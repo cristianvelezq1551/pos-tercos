@@ -43,6 +43,8 @@ model User {
   refreshTokens      RefreshToken[]
   inventoryMovements InventoryMovement[]
   auditLogs          AuditLog[]
+  invoicesUploaded   Invoice[]           @relation("InvoiceUploadedBy")
+  invoicesConfirmed  Invoice[]           @relation("InvoiceConfirmedBy")
 
   @@index([role, active])
   @@map("users")
@@ -159,8 +161,10 @@ model Ingredient {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  consumedAs RecipeEdge[]        @relation("IngredientChild")
-  movements  InventoryMovement[]
+  consumedAs       RecipeEdge[]        @relation("IngredientChild")
+  movements        InventoryMovement[]
+  supplierProducts SupplierProduct[]
+  invoiceItems     InvoiceItem[]
 
   @@index([isActive])
   @@map("ingredients")
@@ -245,4 +249,97 @@ model AuditLog {
   @@index([action, createdAt(sort: Desc)])
   @@index([entityType, entityId, createdAt(sort: Desc)])
   @@map("audit_log")
+}
+
+// =====================================================================
+// PROVEEDORES + FACTURAS (FASE 4)
+// =====================================================================
+
+model Supplier {
+  id        String   @id @default(uuid())
+  nit       String   @unique
+  name      String
+  phone     String?
+  email     String?
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products SupplierProduct[]
+  invoices Invoice[]
+
+  @@index([isActive])
+  @@map("suppliers")
+}
+
+/// Catálogo de productos típicos de cada proveedor con su último precio.
+/// Se actualiza automáticamente al confirmar una factura cuyo item se
+/// matchea contra un ingredient existente.
+model SupplierProduct {
+  id               String     @id @default(uuid())
+  supplierId       String     @map("supplier_id")
+  supplier         Supplier   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  ingredientId     String     @map("ingredient_id")
+  ingredient       Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  lastUnitPrice    Decimal?   @map("last_unit_price") @db.Decimal(14, 4)
+  lastPurchaseDate DateTime?  @map("last_purchase_date")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  @@unique([supplierId, ingredientId])
+  @@index([supplierId])
+  @@index([ingredientId])
+  @@map("supplier_products")
+}
+
+enum InvoiceStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  REJECTED
+}
+
+model Invoice {
+  id               String        @id @default(uuid())
+  supplierId       String?       @map("supplier_id")
+  supplier         Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  invoiceNumber    String?       @map("invoice_number")
+  total            Decimal?      @db.Decimal(14, 2)
+  iva              Decimal?      @db.Decimal(14, 2)
+  photoStorageKey  String?       @map("photo_storage_key")
+  aiExtractionJson Json?         @map("ai_extraction_json")
+  aiModelUsed      String?       @map("ai_model_used")
+  status           InvoiceStatus @default(PENDING_REVIEW)
+  uploadedById     String?       @map("uploaded_by_id")
+  uploadedBy       User?         @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  confirmedById    String?       @map("confirmed_by_id")
+  confirmedBy      User?         @relation("InvoiceConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  confirmedAt      DateTime?     @map("confirmed_at")
+  notes            String?
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  items InvoiceItem[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([supplierId, createdAt(sort: Desc)])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id             String      @id @default(uuid())
+  invoiceId      String      @map("invoice_id")
+  invoice        Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  ingredientId   String?     @map("ingredient_id")
+  ingredient     Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+  descriptionRaw String      @map("description_raw")
+  quantity       Decimal     @db.Decimal(14, 4)
+  unit           String
+  unitPrice      Decimal     @map("unit_price") @db.Decimal(14, 4)
+  total          Decimal     @db.Decimal(14, 2)
+  sortOrder      Int         @default(0) @map("sort_order")
+
+  @@index([invoiceId])
+  @@index([ingredientId])
+  @@map("invoice_items")
 }
