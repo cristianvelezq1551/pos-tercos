@@ -205,18 +205,39 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
-**Próxima: FASE 1 — Auth y roles**
+**FASE 1 — Auth y roles (backend ✅, frontend pendiente)**
 
-Submódulos previstos:
-- [ ] 1.1 Schema Prisma `users` + enum role
-- [ ] 1.2 Migration inicial
-- [ ] 1.3 Endpoints `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`
-- [ ] 1.4 JWT (access 15min + refresh 7d httpOnly)
-- [ ] 1.5 Guards `JwtAuthGuard`, `RolesGuard`
-- [ ] 1.6 Decoradores de rol
-- [ ] 1.7 Seed con 1 user por rol
+- [x] 1.1 Schema Prisma `users` + `refresh_tokens` + enums `UserRole`, `RepartidorAvailability`
+- [x] 1.2 Migration inicial `init_users_auth`
+- [x] 1.3 Endpoints `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`
+- [x] 1.4 JWT access 15min en Bearer + refresh 7d en httpOnly cookie con rotación
+- [x] 1.5 Guards `JwtAuthGuard`, `RolesGuard` registrados como APP_GUARD globales
+- [x] 1.6 Decoradores `@Public`, `@Roles`, `@OnlyDueno`, `@AdminAccess`, `@CashierAccess`, `@CurrentUser`
+- [x] 1.7 Seed con 6 users (1 por rol), password dev: `dev12345`
 - [ ] 1.8 Login UI común en `packages/ui`
 - [ ] 1.9 Middleware Next.js que protege rutas según rol
+
+**Verificación FASE 1 backend (curl):**
+- POST /auth/login con `dueno@dev.local`/`dev12345` → 200 con `accessToken` + cookie `pos_refresh`
+- GET /auth/me sin Bearer → 401
+- GET /auth/me con Bearer → user payload
+- POST /auth/refresh con cookie → nuevo access (rotación de refresh)
+- POST /auth/logout → 204 + cookie cleared
+- POST /auth/refresh tras logout → 401
+
+**Estructura backend siguiendo reglas anti-spaghetti:**
+```
+apps/api/src/
+├── auth/
+│   ├── auth.module.ts / auth.controller.ts / auth.service.ts
+│   ├── decorators/{public,roles,current-user}.decorator.ts
+│   ├── guards/{jwt-auth,roles}.guard.ts
+│   └── dto/login.dto.ts
+├── users/users.{module,service}.ts
+├── prisma/prisma.{module,service}.ts (global)
+├── common/zod-validation.pipe.ts
+└── health/health.controller.ts (uses @Public)
+```
 
 ## Cómo arrancar
 

@@ -44,7 +44,12 @@
       "Bash(npx --yes skills --help)",
       "Bash(npx --yes skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max -a claude-code -y)",
       "Bash(npx --yes skills add https://github.com/vercel-labs/skills --skill find-skills -a claude-code -y)",
-      "Bash(npx --yes skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -a claude-code -y)"
+      "Bash(npx --yes skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -a claude-code -y)",
+      "Bash(pnpm prisma:migrate --name \"init_users_auth\")",
+      "Bash(pnpm prisma:seed)",
+      "Bash(pkill -f \"ts-node\")",
+      "Bash(pnpm --filter @pos-tercos/types --filter @pos-tercos/domain build)",
+      "Bash(kill -9 38226)"
     ]
   }
 }
