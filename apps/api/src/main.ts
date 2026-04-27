@@ -14,7 +14,6 @@ async function bootstrap() {
   const host = process.env.API_HOST ?? '0.0.0.0';
   await app.listen(port, host);
 
-  // eslint-disable-next-line no-console
   console.log(`[api] listening on http://localhost:${port}`);
 }
 

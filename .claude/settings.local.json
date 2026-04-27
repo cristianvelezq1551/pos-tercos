@@ -35,7 +35,10 @@
       "Bash(curl -s http://localhost:3000)",
       "Bash(kill -9 94219)",
       "Bash(pkill -f \"next-server\")",
-      "Bash(pkill -f \"next dev\")"
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl -s --max-time 1 http://localhost:3004)",
+      "Bash(curl -s http://localhost:3004)",
+      "Bash(pnpm lint *)"
     ]
   }
 }

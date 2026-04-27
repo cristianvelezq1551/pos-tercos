@@ -74,18 +74,36 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 > Editar al inicio de cada fase con la fase vigente y los checkpoints.
 
-**FASE 0 — Setup base (en curso)**
+**FASE 0 — Setup base (✅ COMPLETADA)**
 
-Submódulos:
-- [x] 0.1 Monorepo Turborepo + pnpm workspaces (estructura base + configs raíz + packages placeholder)
-- [ ] 0.2 NestJS app `apps/api` + Prisma + Postgres en Docker
-- [ ] 0.3 Next.js apps placeholder
-- [ ] 0.4 Package `packages/types` con Zod (estructura existe, contenido v1 vacío)
-- [ ] 0.5 Package `packages/ui` con shadcn/ui base
-- [ ] 0.6 Package `packages/domain`
-- [ ] 0.7 ESLint + Prettier + tsconfig compartido (parcial: prettier listo, eslint pendiente)
-- [ ] 0.8 GitHub repo privado + commit inicial
-- [ ] 0.9 `CLAUDE.md` raíz (este archivo, hecho)
+- [x] 0.1 Monorepo Turborepo + pnpm workspaces
+- [x] 0.2 NestJS api + Prisma + Postgres en Docker (`/healthz` con DB ping)
+- [x] 0.3 Next.js apps placeholder (web, pos, kds, admin, public-display, repa)
+- [x] 0.4 `packages/types` (Zod queda para FASE 1)
+- [x] 0.5 `packages/ui` con `Button` (cva + clsx + tailwind-merge), validado en admin
+- [x] 0.6 `packages/domain` (placeholder)
+- [x] 0.7 Prettier + ESLint 9 flat config (typescript-eslint), `pnpm lint` clean
+- [x] 0.8 GitHub repo privado pushed → https://github.com/cristianvelezq1551/pos-tercos
+- [x] 0.9 `CLAUDE.md` raíz
+
+**Verificación FASE 0:**
+- `pnpm typecheck` → 10 packages OK
+- `pnpm lint` → 0 errores 0 warnings
+- `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
+- `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
+
+**Próxima: FASE 1 — Auth y roles**
+
+Submódulos previstos:
+- [ ] 1.1 Schema Prisma `users` + enum role
+- [ ] 1.2 Migration inicial
+- [ ] 1.3 Endpoints `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`
+- [ ] 1.4 JWT (access 15min + refresh 7d httpOnly)
+- [ ] 1.5 Guards `JwtAuthGuard`, `RolesGuard`
+- [ ] 1.6 Decoradores de rol
+- [ ] 1.7 Seed con 1 user por rol
+- [ ] 1.8 Login UI común en `packages/ui`
+- [ ] 1.9 Middleware Next.js que protege rutas según rol
 
 ## Cómo arrancar
 
