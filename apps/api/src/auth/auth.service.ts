@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { JwtAccessPayload, LoginResponse, User } from '@pos-tercos/types';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, createHash } from 'crypto';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 
@@ -17,21 +18,37 @@ export class AuthService {
     private readonly users: UsersService,
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly audit: AuditService,
   ) {}
 
   async login(email: string, password: string): Promise<{ result: LoginResponse; refresh: string }> {
     const user = await this.users.findByEmail(email);
     if (!user || !user.active) {
+      await this.audit.log({
+        action: 'AUTH_LOGIN_FAILED',
+        metadata: { email, reason: !user ? 'unknown_email' : 'inactive' },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
+      await this.audit.log({
+        userId: user.id,
+        action: 'AUTH_LOGIN_FAILED',
+        metadata: { email, reason: 'wrong_password' },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const accessToken = await this.signAccess(user.id, user.role, user.email);
     const refresh = await this.issueRefreshToken(user.id);
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'AUTH_LOGIN',
+      metadata: { role: user.role },
+    });
 
     return {
       result: {
@@ -50,6 +67,13 @@ export class AuthService {
     });
 
     if (!record || record.revokedAt || record.expiresAt < new Date()) {
+      await this.audit.log({
+        userId: record?.userId ?? null,
+        action: 'AUTH_REFRESH_FAILED',
+        metadata: {
+          reason: !record ? 'unknown_token' : record.revokedAt ? 'revoked' : 'expired',
+        },
+      });
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
     if (!record.user.active) {
@@ -65,16 +89,31 @@ export class AuthService {
     const accessToken = await this.signAccess(record.user.id, record.user.role, record.user.email);
     const newRefresh = await this.issueRefreshToken(record.user.id);
 
+    await this.audit.log({
+      userId: record.user.id,
+      action: 'AUTH_REFRESH',
+    });
+
     return { accessToken, refresh: newRefresh };
   }
 
   async logout(rawRefresh: string | undefined): Promise<void> {
     if (!rawRefresh) return;
     const tokenHash = this.hashRefresh(rawRefresh);
+    const record = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      select: { userId: true },
+    });
     await this.prisma.refreshToken.updateMany({
       where: { tokenHash, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (record) {
+      await this.audit.log({
+        userId: record.userId,
+        action: 'AUTH_LOGOUT',
+      });
+    }
   }
 
   toPublicUser(dbUser: {

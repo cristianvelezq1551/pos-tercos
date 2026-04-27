@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ApiError, serverFetchJson } from '../../lib/api-server';
-import type { Ingredient, Product, Subproduct } from '@pos-tercos/types';
+import type { IngredientWithStock, Product, Subproduct } from '@pos-tercos/types';
 
 interface DashboardCounts {
   ingredients: number;
@@ -11,14 +11,14 @@ interface DashboardCounts {
 
 async function loadCounts(): Promise<DashboardCounts | null> {
   try {
-    const [ingredients, subproducts, products] = await Promise.all([
-      serverFetchJson<Ingredient[]>('/ingredients'),
+    const [stocks, subproducts, products] = await Promise.all([
+      serverFetchJson<IngredientWithStock[]>('/inventory/stock'),
       serverFetchJson<Subproduct[]>('/subproducts'),
       serverFetchJson<Product[]>('/products'),
     ]);
     return {
-      ingredients: ingredients.length,
-      ingredientsLowStock: 0,
+      ingredients: stocks.length,
+      ingredientsLowStock: stocks.filter((s) => s.lowStock).length,
       subproducts: subproducts.length,
       products: products.length,
     };

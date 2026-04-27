@@ -205,6 +205,27 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
+**FASE 3 — Inventario + audit log · backend ✅, UI pendiente**
+
+- [x] 3.1 Schema: `inventory_movements` + `audit_log` (ambas insert-only via trigger)
+- [x] 3.2 Migration `inventory_audit` con triggers `reject_update_delete()` + check constraint `delta != 0`
+- [x] 3.3 Endpoints: `GET /inventory/stock`, `GET /inventory/stock/:id`, `GET /inventory/movements`, `POST /inventory/movements` (admin/dueño)
+- [x] 3.4 Lógica de alerta: `lowStock = currentStock < thresholdMin && isActive`. Dashboard muestra count real
+- [x] 3.5 `AuditModule` global + `AuditService.log()` integrado en `AuthService` (login OK/FAILED, logout, refresh OK/FAILED) y en `InventoryController` (movements WASTE/INITIAL/MANUAL). `GET /audit` solo Dueño.
+- [ ] 3.6 UI Admin inventario (stock + alertas en rojo)
+- [ ] 3.7 UI Admin movimientos con filtros
+- [ ] 3.8 UI Dueño audit log
+
+**Verificación e2e:**
+- 4/4 enforcement tests DB: INSERT ok, UPDATE/DELETE rechazados con `Table % is insert-only`, `delta=0` rechazado por CHECK
+- Login OK + login fallido → 2 audit entries (`AUTH_LOGIN`, `AUTH_LOGIN_FAILED`)
+- 3 movements creados (INITIAL +5000g pollo, INITIAL +500g sal, WASTE -200g pollo) → `currentStock` se actualiza correctamente (pollo 4800, sal 500)
+- `lowStock` flag pasa de true (stock 0 < threshold 2000) a false (stock 4800)
+- Dashboard counter "Stock crítico" usa `/inventory/stock` y filtra por `lowStock`
+- Cajero rechazado de POST /inventory/movements (403) y GET /audit (403)
+
+---
+
 **FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · ✅ COMPLETADA**
 
 - [x] 2.1 Schema Prisma + 11 CHECK constraints
