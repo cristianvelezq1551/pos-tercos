@@ -5,6 +5,8 @@ import { JwtAccessPayloadSchema } from '@pos-tercos/types';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
+const ACCESS_COOKIE_NAME = 'pos_access';
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -39,8 +41,11 @@ export class JwtAuthGuard implements CanActivate {
 
   private extractToken(req: Request): string | undefined {
     const header = req.headers.authorization;
-    if (!header) return undefined;
-    const [type, value] = header.split(' ');
-    return type === 'Bearer' ? value : undefined;
+    if (header) {
+      const [type, value] = header.split(' ');
+      if (type === 'Bearer' && value) return value;
+    }
+    const cookies = req.cookies as Record<string, string> | undefined;
+    return cookies?.[ACCESS_COOKIE_NAME];
   }
 }

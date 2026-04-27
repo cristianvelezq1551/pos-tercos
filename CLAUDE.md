@@ -205,25 +205,51 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
-**FASE 1 — Auth y roles (backend ✅, frontend pendiente)**
+**FASE 1 — Auth y roles (✅ COMPLETADA)**
 
 - [x] 1.1 Schema Prisma `users` + `refresh_tokens` + enums `UserRole`, `RepartidorAvailability`
 - [x] 1.2 Migration inicial `init_users_auth`
 - [x] 1.3 Endpoints `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`
-- [x] 1.4 JWT access 15min en Bearer + refresh 7d en httpOnly cookie con rotación
-- [x] 1.5 Guards `JwtAuthGuard`, `RolesGuard` registrados como APP_GUARD globales
+- [x] 1.4 JWT access 15min en cookie+Bearer + refresh 7d en httpOnly cookie con rotación
+- [x] 1.5 Guards `JwtAuthGuard` (Bearer o cookie), `RolesGuard` registrados como APP_GUARD globales
 - [x] 1.6 Decoradores `@Public`, `@Roles`, `@OnlyDueno`, `@AdminAccess`, `@CashierAccess`, `@CurrentUser`
 - [x] 1.7 Seed con 6 users (1 por rol), password dev: `dev12345`
-- [ ] 1.8 Login UI común en `packages/ui`
-- [ ] 1.9 Middleware Next.js que protege rutas según rol
+- [x] 1.8 Login UI común en `packages/ui` (LoginForm + Input + Label primitivos)
+- [x] 1.9 Middleware Next.js (Edge runtime) verifica JWT + rol con `jose`. Cableado en `apps/admin` (canónico). Las otras 5 apps replicarán cuando llegue su FASE.
 
 **Verificación FASE 1 backend (curl):**
-- POST /auth/login con `dueno@dev.local`/`dev12345` → 200 con `accessToken` + cookie `pos_refresh`
-- GET /auth/me sin Bearer → 401
-- GET /auth/me con Bearer → user payload
+- POST /auth/login con `dueno@dev.local`/`dev12345` → 200 con `accessToken` + cookies `pos_access` y `pos_refresh`
+- GET /auth/me sin token → 401
+- GET /auth/me con Bearer o con cookie → user payload
 - POST /auth/refresh con cookie → nuevo access (rotación de refresh)
-- POST /auth/logout → 204 + cookie cleared
+- POST /auth/logout → 204 + cookies cleared
 - POST /auth/refresh tras logout → 401
+
+**Verificación FASE 1 frontend (admin localhost:3004):**
+- `GET /` sin cookie → 307 redirect a `/login`
+- `/login` renderiza `<LoginForm />` de `@pos-tercos/ui`
+- POST `/api/auth/login` (proxy a la api via `next.config rewrites`) setea las 2 cookies httpOnly
+- `/` con cookies de DUENO → 200 con info de sesión + botón Cerrar sesión
+- `/` con cookies de CAJERO (rol no permitido en admin) → 307 a `/unauthorized`
+- `/unauthorized` muestra mensaje de acceso denegado
+
+**Patrón frontend (anti-spaghetti) cableado en `apps/admin`, replicable en las otras 5 apps:**
+```
+apps/admin/src/
+├── app/
+│   ├── login/page.tsx                ← thin Suspense + LoginScreen
+│   ├── unauthorized/page.tsx
+│   └── page.tsx                      ← Server Component, getCurrentUserServer()
+├── features/auth/
+│   ├── api/{login,me,logout}.ts      ← fetch wrappers tipados (Zod parse)
+│   ├── components/LoginScreen.tsx    ← 'use client', usa LoginForm de UI
+│   ├── components/LogoutButton.tsx
+│   ├── server.ts                     ← getCurrentUserServer() para SSR
+│   └── index.ts                      ← barrel
+├── lib/auth-config.ts                ← ADMIN_ALLOWED_ROLES = [ADMIN_OPERATIVO, DUENO]
+├── middleware.ts                     ← jose JWT verify + role check (Edge runtime)
+└── next.config.ts                    ← rewrite /api/* → http://localhost:3001/*
+```
 
 **Estructura backend siguiendo reglas anti-spaghetti:**
 ```

@@ -8,7 +8,9 @@ import { LoginDtoSchema, type LoginDto } from './dto/login.dto';
 import { UsersService } from '../users/users.service';
 import type { JwtAccessPayload, LoginResponse, RefreshResponse, User } from '@pos-tercos/types';
 
+const ACCESS_COOKIE_NAME = 'pos_access';
 const REFRESH_COOKIE_NAME = 'pos_refresh';
+const ACCESS_COOKIE_MAX_AGE_MS = 15 * 60 * 1000;
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Controller('auth')
@@ -27,7 +29,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<LoginResponse> {
     const { result, refresh } = await this.auth.login(body.email, body.password);
-    this.setRefreshCookie(res, refresh);
+    this.setAuthCookies(res, result.accessToken, refresh);
     return result;
   }
 
@@ -43,7 +45,7 @@ export class AuthController {
       throw new UnauthorizedException('Missing refresh token');
     }
     const { accessToken, refresh } = await this.auth.refresh(cookie);
-    this.setRefreshCookie(res, refresh);
+    this.setAuthCookies(res, accessToken, refresh);
     return { accessToken };
   }
 
@@ -53,7 +55,7 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
     const cookie = (req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE_NAME];
     await this.auth.logout(cookie);
-    this.clearRefreshCookie(res);
+    this.clearAuthCookies(res);
   }
 
   @Get('me')
@@ -62,17 +64,26 @@ export class AuthController {
     return this.auth.toPublicUser(dbUser);
   }
 
-  private setRefreshCookie(res: Response, refresh: string): void {
+  private setAuthCookies(res: Response, accessToken: string, refresh: string): void {
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie(ACCESS_COOKIE_NAME, accessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      maxAge: ACCESS_COOKIE_MAX_AGE_MS,
+      path: '/',
+    });
     res.cookie(REFRESH_COOKIE_NAME, refresh, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isProd,
       sameSite: 'lax',
       maxAge: REFRESH_COOKIE_MAX_AGE_MS,
-      path: '/auth',
+      path: '/',
     });
   }
 
-  private clearRefreshCookie(res: Response): void {
-    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth' });
+  private clearAuthCookies(res: Response): void {
+    res.clearCookie(ACCESS_COOKIE_NAME, { path: '/' });
+    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/' });
   }
 }

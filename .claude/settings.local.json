@@ -49,7 +49,17 @@
       "Bash(pnpm prisma:seed)",
       "Bash(pkill -f \"ts-node\")",
       "Bash(pnpm --filter @pos-tercos/types --filter @pos-tercos/domain build)",
-      "Bash(kill -9 38226)"
+      "Bash(kill -9 38226)",
+      "Bash(curl -s -c /tmp/admin_cookies.txt -H 'Content-Type: application/json' -d '{\"email\":\"dueno@dev.local\",\"password\":\"dev12345\"}' http://localhost:3004/api/auth/login)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('OK login:', d['user']['email'], d['user']['role']\\)\")",
+      "Read(//tmp/**)",
+      "Bash(awk '{print \"  \"$6, \"\\(httpOnly\\)\"}')",
+      "Bash(curl -s -b /tmp/admin_cookies.txt -o /tmp/home.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/)",
+      "Bash(curl -s -c /tmp/cajero_cookies.txt -H 'Content-Type: application/json' -d '{\"email\":\"cajero@dev.local\",\"password\":\"dev12345\"}' http://localhost:3004/api/auth/login)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('login OK:', d['user']['email'], d['user']['role']\\)\")",
+      "Bash(curl -s -b /tmp/cajero_cookies.txt -o /dev/null -w \"HTTP %{http_code} → %{redirect_url}\\\\n\" http://localhost:3004/)",
+      "Bash(curl -s -b /tmp/cajero_cookies.txt -o /tmp/unauth.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/unauthorized)",
+      "Bash(kill -9 41101)"
     ]
   }
 }
