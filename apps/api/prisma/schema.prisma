@@ -46,6 +46,16 @@ model User {
   invoicesUploaded   Invoice[]           @relation("InvoiceUploadedBy")
   invoicesConfirmed  Invoice[]           @relation("InvoiceConfirmedBy")
 
+  // FASE 5
+  salesAsCashier    Sale[]           @relation("SaleCashier")
+  salesAsPaidBy     Sale[]           @relation("SalePaidBy")
+  salesAsRepartidor Sale[]           @relation("SaleRepartidor")
+  saleStatusChanges SaleStatusLog[]
+  shifts            Shift[]
+  promotionsCreated Promotion[]
+  idempotencyKeys   IdempotencyKey[]
+  approvalPin       ApprovalPin?
+
   @@index([role, active])
   @@map("users")
 }
@@ -113,6 +123,10 @@ model Product {
   invoiceItems      InvoiceItem[]
   supplierResaleHistory SupplierProduct[] @relation("SupplierProductResale")
 
+  // FASE 5
+  saleItems         SaleItem[]
+  promotionProducts PromotionProduct[]
+
   @@index([category, isActive])
   @@index([isActive])
   @@index([directResale, isActive])
@@ -126,6 +140,9 @@ model ProductSize {
   name          String
   priceModifier Decimal @map("price_modifier") @db.Decimal(12, 2) @default(0)
   sortOrder     Int     @default(0) @map("sort_order")
+
+  // FASE 5
+  saleItems SaleItem[]
 
   @@index([productId])
   @@map("product_sizes")
@@ -392,4 +409,276 @@ model InvoiceItem {
   @@index([ingredientId])
   @@index([productId])
   @@map("invoice_items")
+}
+
+// =====================================================================
+// VENTAS + TURNOS + PROMOCIONES + IDEMPOTENCY + APPROVAL PINS (FASE 5)
+// =====================================================================
+
+enum SaleType {
+  COUNTER
+  WEB_PICKUP
+  WEB_DELIVERY
+}
+
+/// Estado completo del ciclo de vida de una venta. Algunos estados solo
+/// aplican a tipos WEB_* (FASE 7+). En FASE 5 una venta COUNTER va:
+/// PENDIENTE_PAGO -> PAGADO (-> EN_PREPARACION -> LISTO_DESPACHO via FASE 6 KDS)
+/// o PENDIENTE_PAGO -> CANCELADO_NO_PAGO o cualquier -> VOID.
+enum SaleStatus {
+  PENDIENTE_PAGO
+  PAGADO
+  EN_PREPARACION
+  LISTO_DESPACHO
+  ASIGNADO
+  EN_RUTA
+  ENTREGADO
+  CANCELADO_NO_PAGO
+  CANCELADO_SIN_REEMBOLSO
+  INTENTO_FALLIDO
+  DEVUELTO
+  EN_DISPUTA
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  NEQUI
+  DAVIPLATA
+  QR_BANCOLOMBIA
+  TRANSFER
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+  RECONCILED
+}
+
+/// v1 solo usa PERCENT_OFF. El enum incluye los demás para no migrar
+/// cuando se implementen en FASE 12.
+enum PromotionType {
+  PERCENT_OFF
+  BOGO
+  FIXED_OFF
+  COMBO_OFF
+}
+
+/// Header de venta. Campos delivery (repartidor_id, addresses, picked_up_at,
+/// etc.) quedan NULL en FASE 5 — se rellenan desde FASE 7.
+///
+/// receipt_number tiene default `nextval('receipt_seq')` aplicado vía
+/// migration manual. La sequence garantiza monotonicidad incluso si
+/// hay rollback de transacción.
+///
+/// idempotency_key permite que el POS reintente POST /sales sin duplicar.
+/// El campo es UNIQUE pero opcional (web orders no lo usan).
+model Sale {
+  id             String     @id @default(uuid())
+  receiptNumber  BigInt     @unique @map("receipt_number")
+  type           SaleType
+  status         SaleStatus @default(PENDIENTE_PAGO)
+  turnNumber     Int        @map("turn_number")
+
+  // Cliente (opcional para COUNTER, requerido para WEB_*)
+  customerName  String? @map("customer_name")
+  customerPhone String? @map("customer_phone")
+  customerNit   String? @map("customer_nit")
+
+  // Delivery (FASE 7+)
+  deliveryAddress String?  @map("delivery_address")
+  deliveryLat     Decimal? @map("delivery_lat") @db.Decimal(10, 7)
+  deliveryLng     Decimal? @map("delivery_lng") @db.Decimal(10, 7)
+
+  // Totales (CHECK: total = subtotal - discount_total ± epsilon)
+  subtotal      Decimal @db.Decimal(14, 2)
+  discountTotal Decimal @default(0) @map("discount_total") @db.Decimal(14, 2)
+  total         Decimal @db.Decimal(14, 2)
+
+  // Pago (NULL hasta confirm-payment)
+  paymentMethod PaymentMethod? @map("payment_method")
+  paidAt        DateTime?      @map("paid_at")
+  paidByUserId  String?        @map("paid_by_user_id")
+  paidBy        User?          @relation("SalePaidBy", fields: [paidByUserId], references: [id], onDelete: SetNull)
+
+  cashierId String? @map("cashier_id")
+  cashier   User?   @relation("SaleCashier", fields: [cashierId], references: [id], onDelete: SetNull)
+
+  shiftId String? @map("shift_id")
+  shift   Shift?  @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  // Delivery (FASE 7+)
+  repartidorId   String?   @map("repartidor_id")
+  repartidor     User?     @relation("SaleRepartidor", fields: [repartidorId], references: [id], onDelete: SetNull)
+  assignedAt     DateTime? @map("assigned_at")
+  pickedUpAt     DateTime? @map("picked_up_at")
+  departedAt     DateTime? @map("departed_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  failedAttempts Int       @default(0) @map("failed_attempts")
+
+  notes          String?
+  idempotencyKey String?   @unique @map("idempotency_key")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  items     SaleItem[]
+  statusLog SaleStatusLog[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([cashierId, createdAt(sort: Desc)])
+  @@index([repartidorId, status])
+  @@index([type, status, createdAt(sort: Desc)])
+  @@index([shiftId])
+  @@map("sales")
+}
+
+/// Línea de venta. unit_price está CONGELADO al momento de la venta —
+/// no se actualiza si después cambia el basePrice del producto.
+/// modifiers_json es snapshot (array de objetos con name/priceDelta) para
+/// preservar la información tal como estaba al momento de la venta.
+model SaleItem {
+  id        String  @id @default(uuid())
+  saleId    String  @map("sale_id")
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  sizeId String?      @map("size_id")
+  size   ProductSize? @relation(fields: [sizeId], references: [id], onDelete: SetNull)
+
+  quantity      Int
+  unitPrice     Decimal @map("unit_price") @db.Decimal(12, 2)
+  modifiersJson Json    @default("[]") @map("modifiers_json")
+
+  appliedPromotionId String?    @map("applied_promotion_id")
+  appliedPromotion   Promotion? @relation(fields: [appliedPromotionId], references: [id], onDelete: SetNull)
+
+  // CHECK: line_total = line_subtotal - line_discount ± epsilon
+  lineSubtotal Decimal @map("line_subtotal") @db.Decimal(14, 2)
+  lineDiscount Decimal @default(0) @map("line_discount") @db.Decimal(14, 2)
+  lineTotal    Decimal @map("line_total") @db.Decimal(14, 2)
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([appliedPromotionId])
+  @@map("sale_items")
+}
+
+/// Insert-only via trigger DB (igual que inventory_movements y audit_log).
+/// Cada cambio de Sale.status agrega una fila con (from, to, user, notes).
+/// Permite calcular tiempos por etapa para reportes (FASE 13).
+model SaleStatusLog {
+  id         String   @id @default(uuid())
+  saleId     String   @map("sale_id")
+  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  statusFrom String?  @map("status_from")
+  statusTo   String   @map("status_to")
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  notes      String?
+  changedAt  DateTime @default(now()) @map("changed_at")
+
+  @@index([saleId, changedAt])
+  @@map("sale_status_log")
+}
+
+/// Turno de caja del cajero. FASE 5 cubre solo apertura (opening_cash).
+/// expected_cash, counted_cash, difference, closed_at quedan NULL hasta
+/// FASE 11 que implementa cierre + reconciliación.
+///
+/// CHECK: solo puede haber 1 Shift OPEN por cajero a la vez (validado en
+/// service, no en DB porque requiere subquery).
+model Shift {
+  id           String      @id @default(uuid())
+  cashierId    String      @map("cashier_id")
+  cashier      User        @relation(fields: [cashierId], references: [id], onDelete: Restrict)
+  openedAt     DateTime    @default(now()) @map("opened_at")
+  closedAt     DateTime?   @map("closed_at")
+  openingCash  Decimal     @map("opening_cash") @db.Decimal(14, 2)
+  expectedCash Decimal?    @map("expected_cash") @db.Decimal(14, 2)
+  countedCash  Decimal?    @map("counted_cash") @db.Decimal(14, 2)
+  difference   Decimal?    @db.Decimal(14, 2)
+  notes        String?
+  status       ShiftStatus @default(OPEN)
+
+  sales Sale[]
+
+  @@index([cashierId, status])
+  @@index([status, openedAt(sort: Desc)])
+  @@map("shifts")
+}
+
+/// Promociones automáticas aplicadas en cobro. v1 solo PERCENT_OFF.
+/// Resolución de overlap: para cada sale_item, buscar promociones activas
+/// que matcheen day-of-week + hora + producto, aplicar la de mayor
+/// discount_pct. No acumulables.
+///
+/// daysOfWeekMask es bitmask: lunes=1, martes=2, miércoles=4, jueves=8,
+/// viernes=16, sábado=32, domingo=64. 127 = todos los días.
+model Promotion {
+  id              String        @id @default(uuid())
+  name            String
+  type            PromotionType @default(PERCENT_OFF)
+  discountPct     Decimal       @map("discount_pct") @db.Decimal(5, 4)
+  daysOfWeekMask  Int           @map("days_of_week_mask")
+  // Formato HH:MM:SS (24h). Si time_start > time_end, la promo cruza medianoche.
+  timeStart       String        @map("time_start")
+  timeEnd         String        @map("time_end")
+  activeFrom      DateTime?     @map("active_from") @db.Date
+  activeTo        DateTime?     @map("active_to") @db.Date
+  isActive        Boolean       @default(true) @map("is_active")
+  createdById     String?       @map("created_by")
+  createdBy       User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  products  PromotionProduct[]
+  saleItems SaleItem[]
+
+  @@index([isActive])
+  @@map("promotions")
+}
+
+model PromotionProduct {
+  promotionId String    @map("promotion_id")
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  productId   String    @map("product_id")
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([promotionId, productId])
+  @@index([productId])
+  @@map("promotion_products")
+}
+
+/// Cache de respuestas para POSTs idempotentes (sales, shifts/open, etc.).
+/// Cuando el cliente envía Idempotency-Key, el backend busca acá; si la
+/// key existe + no expiró, retorna response_json sin re-ejecutar la lógica.
+/// TTL default 7 días. Cleanup por cron (FASE 5.B).
+model IdempotencyKey {
+  key          String   @id
+  endpoint     String
+  responseJson Json     @map("response_json")
+  statusCode   Int      @map("status_code")
+  userId       String?  @map("user_id")
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+/// PIN de aprobación de 6 dígitos para Admin Operativo / Dueño.
+/// Usado por cajero para anular ventas, aplicar descuentos >15%,
+/// abrir cajón sin venta. Header X-Approval-Pin: <pin>.
+/// FASE 5: solo seed para Dueño (PIN configurable por env). UI para
+/// cambiarlo entra en FASE 11.
+///
+/// CHECK: solo Admin/Dueño puede tener PIN (constraint en migration).
+model ApprovalPin {
+  userId    String   @id @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pinHash   String   @map("pin_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("approval_pins")
 }

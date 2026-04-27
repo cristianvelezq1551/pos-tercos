@@ -230,14 +230,22 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 
 ---
 
-## 5. Schema DB (16 tablas + 5 enums)
+## 5. Schema DB (24 tablas + 10 enums + 1 sequence)
 
 ### Enums Prisma
-- `UserRole` — DUENO, ADMIN_OPERATIVO, CAJERO, COCINERO, REPARTIDOR, ATENCION_CLIENTE
-- `RepartidorAvailability` — AVAILABLE, BUSY, OFFLINE
-- `MovementType` — PURCHASE, SALE, MANUAL_ADJUSTMENT, WASTE, INITIAL
+- `UserRole` — CAJERO, COCINERO, REPARTIDOR, ADMIN_OPERATIVO, DUENO, TRABAJADOR
+- `RepartidorAvailability` — DISPONIBLE, OCUPADO, OFFLINE
+- `InventoryMovementType` — PURCHASE, SALE, MANUAL_ADJUSTMENT, WASTE, INITIAL
 - `StockableType` — INGREDIENT, PRODUCT
 - `InvoiceStatus` — PENDING_REVIEW, CONFIRMED, REJECTED
+- `SaleType` (FASE 5) — COUNTER, WEB_PICKUP, WEB_DELIVERY
+- `SaleStatus` (FASE 5) — PENDIENTE_PAGO, PAGADO, EN_PREPARACION, LISTO_DESPACHO, ASIGNADO, EN_RUTA, ENTREGADO, CANCELADO_NO_PAGO, CANCELADO_SIN_REEMBOLSO, INTENTO_FALLIDO, DEVUELTO, EN_DISPUTA, VOID
+- `PaymentMethod` (FASE 5) — CASH, NEQUI, DAVIPLATA, QR_BANCOLOMBIA, TRANSFER
+- `ShiftStatus` (FASE 5) — OPEN, CLOSED, RECONCILED
+- `PromotionType` (FASE 5) — PERCENT_OFF, BOGO, FIXED_OFF, COMBO_OFF (v1 solo PERCENT_OFF)
+
+### Sequences
+- `receipt_seq` (FASE 5) — monotónica, default de `sales.receipt_number`. Saltos detectables vía cron.
 
 ### Tablas
 1. `users`
@@ -255,7 +263,15 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 13. `supplier_products` — polimórfico, last_unit_price + currency + last_seen
 14. `invoices` — supplier_name, invoice_number, total, iva, status, image_url, ai_model_used, raw_extraction (JSON), uploaded_by, confirmed_by
 15. `invoice_items` — polimórfico, description_raw + matched entity
-16. `_prisma_migrations`
+16. `sales` (FASE 5) — receipt_number (default nextval), type, status, totals, payment, cashier, shift, delivery (NULL hasta FASE 7), idempotency_key UNIQUE
+17. `sale_items` (FASE 5) — product_id (no polimórfico), size_id NULL, modifiers_json snapshot, applied_promotion_id, line_subtotal/discount/total con CHECK
+18. `sale_status_log` (FASE 5) — insert-only via trigger; trazabilidad de cambios de status
+19. `shifts` (FASE 5) — apertura completa; cierre + reconciliación quedan para FASE 11
+20. `promotions` (FASE 5) — discount_pct [0..1), days_of_week_mask 1..127, time_start/end HH:MM:SS validado por regex
+21. `promotion_products` (FASE 5) — N:M, PRIMARY KEY composite
+22. `idempotency_keys` (FASE 5) — cache de respuestas para POSTs idempotentes, TTL 7d
+23. `approval_pins` (FASE 5) — PIN hash por usuario; trigger valida que role IN (ADMIN_OPERATIVO, DUENO)
+24. `_prisma_migrations`
 
 ---
 
@@ -417,9 +433,27 @@ Schema insert-only via trigger, CRUD movements polimórficos, alerta lowStock, A
 
 **Llaves LLM:** `apps/api/.env` → `ANTHROPIC_API_KEY=sk-ant-...`. OpenAI fallback opcional (`OPENAI_API_KEY=sk-...`). `LLM_PROVIDER` controla preferencia (`anthropic` default).
 
-### Pendientes — FASES 5 a 15
+### FASE 5 — POS Cajero base · EN PROGRESO
 
-- **FASE 5** — POS Cajero base (mostrador, sin domicilio): `apps/pos`, ventas, métodos pago, anulaciones, descuentos, audit.
+Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en CLAUDE.md sec 13.
+
+- [x] **5.A — Schema + types** (commit pendiente):
+  - 8 modelos Prisma nuevos: `Sale`, `SaleItem`, `SaleStatusLog`, `Shift`, `Promotion`, `PromotionProduct`, `IdempotencyKey`, `ApprovalPin`
+  - 5 enums nuevos: `SaleType`, `SaleStatus`, `PaymentMethod`, `ShiftStatus`, `PromotionType`
+  - Migration `20260427220551_sales_promotions_shifts_idem_pin`:
+    - Sequence `receipt_seq` con default en `sales.receipt_number`
+    - 18 CHECK constraints (totales coherentes, rangos, formato HH:MM:SS via regex)
+    - Trigger `trg_sale_status_log_no_update_delete` (reusa `reject_update_delete()` de FASE 3)
+    - Trigger `trg_approval_pins_role_check` valida role IN (ADMIN_OPERATIVO, DUENO)
+  - 12/12 constraint tests SQL pasan (rechaza incoherencias, acepta válidos)
+  - Types Zod: `sales.ts`, `promotions.ts`, `shifts.ts`, `idempotency.ts`, `approvals.ts`
+  - `AuditActionEnum` extendido con SALE_*, SHIFT_*, PROMOTION_*, RECEIPT_*, INVOICE_* (cierra parte del ajuste 2.18)
+- [ ] **5.B — Sales backend module** (próximo): `POST /sales` con Idempotency-Key + descuento de stock vía `expandRecipe` + receipt numbering
+- [ ] **5.C — Promociones engine + Shifts open + audit**: motor puro en `@pos-tercos/domain`, CRUD `/promotions`, `POST /shifts/open`, cron sequence-gap detection
+- [ ] **5.D — Print agent skeleton + adapters**: `apps/print-agent` en :9100, `MockPrinterAdapter`, `MockCashDrawerAdapter`
+- [ ] **5.E — apps/pos UI**: shell + login + carrito + cobro + recibo PDF mock
+
+### Pendientes — FASES 6 a 15
 - **FASE 6** — KDS + pantalla pública: `apps/kds`, `apps/public-display`, WebSocket gateway, SSE, estados pedido, tiempos.
 - **FASE 7** — Domicilios + Mapbox + repartidores: `apps/repa`, geocoding, asignación.
 - **FASE 8** — Turnos / cierre Z / arqueo.
@@ -509,14 +543,24 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 4 está cerrada al 100%. Próxima opción es **FASE 5: POS Cajero** (grande, ~2-3 semanas):
+FASE 5 está en progreso. Sprint 5.A (schema + types + migration) cerrado.
+**Próximo: Sprint 5.B (Sales backend module)** — cuando se arranque chat dedicado.
 
-- Schema `sales`, `sale_items`, `payments`.
-- WebSocket gateway base (también requerido FASE 6 KDS).
-- `apps/pos`: shell PWA, login, panel venta mostrador, métodos pago, anulación con motivo + audit, descuento con motivo + audit.
-- Trigger DB que descuente stock al confirmar venta vía `expandRecipe`.
+**Decisiones confirmadas para FASE 5 (no re-discutir sin razón):**
+1. `sale_items.product_id NOT NULL` (no polimórfico). Las ventas son siempre de productos, no de insumos directos.
+2. `sales.type` enum completo desde 5.A (`COUNTER`, `WEB_PICKUP`, `WEB_DELIVERY`). Solo `COUNTER` se usa hasta FASE 7.
+3. `approval_pins` ya existe (con trigger de role check). PIN seed para Dueño en FASE 5.B/5.C; UI de configuración entra en FASE 11.
+4. `idempotency_keys` tabla aparte con TTL 7d (no campo único en `sales`). Cleanup por cron en 5.B/5.C.
+5. Sprint 5.A se hizo en chat actual. 5.B+ en chat dedicado por presión de contexto.
 
-Decidir con el usuario antes de arrancar.
+**Sprint 5.B — alcance:**
+- Módulo `apps/api/src/sales/` (controller + service + DTOs)
+- `IdempotencyService` para cachear responses de POSTs idempotentes
+- `POST /sales` con header `Idempotency-Key` que descuenta stock vía `expandRecipe` (calcula movements polimórficos: ingredientes via receta + productos direct-resale como SALE)
+- `POST /sales/:id/confirm-payment` con doble validación digital
+- `POST /sales/:id/void` con `X-Approval-Pin` (validar PIN contra `approval_pins` table)
+- Receipt numbering: el `nextval('receipt_seq')` ya está como default; service expone helper para detectar saltos (cron en 5.C)
+- Tests unit del service + e2e supertest happy path
 
 ---
 
