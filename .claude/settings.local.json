@@ -64,7 +64,17 @@
       "Bash(claude --version)",
       "Bash(pnpm dlx *)",
       "Bash(pnpm prisma *)",
-      "Bash(kill -9 54575)"
+      "Bash(kill -9 54575)",
+      "Bash(python3 ~/.claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant POS admin dashboard productivity desktop intensive minimal\" --design-system -p \"Tercos Admin\")",
+      "Bash(git mv *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('OK', d['user']['role']\\)\")",
+      "Bash(curl -s -b /tmp/admin_cookies.txt -o /tmp/home.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/)",
+      "Bash(curl -s -b /tmp/admin_cookies.txt -o /tmp/ing.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/ingredients)",
+      "Bash(curl -s -b /tmp/admin_cookies.txt -o /tmp/new.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/ingredients/new)",
+      "Bash(curl -s -b /tmp/admin_cookies.txt http://localhost:3004/api/ingredients)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} insumos:'\\); [print\\(f'  - {i[\\\\\"name\\\\\"]} \\({i[\\\\\"unitPurchase\\\\\"]} → {i[\\\\\"unitRecipe\\\\\"]}, factor {i[\\\\\"conversionFactor\\\\\"]}\\)'\\) for i in d]\")",
+      "Bash(curl -s -b /tmp/admin_cookies.txt http://localhost:3004/ingredients)",
+      "Bash(kill -9 61854)"
     ]
   }
 }

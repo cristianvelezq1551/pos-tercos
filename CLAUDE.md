@@ -205,7 +205,7 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
-**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · backend ✅, UI pendiente**
+**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · en curso**
 
 - [x] 2.1 Schema Prisma + 11 CHECK constraints
 - [x] 2.2 Migration `catalog_recipe_tree`
@@ -214,8 +214,44 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - [ ] 2.5 UI Admin productos
 - [ ] 2.6 UI Admin editor de receta (árbol)
 - [ ] 2.7 UI Admin subproductos
-- [ ] 2.8 UI Admin insumos
+- [x] 2.8 UI Admin insumos (lista + crear + editar + desactivar)
 - [x] 2.9 Endpoint `GET /products/:id/expanded-cost`
+
+**Admin shell construido en esta tanda (canónico para el resto de pantallas):**
+```
+apps/admin/src/
+├── app/
+│   ├── layout.tsx (root, sin shell)
+│   ├── login/page.tsx (sin shell)
+│   ├── unauthorized/page.tsx (sin shell)
+│   └── (authenticated)/                     ← route group
+│       ├── layout.tsx                       ← envuelve con AdminShell
+│       ├── page.tsx                         ← dashboard + 4 stat cards
+│       └── ingredients/
+│           ├── page.tsx                     ← lista (Server Component)
+│           ├── new/page.tsx                 ← crear (form client)
+│           └── [id]/page.tsx                ← editar (form client + initial data SSR)
+├── components/
+│   ├── AdminShell.tsx                       ← sidebar + topbar wrapper
+│   ├── AdminSidebar.tsx                     ← nav agrupada por sección
+│   └── AdminTopbar.tsx                      ← user avatar + logout
+├── features/auth/                           ← FASE 1
+├── features/ingredients/
+│   ├── api/client.ts                        ← fetch wrappers tipados con Zod parse
+│   ├── components/IngredientsTable.tsx      ← table + empty state
+│   ├── components/IngredientForm.tsx        ← create + edit + deactivate
+│   └── index.ts                             ← barrel
+└── lib/
+    ├── api-server.ts                        ← serverFetchJson + ApiError
+    └── auth-config.ts (FASE 1)
+```
+
+**Design system aplicado (decisión + skill ui-ux-pro-max):**
+- Light theme por default
+- Sidebar fijo 240px en desktop, oculto en <1024px
+- Color primary: blue-600 / Stock crítico: amber-600 / Destructive: red-600 / Success: green-600
+- Tablas: light borders, hover row, no zebra, `tabular-nums` en columnas numéricas
+- Empty state explícito en lista vacía con CTA
 
 **Endpoints disponibles:**
 - `GET/POST/PATCH/DELETE /ingredients` (admin para writes)
