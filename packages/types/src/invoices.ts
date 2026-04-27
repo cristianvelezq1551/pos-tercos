@@ -37,8 +37,13 @@ export type ExtractedInvoice = z.infer<typeof ExtractedInvoiceSchema>;
 export const InvoiceItemSchema = z.object({
   id: z.string().uuid(),
   invoiceId: z.string().uuid(),
+  // Polimórfico: el item asocia a un Insumo o Producto direct-resale.
+  // Ambos null si todavía no se asoció.
+  entityType: z.enum(['INGREDIENT', 'PRODUCT']).nullable(),
   ingredientId: z.string().uuid().nullable(),
-  ingredientName: z.string().nullable().optional(),
+  productId: z.string().uuid().nullable(),
+  /** Nombre resuelto del item asociado (server-embedded). */
+  itemName: z.string().nullable().optional(),
   descriptionRaw: z.string(),
   quantity: z.number(),
   unit: z.string(),
@@ -74,14 +79,38 @@ export type Invoice = z.infer<typeof InvoiceSchema>;
 // CONFIRM PAYLOAD (lo que envía la UI al confirmar tras editar)
 // ====================================================================
 
-export const ConfirmInvoiceItemSchema = z.object({
-  ingredientId: z.string().uuid(),
-  descriptionRaw: z.string().min(1).max(500),
-  quantity: z.number().positive(),
-  unit: z.string().min(1).max(40),
-  unitPrice: z.number().nonnegative(),
-  total: z.number().nonnegative(),
-});
+/**
+ * Cada item de la factura confirma con su tipo (INGREDIENT o PRODUCT)
+ * y el ID correspondiente. La validación en backend exige consistencia
+ * entre entityType y los FK.
+ */
+export const ConfirmInvoiceItemSchema = z
+  .object({
+    entityType: z.enum(['INGREDIENT', 'PRODUCT']),
+    ingredientId: z.string().uuid().optional(),
+    productId: z.string().uuid().optional(),
+    descriptionRaw: z.string().min(1).max(500),
+    quantity: z.number().positive(),
+    unit: z.string().min(1).max(40),
+    unitPrice: z.number().nonnegative(),
+    total: z.number().nonnegative(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.entityType === 'INGREDIENT' && !data.ingredientId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ingredientId required when entityType=INGREDIENT',
+        path: ['ingredientId'],
+      });
+    }
+    if (data.entityType === 'PRODUCT' && !data.productId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'productId required when entityType=PRODUCT',
+        path: ['productId'],
+      });
+    }
+  });
 export type ConfirmInvoiceItem = z.infer<typeof ConfirmInvoiceItemSchema>;
 
 export const ConfirmInvoiceSchema = z.object({

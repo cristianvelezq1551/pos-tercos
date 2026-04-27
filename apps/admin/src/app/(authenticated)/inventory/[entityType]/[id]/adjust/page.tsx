@@ -1,19 +1,24 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { AdjustStockForm } from '../../../../../features/inventory';
-import { ApiError, serverFetchJson } from '../../../../../lib/api-server';
-import type { IngredientWithStock } from '@pos-tercos/types';
+import { AdjustStockForm } from '../../../../../../features/inventory';
+import { ApiError, serverFetchJson } from '../../../../../../lib/api-server';
+import { StockableTypeEnum, type Stockable } from '@pos-tercos/types';
 
 interface PageProps {
-  params: Promise<{ ingredientId: string }>;
+  params: Promise<{ entityType: string; id: string }>;
 }
 
 export default async function AdjustStockPage({ params }: PageProps) {
-  const { ingredientId } = await params;
+  const { entityType, id } = await params;
 
-  let ingredient: IngredientWithStock;
+  const parsed = StockableTypeEnum.safeParse(entityType.toUpperCase());
+  if (!parsed.success) notFound();
+
+  let stockable: Stockable;
   try {
-    ingredient = await serverFetchJson<IngredientWithStock>(`/inventory/stock/${ingredientId}`);
+    stockable = await serverFetchJson<Stockable>(
+      `/inventory/stock/${parsed.data.toLowerCase()}/${id}`,
+    );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       notFound();
@@ -33,7 +38,7 @@ export default async function AdjustStockPage({ params }: PageProps) {
         </p>
       </div>
       <div className="max-w-2xl">
-        <AdjustStockForm ingredient={ingredient} />
+        <AdjustStockForm stockable={stockable} />
       </div>
     </div>
   );

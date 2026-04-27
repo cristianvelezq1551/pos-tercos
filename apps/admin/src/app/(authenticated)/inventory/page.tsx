@@ -1,16 +1,16 @@
 import Link from 'next/link';
 import { StockTable } from '../../../features/inventory';
 import { ApiError, serverFetchJson } from '../../../lib/api-server';
-import type { IngredientWithStock } from '@pos-tercos/types';
+import type { Stockable } from '@pos-tercos/types';
 
 interface PageProps {
   searchParams: Promise<{ low_stock?: string }>;
 }
 
-async function loadStock(lowStockOnly: boolean): Promise<IngredientWithStock[] | { error: string }> {
+async function loadStock(lowStockOnly: boolean): Promise<Stockable[] | { error: string }> {
   try {
     const params = lowStockOnly ? '?low_stock=true' : '';
-    return await serverFetchJson<IngredientWithStock[]>(`/inventory/stock${params}`);
+    return await serverFetchJson<Stockable[]>(`/inventory/stock${params}`);
   } catch (err) {
     if (err instanceof ApiError) {
       return { error: `API ${err.status}` };

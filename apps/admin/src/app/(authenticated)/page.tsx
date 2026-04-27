@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { ApiError, serverFetchJson } from '../../lib/api-server';
-import type { IngredientWithStock, Product, Subproduct } from '@pos-tercos/types';
+import type { Product, Stockable, Subproduct } from '@pos-tercos/types';
 
 interface DashboardCounts {
   ingredients: number;
-  ingredientsLowStock: number;
+  productsDirectResale: number;
+  lowStockTotal: number;
   subproducts: number;
   products: number;
 }
@@ -12,13 +13,14 @@ interface DashboardCounts {
 async function loadCounts(): Promise<DashboardCounts | null> {
   try {
     const [stocks, subproducts, products] = await Promise.all([
-      serverFetchJson<IngredientWithStock[]>('/inventory/stock'),
+      serverFetchJson<Stockable[]>('/inventory/stock'),
       serverFetchJson<Subproduct[]>('/subproducts'),
       serverFetchJson<Product[]>('/products'),
     ]);
     return {
-      ingredients: stocks.length,
-      ingredientsLowStock: stocks.filter((s) => s.lowStock).length,
+      ingredients: stocks.filter((s) => s.type === 'INGREDIENT').length,
+      productsDirectResale: stocks.filter((s) => s.type === 'PRODUCT').length,
+      lowStockTotal: stocks.filter((s) => s.lowStock).length,
       subproducts: subproducts.length,
       products: products.length,
     };
@@ -47,9 +49,9 @@ export default async function DashboardPage() {
           <StatCard label="Productos" value={counts.products} href="/products" />
           <StatCard
             label="Stock crítico"
-            value={counts.ingredientsLowStock}
-            tone={counts.ingredientsLowStock > 0 ? 'warning' : 'default'}
-            href="/ingredients?filter=low-stock"
+            value={counts.lowStockTotal}
+            tone={counts.lowStockTotal > 0 ? 'warning' : 'default'}
+            href="/inventory?low_stock=true"
           />
         </div>
       ) : (

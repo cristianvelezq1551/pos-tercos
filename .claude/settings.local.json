@@ -91,7 +91,9 @@
       "Bash(curl -s -b /tmp/admin.txt -o /tmp/aud_admin.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/audit)",
       "Bash(curl -s -b /tmp/admin.txt -o /tmp/inv_admin.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/inventory)",
       "Bash(curl -s -b /tmp/c.txt -o /tmp/new.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/invoices/new)",
-      "Read(//private/tmp/**)"
+      "Read(//private/tmp/**)",
+      "Bash(mkdir -p /Users/cristianvelez/Documents/TERCOS/apps/admin/src/app/'\\(authenticated\\)'/inventory/'[entityType]'/'[id]'/adjust)",
+      "Bash(rm -rf /Users/cristianvelez/Documents/TERCOS/apps/admin/src/app/'\\(authenticated\\)'/inventory/'[ingredientId]')"
     ]
   }
 }

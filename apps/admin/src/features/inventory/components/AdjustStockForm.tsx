@@ -3,11 +3,11 @@
 import { Button, Input, Label } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
-import type { IngredientWithStock } from '@pos-tercos/types';
+import type { Stockable } from '@pos-tercos/types';
 import { createMovement } from '../api/client';
 
 interface AdjustStockFormProps {
-  ingredient: IngredientWithStock;
+  stockable: Stockable;
 }
 
 type MovementKind = 'MANUAL_ADJUSTMENT' | 'WASTE' | 'INITIAL';
@@ -30,7 +30,7 @@ const TYPE_OPTIONS: Array<{ value: MovementKind; label: string; hint: string }> 
   },
 ];
 
-export function AdjustStockForm({ ingredient }: AdjustStockFormProps) {
+export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +44,8 @@ export function AdjustStockForm({ ingredient }: AdjustStockFormProps) {
     const m = Number(magnitude);
     if (!Number.isFinite(m) || m <= 0) return null;
     const delta = direction === 'IN' ? m : -m;
-    return ingredient.currentStock + delta;
-  }, [magnitude, direction, ingredient.currentStock]);
+    return stockable.currentStock + delta;
+  }, [magnitude, direction, stockable.currentStock]);
 
   const wasteForcesNegative = type === 'WASTE';
 
@@ -64,12 +64,23 @@ export function AdjustStockForm({ ingredient }: AdjustStockFormProps) {
 
     setSubmitting(true);
     try {
-      await createMovement({
-        ingredientId: ingredient.id,
-        delta,
-        type,
-        notes: notes.trim() || undefined,
-      });
+      await createMovement(
+        stockable.type === 'INGREDIENT'
+          ? {
+              entityType: 'INGREDIENT',
+              ingredientId: stockable.id,
+              delta,
+              type,
+              notes: notes.trim() || undefined,
+            }
+          : {
+              entityType: 'PRODUCT',
+              productId: stockable.id,
+              delta,
+              type,
+              notes: notes.trim() || undefined,
+            },
+      );
       startTransition(() => {
         router.push('/inventory');
         router.refresh();
@@ -87,26 +98,26 @@ export function AdjustStockForm({ ingredient }: AdjustStockFormProps) {
       className="space-y-6 rounded-lg border border-gray-200 bg-white p-6"
     >
       <section className="rounded-md bg-gray-50 p-4 text-sm">
-        <p className="font-medium text-gray-900">{ingredient.name}</p>
+        <p className="font-medium text-gray-900">{stockable.name}</p>
         <dl className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
           <div>
             <dt className="text-gray-500">Stock actual</dt>
             <dd className="font-mono font-semibold text-gray-900">
-              {ingredient.currentStock.toLocaleString('es-CO', { maximumFractionDigits: 4 })}{' '}
-              {ingredient.unitRecipe}
+              {stockable.currentStock.toLocaleString('es-CO', { maximumFractionDigits: 4 })}{' '}
+              {stockable.unitStock}
             </dd>
           </div>
           <div>
             <dt className="text-gray-500">Threshold</dt>
             <dd className="font-mono text-gray-900">
-              {ingredient.thresholdMin.toLocaleString('es-CO', { maximumFractionDigits: 4 })}{' '}
-              {ingredient.unitRecipe}
+              {stockable.thresholdMin.toLocaleString('es-CO', { maximumFractionDigits: 4 })}{' '}
+              {stockable.unitStock}
             </dd>
           </div>
           <div>
             <dt className="text-gray-500">Estado</dt>
             <dd>
-              {ingredient.lowStock ? (
+              {stockable.lowStock ? (
                 <span className="font-semibold text-amber-700">Stock crítico</span>
               ) : (
                 <span className="font-semibold text-green-700">OK</span>
@@ -183,7 +194,7 @@ export function AdjustStockForm({ ingredient }: AdjustStockFormProps) {
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="magnitude">Magnitud ({ingredient.unitRecipe})</Label>
+        <Label htmlFor="magnitude">Magnitud ({stockable.unitStock})</Label>
         <Input
           id="magnitude"
           type="number"
@@ -198,16 +209,16 @@ export function AdjustStockForm({ ingredient }: AdjustStockFormProps) {
         />
         {projected !== null && (
           <p className="text-xs text-gray-600">
-            Proyección: <span className="font-mono">{ingredient.currentStock.toLocaleString('es-CO', { maximumFractionDigits: 4 })}</span>
+            Proyección: <span className="font-mono">{stockable.currentStock.toLocaleString('es-CO', { maximumFractionDigits: 4 })}</span>
             {' '}
             {wasteForcesNegative || direction === 'OUT' ? '−' : '+'} <span className="font-mono">{magnitude}</span>
             {' = '}
             <span
               className={`font-mono font-semibold ${
-                projected < ingredient.thresholdMin ? 'text-amber-700' : 'text-gray-900'
+                projected < stockable.thresholdMin ? 'text-amber-700' : 'text-gray-900'
               }`}
             >
-              {projected.toLocaleString('es-CO', { maximumFractionDigits: 4 })} {ingredient.unitRecipe}
+              {projected.toLocaleString('es-CO', { maximumFractionDigits: 4 })} {stockable.unitStock}
             </span>
           </p>
         )}

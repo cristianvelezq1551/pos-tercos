@@ -32,6 +32,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@pos-tercos/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@pos-tercos/types':
         specifier: workspace:*
         version: link:../../packages/types
