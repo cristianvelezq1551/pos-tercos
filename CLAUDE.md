@@ -452,6 +452,18 @@ Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en CLAUDE.md sec 13.
   - `ShiftsService.open` (1 OPEN por cajero, ConflictException si ya hay) + `getCurrent` + `getById` + `list`
   - 7 endpoints sales (`POST /sales`, `confirm-payment`, `void`, `GET /sales`, `GET /:id`, `GET /:id/status-log`) + 4 endpoints shifts + 1 endpoint approvals
   - **E2E smoke test (15+ casos)**: idempotency hit, expandRecipe matemáticamente correcto (Pollo -150.3759g, Sal -0.7519g), digital double verification para NEQUI, void post-PAGADO revierte stock, audit log con SALE_CREATED/SALE_PAID/SALE_VOIDED/APPROVAL_GRANTED/APPROVAL_DENIED/IDEMPOTENCY_HIT
+- [x] **5.D — Print + Cash Drawer adapters**:
+  - Interfaces `PrinterProvider`, `CashDrawerProvider`, `ReceiptData`, `PrintResult`, `DrawerOpenResult` en `@pos-tercos/domain/printer/`
+  - Función pura `renderReceiptHtml(receipt)` → HTML 80mm-friendly con CSS embebido (page-size 80mm para impresoras térmicas), banner DUPLICADO en reimpresiones, branding del negocio desde env vars con fallbacks
+  - `LocalFsPrinterAdapter` guarda HTML en `./tmp/receipts/receipt-{N}.html` (1ra) o `receipt-{N}-rep-{ts}.html` (reimpresiones, no pisa el original — auditable)
+  - `LogCashDrawerAdapter` loggea apertura (level=log si con sale, level=warn si no-sale)
+  - `PrinterModule` y `CashDrawerModule` (@Global) con tokens DI `PRINTER_PROVIDER`, `CASH_DRAWER_PROVIDER` (pattern idéntico a `STORAGE_PROVIDER`)
+  - Endpoints nuevos en `SalesController`:
+    - `POST /sales/:id/print` — retorna `text/html` directo (con `@Res()`), audit `RECEIPT_PRINTED` la 1ra vez, `RECEIPT_REPRINTED` siguientes
+    - `POST /sales/:id/open-drawer` — apertura normal post-pago, audit `CASH_DRAWER_OPENED`
+    - `POST /sales/open-drawer/no-sale` — requiere `X-Approval-Pin` + reason ≥ 5 chars, audit `CASH_DRAWER_OPENED_NO_SALE` + `APPROVAL_GRANTED`
+  - **E2E smoke test (15 casos verificados)**: HTML válido en wire (Content-Type text/html), banner DUPLICADO presente en reimpresiones, archivos correctos en disco (original + 2 reprints con sufijos timestamp), drawer falla con sale PENDIENTE_PAGO, drawer ok post-payment, no-sale sin PIN → 403, no-sale con PIN incorrecto → 403 + APPROVAL_DENIED audit, no-sale con PIN correcto → CASH_DRAWER_OPENED_NO_SALE + APPROVAL_GRANTED audit, totales del recibo coinciden ($9.450 con discount $1.050 sobre Coca-Cola × 3)
+  - **Print Agent local** (apps/print-agent en :9100) **diferido a FASE 15**: no aporta valor en modo mock, solo será necesario cuando entre la impresora física Epson TM-T20III. El POS (5.E) abrirá el HTML directamente en el browser via `window.open(blob)`.
 - [x] **5.C — Promotions engine + crons**:
   - Motor puro en `@pos-tercos/domain/promotions/apply-promotions.ts` con tipos en `types.ts`. API: `applyPromotion(input, activePromotions)` retorna `{appliedPromotionId, lineDiscount}`. Reglas: matching por `(productId, day-of-week mask, time window con cross-midnight, active date range)`; mayor `discountPct` gana; tiebreaker estable por `id`; NO acumulables.
   - PromotionsModule en API: CRUD endpoints (`GET/POST/PATCH/DELETE /promotions`, list + getById accesibles para Cajero por tachado de precios en POS; writes solo Admin/Dueño). `loadActiveAt(at)` pre-filtra por `is_active=true` + rango de fechas; el motor de domain hace el match fino.
@@ -461,7 +473,7 @@ Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en CLAUDE.md sec 13.
   - `ReceiptIntegrityService.detectGaps` corre 4:00 AM diario; calcula `(MAX - MIN + 1) - COUNT(*)`; si gap > 0, audit `RECEIPT_GAP_DETECTED`. Endpoint `POST /sales/admin/check-receipt-gaps` (Dueño-only) para chequeo on-demand.
   - **E2E smoke test (12 casos verificados)**: 2 promos overlapping (20% gana sobre 10% — discount exacto $700/$3500), promo fuera de ventana horaria NO aplica, soft delete con `isActive=false`, audit log completo con `PROMOTION_CREATED` × 3 + `PROMOTION_DEACTIVATED`, receipt-gap detector gap=0 con 5 sales contiguos.
 - [ ] **5.D — Print agent skeleton + adapters**: `apps/print-agent` en :9100, `MockPrinterAdapter`, `MockCashDrawerAdapter`
-- [ ] **5.E — apps/pos UI**: shell + login + carrito + cobro + recibo PDF mock
+- [ ] **5.E — apps/pos UI**: shell PWA-light + login + middleware Edge + features (auth, catalog, sales, shifts) + carrito + cobro digital con doble validación + abrir HTML del recibo en nueva tab tras pago
 
 ### Pendientes — FASES 6 a 15
 - **FASE 6** — KDS + pantalla pública: `apps/kds`, `apps/public-display`, WebSocket gateway, SSE, estados pedido, tiempos.
@@ -563,13 +575,15 @@ FASE 5 está en progreso. Sprint 5.A (schema + types + migration) cerrado.
 4. `idempotency_keys` tabla aparte con TTL 7d (no campo único en `sales`). Cleanup por cron en 5.B/5.C.
 5. Sprint 5.A se hizo en chat actual. 5.B+ en chat dedicado por presión de contexto.
 
-**Sprint 5.D — alcance:**
-- `apps/print-agent/` (nuevo Node service en `localhost:9100`) con HTTP server mínimo
-- `MockPrinterAdapter` que renderiza recibo como HTML, abre tab + guarda PDF en `./tmp/receipts/`
-- `MockCashDrawerAdapter` que loggea apertura
-- Interface `PrinterProvider` + `CashDrawerProvider` en `@pos-tercos/domain`
-- Endpoints `POST /sales/:id/print` (re-print) y `POST /sales/:id/open-drawer` (con X-Approval-Pin si reason=no-sale)
-- Audit `RECEIPT_PRINTED`, `RECEIPT_REPRINTED`, `CASH_DRAWER_OPENED`, `CASH_DRAWER_OPENED_NO_SALE`
+**Sprint 5.E — alcance (último de FASE 5):**
+- `apps/pos/src/middleware.ts` (replicar pattern de admin con `jose`)
+- Shell `(authenticated)/layout.tsx` para POS (más bare que admin, sin sidebar — vista catálogo + carrito side-by-side fullscreen)
+- `features/auth/` (replicar de admin, ajustar `POS_ALLOWED_ROLES = [CAJERO, ADMIN_OPERATIVO, DUENO]`)
+- `features/shifts/` con gate al inicio: si no hay shift OPEN → modal de apertura con `openingCash` antes de poder vender
+- `features/catalog/` (lectura productos activos) + selector tamaño/modifiers
+- `features/sales/` con carrito (Zustand local del feature, no global) + cobro CASH/digital con doble validación + post-pago: imprime + abre cajón (opcional)
+- POS abre `POST /sales/:id/print` y muestra el HTML resultante en `<iframe>` o `window.open()` para imprimir
+- Tests manuales del flujo end-to-end: login cajero → abrir turno → carrito → cobrar CASH → ver HTML recibo → abrir cajón
 
 ---
 

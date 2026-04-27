@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { CashDrawerModule } from './adapters/cash-drawer/cash-drawer.module';
 import { LLMModule } from './adapters/llm/llm.module';
+import { PrinterModule } from './adapters/printer/printer.module';
 import { StorageModule } from './adapters/storage/storage.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AuditModule } from './audit/audit.module';
@@ -30,6 +32,8 @@ import { UsersModule } from './users/users.module';
     AuditModule,
     StorageModule,
     LLMModule,
+    PrinterModule,
+    CashDrawerModule,
     IdempotencyModule,
     ApprovalsModule,
     UsersModule,

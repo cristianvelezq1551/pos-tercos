@@ -1,10 +1,20 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { applyPromotion, expandRecipe, type PromotionDef } from '@pos-tercos/domain';
+import {
+  applyPromotion,
+  expandRecipe,
+  type CashDrawerProvider,
+  type DrawerOpenResult,
+  type PrinterProvider,
+  type PrintResult,
+  type PromotionDef,
+  type ReceiptData,
+} from '@pos-tercos/domain';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -20,6 +30,8 @@ import type {
 import type { Prisma, SaleStatus as DbSaleStatus } from '@prisma/client';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
+import { CASH_DRAWER_PROVIDER } from '../adapters/cash-drawer/cash-drawer.module';
+import { PRINTER_PROVIDER } from '../adapters/printer/printer.module';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
@@ -61,6 +73,8 @@ export class SalesService {
     private readonly audit: AuditService,
     private readonly recipes: RecipesService,
     private readonly promotions: PromotionsService,
+    @Inject(PRINTER_PROVIDER) private readonly printer: PrinterProvider,
+    @Inject(CASH_DRAWER_PROVIDER) private readonly drawer: CashDrawerProvider,
   ) {}
 
   // ==================================================================
@@ -516,6 +530,159 @@ export class SalesService {
     return toSaleDto(row);
   }
 
+  // ==================================================================
+  // PRINT RECEIPT
+  // ==================================================================
+
+  /**
+   * Imprime/reimprime el recibo de la sale. La 1ra vez audita
+   * RECEIPT_PRINTED; las siguientes audit RECEIPT_REPRINTED y el HTML
+   * generado lleva banner "DUPLICADO" + sufijo en filename para
+   * mantener histórico (no pisa el original).
+   *
+   * Solo para sales status=PAGADO (no tiene sentido imprimir un
+   * draft o un VOID).
+   */
+  async printReceipt(saleId: string, userId: string): Promise<PrintResult> {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      include: includeFull(),
+    });
+    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (sale.status !== 'PAGADO' && sale.status !== 'EN_PREPARACION' &&
+        sale.status !== 'LISTO_DESPACHO' && sale.status !== 'ENTREGADO' &&
+        sale.status !== 'ASIGNADO' && sale.status !== 'EN_RUTA') {
+      throw new BadRequestException(
+        `Sale en status ${sale.status} no se puede imprimir (solo desde PAGADO en adelante).`,
+      );
+    }
+
+    // Detectar reimpresión: si ya hay audit RECEIPT_PRINTED para esta sale,
+    // marcar como reprint.
+    const previousPrints = await this.prisma.auditLog.count({
+      where: {
+        action: { in: ['RECEIPT_PRINTED', 'RECEIPT_REPRINTED'] },
+        entityType: 'sale',
+        entityId: saleId,
+      },
+    });
+    const isReprint = previousPrints > 0;
+
+    const receipt = buildReceiptData(toSaleDto(sale), isReprint);
+    const result = await this.printer.print(receipt);
+
+    await this.audit.log({
+      userId,
+      action: isReprint ? 'RECEIPT_REPRINTED' : 'RECEIPT_PRINTED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: {
+        receiptNumber: Number(sale.receiptNumber),
+        printerKey: result.key,
+        previousPrintCount: previousPrints,
+      },
+    });
+
+    return result;
+  }
+
+  // ==================================================================
+  // OPEN DRAWER
+  // ==================================================================
+
+  /**
+   * Abre el cajón monedero. Dos modos:
+   *  - Con sale (saleId presente): apertura normal post-pago. Sin PIN.
+   *  - Sin sale ("no-sale"): requiere reason + X-Approval-Pin (cajero NO
+   *    puede abrir cajón sin venta sin aprobación, pos-spec.v1.md:58).
+   *
+   * En FASE 5.D el adapter es mock (solo loggea + audit). En FASE 15 el
+   * Print Agent local manda el comando ESC/POS al cajón físico.
+   */
+  async openDrawer(input: {
+    saleId: string | null;
+    reason: string | null;
+    cashierId: string;
+    approverPin?: string;
+  }): Promise<DrawerOpenResult> {
+    const isNoSale = input.saleId === null;
+
+    if (isNoSale) {
+      if (!input.reason || input.reason.trim().length < 5) {
+        throw new BadRequestException(
+          'Apertura sin venta requiere reason (mínimo 5 caracteres).',
+        );
+      }
+      if (!input.approverPin) {
+        throw new ForbiddenException(
+          'Apertura sin venta requiere X-Approval-Pin de Admin/Dueño.',
+        );
+      }
+      const approverId = await this.approvals.verify(input.approverPin).catch(
+        async (err) => {
+          await this.audit.log({
+            userId: input.cashierId,
+            action: 'APPROVAL_DENIED',
+            entityType: 'cash_drawer',
+            metadata: {
+              reason: 'open-no-sale',
+              given: input.reason,
+              message: err instanceof Error ? err.message : 'invalid pin',
+            },
+          });
+          throw err instanceof ForbiddenException
+            ? err
+            : new ForbiddenException('PIN inválido');
+        },
+      );
+
+      const result = await this.drawer.open({ reason: input.reason });
+
+      await this.audit.log({
+        userId: input.cashierId,
+        action: 'CASH_DRAWER_OPENED_NO_SALE',
+        entityType: 'cash_drawer',
+        metadata: { reason: input.reason, approverId },
+      });
+      await this.audit.log({
+        userId: approverId,
+        action: 'APPROVAL_GRANTED',
+        entityType: 'cash_drawer',
+        metadata: { context: 'open-no-sale', cashierId: input.cashierId },
+      });
+
+      return result;
+    }
+
+    // Apertura normal: validar que la sale exista + esté pagada
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: input.saleId! },
+      select: { id: true, status: true, receiptNumber: true },
+    });
+    if (!sale) throw new NotFoundException(`Sale ${input.saleId} not found`);
+    if (sale.status !== 'PAGADO') {
+      throw new BadRequestException(
+        `Sale en status ${sale.status} no permite apertura de cajón (solo PAGADO).`,
+      );
+    }
+
+    const result = await this.drawer.open({ reason: null });
+
+    await this.audit.log({
+      userId: input.cashierId,
+      action: 'CASH_DRAWER_OPENED',
+      entityType: 'sale',
+      entityId: sale.id,
+      metadata: { receiptNumber: Number(sale.receiptNumber) },
+    });
+
+    return result;
+  }
+
+  // ==================================================================
+  // STATUS LOG
+  // ==================================================================
+
   async getStatusLog(saleId: string): Promise<SaleStatusLogEntry[]> {
     const exists = await this.prisma.sale.findUnique({
       where: { id: saleId },
@@ -669,6 +836,44 @@ function includeFull() {
       },
     },
   } satisfies Prisma.SaleInclude;
+}
+
+/**
+ * Convierte un Sale DTO + flag de reimpresión al formato `ReceiptData`
+ * que consume el renderer puro. Branding del negocio viene de env vars
+ * con fallbacks razonables para dev.
+ */
+function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
+  return {
+    receiptNumber: sale.receiptNumber,
+    createdAt: sale.createdAt,
+    cashierName: sale.cashierName ?? null,
+    customerName: sale.customerName,
+    items: (sale.items ?? []).map((it) => ({
+      productName: it.productName ?? '(sin nombre)',
+      sizeName: it.sizeName ?? null,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice,
+      lineSubtotal: it.lineSubtotal,
+      lineDiscount: it.lineDiscount,
+      lineTotal: it.lineTotal,
+      appliedPromotionName: it.appliedPromotionName ?? null,
+      modifiers: (it.modifiers ?? []).map((m) => ({
+        name: m.name,
+        priceDelta: m.priceDelta,
+      })),
+    })),
+    subtotal: sale.subtotal,
+    discountTotal: sale.discountTotal,
+    total: sale.total,
+    reprintLabel: isReprint ? 'DUPLICADO' : null,
+    business: {
+      name: process.env.BUSINESS_NAME ?? 'POS Tercos',
+      address: process.env.BUSINESS_ADDRESS ?? 'Dirección por configurar',
+      nit: process.env.BUSINESS_NIT ?? '900.000.000-0',
+      phone: process.env.BUSINESS_PHONE ?? null,
+    },
+  };
 }
 
 function toSaleDto(row: DbSaleWithDetail): Sale {

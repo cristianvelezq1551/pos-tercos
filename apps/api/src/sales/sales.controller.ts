@@ -5,27 +5,33 @@ import {
   ForbiddenException,
   Get,
   Headers,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { DrawerOpenResult } from '@pos-tercos/domain';
 import {
   APPROVAL_PIN_HEADER,
   ConfirmPaymentSchema,
   CreateSaleSchema,
   IDEMPOTENCY_HEADER,
   IdempotencyKeySchema,
+  OpenDrawerSchema,
   SaleStatusEnum,
   VoidSaleSchema,
   type ConfirmPayment,
   type CreateSale,
   type JwtAccessPayload,
+  type OpenDrawer,
   type Sale,
   type SaleStatus,
   type SaleStatusLogEntry,
   type VoidSale,
 } from '@pos-tercos/types';
+import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -143,5 +149,71 @@ export class SalesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<SaleStatusLogEntry[]> {
     return this.sales.getStatusLog(id);
+  }
+
+  /**
+   * Imprime/reimprime el recibo. Devuelve el HTML inline (Content-Type
+   * text/html) para que el POS pueda hacer `window.open(blob)` directo
+   * o un iframe. La 1ra invocación audita RECEIPT_PRINTED, las siguientes
+   * RECEIPT_REPRINTED + el HTML lleva banner DUPLICADO.
+   *
+   * Usa @Res() sin passthrough porque el Buffer-as-JSON serializer default
+   * de Nest convertiría el HTML a `{"type":"Buffer","data":[...]}`. Mandamos
+   * los bytes con res.send() directo.
+   */
+  @CashierAccess()
+  @Post(':id/print')
+  @HttpCode(200)
+  async print(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const result = await this.sales.printReceipt(id, user.sub);
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader('X-Receipt-Key', result.key);
+    res.setHeader('X-Receipt-Url', result.url);
+    res.status(200).send(result.body);
+  }
+
+  /**
+   * Abre el cajón monedero asociado a una sale PAGADO. No requiere PIN
+   * (el cajero puede abrir cuando hay venta confirmada).
+   */
+  @CashierAccess()
+  @Post(':id/open-drawer')
+  openDrawerWithSale(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<DrawerOpenResult> {
+    return this.sales.openDrawer({
+      saleId: id,
+      reason: null,
+      cashierId: user.sub,
+    });
+  }
+
+  /**
+   * Apertura SIN VENTA: requiere reason + X-Approval-Pin (Admin/Dueño).
+   * Audit con CASH_DRAWER_OPENED_NO_SALE + APPROVAL_GRANTED.
+   */
+  @CashierAccess()
+  @Post('open-drawer/no-sale')
+  openDrawerNoSale(
+    @CurrentUser() user: JwtAccessPayload,
+    @Headers(APPROVAL_PIN_HEADER) approvalPin: string | undefined,
+    @Body(new ZodValidationPipe(OpenDrawerSchema)) body: OpenDrawer,
+  ): Promise<DrawerOpenResult> {
+    if (!approvalPin) {
+      throw new ForbiddenException(
+        `Header ${APPROVAL_PIN_HEADER} requerido para abrir cajón sin venta.`,
+      );
+    }
+    return this.sales.openDrawer({
+      saleId: null,
+      reason: body.reason ?? null,
+      cashierId: user.sub,
+      approverPin: approvalPin,
+    });
   }
 }
