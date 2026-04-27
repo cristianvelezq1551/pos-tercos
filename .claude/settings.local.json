@@ -24,7 +24,18 @@
       "Bash(curl -s --max-time 1 http://localhost:3001/healthz)",
       "Bash(curl -s http://localhost:3001/healthz)",
       "Bash(pkill -f \"nest start\")",
-      "Bash(kill -9 10925)"
+      "Bash(kill -9 10925)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(python3)",
+      "Bash(curl -s --max-time 1 http://localhost:3000)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(kill -9 94219)",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(pkill -f \"next dev\")"
     ]
   }
 }
