@@ -205,17 +205,32 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
-**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · en curso**
+**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · backend ✅, UI pendiente**
 
-- [x] 2.1 Schema Prisma: `products`, `product_sizes`, `product_modifiers`, `combo_components`, `subproducts`, `ingredients`, `recipe_edges` (con árbol producto → subproducto → insumo, yields, mermas, conversiones de unidades)
-- [x] 2.2 Migration `catalog_recipe_tree` aplicada con 11 CHECK constraints (parent XOR, child XOR, no self-cycle, positive quantities, merma in [0,1), combo_price cuando is_combo=true, etc.)
-- [ ] 2.3 CRUD endpoints (productos, subproductos, insumos, recetas)
-- [ ] 2.4 Función `expandRecipe(productId)` en `packages/domain` con detección de ciclos
+- [x] 2.1 Schema Prisma + 11 CHECK constraints
+- [x] 2.2 Migration `catalog_recipe_tree`
+- [x] 2.3 CRUD endpoints (4 módulos: ingredients, subproducts, products, recipes)
+- [x] 2.4 `expandRecipe` puro en `@pos-tercos/domain` con detección de ciclos + max depth
 - [ ] 2.5 UI Admin productos
 - [ ] 2.6 UI Admin editor de receta (árbol)
 - [ ] 2.7 UI Admin subproductos
-- [ ] 2.8 UI Admin insumos (conversion + threshold)
-- [ ] 2.9 Endpoint `GET /products/:id/expanded-cost`
+- [ ] 2.8 UI Admin insumos
+- [x] 2.9 Endpoint `GET /products/:id/expanded-cost`
+
+**Endpoints disponibles:**
+- `GET/POST/PATCH/DELETE /ingredients` (admin para writes)
+- `GET/POST/PATCH/DELETE /subproducts`
+- `GET/POST/PATCH/DELETE /products`
+- `GET/PUT /products/:id/recipe`
+- `GET/PUT /subproducts/:id/recipe`
+- `GET /products/:id/expanded-cost`
+
+**Verificación e2e (flujo Hamburguesa Nashville → pollo cocido → pollo crudo + sal):**
+Para 1 hamburguesa con `quantityNeta=1000g pollo, mermaPct=5%, yield=7`:
+- Pollo crudo: `1000/(1-0.05)/7 = 150.376g` ✅
+- Sal: `5/0.95/7 = 0.752g` ✅
+- Cycle prevention (subproducto se referencia) → 400 ✅
+- RBAC (cajero crear ingredient) → 403 ✅
 
 **Verificación 2.1+2.2:**
 - 10 tablas en DB: users, refresh_tokens, products, product_sizes, product_modifiers, combo_components, subproducts, ingredients, recipe_edges, _prisma_migrations

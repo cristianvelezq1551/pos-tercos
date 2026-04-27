@@ -63,7 +63,8 @@
       "Read(//Users/cristianvelez/.claude/**)",
       "Bash(claude --version)",
       "Bash(pnpm dlx *)",
-      "Bash(pnpm prisma *)"
+      "Bash(pnpm prisma *)",
+      "Bash(kill -9 54575)"
     ]
   }
 }
