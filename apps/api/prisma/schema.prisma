@@ -475,6 +475,11 @@ enum PromotionType {
 /// El campo es UNIQUE pero opcional (web orders no lo usan).
 model Sale {
   id             String     @id @default(uuid())
+  // receipt_number tiene DEFAULT nextval('receipt_seq') aplicado a nivel
+  // SQL en migration. Prisma desconoce el default (no soportamos
+  // dbgenerated aquí porque su drift detector intentaría DROP SEQUENCE).
+  // El service inyecta el valor explícitamente vía nextval() en el INSERT
+  // — ver SalesService.create.
   receiptNumber  BigInt     @unique @map("receipt_number")
   type           SaleType
   status         SaleStatus @default(PENDIENTE_PAGO)

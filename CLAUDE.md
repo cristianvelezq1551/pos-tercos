@@ -437,19 +437,22 @@ Schema insert-only via trigger, CRUD movements polimórficos, alerta lowStock, A
 
 Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en CLAUDE.md sec 13.
 
-- [x] **5.A — Schema + types** (commit pendiente):
+- [x] **5.A — Schema + types** (commit `23bbd8a`):
   - 8 modelos Prisma nuevos: `Sale`, `SaleItem`, `SaleStatusLog`, `Shift`, `Promotion`, `PromotionProduct`, `IdempotencyKey`, `ApprovalPin`
   - 5 enums nuevos: `SaleType`, `SaleStatus`, `PaymentMethod`, `ShiftStatus`, `PromotionType`
-  - Migration `20260427220551_sales_promotions_shifts_idem_pin`:
-    - Sequence `receipt_seq` con default en `sales.receipt_number`
-    - 18 CHECK constraints (totales coherentes, rangos, formato HH:MM:SS via regex)
-    - Trigger `trg_sale_status_log_no_update_delete` (reusa `reject_update_delete()` de FASE 3)
-    - Trigger `trg_approval_pins_role_check` valida role IN (ADMIN_OPERATIVO, DUENO)
-  - 12/12 constraint tests SQL pasan (rechaza incoherencias, acepta válidos)
-  - Types Zod: `sales.ts`, `promotions.ts`, `shifts.ts`, `idempotency.ts`, `approvals.ts`
-  - `AuditActionEnum` extendido con SALE_*, SHIFT_*, PROMOTION_*, RECEIPT_*, INVOICE_* (cierra parte del ajuste 2.18)
-- [ ] **5.B — Sales backend module** (próximo): `POST /sales` con Idempotency-Key + descuento de stock vía `expandRecipe` + receipt numbering
-- [ ] **5.C — Promociones engine + Shifts open + audit**: motor puro en `@pos-tercos/domain`, CRUD `/promotions`, `POST /shifts/open`, cron sequence-gap detection
+  - Migration con sequence `receipt_seq`, 18 CHECK constraints, trigger insert-only en `sale_status_log`, trigger role check en `approval_pins`
+  - 12/12 SQL constraint tests pasan
+  - Types Zod completos + `AuditActionEnum` extendido
+- [x] **5.B — Sales backend module + shifts open + approvals**:
+  - `IdempotencyService` (@Global) con `findCached` + `cache` + `purgeExpired` (cron en 5.C)
+  - `ApprovalsService` (@Global) con bcrypt PIN hash + verify (timing-safe sweep) + endpoint `POST /approvals/pin` (Dueño-only)
+  - `SalesService.create` consume `nextval('receipt_seq')` por `$queryRaw` (Prisma drift detector incompatible con `dbgenerated`)
+  - `SalesService.confirmPayment` descuenta stock al cobrar (NO al crear): `directResale` → movement directo; producto con receta → `expandRecipe` → movements polimórficos por insumo
+  - `SalesService.void` con `X-Approval-Pin` obligatorio + reverso de movements compensatorios si sale ya estaba PAGADO
+  - `ShiftsService.open` (1 OPEN por cajero, ConflictException si ya hay) + `getCurrent` + `getById` + `list`
+  - 7 endpoints sales (`POST /sales`, `confirm-payment`, `void`, `GET /sales`, `GET /:id`, `GET /:id/status-log`) + 4 endpoints shifts + 1 endpoint approvals
+  - **E2E smoke test (15+ casos)**: idempotency hit, expandRecipe matemáticamente correcto (Pollo -150.3759g, Sal -0.7519g), digital double verification para NEQUI, void post-PAGADO revierte stock, audit log con SALE_CREATED/SALE_PAID/SALE_VOIDED/APPROVAL_GRANTED/APPROVAL_DENIED/IDEMPOTENCY_HIT
+- [ ] **5.C — Promotions engine + cron + extended audit**: motor puro en `@pos-tercos/domain/promotions/apply-promotions.ts`, CRUD `/promotions`, cron `@nestjs/schedule` para `purgeExpired` idempotency + sequence-gap detection diario, audit `RECEIPT_GAP_DETECTED`
 - [ ] **5.D — Print agent skeleton + adapters**: `apps/print-agent` en :9100, `MockPrinterAdapter`, `MockCashDrawerAdapter`
 - [ ] **5.E — apps/pos UI**: shell + login + carrito + cobro + recibo PDF mock
 
@@ -553,14 +556,13 @@ FASE 5 está en progreso. Sprint 5.A (schema + types + migration) cerrado.
 4. `idempotency_keys` tabla aparte con TTL 7d (no campo único en `sales`). Cleanup por cron en 5.B/5.C.
 5. Sprint 5.A se hizo en chat actual. 5.B+ en chat dedicado por presión de contexto.
 
-**Sprint 5.B — alcance:**
-- Módulo `apps/api/src/sales/` (controller + service + DTOs)
-- `IdempotencyService` para cachear responses de POSTs idempotentes
-- `POST /sales` con header `Idempotency-Key` que descuenta stock vía `expandRecipe` (calcula movements polimórficos: ingredientes via receta + productos direct-resale como SALE)
-- `POST /sales/:id/confirm-payment` con doble validación digital
-- `POST /sales/:id/void` con `X-Approval-Pin` (validar PIN contra `approval_pins` table)
-- Receipt numbering: el `nextval('receipt_seq')` ya está como default; service expone helper para detectar saltos (cron en 5.C)
-- Tests unit del service + e2e supertest happy path
+**Sprint 5.C — alcance:**
+- Motor de promociones puro en `@pos-tercos/domain/promotions/apply-promotions.ts`: para cada item evalúa promociones activas (day_of_week_mask + time_start/end + product_id), aplica la de mayor `discount_pct`. No acumulables. Reemplaza el stub actual en `apps/api/src/sales/promotions-engine.stub.ts`.
+- Módulo `apps/api/src/promotions/` con CRUD endpoints (`GET/POST/PATCH/DELETE /promotions`)
+- Agregar `@nestjs/schedule` (justifica peso ~50KB):
+  - Cron diario `purgeExpired` en `IdempotencyService`
+  - Cron diario `detectReceiptGaps` (audit `RECEIPT_GAP_DETECTED` si `MAX(receipt_number) - MIN(receipt_number) + 1 ≠ COUNT(*)`)
+- Tests unit del engine de promociones con escenarios overlap (2 promos en mismo día/hora/producto → mayor discount gana)
 
 ---
 
