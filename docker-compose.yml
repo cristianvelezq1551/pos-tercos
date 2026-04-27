@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pos-tercos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: pos_dev
+      POSTGRES_DB: pos_tercos_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pos-tercos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d pos_tercos_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pos-tercos-pgdata:
