@@ -111,8 +111,8 @@ export function InvoiceItemRow({
                 placeholder="kg, lt, unidad, caja"
               />
             </div>
-            <NumField id={`price-${row.localId}`} label="Precio unit." value={row.unitPrice} onChange={(v) => onChange({ unitPrice: v })} disabled={disabled} />
-            <NumField id={`total-${row.localId}`} label="Total" value={row.total} onChange={(v) => onChange({ total: v })} disabled={disabled} />
+            <NumField id={`price-${row.localId}`} label="Costo unit." value={row.unitPrice} onChange={(v) => onChange({ unitPrice: v })} disabled={disabled} />
+            <NumField id={`total-${row.localId}`} label="Total costo" value={row.total} onChange={(v) => onChange({ total: v })} disabled={disabled} />
           </div>
 
           <div className="space-y-1.5">
@@ -179,7 +179,7 @@ export function InvoiceItemRow({
             <CreateStockableInline
               defaultName={row.descriptionRaw}
               defaultUnitPurchase={row.unit}
-              defaultUnitPrice={row.unitPrice}
+              invoiceUnitCost={row.unitPrice}
               onCreated={(item) => {
                 onStockableCreated(item);
                 onChange({ selection: { entityType: item.type, id: item.id } });
@@ -220,19 +220,22 @@ function parseNum(v: string): number {
 interface CreateStockableInlineProps {
   defaultName: string;
   defaultUnitPurchase: string;
-  defaultUnitPrice: number;
+  /** Costo unitario detectado en la factura (NO se prefilla en basePrice — son precios distintos). */
+  invoiceUnitCost: number;
   onCreated: (item: Stockable) => void;
   onCancel: () => void;
 }
 
-function CreateStockableInline({ defaultName, defaultUnitPurchase, defaultUnitPrice, onCreated, onCancel }: CreateStockableInlineProps) {
+function CreateStockableInline({ defaultName, defaultUnitPurchase, invoiceUnitCost, onCreated, onCancel }: CreateStockableInlineProps) {
   const [type, setType] = useState<StockableType>('INGREDIENT');
   const [name, setName] = useState(defaultName);
   const [unitPurchase, setUnitPurchase] = useState(defaultUnitPurchase || 'kg');
   const [unitStock, setUnitStock] = useState(defaultUnitPurchase || 'g');
   const [conversionFactor, setConversionFactor] = useState('1');
   const [thresholdMin, setThresholdMin] = useState('0');
-  const [basePrice, setBasePrice] = useState(defaultUnitPrice ? String(defaultUnitPrice) : '');
+  // ⚠️ basePrice = PRECIO DE VENTA (al cliente). NO se prefilla con el
+  // costo de factura — son precios diferentes. Lo define el dueño.
+  const [basePrice, setBasePrice] = useState('');
   const [category, setCategory] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -361,9 +364,39 @@ function CreateStockableInline({ defaultName, defaultUnitPurchase, defaultUnitPr
         </div>
         {type === 'PRODUCT' && (
           <>
+            <div className="col-span-full rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+              <p className="font-semibold">⚠️ El costo y el precio de venta son distintos:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                <li>
+                  <strong>Costo:</strong> {invoiceUnitCost > 0 ? `~${formatCop(invoiceUnitCost)} por ${unitPurchase || 'unidad-compra'} (de la factura)` : 'lo que pagás al proveedor (de la factura)'}.
+                  Se guarda automáticamente al confirmar.
+                </li>
+                <li>
+                  <strong>Precio de venta:</strong> lo que cobrás al cliente final. Definilo abajo.
+                </li>
+              </ul>
+            </div>
             <div className="space-y-1.5">
-              <Label htmlFor="cs-bp">Precio venta (COP)</Label>
-              <Input id="cs-bp" type="number" inputMode="decimal" step="any" min="0" disabled={submitting} value={basePrice} onChange={(e) => setBasePrice(e.target.value)} placeholder="3500" />
+              <Label htmlFor="cs-bp">💰 Precio de venta al cliente (COP)</Label>
+              <Input
+                id="cs-bp"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min="0"
+                disabled={submitting}
+                value={basePrice}
+                onChange={(e) => setBasePrice(e.target.value)}
+                placeholder="3500"
+              />
+              {basePrice && invoiceUnitCost > 0 && Number(conversionFactor) > 0 && (
+                <p className="text-xs text-gray-600">
+                  Margen estimado por {unitStock || 'unidad'}:{' '}
+                  <span className="font-mono font-semibold text-emerald-700">
+                    {formatCop(Number(basePrice) - invoiceUnitCost / Number(conversionFactor))}
+                  </span>
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cs-cat">Categoría</Label>
@@ -385,4 +418,12 @@ function CreateStockableInline({ defaultName, defaultUnitPurchase, defaultUnitPr
       </div>
     </div>
   );
+}
+
+function formatCop(n: number): string {
+  return n.toLocaleString('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  });
 }

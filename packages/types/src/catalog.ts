@@ -125,6 +125,11 @@ export const ProductSchema = z.object({
   unitStock: z.string().nullable(),
   conversionFactor: z.number().nullable(),
   thresholdMin: z.number().nonnegative(),
+  // Costo histórico (auto-actualizado al confirmar facturas).
+  // ⚠️ NO confundir con basePrice (precio de VENTA al cliente).
+  // lastUnitCost está en unit_purchase del producto (ej: $/caja).
+  lastUnitCost: z.number().nullable(),
+  lastUnitCostDate: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   sizes: z.array(ProductSizeSchema).optional(),

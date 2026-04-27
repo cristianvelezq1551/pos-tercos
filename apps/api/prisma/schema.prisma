@@ -87,11 +87,17 @@ model Product {
   //   inventory_movements y descuenta directo al venderse.
   // si directResale=false → producto elaborado, sin stock, descuenta
   //   insumos via expandRecipe al venderse.
-  directResale     Boolean  @default(false) @map("direct_resale")
-  unitPurchase     String?  @map("unit_purchase")
-  unitStock        String?  @map("unit_stock")
-  conversionFactor Decimal? @map("conversion_factor") @db.Decimal(14, 6)
-  thresholdMin     Decimal  @default(0) @map("threshold_min") @db.Decimal(14, 4)
+  directResale     Boolean   @default(false) @map("direct_resale")
+  unitPurchase     String?   @map("unit_purchase")
+  unitStock        String?   @map("unit_stock")
+  conversionFactor Decimal?  @map("conversion_factor") @db.Decimal(14, 6)
+  thresholdMin     Decimal   @default(0) @map("threshold_min") @db.Decimal(14, 4)
+
+  // Última info de costo (auto-actualizado al confirmar facturas).
+  // basePrice (más arriba) sigue siendo el PRECIO DE VENTA al cliente.
+  // lastUnitCost es el COSTO de compra (en unit_purchase del producto).
+  lastUnitCost     Decimal?  @map("last_unit_cost") @db.Decimal(14, 4)
+  lastUnitCostDate DateTime? @map("last_unit_cost_date")
 
   sizes      ProductSize[]
   modifiers  ProductModifier[]
@@ -103,8 +109,9 @@ model Product {
   partOfCombos    ComboComponent[] @relation("ComboChild")
 
   // Direct-resale stockable side
-  movements    InventoryMovement[]
-  invoiceItems InvoiceItem[]
+  movements         InventoryMovement[]
+  invoiceItems      InvoiceItem[]
+  supplierResaleHistory SupplierProduct[] @relation("SupplierProductResale")
 
   @@index([category, isActive])
   @@index([isActive])
@@ -301,23 +308,32 @@ model Supplier {
   @@map("suppliers")
 }
 
-/// Catálogo de productos típicos de cada proveedor con su último precio.
-/// Se actualiza automáticamente al confirmar una factura cuyo item se
-/// matchea contra un ingredient existente.
+/// Catálogo histórico de costos por (proveedor, item). Polimórfico igual
+/// que inventory_movements: el item asociado puede ser un Insumo o un
+/// Producto direct-resale.
+///
+/// `last_unit_price` está en la unidad de COMPRA del item (kg, caja,
+/// pack-12). Para obtener costo por unidad de stock, dividir por
+/// conversion_factor del item.
 model SupplierProduct {
-  id               String     @id @default(uuid())
-  supplierId       String     @map("supplier_id")
-  supplier         Supplier   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  ingredientId     String     @map("ingredient_id")
-  ingredient       Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
-  lastUnitPrice    Decimal?   @map("last_unit_price") @db.Decimal(14, 4)
-  lastPurchaseDate DateTime?  @map("last_purchase_date")
-  createdAt        DateTime   @default(now()) @map("created_at")
-  updatedAt        DateTime   @updatedAt @map("updated_at")
+  id               String         @id @default(uuid())
+  supplierId       String         @map("supplier_id")
+  supplier         Supplier       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  entityType       StockableType  @map("entity_type")
+  ingredientId     String?        @map("ingredient_id")
+  ingredient       Ingredient?    @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  productId        String?        @map("product_id")
+  product          Product?       @relation("SupplierProductResale", fields: [productId], references: [id], onDelete: Cascade)
+  lastUnitPrice    Decimal?       @map("last_unit_price") @db.Decimal(14, 4)
+  lastPurchaseDate DateTime?      @map("last_purchase_date")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
   @@unique([supplierId, ingredientId])
+  @@unique([supplierId, productId])
   @@index([supplierId])
   @@index([ingredientId])
+  @@index([productId])
   @@map("supplier_products")
 }
 
