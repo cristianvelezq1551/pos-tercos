@@ -205,6 +205,43 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
+**FASE 4 — Proveedores + IA Facturas · backend ✅, UI pendiente**
+
+- [x] 4.1 Schema: `suppliers`, `supplier_products`, `invoices`, `invoice_items` + enum `InvoiceStatus`
+- [x] 4.2 Suppliers CRUD backend (UI pendiente)
+- [x] 4.3-4.6 Adapter pattern LLM: interface en `@pos-tercos/domain`, impls Anthropic + OpenAI, `LLMService` con strategy primary+fallback
+- [x] 4.7 `StorageProvider` interface + `LocalFilesystemStorageAdapter` (en dev: `./tmp/uploads/invoices/{uuid}.{ext}`)
+- [x] 4.8 `POST /invoices/upload-photo` con Multer (mime check + 10MB limit) → llama LLM → guarda draft
+- [x] 4.11 `POST /invoices/:id/confirm` — transaction atómica: replace items + crear inventory_movements PURCHASE + upsert supplier_products con last_unit_price
+- [x] `POST /invoices/:id/reject`, `GET /invoices`, `GET /invoices/:id`
+- [ ] 4.9 `POST /invoices/from-clone` (manual rápido) — pendiente
+- [ ] 4.10 UI carga + edición — pendiente
+- [ ] 4.12 UI histórico — pendiente
+
+**Llave LLM:** `apps/api/.env` → `ANTHROPIC_API_KEY=sk-ant-...`. OpenAI opcional como fallback (`OPENAI_API_KEY=sk-...`). Variable `LLM_PROVIDER` controla preferencia (`anthropic` default).
+
+**Estructura adapters (anti-spaghetti):**
+```
+apps/api/src/adapters/
+├── llm/
+│   ├── anthropic.adapter.ts (impl LLMProvider)
+│   ├── openai.adapter.ts (impl LLMProvider)
+│   ├── llm.service.ts (strategy primary+fallback)
+│   └── llm.module.ts (Global)
+└── storage/
+    ├── local-filesystem.adapter.ts (impl StorageProvider)
+    └── storage.module.ts (Global, inject token STORAGE_PROVIDER)
+```
+
+**Verificación e2e:**
+- Crear supplier vía POST /suppliers → ver en GET /suppliers
+- POST /invoices/upload-photo sin file → 400 mensaje claro
+- POST con mime txt/plain → 400 listando mimes permitidos
+- Cajero rechazado de upload → 403
+- typecheck 12/12, lint clean
+
+---
+
 **FASE 3 — Inventario + audit log · ✅ COMPLETADA**
 
 - [x] 3.1 Schema: `inventory_movements` + `audit_log` (ambas insert-only via trigger)
