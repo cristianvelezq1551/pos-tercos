@@ -7,5 +7,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Models live here. First entities ship in FASE 1 (User, Role, Session).
-// FASE 0 keeps the schema empty just to validate that Prisma connects.
+enum UserRole {
+  CAJERO
+  COCINERO
+  REPARTIDOR
+  ADMIN_OPERATIVO
+  DUENO
+  TRABAJADOR
+}
+
+enum RepartidorAvailability {
+  DISPONIBLE
+  OCUPADO
+  OFFLINE
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  fullName      String    @map("full_name")
+  phone         String?
+  role          UserRole
+  mustChangePwd Boolean   @default(true) @map("must_change_pwd")
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  // Repartidor-only fields (null for other roles)
+  availability   RepartidorAvailability?
+  lastActiveAt   DateTime?               @map("last_active_at")
+
+  refreshTokens RefreshToken[]
+
+  @@index([role, active])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
