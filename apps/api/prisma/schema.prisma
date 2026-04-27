@@ -1,0 +1,11 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Models live here. First entities ship in FASE 1 (User, Role, Session).
+// FASE 0 keeps the schema empty just to validate that Prisma connects.

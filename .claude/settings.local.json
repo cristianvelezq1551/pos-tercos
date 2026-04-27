@@ -13,7 +13,18 @@
       "Bash(pnpm typecheck *)",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(git -c user.email=cristianvelez1551@gmail.com -c 'user.name=Cristian Velez' commit -m ' *)",
+      "Bash(docker compose *)",
+      "Bash(open -a Docker)",
+      "Bash(docker info *)",
+      "Bash(docker exec *)",
+      "Bash(pnpm prisma:generate)",
+      "Bash(pnpm dev *)",
+      "Bash(curl -s --max-time 1 http://localhost:3001/healthz)",
+      "Bash(curl -s http://localhost:3001/healthz)",
+      "Bash(pkill -f \"nest start\")",
+      "Bash(kill -9 10925)"
     ]
   }
 }
