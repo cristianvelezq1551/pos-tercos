@@ -62,6 +62,13 @@ export function ProductsTable({ products }: ProductsTableProps) {
               </Td>
               <Td align="right">
                 <Link
+                  href={`/products/${p.id}/recipe`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  Receta
+                </Link>
+                <span className="mx-2 text-gray-300">·</span>
+                <Link
                   href={`/products/${p.id}`}
                   className="font-medium text-blue-600 hover:underline"
                 >

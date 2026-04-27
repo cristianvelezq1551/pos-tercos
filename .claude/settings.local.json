@@ -74,7 +74,11 @@
       "Bash(curl -s -b /tmp/admin_cookies.txt http://localhost:3004/api/ingredients)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} insumos:'\\); [print\\(f'  - {i[\\\\\"name\\\\\"]} \\({i[\\\\\"unitPurchase\\\\\"]} → {i[\\\\\"unitRecipe\\\\\"]}, factor {i[\\\\\"conversionFactor\\\\\"]}\\)'\\) for i in d]\")",
       "Bash(curl -s -b /tmp/admin_cookies.txt http://localhost:3004/ingredients)",
-      "Bash(kill -9 61854)"
+      "Bash(kill -9 61854)",
+      "Bash(curl -s -b /tmp/c.txt http://localhost:3004/api/products)",
+      "Bash(python3 -c \"import json,sys; [print\\(p['id']\\) for p in json.load\\(sys.stdin\\) if p['name']=='Hamburguesa Nashville']\")",
+      "Bash(python3 -c \"import json,sys; [print\\(p['id']\\) for p in json.load\\(sys.stdin\\) if p['name']=='Pollo Nashville cocido']\")",
+      "Bash(curl -s -b /tmp/c.txt http://localhost:3004/products)"
     ]
   }
 }
