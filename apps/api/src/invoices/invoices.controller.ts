@@ -20,11 +20,11 @@ import {
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { detectImageMime } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { InvoicesService } from './invoices.service';
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 @Controller('invoices')
@@ -63,15 +63,20 @@ export class InvoicesController {
     if (!file) {
       throw new BadRequestException('Falta el archivo en el campo "photo".');
     }
-    if (!ALLOWED_MIME_TYPES.includes(file.mimetype as (typeof ALLOWED_MIME_TYPES)[number])) {
+
+    // We trust the file CONTENT (magic bytes) over the declared mimetype.
+    // It's common for users to rename files (.png saved as .jpg) and the
+    // LLM provider rejects mismatched media types.
+    const detectedMime = detectImageMime(file.buffer);
+    if (!detectedMime) {
       throw new BadRequestException(
-        `Tipo de archivo no soportado: ${file.mimetype}. Permitidos: ${ALLOWED_MIME_TYPES.join(', ')}`,
+        `El archivo no parece ser una imagen válida. Formatos soportados: JPG, PNG, WebP, GIF.`,
       );
     }
 
     return this.invoices.uploadPhoto({
       fileBuffer: file.buffer,
-      mimeType: file.mimetype,
+      mimeType: detectedMime,
       originalName: file.originalname,
       userId: user.sub,
     });
