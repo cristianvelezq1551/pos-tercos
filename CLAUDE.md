@@ -211,9 +211,9 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - [x] 2.2 Migration `catalog_recipe_tree`
 - [x] 2.3 CRUD endpoints (4 módulos: ingredients, subproducts, products, recipes)
 - [x] 2.4 `expandRecipe` puro en `@pos-tercos/domain` con detección de ciclos + max depth
-- [ ] 2.5 UI Admin productos
+- [x] 2.5 UI Admin productos (lista + crear + editar + desactivar; flag combo con comboPrice condicional; sub-collections sizes/modifiers/comboComponents quedan pendientes para iteración dedicada)
 - [ ] 2.6 UI Admin editor de receta (árbol)
-- [ ] 2.7 UI Admin subproductos
+- [x] 2.7 UI Admin subproductos (lista + crear + editar + desactivar)
 - [x] 2.8 UI Admin insumos (lista + crear + editar + desactivar)
 - [x] 2.9 Endpoint `GET /products/:id/expanded-cost`
 
