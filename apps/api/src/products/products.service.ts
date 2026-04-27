@@ -185,6 +185,8 @@ function toProductDto(row: ProductWithChildren): Product {
     unitStock: row.unitStock,
     conversionFactor: row.conversionFactor !== null ? Number(row.conversionFactor) : null,
     thresholdMin: Number(row.thresholdMin),
+    lastUnitCost: row.lastUnitCost !== null ? Number(row.lastUnitCost) : null,
+    lastUnitCostDate: row.lastUnitCostDate?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     sizes: row.sizes.map(toSizeDto),

@@ -295,30 +295,62 @@ export class InvoicesService {
         }
       }
 
-      // 4. Update supplier_products (solo para insumos, dado que la
-      //    relación supplier_products tiene FK a ingredient_id).
-      //    Para productos direct-resale podríamos tener una tabla análoga
-      //    en el futuro; por ahora solo registramos histórico de insumos.
+      // 4. Update supplier_products polimórfico (insumos Y productos direct-resale).
+      //    El precio guardado es el COSTO (lo que pagamos al proveedor),
+      //    NO el precio de venta. Está en unidad de COMPRA (kg, caja).
       for (const item of input.items) {
-        if (item.entityType !== 'INGREDIENT') continue;
-        await tx.supplierProduct.upsert({
-          where: {
-            supplierId_ingredientId: {
-              supplierId: supplier.id,
-              ingredientId: item.ingredientId as string,
+        if (item.entityType === 'INGREDIENT') {
+          await tx.supplierProduct.upsert({
+            where: {
+              supplierId_ingredientId: {
+                supplierId: supplier.id,
+                ingredientId: item.ingredientId as string,
+              },
             },
-          },
-          create: {
-            supplierId: supplier.id,
-            ingredientId: item.ingredientId as string,
-            lastUnitPrice: item.unitPrice,
-            lastPurchaseDate: new Date(),
-          },
-          update: {
-            lastUnitPrice: item.unitPrice,
-            lastPurchaseDate: new Date(),
-          },
-        });
+            create: {
+              supplierId: supplier.id,
+              entityType: 'INGREDIENT',
+              ingredientId: item.ingredientId as string,
+              lastUnitPrice: item.unitPrice,
+              lastPurchaseDate: new Date(),
+            },
+            update: {
+              lastUnitPrice: item.unitPrice,
+              lastPurchaseDate: new Date(),
+            },
+          });
+        } else {
+          // PRODUCT direct-resale
+          await tx.supplierProduct.upsert({
+            where: {
+              supplierId_productId: {
+                supplierId: supplier.id,
+                productId: item.productId as string,
+              },
+            },
+            create: {
+              supplierId: supplier.id,
+              entityType: 'PRODUCT',
+              productId: item.productId as string,
+              lastUnitPrice: item.unitPrice,
+              lastPurchaseDate: new Date(),
+            },
+            update: {
+              lastUnitPrice: item.unitPrice,
+              lastPurchaseDate: new Date(),
+            },
+          });
+
+          // 5. Actualizar lastUnitCost del producto (para display rápido
+          //    de margen vs basePrice).
+          await tx.product.update({
+            where: { id: item.productId as string },
+            data: {
+              lastUnitCost: item.unitPrice,
+              lastUnitCostDate: new Date(),
+            },
+          });
+        }
       }
 
       return invoiceUpdated;
