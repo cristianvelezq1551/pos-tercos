@@ -59,7 +59,11 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('login OK:', d['user']['email'], d['user']['role']\\)\")",
       "Bash(curl -s -b /tmp/cajero_cookies.txt -o /dev/null -w \"HTTP %{http_code} → %{redirect_url}\\\\n\" http://localhost:3004/)",
       "Bash(curl -s -b /tmp/cajero_cookies.txt -o /tmp/unauth.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/unauthorized)",
-      "Bash(kill -9 41101)"
+      "Bash(kill -9 41101)",
+      "Read(//Users/cristianvelez/.claude/**)",
+      "Bash(claude --version)",
+      "Bash(pnpm dlx *)",
+      "Bash(pnpm prisma *)"
     ]
   }
 }

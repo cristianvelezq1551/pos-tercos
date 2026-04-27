@@ -7,6 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// =====================================================================
+// AUTH + USERS (FASE 1)
+// =====================================================================
+
 enum UserRole {
   CAJERO
   COCINERO
@@ -23,19 +27,18 @@ enum RepartidorAvailability {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  passwordHash  String    @map("password_hash")
-  fullName      String    @map("full_name")
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  fullName      String   @map("full_name")
   phone         String?
   role          UserRole
-  mustChangePwd Boolean   @default(true) @map("must_change_pwd")
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now()) @map("created_at")
+  mustChangePwd Boolean  @default(true) @map("must_change_pwd")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  // Repartidor-only fields (null for other roles)
-  availability   RepartidorAvailability?
-  lastActiveAt   DateTime?               @map("last_active_at")
+  availability RepartidorAvailability?
+  lastActiveAt DateTime?               @map("last_active_at")
 
   refreshTokens RefreshToken[]
 
@@ -54,4 +57,136 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// =====================================================================
+// CATÁLOGO + RECETAS (FASE 2)
+// =====================================================================
+
+model Product {
+  id               String   @id @default(uuid())
+  name             String
+  description      String?
+  basePrice        Decimal  @map("base_price") @db.Decimal(12, 2)
+  category         String?
+  imageUrl         String?  @map("image_url")
+  modifiersEnabled Boolean  @default(false) @map("modifiers_enabled")
+  isCombo          Boolean  @default(false) @map("is_combo")
+  comboPrice       Decimal? @map("combo_price") @db.Decimal(12, 2)
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  sizes      ProductSize[]
+  modifiers  ProductModifier[]
+  recipeEdges RecipeEdge[]    @relation("ProductRecipe")
+
+  // If is_combo=true → list of components
+  comboComponents ComboComponent[] @relation("ComboParent")
+  // Reverse: products listed as components inside a combo
+  partOfCombos    ComboComponent[] @relation("ComboChild")
+
+  @@index([category, isActive])
+  @@index([isActive])
+  @@map("products")
+}
+
+model ProductSize {
+  id            String  @id @default(uuid())
+  productId     String  @map("product_id")
+  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name          String
+  priceModifier Decimal @map("price_modifier") @db.Decimal(12, 2) @default(0)
+  sortOrder     Int     @default(0) @map("sort_order")
+
+  @@index([productId])
+  @@map("product_sizes")
+}
+
+model ProductModifier {
+  id          String  @id @default(uuid())
+  productId   String  @map("product_id")
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name        String
+  priceDelta  Decimal @map("price_delta") @db.Decimal(12, 2) @default(0)
+  recipeDelta Json    @map("recipe_delta") @default("{}")
+
+  @@index([productId])
+  @@map("product_modifiers")
+}
+
+model ComboComponent {
+  id        String  @id @default(uuid())
+  comboId   String  @map("combo_id")
+  combo     Product @relation("ComboParent", fields: [comboId], references: [id], onDelete: Cascade)
+  productId String  @map("product_id")
+  product   Product @relation("ComboChild", fields: [productId], references: [id], onDelete: Restrict)
+  quantity  Int     @default(1)
+
+  @@index([comboId])
+  @@index([productId])
+  @@map("combo_components")
+}
+
+model Subproduct {
+  id        String   @id @default(uuid())
+  name      String
+  yield     Decimal  @db.Decimal(10, 4)
+  unit      String   @default("unidad")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Recipes that PRODUCE this subproduct
+  recipeEdges RecipeEdge[] @relation("SubproductRecipe")
+  // Recipes where this subproduct IS CONSUMED
+  consumedAs  RecipeEdge[] @relation("SubproductChild")
+
+  @@index([isActive])
+  @@map("subproducts")
+}
+
+model Ingredient {
+  id               String   @id @default(uuid())
+  name             String
+  unitPurchase     String   @map("unit_purchase")
+  unitRecipe       String   @map("unit_recipe")
+  conversionFactor Decimal  @map("conversion_factor") @db.Decimal(14, 6)
+  thresholdMin     Decimal  @map("threshold_min") @db.Decimal(14, 4) @default(0)
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  consumedAs RecipeEdge[] @relation("IngredientChild")
+
+  @@index([isActive])
+  @@map("ingredients")
+}
+
+model RecipeEdge {
+  id String @id @default(uuid())
+
+  // Parent: exactly one of (parentProductId, parentSubproductId) is non-null
+  // Enforced by CHECK constraint added in migration SQL.
+  parentProductId    String?     @map("parent_product_id")
+  parentProduct      Product?    @relation("ProductRecipe", fields: [parentProductId], references: [id], onDelete: Cascade)
+  parentSubproductId String?     @map("parent_subproduct_id")
+  parentSubproduct   Subproduct? @relation("SubproductRecipe", fields: [parentSubproductId], references: [id], onDelete: Cascade)
+
+  // Child: exactly one of (childIngredientId, childSubproductId) is non-null
+  childIngredientId String?     @map("child_ingredient_id")
+  childIngredient   Ingredient? @relation("IngredientChild", fields: [childIngredientId], references: [id], onDelete: Restrict)
+  childSubproductId String?     @map("child_subproduct_id")
+  childSubproduct   Subproduct? @relation("SubproductChild", fields: [childSubproductId], references: [id], onDelete: Restrict)
+
+  quantityNeta Decimal @map("quantity_neta") @db.Decimal(14, 4)
+  mermaPct     Decimal @map("merma_pct") @db.Decimal(5, 4) @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([parentProductId])
+  @@index([parentSubproductId])
+  @@index([childIngredientId])
+  @@index([childSubproductId])
+  @@map("recipe_edges")
 }
