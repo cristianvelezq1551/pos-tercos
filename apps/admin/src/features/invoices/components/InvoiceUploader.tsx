@@ -1,9 +1,9 @@
 'use client';
 
 import { cn } from '@pos-tercos/ui';
-import type { Ingredient, InvoiceDraftResponse, Supplier } from '@pos-tercos/types';
+import type { InvoiceDraftResponse, Stockable, Supplier } from '@pos-tercos/types';
 import { useEffect, useState } from 'react';
-import { listIngredients } from '../../ingredients';
+import { listStock } from '../../inventory';
 import { uploadInvoicePhoto } from '../api/client';
 import { listSuppliers } from '../utils/suppliers-api';
 import { InvoiceConfirmModal } from './InvoiceConfirmModal';
@@ -16,20 +16,22 @@ export function InvoiceUploader() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [stockables, setStockables] = useState<Stockable[]>([]);
 
   useEffect(() => {
-    Promise.all([listSuppliers(), listIngredients()])
-      .then(([s, i]) => {
-        setSuppliers(s);
-        setIngredients(i);
-      })
-      .catch(() => {
-        // silent — pickers will refetch on demand
-      });
+    refreshLookups();
   }, []);
 
-  const handleFile = async (file: File) => {
+  const refreshLookups = (): void => {
+    Promise.all([listSuppliers(), listStock({ onlyActive: true })])
+      .then(([s, items]) => {
+        setSuppliers(s);
+        setStockables(items);
+      })
+      .catch(() => {});
+  };
+
+  const handleFile = async (file: File): Promise<void> => {
     setError(null);
     setUploading(true);
     try {
@@ -42,14 +44,11 @@ export function InvoiceUploader() {
     }
   };
 
-  const handleClose = () => setDraft(null);
+  const handleClose = (): void => setDraft(null);
 
-  const handleConfirmed = async () => {
+  const handleConfirmed = (): void => {
     setDraft(null);
-    // Refresh ingredients since user may have created some inline
-    listIngredients()
-      .then(setIngredients)
-      .catch(() => {});
+    refreshLookups();
   };
 
   return (
@@ -81,15 +80,11 @@ export function InvoiceUploader() {
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void handleFile(file);
-            // reset input so the same file can be picked again
             e.target.value = '';
           }}
         />
         <svg
-          className={cn(
-            'h-12 w-12',
-            dragOver ? 'text-blue-500' : 'text-gray-400',
-          )}
+          className={cn('h-12 w-12', dragOver ? 'text-blue-500' : 'text-gray-400')}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -119,9 +114,13 @@ export function InvoiceUploader() {
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p className="font-semibold">Cómo funciona</p>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-blue-800">
-          <li>La IA lee la foto y extrae proveedor, ítems, cantidades y precios.</li>
-          <li>Aparece un modal con todo cargado para que revises y edites.</li>
-          <li>Confirmar genera los movimientos de inventario y guarda la factura.</li>
+          <li>Subís foto de la factura del proveedor (insumos o productos para reventa).</li>
+          <li>La IA extrae proveedor, items, cantidades y precios.</li>
+          <li>
+            En el modal asociás cada línea con un Insumo existente, un Producto direct-resale
+            existente, o creás uno nuevo del tipo correcto.
+          </li>
+          <li>Confirmás → el sistema descuenta al stock correcto y guarda historial.</li>
         </ol>
       </div>
 
@@ -129,10 +128,14 @@ export function InvoiceUploader() {
         <InvoiceConfirmModal
           draft={draft}
           suppliers={suppliers}
-          ingredients={ingredients}
+          stockables={stockables}
           onClose={handleClose}
           onConfirmed={handleConfirmed}
-          onIngredientCreated={(ingredient) => setIngredients((prev) => [...prev, ingredient].sort((a, b) => a.name.localeCompare(b.name)))}
+          onStockableCreated={(item) =>
+            setStockables((prev) =>
+              [...prev, item].sort((a, b) => a.name.localeCompare(b.name)),
+            )
+          }
         />
       )}
     </div>

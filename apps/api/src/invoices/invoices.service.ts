@@ -21,9 +21,34 @@ type DbInvoiceWithDetail = Prisma.InvoiceGetPayload<{
     supplier: { select: { name: true } };
     uploadedBy: { select: { fullName: true } };
     confirmedBy: { select: { fullName: true } };
-    items: { include: { ingredient: { select: { name: true } } } };
+    items: {
+      include: {
+        ingredient: { select: { name: true } };
+        product: { select: { name: true } };
+      };
+    };
   };
 }>;
+
+/**
+ * Convierte cantidad declarada en factura (en unit_purchase) a la unit
+ * de stock usando conversionFactor. Si la unidad declarada coincide con
+ * la unit de stock, no convierte (factor=1 implícito).
+ *
+ * Ejemplo: factura dice "5 kg" de pollo, stock se mide en "g", factor=1000
+ *   → 5 * 1000 = 5000 g a sumar al stock.
+ */
+function computeStockQty(opts: {
+  quantity: number;
+  invoiceUnit: string;
+  stockUnit: string;
+  conversionFactor: number;
+}): number {
+  if (opts.invoiceUnit.toLowerCase() === opts.stockUnit.toLowerCase()) {
+    return opts.quantity;
+  }
+  return opts.quantity * opts.conversionFactor;
+}
 
 @Injectable()
 export class InvoicesService {
@@ -130,30 +155,72 @@ export class InvoicesService {
       throw new BadRequestException('Invoice is rejected; cannot confirm');
     }
 
-    // Validate ingredient IDs
-    const ingredientIds = Array.from(new Set(input.items.map((i) => i.ingredientId)));
-    const ingredients = await this.prisma.ingredient.findMany({
-      where: { id: { in: ingredientIds } },
-      select: { id: true, isActive: true, name: true, unitPurchase: true, unitRecipe: true, conversionFactor: true },
-    });
-    const missing = ingredientIds.filter((id2) => !ingredients.some((i) => i.id === id2));
-    if (missing.length > 0) {
-      throw new BadRequestException(`Items reference missing ingredients: ${missing.join(', ')}`);
+    // Particionar items por entityType para validar cada set
+    const ingredientIds = Array.from(
+      new Set(
+        input.items
+          .filter((i) => i.entityType === 'INGREDIENT')
+          .map((i) => i.ingredientId as string),
+      ),
+    );
+    const productIds = Array.from(
+      new Set(
+        input.items
+          .filter((i) => i.entityType === 'PRODUCT')
+          .map((i) => i.productId as string),
+      ),
+    );
+
+    const [ingredients, products] = await Promise.all([
+      ingredientIds.length > 0
+        ? this.prisma.ingredient.findMany({
+            where: { id: { in: ingredientIds } },
+            select: { id: true, isActive: true, name: true, unitPurchase: true, unitRecipe: true, conversionFactor: true },
+          })
+        : Promise.resolve([]),
+      productIds.length > 0
+        ? this.prisma.product.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, isActive: true, name: true, directResale: true, unitPurchase: true, unitStock: true, conversionFactor: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const missingIng = ingredientIds.filter((iid) => !ingredients.some((i) => i.id === iid));
+    if (missingIng.length > 0) {
+      throw new BadRequestException(`Items refer to missing ingredients: ${missingIng.join(', ')}`);
     }
-    const inactive = ingredients.filter((i) => !i.isActive).map((i) => i.id);
-    if (inactive.length > 0) {
-      throw new BadRequestException(`Items reference inactive ingredients: ${inactive.join(', ')}`);
+    const missingProd = productIds.filter((pid) => !products.some((p) => p.id === pid));
+    if (missingProd.length > 0) {
+      throw new BadRequestException(`Items refer to missing products: ${missingProd.join(', ')}`);
+    }
+
+    const inactiveIng = ingredients.filter((i) => !i.isActive).map((i) => i.id);
+    if (inactiveIng.length > 0) {
+      throw new BadRequestException(`Items refer to inactive ingredients: ${inactiveIng.join(', ')}`);
+    }
+    const notDirectResale = products.filter((p) => !p.directResale).map((p) => p.id);
+    if (notDirectResale.length > 0) {
+      throw new BadRequestException(
+        `Products are not direct-resale (cannot have stock): ${notDirectResale.join(', ')}`,
+      );
+    }
+    const inactiveProd = products.filter((p) => !p.isActive).map((p) => p.id);
+    if (inactiveProd.length > 0) {
+      throw new BadRequestException(`Items refer to inactive products: ${inactiveProd.join(', ')}`);
     }
 
     const supplier = await this.suppliers.upsertByNit(input.supplierNit, input.supplierName);
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      // 1. Replace all invoice_items with the user-edited ones
+      // 1. Replace invoice_items with user-edited ones
       await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
       await tx.invoiceItem.createMany({
         data: input.items.map((it, idx) => ({
           invoiceId: id,
-          ingredientId: it.ingredientId,
+          entityType: it.entityType,
+          ingredientId: it.entityType === 'INGREDIENT' ? (it.ingredientId as string) : null,
+          productId: it.entityType === 'PRODUCT' ? (it.productId as string) : null,
           descriptionRaw: it.descriptionRaw,
           quantity: it.quantity,
           unit: it.unit,
@@ -180,41 +247,70 @@ export class InvoicesService {
       });
 
       // 3. Inventory movements (PURCHASE) per item.
-      //    Convertimos la cantidad de la unidad de compra a la de receta usando conversionFactor.
+      //    Convierte la cantidad declarada (en unit de compra) a la unit
+      //    de stock usando conversionFactor.
       for (const item of input.items) {
-        const ing = ingredients.find((i) => i.id === item.ingredientId);
-        if (!ing) continue;
-        const factor = Number(ing.conversionFactor);
-        const recipeQty =
-          item.unit.toLowerCase() === ing.unitRecipe.toLowerCase()
-            ? item.quantity
-            : item.quantity * factor;
-
-        await tx.inventoryMovement.create({
-          data: {
-            ingredientId: item.ingredientId,
-            delta: recipeQty,
-            type: 'PURCHASE',
-            sourceType: 'invoice',
-            sourceId: id,
-            userId,
-            notes: `Factura ${input.invoiceNumber ?? id.slice(0, 8)} · ${supplier.name}`,
-          },
-        });
+        if (item.entityType === 'INGREDIENT') {
+          const ing = ingredients.find((i) => i.id === item.ingredientId);
+          if (!ing) continue;
+          const stockQty = computeStockQty({
+            quantity: item.quantity,
+            invoiceUnit: item.unit,
+            stockUnit: ing.unitRecipe,
+            conversionFactor: Number(ing.conversionFactor),
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              entityType: 'INGREDIENT',
+              ingredientId: item.ingredientId as string,
+              delta: stockQty,
+              type: 'PURCHASE',
+              sourceType: 'invoice',
+              sourceId: id,
+              userId,
+              notes: `Factura ${input.invoiceNumber ?? id.slice(0, 8)} · ${supplier.name}`,
+            },
+          });
+        } else {
+          const prod = products.find((p) => p.id === item.productId);
+          if (!prod) continue;
+          const stockQty = computeStockQty({
+            quantity: item.quantity,
+            invoiceUnit: item.unit,
+            stockUnit: prod.unitStock ?? 'unidad',
+            conversionFactor: prod.conversionFactor !== null ? Number(prod.conversionFactor) : 1,
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              entityType: 'PRODUCT',
+              productId: item.productId as string,
+              delta: stockQty,
+              type: 'PURCHASE',
+              sourceType: 'invoice',
+              sourceId: id,
+              userId,
+              notes: `Factura ${input.invoiceNumber ?? id.slice(0, 8)} · ${supplier.name}`,
+            },
+          });
+        }
       }
 
-      // 4. Update supplier_products (last unit price + last purchase date)
+      // 4. Update supplier_products (solo para insumos, dado que la
+      //    relación supplier_products tiene FK a ingredient_id).
+      //    Para productos direct-resale podríamos tener una tabla análoga
+      //    en el futuro; por ahora solo registramos histórico de insumos.
       for (const item of input.items) {
+        if (item.entityType !== 'INGREDIENT') continue;
         await tx.supplierProduct.upsert({
           where: {
             supplierId_ingredientId: {
               supplierId: supplier.id,
-              ingredientId: item.ingredientId,
+              ingredientId: item.ingredientId as string,
             },
           },
           create: {
             supplierId: supplier.id,
-            ingredientId: item.ingredientId,
+            ingredientId: item.ingredientId as string,
             lastUnitPrice: item.unitPrice,
             lastPurchaseDate: new Date(),
           },
@@ -277,7 +373,13 @@ function includeFull() {
     supplier: { select: { name: true } },
     uploadedBy: { select: { fullName: true } },
     confirmedBy: { select: { fullName: true } },
-    items: { include: { ingredient: { select: { name: true } } }, orderBy: { sortOrder: 'asc' } },
+    items: {
+      include: {
+        ingredient: { select: { name: true } },
+        product: { select: { name: true } },
+      },
+      orderBy: { sortOrder: 'asc' },
+    },
   } satisfies Prisma.InvoiceInclude;
 }
 
@@ -285,8 +387,15 @@ function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
   const items: InvoiceItem[] = row.items.map((it) => ({
     id: it.id,
     invoiceId: it.invoiceId,
+    entityType: it.entityType,
     ingredientId: it.ingredientId,
-    ingredientName: it.ingredient?.name ?? null,
+    productId: it.productId,
+    itemName:
+      it.entityType === 'INGREDIENT'
+        ? (it.ingredient?.name ?? null)
+        : it.entityType === 'PRODUCT'
+          ? (it.product?.name ?? null)
+          : null,
     descriptionRaw: it.descriptionRaw,
     quantity: Number(it.quantity),
     unit: it.unit,

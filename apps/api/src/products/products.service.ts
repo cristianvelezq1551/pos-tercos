@@ -59,6 +59,11 @@ export class ProductsService {
         modifiersEnabled: input.modifiersEnabled ?? false,
         isCombo: input.isCombo ?? false,
         comboPrice: input.isCombo ? (input.comboPrice ?? null) : null,
+        directResale: input.directResale ?? false,
+        unitPurchase: input.directResale ? (input.unitPurchase ?? null) : null,
+        unitStock: input.directResale ? (input.unitStock ?? null) : null,
+        conversionFactor: input.directResale ? (input.conversionFactor ?? null) : null,
+        thresholdMin: input.thresholdMin ?? 0,
         sizes: input.sizes
           ? {
               create: input.sizes.map((s) => ({
@@ -119,6 +124,11 @@ export class ProductsService {
         ...(input.isCombo !== undefined && { isCombo: input.isCombo }),
         ...(input.comboPrice !== undefined && { comboPrice: input.comboPrice }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
+        ...(input.directResale !== undefined && { directResale: input.directResale }),
+        ...(input.unitPurchase !== undefined && { unitPurchase: input.unitPurchase }),
+        ...(input.unitStock !== undefined && { unitStock: input.unitStock }),
+        ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
+        ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
       },
       include: { sizes: true, modifiers: true, comboComponents: true },
     });
@@ -170,6 +180,11 @@ function toProductDto(row: ProductWithChildren): Product {
     isCombo: row.isCombo,
     comboPrice: row.comboPrice !== null ? Number(row.comboPrice) : null,
     isActive: row.isActive,
+    directResale: row.directResale,
+    unitPurchase: row.unitPurchase,
+    unitStock: row.unitStock,
+    conversionFactor: row.conversionFactor !== null ? Number(row.conversionFactor) : null,
+    thresholdMin: Number(row.thresholdMin),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     sizes: row.sizes.map(toSizeDto),

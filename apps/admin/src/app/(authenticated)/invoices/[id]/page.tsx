@@ -107,9 +107,16 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                 {invoice.items.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50">
                     <Td>
-                      <span className="font-medium text-gray-900">
-                        {item.ingredientName ?? <span className="text-gray-400">—</span>}
-                      </span>
+                      <div className="flex flex-col leading-tight">
+                        <span className="font-medium text-gray-900">
+                          {item.itemName ?? <span className="text-gray-400">—</span>}
+                        </span>
+                        {item.entityType && (
+                          <span className="text-xs text-gray-500">
+                            {item.entityType === 'INGREDIENT' ? '🌾 Insumo' : '📦 Producto'}
+                          </span>
+                        )}
+                      </div>
                     </Td>
                     <Td>
                       <span className="text-xs text-gray-600">{item.descriptionRaw}</span>

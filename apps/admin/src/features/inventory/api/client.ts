@@ -1,14 +1,15 @@
 import {
   CreateInventoryMovementSchema,
-  IngredientWithStockSchema,
   InventoryMovementSchema,
+  StockableSchema,
   type CreateInventoryMovement,
-  type IngredientWithStock,
   type InventoryMovement,
+  type Stockable,
+  type StockableType,
 } from '@pos-tercos/types';
 import { z } from 'zod';
 
-const StockListSchema = z.array(IngredientWithStockSchema);
+const StockListSchema = z.array(StockableSchema);
 const MovementsListSchema = z.array(InventoryMovementSchema);
 
 async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T>): Promise<T> {
@@ -30,7 +31,7 @@ async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T
 
 export function listStock(
   filter: { onlyActive?: boolean; lowStock?: boolean } = {},
-): Promise<IngredientWithStock[]> {
+): Promise<Stockable[]> {
   const params = new URLSearchParams();
   if (filter.onlyActive) params.set('only_active', 'true');
   if (filter.lowStock) params.set('low_stock', 'true');
@@ -38,15 +39,27 @@ export function listStock(
   return request(`/inventory/stock${qs}`, { method: 'GET' }, StockListSchema);
 }
 
-export function getStock(id: string): Promise<IngredientWithStock> {
-  return request(`/inventory/stock/${id}`, { method: 'GET' }, IngredientWithStockSchema);
+export function getStock(entityType: StockableType, id: string): Promise<Stockable> {
+  return request(
+    `/inventory/stock/${entityType.toLowerCase()}/${id}`,
+    { method: 'GET' },
+    StockableSchema,
+  );
 }
 
 export function listMovements(
-  filter: { ingredientId?: string; type?: string; limit?: number } = {},
+  filter: {
+    entityType?: StockableType;
+    ingredientId?: string;
+    productId?: string;
+    type?: string;
+    limit?: number;
+  } = {},
 ): Promise<InventoryMovement[]> {
   const params = new URLSearchParams();
+  if (filter.entityType) params.set('entity_type', filter.entityType);
   if (filter.ingredientId) params.set('ingredient_id', filter.ingredientId);
+  if (filter.productId) params.set('product_id', filter.productId);
   if (filter.type) params.set('type', filter.type);
   if (filter.limit) params.set('limit', String(filter.limit));
   const qs = params.toString() ? `?${params.toString()}` : '';

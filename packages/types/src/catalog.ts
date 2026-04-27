@@ -119,6 +119,12 @@ export const ProductSchema = z.object({
   isCombo: z.boolean(),
   comboPrice: z.number().nullable(),
   isActive: z.boolean(),
+  // Direct-resale fields (FASE 4 refactor)
+  directResale: z.boolean(),
+  unitPurchase: z.string().nullable(),
+  unitStock: z.string().nullable(),
+  conversionFactor: z.number().nullable(),
+  thresholdMin: z.number().nonnegative(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   sizes: z.array(ProductSizeSchema).optional(),
@@ -137,6 +143,13 @@ export const CreateProductSchema = z
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),
     comboPrice: z.number().nonnegative().nullable().optional(),
+    // Direct-resale fields. Si directResale=true → los 3 (unitPurchase,
+    // unitStock, conversionFactor) son requeridos.
+    directResale: z.boolean().optional(),
+    unitPurchase: z.string().min(1).max(20).optional(),
+    unitStock: z.string().min(1).max(20).optional(),
+    conversionFactor: z.number().positive().optional(),
+    thresholdMin: z.number().nonnegative().optional(),
     sizes: z.array(ProductSizeInputSchema).optional(),
     modifiers: z.array(ProductModifierInputSchema).optional(),
     comboComponents: z.array(ComboComponentInputSchema).optional(),
@@ -156,6 +169,36 @@ export const CreateProductSchema = z
         path: ['comboPrice'],
       });
     }
+    if (data.directResale) {
+      if (!data.unitPurchase) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'unitPurchase required when directResale=true',
+          path: ['unitPurchase'],
+        });
+      }
+      if (!data.unitStock) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'unitStock required when directResale=true',
+          path: ['unitStock'],
+        });
+      }
+      if (data.conversionFactor === undefined || data.conversionFactor === null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'conversionFactor required when directResale=true',
+          path: ['conversionFactor'],
+        });
+      }
+      if (data.isCombo) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'directResale and isCombo cannot both be true',
+          path: ['directResale'],
+        });
+      }
+    }
   });
 export type CreateProduct = z.infer<typeof CreateProductSchema>;
 
@@ -170,6 +213,11 @@ export const UpdateProductSchema = z
     isCombo: z.boolean().optional(),
     comboPrice: z.number().nonnegative().nullable().optional(),
     isActive: z.boolean().optional(),
+    directResale: z.boolean().optional(),
+    unitPurchase: z.string().min(1).max(20).nullable().optional(),
+    unitStock: z.string().min(1).max(20).nullable().optional(),
+    conversionFactor: z.number().positive().nullable().optional(),
+    thresholdMin: z.number().nonnegative().optional(),
   })
   .strict();
 export type UpdateProduct = z.infer<typeof UpdateProductSchema>;

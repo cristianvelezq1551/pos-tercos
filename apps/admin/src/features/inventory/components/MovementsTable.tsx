@@ -57,9 +57,14 @@ export function MovementsTable({ rows }: MovementsTableProps) {
                 <Badge tone={TYPE_TONE[m.type]}>{TYPE_LABEL[m.type]}</Badge>
               </Td>
               <Td>
-                <span className="font-medium text-gray-900">
-                  {m.ingredientName ?? m.ingredientId}
-                </span>
+                <div className="flex flex-col leading-tight">
+                  <span className="font-medium text-gray-900">
+                    {m.itemName ?? m.ingredientId ?? m.productId ?? '—'}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {m.entityType === 'INGREDIENT' ? '🌾 Insumo' : '📦 Producto'}
+                  </span>
+                </div>
               </Td>
               <Td align="right" mono>
                 <span

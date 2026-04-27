@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pos-tercos/domain": "workspace:*",
     "@pos-tercos/types": "workspace:*",
     "@pos-tercos/ui": "workspace:*",
     "jose": "^5.9.6",

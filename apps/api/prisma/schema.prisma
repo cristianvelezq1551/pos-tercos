@@ -81,6 +81,18 @@ model Product {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
+  // Direct-resale fields (FASE 4 refactor):
+  // si directResale=true → el producto es comprado y vendido tal cual
+  //   (botellas, snacks empaquetados). Tiene stock propio en
+  //   inventory_movements y descuenta directo al venderse.
+  // si directResale=false → producto elaborado, sin stock, descuenta
+  //   insumos via expandRecipe al venderse.
+  directResale     Boolean  @default(false) @map("direct_resale")
+  unitPurchase     String?  @map("unit_purchase")
+  unitStock        String?  @map("unit_stock")
+  conversionFactor Decimal? @map("conversion_factor") @db.Decimal(14, 6)
+  thresholdMin     Decimal  @default(0) @map("threshold_min") @db.Decimal(14, 4)
+
   sizes      ProductSize[]
   modifiers  ProductModifier[]
   recipeEdges RecipeEdge[]    @relation("ProductRecipe")
@@ -90,8 +102,13 @@ model Product {
   // Reverse: products listed as components inside a combo
   partOfCombos    ComboComponent[] @relation("ComboChild")
 
+  // Direct-resale stockable side
+  movements    InventoryMovement[]
+  invoiceItems InvoiceItem[]
+
   @@index([category, isActive])
   @@index([isActive])
+  @@index([directResale, isActive])
   @@map("products")
 }
 
@@ -210,10 +227,19 @@ enum InventoryMovementType {
   INITIAL           // stock inicial al cargar el sistema
 }
 
+/// Discriminador para entidades stock-trackeables.
+enum StockableType {
+  INGREDIENT
+  PRODUCT
+}
+
 model InventoryMovement {
   id             String                @id @default(uuid())
-  ingredientId   String                @map("ingredient_id")
-  ingredient     Ingredient            @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  entityType     StockableType         @map("entity_type")
+  ingredientId   String?               @map("ingredient_id")
+  ingredient     Ingredient?           @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  productId      String?               @map("product_id")
+  product        Product?              @relation(fields: [productId], references: [id], onDelete: Restrict)
   delta          Decimal               @db.Decimal(14, 4)
   type           InventoryMovementType
   sourceType     String?               @map("source_type")
@@ -225,6 +251,8 @@ model InventoryMovement {
   createdAt      DateTime              @default(now()) @map("created_at")
 
   @@index([ingredientId, createdAt(sort: Desc)])
+  @@index([productId, createdAt(sort: Desc)])
+  @@index([entityType, createdAt(sort: Desc)])
   @@index([type, createdAt(sort: Desc)])
   @@map("inventory_movements")
 }
@@ -327,19 +355,25 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id             String      @id @default(uuid())
-  invoiceId      String      @map("invoice_id")
-  invoice        Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  ingredientId   String?     @map("ingredient_id")
-  ingredient     Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
-  descriptionRaw String      @map("description_raw")
-  quantity       Decimal     @db.Decimal(14, 4)
+  id             String         @id @default(uuid())
+  invoiceId      String         @map("invoice_id")
+  invoice        Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  // Polimórfico: el item de la factura puede asociarse a un Insumo o
+  // a un Producto direct-resale. Un item sin asociar tiene los 3 NULL.
+  entityType     StockableType? @map("entity_type")
+  ingredientId   String?        @map("ingredient_id")
+  ingredient     Ingredient?    @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+  productId      String?        @map("product_id")
+  product        Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  descriptionRaw String         @map("description_raw")
+  quantity       Decimal        @db.Decimal(14, 4)
   unit           String
-  unitPrice      Decimal     @map("unit_price") @db.Decimal(14, 4)
-  total          Decimal     @db.Decimal(14, 2)
-  sortOrder      Int         @default(0) @map("sort_order")
+  unitPrice      Decimal        @map("unit_price") @db.Decimal(14, 4)
+  total          Decimal        @db.Decimal(14, 2)
+  sortOrder      Int            @default(0) @map("sort_order")
 
   @@index([invoiceId])
   @@index([ingredientId])
+  @@index([productId])
   @@map("invoice_items")
 }

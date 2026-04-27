@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import {
   CreateInventoryMovementSchema,
+  StockableTypeEnum,
   type CreateInventoryMovement,
-  type IngredientWithStock,
   type InventoryMovement,
+  type Stockable,
+  type StockableType,
 } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -23,28 +25,44 @@ export class InventoryController {
   listStock(
     @Query('only_active') onlyActive?: string,
     @Query('low_stock') lowStock?: string,
-  ): Promise<IngredientWithStock[]> {
-    return this.inventory.listIngredientsWithStock({
+  ): Promise<Stockable[]> {
+    return this.inventory.listStockables({
       onlyActive: onlyActive === 'true',
       lowStock: lowStock === 'true',
     });
   }
 
-  @Get('stock/:id')
-  getStock(@Param('id', ParseUUIDPipe) id: string): Promise<IngredientWithStock> {
-    return this.inventory.getIngredientWithStock(id);
+  @Get('stock/:entityType/:id')
+  getStock(
+    @Param('entityType') entityType: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Stockable> {
+    const parsed = StockableTypeEnum.safeParse(entityType.toUpperCase());
+    if (!parsed.success) {
+      throw new BadRequestException(`entityType debe ser INGREDIENT o PRODUCT`);
+    }
+    return this.inventory.getStockableById(parsed.data, id);
   }
 
   @Get('movements')
   listMovements(
+    @Query('entity_type') entityType?: string,
     @Query('ingredient_id') ingredientId?: string,
+    @Query('product_id') productId?: string,
     @Query('type') type?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
   ): Promise<InventoryMovement[]> {
+    let parsedEntityType: StockableType | undefined;
+    if (entityType) {
+      const r = StockableTypeEnum.safeParse(entityType.toUpperCase());
+      if (r.success) parsedEntityType = r.data;
+    }
     return this.inventory.listMovements({
+      entityType: parsedEntityType,
       ingredientId,
+      productId,
       type,
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
@@ -80,7 +98,9 @@ export class InventoryController {
       entityType: 'inventory_movement',
       entityId: movement.id,
       after: {
+        entityType: movement.entityType,
         ingredientId: movement.ingredientId,
+        productId: movement.productId,
         delta: movement.delta,
         type: movement.type,
         notes: movement.notes,
