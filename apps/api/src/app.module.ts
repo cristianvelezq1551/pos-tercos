@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { LLMModule } from './adapters/llm/llm.module';
 import { StorageModule } from './adapters/storage/storage.module';
 import { ApprovalsModule } from './approvals/approvals.module';
@@ -14,6 +15,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
+import { PromotionsModule } from './promotions/promotions.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { SalesModule } from './sales/sales.module';
 import { ShiftsModule } from './shifts/shifts.module';
@@ -23,6 +25,7 @@ import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
     StorageModule,
@@ -35,6 +38,7 @@ import { UsersModule } from './users/users.module';
     SubproductsModule,
     ProductsModule,
     RecipesModule,
+    PromotionsModule,
     InventoryModule,
     SuppliersModule,
     InvoicesModule,

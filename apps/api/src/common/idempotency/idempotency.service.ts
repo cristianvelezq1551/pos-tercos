@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { IdempotencyKeySchema } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -91,12 +92,17 @@ export class IdempotencyService {
   }
 
   /**
-   * Borrado manual de keys expiradas. Llamado por cron en FASE 5.C.
+   * Borrado de keys expiradas. Corre todos los días a las 3:00 AM.
+   * También invocable manualmente para testing.
    */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async purgeExpired(): Promise<number> {
     const result = await this.prisma.idempotencyKey.deleteMany({
       where: { expiresAt: { lte: new Date() } },
     });
+    if (result.count > 0) {
+      this.logger.log(`Purged ${result.count} expired idempotency keys`);
+    }
     return result.count;
   }
 }

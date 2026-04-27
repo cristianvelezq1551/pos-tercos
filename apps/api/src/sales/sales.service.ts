@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { expandRecipe } from '@pos-tercos/domain';
+import { applyPromotion, expandRecipe, type PromotionDef } from '@pos-tercos/domain';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -22,8 +22,8 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromotionsService } from '../promotions/promotions.service';
 import { RecipesService } from '../recipes/recipes.service';
-import { resolvePromotion } from './promotions-engine.stub';
 
 const SALES_CREATE_ENDPOINT = 'POST /sales';
 
@@ -60,6 +60,7 @@ export class SalesService {
     private readonly approvals: ApprovalsService,
     private readonly audit: AuditService,
     private readonly recipes: RecipesService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   // ==================================================================
@@ -115,17 +116,21 @@ export class SalesService {
       );
     }
 
-    // Cargar productos + sizes + modifiers en una sola pasada
+    // Cargar productos + sizes + modifiers + promociones activas en paralelo
     const productIds = Array.from(new Set(input.items.map((i) => i.productId)));
-    const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds } },
-      include: { sizes: true, modifiers: true },
-    });
+    const now = new Date();
+    const [products, activePromotions] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { id: { in: productIds } },
+        include: { sizes: true, modifiers: true },
+      }),
+      this.promotions.loadActiveAt(now),
+    ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // Validar + computar líneas
+    // Validar + computar líneas (incluye motor de promociones puro)
     const computedItems: ComputedSaleItem[] = input.items.map((it) =>
-      computeLine(it, productMap, new Date()),
+      computeLine(it, productMap, activePromotions, now),
     );
 
     const subtotal = roundMoney(
@@ -558,6 +563,7 @@ type ProductWithRelations = Prisma.ProductGetPayload<{
 function computeLine(
   input: CreateSaleItem,
   productMap: Map<string, ProductWithRelations>,
+  activePromotions: PromotionDef[],
   at: Date,
 ): ComputedSaleItem {
   const product = productMap.get(input.productId);
@@ -619,12 +625,16 @@ function computeLine(
   const unitPrice = roundMoney(basePrice);
   const lineSubtotal = roundMoney(unitPrice * input.quantity);
 
-  // Stub de promociones (5.B) → siempre 0
-  const promo = resolvePromotion({
-    productId: product.id,
-    lineSubtotal,
-    at,
-  });
+  // Motor de promociones puro (5.C). Devuelve appliedPromotionId=null +
+  // lineDiscount=0 cuando ninguna matchea producto/día/hora.
+  const promo = applyPromotion(
+    {
+      productId: product.id,
+      lineSubtotal,
+      at,
+    },
+    activePromotions,
+  );
 
   const lineDiscount = roundMoney(promo.lineDiscount);
   const lineTotal = roundMoney(lineSubtotal - lineDiscount);

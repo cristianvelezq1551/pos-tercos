@@ -27,13 +27,32 @@ import {
   type VoidSale,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { CashierAccess } from '../auth/decorators/roles.decorator';
+import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { ReceiptIntegrityService } from './receipt-integrity.service';
 import { SalesService } from './sales.service';
 
 @Controller('sales')
 export class SalesController {
-  constructor(private readonly sales: SalesService) {}
+  constructor(
+    private readonly sales: SalesService,
+    private readonly receiptIntegrity: ReceiptIntegrityService,
+  ) {}
+
+  /**
+   * Chequeo on-demand de saltos en receipt_seq. El cron corre 4:00 AM
+   * todos los días, este endpoint permite invocar manualmente (Dueño).
+   */
+  @OnlyDueno()
+  @Post('admin/check-receipt-gaps')
+  async checkReceiptGaps(): Promise<{
+    totalSales: number;
+    minReceipt: number | null;
+    maxReceipt: number | null;
+    gap: number;
+  }> {
+    return this.receiptIntegrity.detectGaps();
+  }
 
   @CashierAccess()
   @Post()

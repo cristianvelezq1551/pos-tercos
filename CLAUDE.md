@@ -452,7 +452,14 @@ Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en CLAUDE.md sec 13.
   - `ShiftsService.open` (1 OPEN por cajero, ConflictException si ya hay) + `getCurrent` + `getById` + `list`
   - 7 endpoints sales (`POST /sales`, `confirm-payment`, `void`, `GET /sales`, `GET /:id`, `GET /:id/status-log`) + 4 endpoints shifts + 1 endpoint approvals
   - **E2E smoke test (15+ casos)**: idempotency hit, expandRecipe matemáticamente correcto (Pollo -150.3759g, Sal -0.7519g), digital double verification para NEQUI, void post-PAGADO revierte stock, audit log con SALE_CREATED/SALE_PAID/SALE_VOIDED/APPROVAL_GRANTED/APPROVAL_DENIED/IDEMPOTENCY_HIT
-- [ ] **5.C — Promotions engine + cron + extended audit**: motor puro en `@pos-tercos/domain/promotions/apply-promotions.ts`, CRUD `/promotions`, cron `@nestjs/schedule` para `purgeExpired` idempotency + sequence-gap detection diario, audit `RECEIPT_GAP_DETECTED`
+- [x] **5.C — Promotions engine + crons**:
+  - Motor puro en `@pos-tercos/domain/promotions/apply-promotions.ts` con tipos en `types.ts`. API: `applyPromotion(input, activePromotions)` retorna `{appliedPromotionId, lineDiscount}`. Reglas: matching por `(productId, day-of-week mask, time window con cross-midnight, active date range)`; mayor `discountPct` gana; tiebreaker estable por `id`; NO acumulables.
+  - PromotionsModule en API: CRUD endpoints (`GET/POST/PATCH/DELETE /promotions`, list + getById accesibles para Cajero por tachado de precios en POS; writes solo Admin/Dueño). `loadActiveAt(at)` pre-filtra por `is_active=true` + rango de fechas; el motor de domain hace el match fino.
+  - SalesService.create ahora consume el engine real (stub eliminado).
+  - `@nestjs/schedule` agregado. ScheduleModule.forRoot() en app.module.
+  - Cron `IdempotencyService.purgeExpired` corre 3:00 AM diario.
+  - `ReceiptIntegrityService.detectGaps` corre 4:00 AM diario; calcula `(MAX - MIN + 1) - COUNT(*)`; si gap > 0, audit `RECEIPT_GAP_DETECTED`. Endpoint `POST /sales/admin/check-receipt-gaps` (Dueño-only) para chequeo on-demand.
+  - **E2E smoke test (12 casos verificados)**: 2 promos overlapping (20% gana sobre 10% — discount exacto $700/$3500), promo fuera de ventana horaria NO aplica, soft delete con `isActive=false`, audit log completo con `PROMOTION_CREATED` × 3 + `PROMOTION_DEACTIVATED`, receipt-gap detector gap=0 con 5 sales contiguos.
 - [ ] **5.D — Print agent skeleton + adapters**: `apps/print-agent` en :9100, `MockPrinterAdapter`, `MockCashDrawerAdapter`
 - [ ] **5.E — apps/pos UI**: shell + login + carrito + cobro + recibo PDF mock
 
@@ -556,13 +563,13 @@ FASE 5 está en progreso. Sprint 5.A (schema + types + migration) cerrado.
 4. `idempotency_keys` tabla aparte con TTL 7d (no campo único en `sales`). Cleanup por cron en 5.B/5.C.
 5. Sprint 5.A se hizo en chat actual. 5.B+ en chat dedicado por presión de contexto.
 
-**Sprint 5.C — alcance:**
-- Motor de promociones puro en `@pos-tercos/domain/promotions/apply-promotions.ts`: para cada item evalúa promociones activas (day_of_week_mask + time_start/end + product_id), aplica la de mayor `discount_pct`. No acumulables. Reemplaza el stub actual en `apps/api/src/sales/promotions-engine.stub.ts`.
-- Módulo `apps/api/src/promotions/` con CRUD endpoints (`GET/POST/PATCH/DELETE /promotions`)
-- Agregar `@nestjs/schedule` (justifica peso ~50KB):
-  - Cron diario `purgeExpired` en `IdempotencyService`
-  - Cron diario `detectReceiptGaps` (audit `RECEIPT_GAP_DETECTED` si `MAX(receipt_number) - MIN(receipt_number) + 1 ≠ COUNT(*)`)
-- Tests unit del engine de promociones con escenarios overlap (2 promos en mismo día/hora/producto → mayor discount gana)
+**Sprint 5.D — alcance:**
+- `apps/print-agent/` (nuevo Node service en `localhost:9100`) con HTTP server mínimo
+- `MockPrinterAdapter` que renderiza recibo como HTML, abre tab + guarda PDF en `./tmp/receipts/`
+- `MockCashDrawerAdapter` que loggea apertura
+- Interface `PrinterProvider` + `CashDrawerProvider` en `@pos-tercos/domain`
+- Endpoints `POST /sales/:id/print` (re-print) y `POST /sales/:id/open-drawer` (con X-Approval-Pin si reason=no-sale)
+- Audit `RECEIPT_PRINTED`, `RECEIPT_REPRINTED`, `CASH_DRAWER_OPENED`, `CASH_DRAWER_OPENED_NO_SALE`
 
 ---
 

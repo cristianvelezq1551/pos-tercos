@@ -1,11 +1,6 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { OpenShift, Shift, ShiftStatus } from '@pos-tercos/types';
-import type { Prisma, Shift as DbShift } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -115,5 +110,3 @@ function toShiftDto(row: DbShiftWithCashier): Shift {
   };
 }
 
-// Suprimir warning de helper sin uso (silencia warnings genéricos)
-export type { DbShift };
