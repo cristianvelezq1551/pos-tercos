@@ -205,14 +205,14 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
-**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · en curso**
+**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · ✅ COMPLETADA**
 
 - [x] 2.1 Schema Prisma + 11 CHECK constraints
 - [x] 2.2 Migration `catalog_recipe_tree`
 - [x] 2.3 CRUD endpoints (4 módulos: ingredients, subproducts, products, recipes)
 - [x] 2.4 `expandRecipe` puro en `@pos-tercos/domain` con detección de ciclos + max depth
 - [x] 2.5 UI Admin productos (lista + crear + editar + desactivar; flag combo con comboPrice condicional; sub-collections sizes/modifiers/comboComponents quedan pendientes para iteración dedicada)
-- [ ] 2.6 UI Admin editor de receta (árbol)
+- [x] 2.6 UI Admin editor de receta — `/products/[id]/recipe` y `/subproducts/[id]/recipe` con add/remove edges, merma %, cálculo bruto en vivo, draft local con dirty state, y vista de expanded-cost para productos
 - [x] 2.7 UI Admin subproductos (lista + crear + editar + desactivar)
 - [x] 2.8 UI Admin insumos (lista + crear + editar + desactivar)
 - [x] 2.9 Endpoint `GET /products/:id/expanded-cost`

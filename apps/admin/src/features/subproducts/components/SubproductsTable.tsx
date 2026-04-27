@@ -55,6 +55,13 @@ export function SubproductsTable({ subproducts }: SubproductsTableProps) {
               </Td>
               <Td align="right">
                 <Link
+                  href={`/subproducts/${s.id}/recipe`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  Receta
+                </Link>
+                <span className="mx-2 text-gray-300">·</span>
+                <Link
                   href={`/subproducts/${s.id}`}
                   className="font-medium text-blue-600 hover:underline"
                 >
