@@ -11,9 +11,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pos-tercos/types": "workspace:*"
+    "@pos-tercos/types": "workspace:*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.5"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "typescript": "^5.7.2"
   }
 }
