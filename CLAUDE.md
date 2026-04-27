@@ -205,6 +205,27 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
+**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · en curso**
+
+- [x] 2.1 Schema Prisma: `products`, `product_sizes`, `product_modifiers`, `combo_components`, `subproducts`, `ingredients`, `recipe_edges` (con árbol producto → subproducto → insumo, yields, mermas, conversiones de unidades)
+- [x] 2.2 Migration `catalog_recipe_tree` aplicada con 11 CHECK constraints (parent XOR, child XOR, no self-cycle, positive quantities, merma in [0,1), combo_price cuando is_combo=true, etc.)
+- [ ] 2.3 CRUD endpoints (productos, subproductos, insumos, recetas)
+- [ ] 2.4 Función `expandRecipe(productId)` en `packages/domain` con detección de ciclos
+- [ ] 2.5 UI Admin productos
+- [ ] 2.6 UI Admin editor de receta (árbol)
+- [ ] 2.7 UI Admin subproductos
+- [ ] 2.8 UI Admin insumos (conversion + threshold)
+- [ ] 2.9 Endpoint `GET /products/:id/expanded-cost`
+
+**Verificación 2.1+2.2:**
+- 10 tablas en DB: users, refresh_tokens, products, product_sizes, product_modifiers, combo_components, subproducts, ingredients, recipe_edges, _prisma_migrations
+- 5 CHECK constraints en recipe_edges + constraints en products, ingredients, subproducts, combo_components
+- INSERT de datos inválidos rechazados con error claro (5/5 tests)
+- `pnpm typecheck` 12/12 OK
+- `pnpm lint` clean
+
+---
+
 **FASE 1 — Auth y roles (✅ COMPLETADA)**
 
 - [x] 1.1 Schema Prisma `users` + `refresh_tokens` + enums `UserRole`, `RepartidorAvailability`
