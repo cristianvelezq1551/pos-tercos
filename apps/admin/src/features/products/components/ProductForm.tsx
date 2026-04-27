@@ -157,6 +157,9 @@ export function ProductForm({ initial }: ProductFormProps) {
             onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
             placeholder="18000"
           />
+          <p className="text-xs text-gray-500">
+            Precio de <strong>venta</strong> al cliente. No es el costo de compra.
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="category">Categoría</Label>
@@ -170,6 +173,10 @@ export function ProductForm({ initial }: ProductFormProps) {
           />
         </div>
       </div>
+
+      {isEdit && initial?.directResale && (
+        <CostInfoPanel product={initial} basePriceInput={form.basePrice} />
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="imageUrl">URL de imagen</Label>
@@ -304,4 +311,130 @@ export function ProductForm({ initial }: ProductFormProps) {
       </div>
     </form>
   );
+}
+
+/**
+ * Bloque de costo histórico para productos direct-resale. Es read-only:
+ * `lastUnitCost` se actualiza automáticamente al confirmar facturas.
+ * Calcula margen vs `basePrice` que el dueño está editando.
+ */
+function CostInfoPanel({
+  product,
+  basePriceInput,
+}: {
+  product: Product;
+  basePriceInput: string;
+}) {
+  const cost = product.lastUnitCost;
+  const factor = product.conversionFactor;
+  const unitPurchase = product.unitPurchase ?? '';
+  const unitStock = product.unitStock ?? '';
+  const date = product.lastUnitCostDate;
+
+  const costPerStock =
+    cost !== null && cost !== undefined && factor && factor > 0 ? cost / factor : null;
+
+  const basePrice = Number(basePriceInput);
+  const margin =
+    costPerStock !== null && Number.isFinite(basePrice) && basePrice > 0
+      ? ((basePrice - costPerStock) / basePrice) * 100
+      : null;
+
+  if (cost === null || cost === undefined) {
+    return (
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+        <p className="font-medium">Sin costo histórico aún</p>
+        <p className="mt-1 text-xs text-amber-800">
+          Este producto se creó como reventa directa, pero todavía no se cargó en ninguna factura
+          confirmada. Una vez registres una factura con este producto, vas a ver acá su último
+          costo y el margen sobre el precio de venta.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-4">
+      <div className="flex items-baseline justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Costo histórico (read-only)
+        </p>
+        {date && (
+          <span className="text-xs text-gray-500">
+            actualizado {new Date(date).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat
+          label={`Costo por ${unitPurchase || 'unidad compra'}`}
+          value={formatCop(cost)}
+        />
+        <Stat
+          label={`Costo por ${unitStock || 'unidad venta'}`}
+          value={costPerStock !== null ? formatCop(costPerStock) : '—'}
+          hint={
+            factor
+              ? `÷ factor ${factor}`
+              : 'Falta conversionFactor para calcular costo por unidad de venta'
+          }
+        />
+        <Stat
+          label="Margen"
+          value={margin !== null ? `${margin.toFixed(1)}%` : '—'}
+          tone={
+            margin === null
+              ? undefined
+              : margin >= 30
+                ? 'good'
+                : margin >= 10
+                  ? 'warn'
+                  : 'bad'
+          }
+        />
+      </div>
+
+      <p className="text-xs text-gray-500">
+        El costo se actualiza automáticamente cada vez que confirmás una factura con este producto.
+        El margen se recalcula en vivo según el precio de venta que estás editando arriba.
+      </p>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: 'good' | 'warn' | 'bad';
+}) {
+  const toneClass =
+    tone === 'good'
+      ? 'text-green-700'
+      : tone === 'warn'
+        ? 'text-amber-700'
+        : tone === 'bad'
+          ? 'text-red-700'
+          : 'text-gray-900';
+  return (
+    <div className="rounded-md bg-white px-3 py-2 ring-1 ring-gray-200">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+      <p className={`mt-1 text-base font-semibold tabular-nums ${toneClass}`}>{value}</p>
+      {hint && <p className="mt-0.5 text-[10px] text-gray-400">{hint}</p>}
+    </div>
+  );
+}
+
+function formatCop(amount: number): string {
+  return amount.toLocaleString('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  });
 }
