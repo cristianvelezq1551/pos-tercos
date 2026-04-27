@@ -11,6 +11,7 @@ import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { AuditService } from '../audit/audit.service';
+import { extensionForMime, type SupportedImageMime } from '../common/image-mime';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SuppliersService } from '../suppliers/suppliers.service';
@@ -37,11 +38,12 @@ export class InvoicesService {
 
   async uploadPhoto(input: {
     fileBuffer: Buffer;
-    mimeType: string;
+    /** MIME type DETECTED from magic bytes (controller already validated). */
+    mimeType: SupportedImageMime;
     originalName: string;
     userId: string;
   }): Promise<{ invoice: Invoice; extraction: ExtractedInvoice }> {
-    const ext = pickExtension(input.mimeType, input.originalName);
+    const ext = extensionForMime(input.mimeType);
     const stored = await this.storage.put('invoices', input.fileBuffer, input.mimeType, ext);
 
     let llmResult: LLMInvoiceExtractionResult;
@@ -312,11 +314,4 @@ function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
     updatedAt: row.updatedAt.toISOString(),
     items,
   };
-}
-
-function pickExtension(mimeType: string, originalName: string): string {
-  const fromMime = mimeType.split('/')[1];
-  if (fromMime && /^[a-zA-Z0-9]+$/.test(fromMime)) return fromMime;
-  const fromName = originalName.split('.').pop();
-  return fromName ?? 'bin';
 }
