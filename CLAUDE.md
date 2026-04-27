@@ -205,16 +205,25 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
 - `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
 
-**FASE 3 — Inventario + audit log · backend ✅, UI pendiente**
+**FASE 3 — Inventario + audit log · ✅ COMPLETADA**
 
 - [x] 3.1 Schema: `inventory_movements` + `audit_log` (ambas insert-only via trigger)
 - [x] 3.2 Migration `inventory_audit` con triggers `reject_update_delete()` + check constraint `delta != 0`
 - [x] 3.3 Endpoints: `GET /inventory/stock`, `GET /inventory/stock/:id`, `GET /inventory/movements`, `POST /inventory/movements` (admin/dueño)
 - [x] 3.4 Lógica de alerta: `lowStock = currentStock < thresholdMin && isActive`. Dashboard muestra count real
-- [x] 3.5 `AuditModule` global + `AuditService.log()` integrado en `AuthService` (login OK/FAILED, logout, refresh OK/FAILED) y en `InventoryController` (movements WASTE/INITIAL/MANUAL). `GET /audit` solo Dueño.
-- [ ] 3.6 UI Admin inventario (stock + alertas en rojo)
-- [ ] 3.7 UI Admin movimientos con filtros
-- [ ] 3.8 UI Dueño audit log
+- [x] 3.5 `AuditModule` global + `AuditService.log()` integrado en `AuthService` y en `InventoryController`. `GET /audit` solo Dueño.
+- [x] 3.6 UI `/inventory` — tabla con stock actual, fila amber para `lowStock`, botones Ajustar / Historial, toggle "Solo stock crítico"
+- [x] 3.7 UI `/inventory/movements` — tabla con filtros por insumo + tipo, badge tonal por tipo, delta con color
+- [x] 3.8 UI `/audit` — tabla con badge tonal por categoría, expandable before/after JSON. Mensaje amber "Solo el Dueño" para Admin Operativo, redirect /unauthorized para Cajero (middleware)
+
+**Form `/inventory/[id]/adjust`:**
+- Tipo (MANUAL_ADJUSTMENT / WASTE / INITIAL) con hint
+- Dirección Entrada/Salida (WASTE fuerza Salida)
+- Magnitud + cálculo en vivo de stock proyectado (en amber si quedaría < threshold)
+- Notas opcionales
+- Submit → POST /inventory/movements + audit log
+
+**Sidebar agregó:** sección Inventario (Stock + Movimientos) y sección Auditoría (Log).
 
 **Verificación e2e:**
 - 4/4 enforcement tests DB: INSERT ok, UPDATE/DELETE rechazados con `Table % is insert-only`, `delta=0` rechazado por CHECK

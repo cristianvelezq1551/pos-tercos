@@ -78,7 +78,18 @@
       "Bash(curl -s -b /tmp/c.txt http://localhost:3004/api/products)",
       "Bash(python3 -c \"import json,sys; [print\\(p['id']\\) for p in json.load\\(sys.stdin\\) if p['name']=='Hamburguesa Nashville']\")",
       "Bash(python3 -c \"import json,sys; [print\\(p['id']\\) for p in json.load\\(sys.stdin\\) if p['name']=='Pollo Nashville cocido']\")",
-      "Bash(curl -s -b /tmp/c.txt http://localhost:3004/products)"
+      "Bash(curl -s -b /tmp/c.txt http://localhost:3004/products)",
+      "Bash(curl -s -c /tmp/cajero.txt -H \"Content-Type: application/json\" -d '{\"email\":\"cajero@dev.local\",\"password\":\"dev12345\"}' http://localhost:3004/api/auth/login)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('login OK', d['user']['role']\\)\")",
+      "Bash(curl -s -b /tmp/c.txt -o /tmp/inv.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/inventory)",
+      "Bash(curl -s -b /tmp/c.txt -o /tmp/mov.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/inventory/movements)",
+      "Bash(curl -s -b /tmp/c.txt -o /tmp/aud.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/audit)",
+      "Bash(curl -s -b /tmp/cajero.txt -o /tmp/aud403.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/audit)",
+      "Bash(curl -s -b /tmp/c.txt http://localhost:3004/inventory)",
+      "Bash(curl -s -c /tmp/admin.txt -H \"Content-Type: application/json\" -d '{\"email\":\"admin@dev.local\",\"password\":\"dev12345\"}' http://localhost:3004/api/auth/login)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('login', d['user']['role']\\)\")",
+      "Bash(curl -s -b /tmp/admin.txt -o /tmp/aud_admin.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/audit)",
+      "Bash(curl -s -b /tmp/admin.txt -o /tmp/inv_admin.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/inventory)"
     ]
   }
 }
