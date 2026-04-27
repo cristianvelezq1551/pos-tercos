@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(docker --version)",
+      "Bash(git --version)",
+      "Bash(npm install *)",
+      "Bash(corepack enable *)",
+      "Bash(corepack prepare *)",
+      "Bash(brew --version)",
+      "Bash(brew install *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm typecheck *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git rm *)"
+    ]
+  }
+}
