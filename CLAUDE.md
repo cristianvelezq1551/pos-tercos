@@ -54,11 +54,124 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 - **Comentarios mínimos**. Solo cuando el "por qué" no es evidente. Nunca describir el "qué" del código.
 - **Adapter pattern obligatorio** para WhatsApp, IA, pagos, billing, delivery aggregator.
 
+## Anti-spaghetti — Reglas estrictas de organización
+
+> Estas reglas son OBLIGATORIAS desde FASE 1. Cualquier código nuevo debe respetarlas. Si una regla parece imposible de cumplir, parar y discutir antes de violarla.
+
+### Backend (`apps/api`) — Estructura por dominio
+
+Cada dominio del negocio es un **módulo NestJS independiente** en `apps/api/src/<dominio>/`. La estructura interna es siempre la misma:
+
+```
+apps/api/src/<dominio>/
+├── <dominio>.module.ts        # NestJS module declaration (imports, providers, controllers, exports)
+├── <dominio>.controller.ts    # SOLO routing: recibe request, llama service, retorna response. NUNCA lógica.
+├── <dominio>.service.ts       # Toda la lógica de negocio del dominio. Inyecta otros services.
+├── dto/
+│   ├── create-<x>.dto.ts      # Zod schemas + tipos inferidos importados de @pos-tercos/types
+│   └── update-<x>.dto.ts
+├── guards/                    # Guards específicos del dominio (si aplica)
+└── <dominio>.service.spec.ts  # Unit tests del service
+```
+
+**Dominios planeados (un módulo c/u):** `auth`, `users`, `products`, `recipes`, `inventory`, `suppliers`, `invoices`, `sales`, `kds`, `delivery`, `shifts`, `audit`, `promotions`, `purchase-suggestions`, `reports`, `workers`, `whatsapp`, `prisma` (shared).
+
+**Reglas obligatorias backend:**
+
+- ❌ **NUNCA** importar `PrismaService` en un controller. Solo en services.
+- ❌ **NUNCA** poner lógica de negocio en controllers. Controller = parsear input + llamar service + serializar output.
+- ❌ **NUNCA** acceder a entidades de otro dominio directamente con Prisma. Si `sales.service` necesita un `product`, lo pide al `products.service` inyectado.
+- ❌ **NUNCA** hacer side-effects desde un getter (ej. en una query que cambia estado).
+- ❌ **NUNCA** mezclar lógica de adapters externos (WhatsApp, IA) con lógica de dominio. Los adapters viven en `apps/api/src/adapters/<provider>/` detrás de interfaces de `@pos-tercos/types`.
+- ✅ **SIEMPRE** validar input con Zod en controllers via `@nestjs/zod` o pipe propio.
+- ✅ **SIEMPRE** retornar DTOs explícitos (no entidades Prisma crudas) — define `<X>Response` schema en `@pos-tercos/types`.
+- ✅ **SIEMPRE** propagar `Idempotency-Key` cuando aplique al endpoint.
+- ✅ **SIEMPRE** registrar acciones sensibles en `AuditService.log(...)` desde el service.
+- ✅ Tests: cada service tiene su `.spec.ts` con casos de happy path + edge cases.
+
+### Frontend (`apps/<next>`) — Estructura por feature
+
+Cada Next.js app sigue **feature-based folder structure**. Las páginas (`app/`) son thin — la lógica vive en `features/`.
+
+```
+apps/<app>/src/
+├── app/                       # Solo Next.js App Router pages + layouts. Pages thin.
+│   └── <route>/
+│       └── page.tsx           # Composición de features. SIN lógica.
+├── features/<feature>/        # Lógica del feature (ej. checkout, kds-board, sales-panel)
+│   ├── components/            # Componentes específicos de ese feature
+│   ├── hooks/                 # Custom hooks
+│   ├── api/                   # Calls al backend (fetch wrappers tipados)
+│   ├── types.ts               # Tipos locales del feature (cuando no aplica @pos-tercos/types)
+│   └── index.ts               # Barrel export controlado
+├── lib/                       # Utilidades transversales (formatters, http client, etc.)
+└── styles/                    # Estilos globales
+```
+
+**Reglas obligatorias frontend:**
+
+- ❌ **NUNCA** poner lógica de negocio en componentes. Va en `features/<x>/hooks/` o servicios del backend.
+- ❌ **NUNCA** hacer `fetch()` directo en un componente. Pasar por `features/<x>/api/`.
+- ❌ **NUNCA** importar de `app/<route>/...` desde otro lugar. Las pages son consumers, no dependencias.
+- ❌ **NUNCA** marcar `'use client'` sin necesidad real. Server Components por defecto.
+- ❌ **NUNCA** importar de un feature ajeno por path interno. Solo a través de su `index.ts` (barrel).
+- ✅ **SIEMPRE** componentes <200 líneas. Si crece, partir.
+- ✅ **SIEMPRE** importar tipos de `@pos-tercos/types` cuando hay contrato compartido con backend.
+- ✅ **SIEMPRE** usar `@pos-tercos/ui` para componentes visuales reusables. Si el componente es local al feature, vive en `features/<x>/components/`.
+
+### Packages compartidos — qué entra en cada uno
+
+| Package | SOLO entra | NUNCA entra |
+|---|---|---|
+| `@pos-tercos/types` | Zod schemas, tipos inferidos, enums compartidos | Lógica, IO, deps de runtime pesadas |
+| `@pos-tercos/domain` | Funciones puras: `expandRecipe`, motor pricing, conversiones unidades, cálculo Haversine, prompts LLM | IO, llamadas HTTP, acceso DB, side-effects |
+| `@pos-tercos/ui` | Componentes visuales puros | Lógica de negocio, calls al backend, estado global |
+
+### Naming
+
+- **Filenames:** `kebab-case` (`sales.service.ts`, `expand-recipe.ts`).
+- **Components React:** `PascalCase` (`SalesPanel.tsx`). Filename igual: `SalesPanel.tsx`.
+- **Functions/vars:** `camelCase`.
+- **Constants top-level:** `SCREAMING_SNAKE`.
+- **Zod schemas:** sufijo `Schema` (`CreateSaleSchema`).
+- **Tipos inferidos:** sin sufijo (`type CreateSale = z.infer<typeof CreateSaleSchema>`).
+- **Servicios NestJS:** sufijo `Service`. Controllers: sufijo `Controller`.
+
+### Forbidden globalmente
+
+- ❌ Funciones >50 líneas (refactor obligatorio).
+- ❌ Archivos `utils.ts` que se vuelvan basurero. Si un util tiene nombre genérico ("helpers"), va a un módulo específico.
+- ❌ Importaciones cíclicas entre packages (validar en review).
+- ❌ "God modules": módulo NestJS con +5 controllers o +10 services. Partir antes.
+- ❌ Estado global compartido entre features (Zustand store gigante). Cada feature tiene su propio store si lo necesita.
+- ❌ `any` sin justificación documentada en comentario.
+- ❌ Magic numbers. Constantes con nombre.
+
+### Cómo validar antes de cada commit
+
+```bash
+pnpm lint        # eslint clean
+pnpm typecheck   # tsc clean
+pnpm test        # tests passing (cuando haya)
+```
+
+Cualquier commit que rompa una de estas debe revertirse o arreglarse antes del push.
+
 ## Convenciones
 
 - **Commits:** convencional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`).
 - **Mensajes en español o inglés** — consistencia dentro del commit.
 - **Tests:** jest unit en `apps/api`, supertest e2e para endpoints críticos. Vitest en frontend si aplica.
+
+## Skills de Claude Code instaladas en este proyecto
+
+Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
+
+| Skill | Cuándo invocarla |
+|---|---|
+| `ui-ux-pro-max` | Cualquier decisión de UI: design system, color, tipografía, layout, accesibilidad, refactor visual de componentes. Aplica al armar pantallas de POS, KDS, Admin, Web, etc. |
+| `vercel-react-best-practices` | Antes de mergear cualquier código React/Next.js: 70 reglas de performance de Vercel (memo, suspense, bundle, fetch, etc.). |
+| `find-skills` | Si aparece una necesidad de tooling (linting nuevo, generador, etc.) y dudás si existe skill que la cubra. |
 
 ## NO hacer sin preguntarme
 

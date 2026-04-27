@@ -38,7 +38,13 @@
       "Bash(pkill -f \"next dev\")",
       "Bash(curl -s --max-time 1 http://localhost:3004)",
       "Bash(curl -s http://localhost:3004)",
-      "Bash(pnpm lint *)"
+      "Bash(pnpm lint *)",
+      "Bash(npx --yes skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max)",
+      "Bash(npx --yes skills add --help)",
+      "Bash(npx --yes skills --help)",
+      "Bash(npx --yes skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max -a claude-code -y)",
+      "Bash(npx --yes skills add https://github.com/vercel-labs/skills --skill find-skills -a claude-code -y)",
+      "Bash(npx --yes skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices -a claude-code -y)"
     ]
   }
 }
