@@ -40,7 +40,9 @@ model User {
   availability RepartidorAvailability?
   lastActiveAt DateTime?               @map("last_active_at")
 
-  refreshTokens RefreshToken[]
+  refreshTokens      RefreshToken[]
+  inventoryMovements InventoryMovement[]
+  auditLogs          AuditLog[]
 
   @@index([role, active])
   @@map("users")
@@ -157,7 +159,8 @@ model Ingredient {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  consumedAs RecipeEdge[] @relation("IngredientChild")
+  consumedAs RecipeEdge[]        @relation("IngredientChild")
+  movements  InventoryMovement[]
 
   @@index([isActive])
   @@map("ingredients")
@@ -189,4 +192,57 @@ model RecipeEdge {
   @@index([childIngredientId])
   @@index([childSubproductId])
   @@map("recipe_edges")
+}
+
+// =====================================================================
+// INVENTARIO + AUDIT (FASE 3)
+// =====================================================================
+
+enum InventoryMovementType {
+  PURCHASE          // entrada por factura confirmada (FASE 4)
+  SALE              // salida por venta (FASE 5; computado vía expandRecipe)
+  MANUAL_ADJUSTMENT // ajuste manual por admin/dueño
+  WASTE             // pérdida registrada
+  INITIAL           // stock inicial al cargar el sistema
+}
+
+model InventoryMovement {
+  id             String                @id @default(uuid())
+  ingredientId   String                @map("ingredient_id")
+  ingredient     Ingredient            @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  delta          Decimal               @db.Decimal(14, 4)
+  type           InventoryMovementType
+  sourceType     String?               @map("source_type")
+  sourceId       String?               @map("source_id")
+  userId         String?               @map("user_id")
+  user           User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  notes          String?
+  idempotencyKey String?               @unique @map("idempotency_key")
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  @@index([ingredientId, createdAt(sort: Desc)])
+  @@index([type, createdAt(sort: Desc)])
+  @@map("inventory_movements")
+}
+
+/// Insert-only audit trail for sensitive actions.
+/// `action` is a free-form string validated against AuditActionEnum
+/// in @pos-tercos/types (string column for forward-compat without
+/// requiring DB migrations to add new actions).
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  beforeJson Json?    @map("before_json")
+  afterJson  Json?    @map("after_json")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@map("audit_log")
 }
