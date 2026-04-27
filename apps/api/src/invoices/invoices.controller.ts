@@ -3,17 +3,22 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
   UploadedFile,
   UseInterceptors,
+  UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  CloneInvoiceRequestSchema,
   ConfirmInvoiceSchema,
+  type CloneInvoiceRequest,
   type ConfirmInvoice,
+  type ExtractedInvoice,
   type Invoice,
   type InvoiceDraftResponse,
 } from '@pos-tercos/types';
@@ -47,6 +52,31 @@ export class InvoicesController {
   @Get(':id')
   getById(@Param('id', ParseUUIDPipe) id: string): Promise<Invoice> {
     return this.invoices.getById(id);
+  }
+
+  /**
+   * Devuelve la extracción IA original guardada en aiExtractionJson.
+   * Útil para reanudar drafts cuyos items aún no se confirmaron.
+   */
+  @Get(':id/raw-extraction')
+  async getRawExtraction(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ExtractedInvoice> {
+    const extraction = await this.invoices.getRawExtraction(id);
+    if (!extraction) {
+      throw new NotFoundException('No raw extraction stored for this invoice');
+    }
+    return extraction;
+  }
+
+  @AdminAccess()
+  @Post('from-clone')
+  @UsePipes(new ZodValidationPipe(CloneInvoiceRequestSchema))
+  fromClone(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body() body: CloneInvoiceRequest,
+  ): Promise<InvoiceDraftResponse> {
+    return this.invoices.cloneFrom(body.sourceInvoiceId, user.sub);
   }
 
   @AdminAccess()

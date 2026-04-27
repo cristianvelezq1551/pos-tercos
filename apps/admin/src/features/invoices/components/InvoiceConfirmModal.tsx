@@ -66,33 +66,63 @@ export function InvoiceConfirmModal({
   );
   const [notes, setNotes] = useState('');
 
-  const [rows, setRows] = useState<DraftRow[]>(() =>
-    draft.extraction.items.map((item) => {
-      const match = bestMatch(
-        item.descriptionRaw,
-        stockables,
-        (s) => s.name,
-        0.4,
-      );
+  // Si la draft trae items ya persistidos (clon o reanudación de un draft
+  // existente con selecciones resueltas), usamos ESOS como fuente y
+  // pre-rellenamos la selección. Si no hay items persistidos, usamos
+  // extraction.items + fuzzy match como antes.
+  const [rows, setRows] = useState<DraftRow[]>(() => {
+    const persistedItems = draft.invoice.items ?? [];
+    const useDbItems =
+      persistedItems.length > 0 &&
+      persistedItems.length === draft.extraction.items.length;
+
+    return draft.extraction.items.map((item, idx) => {
+      const persisted = useDbItems ? persistedItems[idx] : undefined;
+
+      let selection: DraftRow['selection'] = null;
+      if (persisted?.entityType) {
+        const id =
+          persisted.entityType === 'INGREDIENT'
+            ? persisted.ingredientId
+            : persisted.productId;
+        if (id) {
+          const stockable = stockables.find(
+            (s) => s.id === id && s.type === persisted.entityType,
+          );
+          if (stockable) {
+            selection = {
+              entityType: stockable.type,
+              id: stockable.id,
+            };
+          }
+        }
+      }
+
+      let suggestion: DraftRow['suggestion'] = null;
+      if (!selection) {
+        const match = bestMatch(item.descriptionRaw, stockables, (s) => s.name, 0.4);
+        if (match) {
+          suggestion = {
+            entityType: match.candidate.type,
+            id: match.candidate.id,
+            name: match.candidate.name,
+            score: match.score,
+          };
+        }
+      }
+
       return {
         localId: nextRowId(),
-        selection: null,
+        selection,
         descriptionRaw: item.descriptionRaw,
         quantity: item.quantity,
         unit: item.unit,
         unitPrice: item.unitPrice,
         total: item.total,
-        suggestion: match
-          ? {
-              entityType: match.candidate.type,
-              id: match.candidate.id,
-              name: match.candidate.name,
-              score: match.score,
-            }
-          : null,
+        suggestion,
       };
-    }),
-  );
+    });
+  });
 
   // Recompute suggestions when stockables change (e.g. user creates a new one
   // and we want to update sugerencias para otras filas).

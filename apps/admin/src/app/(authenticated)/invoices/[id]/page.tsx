@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
+import { CloneInvoiceButton } from '../../../../features/invoices';
+import { Button } from '@pos-tercos/ui';
 import type { Invoice } from '@pos-tercos/types';
 
 interface PageProps {
@@ -38,15 +40,27 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
         <Link href="/invoices" className="text-sm text-blue-600 hover:underline">
           ← Volver a facturas
         </Link>
-        <div className="mt-2 flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">
-            {invoice.supplierName ?? '— sin proveedor —'}
-          </h1>
-          <span
-            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_TONE[invoice.status]}`}
-          >
-            {STATUS_LABEL[invoice.status]}
-          </span>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight">
+              {invoice.supplierName ?? '— sin proveedor —'}
+            </h1>
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_TONE[invoice.status]}`}
+            >
+              {STATUS_LABEL[invoice.status]}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {invoice.status === 'PENDING_REVIEW' && (
+              <Link href={`/invoices/${invoice.id}/edit`}>
+                <Button size="sm">Continuar edición</Button>
+              </Link>
+            )}
+            {invoice.status === 'CONFIRMED' && (
+              <CloneInvoiceButton sourceInvoiceId={invoice.id} />
+            )}
+          </div>
         </div>
       </div>
 
@@ -145,13 +159,12 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
       {invoice.status === 'PENDING_REVIEW' && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Esta factura quedó como draft tras subir la foto. Para finalizarla con sus ítems,{' '}
-          <Link href="/invoices/new" className="font-medium underline">
-            subila otra vez
+          Esta factura está como borrador. Usá{' '}
+          <Link href={`/invoices/${invoice.id}/edit`} className="font-medium underline">
+            Continuar edición
           </Link>{' '}
-          o usá el endpoint <code className="rounded bg-amber-100 px-1">/invoices/:id/confirm</code>{' '}
-          via API. (Reanudar el modal desde una draft existente queda pendiente para una próxima
-          iteración.)
+          para asociar cada ítem y confirmar. Al confirmar, el stock se descuenta y queda como
+          histórico.
         </p>
       )}
     </div>

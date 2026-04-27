@@ -62,3 +62,11 @@ export function rejectInvoice(id: string, reason?: string): Promise<Invoice> {
     InvoiceSchema,
   );
 }
+
+export function cloneInvoice(sourceInvoiceId: string): Promise<InvoiceDraftResponse> {
+  return request(
+    '/invoices/from-clone',
+    { method: 'POST', body: JSON.stringify({ sourceInvoiceId }) },
+    InvoiceDraftResponseSchema,
+  );
+}

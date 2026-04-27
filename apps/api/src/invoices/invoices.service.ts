@@ -375,6 +375,113 @@ export class InvoicesService {
     return toInvoiceDto(updated);
   }
 
+  /**
+   * Clona una factura existente como draft PENDING_REVIEW. Copia
+   * supplier, items (entityType + ingredientId/productId + descripción +
+   * unidad + qty + precio) pero deja invoice_number/total/iva en null.
+   * El dueño edita lo que cambió y confirma.
+   */
+  async cloneFrom(
+    sourceInvoiceId: string,
+    userId: string,
+  ): Promise<{ invoice: Invoice; extraction: ExtractedInvoice }> {
+    const source = await this.prisma.invoice.findUnique({
+      where: { id: sourceInvoiceId },
+      include: includeFull(),
+    });
+    if (!source) {
+      throw new NotFoundException(`Source invoice ${sourceInvoiceId} not found`);
+    }
+    if (source.status !== 'CONFIRMED') {
+      throw new BadRequestException(
+        'Solo se pueden clonar facturas confirmadas. Reanudá la draft directamente.',
+      );
+    }
+
+    const sourceShort = source.id.slice(0, 8);
+    const supplierName = source.supplier?.name ?? null;
+    const supplierNit = source.supplierId
+      ? (await this.prisma.supplier.findUnique({
+          where: { id: source.supplierId },
+          select: { nit: true },
+        }))?.nit ?? null
+      : null;
+
+    const synthExtraction: ExtractedInvoice = {
+      supplierName,
+      supplierNit,
+      invoiceNumber: null,
+      total: null,
+      iva: null,
+      items: source.items.map((it) => ({
+        descriptionRaw: it.descriptionRaw,
+        quantity: Number(it.quantity),
+        unit: it.unit,
+        unitPrice: Number(it.unitPrice),
+        total: Number(it.total),
+      })),
+      warnings: [`Clonado de factura ${sourceShort}. Revisá cantidades y precios antes de confirmar.`],
+    };
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const inv = await tx.invoice.create({
+        data: {
+          supplierId: source.supplierId,
+          invoiceNumber: null,
+          total: null,
+          iva: null,
+          status: 'PENDING_REVIEW',
+          photoStorageKey: null,
+          aiModelUsed: `manual-clone:${sourceShort}`,
+          aiExtractionJson: synthExtraction as unknown as Prisma.InputJsonValue,
+          uploadedById: userId,
+        },
+      });
+
+      // Copiar items con entityType + ingredientId/productId + descripción + qty + price.
+      // Mantenemos sortOrder para que el orden visual sea consistente.
+      if (source.items.length > 0) {
+        await tx.invoiceItem.createMany({
+          data: source.items.map((it, idx) => ({
+            invoiceId: inv.id,
+            entityType: it.entityType,
+            ingredientId: it.entityType === 'INGREDIENT' ? it.ingredientId : null,
+            productId: it.entityType === 'PRODUCT' ? it.productId : null,
+            descriptionRaw: it.descriptionRaw,
+            quantity: it.quantity,
+            unit: it.unit,
+            unitPrice: it.unitPrice,
+            total: it.total,
+            sortOrder: idx,
+          })),
+        });
+      }
+
+      return tx.invoice.findUnique({ where: { id: inv.id }, include: includeFull() });
+    });
+
+    if (!created) {
+      throw new BadRequestException('Failed to clone invoice');
+    }
+
+    await this.audit.log({
+      userId,
+      action: 'INVENTORY_MOVEMENT_PURCHASE',
+      entityType: 'invoice',
+      entityId: created.id,
+      metadata: {
+        stage: 'cloned',
+        sourceInvoiceId,
+        itemsCount: source.items.length,
+      },
+    });
+
+    return {
+      invoice: toInvoiceDto(created),
+      extraction: synthExtraction,
+    };
+  }
+
   async reject(id: string, userId: string, reason?: string): Promise<Invoice> {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);

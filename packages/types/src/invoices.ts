@@ -130,3 +130,10 @@ export const InvoiceDraftResponseSchema = z.object({
   extraction: ExtractedInvoiceSchema,
 });
 export type InvoiceDraftResponse = z.infer<typeof InvoiceDraftResponseSchema>;
+
+// Request: clonar una factura confirmada para repetir su carga manualmente.
+// Útil cuando la IA falla o cuando se repite una compra recurrente.
+export const CloneInvoiceRequestSchema = z.object({
+  sourceInvoiceId: z.string().uuid(),
+});
+export type CloneInvoiceRequest = z.infer<typeof CloneInvoiceRequestSchema>;
