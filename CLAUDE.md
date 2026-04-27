@@ -1,179 +1,451 @@
 # POS Tercos — Guía para Claude Code
 
-## Contexto del proyecto
+> **Documento canónico de estado.** Cualquier nuevo contexto/chat debe leer este archivo primero. Refleja todo lo construido y todas las decisiones arquitectónicas que NO se pueden violar.
 
-POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero por turno.
+---
+
+## 0. Contexto del proyecto
+
+POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero por turno. Solo + Claude Code, target 14–18 semanas, 15 fases local-first.
 
 **Documentos fuente** (leer en este orden si arrancás cold):
 
-1. `pos-spec.v1.md` — alcance v1 cerrado (qué entra, qué no)
-2. `architecture.md` — arquitectura técnica completa, modelo de datos, API surface
-3. `implementation-plan.md` — fases de implementación local-first (15 fases)
-4. `kickoff-plan.md` — pendientes externos (Meta WABA, hardware, contador, etc.)
+1. `CLAUDE.md` (este archivo) — estado vigente, decisiones, módulos vivos
+2. `pos-spec.v1.md` — alcance v1 cerrado (qué entra, qué no)
+3. `architecture.md` — arquitectura técnica completa, modelo de datos, API surface
+4. `implementation-plan.md` — fases de implementación local-first (15 fases)
+5. `kickoff-plan.md` — pendientes externos (Meta WABA, hardware, contador, etc.)
+6. `testing-guide.md` — checklist e2e ~50 tests sec 1-11 (FASES 0-3)
 
-## Stack
+---
 
-- **Backend:** NestJS + Prisma + PostgreSQL (Railway en prod, Docker en dev)
-- **Frontends:** Next.js 15 App Router (Vercel en prod)
+## 1. Stack
+
+- **Backend:** NestJS 11 + Prisma 6 + PostgreSQL 16 (Railway en prod, Docker en dev)
+- **Frontends:** Next.js 15 App Router + React 19 + Tailwind v4 (Vercel en prod)
 - **Monorepo:** Turborepo + pnpm workspaces
-- **Auth:** JWT (access 15min memoria + refresh 7d httpOnly cookie)
-- **Realtime:** WebSocket (KDS, repartidor, POS) + SSE (pantalla pública)
-- **IA:** Anthropic Claude Haiku 4.5 (primario) + OpenAI GPT-4o-mini (fallback)
-- **WhatsApp:** Cloud API oficial Meta (mock en dev hasta aprobación)
-- **Mapas:** Mapbox (geocoding + autocomplete + maps GL)
-- **Storage:** Cloudflare R2 en prod, filesystem local en dev
+- **Auth:** JWT (access 15min en cookie+Bearer + refresh 7d httpOnly cookie con rotación)
+- **Realtime:** WebSocket (KDS, repartidor, POS) + SSE (pantalla pública) — pendiente FASE 5+
+- **IA:** Anthropic Claude Haiku 4.5 (primario) + OpenAI GPT-4o-mini (fallback) — vision para facturas
+- **WhatsApp:** Cloud API oficial Meta (mock en dev hasta aprobación) — pendiente FASE 9
+- **Mapas:** Mapbox (geocoding + autocomplete + maps GL) — pendiente FASE 7
+- **Storage:** Cloudflare R2 en prod, filesystem local en dev (`./tmp/uploads/...`)
 
-## Apps planeadas
+---
 
-| App | Path | Rol |
-|---|---|---|
-| API | `apps/api` | NestJS backend |
-| POS Cajero | `apps/pos` | Next.js PWA |
-| KDS Cocina | `apps/kds` | Next.js PWA |
-| Pantalla Pública | `apps/public-display` | Next.js + SSE |
-| Web Pública | `apps/web` | Next.js |
-| Admin | `apps/admin` | Next.js |
-| Repartidor | `apps/repa` | Next.js PWA mobile |
-| Print Agent | `apps/print-agent` | Node service local (impresora ESC/POS) |
+## 2. Apps y packages
 
-## Packages compartidos
+### Apps
 
-| Package | Path | Contenido |
-|---|---|---|
-| Types | `packages/types` | Schemas Zod + tipos TS compartidos |
-| Domain | `packages/domain` | Lógica pura (`expandRecipe`, motor pricing, conversiones, prompts LLM) |
-| UI | `packages/ui` | Componentes shadcn/ui compartidos |
+| App | Path | Rol | Estado |
+|---|---|---|---|
+| API | `apps/api` | NestJS backend | FASE 0-4 backend ✅ |
+| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría | FASE 0-4 UI ✅ |
+| POS Cajero | `apps/pos` | Next.js PWA — venta en mostrador | placeholder |
+| KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | placeholder |
+| Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | placeholder |
+| Web Pública | `apps/web` | Next.js — landing + menú | placeholder |
+| Repartidor | `apps/repa` | Next.js PWA mobile — domicilios | placeholder |
+| Print Agent | `apps/print-agent` | Node service local — ESC/POS | no creado aún |
 
-## Reglas de código
+### Packages compartidos
+
+| Package | Path | Contenido | SOLO entra | NUNCA entra |
+|---|---|---|---|---|
+| Types | `packages/types` | Schemas Zod + tipos inferidos + enums | Zod, tipos, enums | Lógica, IO, deps pesadas |
+| Domain | `packages/domain` | Funciones puras: `expandRecipe`, fuzzy `bestMatch`, prompts LLM, interfaces de adapters | Lógica pura | IO, HTTP, DB, side-effects |
+| UI | `packages/ui` | Componentes visuales (Button, Dialog, LoginForm, Input, Label) | Componentes puros | Lógica de negocio, fetch, estado global |
+
+**Build pipeline:**
+- `types/` y `domain/` compilan a `dist/` CJS (`pnpm -F @pos-tercos/types build`).
+- `ui/` se queda como source y se transpila vía `transpilePackages` en cada `next.config.ts`.
+- Turbo con `dependsOn: ["^build"]` garantiza orden.
+
+---
+
+## 3. Reglas de código (OBLIGATORIAS)
+
+### Generales
 
 - **TypeScript strict** en todo el monorepo.
-- **Zod** como single source of truth de validación. Backend infiere desde Zod.
-- **Prisma** como ORM. Una migration por feature, revisable.
-- **Idempotency keys** obligatorias en endpoints POST que crean recursos críticos (ventas, movimientos de inventario, confirmaciones).
-- **Audit log inmutable** para acciones sensibles (anulaciones, descuentos, ajustes inv, apertura cajón sin venta, edición de receta/precio).
-- **Comentarios mínimos**. Solo cuando el "por qué" no es evidente. Nunca describir el "qué" del código.
-- **Adapter pattern obligatorio** para WhatsApp, IA, pagos, billing, delivery aggregator.
+- **Zod** = single source of truth de validación. Backend infiere tipos desde Zod.
+- **Prisma** ORM. Una migration por feature, revisable.
+- **Idempotency keys** en POST que crean recursos críticos (ventas, movements, confirmaciones).
+- **Audit log inmutable** (insert-only via trigger DB) para acciones sensibles.
+- **Comentarios mínimos**. Solo "por qué" no evidente, nunca "qué" hace el código.
+- **Adapter pattern** OBLIGATORIO para WhatsApp, IA, pagos, billing, delivery aggregator, storage.
 
-## Anti-spaghetti — Reglas estrictas de organización
-
-> Estas reglas son OBLIGATORIAS desde FASE 1. Cualquier código nuevo debe respetarlas. Si una regla parece imposible de cumplir, parar y discutir antes de violarla.
-
-### Backend (`apps/api`) — Estructura por dominio
-
-Cada dominio del negocio es un **módulo NestJS independiente** en `apps/api/src/<dominio>/`. La estructura interna es siempre la misma:
+### Backend (`apps/api`) — un módulo por dominio
 
 ```
 apps/api/src/<dominio>/
-├── <dominio>.module.ts        # NestJS module declaration (imports, providers, controllers, exports)
-├── <dominio>.controller.ts    # SOLO routing: recibe request, llama service, retorna response. NUNCA lógica.
-├── <dominio>.service.ts       # Toda la lógica de negocio del dominio. Inyecta otros services.
-├── dto/
-│   ├── create-<x>.dto.ts      # Zod schemas + tipos inferidos importados de @pos-tercos/types
-│   └── update-<x>.dto.ts
-├── guards/                    # Guards específicos del dominio (si aplica)
-└── <dominio>.service.spec.ts  # Unit tests del service
+├── <dominio>.module.ts
+├── <dominio>.controller.ts    # SOLO routing. NUNCA lógica.
+├── <dominio>.service.ts       # Toda la lógica. Inyecta otros services.
+├── dto/                       # DTOs Zod desde @pos-tercos/types
+└── <dominio>.service.spec.ts
 ```
 
-**Dominios planeados (un módulo c/u):** `auth`, `users`, `products`, `recipes`, `inventory`, `suppliers`, `invoices`, `sales`, `kds`, `delivery`, `shifts`, `audit`, `promotions`, `purchase-suggestions`, `reports`, `workers`, `whatsapp`, `prisma` (shared).
+**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `adapters/llm`, `adapters/storage`, `common`.
 
-**Reglas obligatorias backend:**
+**Dominios pendientes:** `sales`, `kds`, `delivery`, `shifts`, `promotions`, `purchase-suggestions`, `reports`, `workers`, `whatsapp`.
 
-- ❌ **NUNCA** importar `PrismaService` en un controller. Solo en services.
-- ❌ **NUNCA** poner lógica de negocio en controllers. Controller = parsear input + llamar service + serializar output.
-- ❌ **NUNCA** acceder a entidades de otro dominio directamente con Prisma. Si `sales.service` necesita un `product`, lo pide al `products.service` inyectado.
-- ❌ **NUNCA** hacer side-effects desde un getter (ej. en una query que cambia estado).
-- ❌ **NUNCA** mezclar lógica de adapters externos (WhatsApp, IA) con lógica de dominio. Los adapters viven en `apps/api/src/adapters/<provider>/` detrás de interfaces de `@pos-tercos/types`.
-- ✅ **SIEMPRE** validar input con Zod en controllers via `@nestjs/zod` o pipe propio.
-- ✅ **SIEMPRE** retornar DTOs explícitos (no entidades Prisma crudas) — define `<X>Response` schema en `@pos-tercos/types`.
-- ✅ **SIEMPRE** propagar `Idempotency-Key` cuando aplique al endpoint.
-- ✅ **SIEMPRE** registrar acciones sensibles en `AuditService.log(...)` desde el service.
-- ✅ Tests: cada service tiene su `.spec.ts` con casos de happy path + edge cases.
+**Reglas backend:**
+- ❌ NUNCA `PrismaService` en controller. Solo en service.
+- ❌ NUNCA lógica de negocio en controller.
+- ❌ NUNCA acceder a entidades de otro dominio directamente con Prisma — pedirle al `<X>Service` inyectado.
+- ❌ NUNCA mezclar adapters externos con lógica de dominio (van en `apps/api/src/adapters/<provider>/` detrás de interfaces de `@pos-tercos/domain`).
+- ✅ SIEMPRE validar input con Zod en controller (pipe propio).
+- ✅ SIEMPRE retornar DTOs explícitos, nunca entidades Prisma crudas.
+- ✅ SIEMPRE registrar acciones sensibles vía `AuditService.log(...)` desde el service.
+- ✅ Tests en `.spec.ts` happy + edge cases.
 
-### Frontend (`apps/<next>`) — Estructura por feature
-
-Cada Next.js app sigue **feature-based folder structure**. Las páginas (`app/`) son thin — la lógica vive en `features/`.
+### Frontend (`apps/<next>`) — feature-based
 
 ```
 apps/<app>/src/
-├── app/                       # Solo Next.js App Router pages + layouts. Pages thin.
-│   └── <route>/
-│       └── page.tsx           # Composición de features. SIN lógica.
-├── features/<feature>/        # Lógica del feature (ej. checkout, kds-board, sales-panel)
-│   ├── components/            # Componentes específicos de ese feature
-│   ├── hooks/                 # Custom hooks
-│   ├── api/                   # Calls al backend (fetch wrappers tipados)
-│   ├── types.ts               # Tipos locales del feature (cuando no aplica @pos-tercos/types)
-│   └── index.ts               # Barrel export controlado
-├── lib/                       # Utilidades transversales (formatters, http client, etc.)
-└── styles/                    # Estilos globales
+├── app/                # Pages thin. Composición de features. SIN lógica.
+├── features/<feature>/
+│   ├── components/
+│   ├── hooks/
+│   ├── api/            # fetch wrappers tipados (Zod parse)
+│   ├── server.ts       # helpers SSR (cookies + serverFetchJson)
+│   └── index.ts        # barrel
+└── lib/                # utilidades transversales (api-server, auth-config)
 ```
 
-**Reglas obligatorias frontend:**
-
-- ❌ **NUNCA** poner lógica de negocio en componentes. Va en `features/<x>/hooks/` o servicios del backend.
-- ❌ **NUNCA** hacer `fetch()` directo en un componente. Pasar por `features/<x>/api/`.
-- ❌ **NUNCA** importar de `app/<route>/...` desde otro lugar. Las pages son consumers, no dependencias.
-- ❌ **NUNCA** marcar `'use client'` sin necesidad real. Server Components por defecto.
-- ❌ **NUNCA** importar de un feature ajeno por path interno. Solo a través de su `index.ts` (barrel).
-- ✅ **SIEMPRE** componentes <200 líneas. Si crece, partir.
-- ✅ **SIEMPRE** importar tipos de `@pos-tercos/types` cuando hay contrato compartido con backend.
-- ✅ **SIEMPRE** usar `@pos-tercos/ui` para componentes visuales reusables. Si el componente es local al feature, vive en `features/<x>/components/`.
-
-### Packages compartidos — qué entra en cada uno
-
-| Package | SOLO entra | NUNCA entra |
-|---|---|---|
-| `@pos-tercos/types` | Zod schemas, tipos inferidos, enums compartidos | Lógica, IO, deps de runtime pesadas |
-| `@pos-tercos/domain` | Funciones puras: `expandRecipe`, motor pricing, conversiones unidades, cálculo Haversine, prompts LLM | IO, llamadas HTTP, acceso DB, side-effects |
-| `@pos-tercos/ui` | Componentes visuales puros | Lógica de negocio, calls al backend, estado global |
+**Reglas frontend:**
+- ❌ NUNCA `fetch()` directo en componente — siempre por `features/<x>/api/`.
+- ❌ NUNCA `'use client'` sin necesidad real. Server Components por defecto.
+- ❌ NUNCA importar de `app/<route>/...` desde otro lugar.
+- ❌ NUNCA importar de un feature ajeno sin pasar por su `index.ts`.
+- ✅ SIEMPRE componentes <200 líneas. Si crece, partir.
+- ✅ SIEMPRE importar tipos de `@pos-tercos/types` cuando hay contrato compartido.
 
 ### Naming
 
-- **Filenames:** `kebab-case` (`sales.service.ts`, `expand-recipe.ts`).
-- **Components React:** `PascalCase` (`SalesPanel.tsx`). Filename igual: `SalesPanel.tsx`.
-- **Functions/vars:** `camelCase`.
-- **Constants top-level:** `SCREAMING_SNAKE`.
-- **Zod schemas:** sufijo `Schema` (`CreateSaleSchema`).
-- **Tipos inferidos:** sin sufijo (`type CreateSale = z.infer<typeof CreateSaleSchema>`).
-- **Servicios NestJS:** sufijo `Service`. Controllers: sufijo `Controller`.
+- Filenames: `kebab-case` (`sales.service.ts`, `expand-recipe.ts`).
+- Components React: `PascalCase` archivo y export (`SalesPanel.tsx`).
+- Functions/vars: `camelCase`. Constantes top-level: `SCREAMING_SNAKE`.
+- Zod schemas: sufijo `Schema`. Tipos inferidos: sin sufijo.
+- Servicios NestJS: sufijo `Service`. Controllers: sufijo `Controller`.
 
 ### Forbidden globalmente
 
-- ❌ Funciones >50 líneas (refactor obligatorio).
-- ❌ Archivos `utils.ts` que se vuelvan basurero. Si un util tiene nombre genérico ("helpers"), va a un módulo específico.
-- ❌ Importaciones cíclicas entre packages (validar en review).
-- ❌ "God modules": módulo NestJS con +5 controllers o +10 services. Partir antes.
-- ❌ Estado global compartido entre features (Zustand store gigante). Cada feature tiene su propio store si lo necesita.
-- ❌ `any` sin justificación documentada en comentario.
-- ❌ Magic numbers. Constantes con nombre.
+- ❌ Funciones >50 líneas. Refactor obligatorio.
+- ❌ `utils.ts` basurero — utils con nombre específico al dominio.
+- ❌ Importaciones cíclicas entre packages.
+- ❌ "God modules" (+5 controllers o +10 services).
+- ❌ Estado global compartido entre features (Zustand store gigante).
+- ❌ `any` sin justificación documentada.
+- ❌ Magic numbers — constantes con nombre.
 
-### Cómo validar antes de cada commit
+### Validar antes de cada commit
 
 ```bash
-pnpm lint        # eslint clean
-pnpm typecheck   # tsc clean
-pnpm test        # tests passing (cuando haya)
+pnpm lint         # eslint clean
+pnpm typecheck    # tsc clean (12/12 packages)
+pnpm test         # cuando haya tests
 ```
 
-Cualquier commit que rompa una de estas debe revertirse o arreglarse antes del push.
+---
 
-## Convenciones
+## 4. Decisiones arquitectónicas críticas (NO violar sin discutir)
 
-- **Commits:** convencional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`).
-- **Mensajes en español o inglés** — consistencia dentro del commit.
-- **Tests:** jest unit en `apps/api`, supertest e2e para endpoints críticos. Vitest en frontend si aplica.
+### 4.1 Stockables polimórficos (FASE 4 refactor)
 
-## Skills de Claude Code instaladas en este proyecto
+`InventoryMovement`, `InvoiceItem` y `SupplierProduct` apuntan a **INGREDIENT o PRODUCT** vía:
+- `entity_type` enum `StockableType { INGREDIENT, PRODUCT }`
+- `ingredient_id` xor `product_id` (CHECK constraint: exactamente uno NOT NULL coherente con entity_type)
+
+Razón: insumos y productos `directResale=true` (ej. botellas de gaseosa, snacks) consumen el mismo lifecycle de stock. Forzar todo como `Ingredient` rompía coherencia ("Coca Cola 600ml" no es un ingrediente).
+
+**API y UI lo exponen unificado** vía `StockableSchema` (mismo shape, distinguidos por `type`) en `packages/types/src/inventory.ts`.
+
+### 4.2 Costo vs precio de venta (FASE 4 fix)
+
+- `Product.basePrice` = precio de **VENTA** al cliente. Lo define el dueño.
+- `Product.lastUnitCost` (+ `lastUnitCostDate`) = costo histórico **auto-actualizado** al confirmar facturas. Está en `unit_purchase` (ej. $/caja).
+- `SupplierProduct.lastUnitPrice` = último precio que ese proveedor cobró por ese item.
+- En `InvoiceItemRow` (admin), el `unitPrice` de la factura **NUNCA prefilea** `basePrice`. Banner amber explícito + cálculo de margen en vivo cuando el dueño escribe `basePrice`.
+
+### 4.3 Recetas — árbol polimórfico
+
+`recipe_edges` con XOR `parent_product_id` xor `parent_subproduct_id` y XOR `child_ingredient_id` xor `child_subproduct_id`. Permite:
+- Producto → ingredientes y/o subproductos
+- Subproducto → ingredientes y/o subproductos (anidación)
+
+**`expandRecipe`** en `@pos-tercos/domain`:
+- Pura, sin IO.
+- Detección de ciclos (`RecipeCycleError`) + `MAX_DEPTH = 10`.
+- Aplica `quantityNeta / (1 - mermaPct) / yield` recursivamente.
+- Retorna `Map<ingredientId, totalQuantityInUnitRecipe>`.
+
+### 4.4 Insert-only enforcement (FASE 3)
+
+`inventory_movements` y `audit_log` tienen trigger Postgres `reject_update_delete()` que bloquea UPDATE/DELETE con error `Table % is insert-only`. Además `inventory_movements` tiene CHECK `delta != 0`.
+
+Todo cambio retroactivo se hace por **movement compensatorio**, nunca editando.
+
+### 4.5 LLM strategy (FASE 4)
+
+```
+@pos-tercos/domain/llm/llm-provider.ts    # interface LLMProvider + ExtractedInvoice tipo
+apps/api/src/adapters/llm/
+├── anthropic.adapter.ts                  # claude-haiku-4-5 vision
+├── openai.adapter.ts                     # gpt-4o-mini vision
+├── llm.service.ts                        # strategy primary+fallback (LLM_PROVIDER env)
+└── llm.module.ts                         # @Global()
+```
+
+- `ExtractedInvoiceSchema` requiere `items: []` y `warnings: []` siempre (los adapters rellenan defaults antes del Zod parse).
+- Adapter strip de code-fences (` ```json `) antes de parsear.
+- `LLM_PROVIDER=anthropic|openai` controla preferencia. Si falla, intenta el otro.
+
+### 4.6 MIME magic-byte detection (FASE 4 fix)
+
+`apps/api/src/common/image-mime.ts → detectImageMime(buffer)` lee primeros 12 bytes para detectar PNG/JPEG/GIF/WebP. **NUNCA** se confía en `file.mimetype` del header — usuarios suben `.jpg` que en realidad son PNG y Anthropic rechaza el `media_type` incorrecto.
+
+### 4.7 Fuzzy matching (FASE 4)
+
+`@pos-tercos/domain/matching/similarity.ts`:
+- `similarity(a, b)` — Jaccard de tokens + boost 0.85 por substring.
+- `bestMatch(query, candidates, getName, threshold=0.4)` — devuelve `{candidate, score}` o null.
+
+Usado en `InvoiceConfirmModal` para sugerir el `Stockable` correcto a cada `InvoiceItem` extraído por la IA.
+
+### 4.8 Storage adapter
+
+`StorageProvider` interface en `@pos-tercos/domain`:
+- `LocalFilesystemStorageAdapter` en dev → `./tmp/uploads/invoices/{uuid}.{ext}`
+- En prod se reemplaza por `R2StorageAdapter` (FASE 14).
+
+Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
+
+### 4.9 Build pipeline
+
+- Cambios en `packages/types` o `packages/domain` requieren `pnpm -F <pkg> build` (o el `^build` lo gatilla turbo).
+- `apps/api` levanta en puerto `3001`. `apps/admin` en `3004`. Ambos vía `pnpm dev`.
+- En `next.config.ts` rewrites: `/api/* → http://localhost:3001/*` para que el admin cliente pegue cookies httpOnly.
+
+---
+
+## 5. Schema DB (16 tablas + 5 enums)
+
+### Enums Prisma
+- `UserRole` — DUENO, ADMIN_OPERATIVO, CAJERO, COCINERO, REPARTIDOR, ATENCION_CLIENTE
+- `RepartidorAvailability` — AVAILABLE, BUSY, OFFLINE
+- `MovementType` — PURCHASE, SALE, MANUAL_ADJUSTMENT, WASTE, INITIAL
+- `StockableType` — INGREDIENT, PRODUCT
+- `InvoiceStatus` — PENDING_REVIEW, CONFIRMED, REJECTED
+
+### Tablas
+1. `users`
+2. `refresh_tokens`
+3. `products` — con `direct_resale`, `unit_purchase`, `unit_stock`, `conversion_factor`, `threshold_min`, `last_unit_cost`, `last_unit_cost_date`, `is_combo`, `combo_price`
+4. `product_sizes`
+5. `product_modifiers`
+6. `combo_components`
+7. `subproducts` — `yield`, `unit`
+8. `ingredients` — `unit_purchase`, `unit_recipe`, `conversion_factor`, `threshold_min`
+9. `recipe_edges` — polimórfico parent/child
+10. `inventory_movements` — polimórfico (entity_type + ingredient_id xor product_id), insert-only
+11. `audit_log` — insert-only
+12. `suppliers`
+13. `supplier_products` — polimórfico, last_unit_price + currency + last_seen
+14. `invoices` — supplier_name, invoice_number, total, iva, status, image_url, ai_model_used, raw_extraction (JSON), uploaded_by, confirmed_by
+15. `invoice_items` — polimórfico, description_raw + matched entity
+16. `_prisma_migrations`
+
+---
+
+## 6. API surface vigente
+
+### Auth (FASE 1)
+- `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`
+
+### Catálogo (FASE 2)
+- `GET/POST/PATCH/DELETE /ingredients`
+- `GET/POST/PATCH/DELETE /subproducts`
+- `GET/POST/PATCH/DELETE /products`
+- `GET/PUT /products/:id/recipe`
+- `GET/PUT /subproducts/:id/recipe`
+- `GET /products/:id/expanded-cost`
+
+### Inventario + audit (FASE 3)
+- `GET /inventory/stock` — devuelve `Stockable[]` (insumos + productos direct-resale)
+- `GET /inventory/stock/:type/:id`
+- `GET /inventory/movements` — filtros `entity_type`, `ingredient_id`, `product_id`, `type`
+- `POST /inventory/movements` — admin/dueño, polimórfico
+- `GET /audit` — solo Dueño
+
+### Suppliers + invoices (FASE 4)
+- `GET/POST/PATCH/DELETE /suppliers`
+- `POST /invoices/upload-photo` (Multer, mime check, 10MB) → llama LLM → guarda draft `PENDING_REVIEW`
+- `POST /invoices/from-clone` — admin: clona invoice CONFIRMED como draft PENDING_REVIEW (mismos supplier + items, sin total/iva). Audit log con `stage=cloned + sourceInvoiceId`.
+- `GET /invoices/:id/raw-extraction` — devuelve `ExtractedInvoice` cruda (o sintética para clones) usada por `/invoices/[id]/edit`.
+- `POST /invoices/:id/confirm` — atómico: replace items + crear `inventory_movements PURCHASE` polimórficos + upsert `supplier_products` + actualizar `Product.lastUnitCost`
+- `POST /invoices/:id/reject`
+- `GET /invoices`, `GET /invoices/:id`
+
+### Pendiente FASE 4
+_(ninguno — FASE 4 cerrada)_
+
+---
+
+## 7. Admin UI vigente
+
+### Rutas
+
+```
+/login                                   # FASE 1
+/unauthorized
+/                                        # dashboard + 4 stat cards
+/ingredients                             # lista + new + [id]
+/subproducts                             # lista + new + [id]
+/products                                # lista + new + [id]
+/products/[id]/recipe                    # editor de receta + expanded-cost
+/subproducts/[id]/recipe
+/inventory                               # tabla unificada Stockable[]
+/inventory/[type]/[id]/adjust            # MANUAL_ADJUSTMENT / WASTE / INITIAL
+/inventory/movements                     # tabla con filtros
+/invoices                                # lista
+/invoices/new                            # uploader + IA extract + InvoiceConfirmModal
+/invoices/[id]                           # detalle (botón "Continuar" si PENDING / "Clonar" si CONFIRMED)
+/invoices/[id]/edit                      # reabre modal sobre draft existente (resume + clone targets)
+/suppliers                               # lista + new + [id]
+/audit                                   # solo Dueño
+```
+
+### Componentes shell (canónico)
+
+```
+apps/admin/src/
+├── app/
+│   ├── (authenticated)/layout.tsx       # AdminShell wrapper
+│   ├── login/page.tsx
+│   └── unauthorized/page.tsx
+├── components/{AdminShell,AdminSidebar,AdminTopbar}.tsx
+├── features/auth/                       # FASE 1
+├── features/ingredients/
+├── features/subproducts/
+├── features/products/
+├── features/recipes/
+├── features/inventory/
+├── features/audit/
+├── features/suppliers/                  # CRUD UI completo
+├── features/invoices/
+│   └── components/
+│       ├── InvoiceUploader.tsx          # dropzone + fetch stockables
+│       ├── InvoiceConfirmModal.tsx      # editor pre-confirm; selección pre-resuelta cuando invoice.items existe, fuzzy match si no
+│       ├── InvoiceItemRow.tsx           # row polimórfica con "+ Crear nuevo"
+│       ├── EditDraftScreen.tsx          # client wrapper para /invoices/[id]/edit
+│       └── CloneInvoiceButton.tsx       # POST /invoices/from-clone → redirect a /edit
+├── lib/api-server.ts                    # serverFetchJson + ApiError
+├── lib/auth-config.ts                   # ADMIN_ALLOWED_ROLES
+└── middleware.ts                        # jose JWT verify (Edge runtime)
+```
+
+### Design system aplicado
+
+- Light theme. Sidebar fijo 240px desktop, oculto <1024px.
+- Primary: blue-600 / Stock crítico: amber-600 / Destructive: red-600 / Success: green-600.
+- Tablas: light borders, hover row, no zebra, `tabular-nums` en columnas numéricas.
+- Empty states explícitos con CTA.
+- Badges polimórficos: 🌾 Insumo (emerald) / 📦 Producto (blue).
+
+---
+
+## 8. Estado del proyecto (commits y FASES)
+
+### Commits en `main` (24 hasta hoy)
+
+```
+8335471 feat(invoices): from-clone endpoint + resume drafts UI (closes FASE 4)
+848f215 feat(admin): show lastUnitCost + margin for direct-resale products
+223905f feat(admin): suppliers CRUD UI (closes FASE 4 pendiente)
+2f1f4ab fix(invoices): track cost vs sale price separately on direct-resale products
+bddb87d refactor(inventory,invoices): polymorphic stockables (Insumo + Producto direct-resale)
+b80d4d4 feat(admin): invoice upload + edit modal + confirm flow (FASE 4 UI)
+f308739 fix(invoices): detect image MIME from magic bytes, not declared header
+d8bcf74 feat(invoices): suppliers + IA invoice extraction (FASE 4 backend)
+fab5001 docs: testing guide for FASE 0-3
+041438e feat(admin): inventory + audit UI (FASE 3.6-3.8)
+a4903ce feat(inventory,audit): movements ledger + audit log backend (FASE 3.1-3.5)
+776fb6e feat(admin): recipe editor + expanded-cost view (FASE 2.6)
+a496ae9 feat(admin): subproducts + products CRUD UI (FASE 2.5 + 2.7)
+6ae8dfc feat(admin): shell layout + ingredients CRUD UI (FASE 2.8)
+f73e45b feat(catalog): CRUD + recipes + expandRecipe (FASE 2.3-2.4-2.9)
+3baf3f4 feat(catalog): Prisma schema + migration for products/recipes (FASE 2.1-2.2)
+7530eda feat(auth-fe): login UI in @pos-tercos/ui + Next middleware role guard
+9a6aff6 feat(auth): JWT auth + roles backend (FASE 1.1-1.7)
+455df52 chore: install 3 Claude Code skills + lock anti-spaghetti rules
+b3593e7 feat(ui,lint): shadcn-compat Button in packages/ui + ESLint 9 flat config
+dfb72cb feat(apps): scaffold 6 Next.js placeholder frontends
+bbf3105 feat(api): NestJS app with Prisma + Postgres healthz
+e8b3743 chore: initial monorepo scaffold
+```
+
+### FASE 0 — Setup base · ✅ COMPLETADA
+Monorepo, Postgres docker, Next.js placeholders, packages/types/domain/ui, ESLint 9, repo GitHub privado.
+
+### FASE 1 — Auth y roles · ✅ COMPLETADA
+Schema users + refresh_tokens, JWT 15min/7d con rotación, guards globales, decoradores `@Public/@Roles/@OnlyDueno/@AdminAccess/@CashierAccess/@CurrentUser`, seed 6 users (`dev12345`), LoginForm en `@pos-tercos/ui`, middleware Next Edge con `jose`, cableado en admin.
+
+### FASE 2 — Catálogo + recetas · ✅ COMPLETADA
+Schema 11 CHECK constraints, CRUD ingredients/subproducts/products, recipe tree polimórfico, `expandRecipe` puro con cycle detection, UI admin completo (lista + form + editor de receta + expanded-cost view).
+
+### FASE 3 — Inventario + audit · ✅ COMPLETADA
+Schema insert-only via trigger, CRUD movements polimórficos, alerta lowStock, AuditService global integrado en Auth + Inventory, UI `/inventory`, `/inventory/movements`, `/inventory/[type]/[id]/adjust`, `/audit`.
+
+### FASE 4 — Proveedores + IA Facturas · ✅ COMPLETADA
+
+- [x] 4.1 Schema suppliers/supplier_products/invoices/invoice_items + InvoiceStatus
+- [x] 4.2 Suppliers CRUD backend
+- [x] 4.3-4.6 Adapter LLM (interface en domain, impls Anthropic + OpenAI, strategy primary+fallback)
+- [x] 4.7 StorageProvider + LocalFilesystemStorageAdapter
+- [x] 4.8 `POST /invoices/upload-photo` (Multer + mime magic-byte) → LLM → draft
+- [x] 4.9 `POST /invoices/from-clone` — clona factura CONFIRMED como draft PENDING_REVIEW para entrada manual rápida (factura recurrente o cuando IA falla)
+- [x] 4.10 UI uploader + InvoiceConfirmModal + InvoiceItemRow
+- [x] 4.11 `POST /invoices/:id/confirm` atómico polimórfico
+- [x] 4.12 UI histórico (`/invoices`, `/invoices/[id]`)
+- [x] UI dedicada `/suppliers` (lista + new + [id] siguiendo patrón ingredients)
+- [x] **REFACTOR polimorfismo**: invoices ahora aceptan INGREDIENT o PRODUCT direct-resale (no solo insumos)
+- [x] **FIX cost vs sale**: `Product.lastUnitCost` (auto desde facturas) ≠ `Product.basePrice` (venta), banner explicativo + cálculo de margen
+- [x] **UI lastUnitCost + margen**: columnas en `ProductsTable` + `CostInfoPanel` read-only en `ProductForm` con margen vivo (badge tonal por threshold)
+- [x] **Resume drafts**: ruta `/invoices/[id]/edit` reutiliza el modal con selecciones pre-resueltas desde `invoice.items`. Cubre clones + drafts de upload sin confirmar. `GET /invoices/:id/raw-extraction` expuesto para SSR.
+
+**Llaves LLM:** `apps/api/.env` → `ANTHROPIC_API_KEY=sk-ant-...`. OpenAI fallback opcional (`OPENAI_API_KEY=sk-...`). `LLM_PROVIDER` controla preferencia (`anthropic` default).
+
+### Pendientes — FASES 5 a 15
+
+- **FASE 5** — POS Cajero base (mostrador, sin domicilio): `apps/pos`, ventas, métodos pago, anulaciones, descuentos, audit.
+- **FASE 6** — KDS + pantalla pública: `apps/kds`, `apps/public-display`, WebSocket gateway, SSE, estados pedido, tiempos.
+- **FASE 7** — Domicilios + Mapbox + repartidores: `apps/repa`, geocoding, asignación.
+- **FASE 8** — Turnos / cierre Z / arqueo.
+- **FASE 9** — WhatsApp Cloud API (mock + bot menu + status updates).
+- **FASE 10** — Promociones + cupones.
+- **FASE 11** — Sugerencias de compra (purchase-suggestions service).
+- **FASE 12** — Web pública + SEO + menú.
+- **FASE 13** — Reportes (ventas, costos, margen, mermas).
+- **FASE 14** — Hardening prod (R2, Railway deploy, Vercel, observability, backups).
+- **FASE 15** — Print agent ESC/POS local + integración impresoras térmicas.
+
+---
+
+## 9. Skills Claude Code instaladas
 
 Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 
 | Skill | Cuándo invocarla |
 |---|---|
-| `ui-ux-pro-max` | Cualquier decisión de UI: design system, color, tipografía, layout, accesibilidad, refactor visual de componentes. Aplica al armar pantallas de POS, KDS, Admin, Web, etc. |
-| `vercel-react-best-practices` | Antes de mergear cualquier código React/Next.js: 70 reglas de performance de Vercel (memo, suspense, bundle, fetch, etc.). |
-| `find-skills` | Si aparece una necesidad de tooling (linting nuevo, generador, etc.) y dudás si existe skill que la cubra. |
+| `ui-ux-pro-max` | Cualquier decisión de UI: design system, color, tipografía, layout, accesibilidad, refactor visual. |
+| `vercel-react-best-practices` | Antes de mergear código React/Next.js: 70 reglas de performance Vercel. |
+| `find-skills` | Si aparece necesidad de tooling y dudás si hay skill que la cubra. |
 
-## NO hacer sin preguntarme
+---
+
+## 10. NO hacer sin preguntarme
 
 - Cambiar el alcance de v1 (definido en `pos-spec.v1.md`).
 - Borrar migraciones aplicadas en producción.
@@ -181,230 +453,24 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - Aplicar migraciones a Railway directamente sin revisar.
 - Agregar dependencias nuevas pesadas (>50KB minified) sin justificar.
 - Codear features completas sin partir en submódulos verificables.
-- Usar APIs externas reales en dev (ej. Meta WhatsApp real, R2 real) — siempre por mock primero.
-
-## Sprint actual
-
-> Editar al inicio de cada fase con la fase vigente y los checkpoints.
-
-**FASE 0 — Setup base (✅ COMPLETADA)**
-
-- [x] 0.1 Monorepo Turborepo + pnpm workspaces
-- [x] 0.2 NestJS api + Prisma + Postgres en Docker (`/healthz` con DB ping)
-- [x] 0.3 Next.js apps placeholder (web, pos, kds, admin, public-display, repa)
-- [x] 0.4 `packages/types` (Zod queda para FASE 1)
-- [x] 0.5 `packages/ui` con `Button` (cva + clsx + tailwind-merge), validado en admin
-- [x] 0.6 `packages/domain` (placeholder)
-- [x] 0.7 Prettier + ESLint 9 flat config (typescript-eslint), `pnpm lint` clean
-- [x] 0.8 GitHub repo privado pushed → https://github.com/cristianvelezq1551/pos-tercos
-- [x] 0.9 `CLAUDE.md` raíz
-
-**Verificación FASE 0:**
-- `pnpm typecheck` → 10 packages OK
-- `pnpm lint` → 0 errores 0 warnings
-- `docker compose up -d postgres` + `cd apps/api && pnpm dev` → `curl localhost:3001/healthz` → `{"status":"ok","checks":{"db":"ok"}}`
-- `cd apps/admin && pnpm dev` → `localhost:3004` renderiza placeholder + 4 buttons importados de `@pos-tercos/ui`
-
-**FASE 4 — Proveedores + IA Facturas · backend ✅, UI pendiente**
-
-- [x] 4.1 Schema: `suppliers`, `supplier_products`, `invoices`, `invoice_items` + enum `InvoiceStatus`
-- [x] 4.2 Suppliers CRUD backend (UI pendiente)
-- [x] 4.3-4.6 Adapter pattern LLM: interface en `@pos-tercos/domain`, impls Anthropic + OpenAI, `LLMService` con strategy primary+fallback
-- [x] 4.7 `StorageProvider` interface + `LocalFilesystemStorageAdapter` (en dev: `./tmp/uploads/invoices/{uuid}.{ext}`)
-- [x] 4.8 `POST /invoices/upload-photo` con Multer (mime check + 10MB limit) → llama LLM → guarda draft
-- [x] 4.11 `POST /invoices/:id/confirm` — transaction atómica: replace items + crear inventory_movements PURCHASE + upsert supplier_products con last_unit_price
-- [x] `POST /invoices/:id/reject`, `GET /invoices`, `GET /invoices/:id`
-- [ ] 4.9 `POST /invoices/from-clone` (manual rápido) — pendiente
-- [ ] 4.10 UI carga + edición — pendiente
-- [ ] 4.12 UI histórico — pendiente
-
-**Llave LLM:** `apps/api/.env` → `ANTHROPIC_API_KEY=sk-ant-...`. OpenAI opcional como fallback (`OPENAI_API_KEY=sk-...`). Variable `LLM_PROVIDER` controla preferencia (`anthropic` default).
-
-**Estructura adapters (anti-spaghetti):**
-```
-apps/api/src/adapters/
-├── llm/
-│   ├── anthropic.adapter.ts (impl LLMProvider)
-│   ├── openai.adapter.ts (impl LLMProvider)
-│   ├── llm.service.ts (strategy primary+fallback)
-│   └── llm.module.ts (Global)
-└── storage/
-    ├── local-filesystem.adapter.ts (impl StorageProvider)
-    └── storage.module.ts (Global, inject token STORAGE_PROVIDER)
-```
-
-**Verificación e2e:**
-- Crear supplier vía POST /suppliers → ver en GET /suppliers
-- POST /invoices/upload-photo sin file → 400 mensaje claro
-- POST con mime txt/plain → 400 listando mimes permitidos
-- Cajero rechazado de upload → 403
-- typecheck 12/12, lint clean
+- Usar APIs externas reales en dev (Meta WhatsApp real, R2 real) — siempre por mock primero.
+- Cambiar el modelo polimórfico stockables (`StockableType`).
+- Conflar `lastUnitCost` con `basePrice` en producto.
+- Saltar el banner amber de coste/venta en `InvoiceItemRow`.
+- Eliminar el trigger insert-only de `inventory_movements` o `audit_log`.
 
 ---
 
-**FASE 3 — Inventario + audit log · ✅ COMPLETADA**
+## 11. Convenciones de commit
 
-- [x] 3.1 Schema: `inventory_movements` + `audit_log` (ambas insert-only via trigger)
-- [x] 3.2 Migration `inventory_audit` con triggers `reject_update_delete()` + check constraint `delta != 0`
-- [x] 3.3 Endpoints: `GET /inventory/stock`, `GET /inventory/stock/:id`, `GET /inventory/movements`, `POST /inventory/movements` (admin/dueño)
-- [x] 3.4 Lógica de alerta: `lowStock = currentStock < thresholdMin && isActive`. Dashboard muestra count real
-- [x] 3.5 `AuditModule` global + `AuditService.log()` integrado en `AuthService` y en `InventoryController`. `GET /audit` solo Dueño.
-- [x] 3.6 UI `/inventory` — tabla con stock actual, fila amber para `lowStock`, botones Ajustar / Historial, toggle "Solo stock crítico"
-- [x] 3.7 UI `/inventory/movements` — tabla con filtros por insumo + tipo, badge tonal por tipo, delta con color
-- [x] 3.8 UI `/audit` — tabla con badge tonal por categoría, expandable before/after JSON. Mensaje amber "Solo el Dueño" para Admin Operativo, redirect /unauthorized para Cajero (middleware)
-
-**Form `/inventory/[id]/adjust`:**
-- Tipo (MANUAL_ADJUSTMENT / WASTE / INITIAL) con hint
-- Dirección Entrada/Salida (WASTE fuerza Salida)
-- Magnitud + cálculo en vivo de stock proyectado (en amber si quedaría < threshold)
-- Notas opcionales
-- Submit → POST /inventory/movements + audit log
-
-**Sidebar agregó:** sección Inventario (Stock + Movimientos) y sección Auditoría (Log).
-
-**Verificación e2e:**
-- 4/4 enforcement tests DB: INSERT ok, UPDATE/DELETE rechazados con `Table % is insert-only`, `delta=0` rechazado por CHECK
-- Login OK + login fallido → 2 audit entries (`AUTH_LOGIN`, `AUTH_LOGIN_FAILED`)
-- 3 movements creados (INITIAL +5000g pollo, INITIAL +500g sal, WASTE -200g pollo) → `currentStock` se actualiza correctamente (pollo 4800, sal 500)
-- `lowStock` flag pasa de true (stock 0 < threshold 2000) a false (stock 4800)
-- Dashboard counter "Stock crítico" usa `/inventory/stock` y filtra por `lowStock`
-- Cajero rechazado de POST /inventory/movements (403) y GET /audit (403)
+- Convencional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`.
+- Mensaje en español o inglés — consistencia dentro del commit.
+- Body opcional con bullets de cambios concretos.
+- Tests: jest unit en `apps/api` (cuando hay), supertest e2e para endpoints críticos. Vitest en frontend si aplica.
 
 ---
 
-**FASE 2 — Catálogo (productos / subproductos / insumos / recetas) · ✅ COMPLETADA**
-
-- [x] 2.1 Schema Prisma + 11 CHECK constraints
-- [x] 2.2 Migration `catalog_recipe_tree`
-- [x] 2.3 CRUD endpoints (4 módulos: ingredients, subproducts, products, recipes)
-- [x] 2.4 `expandRecipe` puro en `@pos-tercos/domain` con detección de ciclos + max depth
-- [x] 2.5 UI Admin productos (lista + crear + editar + desactivar; flag combo con comboPrice condicional; sub-collections sizes/modifiers/comboComponents quedan pendientes para iteración dedicada)
-- [x] 2.6 UI Admin editor de receta — `/products/[id]/recipe` y `/subproducts/[id]/recipe` con add/remove edges, merma %, cálculo bruto en vivo, draft local con dirty state, y vista de expanded-cost para productos
-- [x] 2.7 UI Admin subproductos (lista + crear + editar + desactivar)
-- [x] 2.8 UI Admin insumos (lista + crear + editar + desactivar)
-- [x] 2.9 Endpoint `GET /products/:id/expanded-cost`
-
-**Admin shell construido en esta tanda (canónico para el resto de pantallas):**
-```
-apps/admin/src/
-├── app/
-│   ├── layout.tsx (root, sin shell)
-│   ├── login/page.tsx (sin shell)
-│   ├── unauthorized/page.tsx (sin shell)
-│   └── (authenticated)/                     ← route group
-│       ├── layout.tsx                       ← envuelve con AdminShell
-│       ├── page.tsx                         ← dashboard + 4 stat cards
-│       └── ingredients/
-│           ├── page.tsx                     ← lista (Server Component)
-│           ├── new/page.tsx                 ← crear (form client)
-│           └── [id]/page.tsx                ← editar (form client + initial data SSR)
-├── components/
-│   ├── AdminShell.tsx                       ← sidebar + topbar wrapper
-│   ├── AdminSidebar.tsx                     ← nav agrupada por sección
-│   └── AdminTopbar.tsx                      ← user avatar + logout
-├── features/auth/                           ← FASE 1
-├── features/ingredients/
-│   ├── api/client.ts                        ← fetch wrappers tipados con Zod parse
-│   ├── components/IngredientsTable.tsx      ← table + empty state
-│   ├── components/IngredientForm.tsx        ← create + edit + deactivate
-│   └── index.ts                             ← barrel
-└── lib/
-    ├── api-server.ts                        ← serverFetchJson + ApiError
-    └── auth-config.ts (FASE 1)
-```
-
-**Design system aplicado (decisión + skill ui-ux-pro-max):**
-- Light theme por default
-- Sidebar fijo 240px en desktop, oculto en <1024px
-- Color primary: blue-600 / Stock crítico: amber-600 / Destructive: red-600 / Success: green-600
-- Tablas: light borders, hover row, no zebra, `tabular-nums` en columnas numéricas
-- Empty state explícito en lista vacía con CTA
-
-**Endpoints disponibles:**
-- `GET/POST/PATCH/DELETE /ingredients` (admin para writes)
-- `GET/POST/PATCH/DELETE /subproducts`
-- `GET/POST/PATCH/DELETE /products`
-- `GET/PUT /products/:id/recipe`
-- `GET/PUT /subproducts/:id/recipe`
-- `GET /products/:id/expanded-cost`
-
-**Verificación e2e (flujo Hamburguesa Nashville → pollo cocido → pollo crudo + sal):**
-Para 1 hamburguesa con `quantityNeta=1000g pollo, mermaPct=5%, yield=7`:
-- Pollo crudo: `1000/(1-0.05)/7 = 150.376g` ✅
-- Sal: `5/0.95/7 = 0.752g` ✅
-- Cycle prevention (subproducto se referencia) → 400 ✅
-- RBAC (cajero crear ingredient) → 403 ✅
-
-**Verificación 2.1+2.2:**
-- 10 tablas en DB: users, refresh_tokens, products, product_sizes, product_modifiers, combo_components, subproducts, ingredients, recipe_edges, _prisma_migrations
-- 5 CHECK constraints en recipe_edges + constraints en products, ingredients, subproducts, combo_components
-- INSERT de datos inválidos rechazados con error claro (5/5 tests)
-- `pnpm typecheck` 12/12 OK
-- `pnpm lint` clean
-
----
-
-**FASE 1 — Auth y roles (✅ COMPLETADA)**
-
-- [x] 1.1 Schema Prisma `users` + `refresh_tokens` + enums `UserRole`, `RepartidorAvailability`
-- [x] 1.2 Migration inicial `init_users_auth`
-- [x] 1.3 Endpoints `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`
-- [x] 1.4 JWT access 15min en cookie+Bearer + refresh 7d en httpOnly cookie con rotación
-- [x] 1.5 Guards `JwtAuthGuard` (Bearer o cookie), `RolesGuard` registrados como APP_GUARD globales
-- [x] 1.6 Decoradores `@Public`, `@Roles`, `@OnlyDueno`, `@AdminAccess`, `@CashierAccess`, `@CurrentUser`
-- [x] 1.7 Seed con 6 users (1 por rol), password dev: `dev12345`
-- [x] 1.8 Login UI común en `packages/ui` (LoginForm + Input + Label primitivos)
-- [x] 1.9 Middleware Next.js (Edge runtime) verifica JWT + rol con `jose`. Cableado en `apps/admin` (canónico). Las otras 5 apps replicarán cuando llegue su FASE.
-
-**Verificación FASE 1 backend (curl):**
-- POST /auth/login con `dueno@dev.local`/`dev12345` → 200 con `accessToken` + cookies `pos_access` y `pos_refresh`
-- GET /auth/me sin token → 401
-- GET /auth/me con Bearer o con cookie → user payload
-- POST /auth/refresh con cookie → nuevo access (rotación de refresh)
-- POST /auth/logout → 204 + cookies cleared
-- POST /auth/refresh tras logout → 401
-
-**Verificación FASE 1 frontend (admin localhost:3004):**
-- `GET /` sin cookie → 307 redirect a `/login`
-- `/login` renderiza `<LoginForm />` de `@pos-tercos/ui`
-- POST `/api/auth/login` (proxy a la api via `next.config rewrites`) setea las 2 cookies httpOnly
-- `/` con cookies de DUENO → 200 con info de sesión + botón Cerrar sesión
-- `/` con cookies de CAJERO (rol no permitido en admin) → 307 a `/unauthorized`
-- `/unauthorized` muestra mensaje de acceso denegado
-
-**Patrón frontend (anti-spaghetti) cableado en `apps/admin`, replicable en las otras 5 apps:**
-```
-apps/admin/src/
-├── app/
-│   ├── login/page.tsx                ← thin Suspense + LoginScreen
-│   ├── unauthorized/page.tsx
-│   └── page.tsx                      ← Server Component, getCurrentUserServer()
-├── features/auth/
-│   ├── api/{login,me,logout}.ts      ← fetch wrappers tipados (Zod parse)
-│   ├── components/LoginScreen.tsx    ← 'use client', usa LoginForm de UI
-│   ├── components/LogoutButton.tsx
-│   ├── server.ts                     ← getCurrentUserServer() para SSR
-│   └── index.ts                      ← barrel
-├── lib/auth-config.ts                ← ADMIN_ALLOWED_ROLES = [ADMIN_OPERATIVO, DUENO]
-├── middleware.ts                     ← jose JWT verify + role check (Edge runtime)
-└── next.config.ts                    ← rewrite /api/* → http://localhost:3001/*
-```
-
-**Estructura backend siguiendo reglas anti-spaghetti:**
-```
-apps/api/src/
-├── auth/
-│   ├── auth.module.ts / auth.controller.ts / auth.service.ts
-│   ├── decorators/{public,roles,current-user}.decorator.ts
-│   ├── guards/{jwt-auth,roles}.guard.ts
-│   └── dto/login.dto.ts
-├── users/users.{module,service}.ts
-├── prisma/prisma.{module,service}.ts (global)
-├── common/zod-validation.pipe.ts
-└── health/health.controller.ts (uses @Public)
-```
-
-## Cómo arrancar
+## 12. Cómo arrancar dev local
 
 ```bash
 # Instalar dependencias
@@ -413,9 +479,52 @@ pnpm install
 # Levantar Postgres local
 docker compose up -d postgres
 
+# Aplicar migraciones (si arrancás cold)
+cd apps/api && pnpm prisma migrate deploy && cd ../..
+
+# Seed inicial (6 users, password dev12345)
+cd apps/api && pnpm prisma db seed && cd ../..
+
 # Dev de todas las apps en paralelo
 pnpm dev
 
-# Tests
-pnpm test
+# O solo API + Admin
+pnpm -F @pos-tercos/api dev   # localhost:3001
+pnpm -F @pos-tercos/admin dev # localhost:3004
+
+# Validar antes de cada commit
+pnpm typecheck     # 12/12 packages
+pnpm lint
 ```
+
+**Users seed:**
+- `dueno@dev.local` / `dev12345` (acceso total)
+- `admin@dev.local` / `dev12345`
+- `cajero@dev.local` / `dev12345`
+- `cocinero@dev.local` / `dev12345`
+- `repartidor@dev.local` / `dev12345`
+- `atencion@dev.local` / `dev12345`
+
+---
+
+## 13. Próxima tarea sugerida
+
+FASE 4 está cerrada al 100%. Próxima opción es **FASE 5: POS Cajero** (grande, ~2-3 semanas):
+
+- Schema `sales`, `sale_items`, `payments`.
+- WebSocket gateway base (también requerido FASE 6 KDS).
+- `apps/pos`: shell PWA, login, panel venta mostrador, métodos pago, anulación con motivo + audit, descuento con motivo + audit.
+- Trigger DB que descuente stock al confirmar venta vía `expandRecipe`.
+
+Decidir con el usuario antes de arrancar.
+
+---
+
+## 14. Pendientes externos (kickoff-plan)
+
+- Aprobación Meta WABA (WhatsApp Business). Mock vigente en dev.
+- Compra hardware (impresoras térmicas, lector códigos, tablets KDS).
+- Onboarding contador (DIAN, facturación electrónica si aplica).
+- Cuenta Cloudflare R2 para prod.
+- Cuenta Mapbox (token público + secret).
+- Decisión proveedor pagos (Wompi, Mercado Pago, etc.) para FASE 5+.
