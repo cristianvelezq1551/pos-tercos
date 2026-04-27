@@ -65,9 +65,9 @@ export class AnthropicLLMAdapter implements LLMProvider {
       .join('');
 
     const cleaned = stripCodeFences(text);
-    let parsed: unknown;
+    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(cleaned) as Record<string, unknown>;
     } catch (err) {
       this.logger.error(
         `Anthropic returned non-JSON: ${text.slice(0, 200)}…`,
@@ -75,6 +75,10 @@ export class AnthropicLLMAdapter implements LLMProvider {
       );
       throw new Error('LLM did not return valid JSON');
     }
+
+    // Defaults para arrays que el LLM a veces omite del JSON
+    if (parsed.items === undefined || parsed.items === null) parsed.items = [];
+    if (parsed.warnings === undefined || parsed.warnings === null) parsed.warnings = [];
 
     const extraction = ExtractedInvoiceSchema.parse(parsed);
     return {

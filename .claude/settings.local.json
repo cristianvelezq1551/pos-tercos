@@ -89,7 +89,9 @@
       "Bash(curl -s -c /tmp/admin.txt -H \"Content-Type: application/json\" -d '{\"email\":\"admin@dev.local\",\"password\":\"dev12345\"}' http://localhost:3004/api/auth/login)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('login', d['user']['role']\\)\")",
       "Bash(curl -s -b /tmp/admin.txt -o /tmp/aud_admin.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/audit)",
-      "Bash(curl -s -b /tmp/admin.txt -o /tmp/inv_admin.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/inventory)"
+      "Bash(curl -s -b /tmp/admin.txt -o /tmp/inv_admin.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/inventory)",
+      "Bash(curl -s -b /tmp/c.txt -o /tmp/new.html -w \"HTTP %{http_code}\\\\n\" http://localhost:3004/invoices/new)",
+      "Read(//private/tmp/**)"
     ]
   }
 }
