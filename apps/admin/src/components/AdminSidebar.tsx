@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Catálogo', label: 'Productos', href: '/products' },
   { section: 'Catálogo', label: 'Subproductos', href: '/subproducts' },
   { section: 'Catálogo', label: 'Insumos', href: '/ingredients' },
+  { section: 'Compras', label: 'Facturas', href: '/invoices' },
   { section: 'Inventario', label: 'Stock', href: '/inventory' },
   { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements' },
   { section: 'Auditoría', label: 'Log', href: '/audit' },

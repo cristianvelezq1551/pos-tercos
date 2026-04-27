@@ -57,9 +57,9 @@ export class OpenAILLMAdapter implements LLMProvider {
     });
 
     const text = response.choices[0]?.message?.content ?? '';
-    let parsed: unknown;
+    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(text) as Record<string, unknown>;
     } catch (err) {
       this.logger.error(
         `OpenAI returned non-JSON: ${text.slice(0, 200)}…`,
@@ -67,6 +67,9 @@ export class OpenAILLMAdapter implements LLMProvider {
       );
       throw new Error('LLM did not return valid JSON');
     }
+
+    if (parsed.items === undefined || parsed.items === null) parsed.items = [];
+    if (parsed.warnings === undefined || parsed.warnings === null) parsed.warnings = [];
 
     const extraction = ExtractedInvoiceSchema.parse(parsed);
     return {

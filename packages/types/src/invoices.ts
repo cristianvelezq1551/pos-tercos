@@ -22,8 +22,11 @@ export const ExtractedInvoiceSchema = z.object({
   invoiceNumber: z.string().nullable(),
   total: z.number().nullable(),
   iva: z.number().nullable(),
-  items: z.array(ExtractedInvoiceItemSchema).default([]),
-  warnings: z.array(z.string()).default([]),
+  // items y warnings se exigen siempre como array (vacío si no aplica).
+  // No usamos .default() aquí porque Zod hace que el input type difiera
+  // del output type, lo que rompe la inferencia de DTOs compartidos.
+  items: z.array(ExtractedInvoiceItemSchema),
+  warnings: z.array(z.string()),
 });
 export type ExtractedInvoice = z.infer<typeof ExtractedInvoiceSchema>;
 
