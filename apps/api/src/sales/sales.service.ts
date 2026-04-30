@@ -37,6 +37,7 @@ import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { KdsGateway } from '../kds/kds.gateway';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
+import { PublicDisplayService } from '../public-display/public-display.service';
 import { RecipesService } from '../recipes/recipes.service';
 
 const SALES_CREATE_ENDPOINT = 'POST /sales';
@@ -78,6 +79,7 @@ export class SalesService {
     @Inject(PRINTER_PROVIDER) private readonly printer: PrinterProvider,
     @Inject(CASH_DRAWER_PROVIDER) private readonly drawer: CashDrawerProvider,
     @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
+    private readonly publicDisplay: PublicDisplayService,
   ) {}
 
   // ==================================================================
@@ -390,6 +392,10 @@ export class SalesService {
     const dto = toSaleDto(updated);
     // Notifica al KDS: la venta entra al queue de cocina.
     this.kdsGateway.emit('order.created', dto);
+    // Notifica a la pantalla pública: si es COUNTER, podría aparecer en "next".
+    if (dto.type === 'COUNTER') {
+      this.publicDisplay.notify();
+    }
     return dto;
   }
 

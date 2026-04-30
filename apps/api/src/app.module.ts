@@ -19,6 +19,7 @@ import { KdsModule } from './kds/kds.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { PublicDisplayModule } from './public-display/public-display.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { SalesModule } from './sales/sales.module';
 import { ShiftsModule } from './shifts/shifts.module';
@@ -50,6 +51,7 @@ import { UsersModule } from './users/users.module';
     ShiftsModule,
     SalesModule,
     KdsModule,
+    PublicDisplayModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { Sale, SaleStatus } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PublicDisplayService } from '../public-display/public-display.service';
 import { SalesService } from '../sales/sales.service';
 
 const KITCHEN_QUEUE_STATUSES = ['PAGADO', 'EN_PREPARACION'] as const satisfies readonly SaleStatus[];
@@ -12,6 +13,7 @@ export class KdsService {
     private readonly prisma: PrismaService,
     private readonly sales: SalesService,
     private readonly audit: AuditService,
+    private readonly publicDisplay: PublicDisplayService,
   ) {}
 
   /**
@@ -77,7 +79,11 @@ export class KdsService {
       metadata: { from, to, by: 'kds' },
     });
 
-    return this.sales.getById(saleId);
+    const sale = await this.sales.getById(saleId);
+    if (sale.type === 'COUNTER') {
+      this.publicDisplay.notify();
+    }
+    return sale;
   }
 
   /** Subset estatuses que el KDS reconoce. */
