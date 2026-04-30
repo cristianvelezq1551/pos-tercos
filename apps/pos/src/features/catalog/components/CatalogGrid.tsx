@@ -2,15 +2,16 @@
 
 import type { Product } from '@pos-tercos/types';
 import { useMemo, useState } from 'react';
+import { useCartStore } from '../../sales/store/cart-store';
 import { COP } from '../lib/format';
 import { ProductPickerModal, type PickerSelection } from './ProductPickerModal';
 
 const ALL = '__all__';
 
 export function CatalogGrid({ products }: { products: Product[] }) {
+  const addItem = useCartStore((s) => s.addItem);
   const [selected, setSelected] = useState<Product | null>(null);
   const [open, setOpen] = useState(false);
-  const [lastAdded, setLastAdded] = useState<PickerSelection | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>(ALL);
 
   const categories = useMemo(() => {
@@ -32,7 +33,20 @@ export function CatalogGrid({ products }: { products: Product[] }) {
   };
 
   const handleConfirm = (sel: PickerSelection) => {
-    setLastAdded(sel);
+    addItem({
+      productId: sel.productId,
+      productName: sel.productName,
+      size: sel.size
+        ? { id: sel.size.id, name: sel.size.name, priceModifier: sel.size.priceModifier }
+        : null,
+      modifiers: sel.modifiers.map((m) => ({
+        id: m.id,
+        name: m.name,
+        priceDelta: m.priceDelta,
+      })),
+      quantity: sel.quantity,
+      unitPrice: sel.unitPrice,
+    });
   };
 
   return (
@@ -67,23 +81,6 @@ export function CatalogGrid({ products }: { products: Product[] }) {
           ))}
         </div>
       )}
-
-      {lastAdded ? (
-        <div className="border-t border-gray-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
-          Agregado: <strong>{lastAdded.productName}</strong>
-          {lastAdded.size ? ` · ${lastAdded.size.name}` : ''}
-          {lastAdded.modifiers.length > 0
-            ? ` · ${lastAdded.modifiers.map((m) => m.name).join(', ')}`
-            : ''}{' '}
-          × {lastAdded.quantity} ={' '}
-          <span className="font-semibold tabular-nums">
-            {COP.format(lastAdded.unitPrice * lastAdded.quantity)}
-          </span>
-          <span className="ml-2 text-xs text-emerald-600">
-            (carrito real entra en 5.E.4)
-          </span>
-        </div>
-      ) : null}
 
       <ProductPickerModal
         product={selected}
