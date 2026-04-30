@@ -1,5 +1,6 @@
 import type { Shift, User } from '@pos-tercos/types';
 import { LogoutButton } from '../features/auth';
+import { VoidSaleAction } from '../features/sales/components/VoidSaleAction';
 import { APP_LABEL } from '../lib/auth-config';
 
 const COP = new Intl.NumberFormat('es-CO', {
@@ -24,6 +25,7 @@ export function PosTopbar({ user, shift }: { user: User | null; shift: Shift | n
         ) : null}
       </div>
       <div className="flex items-center gap-3">
+        <VoidSaleAction shiftId={shift?.id ?? null} />
         {user ? (
           <span className="text-sm text-gray-600">
             {user.email} · <span className="font-medium text-gray-900">{user.role}</span>
