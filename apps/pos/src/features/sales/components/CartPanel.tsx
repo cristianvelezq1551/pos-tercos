@@ -8,6 +8,8 @@ import { fetchActivePromotions } from '../api';
 import type { CartLine } from '../lib/cart-types';
 import { computeCartTotals } from '../lib/totals';
 import { useCartStore } from '../store/cart-store';
+import { CheckoutModal, type CheckoutSuccess } from './CheckoutModal';
+import { LastSaleBanner } from './LastSaleBanner';
 
 const PROMO_REFRESH_MS = 60_000;
 
@@ -16,9 +18,12 @@ export function CartPanel() {
   const removeLine = useCartStore((s) => s.removeLine);
   const updateQty = useCartStore((s) => s.updateQty);
   const clear = useCartStore((s) => s.clear);
+  const lastSale = useCartStore((s) => s.lastSale);
+  const setLastSale = useCartStore((s) => s.setLastSale);
 
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +49,18 @@ export function CartPanel() {
   }, []);
 
   const totals = useMemo(() => computeCartTotals(items, promos), [items, promos]);
+
+  const handleCheckoutSuccess = (s: CheckoutSuccess) => {
+    setLastSale({
+      id: s.saleId,
+      receiptNumber: s.receiptNumber,
+      total: s.total,
+      paymentMethod: s.paymentMethod,
+      changeDue: s.changeDue,
+    });
+    clear();
+    setCheckoutOpen(false);
+  };
 
   return (
     <aside className="flex h-full flex-col bg-white">
@@ -101,13 +118,23 @@ export function CartPanel() {
             </span>
           </div>
         </div>
-        <Button className="mt-3 w-full" disabled={items.length === 0}>
+        <Button
+          className="mt-3 w-full"
+          disabled={items.length === 0}
+          onClick={() => setCheckoutOpen(true)}
+        >
           Cobrar {items.length > 0 ? COP.format(totals.total) : ''}
         </Button>
-        <p className="mt-2 text-center text-[10px] text-gray-400">
-          Cobro real entra en 5.E.5 (CASH/digital + doble validación).
-        </p>
+        {lastSale ? <LastSaleBanner sale={lastSale} onDismiss={() => setLastSale(null)} /> : null}
       </footer>
+
+      <CheckoutModal
+        open={checkoutOpen}
+        total={totals.total}
+        items={items}
+        onClose={() => setCheckoutOpen(false)}
+        onSuccess={handleCheckoutSuccess}
+      />
     </aside>
   );
 }

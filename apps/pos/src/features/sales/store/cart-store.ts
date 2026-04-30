@@ -12,12 +12,22 @@ interface AddInput {
   unitPrice: number;
 }
 
+export interface LastSaleSummary {
+  id: string;
+  receiptNumber: number;
+  total: number;
+  paymentMethod: string;
+  changeDue: number;
+}
+
 interface CartState {
   items: CartLine[];
+  lastSale: LastSaleSummary | null;
   addItem: (input: AddInput) => void;
   removeLine: (lineId: string) => void;
   updateQty: (lineId: string, qty: number) => void;
   clear: () => void;
+  setLastSale: (sale: LastSaleSummary | null) => void;
 }
 
 function lineSignature(item: AddInput | CartLine): string {
@@ -31,6 +41,7 @@ const nextLineId = () => `line-${Date.now().toString(36)}-${(lineCounter++).toSt
 
 export const useCartStore = create<CartState>((set) => ({
   items: [],
+  lastSale: null,
   addItem: (input) =>
     set((state) => {
       const sig = lineSignature(input);
@@ -65,4 +76,15 @@ export const useCartStore = create<CartState>((set) => ({
       ),
     })),
   clear: () => set({ items: [] }),
+  setLastSale: (sale) => set({ lastSale: sale }),
 }));
+
+/** Convierte el carrito local al payload del backend (CreateSale.items). */
+export function cartLinesToCreateItems(items: readonly CartLine[]) {
+  return items.map((it) => ({
+    productId: it.productId,
+    sizeId: it.size?.id,
+    quantity: it.quantity,
+    modifiers: it.modifiers.map((m) => ({ modifierId: m.id })),
+  }));
+}
