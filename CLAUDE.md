@@ -39,9 +39,9 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-4 backend ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-5 backend ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría | FASE 0-4 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA — venta en mostrador | placeholder |
+| POS Cajero | `apps/pos` | Next.js PWA — venta en mostrador | FASE 5.E UI ✅ |
 | KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | placeholder |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | placeholder |
 | Web Pública | `apps/web` | Next.js — landing + menú | placeholder |
@@ -372,11 +372,78 @@ apps/admin/src/
 
 ---
 
-## 8. Estado del proyecto (commits y FASES)
+## 7.bis POS UI vigente (FASE 5.E)
 
-### Commits en `main` (24 hasta hoy)
+### Rutas
 
 ```
+/login                                   # FASE 5.E.1
+/unauthorized
+/                                        # FASE 5.E.3+ — gate shift → catálogo + carrito + cobro
+/shift/open                              # FASE 5.E.2 — apertura turno (gate inverso si ya hay OPEN)
+```
+
+### Estructura
+
+```
+apps/pos/src/
+├── app/
+│   ├── (authenticated)/
+│   │   ├── layout.tsx                   # PosTopbar + main; fetch user + shift en paralelo
+│   │   ├── page.tsx                     # gate shift → CatalogGrid + CartPanel split lg:[1fr_360px]
+│   │   └── shift/open/page.tsx          # gate inverso + OpenShiftForm
+│   ├── login/page.tsx
+│   └── unauthorized/page.tsx
+├── components/PosTopbar.tsx              # APP_LABEL + badge "● Turno abierto" + VoidSaleAction + role/email + LogoutButton
+├── features/auth/                        # replicado de admin (POS_ALLOWED_ROLES = [CAJERO, ADMIN_OPERATIVO, DUENO])
+├── features/shifts/
+│   ├── api/{getCurrent,open}.ts
+│   ├── server.ts                         # getCurrentShiftServer (SSR)
+│   └── components/OpenShiftForm.tsx
+├── features/catalog/
+│   ├── api/list.ts                       # GET /products?only_active=true
+│   ├── server.ts                         # SSR
+│   ├── lib/format.ts                     # COP Intl
+│   └── components/{CatalogGrid,ProductPickerModal}.tsx
+├── features/sales/
+│   ├── api/{create,confirm-payment,print,open-drawer,list,void,list-promotions}.ts
+│   ├── store/cart-store.ts               # Zustand (items + lastSale + actions)
+│   ├── lib/{cart-types,totals,open-receipt-window}.ts
+│   └── components/{CartPanel,CheckoutModal,LastSaleBanner,VoidModal,VoidSaleAction}.tsx
+├── lib/{api-server,auth-config}.ts       # serverFetchJson + POS_ALLOWED_ROLES
+└── middleware.ts                         # jose JWT verify + role gate (Edge runtime)
+```
+
+### Decisiones de UX aplicadas
+
+- Layout fullscreen split `lg:[1fr_360px]` (catálogo izquierda, carrito derecha) — no sidebar (a diferencia de admin).
+- Botón `Cobrar` siempre visible en footer del carrito; deshabilitado cuando `items.length === 0`.
+- Idempotency-Key (`crypto.randomUUID()`) generado al abrir `CheckoutModal` — vive una vida del modal; reintentos transparentes.
+- Promos: refresh cada 60s mientras el carrito esté montado (auto-reflejan cambios desde admin sin reload).
+- Recibo HTML: `window.open(blob)` + `window.print()` automático en `load`. El POS NO mantiene el HTML — lo abre y se va.
+- `LastSaleBanner` no tiene autodismiss (cajero decide cuándo limpiarlo); badge `Anulada #N` en topbar SÍ tiene autodismiss 5s.
+
+---
+
+## 8. Estado del proyecto (commits y FASES)
+
+### Commits en `main` (37 hasta hoy)
+
+```
+de44062 feat(pos): FASE 5.E.7 anular venta con X-Approval-Pin
+257b035 feat(pos): FASE 5.E.6 post-pago print recibo + abrir cajón
+b1a862e feat(pos): FASE 5.E.5 cobro CASH + digital con doble validación
+0086173 feat(pos): FASE 5.E.4 carrito Zustand + totales con promos vivas
+04710e7 feat(pos): FASE 5.E.3 catalog grid + size/modifier picker
+c8193df feat(pos): FASE 5.E.2 shift gate + apertura turno
+10b28f2 feat(pos): FASE 5.E.1 scaffold POS app + auth middleware + role guard
+7407092 docs: add roadmap exhaustivo Sprint 5.E + FASES 6-15
+ff462c5 feat(printer,cash-drawer): FASE 5.D adapters + receipt HTML rendering
+98265e1 feat(promotions,sales): FASE 5.C engine + crons + receipt-gap detection
+72d9138 feat(sales,approvals,shifts): FASE 5.B sales backend module + e2e verified
+23bbd8a feat(sales,shifts,promotions): FASE 5.A schema + types foundation
+0fdb864 docs: add FASE 4 ajustes pendientes (18 áreas, 6 sprints)
+1ead706 docs(claude): mark FASE 4 fully closed in canonical state file
 8335471 feat(invoices): from-clone endpoint + resume drafts UI (closes FASE 4)
 848f215 feat(admin): show lastUnitCost + margin for direct-resale products
 223905f feat(admin): suppliers CRUD UI (closes FASE 4 pendiente)
@@ -433,9 +500,9 @@ Schema insert-only via trigger, CRUD movements polimórficos, alerta lowStock, A
 
 **Llaves LLM:** `apps/api/.env` → `ANTHROPIC_API_KEY=sk-ant-...`. OpenAI fallback opcional (`OPENAI_API_KEY=sk-...`). `LLM_PROVIDER` controla preferencia (`anthropic` default).
 
-### FASE 5 — POS Cajero base · EN PROGRESO
+### FASE 5 — POS Cajero base · ✅ COMPLETADA
 
-Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en CLAUDE.md sec 13.
+Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en `fase5e-y-pendientes.md`.
 
 - [x] **5.A — Schema + types** (commit `23bbd8a`):
   - 8 modelos Prisma nuevos: `Sale`, `SaleItem`, `SaleStatusLog`, `Shift`, `Promotion`, `PromotionProduct`, `IdempotencyKey`, `ApprovalPin`
@@ -472,8 +539,22 @@ Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en CLAUDE.md sec 13.
   - Cron `IdempotencyService.purgeExpired` corre 3:00 AM diario.
   - `ReceiptIntegrityService.detectGaps` corre 4:00 AM diario; calcula `(MAX - MIN + 1) - COUNT(*)`; si gap > 0, audit `RECEIPT_GAP_DETECTED`. Endpoint `POST /sales/admin/check-receipt-gaps` (Dueño-only) para chequeo on-demand.
   - **E2E smoke test (12 casos verificados)**: 2 promos overlapping (20% gana sobre 10% — discount exacto $700/$3500), promo fuera de ventana horaria NO aplica, soft delete con `isActive=false`, audit log completo con `PROMOTION_CREATED` × 3 + `PROMOTION_DEACTIVATED`, receipt-gap detector gap=0 con 5 sales contiguos.
-- [ ] **5.D — Print agent skeleton + adapters**: `apps/print-agent` en :9100, `MockPrinterAdapter`, `MockCashDrawerAdapter`
-- [ ] **5.E — apps/pos UI**: shell PWA-light + login + middleware Edge + features (auth, catalog, sales, shifts) + carrito + cobro digital con doble validación + abrir HTML del recibo en nueva tab tras pago
+- [x] **5.E — apps/pos UI** (commits `10b28f2` → `de44062`):
+  - **5.E.1 scaffold** (`10b28f2`): `apps/pos` deps (jose, zod, @pos-tercos/domain, zustand viene en 5.E.4), `next.config.ts` rewrite `/api/* → :3001`, `middleware.ts` Edge con `jose` (cookie `pos_access` → JWT verify → role check), `POS_ALLOWED_ROLES = [CAJERO, ADMIN_OPERATIVO, DUENO]`, `features/auth` replicado de admin (login + me + logout + server.ts SSR + LogoutButton), `/login` reusa `LoginForm` de `@pos-tercos/ui`, `/unauthorized`, `(authenticated)/layout` con `PosTopbar`. `apps/pos/.env.local` mirror de `admin/.env.local` (gitignored).
+  - **5.E.2 shift gate** (`c8193df`): `features/shifts` con api client (`getCurrent`, `open`) + `server.ts` SSR. Page `/shift/open` con `OpenShiftForm` (input `openingCash` + notes opcional). Home page hace gate: si no hay shift OPEN → redirect `/shift/open`; si ya hay → redirect inverso. Layout fetcha user + shift en paralelo y los pasa a `PosTopbar` que muestra badge emerald `● Turno abierto`. Conflict 409 si reabre.
+  - **5.E.3 catalog + picker** (`04710e7`): `features/catalog` con `fetchActiveProducts` (GET `/products?only_active=true`), `CatalogGrid` (chips de categorías + grid responsivo + `ProductTile` con `+ opciones` cuando hay sizes/modifiers), `ProductPickerModal` con radio sizes (required si hay) + checkboxes modifiers (si `modifiersEnabled`) + cantidad + preview de unitPrice/total con sumas size+modifiers. Home con split lg:[1fr_360px]: catálogo + placeholder carrito.
+  - **5.E.4 carrito + totales con promos** (`0086173`): dep `zustand@^5.0.2`. `features/sales/store/cart-store` con items + `addItem` (combina líneas idénticas: mismo productId+sizeId+modIds) + `removeLine` + `updateQty` + `clear` + `lastSale`. `lib/totals.computeCartTotals(items, promos, at)` usa `applyPromotion` de `@pos-tercos/domain` por línea. `CartPanel` con qty +/- + delete + footer con subtotal/descuentos/total + auto-refresh de promos cada 60s. Strikethrough en línea con promo aplicada + tag `−$X promo`. Picker `onConfirm` ahora cablea al store.
+  - **5.E.5 checkout CASH + digital** (`b1a862e`): api `createSale` (POST `/sales` con header `Idempotency-Key` UUID v4) + `confirmPayment`. `CheckoutModal` con selector de 5 métodos (CASH / NEQUI / DAVIPLATA / QR_BANCOLOMBIA / TRANSFER). CASH: input `Recibido` + cálculo de cambio en vivo, valida `received >= total`. Digital: doble input de monto + ambos deben coincidir y matchear total exacto + checkbox `verifiqué app del negocio + comprobante cliente` (manda `digitalDoubleVerified=true`). Idempotency-key generado UNA vez al abrir modal — reintentos por network flake usan el mismo key, backend devuelve cached. Modal no cerrable mientras pending. On success → `setLastSale` + `clear` + `LastSaleBanner` con receipt#/método/cambio.
+  - **5.E.6 post-pago print + cajón** (`257b035`): api `printReceipt` (POST `/sales/:id/print` → text/html con headers `X-Receipt-Key`/`X-Receipt-Url`) + `openDrawerForSale`. `lib/openReceiptWindow(html)` abre HTML como Blob URL en `window.open` + auto `window.print()` on load. Detecta popup blocker y reporta. Revoca URL on `beforeunload`. `LastSaleBanner` con 2 botones: `Imprimir recibo` (todos los métodos) + `Abrir cajón` (solo CASH). Estado pending/ok/error inline.
+  - **5.E.7 anular venta** (`de44062`): api `listSales` (filtros `shift_id` + `status` + `limit`) + `voidSale` (POST `/sales/:id/void` con header `X-Approval-Pin` + body `{reason}`). `VoidModal` con selector radio de últimas 20 PAGADAS del turno + textarea motivo (5-200) + input PIN 6 dígitos numéricos. Botón rojo `Anular venta` solo se habilita cuando los 3 son válidos. `VoidSaleAction` (topbar wrapper): botón `Anular` disabled si no hay turno + badge amber autoborrar 5s con `Anulada #N`. PosTopbar integra el botón.
+
+  **Decisiones tomadas en 5.E (no re-discutir):**
+  - Carrito Zustand local del feature (NO global) — solo el POS lo necesita.
+  - Idempotency-Key generado en cliente al abrir CheckoutModal (UUID v4 via `crypto.randomUUID()`); persiste mientras el modal está abierto. No se persiste entre sesiones.
+  - Sizes/modifiers seedeados directo en DB para smoke (la API solo expone sizes/modifiers en CREATE de producto, no en PATCH — gap funcional documentado en `fase4-ajustes-pendientes.md`).
+  - PIN del Dueño dev seteado en `123456` (override vía `POST /approvals/pin`). Admin Operativo dev sin PIN. UI de configuración entra en FASE 11.
+  - Botón "Abrir cajón" solo aparece en CASH (otros métodos no manejan efectivo).
+  - `directResale=true` rechaza `isCombo=true` (ya enforced en Zod). 5.E no construye combos — el "Combo Familiar" seed con `basePrice=0` queda como gap para fase 4 ajustes.
 
 ### Pendientes — FASES 6 a 15
 - **FASE 6** — KDS + pantalla pública: `apps/kds`, `apps/public-display`, WebSocket gateway, SSE, estados pedido, tiempos.
@@ -565,25 +646,19 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 5 está en progreso. Sprint 5.A (schema + types + migration) cerrado.
-**Próximo: Sprint 5.B (Sales backend module)** — cuando se arranque chat dedicado.
+FASE 5 cerrada. **Próximo: FASE 6 — KDS + pantalla pública.**
 
-**Decisiones confirmadas para FASE 5 (no re-discutir sin razón):**
-1. `sale_items.product_id NOT NULL` (no polimórfico). Las ventas son siempre de productos, no de insumos directos.
-2. `sales.type` enum completo desde 5.A (`COUNTER`, `WEB_PICKUP`, `WEB_DELIVERY`). Solo `COUNTER` se usa hasta FASE 7.
-3. `approval_pins` ya existe (con trigger de role check). PIN seed para Dueño en FASE 5.B/5.C; UI de configuración entra en FASE 11.
-4. `idempotency_keys` tabla aparte con TTL 7d (no campo único en `sales`). Cleanup por cron en 5.B/5.C.
-5. Sprint 5.A se hizo en chat actual. 5.B+ en chat dedicado por presión de contexto.
-
-**Sprint 5.E — alcance (último de FASE 5):**
-- `apps/pos/src/middleware.ts` (replicar pattern de admin con `jose`)
-- Shell `(authenticated)/layout.tsx` para POS (más bare que admin, sin sidebar — vista catálogo + carrito side-by-side fullscreen)
-- `features/auth/` (replicar de admin, ajustar `POS_ALLOWED_ROLES = [CAJERO, ADMIN_OPERATIVO, DUENO]`)
-- `features/shifts/` con gate al inicio: si no hay shift OPEN → modal de apertura con `openingCash` antes de poder vender
-- `features/catalog/` (lectura productos activos) + selector tamaño/modifiers
-- `features/sales/` con carrito (Zustand local del feature, no global) + cobro CASH/digital con doble validación + post-pago: imprime + abre cajón (opcional)
-- POS abre `POST /sales/:id/print` y muestra el HTML resultante en `<iframe>` o `window.open()` para imprimir
-- Tests manuales del flujo end-to-end: login cajero → abrir turno → carrito → cobrar CASH → ver HTML recibo → abrir cajón
+Plan completo en `fase5e-y-pendientes.md` sec 3. Resumen:
+- `apps/kds` (puerto 3003) — comanda cocina con WebSocket. Lista pedidos en estados `PAGADO` (in queue) → `EN_PREPARACION` → `LISTO_DESPACHO`. Cocinero marca transiciones desde la UI; los eventos llegan en tiempo real a otros KDS y a la pantalla pública.
+- `apps/public-display` (puerto 3005) — pantalla TV con SSE. Muestra "Listos para retirar" (ventas con `status=LISTO_DESPACHO` filtradas por `type=COUNTER`) por turno o nombre del cliente.
+- Backend nuevo:
+  - `KdsModule` con `KdsGateway` (WS namespace `/kds`, auth via cookie/Bearer), endpoints `POST /kds/orders/:id/start` y `POST /kds/orders/:id/ready` (transiciones de status con audit + emit event).
+  - `PublicDisplayModule` con SSE controller `GET /public-display/stream` (sin auth, hardening con CORS estricto).
+  - Trigger en `confirmPayment` → emit a KDS namespace.
+- Decisiones a tomar antes de arrancar 6.A:
+  - Auth en WS gateway (cookie httpOnly + handshake check vs token via header).
+  - Pantalla pública: `@Public()` + filtros server-side para no exponer info sensible.
+  - Reintentos en cliente WS (lib propia o `socket.io-client`).
 
 ---
 
