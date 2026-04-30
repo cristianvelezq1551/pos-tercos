@@ -1,33 +1,28 @@
 import { redirect } from 'next/navigation';
+import { CatalogGrid } from '../../features/catalog';
+import { getActiveProductsServer } from '../../features/catalog/server';
 import { getCurrentShiftServer } from '../../features/shifts/server';
-
-const COP = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
 
 export default async function PosHomePage() {
   const shift = await getCurrentShiftServer();
   if (!shift) {
     redirect('/shift/open');
   }
-  const opened = new Date(shift.openedAt).toLocaleString('es-CO', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const products = await getActiveProductsServer();
   return (
-    <div className="flex h-full flex-col items-center justify-center p-12 text-center">
-      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-        Turno abierto
-      </span>
-      <h1 className="mt-6 text-3xl font-bold tracking-tight">Listo para vender</h1>
-      <p className="mt-2 text-sm text-gray-600">
-        Apertura: {opened} · Efectivo inicial {COP.format(shift.openingCash)}
-      </p>
-      <p className="mt-6 max-w-md text-sm text-gray-500">
-        Próximo bloque (5.E.3): grid de catálogo + selector de tamaños/modificadores.
-      </p>
+    <div className="grid h-full grid-cols-1 lg:grid-cols-[1fr_360px]">
+      <section className="flex flex-col overflow-hidden border-r border-gray-200">
+        <CatalogGrid products={products} />
+      </section>
+      <aside className="hidden flex-col bg-white lg:flex">
+        <header className="border-b border-gray-200 px-4 py-3">
+          <h2 className="text-sm font-semibold tracking-tight">Carrito</h2>
+          <p className="mt-0.5 text-xs text-gray-500">5.E.4 — todavía no operativo</p>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-gray-400">
+          El carrito se cablea en el próximo bloque.
+        </div>
+      </aside>
     </div>
   );
 }

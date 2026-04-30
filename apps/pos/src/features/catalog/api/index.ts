@@ -1,0 +1,1 @@
+export { fetchActiveProducts } from './list';
