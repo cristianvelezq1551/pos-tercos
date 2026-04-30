@@ -39,11 +39,11 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-5 backend ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-6 backend ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría | FASE 0-4 UI ✅ |
 | POS Cajero | `apps/pos` | Next.js PWA — venta en mostrador | FASE 5.E UI ✅ |
-| KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | placeholder |
-| Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | placeholder |
+| KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | FASE 6.C UI ✅ |
+| Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
 | Web Pública | `apps/web` | Next.js — landing + menú | placeholder |
 | Repartidor | `apps/repa` | Next.js PWA mobile — domicilios | placeholder |
 | Print Agent | `apps/print-agent` | Node service local — ESC/POS | no creado aún |
@@ -307,6 +307,14 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 ### Pendiente FASE 4
 _(ninguno — FASE 4 cerrada)_
 
+### KDS + Pantalla Pública (FASE 6)
+- `GET /kds/orders [cocinero]` — cola PAGADO + EN_PREPARACION ordenado por paidAt asc
+- `POST /kds/orders/:id/start [cocinero]` — PAGADO → EN_PREPARACION
+- `POST /kds/orders/:id/ready [cocinero]` — EN_PREPARACION → LISTO_DESPACHO
+- `WS /ws/kds` (socket.io, namespace `/ws/kds`, room `kitchen.queue`) — auth handshake (auth.token | Authorization: Bearer | cookie pos_access). Eventos: `order.created`, `order.status.changed` con payload `KdsEvent { event, sale, emittedAt }`
+- `GET /public-display/state` — `@Public()`, snapshot `{ current, next[≤3], asOf }`. Filtra `type=COUNTER` + ventana 30 min
+- `GET /public-display/stream` — `@Public()`, SSE con NestJS `@Sse()`. Reconnect automático nativo del browser (`EventSource`)
+
 ---
 
 ## 7. Admin UI vigente
@@ -425,11 +433,91 @@ apps/pos/src/
 
 ---
 
-## 8. Estado del proyecto (commits y FASES)
+## 7.ter KDS UI vigente (FASE 6.C)
 
-### Commits en `main` (37 hasta hoy)
+### Rutas
 
 ```
+/login                                   # roles permitidos: COCINERO, ADMIN_OPERATIVO, DUENO
+/unauthorized
+/                                        # OrdersGrid (server-fetch initial → WS live)
+```
+
+### Estructura
+
+```
+apps/kds/src/
+├── app/
+│   ├── (authenticated)/
+│   │   ├── layout.tsx                   # KdsTopbar + main; oscuro (gray-900)
+│   │   └── page.tsx                     # SSR: getKitchenQueueServer + getAccessTokenServer en paralelo
+│   ├── login/page.tsx
+│   └── unauthorized/page.tsx
+├── components/KdsTopbar.tsx              # badge rojo "KDS" sobre fondo dark
+├── features/auth/                        # replicado de pos + getAccessTokenServer (extra)
+├── features/orders/
+│   ├── api/{list,transitions}.ts         # GET /kds/orders, POST /:id/start, /ready
+│   ├── server.ts                         # getKitchenQueueServer (SSR)
+│   ├── hooks/useElapsed.ts               # cronómetro 1s tick, isLate >= 10 min
+│   ├── hooks/useKDSSocket.ts             # socket.io-client + auth.token + dedupe + sort por paidAt
+│   └── components/{OrderCard,OrdersGrid}.tsx
+├── lib/{api-server,auth-config}.ts       # KDS_ALLOWED_ROLES = [COCINERO, ADMIN_OPERATIVO, DUENO]
+└── middleware.ts
+```
+
+### Decisiones de UX/auth aplicadas
+
+- **Auth WS cross-origin**: cookie httpOnly del POS dominio (:3003) NO se envía cross-origin a la API (:3001). SSR lee la cookie con `getAccessTokenServer()` y la pasa al cliente como prop `wsToken` → `socket.io-client.handshake.auth.token`. Token TTL 15 min — si expira, el WS se desconecta y el badge muestra "Error WS"; reload trae token fresco. (Refresh automático queda como TODO para FASE 14 hardening.)
+- Socket conecta directo a `http://localhost:3001/ws/kds` (configurable con `NEXT_PUBLIC_API_WS_URL`). No usa rewrite — Next.js no proxea WebSockets confiable.
+- Cards con cronómetro live (1s tick) + ring rojo + ⚠ cuando `elapsed >= 10 min` (escalation visual sin bloqueante).
+- Botones grandes h-14 ("Iniciar" azul / "Marcar listo" verde) — pensado para tap en tablet en la cocina.
+- ConnectionBadge top-right del grid: `bg-emerald-500` live / `bg-amber-500` connecting / `bg-red-500` error.
+
+---
+
+## 7.quater Pantalla Pública UI vigente (FASE 6.D)
+
+### Rutas
+
+```
+/                                        # SIN auth (público), full-screen kiosko
+```
+
+### Estructura
+
+```
+apps/public-display/src/
+├── app/
+│   ├── globals.css                       # cursor:none, bg-gray-950, hide scrollbars
+│   ├── layout.tsx                        # viewport maximumScale=1, userScalable=false
+│   └── page.tsx                          # dynamic='force-dynamic' + SSR fetch initial
+└── features/display/
+    ├── server.ts                         # getInitialDisplayState (sin auth, fallback EMPTY_STATE)
+    ├── hooks/useDisplayStream.ts         # EventSource → reconnect nativo + backoff browser-managed
+    └── components/Display.tsx            # current section gigante + next section abajo + ConnectionDot
+```
+
+### Decisiones de UX aplicadas
+
+- **Modo kiosko**: `cursor: none`, `overflow: hidden`, viewport sin user-scalable. Pensado para Chrome/Edge en modo kiosko en tablet Android (FASE 14).
+- **EventSource > socket.io**: SSE es uno-a-muchos read-only. Reconnect nativo del browser, no requiere lib cliente, sin handshake.
+- Bg `gray-950` (casi negro) para alto contraste.
+- Empty state amigable: "Estamos preparando tu pedido…" cuando `current === null`.
+- ConnectionDot top-right pequeño (debugging visual, no UX): emerald/amber/red.
+- Render gigante: `text-9xl md:text-[14rem]` para que se lea desde la entrada del local.
+
+---
+
+## 8. Estado del proyecto (commits y FASES)
+
+### Commits en `main` (42 hasta hoy)
+
+```
+2434523 feat(public-display): FASE 6.D apps/public-display SSE kiosko
+83c186e feat(kds): FASE 6.C apps/kds UI con WS auto-reconnect
+67dd921 feat(public-display): FASE 6.B SSE pantalla pública
+1b06ffd feat(kds): FASE 6.A backend KDS gateway + transitions
+90fa22a docs(claude): cierre FASE 5.E + roadmap a FASE 6
 de44062 feat(pos): FASE 5.E.7 anular venta con X-Approval-Pin
 257b035 feat(pos): FASE 5.E.6 post-pago print recibo + abrir cajón
 b1a862e feat(pos): FASE 5.E.5 cobro CASH + digital con doble validación
@@ -556,17 +644,36 @@ Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en `fase5e-y-pendient
   - Botón "Abrir cajón" solo aparece en CASH (otros métodos no manejan efectivo).
   - `directResale=true` rechaza `isCombo=true` (ya enforced en Zod). 5.E no construye combos — el "Combo Familiar" seed con `basePrice=0` queda como gap para fase 4 ajustes.
 
-### Pendientes — FASES 6 a 15
-- **FASE 6** — KDS + pantalla pública: `apps/kds`, `apps/public-display`, WebSocket gateway, SSE, estados pedido, tiempos.
-- **FASE 7** — Domicilios + Mapbox + repartidores: `apps/repa`, geocoding, asignación.
-- **FASE 8** — Turnos / cierre Z / arqueo.
-- **FASE 9** — WhatsApp Cloud API (mock + bot menu + status updates).
-- **FASE 10** — Promociones + cupones.
-- **FASE 11** — Sugerencias de compra (purchase-suggestions service).
-- **FASE 12** — Web pública + SEO + menú.
-- **FASE 13** — Reportes (ventas, costos, margen, mermas).
-- **FASE 14** — Hardening prod (R2, Railway deploy, Vercel, observability, backups).
-- **FASE 15** — Print agent ESC/POS local + integración impresoras térmicas.
+### FASE 6 — KDS + Pantalla Pública · ✅ COMPLETADA
+
+Particionada en 5 sub-sprints. Plan completo en `fase5e-y-pendientes.md` sec 3.1.
+
+- [x] **6.A backend KDS** (`1b06ffd`): deps `@nestjs/websockets` + `@nestjs/platform-socket.io` + `socket.io`. `packages/types/kds`: `KitchenStatusEnum`, `KitchenOrderSchema` (alias Sale), `KdsEventSchema`, constantes `KDS_NAMESPACE='/ws/kds'` + `KDS_QUEUE_ROOM='kitchen.queue'`. Decorator `KitchenAccess()`. `KdsModule` (forwardRef SalesModule) con: `KdsGateway` (auth tri-modal: handshake.auth.token | Authorization Bearer | cookie pos_access; verify JWT con JwtService; role gate; join room; emit), `KdsService` con `getQueue` (PAGADO + EN_PREPARACION FIFO) + `start`/`ready` (transitions con sale_status_log + audit `SALE_STATUS_CHANGED`), `KdsController` con `GET /kds/orders` + `POST /:id/start` + `POST /:id/ready`. Hook `SalesService.confirmPayment` → `kdsGateway.emit('order.created')`.
+- [x] **6.B SSE pantalla pública** (`67dd921`): `packages/types/public-display`: `PublicDisplayOrder` (saleId/receiptNumber/customerName/at — minimal seguro) + `PublicDisplayState` ({current, next[≤3], asOf}). `PublicDisplayModule` `@Global()` sin auth deps. `PublicDisplayService.getState` (current = última transición LISTO_DESPACHO de COUNTER en últimos 30 min vía sale_status_log; next = top 2 PAGADO/EN_PREPARACION FIFO). `notify()` → RxJS Subject; `stream()` con `concat(initial, updates)` emite snapshot completo. `PublicDisplayController` `@Public()` con `GET /state` + `@Sse('/stream')`. Hooks: `confirmPayment` y `KdsService.transition` llaman `publicDisplay.notify()` cuando type=COUNTER.
+- [x] **6.C apps/kds UI** (`83c186e`): scaffold replica POS con middleware Edge + `KDS_ALLOWED_ROLES = [COCINERO, ADMIN_OPERATIVO, DUENO]`. Layout dark (gray-900) + KdsTopbar rojo. `features/orders` con `useKDSSocket` (socket.io-client cross-origin :3003→:3001 con `handshake.auth.token` desde SSR), `useElapsed` (1s tick, ⚠ red ring >= 10 min), `OrderCard` con #receipt grande + items + botones h-14 ("Iniciar" azul / "Marcar listo" verde), `OrdersGrid` responsive con ConnectionBadge live.
+- [x] **6.D apps/public-display UI** (`2434523`): kiosko CSS (cursor:none, overflow:hidden, bg-gray-950). Layout viewport sin user-scalable. `useDisplayStream` con `EventSource` (reconnect nativo + backoff browser-managed). `Display` full-screen split: current section gigante (#N text-9xl + customerName) | next section abajo. ConnectionDot top-right debug. Empty state amigable.
+
+  **Decisiones tomadas en FASE 6 (no re-discutir):**
+  - WebSocket lib: socket.io (estabilidad + reconnect built-in). Cliente: socket.io-client.
+  - Auth WS: handshake.auth.token (cookie httpOnly NO se envía cross-origin del KDS dominio :3003 al API :3001). SSR lee cookie y la pasa como prop `wsToken`.
+  - SSE público: sin middleware estricto. La auth boundary la marca el filtro server-side: solo expone `{saleId, receiptNumber, customerName, at}` — NO total/payment/phone.
+  - Trigger emits desde 2 lugares: `confirmPayment` (entra al queue) + `KdsService.transition` (start/ready). Ambos checkean `type=COUNTER` antes de notify a public display.
+  - Sale tabla NO tiene `updatedAt` — para el `current` del public display derivamos timestamp desde `sale_status_log.changedAt`.
+  - Token refresh automático en KDS: NO implementado en 6.C (TODO FASE 14 hardening).
+
+### Pendientes — FASES 7 a 15
+
+Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
+
+- **FASE 7** — Web pública pedidos (sin Mapbox): `apps/web`, menú público, checkout pickup/delivery, `POST /web/orders` con rate-limit, `GET /web/orders/:id?token=`, notificación POS via WS (extiende FASE 6).
+- **FASE 8** — Mapbox + validación 3km: geocoding + autocomplete address + cálculo de distancia haversine + bloqueo > 3km.
+- **FASE 9** — WhatsApp con Mock + Dev Inbox: adapter Meta Cloud API + `apps/api/tmp/whatsapp/` mock log + dashboard inbox.
+- **FASE 10** — Repartidor: `apps/repa`, asignación, GPS captura, transitions delivery.
+- **FASE 11** — Cierre de caja + Anti-fraude: `expectedCash`, `countedCash`, diff threshold, Z-report.
+- **FASE 12** — Auto-pedido IA + Promociones avanzadas (UI completa).
+- **FASE 13** — Reportes y Dashboard.
+- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones).
+- **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local.
 
 ---
 
@@ -646,19 +753,25 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 5 cerrada. **Próximo: FASE 6 — KDS + pantalla pública.**
+FASE 6 cerrada. **Próximo: FASE 7 — Web pública pedidos (sin Mapbox).**
 
-Plan completo en `fase5e-y-pendientes.md` sec 3. Resumen:
-- `apps/kds` (puerto 3003) — comanda cocina con WebSocket. Lista pedidos en estados `PAGADO` (in queue) → `EN_PREPARACION` → `LISTO_DESPACHO`. Cocinero marca transiciones desde la UI; los eventos llegan en tiempo real a otros KDS y a la pantalla pública.
-- `apps/public-display` (puerto 3005) — pantalla TV con SSE. Muestra "Listos para retirar" (ventas con `status=LISTO_DESPACHO` filtradas por `type=COUNTER`) por turno o nombre del cliente.
+Plan completo en `fase5e-y-pendientes.md` sec 3.2. Resumen:
+- `apps/web` (puerto 3000) — landing/menú online-only, carrito en localStorage anónimo, checkout flow con pickup/delivery, payment instructions post-checkout (Nequi/transfer + tracking ID).
 - Backend nuevo:
-  - `KdsModule` con `KdsGateway` (WS namespace `/kds`, auth via cookie/Bearer), endpoints `POST /kds/orders/:id/start` y `POST /kds/orders/:id/ready` (transiciones de status con audit + emit event).
-  - `PublicDisplayModule` con SSE controller `GET /public-display/stream` (sin auth, hardening con CORS estricto).
-  - Trigger en `confirmPayment` → emit a KDS namespace.
-- Decisiones a tomar antes de arrancar 6.A:
-  - Auth en WS gateway (cookie httpOnly + handshake check vs token via header).
-  - Pantalla pública: `@Public()` + filtros server-side para no exponer info sensible.
-  - Reintentos en cliente WS (lib propia o `socket.io-client`).
+  - `web-orders` module: `POST /web/orders` (público con rate-limit `@nestjs/throttler` 100 req/min/IP), `GET /web/orders/:id?token=` (público con token de orden), `POST /web/orders/:id/confirm-payment [cajero]`.
+  - `web-menu` module: endpoint público para listar productos activos + categorías + precio (NO costo).
+  - Token de orden: HMAC del saleId con secret env. El POS no expone /sales público — el web-orders module crea su propio endpoint dedicado.
+  - WS POS event: `web-order.pending-payment` para notificar al cajero (extiende FASE 6 con namespace `/ws/pos`).
+- Sales schema ya soporta `type=WEB_PICKUP` y `type=WEB_DELIVERY` desde 5.A.
+- Reglas críticas (`pos-spec.v1.md`):
+  - Web pública es **online-only** (no funciona offline).
+  - "NO HAY REEMBOLSO post pago confirmado".
+  - Rate-limit 100 req/min por IP en `/web/*` (`architecture.md:863`) — instalar `@nestjs/throttler`.
+- Decisiones a tomar antes de arrancar 7.A:
+  - Diseño del token de orden (HMAC con expiración 24h o sin expiración?).
+  - UX checkout: 1 página con pickup/delivery toggle vs flow multi-step.
+  - Notificación al POS de orden pendiente: WS namespace nuevo `/ws/pos` o reusar `/ws/kds` con room separada.
+  - Mock de payment: cliente debe pegar txId/comprobante? O solo "ya pagué" botón?
 
 ---
 
