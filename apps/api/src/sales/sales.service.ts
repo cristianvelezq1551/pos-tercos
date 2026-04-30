@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  forwardRef,
   ForbiddenException,
   Inject,
   Injectable,
@@ -33,6 +34,7 @@ import { AuditService } from '../audit/audit.service';
 import { CASH_DRAWER_PROVIDER } from '../adapters/cash-drawer/cash-drawer.module';
 import { PRINTER_PROVIDER } from '../adapters/printer/printer.module';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
+import { KdsGateway } from '../kds/kds.gateway';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { RecipesService } from '../recipes/recipes.service';
@@ -75,6 +77,7 @@ export class SalesService {
     private readonly promotions: PromotionsService,
     @Inject(PRINTER_PROVIDER) private readonly printer: PrinterProvider,
     @Inject(CASH_DRAWER_PROVIDER) private readonly drawer: CashDrawerProvider,
+    @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
   ) {}
 
   // ==================================================================
@@ -384,7 +387,10 @@ export class SalesService {
       },
     });
 
-    return toSaleDto(updated);
+    const dto = toSaleDto(updated);
+    // Notifica al KDS: la venta entra al queue de cocina.
+    this.kdsGateway.emit('order.created', dto);
+    return dto;
   }
 
   // ==================================================================

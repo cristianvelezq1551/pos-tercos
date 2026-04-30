@@ -7,5 +7,6 @@ export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 export const OnlyDueno = () => Roles('DUENO');
 export const AdminAccess = () => Roles('ADMIN_OPERATIVO', 'DUENO');
 export const CashierAccess = () => Roles('CAJERO', 'ADMIN_OPERATIVO', 'DUENO');
+export const KitchenAccess = () => Roles('COCINERO', 'ADMIN_OPERATIVO', 'DUENO');
 export const InternalAccess = () =>
   Roles('CAJERO', 'COCINERO', 'REPARTIDOR', 'ADMIN_OPERATIVO', 'DUENO', 'TRABAJADOR');

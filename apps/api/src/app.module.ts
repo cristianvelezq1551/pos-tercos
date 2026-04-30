@@ -15,6 +15,7 @@ import { HealthController } from './health/health.controller';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { KdsModule } from './kds/kds.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { PromotionsModule } from './promotions/promotions.module';
@@ -48,6 +49,7 @@ import { UsersModule } from './users/users.module';
     InvoicesModule,
     ShiftsModule,
     SalesModule,
+    KdsModule,
   ],
   controllers: [HealthController],
   providers: [
