@@ -11,3 +11,5 @@ export * from './public-display';
 export * from './sales';
 export * from './shifts';
 export * from './suppliers';
+export * from './web-menu';
+export * from './web-orders';

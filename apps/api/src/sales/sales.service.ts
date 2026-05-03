@@ -118,21 +118,20 @@ export class SalesService {
       }
     }
 
-    if (input.type !== 'COUNTER') {
-      throw new BadRequestException(
-        `FASE 5 solo soporta sales type=COUNTER (recibido ${input.type}). WEB_* llega en FASE 7.`,
-      );
-    }
-
-    // Cajero debe tener turno abierto
-    const shift = await this.prisma.shift.findFirst({
-      where: { cashierId, status: 'OPEN' },
-      orderBy: { openedAt: 'desc' },
-    });
-    if (!shift) {
-      throw new BadRequestException(
-        'No tenés un turno abierto. Abrí turno antes de vender (POST /shifts/open).',
-      );
+    // COUNTER requiere turno abierto del cajero. WEB_* no exige turno
+    // (el cajero asignará shift al confirmar el pago vía POS, fuera de
+    // este endpoint).
+    let shift: Awaited<ReturnType<typeof this.prisma.shift.findFirst>> = null;
+    if (input.type === 'COUNTER') {
+      shift = await this.prisma.shift.findFirst({
+        where: { cashierId, status: 'OPEN' },
+        orderBy: { openedAt: 'desc' },
+      });
+      if (!shift) {
+        throw new BadRequestException(
+          'No tenés un turno abierto. Abrí turno antes de vender (POST /shifts/open).',
+        );
+      }
     }
 
     // Cargar productos + sizes + modifiers + promociones activas en paralelo
@@ -160,11 +159,16 @@ export class SalesService {
     );
     const total = roundMoney(subtotal - discountTotal);
 
-    // turn_number = ventas del día creadas por este cajero + 1
+    // turn_number: para COUNTER cuenta ventas del cajero en el día;
+    // para WEB_* cuenta ventas web del día. Se usa solo para display
+    // en el recibo, no es identificador único.
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const todayCount = await this.prisma.sale.count({
-      where: { cashierId, createdAt: { gte: startOfDay } },
+      where:
+        input.type === 'COUNTER'
+          ? { cashierId, createdAt: { gte: startOfDay } }
+          : { type: input.type, createdAt: { gte: startOfDay } },
     });
     const turnNumber = todayCount + 1;
 
@@ -192,8 +196,9 @@ export class SalesService {
           subtotal,
           discountTotal,
           total,
-          cashierId,
-          shiftId: shift.id,
+          // WEB_* no tiene cashier ni shift hasta que el cajero confirme pago
+          cashierId: input.type === 'COUNTER' ? cashierId : null,
+          shiftId: input.type === 'COUNTER' ? shift!.id : null,
           notes: input.notes ?? null,
           idempotencyKey: idempotencyKey ?? null,
           items: {
@@ -248,7 +253,8 @@ export class SalesService {
         receiptNumber: dto.receiptNumber,
         total: dto.total,
         itemsCount: dto.items?.length ?? 0,
-        shiftId: shift.id,
+        shiftId: shift?.id ?? null,
+        type: dto.type,
       },
     });
 

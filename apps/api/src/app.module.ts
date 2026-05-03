@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CashDrawerModule } from './adapters/cash-drawer/cash-drawer.module';
 import { LLMModule } from './adapters/llm/llm.module';
 import { PrinterModule } from './adapters/printer/printer.module';
@@ -26,10 +27,13 @@ import { ShiftsModule } from './shifts/shifts.module';
 import { SubproductsModule } from './subproducts/subproducts.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { UsersModule } from './users/users.module';
+import { WebMenuModule } from './web-menu/web-menu.module';
+import { WebOrdersModule } from './web-orders/web-orders.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
     AuditModule,
     StorageModule,
@@ -52,11 +56,14 @@ import { UsersModule } from './users/users.module';
     SalesModule,
     KdsModule,
     PublicDisplayModule,
+    WebMenuModule,
+    WebOrdersModule,
   ],
   controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}
