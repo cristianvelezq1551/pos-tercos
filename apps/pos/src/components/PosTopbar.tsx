@@ -1,5 +1,5 @@
 import type { PublicWebOrder, Shift, User } from '@pos-tercos/types';
-import { LogoutButton } from '../features/auth';
+import { ChangePinAction, LogoutButton } from '../features/auth';
 import { VoidSaleAction } from '../features/sales/components/VoidSaleAction';
 import { CloseShiftAction } from '../features/shifts/components/CloseShiftAction';
 import { WebOrdersAction } from '../features/web-orders/components/WebOrdersAction';
@@ -40,6 +40,7 @@ export function PosTopbar({
         <WebOrdersAction initial={webOrdersInitial} wsToken={wsToken} />
         <VoidSaleAction shiftId={shift?.id ?? null} />
         <CloseShiftAction shift={shift} />
+        <ChangePinAction user={user} />
         {user ? (
           <span className="text-sm text-gray-600">
             {user.email} · <span className="font-medium text-gray-900">{user.role}</span>

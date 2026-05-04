@@ -2,7 +2,7 @@ import { Body, Controller, Post } from '@nestjs/common';
 import { SetApprovalPinSchema, type SetApprovalPin } from '@pos-tercos/types';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { OnlyDueno } from '../auth/decorators/roles.decorator';
+import { AdminAccess } from '../auth/decorators/roles.decorator';
 import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ApprovalsService } from './approvals.service';
@@ -15,12 +15,14 @@ export class ApprovalsController {
   ) {}
 
   /**
-   * Setea/resetea el PIN del Dueño autenticado. UI completa (Admins
-   * cambiando su propio PIN, Dueño reseteando el de Admins) entra en
-   * FASE 11. En 5.B este endpoint sirve para bootstrap inicial del PIN
-   * del Dueño así se pueden testear voids.
+   * FASE 11.C: cualquier usuario con rol que pueda tener PIN (ADMIN_OPERATIVO
+   * o DUENO) cambia SU PROPIO PIN. El path `/approvals/pin` se mantiene
+   * (en 5.B era Dueño-only para bootstrap; ahora es Admin+Dueño).
+   *
+   * NO se permite que un Admin/Dueño cambie el PIN de OTRO usuario desde
+   * acá — ese flujo (reset por Dueño) entra en FASE 14 si se decide habilitar.
    */
-  @OnlyDueno()
+  @AdminAccess()
   @Post('pin')
   async setOwnPin(
     @CurrentUser() user: JwtAccessPayload,
@@ -32,7 +34,7 @@ export class ApprovalsController {
       action: 'APPROVAL_PIN_SET',
       entityType: 'user',
       entityId: user.sub,
-      metadata: { self: true },
+      metadata: { self: true, role: user.role },
     });
     return { ok: true };
   }
