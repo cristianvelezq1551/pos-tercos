@@ -3,12 +3,10 @@ import {
   forwardRef,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { haversineKm, type GeoPoint } from '@pos-tercos/domain';
 import type { CreateWebOrder, PublicWebOrder, Sale } from '@pos-tercos/types';
-import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesService } from '../sales/sales.service';
 import { PosGateway } from './pos.gateway';
@@ -17,12 +15,9 @@ const DEFAULT_RADIUS_KM = 3;
 
 @Injectable()
 export class WebOrdersService {
-  private readonly logger = new Logger(WebOrdersService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly sales: SalesService,
-    private readonly audit: AuditService,
     @Inject(forwardRef(() => PosGateway))
     private readonly posGateway: PosGateway,
   ) {}
@@ -84,7 +79,7 @@ export class WebOrdersService {
       idempotencyKey,
     );
 
-    const dto = this.toPublicDto(sale, null);
+    const dto = this.toPublicDto(sale);
     this.posGateway.emit('web-order.created', dto);
     return dto;
   }
@@ -95,61 +90,14 @@ export class WebOrdersService {
     if (sale.type === 'COUNTER') {
       throw new NotFoundException(`Sale ${saleId} no es una orden web`);
     }
-    const customerPaidAt = await this.readCustomerPaidAt(saleId);
-    return this.toPublicDto(sale, customerPaidAt);
+    return this.toPublicDto(sale);
   }
 
-  /**
-   * Cliente clickea "ya pagué". Esto NO cambia el status de la sale.
-   * Solo:
-   *  1. Inserta entrada en audit con action SALE_STATUS_CHANGED + metadata
-   *     `{stage: 'customer-paid-claimed', reference}` (reusamos el enum
-   *     existente para no tocar migration en este sprint).
-   *  2. Lee el momento de la "afirmación" para retornarlo en el GET.
-   *  3. (7.B) Emite WS al POS para notificar al cajero.
-   */
-  async markPaid(saleId: string, reference: string | undefined): Promise<PublicWebOrder> {
-    const sale = await this.sales.getById(saleId);
-    if (sale.type === 'COUNTER') {
-      throw new NotFoundException(`Sale ${saleId} no es una orden web`);
-    }
-    if (sale.status !== 'PENDIENTE_PAGO') {
-      throw new NotFoundException(
-        `Sale ${saleId} no está en PENDIENTE_PAGO (status=${sale.status})`,
-      );
-    }
+  // FASE 14.A — markPaid + readCustomerPaidAt removidos. El flujo es
+  // cajero-driven via wa.me desde FASE 9: el cliente nunca afirma pago,
+  // el cajero lo verifica en WhatsApp y confirma desde POS.
 
-    await this.audit.log({
-      userId: null,
-      action: 'SALE_STATUS_CHANGED',
-      entityType: 'sale',
-      entityId: saleId,
-      metadata: { stage: 'customer-paid-claimed', reference: reference ?? null },
-    });
-
-    const customerPaidAt = await this.readCustomerPaidAt(saleId);
-    const dto = this.toPublicDto(sale, customerPaidAt);
-    this.posGateway.emit('web-order.customer-paid', dto);
-    return dto;
-  }
-
-  private async readCustomerPaidAt(saleId: string): Promise<string | null> {
-    const candidates = await this.prisma.auditLog.findMany({
-      where: { entityId: saleId, action: 'SALE_STATUS_CHANGED' },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-      select: { metadata: true, createdAt: true },
-    });
-    for (const c of candidates) {
-      const m = c.metadata as { stage?: unknown } | null;
-      if (m && typeof m === 'object' && m.stage === 'customer-paid-claimed') {
-        return c.createdAt.toISOString();
-      }
-    }
-    return null;
-  }
-
-  private toPublicDto(sale: Sale, customerPaidAt: string | null): PublicWebOrder {
+  private toPublicDto(sale: Sale): PublicWebOrder {
     if (sale.type === 'COUNTER') {
       throw new Error('Cannot serialize COUNTER sale as PublicWebOrder');
     }
@@ -165,7 +113,6 @@ export class WebOrdersService {
       discountTotal: sale.discountTotal,
       total: sale.total,
       createdAt: sale.createdAt,
-      customerPaidAt,
     };
   }
 }

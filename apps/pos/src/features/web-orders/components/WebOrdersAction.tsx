@@ -32,7 +32,6 @@ export function WebOrdersAction({
     return () => clearTimeout(id);
   }, [orders.length]);
 
-  const claimed = orders.filter((o) => o.customerPaidAt !== null).length;
   const total = orders.length;
 
   return (
@@ -45,11 +44,7 @@ export function WebOrdersAction({
       >
         Pedidos web
         {total > 0 ? (
-          <span
-            className={`ml-2 rounded-full px-2 py-0.5 text-xs font-bold ${
-              claimed > 0 ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-            }`}
-          >
+          <span className="ml-2 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
             {total}
           </span>
         ) : null}

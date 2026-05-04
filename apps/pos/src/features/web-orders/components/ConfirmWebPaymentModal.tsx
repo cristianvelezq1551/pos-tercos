@@ -121,15 +121,9 @@ export function ConfirmWebPaymentModal({
             </span>
             <span className="text-lg font-bold tabular-nums">{COP.format(total)}</span>
           </div>
-          {order.customerPaidAt ? (
-            <p className="mt-1 text-xs text-emerald-700">
-              ✓ Cliente declaró pago: {new Date(order.customerPaidAt).toLocaleTimeString('es-CO')}
-            </p>
-          ) : (
-            <p className="mt-1 text-xs text-amber-700">
-              ⚠ Cliente todavía no confirmó pago. Verificá antes de confirmar.
-            </p>
-          )}
+          <p className="mt-1 text-xs text-amber-700">
+            Verificá el comprobante en WhatsApp antes de confirmar.
+          </p>
         </section>
 
         {loadingSale ? (

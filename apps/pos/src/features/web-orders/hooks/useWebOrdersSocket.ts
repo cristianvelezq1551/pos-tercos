@@ -17,8 +17,10 @@ export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'err
 /**
  * Sincroniza la lista de órdenes web pendientes contra el WS.
  * - `web-order.created` → agrega al state si type=WEB_*.
- * - `web-order.customer-paid` → patch del item con customerPaidAt poblado.
  * - `web-order.cancelled` → quita del state.
+ *
+ * (`web-order.customer-paid` removido en FASE 14.A; el flujo es
+ *  cajero-driven via wa.me desde FASE 9.)
  */
 export function useWebOrdersSocket(
   initial: PublicWebOrder[],
@@ -81,7 +83,6 @@ export function useWebOrdersSocket(
     };
 
     socket.on('web-order.created', apply);
-    socket.on('web-order.customer-paid', apply);
     socket.on('web-order.cancelled', apply);
 
     return () => {

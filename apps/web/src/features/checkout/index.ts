@@ -6,10 +6,5 @@ export {
   useOrderPoller,
   type OrderConnState,
 } from './components/OrderStatusPoller';
-export {
-  createWebOrder,
-  getWebOrder,
-  markOrderPaid,
-  geocodeAddress,
-} from './api';
+export { createWebOrder, getWebOrder, geocodeAddress } from './api';
 export { getWebOrderServer, buildPaymentInstructions } from './server';

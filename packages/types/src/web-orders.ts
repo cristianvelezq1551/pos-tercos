@@ -87,8 +87,6 @@ export const PublicWebOrderSchema = z.object({
   discountTotal: z.number().nonnegative(),
   total: z.number().nonnegative(),
   createdAt: z.string().datetime(),
-  /** ISO datetime cuando el cliente clickeó "ya pagué". Null si nunca. */
-  customerPaidAt: z.string().datetime().nullable(),
 });
 export type PublicWebOrder = z.infer<typeof PublicWebOrderSchema>;
 
@@ -105,36 +103,17 @@ export const CreateWebOrderResponseSchema = z.object({
 export type CreateWebOrderResponse = z.infer<typeof CreateWebOrderResponseSchema>;
 
 // ====================================================================
-// MARK PAID — el cliente clickea "ya pagué" desde la web
+// WS POS NOTIFICATION (FASE 7.B + 7.E + 14.A cleanup)
 // ====================================================================
-
-/**
- * Endpoint POST /web/orders/:id/mark-paid?token=
- *
- * NO cambia el status del sale (sigue PENDIENTE_PAGO). Solo:
- *  1. Setea `customer_paid_at` en metadata audit del sale (snapshot del momento).
- *  2. Emite evento WS al POS (room `pos.web-orders`) para que el cajero
- *     vea la notificación y confirme manualmente desde POS.
- *
- * El cajero verifica monto en Nequi/transfer + clicker confirm-payment del
- * POS (mismo endpoint /sales/:id/confirm-payment de FASE 5).
- */
-export const MarkPaidSchema = z.object({
-  /** Texto opcional con id de transacción / referencia que el cliente vio. */
-  reference: z.string().max(120).optional(),
-});
-export type MarkPaid = z.infer<typeof MarkPaidSchema>;
-
-// ====================================================================
-// WS POS NOTIFICATION (FASE 7.B + 7.E)
-// ====================================================================
+// `web-order.customer-paid` removido en 14.A (era parte del flujo "Ya pagué"
+// del cliente que se eliminó en 9.D). El backend ya no emite ese evento.
+// `web-order.cancelled` queda como reserva — sin emitter por ahora.
 
 export const POS_NAMESPACE = '/ws/pos';
 export const POS_WEB_ORDERS_ROOM = 'pos.web-orders';
 
 export const WebOrderEventNameEnum = z.enum([
   'web-order.created',
-  'web-order.customer-paid',
   'web-order.cancelled',
 ]);
 export type WebOrderEventName = z.infer<typeof WebOrderEventNameEnum>;

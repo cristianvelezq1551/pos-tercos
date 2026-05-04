@@ -4,7 +4,6 @@ import {
   Controller,
   Get,
   Headers,
-  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -16,10 +15,8 @@ import {
   CreateWebOrderSchema,
   IdempotencyKeySchema,
   IDEMPOTENCY_HEADER,
-  MarkPaidSchema,
   type CreateWebOrder,
   type CreateWebOrderResponse,
-  type MarkPaid,
   type PublicWebOrder,
 } from '@pos-tercos/types';
 import { Public } from '../auth/decorators/public.decorator';
@@ -75,19 +72,10 @@ export class WebOrdersController {
     return this.orders.getPublic(id);
   }
 
-  /** 10 reqs / 60s por IP — el cliente solo debería clickear una vez. */
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  @Post(':id/mark-paid')
-  @HttpCode(200)
-  async markPaid(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Query('token') token: string,
-    @Body(new ZodValidationPipe(MarkPaidSchema)) body: MarkPaid,
-  ): Promise<PublicWebOrder> {
-    if (!token) throw new BadRequestException('token query param required');
-    this.tokens.verify(token, id);
-    return this.orders.markPaid(id, body.reference);
-  }
+  // FASE 14.A — endpoint POST :id/mark-paid removido. El flujo es
+  // cajero-driven via wa.me desde FASE 9: el cliente nunca afirma pago,
+  // el cajero verifica el comprobante en WhatsApp y confirma desde POS
+  // (POST /sales/:id/confirm-payment).
 }
 
 function buildPaymentInstructions(order: PublicWebOrder): string {
@@ -105,7 +93,7 @@ function buildPaymentInstructions(order: PublicWebOrder): string {
   }
   lines.push('');
   lines.push(
-    `Cuando termines el pago, hacé click en "Ya pagué". Tu orden #${order.receiptNumber} se enviará a cocina apenas el cajero verifique.`,
+    `Te vamos a contactar por WhatsApp para pedirte el comprobante. Tu orden #${order.receiptNumber} se enviará a cocina apenas el cajero verifique el pago.`,
   );
   return lines.join('\n');
 }
