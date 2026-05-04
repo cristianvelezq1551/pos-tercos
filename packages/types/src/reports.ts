@@ -89,3 +89,166 @@ export const ReconciliationReportSchema = z.object({
   rows: z.array(ReconciliationRowSchema),
 });
 export type ReconciliationReport = z.infer<typeof ReconciliationReportSchema>;
+
+// ====================================================================
+// SALES REPORTS (FASE 13.A)
+// ====================================================================
+// Filtros base: from/to (ISO date YYYY-MM-DD), opcional cashierId/shiftId.
+// Granularidad: daily (por defecto). Devolvemos una serie temporal +
+// breakdowns + totales para que el frontend renderice dashboard, gráfica
+// y tabla del mismo payload.
+// ====================================================================
+
+export const SalesGranularityEnum = z.enum(['daily', 'hourly']);
+export type SalesGranularity = z.infer<typeof SalesGranularityEnum>;
+
+export const SalesBucketSchema = z.object({
+  /** ISO date `YYYY-MM-DD` (daily) o ISO datetime hora exacta (hourly). */
+  bucket: z.string(),
+  count: z.number().int().nonnegative(),
+  revenue: z.number().nonnegative(),
+  discount: z.number().nonnegative(),
+});
+export type SalesBucket = z.infer<typeof SalesBucketSchema>;
+
+export const SalesByTypeSchema = z.object({
+  type: z.enum(['COUNTER', 'WEB_PICKUP', 'WEB_DELIVERY']),
+  count: z.number().int().nonnegative(),
+  revenue: z.number().nonnegative(),
+});
+export type SalesByType = z.infer<typeof SalesByTypeSchema>;
+
+export const SalesByMethodSchema = z.object({
+  method: z.enum(['CASH', 'NEQUI', 'DAVIPLATA', 'QR_BANCOLOMBIA', 'TRANSFER']),
+  count: z.number().int().nonnegative(),
+  revenue: z.number().nonnegative(),
+});
+export type SalesByMethod = z.infer<typeof SalesByMethodSchema>;
+
+export const SalesSummarySchema = z.object({
+  periodFrom: z.string(),
+  periodTo: z.string(),
+  granularity: SalesGranularityEnum,
+  totals: z.object({
+    count: z.number().int().nonnegative(),
+    revenue: z.number().nonnegative(),
+    discount: z.number().nonnegative(),
+    voidCount: z.number().int().nonnegative(),
+    avgTicket: z.number().nonnegative(),
+  }),
+  buckets: z.array(SalesBucketSchema),
+  byType: z.array(SalesByTypeSchema),
+  byMethod: z.array(SalesByMethodSchema),
+});
+export type SalesSummary = z.infer<typeof SalesSummarySchema>;
+
+// ====================================================================
+// TOP PRODUCTS (FASE 13.A)
+// ====================================================================
+
+export const TopProductSchema = z.object({
+  productId: z.string().uuid(),
+  productName: z.string(),
+  quantity: z.number().nonnegative(),
+  revenue: z.number().nonnegative(),
+  /** Costo total estimado (sumatoria de lastUnitCost × qty consumida). null si no se pudo calcular. */
+  estCost: z.number().nullable(),
+  /** Margen absoluto = revenue - estCost. null si no se pudo calcular. */
+  estMargin: z.number().nullable(),
+  /** % margin = estMargin / revenue. null si no se pudo calcular. */
+  estMarginPct: z.number().nullable(),
+});
+export type TopProduct = z.infer<typeof TopProductSchema>;
+
+export const TopProductsReportSchema = z.object({
+  periodFrom: z.string(),
+  periodTo: z.string(),
+  products: z.array(TopProductSchema),
+});
+export type TopProductsReport = z.infer<typeof TopProductsReportSchema>;
+
+// ====================================================================
+// HOUR HEATMAP (FASE 13.A) — día de semana × hora del día
+// ====================================================================
+
+export const HourHeatmapCellSchema = z.object({
+  /** 0=domingo … 6=sábado (JS Date.getDay convention). */
+  dow: z.number().int().min(0).max(6),
+  /** 0..23 (hora local Bogotá). */
+  hour: z.number().int().min(0).max(23),
+  count: z.number().int().nonnegative(),
+  revenue: z.number().nonnegative(),
+});
+export type HourHeatmapCell = z.infer<typeof HourHeatmapCellSchema>;
+
+export const HourHeatmapReportSchema = z.object({
+  periodFrom: z.string(),
+  periodTo: z.string(),
+  cells: z.array(HourHeatmapCellSchema),
+});
+export type HourHeatmapReport = z.infer<typeof HourHeatmapReportSchema>;
+
+// ====================================================================
+// WHATSAPP METRICS (FASE 13.A) — desde audit log WHATSAPP_LINK_OPENED
+// ====================================================================
+
+export const WhatsAppStageCoverageSchema = z.object({
+  stage: z.enum(['accepted', 'confirmed', 'ready']),
+  /** Cantidad de sales web elegibles para este stage en el período. */
+  eligible: z.number().int().nonnegative(),
+  /** Cantidad de sales que tuvieron al menos 1 click registrado. */
+  reached: z.number().int().nonnegative(),
+  /** % cobertura = reached / eligible. 0..1. null si eligible=0. */
+  coveragePct: z.number().nullable(),
+});
+export type WhatsAppStageCoverage = z.infer<typeof WhatsAppStageCoverageSchema>;
+
+export const WhatsAppMetricsSchema = z.object({
+  periodFrom: z.string(),
+  periodTo: z.string(),
+  totalWebSales: z.number().int().nonnegative(),
+  stages: z.array(WhatsAppStageCoverageSchema),
+});
+export type WhatsAppMetrics = z.infer<typeof WhatsAppMetricsSchema>;
+
+// ====================================================================
+// IA SUGGESTIONS METRICS (FASE 13.A) — desde purchase_suggestions
+// ====================================================================
+
+export const SuggestionsMetricsSchema = z.object({
+  periodFrom: z.string(),
+  periodTo: z.string(),
+  byStatus: z.object({
+    pending: z.number().int().nonnegative(),
+    evaluated: z.number().int().nonnegative(),
+    accepted: z.number().int().nonnegative(),
+    rejected: z.number().int().nonnegative(),
+    stale: z.number().int().nonnegative(),
+  }),
+  evaluatedCount: z.number().int().nonnegative(),
+  /** Total estimado en COP de las suggestions ACEPTADAS. */
+  acceptedEstTotal: z.number().nonnegative(),
+});
+export type SuggestionsMetrics = z.infer<typeof SuggestionsMetricsSchema>;
+
+// ====================================================================
+// DASHBOARD HOME (FASE 13.B) — resumen del día
+// ====================================================================
+
+export const DashboardSummarySchema = z.object({
+  /** Fecha del día (YYYY-MM-DD, zona Bogotá). */
+  date: z.string(),
+  todayCount: z.number().int().nonnegative(),
+  todayRevenue: z.number().nonnegative(),
+  todayDiscount: z.number().nonnegative(),
+  /** Diferencia % vs el mismo día de la semana pasada. null si no hay sample. */
+  weekOverWeekPct: z.number().nullable(),
+  /** Pendientes en el momento de la consulta. */
+  pendingWebOrders: z.number().int().nonnegative(),
+  ordersInKitchen: z.number().int().nonnegative(),
+  ordersReady: z.number().int().nonnegative(),
+  /** Stockables bajo threshold (ingredient/product directResale activos). */
+  lowStockCount: z.number().int().nonnegative(),
+  pendingSuggestions: z.number().int().nonnegative(),
+});
+export type DashboardSummary = z.infer<typeof DashboardSummarySchema>;

@@ -1,0 +1,577 @@
+import { Injectable } from '@nestjs/common';
+import { expandRecipe } from '@pos-tercos/domain';
+import type {
+  DashboardSummary,
+  HourHeatmapReport,
+  SalesGranularity,
+  SalesSummary,
+  SuggestionsMetrics,
+  TopProductsReport,
+  WhatsAppMetrics,
+} from '@pos-tercos/types';
+import type { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+
+/**
+ * Reportes operativos / de negocio (FASE 13.A).
+ *
+ * Diseño:
+ * - Cada método arma su propia query SQL focalizada (groupBy + aggregate).
+ *   No reusamos un mega-pipeline porque las dimensiones varían.
+ * - Período se interpreta como "fecha local Bogotá" (timezone-naive ok
+ *   para v1 — el backend corre en TZ Colombia).
+ * - "Sales pagadas" = status NOT IN (PENDIENTE_PAGO, CANCELADO_NO_PAGO,
+ *   VOID). Esto incluye PAGADO, EN_PREPARACION, LISTO, ASIGNADO, EN_RUTA,
+ *   ENTREGADO, INTENTO_FALLIDO, DEVUELTO, EN_DISPUTA, CANCELADO_SIN_REEMBOLSO.
+ *   Idea: una vez que el cliente pagó, eso ya es revenue del día.
+ */
+@Injectable()
+export class SalesReportsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ==================================================================
+  // SALES SUMMARY — series + breakdowns
+  // ==================================================================
+
+  async getSalesSummary(
+    from: Date,
+    to: Date,
+    granularity: SalesGranularity,
+  ): Promise<SalesSummary> {
+    const where = paidSalesWhere(from, to);
+
+    const sales = await this.prisma.sale.findMany({
+      where,
+      select: {
+        type: true,
+        paymentMethod: true,
+        total: true,
+        discountTotal: true,
+        paidAt: true,
+        status: true,
+      },
+    });
+
+    // Total / avg / discount / count + voidCount
+    const voidCount = await this.prisma.sale.count({
+      where: {
+        status: 'VOID',
+        createdAt: { gte: from, lte: to },
+      },
+    });
+
+    let revenue = 0;
+    let discount = 0;
+    const buckets = new Map<string, { count: number; revenue: number; discount: number }>();
+    const byType = new Map<string, { count: number; revenue: number }>();
+    const byMethod = new Map<string, { count: number; revenue: number }>();
+
+    for (const s of sales) {
+      const total = Number(s.total);
+      const disc = Number(s.discountTotal);
+      revenue += total;
+      discount += disc;
+
+      const at = s.paidAt ?? new Date();
+      const bucketKey =
+        granularity === 'hourly'
+          ? toHourBucket(at)
+          : toDayBucket(at);
+      const b = buckets.get(bucketKey) ?? { count: 0, revenue: 0, discount: 0 };
+      b.count += 1;
+      b.revenue += total;
+      b.discount += disc;
+      buckets.set(bucketKey, b);
+
+      const t = byType.get(s.type) ?? { count: 0, revenue: 0 };
+      t.count += 1;
+      t.revenue += total;
+      byType.set(s.type, t);
+
+      if (s.paymentMethod) {
+        const m = byMethod.get(s.paymentMethod) ?? { count: 0, revenue: 0 };
+        m.count += 1;
+        m.revenue += total;
+        byMethod.set(s.paymentMethod, m);
+      }
+    }
+
+    const count = sales.length;
+    const avgTicket = count > 0 ? revenue / count : 0;
+
+    return {
+      periodFrom: toDayBucket(from),
+      periodTo: toDayBucket(to),
+      granularity,
+      totals: {
+        count,
+        revenue: round(revenue),
+        discount: round(discount),
+        voidCount,
+        avgTicket: round(avgTicket),
+      },
+      buckets: Array.from(buckets.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([bucket, v]) => ({
+          bucket,
+          count: v.count,
+          revenue: round(v.revenue),
+          discount: round(v.discount),
+        })),
+      byType: Array.from(byType.entries()).map(([type, v]) => ({
+        type: type as 'COUNTER' | 'WEB_PICKUP' | 'WEB_DELIVERY',
+        count: v.count,
+        revenue: round(v.revenue),
+      })),
+      byMethod: Array.from(byMethod.entries()).map(([method, v]) => ({
+        method: method as
+          | 'CASH'
+          | 'NEQUI'
+          | 'DAVIPLATA'
+          | 'QR_BANCOLOMBIA'
+          | 'TRANSFER',
+        count: v.count,
+        revenue: round(v.revenue),
+      })),
+    };
+  }
+
+  // ==================================================================
+  // TOP PRODUCTS
+  // ==================================================================
+
+  async getTopProducts(
+    from: Date,
+    to: Date,
+    limit: number,
+  ): Promise<TopProductsReport> {
+    const grouped = await this.prisma.saleItem.groupBy({
+      by: ['productId'],
+      where: { sale: paidSalesWhere(from, to) },
+      _sum: { quantity: true, lineTotal: true },
+      orderBy: { _sum: { lineTotal: 'desc' } },
+      take: limit,
+    });
+
+    const productIds = grouped.map((g) => g.productId);
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      include: {
+        recipeEdges: { include: { childIngredient: true, childSubproduct: true } },
+        comboComponents: { include: { product: true } },
+      },
+    });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    // Para costos: pre-cargamos lastUnitCost de todos los ingredients que
+    // intervienen en las recetas de los top products.
+    const ingredientIds = new Set<string>();
+    for (const p of products) {
+      for (const e of p.recipeEdges) {
+        if (e.childIngredientId) ingredientIds.add(e.childIngredientId);
+      }
+    }
+    const ingredients = ingredientIds.size
+      ? await this.prisma.ingredient.findMany({
+          where: { id: { in: Array.from(ingredientIds) } },
+          select: { id: true, lastUnitCost: true, conversionFactor: true },
+        })
+      : [];
+    const ingredientCostMap = new Map<string, number | null>();
+    for (const i of ingredients) {
+      // Costo en unitRecipe = lastUnitCost (en unitPurchase) / conversionFactor
+      const cf = Number(i.conversionFactor);
+      const luc = i.lastUnitCost === null ? null : Number(i.lastUnitCost);
+      ingredientCostMap.set(i.id, luc !== null && cf > 0 ? luc / cf : null);
+    }
+
+    const result = grouped.map((g) => {
+      const product = productMap.get(g.productId);
+      const productName = product?.name ?? '(producto eliminado)';
+      const quantity = Number(g._sum.quantity ?? 0);
+      const revenue = Number(g._sum.lineTotal ?? 0);
+      const estCostPerUnit = product
+        ? estimateProductCost(product, ingredientCostMap)
+        : null;
+      const estCost = estCostPerUnit !== null ? estCostPerUnit * quantity : null;
+      const estMargin = estCost !== null ? revenue - estCost : null;
+      const estMarginPct =
+        estMargin !== null && revenue > 0 ? estMargin / revenue : null;
+      return {
+        productId: g.productId,
+        productName,
+        quantity,
+        revenue: round(revenue),
+        estCost: estCost === null ? null : round(estCost),
+        estMargin: estMargin === null ? null : round(estMargin),
+        estMarginPct: estMarginPct === null ? null : round4(estMarginPct),
+      };
+    });
+
+    return {
+      periodFrom: toDayBucket(from),
+      periodTo: toDayBucket(to),
+      products: result,
+    };
+  }
+
+  // ==================================================================
+  // HOUR HEATMAP — día de semana × hora
+  // ==================================================================
+
+  async getHourHeatmap(from: Date, to: Date): Promise<HourHeatmapReport> {
+    const sales = await this.prisma.sale.findMany({
+      where: paidSalesWhere(from, to),
+      select: { paidAt: true, total: true },
+    });
+
+    const cells = new Map<string, { count: number; revenue: number }>();
+    for (const s of sales) {
+      const at = s.paidAt ?? new Date();
+      const dow = at.getDay();
+      const hour = at.getHours();
+      const key = `${dow}-${hour}`;
+      const cell = cells.get(key) ?? { count: 0, revenue: 0 };
+      cell.count += 1;
+      cell.revenue += Number(s.total);
+      cells.set(key, cell);
+    }
+
+    return {
+      periodFrom: toDayBucket(from),
+      periodTo: toDayBucket(to),
+      cells: Array.from(cells.entries()).map(([key, v]) => {
+        const [dow, hour] = key.split('-').map(Number);
+        return {
+          dow: dow!,
+          hour: hour!,
+          count: v.count,
+          revenue: round(v.revenue),
+        };
+      }),
+    };
+  }
+
+  // ==================================================================
+  // WHATSAPP METRICS — cobertura por stage
+  // ==================================================================
+
+  async getWhatsAppMetrics(from: Date, to: Date): Promise<WhatsAppMetrics> {
+    // Sales web (PICKUP + DELIVERY) en el período.
+    const webSales = await this.prisma.sale.findMany({
+      where: {
+        type: { in: ['WEB_PICKUP', 'WEB_DELIVERY'] },
+        createdAt: { gte: from, lte: to },
+      },
+      select: { id: true, status: true, paidAt: true },
+    });
+    const totalWebSales = webSales.length;
+
+    const eligibleAccepted = webSales.length; // todo pedido web pasa por accepted
+    const eligibleConfirmed = webSales.filter(
+      (s) => s.paidAt !== null,
+    ).length;
+    const eligibleReady = webSales.filter((s) =>
+      [
+        'LISTO_DESPACHO',
+        'ASIGNADO',
+        'EN_RUTA',
+        'ENTREGADO',
+      ].includes(s.status),
+    ).length;
+
+    // Audit log WHATSAPP_LINK_OPENED por stage.
+    const audits = await this.prisma.auditLog.findMany({
+      where: {
+        action: 'WHATSAPP_LINK_OPENED',
+        createdAt: { gte: from, lte: to },
+      },
+      select: { entityId: true, metadata: true },
+    });
+    const reachedByStage: Record<string, Set<string>> = {
+      accepted: new Set(),
+      confirmed: new Set(),
+      ready: new Set(),
+    };
+    const webSaleIds = new Set(webSales.map((s) => s.id));
+    for (const a of audits) {
+      if (!a.entityId || !webSaleIds.has(a.entityId)) continue;
+      const meta = a.metadata as { stage?: string } | null;
+      const stage = meta?.stage;
+      if (stage && reachedByStage[stage]) {
+        reachedByStage[stage].add(a.entityId);
+      }
+    }
+
+    const buildStage = (
+      stage: 'accepted' | 'confirmed' | 'ready',
+      eligible: number,
+    ) => {
+      const reached = reachedByStage[stage].size;
+      return {
+        stage,
+        eligible,
+        reached,
+        coveragePct: eligible > 0 ? round4(reached / eligible) : null,
+      };
+    };
+
+    return {
+      periodFrom: toDayBucket(from),
+      periodTo: toDayBucket(to),
+      totalWebSales,
+      stages: [
+        buildStage('accepted', eligibleAccepted),
+        buildStage('confirmed', eligibleConfirmed),
+        buildStage('ready', eligibleReady),
+      ],
+    };
+  }
+
+  // ==================================================================
+  // IA SUGGESTIONS METRICS
+  // ==================================================================
+
+  async getSuggestionsMetrics(
+    from: Date,
+    to: Date,
+  ): Promise<SuggestionsMetrics> {
+    const grouped = await this.prisma.purchaseSuggestion.groupBy({
+      by: ['status'],
+      where: { createdAt: { gte: from, lte: to } },
+      _count: { _all: true },
+    });
+    const byStatus = {
+      pending: 0,
+      evaluated: 0,
+      accepted: 0,
+      rejected: 0,
+      stale: 0,
+    };
+    for (const g of grouped) {
+      const key = g.status.toLowerCase() as keyof typeof byStatus;
+      byStatus[key] = g._count._all;
+    }
+
+    const evaluatedCount = await this.prisma.purchaseSuggestion.count({
+      where: {
+        llmEvaluatedAt: { gte: from, lte: to },
+      },
+    });
+
+    const acceptedSum = await this.prisma.purchaseSuggestion.aggregate({
+      where: {
+        status: 'ACCEPTED',
+        resolvedAt: { gte: from, lte: to },
+      },
+      _sum: { estTotal: true },
+    });
+
+    return {
+      periodFrom: toDayBucket(from),
+      periodTo: toDayBucket(to),
+      byStatus,
+      evaluatedCount,
+      acceptedEstTotal: round(Number(acceptedSum._sum.estTotal ?? 0)),
+    };
+  }
+
+  // ==================================================================
+  // DASHBOARD SUMMARY
+  // ==================================================================
+
+  async getDashboardSummary(): Promise<DashboardSummary> {
+    const now = new Date();
+    const dayStart = startOfDay(now);
+    const dayEnd = endOfDay(now);
+    const lastWeekStart = startOfDay(addDays(now, -7));
+    const lastWeekEnd = endOfDay(addDays(now, -7));
+
+    const [today, lastWeekSameDay, pendingWeb, inKitchen, ready, lowStock, pendingSugg] = await Promise.all([
+      this.prisma.sale.aggregate({
+        where: paidSalesWhere(dayStart, dayEnd),
+        _sum: { total: true, discountTotal: true },
+        _count: true,
+      }),
+      this.prisma.sale.aggregate({
+        where: paidSalesWhere(lastWeekStart, lastWeekEnd),
+        _sum: { total: true },
+      }),
+      this.prisma.sale.count({
+        where: {
+          type: { in: ['WEB_PICKUP', 'WEB_DELIVERY'] },
+          status: 'PENDIENTE_PAGO',
+        },
+      }),
+      this.prisma.sale.count({
+        where: { status: { in: ['PAGADO', 'EN_PREPARACION'] } },
+      }),
+      this.prisma.sale.count({
+        where: { status: 'LISTO_DESPACHO' },
+      }),
+      this.computeLowStockCount(),
+      this.prisma.purchaseSuggestion.count({
+        where: { status: { in: ['PENDING', 'EVALUATED'] } },
+      }),
+    ]);
+
+    const todayRevenue = Number(today._sum.total ?? 0);
+    const todayDiscount = Number(today._sum.discountTotal ?? 0);
+    const lastWeekRevenue = Number(lastWeekSameDay._sum.total ?? 0);
+    const weekOverWeekPct =
+      lastWeekRevenue > 0
+        ? round4((todayRevenue - lastWeekRevenue) / lastWeekRevenue)
+        : null;
+
+    return {
+      date: toDayBucket(now),
+      todayCount: today._count,
+      todayRevenue: round(todayRevenue),
+      todayDiscount: round(todayDiscount),
+      weekOverWeekPct,
+      pendingWebOrders: pendingWeb,
+      ordersInKitchen: inKitchen,
+      ordersReady: ready,
+      lowStockCount: lowStock,
+      pendingSuggestions: pendingSugg,
+    };
+  }
+
+  private async computeLowStockCount(): Promise<number> {
+    // Stockables activos con thresholdMin > 0 cuyo stock actual está bajo.
+    const [ingredients, products, movements] = await Promise.all([
+      this.prisma.ingredient.findMany({
+        where: { isActive: true, thresholdMin: { gt: 0 } },
+        select: { id: true, thresholdMin: true },
+      }),
+      this.prisma.product.findMany({
+        where: { isActive: true, directResale: true, thresholdMin: { gt: 0 } },
+        select: { id: true, thresholdMin: true },
+      }),
+      this.prisma.inventoryMovement.groupBy({
+        by: ['entityType', 'ingredientId', 'productId'],
+        _sum: { delta: true },
+      }),
+    ]);
+
+    const stockMap = new Map<string, number>();
+    for (const r of movements) {
+      const id = r.entityType === 'INGREDIENT' ? r.ingredientId : r.productId;
+      if (!id) continue;
+      const key = `${r.entityType}:${id}`;
+      stockMap.set(key, Number(r._sum.delta ?? 0));
+    }
+
+    let count = 0;
+    for (const i of ingredients) {
+      const stock = stockMap.get(`INGREDIENT:${i.id}`) ?? 0;
+      if (stock < Number(i.thresholdMin)) count++;
+    }
+    for (const p of products) {
+      const stock = stockMap.get(`PRODUCT:${p.id}`) ?? 0;
+      if (stock < Number(p.thresholdMin)) count++;
+    }
+    return count;
+  }
+}
+
+// ====================================================================
+// HELPERS
+// ====================================================================
+
+function paidSalesWhere(from: Date, to: Date): Prisma.SaleWhereInput {
+  return {
+    paidAt: { gte: from, lte: to, not: null },
+    status: {
+      notIn: ['PENDIENTE_PAGO', 'CANCELADO_NO_PAGO', 'VOID'],
+    },
+  };
+}
+
+function toDayBucket(d: Date): string {
+  // YYYY-MM-DD en hora local del server (Bogotá).
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function toHourBucket(d: Date): string {
+  // YYYY-MM-DDTHH:00 (hora local).
+  return `${toDayBucket(d)}T${String(d.getHours()).padStart(2, '0')}:00`;
+}
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function round(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function round4(n: number): number {
+  return Math.round(n * 10000) / 10000;
+}
+
+/**
+ * Costo unitario estimado de un producto. Recursivo via expandRecipe para
+ * productos con receta; combo = sum de componentes; directResale =
+ * lastUnitCost del producto. Devuelve null si falta data.
+ */
+function estimateProductCost(
+  product: {
+    id: string;
+    isCombo: boolean;
+    directResale: boolean;
+    lastUnitCost: Prisma.Decimal | null;
+    recipeEdges: Array<{
+      childIngredientId: string | null;
+      quantityNeta: Prisma.Decimal;
+      mermaPct: Prisma.Decimal;
+    }>;
+    comboComponents: Array<{ quantity: number; product: { lastUnitCost: Prisma.Decimal | null } }>;
+  },
+  ingredientCostPerRecipeUnit: Map<string, number | null>,
+): number | null {
+  if (product.isCombo) {
+    let total = 0;
+    for (const c of product.comboComponents) {
+      if (c.product.lastUnitCost === null) return null;
+      total += Number(c.product.lastUnitCost) * c.quantity;
+    }
+    return total;
+  }
+
+  if (product.directResale) {
+    return product.lastUnitCost === null ? null : Number(product.lastUnitCost);
+  }
+
+  // Producto con receta — usar expandRecipe simplificado (1 nivel via
+  // recipeEdges directos). Si tuviera subproductos, este cálculo
+  // subestima — para v1 el dueño aceptó esa aproximación.
+  void expandRecipe; // marca explícita que no la usamos acá (recipe edges directos alcanzan)
+  let total = 0;
+  for (const e of product.recipeEdges) {
+    if (!e.childIngredientId) continue; // subproducto: skip por simplicidad
+    const cost = ingredientCostPerRecipeUnit.get(e.childIngredientId);
+    if (cost === null || cost === undefined) return null;
+    const merma = Number(e.mermaPct);
+    const effectiveQty = Number(e.quantityNeta) / (1 - merma);
+    total += cost * effectiveQty;
+  }
+  return total;
+}
