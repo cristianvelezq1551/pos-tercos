@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { CreateSupplier, Supplier, UpdateSupplier } from '@pos-tercos/types';
+import type {
+  CreateSupplier,
+  Supplier,
+  SupplierProduct,
+  UpdateSupplier,
+} from '@pos-tercos/types';
 import type { Prisma, Supplier as DbSupplier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -61,6 +66,35 @@ export class SuppliersService {
       data: { isActive: false },
     });
     return toSupplierDto(row);
+  }
+
+  /**
+   * FASE 4 ajustes 2.7: lista los items que el proveedor vende (insumos
+   * + productos direct-resale) con su último precio + última fecha de
+   * compra. Polimórfico via entityType.
+   */
+  async getProducts(supplierId: string): Promise<SupplierProduct[]> {
+    await this.assertExists(supplierId);
+    const rows = await this.prisma.supplierProduct.findMany({
+      where: { supplierId },
+      include: {
+        ingredient: { select: { name: true } },
+        product: { select: { name: true } },
+      },
+      orderBy: { lastPurchaseDate: 'desc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      supplierId: r.supplierId,
+      entityType: r.entityType,
+      ingredientId: r.ingredientId,
+      productId: r.productId,
+      name: r.ingredient?.name ?? r.product?.name ?? '(eliminado)',
+      lastUnitPrice: r.lastUnitPrice !== null ? Number(r.lastUnitPrice) : null,
+      lastPurchaseDate: r.lastPurchaseDate?.toISOString() ?? null,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }));
   }
 
   /**

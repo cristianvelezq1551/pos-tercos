@@ -4,6 +4,7 @@ import {
   UpdateSupplierSchema,
   type CreateSupplier,
   type Supplier,
+  type SupplierProduct,
   type UpdateSupplier,
 } from '@pos-tercos/types';
 import { AdminAccess } from '../auth/decorators/roles.decorator';
@@ -22,6 +23,12 @@ export class SuppliersController {
   @Get(':id')
   getById(@Param('id', ParseUUIDPipe) id: string): Promise<Supplier> {
     return this.suppliers.getById(id);
+  }
+
+  /** FASE 4 ajustes 2.7: items que el proveedor vende (insumos + productos direct-resale). */
+  @Get(':id/products')
+  getProducts(@Param('id', ParseUUIDPipe) id: string): Promise<SupplierProduct[]> {
+    return this.suppliers.getProducts(id);
   }
 
   @AdminAccess()

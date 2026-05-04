@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { StockableTypeEnum } from './inventory';
 
 export const SupplierSchema = z.object({
   id: z.string().uuid(),
@@ -27,14 +28,31 @@ export const UpdateSupplierSchema = CreateSupplierSchema.partial().extend({
 });
 export type UpdateSupplier = z.infer<typeof UpdateSupplierSchema>;
 
-export const SupplierProductSchema = z.object({
-  id: z.string().uuid(),
-  supplierId: z.string().uuid(),
-  ingredientId: z.string().uuid(),
-  ingredientName: z.string().optional(),
-  lastUnitPrice: z.number().nullable(),
-  lastPurchaseDate: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
+/**
+ * SupplierProduct polimórfico (FASE 4 ajustes 2.8): apunta a INGREDIENT
+ * o PRODUCT (direct-resale) según `entityType`. Espejo del schema DB
+ * donde `ingredient_id` xor `product_id` está enforced por CHECK.
+ *
+ * Reusa StockableTypeEnum de `./inventory` (ya existía).
+ */
+export const SupplierProductSchema = z
+  .object({
+    id: z.string().uuid(),
+    supplierId: z.string().uuid(),
+    entityType: StockableTypeEnum,
+    ingredientId: z.string().uuid().nullable(),
+    productId: z.string().uuid().nullable(),
+    /** Nombre del item (ingrediente o producto) — populado por el endpoint. */
+    name: z.string().optional(),
+    lastUnitPrice: z.number().nullable(),
+    lastPurchaseDate: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .refine(
+    (d) =>
+      (d.entityType === 'INGREDIENT' && d.ingredientId !== null && d.productId === null) ||
+      (d.entityType === 'PRODUCT' && d.productId !== null && d.ingredientId === null),
+    'entityType debe coincidir con ingredientId xor productId',
+  );
 export type SupplierProduct = z.infer<typeof SupplierProductSchema>;
