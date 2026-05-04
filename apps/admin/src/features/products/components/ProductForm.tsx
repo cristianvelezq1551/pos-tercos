@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { CreateProduct, Product, UpdateProduct } from '@pos-tercos/types';
 import { createProduct, deactivateProduct, updateProduct } from '../api/client';
+import { formatCop as fmtCop } from '../../../lib/format';
+import { marginTone } from '../../../lib/margin-thresholds';
 
 interface ProductFormProps {
   initial?: Product;
@@ -611,11 +613,10 @@ function CostInfoPanel({
           tone={
             margin === null
               ? undefined
-              : margin >= 30
-                ? 'good'
-                : margin >= 10
-                  ? 'warn'
-                  : 'bad'
+              : (() => {
+                  const t = marginTone(margin);
+                  return t === 'good' ? 'good' : t === 'warn' ? 'warn' : 'bad';
+                })()
           }
         />
       </div>
@@ -657,9 +658,5 @@ function Stat({
 }
 
 function formatCop(amount: number): string {
-  return amount.toLocaleString('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  });
+  return fmtCop(amount);
 }

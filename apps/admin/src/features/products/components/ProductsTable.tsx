@@ -1,5 +1,7 @@
 import type { ExpandedCostResponse, Product } from '@pos-tercos/types';
 import Link from 'next/link';
+import { formatCop } from '../../../lib/format';
+import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
 
 interface ProductsTableProps {
   products: Product[];
@@ -225,21 +227,10 @@ function Badge({
 }
 
 function MarginBadge({ value }: { value: number }) {
-  const tone =
-    value >= 30
-      ? 'text-green-700'
-      : value >= 10
-        ? 'text-amber-700'
-        : value >= 0
-          ? 'text-orange-700'
-          : 'text-red-700';
+  const tone = MARGIN_TONE_CLASS[marginTone(value)];
   return <span className={`font-medium ${tone}`}>{value.toFixed(1)}%</span>;
 }
 
 function formatPrice(amount: number): string {
-  return amount.toLocaleString('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  });
+  return formatCop(amount);
 }

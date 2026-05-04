@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
   ExtractedInvoice,
@@ -9,8 +9,6 @@ import type {
   Stockable,
   Supplier,
 } from '@pos-tercos/types';
-import { listStock } from '../../inventory';
-import { listSuppliers } from '../utils/suppliers-api';
 import { InvoiceConfirmModal } from './InvoiceConfirmModal';
 
 interface EditDraftScreenProps {
@@ -29,6 +27,12 @@ interface EditDraftScreenProps {
  *     extracción IA cruda).
  *  2) Editar un draft creado por POST /invoices/from-clone (items con
  *     selección pre-resuelta).
+ *
+ * FASE 4 ajustes 2.15: ya NO se hace re-fetch on-mount de suppliers +
+ * stockables. La página SSR ya los pasa frescos en initialSuppliers/initial-
+ * Stockables. El doble fetch on-mount era redundante y agregaba latencia
+ * percibida. Si el dueño crea un stockable inline, `onStockableCreated` lo
+ * agrega al state local sin necesidad de re-fetch.
  */
 export function EditDraftScreen({
   invoice,
@@ -37,19 +41,8 @@ export function EditDraftScreen({
   initialStockables,
 }: EditDraftScreenProps) {
   const router = useRouter();
-  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
   const [stockables, setStockables] = useState<Stockable[]>(initialStockables);
-
-  // Refresh lookups cuando se monta, por si el usuario creó un supplier
-  // o stockable mientras tanto en otra pestaña.
-  useEffect(() => {
-    Promise.all([listSuppliers(), listStock({ onlyActive: true })])
-      .then(([s, items]) => {
-        setSuppliers(s);
-        setStockables(items);
-      })
-      .catch(() => {});
-  }, []);
+  const suppliers = initialSuppliers;
 
   const draft: InvoiceDraftResponse = { invoice, extraction };
 
