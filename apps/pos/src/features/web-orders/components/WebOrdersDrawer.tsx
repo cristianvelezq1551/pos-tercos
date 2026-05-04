@@ -5,6 +5,7 @@ import { Button } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { COP } from '../../catalog/lib/format';
 import { useWebOrdersSocket, type ConnectionState } from '../hooks/useWebOrdersSocket';
+import { openWhatsAppForSale } from '../lib/whatsapp';
 import { ConfirmWebPaymentModal } from './ConfirmWebPaymentModal';
 
 export function WebOrdersDrawer({
@@ -85,7 +86,10 @@ export function WebOrdersDrawer({
                 <ul className="divide-y divide-gray-100">
                   {orders.map((o) => (
                     <li key={o.id} className="px-4 py-3">
-                      <WebOrderRow order={o} onConfirm={() => setConfirming(o)} />
+                      <WebOrderRow
+                        order={o}
+                        onConfirm={() => setConfirming(o)}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -112,8 +116,17 @@ function WebOrderRow({
   order: PublicWebOrder;
   onConfirm: () => void;
 }) {
-  const claimed = order.customerPaidAt !== null;
   const created = new Date(order.createdAt);
+  const [popupBlocked, setPopupBlocked] = useState(false);
+
+  const handleAccept = () => {
+    setPopupBlocked(false);
+    const r = openWhatsAppForSale(order, 'accepted');
+    if (!r.opened && r.reason === 'popup-blocked') {
+      setPopupBlocked(true);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-baseline justify-between">
@@ -131,21 +144,29 @@ function WebOrderRow({
       {order.deliveryAddress ? (
         <p className="mt-0.5 text-xs text-gray-500">{order.deliveryAddress}</p>
       ) : null}
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-base font-bold tabular-nums">{COP.format(order.total)}</span>
-        {claimed ? (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-            ✓ Cliente avisó pago
-          </span>
-        ) : (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-            Pendiente confirmar
-          </span>
-        )}
+      <p className="mt-2 text-base font-bold tabular-nums">
+        {COP.format(order.total)}
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Button
+          size="sm"
+          className="bg-emerald-600 text-white hover:bg-emerald-700"
+          onClick={handleAccept}
+        >
+          📱 Aceptar y contactar
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onConfirm}>
+          Confirmar pago
+        </Button>
       </div>
-      <Button size="sm" className="mt-2 w-full" onClick={onConfirm}>
-        Confirmar pago
-      </Button>
+      <p className="mt-1.5 text-[11px] leading-snug text-gray-500">
+        Pedí el comprobante por WhatsApp. Cuando llegue, "Confirmar pago".
+      </p>
+      {popupBlocked && (
+        <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+          El navegador bloqueó WhatsApp. Permití popups para esta página y volvé a intentar.
+        </p>
+      )}
     </div>
   );
 }

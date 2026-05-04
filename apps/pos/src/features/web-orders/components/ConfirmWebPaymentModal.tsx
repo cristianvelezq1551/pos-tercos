@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { COP } from '../../catalog/lib/format';
 import { confirmPayment } from '../../sales/api/confirm-payment';
 import { fetchSaleById } from '../api/get-sale';
+import { openWhatsAppForSale } from '../lib/whatsapp';
 
 const METHODS: { method: PaymentMethod; label: string }[] = [
   { method: 'CASH', label: 'Efectivo' },
@@ -91,6 +92,11 @@ export function ConfirmWebPaymentModal({
         amountReceived: total,
         digitalDoubleVerified: isDigital ? true : undefined,
       });
+      // Acoplado al click: post-confirm abrimos WhatsApp con "ya está
+      // en cocina". El backend audit registra el click. Si el browser
+      // bloquea el popup, no falla la confirmación — el cajero puede
+      // mensajear manual desde el chat existente.
+      openWhatsAppForSale(paid, 'confirmed');
       onConfirmed(paid);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
