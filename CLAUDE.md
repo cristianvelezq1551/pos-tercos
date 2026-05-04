@@ -39,8 +39,8 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 backend ✅ |
-| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes (ventas/productos/operación) / promos / sugerencias IA | FASE 0-4 + 11 + 12 + 13 UI ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 + 14 backend ✅ |
+| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes (ventas/productos/operación) / promos / sugerencias IA / RRHH | FASE 0-4 + 11 + 12 + 13 + 14 UI ✅ |
 | POS Cajero | `apps/pos` | Next.js PWA — venta + drawer pedidos web + WhatsApp wa.me + cierre turno + cambiar PIN | FASE 5.E + 7.E + 9 + 11 UI ✅ |
 | KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina + WhatsApp al "Marcar listo" | FASE 6.C + 9 UI ✅ |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
@@ -86,9 +86,9 @@ apps/api/src/<dominio>/
 └── <dominio>.service.spec.ts
 ```
 
-**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `sales`, `kds`, `shifts`, `promotions`, `web-orders`, `web-menu`, `public-display`, `reports`, `purchase-suggestions`, `adapters/llm`, `adapters/storage`, `adapters/printer`, `adapters/cash-drawer`, `adapters/maps`, `common`. (WhatsApp wa.me NO crea módulo backend — es helper en `@pos-tercos/domain/whatsapp` + endpoint `POST /sales/:id/whatsapp-clicked` en SalesController.)
+**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `sales`, `kds`, `shifts`, `promotions`, `web-orders`, `web-menu`, `public-display`, `reports`, `purchase-suggestions`, `workers`, `adapters/llm`, `adapters/storage`, `adapters/printer`, `adapters/cash-drawer`, `adapters/maps`, `common`. (WhatsApp wa.me NO crea módulo backend — es helper en `@pos-tercos/domain/whatsapp` + endpoint `POST /sales/:id/whatsapp-clicked` en SalesController.)
 
-**Dominios pendientes:** `delivery`, `workers`.
+**Dominios pendientes:** `delivery`.
 
 **Reglas backend:**
 - ❌ NUNCA `PrismaService` en controller. Solo en service.
@@ -287,7 +287,7 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 
 ---
 
-## 5. Schema DB (25 tablas + 11 enums + 1 sequence)
+## 5. Schema DB (28 tablas + 12 enums + 1 sequence)
 
 ### Enums Prisma
 - `UserRole` — CAJERO, COCINERO, REPARTIDOR, ADMIN_OPERATIVO, DUENO, TRABAJADOR
@@ -301,6 +301,7 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 - `ShiftStatus` (FASE 5) — OPEN, CLOSED, RECONCILED
 - `PromotionType` (FASE 5 + 12.A) — PERCENT_OFF, BOGO, FIXED_OFF, COMBO_OFF (los 4 implementados en motor + DB + UI)
 - `PurchaseSuggestionStatus` (FASE 12.C) — PENDING, EVALUATED, ACCEPTED, REJECTED, STALE
+- `WorkerCommissionType` (FASE 14.B) — PERCENT_OF_SHIFT, FIXED_PER_SALE
 
 ### Sequences
 - `receipt_seq` (FASE 5) — monotónica, default de `sales.receipt_number`. Saltos detectables vía cron.
@@ -330,7 +331,10 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 22. `idempotency_keys` (FASE 5) — cache de respuestas para POSTs idempotentes, TTL 7d
 23. `approval_pins` (FASE 5) — PIN hash por usuario; trigger valida que role IN (ADMIN_OPERATIVO, DUENO)
 24. `purchase_suggestions` (FASE 12.C) — polimórfico (entity_type + ingredient_id xor product_id), snapshot stock/threshold/qty/cost, `llm_rationale` + `llm_model` + `llm_evaluated_at`, status + resolved_by/at/note, CHECK polimórfico + `suggested_qty > 0`
-25. `_prisma_migrations`
+25. `worker_attendance` (FASE 14.B) — userId + checkIn + checkOut nullable + hoursWorked Decimal calculado, CHECK checkOut > checkIn
+26. `worker_commissions` (FASE 14.B) — userId + type enum + percent / fixedAmount + appliedAt, histórico inmutable. CHECK per-type
+27. `payment_reconciliations` (FASE 14.D) — snapshot del módulo FASE 11.E con counts + reportJson completo + importedById
+28. `_prisma_migrations`
 
 ---
 
@@ -381,6 +385,20 @@ _(ninguno — FASE 4 cerrada)_
 - `POST /web/orders/:id/mark-paid?token=` — `@Public()`, Throttle 10/60s. NO cambia status. Audit `SALE_STATUS_CHANGED` con `metadata.stage='customer-paid-claimed'`. Retorna `PublicWebOrder` con `customerPaidAt` poblado.
 - `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.customer-paid`, `web-order.cancelled` (este último reservado para FASE 9+).
 - Confirmación de pago de orden web reusa `POST /sales/:id/confirm-payment` (FASE 5). El cajero hace doble-validación digital normal y el sale pasa a PAGADO.
+
+### RRHH (FASE 14.B)
+- `GET /workers/users` — Admin/Dueño. Lista candidatos a registrar.
+- `GET /workers/attendance[?user_id=&from=&to=&only_open=true&limit=]` — Admin/Dueño.
+- `POST /workers/:userId/check-in` body `{at?, notes?}` — Admin/Dueño. Rechaza si ya hay turno abierto.
+- `POST /workers/attendance/:id/check-out` body `{at?, notes?}` — Admin/Dueño. Calcula `hoursWorked`.
+- `GET /workers/commissions[?user_id=]` — Admin/Dueño.
+- `POST /workers/:userId/commission` body `CreateCommission` — Admin/Dueño. Histórico inmutable: cada cambio crea fila nueva.
+- `GET /workers/payroll-period?from=&to=` — Admin/Dueño. Agrupa por user con totalHours + activeCommission + estimatedCommission.
+
+### Persistencia reconciliación (FASE 14.D)
+- `POST /reports/payment-reconciliation/import?source=&save=true` — Dueño-only. `save=true` persiste el reporte.
+- `GET /reports/payment-reconciliation/history[?source=&limit=]` — Dueño-only.
+- `GET /reports/payment-reconciliation/history/:id` — Dueño-only. Detalle con rows.
 
 ### Reportes y Dashboard (FASE 13)
 - `GET /reports/dashboard` — Admin/Dueño. Resumen del día (revenue + WoW% + counts en vivo).
@@ -447,7 +465,11 @@ _(ninguno — FASE 4 cerrada)_
 /reports/products                        # top productos con margen (FASE 13.D)
 /reports/operations                      # WhatsApp + IA + heatmap (FASE 13.E)
 /reports/anomalies                       # 2σ histórico personal (FASE 11.D)
-/reports/reconciliation                  # CSV match Nequi/Bancolombia (FASE 11.E)
+/reports/reconciliation                  # CSV match + histórico (FASE 11.E + 14.D)
+/reports/reconciliation/history/[id]     # detalle de report guardado (FASE 14.D)
+/workers/attendance                      # asistencia trabajadores (FASE 14.C)
+/workers/commissions                     # config comisiones (FASE 14.C)
+/workers/payroll                         # payroll del período (FASE 14.C)
 /audit                                   # solo Dueño
 ```
 
@@ -676,9 +698,15 @@ apps/public-display/src/
 
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (80 hasta hoy)
+### Commits en `main` (86 hasta hoy)
 
 ```
+2ead261 chore(domain,reports): FASE 14.E Vitest formal + costo TopProducts recursivo
+13e0d67 feat(reports): FASE 14.D persistencia de reconciliation reports
+a86541f feat(admin): FASE 14.C UI /workers — asistencia + comisiones + payroll
+6302fca feat(workers): FASE 14.B schema RRHH + endpoints attendance/commission/payroll
+d30f83a chore(web-orders): FASE 14.A cleanup deprecated mark-paid + customerPaidAt
+5c8e93e docs(claude): FASE 13.F cierre — Reportes y Dashboard
 b2ffa61 feat(admin): FASE 13.E UI /reports/operations + sección Reportes en sidebar
 806d55a feat(admin): FASE 13.D UI /reports/products — top productos con márgenes
 02cccba feat(admin): FASE 13.C UI /reports/sales — serie + breakdowns
@@ -1104,13 +1132,55 @@ cancelaciones (cajero matiza el mensaje manualmente).
   - Cobertura WhatsApp se mide en sales **únicas** con click registrado, no en total de clicks (para no inflar % si el cajero hace doble click).
   - WoW% se calcula contra el "mismo día de la semana pasada" (not 7-day rolling). Es lo que un dueño de restaurante intuitivamente compara.
 
-### Pendientes — FASES 10, 14, 15
+### FASE 14 — RRHH + persistencia + Vitest + cleanup · ✅ COMPLETADA (5 sub-sprints)
+
+- [x] **14.A** (`d30f83a`) — Cleanup deprecated wa.me:
+  - `PublicWebOrderSchema`: drop `customerPaidAt` (siempre fue derivado del audit log, nunca DB column).
+  - `MarkPaidSchema` + tipo `MarkPaid`: removidos.
+  - `WebOrderEventNameEnum`: drop `web-order.customer-paid` (queda `created` y `cancelled`).
+  - Backend: `WebOrdersController.markPaid` removido. Service drop `markPaid`/`readCustomerPaidAt`. AuditService + Logger no usados removidos. `buildPaymentInstructions` cambia footer a "Te vamos a contactar por WhatsApp".
+  - Web: `api/mark-paid.ts` eliminado, exports actualizados.
+  - POS: `lib/project.ts` drop `customerPaidAt: null`. `useWebOrdersSocket` drop subscription a `web-order.customer-paid`. `WebOrdersAction` drop `claimed` count y badge emerald conditional. `ConfirmWebPaymentModal` drop bloque "Cliente declaró pago" → "Verificá el comprobante en WhatsApp antes de confirmar".
+
+- [x] **14.B** (`6302fca`) — Schema RRHH + endpoints:
+  - Migration `20260504220000`: model `WorkerAttendance` (userId + checkIn + checkOut nullable + hoursWorked Decimal calculado + notes; CHECK checkOut > checkIn, hoursWorked >= 0); model `WorkerCommission` (userId + type enum + percent / fixedAmount + appliedAt + notes; CHECK per-type defensivos); enum `WorkerCommissionType` (PERCENT_OF_SHIFT | FIXED_PER_SALE).
+  - Migración escrita a mano (Docker abajo durante el sprint). Aplicar con `pnpm prisma migrate deploy`.
+  - `packages/types/workers.ts`: schemas DTO + `CheckIn` + `CheckOut` + `CreateCommission` con superRefine per-type + `PayrollPeriodEntry` + `PayrollPeriodReport`.
+  - `WorkersService`: `checkIn` (rechaza si turno abierto), `checkOut` (calcula hoursWorked decimal), `createCommission` (siempre fila nueva, histórico inmutable), `getActiveCommission(userId, at)` (la más reciente con appliedAt <= at), `getPayrollPeriod` (agrupa por user con totalHours, attendanceDays, activeCommission, estimatedCommission).
+  - Endpoints `AdminAccess`: `GET /workers/users` (candidatos), `GET /workers/attendance`, `POST /workers/:userId/check-in`, `POST /workers/attendance/:id/check-out`, `GET /workers/commissions`, `POST /workers/:userId/commission`, `GET /workers/payroll-period`.
+  - Audit actions nuevos: `WORKER_CHECK_IN`, `WORKER_CHECK_OUT`, `WORKER_COMMISSION_CREATED`.
+
+- [x] **14.C** (`a86541f`) — UI admin `/workers`:
+  - `apps/admin/src/features/workers/`: api/client + WorkerOption type + AttendanceTable + CheckInForm + CommissionsList (form + tabla con TypeBadge tonal + footer "histórico inmutable") + PayrollPeriodTable (3 stat cards + tabla por trabajador con activeCommission + estimatedCommission emerald si >0).
+  - Pages: `/workers` redirect, `/workers/attendance` (form + filtro Todos/Abiertos), `/workers/commissions`, `/workers/payroll` (RangeFilter default 14 días).
+  - Sidebar: nueva sección "RRHH" con 3 items (UserCheck, Coins, Clock).
+
+- [x] **14.D** (`13e0d67`) — Persistencia de reconciliation reports:
+  - Migration `20260504220500`: model `PaymentReconciliation` (source, periodFrom/To strings, counts, reportJson snapshot, importedById, createdAt). Indexes (createdAt DESC) y (source, createdAt DESC). Inmutable.
+  - `SavedReconciliation` + `SavedReconciliationDetail` schemas.
+  - `ReconciliationService`: `saveReport` (audit `RECONCILIATION_IMPORTED`), `listSaved`, `getSavedDetail` (Zod-parse del JSON para integridad).
+  - Endpoints `OnlyDueno`: `POST .../import?save=true` ahora persiste, `GET .../history`, `GET .../history/:id`.
+  - UI: ReconciliationView agrega checkbox "Guardar en historial" (default on) + router.refresh post-save. Page `/reports/reconciliation` muestra 2 secciones (importar + histórico). Page `/reports/reconciliation/history/[id]` para detalle.
+
+- [x] **14.E** (`2ead261`) — Vitest formal + costo TopProducts recursivo:
+  - Vitest agregado a `@pos-tercos/domain` (^3.0.5) + vitest.config.ts.
+  - 27 tests migrados de runner manual a describe/it/expect: 11 promotions + 16 wa.me. `pnpm -F @pos-tercos/domain test` → 27/27 pass.
+  - `SalesReportsService.getTopProducts` reemplaza el cálculo inline aproximado por `RecipesService.expandedCost(productId)` que expande subproducts via `expandRecipe` + `computeProductCost`/`computeComboCost`. Trade-off N+1 (≤100 productos, admin-only).
+  - ReportsModule importa RecipesModule.
+
+  **Decisiones tomadas en FASE 14 (no re-discutir):**
+  - Comisiones: histórico **inmutable** — un cambio crea nueva fila, jamás update. La vigente se calcula con `appliedAt <= ahora`. Permite auditar comisiones pasadas sin perder info.
+  - Migration de RRHH y de reconciliations escritas a mano por Docker abajo durante el sprint. Cuando vuelva el server: `prisma migrate deploy` aplica ambas. Schema y SQL espejan estructura que `prisma migrate dev` generaría.
+  - `payment_reconciliations.report_json` guarda el `ReconciliationReport` completo (incluyendo todas las rows). En grandes volúmenes esto crece — para v1 está bien; en hardening de FASE 15 evaluar normalizar a tabla hija.
+  - TopProducts ahora hace N+1 queries pero es admin-only. Si se vuelve hot: pre-cargar TODOS los grafos en memoria una vez al arrancar el endpoint.
+  - Reconciliation guardar es opt-in (default checked) — el dueño puede desactivar para tests sin contaminar histórico.
+
+### Pendientes — FASES 10, 15
 
 Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
 
 - **FASE 10** — Repartidor (DIFERIDA por decisión del usuario): `apps/repa`, asignación, GPS captura, transitions delivery.
-- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports + Vitest formal + cleanup de `customerPaidAt`/`mark-paid` deprecated + expansión recursiva del costo en TopProducts.
-- **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local.
+- **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local. Incluye: aplicar migrations 14.B y 14.D contra DB de prod (`pnpm prisma migrate deploy`), normalizar `report_json` en `payment_reconciliations` si crece.
 
 ---
 
@@ -1190,25 +1260,32 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 13 cerrada. **Próximo: FASE 14 — RRHH ligero + persistencia de reconciliation + Vitest + cleanup.**
+FASE 14 cerrada. **Próximo: FASE 15 — PWA + offline + hardening + Print Agent.**
 
-Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **14 → 15 → 10 (diferida)**.
+Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **15 → 10 (diferida)**.
 
-Plan FASE 14 (preview):
+Plan FASE 15 (preview):
 
-- **RRHH ligero**: schema `worker_attendance` (check-in / check-out simples por turno), `worker_commission` (% sobre revenue del turno o por sale específica), endpoints CRUD + reportes asociados.
-- **Persistencia de reconciliation**: tabla `payment_reconciliations` para guardar reports históricos del módulo FASE 11.E (hoy stateless).
-- **Vitest formal**: configurar runner en monorepo, migrar tests ad-hoc (16 tests wa.me + 11 promotions) a vitest. CI cuando llegue.
-- **Cleanup de FASE 9**:
-  - Eliminar campo `customerPaidAt` de Sale model (sin escritor desde 9.D).
-  - Deprecar/eliminar endpoint `POST /web/orders/:id/mark-paid` y schema `MarkPaidSchema`.
-  - Eliminar evento WS `web-order.customer-paid` y badge "Cliente avisó pago" residual.
-- **Mejoras menores**:
-  - Expandir costo de producto recursivo en TopProducts (incluir subproducts vía `expandRecipe` real).
-  - WhatsApp al Dueño cuando se detecta `SHIFT_DISCREPANCY_DETECTED` (TODO marker FASE 11.A).
-  - Test E2E end-to-end del flujo wa.me con DB real (Docker up).
+- **PWA**: agregar `manifest.json` + service worker en POS, KDS, public-display, web. Offline cache para catálogo + última lista de pedidos. Modo kiosko en pantalla pública.
+- **Hardware local**: instalar Print Agent (Node service local en :9100) en Raspberry Pi del local. Driver ESC/POS para Epson TM-T20III. Reemplazar `LocalFsPrinterAdapter` por `RaspberryPiPrinterAdapter`. Drawer físico vía RJ-11.
+- **Hardening prod**:
+  - Aplicar migrations pendientes de FASE 14 (`20260504220000_fase14b_workers`, `20260504220500_fase14d_payment_reconciliations`) contra DB de Railway.
+  - Refresh automático de JWT en KDS WS (TODO documentado desde FASE 6).
+  - Token Mapbox real con restricciones por dominio (hoy es público sin restricción).
+  - R2 bucket production setup + `R2StorageAdapter` reemplaza `LocalFilesystemStorageAdapter`.
+  - Cron diario de `IdempotencyService.purgeExpired` validar funciona en prod.
+- **Deploy**:
+  - Railway: backend + Postgres + R2 wired. Variables env desde `pendientes-externos-y-deploy.md`.
+  - Vercel: 5 frontends (admin, pos, kds, public-display, web). Domains custom.
+  - DNS Cloudflare: A records, SSL, CDN.
 
-Variable env de FASE 9: `NEXT_PUBLIC_BUSINESS_NAME` y `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT` deben estar seteadas en `apps/pos/.env.local` y `apps/kds/.env.local` antes de prod.
+Variables env críticas para revisar antes de prod:
+- `NEXT_PUBLIC_BUSINESS_NAME` y `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT` (apps/pos, apps/kds).
+- `RESTAURANT_LAT`, `RESTAURANT_LNG`, `DELIVERY_RADIUS_KM` (apps/api).
+- `MAPBOX_TOKEN` (apps/api), `NEXT_PUBLIC_MAPBOX_TOKEN` (apps/web).
+- `PAYMENT_INSTRUCTIONS_NEQUI`, `PAYMENT_INSTRUCTIONS_TRANSFER` (apps/api).
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `WEB_ORDER_TOKEN_SECRET` (apps/api).
+- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (apps/api).
 
 ---
 
