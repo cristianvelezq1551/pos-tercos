@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { buildPurchaseSuggestionUserPrompt } from '@pos-tercos/domain';
 import type {
   PurchaseSuggestion,
   PurchaseSuggestionStatus,
@@ -12,6 +13,7 @@ import type {
   ScanResult,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,6 +39,7 @@ export class PurchaseSuggestionsService {
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
+    private readonly llm: LLMService,
   ) {}
 
   // ==================================================================
@@ -244,6 +247,137 @@ export class PurchaseSuggestionsService {
     });
     if (!row) throw new NotFoundException(`Suggestion ${id} not found`);
     return toDto(row);
+  }
+
+  // ==================================================================
+  // LLM EVALUATION (FASE 12.D)
+  // ==================================================================
+
+  /**
+   * Llena `llmRationale` + `llmModel` + `llmEvaluatedAt` en la sugerencia
+   * y la pasa de PENDING → EVALUATED. Carga histórico de compras (últimos
+   * 10 invoice items del mismo stockable) para que el LLM tenga contexto.
+   *
+   * Si la sugerencia ya está EVALUATED, re-evalúa (sobrescribe rationale
+   * + actualiza llmEvaluatedAt). En estados terminales rechaza con 400.
+   */
+  async evaluate(id: string, userId: string): Promise<PurchaseSuggestion> {
+    const existing = await this.prisma.purchaseSuggestion.findUnique({
+      where: { id },
+      include: includeFull(),
+    });
+    if (!existing) throw new NotFoundException(`Suggestion ${id} not found`);
+    if (
+      existing.status !== 'PENDING' &&
+      existing.status !== 'EVALUATED'
+    ) {
+      throw new BadRequestException(
+        `Suggestion already resolved (status=${existing.status})`,
+      );
+    }
+
+    // Histórico: invoice_items confirmados del mismo stockable, máx 10.
+    const itemWhere: Prisma.InvoiceItemWhereInput =
+      existing.entityType === 'INGREDIENT'
+        ? { ingredientId: existing.ingredientId, invoice: { status: 'CONFIRMED' } }
+        : { productId: existing.productId, invoice: { status: 'CONFIRMED' } };
+    const items = await this.prisma.invoiceItem.findMany({
+      where: itemWhere,
+      orderBy: { invoice: { createdAt: 'desc' } },
+      take: 10,
+      select: {
+        quantity: true,
+        unit: true,
+        unitPrice: true,
+        invoice: {
+          select: {
+            createdAt: true,
+            supplier: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    const itemName =
+      existing.entityType === 'INGREDIENT'
+        ? (existing.ingredient?.name ?? '(insumo eliminado)')
+        : (existing.product?.name ?? '(producto eliminado)');
+    const unitStock =
+      existing.entityType === 'INGREDIENT'
+        ? 'unidad receta'
+        : 'unidad';
+
+    const userPrompt = buildPurchaseSuggestionUserPrompt({
+      itemName,
+      unitPurchase: existing.unitPurchase,
+      currentStock: Number(existing.currentStock),
+      thresholdMin: Number(existing.thresholdMin),
+      unitStock,
+      suggestedQty: Number(existing.suggestedQty),
+      estUnitCost: existing.estUnitCost === null ? null : Number(existing.estUnitCost),
+      estTotal: existing.estTotal === null ? null : Number(existing.estTotal),
+      history: items.map((it) => ({
+        date: it.invoice.createdAt.toISOString().slice(0, 10),
+        supplierName: it.invoice.supplier?.name ?? '(sin proveedor)',
+        qty: Number(it.quantity),
+        unit: it.unit,
+        unitPrice: Number(it.unitPrice),
+      })),
+    });
+
+    const { rationale, modelUsed } = await this.llm.evaluatePurchaseSuggestion({
+      userPrompt,
+    });
+
+    const updated = await this.prisma.purchaseSuggestion.update({
+      where: { id },
+      data: {
+        llmRationale: rationale,
+        llmModel: modelUsed,
+        llmEvaluatedAt: new Date(),
+        status: 'EVALUATED',
+      },
+      include: includeFull(),
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'PURCHASE_SUGGESTION_EVALUATED',
+      entityType: 'purchase_suggestion',
+      entityId: id,
+      metadata: {
+        modelUsed,
+        historySize: items.length,
+        rationaleLen: rationale.length,
+      },
+    });
+
+    return toDto(updated);
+  }
+
+  /** Evaluar todas las PENDING sin rationale. Útil como botón "evaluar todas". */
+  async evaluateAllPending(userId: string): Promise<{
+    evaluated: number;
+    failed: number;
+  }> {
+    const pending = await this.prisma.purchaseSuggestion.findMany({
+      where: { status: 'PENDING' },
+      select: { id: true },
+    });
+    let evaluated = 0;
+    let failed = 0;
+    for (const p of pending) {
+      try {
+        await this.evaluate(p.id, userId);
+        evaluated++;
+      } catch (e) {
+        failed++;
+        this.logger.warn(
+          `evaluateAllPending: ${p.id} failed: ${(e as Error).message}`,
+        );
+      }
+    }
+    return { evaluated, failed };
   }
 
   // ==================================================================

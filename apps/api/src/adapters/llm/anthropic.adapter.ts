@@ -3,9 +3,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   INVOICE_EXTRACTION_SYSTEM,
   INVOICE_EXTRACTION_USER,
+  PURCHASE_SUGGESTION_SYSTEM,
   type LLMInvoiceExtractionRequest,
   type LLMInvoiceExtractionResult,
   type LLMProvider,
+  type PurchaseSuggestionEvalRequest,
+  type PurchaseSuggestionEvalResult,
 } from '@pos-tercos/domain';
 import { ExtractedInvoiceSchema } from '@pos-tercos/types';
 
@@ -85,6 +88,29 @@ export class AnthropicLLMAdapter implements LLMProvider {
       extraction,
       modelUsed: `anthropic:${this.model}`,
     };
+  }
+
+  async evaluatePurchaseSuggestion(
+    req: PurchaseSuggestionEvalRequest,
+  ): Promise<PurchaseSuggestionEvalResult> {
+    const client = this.getClient();
+    const response = await client.messages.create({
+      model: this.model,
+      max_tokens: 256,
+      system: PURCHASE_SUGGESTION_SYSTEM,
+      messages: [{ role: 'user', content: req.userPrompt }],
+    });
+
+    const text = response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('')
+      .trim();
+
+    if (text.length === 0) {
+      throw new Error('LLM returned empty rationale');
+    }
+    return { rationale: text, modelUsed: `anthropic:${this.model}` };
   }
 }
 

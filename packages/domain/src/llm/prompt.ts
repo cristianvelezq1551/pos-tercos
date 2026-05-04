@@ -35,3 +35,74 @@ Reglas:
 - NO inventes datos. Es preferible warnings y nulls que data falsa.`;
 
 export const INVOICE_EXTRACTION_USER = `Esta es la foto de una factura. Devolveme el JSON estructurado según el schema indicado.`;
+
+// ====================================================================
+// Purchase suggestion evaluation (FASE 12.D)
+// ====================================================================
+
+export const PURCHASE_SUGGESTION_SYSTEM = `Sos un asistente del dueño de un restaurante de comida rápida en Bogotá, Colombia.
+
+Tu trabajo es evaluar sugerencias de compra de insumos/productos generadas automáticamente por el sistema cuando el stock cae por debajo del threshold definido por el dueño.
+
+Recibís:
+- Item (nombre + unidad de compra)
+- Stock actual + threshold mínimo
+- Cantidad sugerida (calculada como refill a 2× threshold) + costo estimado total
+- Histórico de las últimas compras del item (fecha, proveedor, qty, $/unidad)
+
+Devolvé un análisis CORTO y práctico en español (máximo 3 frases, ~50 palabras) que cubra (lo que sea relevante):
+- Si la cantidad sugerida es razonable o conviene ajustar (ej. comprar más por descuento por volumen, o menos para no acumular).
+- Si el costo se ve consistente con el histórico, o si hay un proveedor más barato en los registros.
+- Si conviene comprar YA o esperar (ej. consumo bajo + threshold pequeño).
+- Si detectás algo raro (precios subiendo mucho, proveedor único, etc.).
+
+Reglas:
+- Tono directo, en confianza, sin formalidad. Como un mentor que conoce el negocio.
+- NO inventes proveedores ni precios que no estén en el histórico.
+- Si el histórico está vacío, decilo y limítate a comentar la cantidad/threshold.
+- Responder SOLO con el texto del análisis. No JSON, no markdown, sin headers.
+- Sin saludos, sin "espero que sea útil", sin disclaimers. Solo el análisis.`;
+
+export function buildPurchaseSuggestionUserPrompt(input: {
+  itemName: string;
+  unitPurchase: string;
+  currentStock: number;
+  thresholdMin: number;
+  unitStock: string;
+  suggestedQty: number;
+  estUnitCost: number | null;
+  estTotal: number | null;
+  history: Array<{
+    date: string;
+    supplierName: string;
+    qty: number;
+    unit: string;
+    unitPrice: number;
+  }>;
+}): string {
+  const lines: string[] = [
+    `Item: ${input.itemName}`,
+    `Stock actual: ${input.currentStock} ${input.unitStock} | Threshold mínimo: ${input.thresholdMin} ${input.unitStock}`,
+    `Sugerencia: comprar ${input.suggestedQty} ${input.unitPurchase}` +
+      (input.estUnitCost !== null && input.estTotal !== null
+        ? ` a ~$${formatNumber(input.estUnitCost)}/${input.unitPurchase} (total ~$${formatNumber(input.estTotal)})`
+        : ' (sin costo histórico)'),
+    '',
+    'Historial de compras:',
+  ];
+  if (input.history.length === 0) {
+    lines.push('  (sin compras registradas)');
+  } else {
+    for (const h of input.history) {
+      lines.push(
+        `  ${h.date} · ${h.supplierName} · ${h.qty} ${h.unit} a $${formatNumber(h.unitPrice)}/${h.unit}`,
+      );
+    }
+  }
+  lines.push('', 'Evaluá esta sugerencia.');
+  return lines.join('\n');
+}
+
+function formatNumber(n: number): string {
+  return Math.round(n).toLocaleString('es-CO');
+}

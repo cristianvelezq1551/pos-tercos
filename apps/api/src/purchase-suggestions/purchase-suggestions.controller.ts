@@ -76,6 +76,26 @@ export class PurchaseSuggestionsController {
   scan(@CurrentUser() user: JwtAccessPayload): Promise<ScanResult> {
     return this.service.runScan(user.sub);
   }
+
+  /** Evaluación LLM individual. Dueño-only (cuesta $$). */
+  @OnlyDueno()
+  @Post(':id/evaluate')
+  evaluate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<PurchaseSuggestion> {
+    return this.service.evaluate(id, user.sub);
+  }
+
+  /** Evaluar todas las PENDING en batch. Dueño-only. */
+  @OnlyDueno()
+  @Post('admin/evaluate-all-pending')
+  evaluateAllPending(@CurrentUser() user: JwtAccessPayload): Promise<{
+    evaluated: number;
+    failed: number;
+  }> {
+    return this.service.evaluateAllPending(user.sub);
+  }
 }
 
 function parseStatusList(raw: string): PurchaseSuggestionStatus[] {

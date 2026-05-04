@@ -3,6 +3,8 @@ import type {
   LLMInvoiceExtractionRequest,
   LLMInvoiceExtractionResult,
   LLMProvider,
+  PurchaseSuggestionEvalRequest,
+  PurchaseSuggestionEvalResult,
 } from '@pos-tercos/domain';
 import { AnthropicLLMAdapter } from './anthropic.adapter';
 import { OpenAILLMAdapter } from './openai.adapter';
@@ -44,6 +46,35 @@ export class LLMService {
         lastError = err;
         this.logger.warn(
           `${provider.name} extraction failed; trying next provider. Error: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('All LLM providers failed');
+  }
+
+  async evaluatePurchaseSuggestion(
+    req: PurchaseSuggestionEvalRequest,
+  ): Promise<PurchaseSuggestionEvalResult> {
+    const chain = this.buildChain();
+    if (chain.length === 0) {
+      throw new ServiceUnavailableException(
+        'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.',
+      );
+    }
+
+    let lastError: unknown;
+    for (const provider of chain) {
+      try {
+        return await provider.evaluatePurchaseSuggestion(req);
+      } catch (err) {
+        lastError = err;
+        this.logger.warn(
+          `${provider.name} eval failed; trying next provider. Error: ${
             err instanceof Error ? err.message : String(err)
           }`,
         );

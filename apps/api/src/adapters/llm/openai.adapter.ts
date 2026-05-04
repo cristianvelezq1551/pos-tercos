@@ -2,9 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   INVOICE_EXTRACTION_SYSTEM,
   INVOICE_EXTRACTION_USER,
+  PURCHASE_SUGGESTION_SYSTEM,
   type LLMInvoiceExtractionRequest,
   type LLMInvoiceExtractionResult,
   type LLMProvider,
+  type PurchaseSuggestionEvalRequest,
+  type PurchaseSuggestionEvalResult,
 } from '@pos-tercos/domain';
 import { ExtractedInvoiceSchema } from '@pos-tercos/types';
 import OpenAI from 'openai';
@@ -76,5 +79,25 @@ export class OpenAILLMAdapter implements LLMProvider {
       extraction,
       modelUsed: `openai:${this.model}`,
     };
+  }
+
+  async evaluatePurchaseSuggestion(
+    req: PurchaseSuggestionEvalRequest,
+  ): Promise<PurchaseSuggestionEvalResult> {
+    const client = this.getClient();
+    const response = await client.chat.completions.create({
+      model: this.model,
+      max_tokens: 256,
+      messages: [
+        { role: 'system', content: PURCHASE_SUGGESTION_SYSTEM },
+        { role: 'user', content: req.userPrompt },
+      ],
+    });
+
+    const text = (response.choices[0]?.message?.content ?? '').trim();
+    if (text.length === 0) {
+      throw new Error('LLM returned empty rationale');
+    }
+    return { rationale: text, modelUsed: `openai:${this.model}` };
   }
 }
