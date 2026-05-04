@@ -10,7 +10,6 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
-  UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -71,10 +70,9 @@ export class InvoicesController {
 
   @AdminAccess()
   @Post('from-clone')
-  @UsePipes(new ZodValidationPipe(CloneInvoiceRequestSchema))
   fromClone(
     @CurrentUser() user: JwtAccessPayload,
-    @Body() body: CloneInvoiceRequest,
+    @Body(new ZodValidationPipe(CloneInvoiceRequestSchema)) body: CloneInvoiceRequest,
   ): Promise<InvoiceDraftResponse> {
     return this.invoices.cloneFrom(body.sourceInvoiceId, user.sub);
   }

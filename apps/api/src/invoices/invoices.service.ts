@@ -100,11 +100,10 @@ export class InvoicesService {
 
     await this.audit.log({
       userId: input.userId,
-      action: 'INVENTORY_MOVEMENT_PURCHASE',
+      action: 'INVOICE_UPLOADED',
       entityType: 'invoice',
       entityId: created.id,
       metadata: {
-        stage: 'uploaded',
         modelUsed: llmResult.modelUsed,
         warnings: llmResult.extraction.warnings,
       },
@@ -387,11 +386,10 @@ export class InvoicesService {
 
     await this.audit.log({
       userId,
-      action: 'INVENTORY_MOVEMENT_PURCHASE',
+      action: 'INVOICE_CONFIRMED',
       entityType: 'invoice',
       entityId: id,
       metadata: {
-        stage: 'confirmed',
         supplierId: supplier.id,
         supplierNit: supplier.nit,
         itemsCount: input.items.length,
@@ -424,6 +422,13 @@ export class InvoicesService {
     if (source.status !== 'CONFIRMED') {
       throw new BadRequestException(
         'Solo se pueden clonar facturas confirmadas. Reanudá la draft directamente.',
+      );
+    }
+    // FASE 4 ajustes 2.12: rechazar source con 0 items (caso patológico
+    // que dejaría una draft no-confirmable porque CreateInvoice exige >=1).
+    if (source.items.length === 0) {
+      throw new BadRequestException(
+        'La factura origen no tiene items, no se puede clonar. Editala manualmente o subí una nueva.',
       );
     }
 
@@ -495,11 +500,10 @@ export class InvoicesService {
 
     await this.audit.log({
       userId,
-      action: 'INVENTORY_MOVEMENT_PURCHASE',
+      action: 'INVOICE_CLONED',
       entityType: 'invoice',
       entityId: created.id,
       metadata: {
-        stage: 'cloned',
         sourceInvoiceId,
         itemsCount: source.items.length,
       },
@@ -527,10 +531,10 @@ export class InvoicesService {
     });
     await this.audit.log({
       userId,
-      action: 'INVENTORY_MOVEMENT_PURCHASE',
+      action: 'INVOICE_REJECTED',
       entityType: 'invoice',
       entityId: id,
-      metadata: { stage: 'rejected', reason },
+      metadata: { reason },
     });
     return toInvoiceDto(updated);
   }

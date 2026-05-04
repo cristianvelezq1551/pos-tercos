@@ -129,6 +129,7 @@ function ActionBadge({ action }: { action: string }) {
     inventory: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
     catalog: 'bg-purple-50 text-purple-700 ring-purple-600/20',
     sale: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+    invoice: 'bg-indigo-50 text-indigo-700 ring-indigo-600/20',
     other: 'bg-gray-100 text-gray-700 ring-gray-500/20',
   } as const;
   return (
@@ -140,9 +141,14 @@ function ActionBadge({ action }: { action: string }) {
   );
 }
 
-function toneFor(action: string): 'auth' | 'failed' | 'inventory' | 'catalog' | 'sale' | 'other' {
+function toneFor(
+  action: string,
+): 'auth' | 'failed' | 'inventory' | 'catalog' | 'sale' | 'invoice' | 'other' {
   if (action.endsWith('_FAILED') || action.endsWith('_DENIED')) return 'failed';
   if (action.startsWith('AUTH_')) return 'auth';
+  // FASE 4 ajustes 2.5: actions específicos de invoice (antes todo era
+  // INVENTORY_MOVEMENT_PURCHASE con metadata.stage).
+  if (action.startsWith('INVOICE_')) return 'invoice';
   if (action.startsWith('INVENTORY_')) return 'inventory';
   if (
     action.startsWith('PRODUCT_') ||
