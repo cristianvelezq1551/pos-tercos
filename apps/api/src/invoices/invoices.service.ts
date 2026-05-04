@@ -210,6 +210,24 @@ export class InvoicesService {
       throw new BadRequestException(`Items refer to inactive products: ${inactiveProd.join(', ')}`);
     }
 
+    // FASE 4 ajustes 2.3: total de la factura debe coincidir (con tolerancia)
+    // con la suma de items.total. Tolerancia = max(1% del total, $1.000 COP).
+    const itemsSum = input.items.reduce((acc, it) => acc + Number(it.total), 0);
+    const totalDelta = Math.abs(input.total - itemsSum);
+    const totalTolerance = Math.max(input.total * 0.01, 1000);
+    if (totalDelta > totalTolerance) {
+      throw new BadRequestException(
+        `Total de la factura ($${input.total.toLocaleString('es-CO')}) no coincide con la suma de items ($${itemsSum.toLocaleString('es-CO')}). Diferencia: $${totalDelta.toLocaleString('es-CO')} (tolerancia $${Math.round(totalTolerance).toLocaleString('es-CO')}).`,
+      );
+    }
+
+    // FASE 4 ajustes 2.4: IVA no puede exceder el total
+    if (input.iva !== undefined && input.iva !== null && input.iva > input.total) {
+      throw new BadRequestException(
+        `IVA ($${input.iva.toLocaleString('es-CO')}) no puede ser mayor al total ($${input.total.toLocaleString('es-CO')}).`,
+      );
+    }
+
     const supplier = await this.suppliers.upsertByNit(input.supplierNit, input.supplierName);
 
     const updated = await this.prisma.$transaction(async (tx) => {
