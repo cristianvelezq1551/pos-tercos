@@ -15,7 +15,9 @@
     "build": "tsc",
     "dev": "tsc --watch --preserveWatchOutput",
     "clean": "rm -rf dist .tsbuildinfo",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@pos-tercos/types": "workspace:*",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
   }
 }

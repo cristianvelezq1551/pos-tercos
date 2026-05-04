@@ -1,12 +1,10 @@
 /**
  * Tests del motor extendido (FASE 12.A): PERCENT_OFF + FIXED_OFF + BOGO + COMBO_OFF.
- * Ejecutar con `pnpm -F @pos-tercos/domain test` (cuando se cablee Vitest).
- *
- * Por ahora: tests autocontenidos con asserts simples — pueden correrse
- * ad-hoc con `node --import tsx packages/domain/src/promotions/apply-promotions.test.ts`
- * o se integran cuando se monte el runner.
+ * Migrado a Vitest en FASE 14.E.
+ * Ejecutar con `pnpm -F @pos-tercos/domain test`.
  */
 
+import { describe, it, expect } from 'vitest';
 import { applyPromotion } from './apply-promotions';
 import type { ApplyPromotionInput, PromotionDef } from './types';
 
@@ -31,13 +29,11 @@ function input(overrides: Partial<ApplyPromotionInput> = {}): ApplyPromotionInpu
   };
 }
 
-const tests: { name: string; run: () => void }[] = [];
-const it = (name: string, run: () => void) => tests.push({ name, run });
-const eq = (actual: unknown, expected: unknown, msg?: string) => {
-  if (actual !== expected) {
-    throw new Error(`${msg ?? 'assertion'}: expected ${expected}, got ${actual}`);
-  }
-};
+function eq(actual: unknown, expected: unknown): void {
+  expect(actual).toBe(expected);
+}
+
+describe('applyPromotion', () => {
 
 // PERCENT_OFF
 it('PERCENT_OFF 20% sobre $10.000 → $2.000', () => {
@@ -215,21 +211,4 @@ it('mejor descuento absoluto gana: PERCENT 10% ($1k) vs FIXED $2k → gana FIXED
   eq(r.lineDiscount, 2000);
 });
 
-// Run all
-let pass = 0;
-let fail = 0;
-for (const t of tests) {
-  try {
-    t.run();
-    pass++;
-    // eslint-disable-next-line no-console
-    console.log(`  ✓ ${t.name}`);
-  } catch (e) {
-    fail++;
-    // eslint-disable-next-line no-console
-    console.error(`  ✗ ${t.name}: ${(e as Error).message}`);
-  }
-}
-// eslint-disable-next-line no-console
-console.log(`\n${pass}/${pass + fail} tests passed`);
-if (fail > 0) process.exit(1);
+}); // describe('applyPromotion')

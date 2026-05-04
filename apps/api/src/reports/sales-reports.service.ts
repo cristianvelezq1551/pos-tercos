@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { expandRecipe } from '@pos-tercos/domain';
+import { Injectable, Logger } from '@nestjs/common';
 import type {
   DashboardSummary,
   HourHeatmapReport,
@@ -11,6 +10,7 @@ import type {
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RecipesService } from '../recipes/recipes.service';
 
 /**
  * Reportes operativos / de negocio (FASE 13.A).
@@ -27,7 +27,12 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class SalesReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(SalesReportsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly recipes: RecipesService,
+  ) {}
 
   // ==================================================================
   // SALES SUMMARY — series + breakdowns
@@ -156,57 +161,47 @@ export class SalesReportsService {
     const productIds = grouped.map((g) => g.productId);
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      include: {
-        recipeEdges: { include: { childIngredient: true, childSubproduct: true } },
-        comboComponents: { include: { product: true } },
-      },
+      select: { id: true, name: true },
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // Para costos: pre-cargamos lastUnitCost de todos los ingredients que
-    // intervienen en las recetas de los top products.
-    const ingredientIds = new Set<string>();
-    for (const p of products) {
-      for (const e of p.recipeEdges) {
-        if (e.childIngredientId) ingredientIds.add(e.childIngredientId);
-      }
-    }
-    const ingredients = ingredientIds.size
-      ? await this.prisma.ingredient.findMany({
-          where: { id: { in: Array.from(ingredientIds) } },
-          select: { id: true, lastUnitCost: true, conversionFactor: true },
-        })
-      : [];
-    const ingredientCostMap = new Map<string, number | null>();
-    for (const i of ingredients) {
-      // Costo en unitRecipe = lastUnitCost (en unitPurchase) / conversionFactor
-      const cf = Number(i.conversionFactor);
-      const luc = i.lastUnitCost === null ? null : Number(i.lastUnitCost);
-      ingredientCostMap.set(i.id, luc !== null && cf > 0 ? luc / cf : null);
-    }
+    // Costo unitario via RecipesService.expandedCost — cálculo recursivo
+    // real (incluye subproducts, no la aproximación de FASE 13.A).
+    // N+1 controlado: limit ≤ 100, endpoint admin-only no en hot path.
+    const result = await Promise.all(
+      grouped.map(async (g) => {
+        const product = productMap.get(g.productId);
+        const productName = product?.name ?? '(producto eliminado)';
+        const quantity = Number(g._sum.quantity ?? 0);
+        const revenue = Number(g._sum.lineTotal ?? 0);
 
-    const result = grouped.map((g) => {
-      const product = productMap.get(g.productId);
-      const productName = product?.name ?? '(producto eliminado)';
-      const quantity = Number(g._sum.quantity ?? 0);
-      const revenue = Number(g._sum.lineTotal ?? 0);
-      const estCostPerUnit = product
-        ? estimateProductCost(product, ingredientCostMap)
-        : null;
-      const estCost = estCostPerUnit !== null ? estCostPerUnit * quantity : null;
-      const estMargin = estCost !== null ? revenue - estCost : null;
-      const estMarginPct =
-        estMargin !== null && revenue > 0 ? estMargin / revenue : null;
-      return {
-        productId: g.productId,
-        productName,
-        quantity,
-        revenue: round(revenue),
-        estCost: estCost === null ? null : round(estCost),
-        estMargin: estMargin === null ? null : round(estMargin),
-        estMarginPct: estMarginPct === null ? null : round4(estMarginPct),
-      };
-    });
+        let estCostPerUnit: number | null = null;
+        if (product) {
+          try {
+            const cost = await this.recipes.expandedCost(g.productId);
+            estCostPerUnit = cost.totalCost;
+          } catch (e) {
+            this.logger.warn(
+              `expandedCost failed for ${g.productId}: ${(e as Error).message}`,
+            );
+          }
+        }
+        const estCost =
+          estCostPerUnit !== null ? estCostPerUnit * quantity : null;
+        const estMargin = estCost !== null ? revenue - estCost : null;
+        const estMarginPct =
+          estMargin !== null && revenue > 0 ? estMargin / revenue : null;
+        return {
+          productId: g.productId,
+          productName,
+          quantity,
+          revenue: round(revenue),
+          estCost: estCost === null ? null : round(estCost),
+          estMargin: estMargin === null ? null : round(estMargin),
+          estMarginPct: estMarginPct === null ? null : round4(estMarginPct),
+        };
+      }),
+    );
 
     return {
       periodFrom: toDayBucket(from),
@@ -527,51 +522,6 @@ function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
 }
 
-/**
- * Costo unitario estimado de un producto. Recursivo via expandRecipe para
- * productos con receta; combo = sum de componentes; directResale =
- * lastUnitCost del producto. Devuelve null si falta data.
- */
-function estimateProductCost(
-  product: {
-    id: string;
-    isCombo: boolean;
-    directResale: boolean;
-    lastUnitCost: Prisma.Decimal | null;
-    recipeEdges: Array<{
-      childIngredientId: string | null;
-      quantityNeta: Prisma.Decimal;
-      mermaPct: Prisma.Decimal;
-    }>;
-    comboComponents: Array<{ quantity: number; product: { lastUnitCost: Prisma.Decimal | null } }>;
-  },
-  ingredientCostPerRecipeUnit: Map<string, number | null>,
-): number | null {
-  if (product.isCombo) {
-    let total = 0;
-    for (const c of product.comboComponents) {
-      if (c.product.lastUnitCost === null) return null;
-      total += Number(c.product.lastUnitCost) * c.quantity;
-    }
-    return total;
-  }
-
-  if (product.directResale) {
-    return product.lastUnitCost === null ? null : Number(product.lastUnitCost);
-  }
-
-  // Producto con receta — usar expandRecipe simplificado (1 nivel via
-  // recipeEdges directos). Si tuviera subproductos, este cálculo
-  // subestima — para v1 el dueño aceptó esa aproximación.
-  void expandRecipe; // marca explícita que no la usamos acá (recipe edges directos alcanzan)
-  let total = 0;
-  for (const e of product.recipeEdges) {
-    if (!e.childIngredientId) continue; // subproducto: skip por simplicidad
-    const cost = ingredientCostPerRecipeUnit.get(e.childIngredientId);
-    if (cost === null || cost === undefined) return null;
-    const merma = Number(e.mermaPct);
-    const effectiveQty = Number(e.quantityNeta) / (1 - merma);
-    total += cost * effectiveQty;
-  }
-  return total;
-}
+// FASE 14.E: estimateProductCost (cálculo inline aproximado) removido.
+// Ahora usamos RecipesService.expandedCost que expande recursivamente
+// subproducts via expandRecipe + computeProductCost / computeComboCost.

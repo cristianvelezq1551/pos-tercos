@@ -1,8 +1,9 @@
 /**
- * Tests de los builders wa.me. Ejecutar con:
- *   pnpm dlx tsx packages/domain/src/whatsapp/build-link.test.ts
+ * Tests de los builders wa.me. Migrado a Vitest en FASE 14.E.
+ * Ejecutar con `pnpm -F @pos-tercos/domain test`.
  */
 
+import { describe, it, expect } from 'vitest';
 import {
   buildAcceptedLink,
   buildConfirmedLink,
@@ -29,21 +30,17 @@ const SALE_DELIVERY: WhatsAppSaleSnapshot = {
   type: 'WEB_DELIVERY',
 };
 
-const tests: { name: string; run: () => void }[] = [];
-const it = (name: string, run: () => void) => tests.push({ name, run });
-const eq = (actual: unknown, expected: unknown, msg?: string) => {
-  if (actual !== expected) {
-    throw new Error(`${msg ?? 'assertion'}: expected ${expected}, got ${actual}`);
-  }
-};
-const truthy = (v: unknown, msg: string) => {
-  if (!v) throw new Error(`expected truthy: ${msg}`);
-};
-const contains = (haystack: string, needle: string) => {
-  if (!haystack.includes(needle)) {
-    throw new Error(`expected to contain "${needle}" in:\n${haystack}`);
-  }
-};
+function eq(actual: unknown, expected: unknown): void {
+  expect(actual).toBe(expected);
+}
+function truthy(v: unknown, msg: string): void {
+  expect(v, msg).toBeTruthy();
+}
+function contains(haystack: string, needle: string): void {
+  expect(haystack).toContain(needle);
+}
+
+describe('whatsapp build-link', () => {
 
 // PHONE NORMALIZATION
 it('phone +57 prefix → solo dígitos en URL', () => {
@@ -168,21 +165,4 @@ it('buildLinkForStage stage=ready PICKUP equivale a buildReadyLink', () => {
   eq(a!.messagePlain, b!.messagePlain);
 });
 
-// Run all
-let pass = 0;
-let fail = 0;
-for (const t of tests) {
-  try {
-    t.run();
-    pass++;
-    // eslint-disable-next-line no-console
-    console.log(`  ✓ ${t.name}`);
-  } catch (e) {
-    fail++;
-    // eslint-disable-next-line no-console
-    console.error(`  ✗ ${t.name}: ${(e as Error).message}`);
-  }
-}
-// eslint-disable-next-line no-console
-console.log(`\n${pass}/${pass + fail} tests passed`);
-if (fail > 0) process.exit(1);
+}); // describe('whatsapp build-link')
