@@ -1,9 +1,9 @@
 'use client';
 
 import { Button, Input, Label } from '@pos-tercos/ui';
-import type { WebOrderType } from '@pos-tercos/types';
+import type { GeocodeResponse, WebOrderType } from '@pos-tercos/types';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 import { COP } from '../../../lib/format';
 import {
   cartLinesToCreateItems,
@@ -11,6 +11,7 @@ import {
   useCartStore,
 } from '../../cart';
 import { createWebOrder } from '../api/create-order';
+import { DeliveryAddressInput } from './DeliveryAddressInput';
 
 export function CheckoutForm() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export function CheckoutForm() {
   const [name, setName] = useState('');
   const [phone10, setPhone10] = useState(''); // 10 dígitos, sin +57
   const [address, setAddress] = useState('');
+  const [geocode, setGeocode] = useState<GeocodeResponse | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -29,8 +31,19 @@ export function CheckoutForm() {
   const subtotal = cartSubtotal(items);
   const phoneValid = /^\d{10}$/.test(phone10);
   const nameValid = name.trim().length >= 2;
-  const addressValid = type === 'WEB_PICKUP' || address.trim().length >= 5;
-  const canSubmit = items.length > 0 && nameValid && phoneValid && addressValid;
+  // FASE 8: WEB_DELIVERY ahora exige geocode resuelto + dentro de zona.
+  const deliveryReady =
+    type === 'WEB_PICKUP' ||
+    (geocode !== null && geocode.withinDeliveryRadius);
+  const canSubmit = items.length > 0 && nameValid && phoneValid && deliveryReady;
+
+  const handleGeocode = useCallback((g: GeocodeResponse | null) => {
+    setGeocode(g);
+  }, []);
+  const handleSwitchToPickup = useCallback(() => {
+    setType('WEB_PICKUP');
+    setGeocode(null);
+  }, []);
 
   if (hydrated && items.length === 0) {
     return (
@@ -56,7 +69,10 @@ export function CheckoutForm() {
           items: cartLinesToCreateItems(items),
           customerName: name.trim(),
           customerPhone: `+57${phone10}`,
-          deliveryAddress: type === 'WEB_DELIVERY' ? address.trim() : undefined,
+          deliveryAddress:
+            type === 'WEB_DELIVERY' ? geocode?.formattedAddress ?? address.trim() : undefined,
+          deliveryLat: type === 'WEB_DELIVERY' ? geocode?.lat : undefined,
+          deliveryLng: type === 'WEB_DELIVERY' ? geocode?.lng : undefined,
           notes: notes.trim() || undefined,
         },
         idempotencyKey,
@@ -129,21 +145,13 @@ export function CheckoutForm() {
         </div>
 
         {type === 'WEB_DELIVERY' ? (
-          <div className="space-y-2">
-            <Label htmlFor="address">Dirección de entrega</Label>
-            <Input
-              id="address"
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Carrera 11 # 23-45, apto 302"
-              maxLength={500}
-              required
-            />
-            <p className="text-[11px] text-gray-500">
-              Validación de zona 3 km llega en próxima fase.
-            </p>
-          </div>
+          <DeliveryAddressInput
+            value={address}
+            onChange={setAddress}
+            onGeocode={handleGeocode}
+            onSwitchToPickup={handleSwitchToPickup}
+            disabled={pending}
+          />
         ) : null}
 
         <div className="space-y-2">
