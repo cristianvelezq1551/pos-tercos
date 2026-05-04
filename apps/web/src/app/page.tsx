@@ -1,15 +1,22 @@
-export default function Home() {
+import { CatalogGrid, getMenuServer } from '../features/catalog';
+import { WebTopbar } from '../components/WebTopbar';
+
+export const dynamic = 'force-dynamic';
+
+export default async function Home() {
+  const menu = await getMenuServer();
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-12 text-center">
-      <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
-        APP: web (puerto 3000)
-      </span>
-      <h1 className="mt-6 text-4xl font-bold tracking-tight">Web Pública — POS Tercos</h1>
-      <p className="mt-4 max-w-md text-gray-600">
-        Placeholder. La superficie de pedidos online (recoger en tienda o domicilio sin login) se
-        construye en FASE 7.
-      </p>
-      <p className="mt-8 text-sm text-gray-400">v0.0.0 · FASE 0 · setup</p>
-    </main>
+    <div className="flex min-h-screen flex-col bg-gray-50">
+      <WebTopbar />
+      {menu.products.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center p-12 text-center text-sm text-gray-500">
+          No hay productos disponibles. Volvé a probar en un rato.
+        </div>
+      ) : (
+        <main className="flex-1">
+          <CatalogGrid products={menu.products} categories={menu.categories} />
+        </main>
+      )}
+    </div>
   );
 }
