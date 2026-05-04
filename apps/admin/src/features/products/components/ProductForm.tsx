@@ -20,6 +20,11 @@ interface FormState {
   isCombo: boolean;
   comboPrice: string;
   isActive: boolean;
+  directResale: boolean;
+  unitPurchase: string;
+  unitStock: string;
+  conversionFactor: string;
+  thresholdMin: string;
 }
 
 export function ProductForm({ initial }: ProductFormProps) {
@@ -34,11 +39,26 @@ export function ProductForm({ initial }: ProductFormProps) {
     imageUrl: initial?.imageUrl ?? '',
     modifiersEnabled: initial?.modifiersEnabled ?? false,
     isCombo: initial?.isCombo ?? false,
-    comboPrice: initial?.comboPrice !== null && initial?.comboPrice !== undefined ? String(initial.comboPrice) : '',
+    comboPrice:
+      initial?.comboPrice !== null && initial?.comboPrice !== undefined
+        ? String(initial.comboPrice)
+        : '',
     isActive: initial?.isActive ?? true,
+    directResale: initial?.directResale ?? false,
+    unitPurchase: initial?.unitPurchase ?? '',
+    unitStock: initial?.unitStock ?? '',
+    conversionFactor:
+      initial?.conversionFactor !== null && initial?.conversionFactor !== undefined
+        ? String(initial.conversionFactor)
+        : '',
+    thresholdMin: initial ? String(initial.thresholdMin) : '0',
   }));
 
   const isEdit = Boolean(initial);
+  // En edit: si el producto YA es direct-resale, los campos quedan locked
+  // (cambiar conversionFactor o unitPurchase post-compras desestabilizaría
+  // el cálculo de stock; por eso se inmoviliza el modelo).
+  const directResaleLocked = isEdit && (initial?.directResale ?? false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -47,6 +67,11 @@ export function ProductForm({ initial }: ProductFormProps) {
     const basePrice = Number(form.basePrice);
     if (!Number.isFinite(basePrice) || basePrice < 0) {
       setError('El precio base debe ser un número ≥ 0.');
+      return;
+    }
+
+    if (form.directResale && form.isCombo) {
+      setError('Un producto no puede ser direct-resale Y combo a la vez.');
       return;
     }
 
@@ -62,8 +87,48 @@ export function ProductForm({ initial }: ProductFormProps) {
       comboPriceParsed = null;
     }
 
+    // Direct-resale: parsear y validar los 4 campos como espejo del backend
+    // CreateProductSchema.superRefine.
+    let drFields:
+      | {
+          unitPurchase: string;
+          unitStock: string;
+          conversionFactor: number;
+          thresholdMin: number;
+        }
+      | null = null;
+    if (form.directResale) {
+      const factor = Number(form.conversionFactor);
+      const threshold = Number(form.thresholdMin);
+      if (!form.unitPurchase.trim()) {
+        setError('Cuando es reventa directa, "Unidad de compra" es requerido.');
+        return;
+      }
+      if (!form.unitStock.trim()) {
+        setError('Cuando es reventa directa, "Unidad de stock" es requerido.');
+        return;
+      }
+      if (!Number.isFinite(factor) || factor <= 0) {
+        setError('Factor de conversión debe ser un número > 0.');
+        return;
+      }
+      if (!Number.isFinite(threshold) || threshold < 0) {
+        setError('Umbral mínimo debe ser un número ≥ 0.');
+        return;
+      }
+      drFields = {
+        unitPurchase: form.unitPurchase.trim(),
+        unitStock: form.unitStock.trim(),
+        conversionFactor: factor,
+        thresholdMin: threshold,
+      };
+    }
+
     try {
       if (isEdit && initial) {
+        // En edit, NO mandamos los direct-resale fields si ya son lockeados
+        // — el backend conserva los valores actuales. Solo mandamos
+        // thresholdMin si cambió (y los flags no-locked).
         const update: UpdateProduct = {
           name: form.name,
           description: form.description || null,
@@ -74,6 +139,17 @@ export function ProductForm({ initial }: ProductFormProps) {
           isCombo: form.isCombo,
           comboPrice: comboPriceParsed,
           isActive: form.isActive,
+          ...(directResaleLocked
+            ? { thresholdMin: drFields?.thresholdMin ?? 0 }
+            : drFields
+              ? {
+                  directResale: true,
+                  unitPurchase: drFields.unitPurchase,
+                  unitStock: drFields.unitStock,
+                  conversionFactor: drFields.conversionFactor,
+                  thresholdMin: drFields.thresholdMin,
+                }
+              : { directResale: false }),
         };
         await updateProduct(initial.id, update);
       } else {
@@ -86,6 +162,15 @@ export function ProductForm({ initial }: ProductFormProps) {
           modifiersEnabled: form.modifiersEnabled,
           isCombo: form.isCombo,
           comboPrice: comboPriceParsed,
+          ...(drFields
+            ? {
+                directResale: true,
+                unitPurchase: drFields.unitPurchase,
+                unitStock: drFields.unitStock,
+                conversionFactor: drFields.conversionFactor,
+                thresholdMin: drFields.thresholdMin,
+              }
+            : {}),
         };
         await createProduct(create);
       }
@@ -191,6 +276,13 @@ export function ProductForm({ initial }: ProductFormProps) {
         />
       </div>
 
+      <DirectResaleSection
+        form={form}
+        setForm={setForm}
+        pending={pending}
+        directResaleLocked={directResaleLocked}
+      />
+
       <fieldset className="space-y-3 rounded-md border border-gray-200 p-4">
         <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
           Configuración
@@ -214,7 +306,7 @@ export function ProductForm({ initial }: ProductFormProps) {
           <input
             id="isCombo"
             type="checkbox"
-            disabled={pending}
+            disabled={pending || form.directResale}
             checked={form.isCombo}
             onChange={(e) =>
               setForm((f) => ({
@@ -225,7 +317,12 @@ export function ProductForm({ initial }: ProductFormProps) {
             }
             className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
-          <Label htmlFor="isCombo">Es un combo (incluye otros productos)</Label>
+          <Label htmlFor="isCombo">
+            Es un combo (incluye otros productos)
+            {form.directResale ? (
+              <span className="ml-2 text-xs text-gray-500">— deshabilitado: ya es reventa directa</span>
+            ) : null}
+          </Label>
         </div>
 
         {form.isCombo && (
@@ -310,6 +407,134 @@ export function ProductForm({ initial }: ProductFormProps) {
         </div>
       </div>
     </form>
+  );
+}
+
+function DirectResaleSection({
+  form,
+  setForm,
+  pending,
+  directResaleLocked,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  pending: boolean;
+  directResaleLocked: boolean;
+}) {
+  return (
+    <fieldset className="space-y-3 rounded-md border border-gray-200 p-4">
+      <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        Reventa directa
+      </legend>
+
+      <div className="flex items-start gap-2">
+        <input
+          id="directResale"
+          type="checkbox"
+          disabled={pending || directResaleLocked || form.isCombo}
+          checked={form.directResale}
+          onChange={(e) =>
+            setForm((f) => ({
+              ...f,
+              directResale: e.target.checked,
+              ...(e.target.checked ? { isCombo: false, comboPrice: '' } : {}),
+            }))
+          }
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <div>
+          <Label htmlFor="directResale">
+            Es producto de <strong>reventa directa</strong>
+          </Label>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Marcar para productos que se venden tal como se compran (Coca-Cola, snacks, papas
+            empacadas). Se descontará stock al cobrar — no usa receta.
+          </p>
+          {directResaleLocked ? (
+            <p className="mt-1 text-xs text-amber-700">
+              ⚠ Este flag NO se puede desactivar porque cambiaría el modelo de stock del producto
+              (rompería conversiones históricas).
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {form.directResale && (
+        <div className="space-y-3 pl-6 pt-2">
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <strong>Costo ≠ Precio.</strong> El <code>basePrice</code> es lo que cobrás al cliente.
+            El costo histórico se actualiza solo al confirmar facturas con este producto.
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="unitPurchase">Unidad de compra</Label>
+              <Input
+                id="unitPurchase"
+                required
+                maxLength={20}
+                disabled={pending || directResaleLocked}
+                value={form.unitPurchase}
+                onChange={(e) => setForm((f) => ({ ...f, unitPurchase: e.target.value }))}
+                placeholder="caja, six-pack, bulto"
+              />
+              <p className="text-[10px] text-gray-500">Cómo viene del proveedor.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="unitStock">Unidad de venta</Label>
+              <Input
+                id="unitStock"
+                required
+                maxLength={20}
+                disabled={pending || directResaleLocked}
+                value={form.unitStock}
+                onChange={(e) => setForm((f) => ({ ...f, unitStock: e.target.value }))}
+                placeholder="botella, lata, unidad"
+              />
+              <p className="text-[10px] text-gray-500">Cómo lo vendés al cliente.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="conversionFactor">Factor de conversión</Label>
+              <Input
+                id="conversionFactor"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min="0.01"
+                required
+                disabled={pending || directResaleLocked}
+                value={form.conversionFactor}
+                onChange={(e) => setForm((f) => ({ ...f, conversionFactor: e.target.value }))}
+                placeholder="24"
+              />
+              <p className="text-[10px] text-gray-500">
+                Cuántas <em>{form.unitStock || 'unidades de venta'}</em> hay en{' '}
+                <em>1 {form.unitPurchase || 'unidad de compra'}</em>.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="thresholdMin">Umbral mínimo (alerta)</Label>
+              <Input
+                id="thresholdMin"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min="0"
+                required
+                disabled={pending}
+                value={form.thresholdMin}
+                onChange={(e) => setForm((f) => ({ ...f, thresholdMin: e.target.value }))}
+                placeholder="12"
+              />
+              <p className="text-[10px] text-gray-500">
+                En <em>{form.unitStock || 'unidades de venta'}</em>. Cuando el stock baja de acá,
+                aparece alerta.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </fieldset>
   );
 }
 
