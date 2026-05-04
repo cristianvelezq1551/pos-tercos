@@ -1,0 +1,109 @@
+import {
+  PurchaseSuggestionSchema,
+  ResolveSuggestionSchema,
+  ScanResultSchema,
+  type PurchaseSuggestion,
+  type ResolveSuggestion,
+  type ScanResult,
+} from '@pos-tercos/types';
+import { z } from 'zod';
+
+const SuggestionListSchema = z.array(PurchaseSuggestionSchema);
+
+const EvaluateAllResultSchema = z.object({
+  evaluated: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+export type EvaluateAllResult = z.infer<typeof EvaluateAllResultSchema>;
+
+async function request<T>(
+  path: string,
+  init: RequestInit,
+  schema: z.ZodSchema<T>,
+): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    credentials: 'include',
+    ...init,
+    headers: {
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `Request failed (${res.status})`);
+  }
+  const json = (await res.json()) as unknown;
+  return schema.parse(json);
+}
+
+export function listSuggestions(opts: {
+  status?: string;
+  limit?: number;
+} = {}): Promise<PurchaseSuggestion[]> {
+  const qs = new URLSearchParams();
+  if (opts.status) qs.set('status', opts.status);
+  if (opts.limit) qs.set('limit', String(opts.limit));
+  const qsStr = qs.toString();
+  return request(
+    `/purchase-suggestions${qsStr ? `?${qsStr}` : ''}`,
+    { method: 'GET' },
+    SuggestionListSchema,
+  );
+}
+
+export function getSuggestion(id: string): Promise<PurchaseSuggestion> {
+  return request(
+    `/purchase-suggestions/${id}`,
+    { method: 'GET' },
+    PurchaseSuggestionSchema,
+  );
+}
+
+export function runScan(): Promise<ScanResult> {
+  return request(
+    '/purchase-suggestions/admin/scan',
+    { method: 'POST' },
+    ScanResultSchema,
+  );
+}
+
+export function evaluateSuggestion(id: string): Promise<PurchaseSuggestion> {
+  return request(
+    `/purchase-suggestions/${id}/evaluate`,
+    { method: 'POST' },
+    PurchaseSuggestionSchema,
+  );
+}
+
+export function evaluateAllPending(): Promise<EvaluateAllResult> {
+  return request(
+    '/purchase-suggestions/admin/evaluate-all-pending',
+    { method: 'POST' },
+    EvaluateAllResultSchema,
+  );
+}
+
+export function acceptSuggestion(
+  id: string,
+  input: ResolveSuggestion = {},
+): Promise<PurchaseSuggestion> {
+  ResolveSuggestionSchema.parse(input);
+  return request(
+    `/purchase-suggestions/${id}/accept`,
+    { method: 'POST', body: JSON.stringify(input) },
+    PurchaseSuggestionSchema,
+  );
+}
+
+export function rejectSuggestion(
+  id: string,
+  input: ResolveSuggestion = {},
+): Promise<PurchaseSuggestion> {
+  ResolveSuggestionSchema.parse(input);
+  return request(
+    `/purchase-suggestions/${id}/reject`,
+    { method: 'POST', body: JSON.stringify(input) },
+    PurchaseSuggestionSchema,
+  );
+}
