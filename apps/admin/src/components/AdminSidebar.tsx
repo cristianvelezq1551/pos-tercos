@@ -1,6 +1,23 @@
 'use client';
 
 import { cn } from '@pos-tercos/ui';
+import {
+  ArrowLeftRight,
+  BarChart3,
+  Box,
+  ClipboardList,
+  FileText,
+  History,
+  LayoutDashboard,
+  Layers,
+  Package,
+  PackageOpen,
+  Receipt,
+  ShoppingBasket,
+  Truck,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -8,22 +25,28 @@ interface NavItem {
   label: string;
   href: string;
   section: string;
+  icon: LucideIcon;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { section: 'Operación', label: 'Dashboard', href: '/' },
-  { section: 'Catálogo', label: 'Productos', href: '/products' },
-  { section: 'Catálogo', label: 'Subproductos', href: '/subproducts' },
-  { section: 'Catálogo', label: 'Insumos', href: '/ingredients' },
-  { section: 'Compras', label: 'Facturas', href: '/invoices' },
-  { section: 'Compras', label: 'Proveedores', href: '/suppliers' },
-  { section: 'Inventario', label: 'Stock', href: '/inventory' },
-  { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements' },
-  { section: 'Caja', label: 'Turnos', href: '/shifts' },
-  { section: 'Caja', label: 'Anomalías', href: '/reports/anomalies' },
-  { section: 'Caja', label: 'Reconciliación', href: '/reports/reconciliation' },
-  { section: 'Auditoría', label: 'Log', href: '/audit' },
+  { section: 'Operación', label: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { section: 'Catálogo', label: 'Productos', href: '/products', icon: ShoppingBasket },
+  { section: 'Catálogo', label: 'Subproductos', href: '/subproducts', icon: Layers },
+  { section: 'Catálogo', label: 'Insumos', href: '/ingredients', icon: Package },
+  { section: 'Compras', label: 'Facturas', href: '/invoices', icon: Receipt },
+  { section: 'Compras', label: 'Proveedores', href: '/suppliers', icon: Truck },
+  { section: 'Inventario', label: 'Stock', href: '/inventory', icon: Box },
+  { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements', icon: PackageOpen },
+  { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet },
+  { section: 'Caja', label: 'Anomalías', href: '/reports/anomalies', icon: BarChart3 },
+  { section: 'Caja', label: 'Reconciliación', href: '/reports/reconciliation', icon: ArrowLeftRight },
+  { section: 'Auditoría', label: 'Log', href: '/audit', icon: History },
 ];
+
+const SECTION_ICON: Record<string, LucideIcon> = {
+  Operación: ClipboardList,
+  Catálogo: FileText,
+};
 
 export function AdminSidebar() {
   const pathname = usePathname();
@@ -46,18 +69,20 @@ export function AdminSidebar() {
             </p>
             {NAV_ITEMS.filter((i) => i.section === section).map((item) => {
               const active = isActive(pathname, item.href);
+              const Icon = item.icon;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                     active
                       ? 'bg-blue-50 text-blue-700'
                       : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900',
                   )}
                 >
-                  {item.label}
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  <span>{item.label}</span>
                 </Link>
               );
             })}
@@ -72,3 +97,6 @@ function isActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
 }
+
+// Imported but unused — kept for potential section header icons in future iteration.
+void SECTION_ICON;
