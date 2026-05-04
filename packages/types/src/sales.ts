@@ -248,6 +248,24 @@ export const VoidSaleSchema = z.object({
 export type VoidSale = z.infer<typeof VoidSaleSchema>;
 
 // ====================================================================
+// WHATSAPP CLICK TRACKING — POST /sales/:id/whatsapp-clicked (FASE 9)
+// ====================================================================
+// El backend NO envía el WhatsApp (es wa.me, lo dispara el browser del
+// cajero/cocinero). Este endpoint solo registra el click para auditoría:
+// "% de pedidos web que recibieron WhatsApp en cada stage".
+//
+// El stage debe ser coherente con el status actual del sale, pero no
+// lo cambia: la transición real la hace `confirm-payment` o el KDS.
+
+export const WhatsAppStageEnum = z.enum(['accepted', 'confirmed', 'ready']);
+export type WhatsAppStage = z.infer<typeof WhatsAppStageEnum>;
+
+export const WhatsAppClickedSchema = z.object({
+  stage: WhatsAppStageEnum,
+});
+export type WhatsAppClicked = z.infer<typeof WhatsAppClickedSchema>;
+
+// ====================================================================
 // OPEN DRAWER — POST /sales/:id/open-drawer y "no-sale"
 // ====================================================================
 

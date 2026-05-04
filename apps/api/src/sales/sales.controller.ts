@@ -22,6 +22,7 @@ import {
   OpenDrawerSchema,
   SaleStatusEnum,
   VoidSaleSchema,
+  WhatsAppClickedSchema,
   type ConfirmPayment,
   type CreateSale,
   type JwtAccessPayload,
@@ -30,10 +31,16 @@ import {
   type SaleStatus,
   type SaleStatusLogEntry,
   type VoidSale,
+  type WhatsAppClicked,
 } from '@pos-tercos/types';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import {
+  CashierAccess,
+  KitchenAccess,
+  OnlyDueno,
+  Roles,
+} from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
 import { SalesService } from './sales.service';
@@ -107,6 +114,25 @@ export class SalesController {
       );
     }
     return this.sales.void(id, body, user.sub, approvalPin);
+  }
+
+  /**
+   * FASE 9 — Tracking de clicks wa.me. NO envía nada (lo abre el browser
+   * via wa.me) y NO cambia el status del sale. Solo audit log.
+   *
+   * Roles: cajero (accepted/confirmed) + cocinero (ready) + admin/dueño.
+   * Para no fragmentar el endpoint, aceptamos los 4 roles y validamos
+   * coherencia stage↔status en el service.
+   */
+  @Roles('CAJERO', 'COCINERO', 'ADMIN_OPERATIVO', 'DUENO')
+  @Post(':id/whatsapp-clicked')
+  @HttpCode(200)
+  recordWhatsAppClick(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(WhatsAppClickedSchema)) body: WhatsAppClicked,
+  ): Promise<{ recorded: true }> {
+    return this.sales.recordWhatsAppClick(id, body.stage, user.sub);
   }
 
   @CashierAccess()
