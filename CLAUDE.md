@@ -39,9 +39,9 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-7 backend ✅ |
-| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría | FASE 0-4 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA — venta en mostrador + drawer pedidos web | FASE 5.E + 7.E UI ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-7 + 11 backend ✅ |
+| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes | FASE 0-4 + 11 UI ✅ |
+| POS Cajero | `apps/pos` | Next.js PWA — venta + drawer pedidos web + cierre turno + cambiar PIN | FASE 5.E + 7.E + 11 UI ✅ |
 | KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | FASE 6.C UI ✅ |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
 | Web Pública | `apps/web` | Next.js — menú + checkout pickup/delivery + status tracking | FASE 7.C-D UI ✅ |
@@ -323,6 +323,12 @@ _(ninguno — FASE 4 cerrada)_
 - `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.customer-paid`, `web-order.cancelled` (este último reservado para FASE 9+).
 - Confirmación de pago de orden web reusa `POST /sales/:id/confirm-payment` (FASE 5). El cajero hace doble-validación digital normal y el sale pasa a PAGADO.
 
+### Cierre de caja + Anti-fraude (FASE 11)
+- `POST /shifts/:id/close [cajero]` — body `{countedCash, notes?}`. Calcula `expectedCash = openingCash + sum(sales CASH PAGADOS+)` y `difference = counted - expected`. Audit `SHIFT_CLOSED` siempre; `SHIFT_DISCREPANCY_DETECTED` adicional si `|diff| >= $5.000`. Solo el cajero dueño del turno puede cerrarlo.
+- `POST /approvals/pin [admin/dueño]` (FASE 11.C: cambió de OnlyDueno a AdminAccess) — cada user con rol cambia su propio PIN. Body `{pin: 6 dígitos}`.
+- `GET /reports/anomalies [dueño]` — `CashierAnomalies[]` con baseline (avg+σ) y flags por shift más reciente cuando métrica > avg + 2σ. Métricas trackeadas: `|difference|`, `voidCount`, `noSaleCount`. Necesita ≥5 shifts de baseline; menos → `baseline=null`.
+- `POST /reports/payment-reconciliation/import?source=NEQUI_CSV|BANCOLOMBIA_CSV [dueño]` multipart `file` — parser CSV minimalista (cols `fecha,monto,referencia`) + greedy match contra sales digitales por monto + fecha ±24h. Devuelve `ReconciliationReport {summary, rows}` con flags `matched|unmatched_csv|unmatched_sale`. Stateless por ahora (persistencia diferida a FASE 14).
+
 ---
 
 ## 7. Admin UI vigente
@@ -574,9 +580,23 @@ apps/public-display/src/
 
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (48 hasta hoy)
+### Commits en `main` (62 hasta hoy)
 
 ```
+fc0c9d3 feat(admin): FASE 4 ajustes 2.16 sidebar con iconos lucide-react
+788717d feat(reports): FASE 11.E reconciliación CSV pagos digitales (stateless MVP)
+6abe877 feat(reports): FASE 11.D anomalías por cajero (2σ histórico personal)
+fac3d25 feat(approvals,pos): FASE 11.C cambiar propio PIN (Admin + Dueño)
+0e0b05c feat(pos,admin): FASE 11.B UI cierre de turno + admin /shifts list
+162bd19 feat(shifts): FASE 11.A backend cierre de turno + Z-report + descuadre
+7ddffe2 chore(admin): FASE 4 ajustes 2.13 + 2.14 + 2.15 — pulido (margin + format helpers + drop fetch)
+b01b8fb feat(invoices,inventory): FASE 4 ajustes 2.6 + 2.9 + 2.11 — movements + foto + unit warning
+10524ac feat(suppliers): FASE 4 ajustes 2.7 + 2.8 — supplier polimórfico + detalle con histórico
+1c5a8cd feat(invoices): FASE 4 ajustes 2.10 — eliminar borradores PENDING_REVIEW
+813539f fix(invoices,audit): FASE 4 ajustes 2.5 + 2.12 — audit actions específicos + cloneFrom valida items
+bc77a6b feat(domain,api,admin): FASE 4 ajustes 2.2 — computeComboCost + ingredient.lastUnitCost
+3801874 feat(products): FASE 4 ajustes 2.1 — ProductForm soporta direct-resale full
+4439647 fix(invoices): FASE 4 ajustes 2.3 + 2.4 — confirm valida totals match + iva ≤ total
 858cb50 feat(pos): FASE 7.E drawer pedidos web pendientes + confirm modal
 18c928c feat(web): FASE 7.D checkout 1-página + status poller + mark-paid
 37165ea feat(web): FASE 7.C apps/web menú + carrito localStorage
@@ -769,17 +789,50 @@ Particionada en 6 sub-sprints. Plan completo en `fase5e-y-pendientes.md` sec 3.2
   - Status poller cliente cada 5s (no SSE) — evita conexiones colgadas en pestañas inactivas y rate-limit lo permite (120/60s).
   - El POS usa el endpoint `/sales/:id/confirm-payment` existente para órdenes web (no se crea endpoint dedicado) — el modal precarga `amountReceived = total` y obliga doble validación.
 
-### Pendientes — FASES 8 a 15
+### FASE 4 ajustes (sweep) · ✅ COMPLETADA (8 sub-sprints, 13 de 18 items)
+
+Documento canónico: `fase4-ajustes-pendientes.md`. Particionada en 8 sub-sprints:
+
+- [x] **4adj.A** (`4439647`) — 2.3 + 2.4: backend valida `Math.abs(total - sum(items.total)) <= max(1% total, $1000)` + `iva <= total` con mensajes claros.
+- [x] **4adj.B** (`3801874`) — 2.1: ProductForm soporta direct-resale full (toggle + 4 campos required + edit lock + banner).
+- [x] **4adj.C** (`bc77a6b`) — 2.2: migration `ingredient.lastUnitCost` + `confirm()` lo actualiza + domain puro `computeProductCost`/`computeComboCost` recursivo + endpoint `expandedCost` extendido devuelve `{kind, totals, components, totalCost}` + UI ProductsTable muestra costo de combos.
+- [x] **4adj.D** (`813539f`) — 2.5 + 2.12: actions específicos `INVOICE_UPLOADED|CONFIRMED|REJECTED|CLONED` (en vez del genérico `INVENTORY_MOVEMENT_PURCHASE` con metadata.stage). cloneFrom rechaza source con 0 items. Bug colateral: `@UsePipes` a nivel método aplicaba ZodValidationPipe a `@CurrentUser` también — refactor a pipe inline en `@Body`.
+- [x] **4adj.E** (`1c5a8cd`) — 2.10: DELETE /invoices/:id solo PENDING_REVIEW + storage.delete idempotente + audit `INVOICE_DELETED`. UI con DeleteDraftButton.
+- [x] **4adj.F** (`10524ac`) — 2.7 + 2.8: `SupplierProductSchema` polimórfico + endpoint GET /suppliers/:id/products + UI /suppliers/[id] con secciones "Productos comprados" + "Últimas facturas".
+- [x] **4adj.G** (`b01b8fb`) — 2.6 + 2.9 + 2.11: GET /inventory/movements con filtros `source_type`/`source_id`. GET /invoices/:id/photo (binary, AdminAccess). UI /invoices/[id] con sección "Movimientos generados" (CONFIRMED) + foto thumbnail. CreateStockableInline warning amber si unitPurchase ≠ row.unit.
+- [x] **4adj.H** (`7ddffe2`) — 2.13 + 2.14 + 2.15: lib/margin-thresholds (centralized) + lib/format (formatCop, formatNumber, formatDate). EditDraftScreen drop doble fetch on-mount.
+- [x] **2.16** (`fc0c9d3`) — sidebar con iconos lucide-react.
+
+**Skipped (deuda menor documentada):**
+- 2.17 — tests automatizados FASE 4 (esfuerzo grande, no v1; testing-guide manual es suficiente por ahora).
+
+### FASE 11 — Cierre de caja + Anti-fraude · ✅ COMPLETADA (5 sub-sprints)
+
+Particionada según `fase5e-y-pendientes.md` sec 3.6.
+
+- [x] **11.A** (`162bd19`) — Backend `POST /shifts/:id/close`: valida ownership + status OPEN, calcula `expectedCash = openingCash + sum(sales CASH PAGADOS+)`, `difference = counted - expected`. Audit `SHIFT_CLOSED` con metadata. Si `|diff| >= $5.000` (DISCREPANCY_THRESHOLD_COP) → audit adicional `SHIFT_DISCREPANCY_DETECTED` con TODO marker para WhatsApp alert (FASE 9).
+- [x] **11.B** (`0e0b05c`) — UI POS `CloseShiftModal` con Z-report preview (apertura + ventas CASH + breakdown por método) + counted input con diff live tonal. `CloseShiftAction` en topbar. Admin `/shifts` page con tabla histórica + diff coloring por threshold. AdminSidebar item "Turnos".
+- [x] **11.C** (`fac3d25`) — `POST /approvals/pin` cambió de OnlyDueno a AdminAccess (cada user con rol cambia su propio PIN). UI POS `ChangePinAction` (modal con PIN doble input + confirm matching + 6 dígitos validation). Renderea solo si user.role ∈ {ADMIN_OPERATIVO, DUENO}. Audit con metadata.role.
+- [x] **11.D** (`6abe877`) — Reporte de anomalías por cajero (2σ histórico personal). Métricas: `|difference|` + `voidCount` + `noSaleCount` (CASH_DRAWER_OPENED_NO_SALE en ventana del shift). Baseline = top 30 shifts excluyendo el más reciente; si <5 shifts → "no baseline". Flags si métrica > avg + 2σ. UI `/reports/anomalies` con cards de baseline + tabla por cajero.
+- [x] **11.E** (`788717d`) — Reconciliación CSV (NEQUI_CSV | BANCOLOMBIA_CSV) **stateless** por ahora (persistencia en FASE 14). Parser CSV minimalista + greedy matching contra sales digitales por monto + fecha ±24h. Flags: `matched` / `unmatched_csv` (red flag) / `unmatched_sale`. UI `/reports/reconciliation` con file upload + selector source + tabla resultado tonal.
+
+**Decisiones tomadas en FASE 11 (no re-discutir):**
+- DISCREPANCY_THRESHOLD_COP = $5.000 (hardcoded por ahora; UI muestra warning visual cuando se supera).
+- WhatsApp alert al detectar descuadre queda como TODO marker en código — wirea en FASE 9.
+- Reconciliación NO persiste reportes en DB en este sprint — endpoint stateless. Tabla `payment_reconciliations` se diferirá hasta que el dueño quiera histórico (FASE 14 hardening prod).
+- 2σ requiere ≥5 shifts de baseline — si hay menos, se marca como "Sin baseline" sin error. Razonable: necesitás histórico personal para detectar desviación personal.
+- Greedy match en reconciliation prioriza primer match por orden (CSV asc, sale asc) — no el "mejor match" temporal. Aceptable para v1; FASE 14 puede sofisticar con scoring por proximidad.
+
+### Pendientes — FASES 8, 9, 10, 12, 13, 14, 15
 
 Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
 
 - **FASE 8** — Mapbox + validación 3km: geocoding + autocomplete address + cálculo de distancia haversine + bloqueo > 3km.
 - **FASE 9** — WhatsApp con Mock + Dev Inbox: adapter Meta Cloud API + `apps/api/tmp/whatsapp/` mock log + dashboard inbox.
-- **FASE 10** — Repartidor: `apps/repa`, asignación, GPS captura, transitions delivery.
-- **FASE 11** — Cierre de caja + Anti-fraude: `expectedCash`, `countedCash`, diff threshold, Z-report.
+- **FASE 10** — Repartidor (DIFERIDA por decisión del usuario): `apps/repa`, asignación, GPS captura, transitions delivery.
 - **FASE 12** — Auto-pedido IA + Promociones avanzadas (UI completa).
 - **FASE 13** — Reportes y Dashboard.
-- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones).
+- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports.
 - **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local.
 
 ---
@@ -860,19 +913,21 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 7 cerrada. **Próximo: FASE 8 — Mapbox + validación 3km.**
+FASE 4 ajustes + FASE 11 cerradas. **Próximo: FASE 8 — Mapbox + validación 3km.**
 
-Plan completo en `fase5e-y-pendientes.md` sec 3.3. Resumen:
+Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **8 → 12 → 9 → 13 → 14 → 15 → 10 (diferida)**.
+
+Plan FASE 8 completo en `fase5e-y-pendientes.md` sec 3.3. Resumen:
 - Adapter `MapsProvider` interface en `@pos-tercos/domain` con `geocode(address) → {lat,lng}` y `reverseGeocode(lat,lng) → address`. Implementación `MapboxMapsAdapter` en `apps/api/src/adapters/maps/`. `MOCK` adapter para tests sin token.
-- Función pura `haversine(lat1,lng1,lat2,lng2): km` en `@pos-tercos/domain/geo/` (ya hay precedente con `expandRecipe`). Constantes `RESTAURANT_LAT/LNG/RADIUS_KM` desde env.
+- Función pura `haversine(lat1,lng1,lat2,lng2): km` en `@pos-tercos/domain/geo/`. Constantes `RESTAURANT_LAT/LNG/RADIUS_KM` desde env.
 - Endpoint público `GET /web/geocode?address=` con throttle agresivo (10/60s) — devuelve `{lat,lng,formattedAddress, withinDeliveryRadius}`.
-- `CreateWebOrderSchema` (FASE 7) extiende: si `type=WEB_DELIVERY`, requiere `deliveryLat` + `deliveryLng` además del address. Backend valida 3km vía haversine antes de crear el sale; rechaza con 400 + mensaje claro.
-- `apps/web/checkout` UX: agregar `GooglePlacesAutocomplete` (o Mapbox equivalent) que llama `/web/geocode` on-blur, muestra mapa pin, banner verde/amber si está/no en zona.
+- `CreateWebOrderSchema` extiende: si `type=WEB_DELIVERY`, requiere `deliveryLat` + `deliveryLng` además del address. Backend valida 3km vía haversine antes de crear el sale; rechaza con 400.
+- `apps/web/checkout` UX: agregar `MapboxAutocomplete` que llama `/web/geocode` on-blur, banner verde/amber si está/no en zona.
 - Decisiones a confirmar antes de 8.A:
-  - Mapbox vs Google Places (token cost, UX). Plan recomienda Mapbox pero pos-spec menciona Google Maps.
+  - Mapbox vs Google Places (recomiendo Mapbox por free tier y SDK liviano).
   - Manejo de fuera-de-zona en checkout: bloquear submit o ofrecer pickup como fallback?
   - Geocode rate limit: por IP o por sesión (cookie temporal sin auth)?
-  - Mock dev: archivos JSON con direcciones fake o adapter "always-success" centrado en restaurant?
+  - Mock dev: JSONs de direcciones fake o adapter "always-success"?
 
 ---
 
