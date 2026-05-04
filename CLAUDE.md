@@ -27,7 +27,7 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 - **Auth:** JWT (access 15min en cookie+Bearer + refresh 7d httpOnly cookie con rotación)
 - **Realtime:** WebSocket (KDS, repartidor, POS) + SSE (pantalla pública) — pendiente FASE 5+
 - **IA:** Anthropic Claude Haiku 4.5 (primario) + OpenAI GPT-4o-mini (fallback) — vision para facturas
-- **WhatsApp:** Cloud API oficial Meta (mock en dev hasta aprobación) — pendiente FASE 9
+- **WhatsApp:** wa.me semi-automático con tracking — sin backend, sin Meta WABA, sin costo. Ver sec 4.10. Pendiente FASE 9.
 - **Mapas:** Mapbox (geocoding + autocomplete + maps GL) — pendiente FASE 7
 - **Storage:** Cloudflare R2 en prod, filesystem local en dev (`./tmp/uploads/...`)
 
@@ -39,8 +39,8 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-7 + 11 backend ✅ |
-| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes | FASE 0-4 + 11 UI ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-8 + 11 + 12 backend ✅ |
+| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes / promos / sugerencias IA | FASE 0-4 + 11 + 12 UI ✅ |
 | POS Cajero | `apps/pos` | Next.js PWA — venta + drawer pedidos web + cierre turno + cambiar PIN | FASE 5.E + 7.E + 11 UI ✅ |
 | KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | FASE 6.C UI ✅ |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
@@ -86,9 +86,9 @@ apps/api/src/<dominio>/
 └── <dominio>.service.spec.ts
 ```
 
-**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `adapters/llm`, `adapters/storage`, `common`.
+**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `sales`, `kds`, `shifts`, `promotions`, `web-orders`, `web-menu`, `public-display`, `reports`, `purchase-suggestions`, `adapters/llm`, `adapters/storage`, `adapters/printer`, `adapters/cash-drawer`, `adapters/maps`, `common`.
 
-**Dominios pendientes:** `sales`, `kds`, `delivery`, `shifts`, `promotions`, `purchase-suggestions`, `reports`, `workers`, `whatsapp`.
+**Dominios pendientes:** `delivery`, `workers`, `whatsapp`.
 
 **Reglas backend:**
 - ❌ NUNCA `PrismaService` en controller. Solo en service.
@@ -228,9 +228,56 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 - `apps/api` levanta en puerto `3001`. `apps/admin` en `3004`. Ambos vía `pnpm dev`.
 - En `next.config.ts` rewrites: `/api/* → http://localhost:3001/*` para que el admin cliente pegue cookies httpOnly.
 
+### 4.10 WhatsApp wa.me semi-automático con tracking (decisión 2026-05-04)
+
+**Cambio drástico vs plan original:** se elimina por completo el módulo WhatsApp del backend. NO hay `WhatsAppProvider`, NO hay adapter Meta, NO hay mock dev inbox, NO hay templates aprobadas, NO hay tokens de Meta. Razón: presupuesto del usuario ≤$10 USD/mes, WABA mínimo viable arranca en ~$30 USD/mes.
+
+**Flujo nuevo (todo frontend, cero costo):**
+
+1. **Cliente hace pedido web** → sale queda en `PENDIENTE_PAGO` y aparece en POS drawer marcado como **"Sin aceptar"**.
+2. **Cajero presiona "Aceptar y contactar"** en POS drawer:
+   - El mismo click ABRE WhatsApp Web (en su computadora) con la conversación al cliente y mensaje pre-llenado pidiendo comprobante.
+   - El click registra `POST /sales/:id/whatsapp-clicked?stage=accepted` en backend → audit log.
+3. **Cliente envía comprobante por WhatsApp** (foto Nequi/transferencia). El cajero recibe en WhatsApp normal del local.
+4. **Cajero verifica comprobante** y presiona **"Confirmar pago"** en POS:
+   - Sale pasa a `PAGADO` (flujo actual sin cambios).
+   - El mismo click ABRE WhatsApp con mensaje pre-llenado "tu pedido fue confirmado, lo estamos preparando".
+   - El click registra `POST /sales/:id/whatsapp-clicked?stage=confirmed`.
+5. **Cocinero presiona "Marcar listo"** en KDS:
+   - Sale pasa a `LISTO_DESPACHO` (flujo actual sin cambios).
+   - El mismo click ABRE WhatsApp con mensaje pre-llenado "tu pedido está listo para retirar".
+   - Solo aplica a `WEB_PICKUP`/`WEB_DELIVERY`. Para `COUNTER` no abre nada.
+   - Registra `POST /sales/:id/whatsapp-clicked?stage=ready`.
+
+**Reglas duras de la decisión:**
+- ❌ NO existe el botón "Avisar cliente" como acción separada — siempre va **acoplado** al click de transición de status (Aceptar / Confirmar pago / Marcar listo). UX casi-obligatoria: para hacer la transición de status, abre WhatsApp como side-effect del mismo click.
+- ❌ NO existe el botón "Ya pagué" del cliente en `/checkout/success/[id]` — se elimina porque el flujo es cajero-driven via WhatsApp. El sale arranca esperando "aceptación + contacto WhatsApp" del cajero.
+- ✅ El mensaje sale del WhatsApp del comercio hacia el cliente (negocio→cliente, nunca al revés). Cliente puede responder normal (comprobantes, dudas) y le llega al WhatsApp del local.
+- ✅ Tracking obligatorio: cada click registra audit log para reportes ("% de pedidos con WhatsApp enviado en cada stage").
+- ✅ Operador usa **WhatsApp Web/Desktop en el computador del POS**. El click `target="_blank"` abre `https://wa.me/<phone>?text=<encoded>` en pestaña nueva — WhatsApp Web ya logueado lo intercepta.
+
+**Implementación (cuando lleguemos a FASE 9):**
+
+- Helper puro `@pos-tercos/domain/whatsapp/build-link.ts`:
+  - `buildAcceptedLink(sale, businessName)` — pide comprobante.
+  - `buildConfirmedLink(sale, businessName)` — confirma pago, va a cocina.
+  - `buildReadyLink(sale, businessName, businessAddressShort)` — listo para retirar.
+- Endpoint backend: `POST /sales/:id/whatsapp-clicked` body `{stage: 'accepted'|'confirmed'|'ready'}`. Audit `WHATSAPP_LINK_OPENED` con metadata.
+- UI cambios:
+  - **POS `WebOrdersDrawer`**: pedidos PENDIENTE_PAGO sin click previo de "accepted" muestran badge "Sin aceptar" rojo + botón principal **"Aceptar y contactar"** (en vez del actual "Confirmar pago" directo). Click → llama `whatsapp-clicked?stage=accepted` + abre wa.me en tab nueva.
+  - **POS `ConfirmWebPaymentModal`**: al hacer click "Confirmar pago" exitoso, además de cerrar modal y refrescar, llama `whatsapp-clicked?stage=confirmed` + abre wa.me.
+  - **KDS `OrderCard`**: botón "Marcar listo" para sales WEB_*, además de transición, llama `whatsapp-clicked?stage=ready` + abre wa.me. Para COUNTER se mantiene igual sin WhatsApp.
+- Variable env nueva (opcional): `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT="Cra 43A # 11-12, Medellín"` — texto que aparece en mensaje "Te esperamos en X".
+
+**Lo que NO va al sistema:**
+- Cron `fifteen-min-warning` queda eliminado de scope (era plan en FASE 9 original).
+- Recordatorio post-listo manual: si el dueño quiere implementar después, agrega un botón ad-hoc en KDS o POS, no es parte de este ciclo.
+
+**Por qué tracking sí:** vos quisiste métricas. El audit log responde "¿qué % de pedidos efectivamente recibió WhatsApp?" — útil para detectar cajeros que olvidan hacer click. Reporte va en FASE 13.
+
 ---
 
-## 5. Schema DB (24 tablas + 10 enums + 1 sequence)
+## 5. Schema DB (25 tablas + 11 enums + 1 sequence)
 
 ### Enums Prisma
 - `UserRole` — CAJERO, COCINERO, REPARTIDOR, ADMIN_OPERATIVO, DUENO, TRABAJADOR
@@ -242,7 +289,8 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 - `SaleStatus` (FASE 5) — PENDIENTE_PAGO, PAGADO, EN_PREPARACION, LISTO_DESPACHO, ASIGNADO, EN_RUTA, ENTREGADO, CANCELADO_NO_PAGO, CANCELADO_SIN_REEMBOLSO, INTENTO_FALLIDO, DEVUELTO, EN_DISPUTA, VOID
 - `PaymentMethod` (FASE 5) — CASH, NEQUI, DAVIPLATA, QR_BANCOLOMBIA, TRANSFER
 - `ShiftStatus` (FASE 5) — OPEN, CLOSED, RECONCILED
-- `PromotionType` (FASE 5) — PERCENT_OFF, BOGO, FIXED_OFF, COMBO_OFF (v1 solo PERCENT_OFF)
+- `PromotionType` (FASE 5 + 12.A) — PERCENT_OFF, BOGO, FIXED_OFF, COMBO_OFF (los 4 implementados en motor + DB + UI)
+- `PurchaseSuggestionStatus` (FASE 12.C) — PENDING, EVALUATED, ACCEPTED, REJECTED, STALE
 
 ### Sequences
 - `receipt_seq` (FASE 5) — monotónica, default de `sales.receipt_number`. Saltos detectables vía cron.
@@ -267,11 +315,12 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 17. `sale_items` (FASE 5) — product_id (no polimórfico), size_id NULL, modifiers_json snapshot, applied_promotion_id, line_subtotal/discount/total con CHECK
 18. `sale_status_log` (FASE 5) — insert-only via trigger; trazabilidad de cambios de status
 19. `shifts` (FASE 5) — apertura completa; cierre + reconciliación quedan para FASE 11
-20. `promotions` (FASE 5) — discount_pct [0..1), days_of_week_mask 1..127, time_start/end HH:MM:SS validado por regex
+20. `promotions` (FASE 5 + 12.B) — `type` enum + `discount_pct` (NULL para FIXED/BOGO) + `discount_fixed` + `bogo_buy_qty` + `bogo_get_qty` + 4 CHECK constraints per-type defensivos
 21. `promotion_products` (FASE 5) — N:M, PRIMARY KEY composite
 22. `idempotency_keys` (FASE 5) — cache de respuestas para POSTs idempotentes, TTL 7d
 23. `approval_pins` (FASE 5) — PIN hash por usuario; trigger valida que role IN (ADMIN_OPERATIVO, DUENO)
-24. `_prisma_migrations`
+24. `purchase_suggestions` (FASE 12.C) — polimórfico (entity_type + ingredient_id xor product_id), snapshot stock/threshold/qty/cost, `llm_rationale` + `llm_model` + `llm_evaluated_at`, status + resolved_by/at/note, CHECK polimórfico + `suggested_qty > 0`
+25. `_prisma_migrations`
 
 ---
 
@@ -323,6 +372,23 @@ _(ninguno — FASE 4 cerrada)_
 - `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.customer-paid`, `web-order.cancelled` (este último reservado para FASE 9+).
 - Confirmación de pago de orden web reusa `POST /sales/:id/confirm-payment` (FASE 5). El cajero hace doble-validación digital normal y el sale pasa a PAGADO.
 
+### Promociones (FASE 5.C + 12.B)
+- `GET /promotions[?only_active=true]` — Cajero+ leen para tachados POS; Admin/Dueño escriben.
+- `GET /promotions/:id` — Cajero+
+- `POST /promotions` — Admin/Dueño. Body `CreatePromotion` validado por `superRefine` per-type (PERCENT_OFF, FIXED_OFF, BOGO, COMBO_OFF). CHECK constraints DB defensivos (`chk_promo_pct/fixed/bogo/combo`).
+- `PATCH /promotions/:id` — Admin/Dueño. Solo permite cambiar campos meta (name, days, time, dates, isActive, productIds). Campos per-tipo son inmutables.
+- `DELETE /promotions/:id` — Admin/Dueño. Soft delete (isActive=false).
+
+### Sugerencias de compra (FASE 12.C-12.D)
+- `GET /purchase-suggestions[?status=&limit=]` — Admin/Dueño. `status` acepta CSV (`PENDING,EVALUATED`).
+- `GET /purchase-suggestions/:id` — Admin/Dueño.
+- `POST /purchase-suggestions/:id/accept` — Admin/Dueño. Body `{note?: string}`. Solo desde PENDING/EVALUATED.
+- `POST /purchase-suggestions/:id/reject` — Admin/Dueño. Body `{note?: string}`.
+- `POST /purchase-suggestions/:id/evaluate` — Dueño-only. LLM (Anthropic Haiku 4.5 primary, OpenAI fallback) escribe `llmRationale` + `llmModel`. Cuesta ~$0.0001/eval.
+- `POST /purchase-suggestions/admin/scan` — Dueño-only. Trigger manual del scan horario.
+- `POST /purchase-suggestions/admin/evaluate-all-pending` — Dueño-only. Batch sobre PENDING.
+- Cron `EVERY_HOUR`: detecta low-stock + crea PENDING + marca STALE las que se repusieron.
+
 ### Cierre de caja + Anti-fraude (FASE 11)
 - `POST /shifts/:id/close [cajero]` — body `{countedCash, notes?}`. Calcula `expectedCash = openingCash + sum(sales CASH PAGADOS+)` y `difference = counted - expected`. Audit `SHIFT_CLOSED` siempre; `SHIFT_DISCREPANCY_DETECTED` adicional si `|diff| >= $5.000`. Solo el cajero dueño del turno puede cerrarlo.
 - `POST /approvals/pin [admin/dueño]` (FASE 11.C: cambió de OnlyDueno a AdminAccess) — cada user con rol cambia su propio PIN. Body `{pin: 6 dígitos}`.
@@ -352,6 +418,9 @@ _(ninguno — FASE 4 cerrada)_
 /invoices/[id]                           # detalle (botón "Continuar" si PENDING / "Clonar" si CONFIRMED)
 /invoices/[id]/edit                      # reabre modal sobre draft existente (resume + clone targets)
 /suppliers                               # lista + new + [id]
+/promotions                              # lista + new + [id] (FASE 12.B)
+/purchase-suggestions                    # lista + tabs filtro + scan + evaluar (FASE 12.E)
+/purchase-suggestions/[id]               # detalle con rationale IA + accept/reject
 /audit                                   # solo Dueño
 ```
 
@@ -580,9 +649,18 @@ apps/public-display/src/
 
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (62 hasta hoy)
+### Commits en `main` (70 hasta hoy)
 
 ```
+2cdf7f6 feat(admin): FASE 12.E UI sugerencias de compra
+626adbb feat(purchase-suggestions): FASE 12.D LLM evalúa sugerencias
+44ba01b feat(purchase-suggestions): FASE 12.C scan horario + accept/reject
+a770e67 feat(admin): FASE 12.B UI promociones — lista + crear con campos por tipo
+18bada3 feat(promotions): FASE 12.B schema + Zod superRefine para 4 tipos de promo
+6c15d38 feat(domain): FASE 12.A motor de promociones extendido (BOGO + FIXED_OFF + COMBO_OFF)
+417204d feat(web): FASE 8.B checkout con autocomplete Mapbox + bloqueo 3km
+0a4b09a feat(maps,web-orders): FASE 8.A backend Mapbox + haversine + 3km validation
+561ae13 docs(claude): cierre FASE 4 ajustes + FASE 11 + roadmap actualizado
 fc0c9d3 feat(admin): FASE 4 ajustes 2.16 sidebar con iconos lucide-react
 788717d feat(reports): FASE 11.E reconciliación CSV pagos digitales (stateless MVP)
 6abe877 feat(reports): FASE 11.D anomalías por cajero (2σ histórico personal)
@@ -823,16 +901,89 @@ Particionada según `fase5e-y-pendientes.md` sec 3.6.
 - 2σ requiere ≥5 shifts de baseline — si hay menos, se marca como "Sin baseline" sin error. Razonable: necesitás histórico personal para detectar desviación personal.
 - Greedy match en reconciliation prioriza primer match por orden (CSV asc, sale asc) — no el "mejor match" temporal. Aceptable para v1; FASE 14 puede sofisticar con scoring por proximidad.
 
-### Pendientes — FASES 8, 9, 10, 12, 13, 14, 15
+### FASE 8 — Mapbox + validación 3km · ✅ COMPLETADA (2 sub-sprints)
+
+- [x] **8.A** (`0a4b09a`) — backend Mapbox + haversine + 3km validation:
+  - `packages/domain/src/maps/`: `MapsProvider` interface + `GeoPoint`/`GeocodeResult` + `haversineKm` puro + `withinRadius`.
+  - `apps/api/src/adapters/maps/`: `MapboxMapsAdapter` (real geocoding), `MockMapsAdapter` (deterministic offset por hash, sin token), `MapsModule` `@Global()` con factory auto-fallback (si no hay `MAPBOX_TOKEN` → mock).
+  - `WebGeoController` `@Public() Throttle(30/60s)`: `GET /web/geocode?address=` retorna `{lat, lng, formattedAddress, withinDeliveryRadius}`. Restaurant lat/lng + radius desde env (`RESTAURANT_LAT/LNG`, `DELIVERY_RADIUS_KM=3`).
+  - `WebOrdersService.create`: si `type=WEB_DELIVERY`, valida `haversineKm(restaurant, delivery) <= radius` antes de crear (rechaza con 400 + mensaje claro).
+- [x] **8.B** (`417204d`) — apps/web checkout con autocomplete:
+  - `DeliveryAddressInput`: debounced geocode (700ms) + status banners (verde dentro de zona / amber fuera de zona / red error) + CTA "Cambiar a pickup" cuando está fuera.
+  - `CheckoutForm`: cuando `type=delivery`, exige geocode válido y dentro de radius antes de submit. Pasa `deliveryLat/Lng` al backend.
+
+  **Decisiones tomadas en FASE 8 (no re-discutir):**
+  - Mapbox > Google Places (free tier mejor + SDK liviano). Token público (`pk.`) técnicamente sirve server-side.
+  - Manejo fuera-de-zona: bloquear submit + ofrecer pickup como alternativa (banner amber + CTA), no error fatal.
+  - Mock dev: deterministic offset por hash del address. Pensado para devs sin token.
+  - Cliente del web app NUNCA llama Mapbox directo — siempre vía `/web/geocode` (throttle + auth boundary). Token Mapbox queda solo en backend.
+
+### FASE 12 — Promociones avanzadas + Auto-pedido IA · ✅ COMPLETADA (5 sub-sprints)
+
+Particionada en 2 lados: promociones (12.A-12.B) y auto-pedido IA (12.C-12.E).
+
+- [x] **12.A** (`6c15d38`) — Motor de promociones extendido en `@pos-tercos/domain`:
+  - `PromotionTypeKind = 'PERCENT_OFF' | 'BOGO' | 'FIXED_OFF' | 'COMBO_OFF'`.
+  - `applyPromotion` con switch-by-type: PERCENT (pct sobre línea), FIXED (cap a lineSubtotal), BOGO (sets completos × unitPrice), COMBO (gating por `isCombo`).
+  - **Cambio breaking de selección de ganador**: antes "mayor discountPct", ahora "mayor descuento ABSOLUTO en COP" (única forma justa de comparar pct vs fixed vs bogo).
+  - `ApplyPromotionInput` ganó `quantity` + `isCombo`. Callers actualizados (api SalesService, pos totals.ts, api PromotionsService.loadActiveAt).
+  - 11/11 tests unit (cubren los 4 tipos + mixed types). Tests excluidos del build TS, ad-hoc con `pnpm dlx tsx`. Vitest formal queda para FASE 14.
+
+- [x] **12.B backend** (`18bada3`) — Schema + Zod superRefine:
+  - Migration `20260504203249`: agrega `discount_fixed`, `bogo_buy_qty`, `bogo_get_qty` a `promotions`. `discount_pct` ahora NULL.
+  - 4 CHECK constraints (`chk_promo_pct/fixed/bogo/combo`) que enforce per-type a nivel DB. Smoke verificado: 6 inválidos rechazados, 3 válidos aceptados.
+  - `PromotionSchema` (wire) — discountPct/Fixed/bogo* nullable.
+  - `CreatePromotionSchema.superRefine` — switch-by-type con `rejectField` helper para enforce que cada type tenga solo sus campos.
+  - `UpdatePromotionSchema` — drops `discountPct`. Decisión: campos por-tipo son inmutables; para cambiarlos se desactiva la promo y se crea una nueva. Mantiene la invariante de tipo sin re-validar XOR.
+  - `PromotionsService.loadActiveAt` y `toPromotionDto` mapean los 4 fields. Audit metadata cambió `discountPct` → `type`.
+  - Fix incidental: `PromotionSchema.productIds.default([])` causaba variance (output type opcional). Removido `.default([])`.
+
+- [x] **12.B UI** (`a770e67`) — Admin `/promotions`:
+  - `apps/admin/src/features/promotions/`: api/client + PromotionsTable (badge tipo + descuento renderizado per-type) + PromotionForm (selector tipo + campos condicionales + 7 chips días + time pickers + multi-select productos) + PromotionDetail (read-only + desactivar).
+  - Pages `/promotions`, `/promotions/new`, `/promotions/[id]`. Sidebar item "Promociones" (icon Tag) en sección Catálogo.
+
+- [x] **12.C** (`44ba01b`) — Backend purchase-suggestions:
+  - Migration `20260504210021`: model `PurchaseSuggestion` polimórfico (xor ingredient/product) + enum `PurchaseSuggestionStatus` (PENDING, EVALUATED, ACCEPTED, REJECTED, STALE).
+  - CHECK polimórfico (xor ingredient_id/product_id coherente con entity_type) + `suggested_qty > 0`.
+  - `PurchaseSuggestionsService.runScan(systemUserId)`: idempotente. Lista stockables activos con `thresholdMin > 0`, batch-load `lastUnitCost`, dedupe contra PENDING/EVALUATED activas, crea nuevas + marca STALE las que ya no están bajo threshold.
+  - Algoritmo qty: refill a 2× threshold, `ceil(deficit_stock / conversion_factor)`, mínimo 1 (en `unit_purchase`).
+  - `@Cron EVERY_HOUR` non-throwing.
+  - Endpoints: `GET /purchase-suggestions[?status=&limit=]`, `GET /:id`, `POST /:id/accept`, `POST /:id/reject` (Admin/Dueño); `POST /admin/scan` (Dueño-only).
+  - Audit actions nuevos: `PURCHASE_SUGGESTION_CREATED/EVALUATED/ACCEPTED/REJECTED/STALE`.
+  - Smoke E2E (3 ingredientes test): bajo-threshold detectado, dedupe, stale auto, accept/reject + audit log correctos.
+
+- [x] **12.D** (`626adbb`) — LLM evaluación de sugerencias:
+  - `LLMProvider.evaluatePurchaseSuggestion(req)` agregado a interface + impls Anthropic (Haiku 4.5) y OpenAI (gpt-4o-mini). max_tokens=256.
+  - `PURCHASE_SUGGESTION_SYSTEM` prompt en español, máx 3 frases, tono directo.
+  - `buildPurchaseSuggestionUserPrompt(input)` arma contexto: item + stock + threshold + sugerencia + costo + últimas 10 compras (date · supplier · qty · $/unidad).
+  - `PurchaseSuggestionsService.evaluate(id, userId)`: carga últimos 10 invoice_items CONFIRMED del stockable (con supplier name), llama LLM, escribe `llmRationale + llmModel + llmEvaluatedAt`, transición → EVALUATED.
+  - `evaluateAllPending(userId)`: batch sobre PENDING, no-throw, retorna `{evaluated, failed}`.
+  - Endpoints Dueño-only: `POST /:id/evaluate`, `POST /admin/evaluate-all-pending`.
+  - Smoke real verificado contra Anthropic Haiku 4.5: rationale 468 chars en español, audit log con `metadata.modelUsed + historySize + rationaleLen`.
+
+- [x] **12.E** (`2cdf7f6`) — Admin `/purchase-suggestions`:
+  - `apps/admin/src/features/purchase-suggestions/`: api/client + SuggestionsTable (StatusBadge tonal + emoji 🌾/📦 + indicador 🤖 si fue evaluada) + SuggestionDetail (panel rationale IA re-evaluable + acciones aceptar/rechazar con nota) + RunActionsBar (scan manual + evaluar pendientes en batch).
+  - Page `/purchase-suggestions` con tabs de filtro por status (Abiertas / Sin evaluar / Evaluadas / Aceptadas / Rechazadas / Vencidas / Todas).
+  - Page `/purchase-suggestions/[id]` SSR.
+  - Sidebar item "Sugerencias IA" (icono Sparkles) en sección Compras.
+
+  **Decisiones tomadas en FASE 12 (no re-discutir):**
+  - Selección ganadora pasó de "mayor pct" a "mayor descuento absoluto en COP" — única forma justa de comparar 4 types.
+  - UpdatePromotion no permite cambiar campos per-tipo (inmutable). Para cambiarlos: desactivar + crear nueva. Evita re-validación XOR + audit más limpio.
+  - CHECK constraints DB defensivos espejan Zod superRefine (no confiar solo en validación app).
+  - Cron de auto-evaluación LLM **NO existe**: el LLM se llama solo on-demand por el Dueño (cuesta $$). El cron solo detecta low-stock + crea PENDING.
+  - Algoritmo de qty: refill a 2× threshold con ceiling. Sin lógica de "comprar más por descuento por volumen" — eso lo evalúa el LLM y lo comenta en el rationale.
+  - LLM con max_tokens=256 → ~$0.0001 por eval con Haiku 4.5. Aceptable para uso diario.
+  - Conversión de unidades en el prompt: actualmente puede confundir al LLM (mezcla `unit_stock` y `unit_purchase` sin conversion factor explícito). TODO menor: clarificar el prompt, pero no bloqueante.
+
+### Pendientes — FASES 9, 10, 13, 14, 15
 
 Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
 
-- **FASE 8** — Mapbox + validación 3km: geocoding + autocomplete address + cálculo de distancia haversine + bloqueo > 3km.
-- **FASE 9** — WhatsApp con Mock + Dev Inbox: adapter Meta Cloud API + `apps/api/tmp/whatsapp/` mock log + dashboard inbox.
+- **FASE 9** — WhatsApp wa.me semi-automático (con tracking): helper puro `@pos-tercos/domain/whatsapp/` con 3 builders + endpoint `POST /sales/:id/whatsapp-clicked` (audit) + UI cambios en POS drawer ("Aceptar y contactar"), `ConfirmWebPaymentModal` (post-confirm abre WhatsApp), KDS `OrderCard` (post "Marcar listo" abre WhatsApp para WEB_*). Eliminar botón "Ya pagué" del cliente en `/checkout/success`. Decisión completa en sec 4.10. **NO requiere Meta WABA, NO requiere mock backend, costo $0.**
 - **FASE 10** — Repartidor (DIFERIDA por decisión del usuario): `apps/repa`, asignación, GPS captura, transitions delivery.
-- **FASE 12** — Auto-pedido IA + Promociones avanzadas (UI completa).
 - **FASE 13** — Reportes y Dashboard.
-- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports.
+- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports + Vitest formal.
 - **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local.
 
 ---
@@ -913,29 +1064,48 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 4 ajustes + FASE 11 cerradas. **Próximo: FASE 8 — Mapbox + validación 3km.**
+FASE 8 + FASE 12 cerradas. **Próximo: FASE 9 — WhatsApp wa.me semi-automático.**
 
-Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **8 → 12 → 9 → 13 → 14 → 15 → 10 (diferida)**.
+Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **9 → 13 → 14 → 15 → 10 (diferida)**.
 
-Plan FASE 8 completo en `fase5e-y-pendientes.md` sec 3.3. Resumen:
-- Adapter `MapsProvider` interface en `@pos-tercos/domain` con `geocode(address) → {lat,lng}` y `reverseGeocode(lat,lng) → address`. Implementación `MapboxMapsAdapter` en `apps/api/src/adapters/maps/`. `MOCK` adapter para tests sin token.
-- Función pura `haversine(lat1,lng1,lat2,lng2): km` en `@pos-tercos/domain/geo/`. Constantes `RESTAURANT_LAT/LNG/RADIUS_KM` desde env.
-- Endpoint público `GET /web/geocode?address=` con throttle agresivo (10/60s) — devuelve `{lat,lng,formattedAddress, withinDeliveryRadius}`.
-- `CreateWebOrderSchema` extiende: si `type=WEB_DELIVERY`, requiere `deliveryLat` + `deliveryLng` además del address. Backend valida 3km vía haversine antes de crear el sale; rechaza con 400.
-- `apps/web/checkout` UX: agregar `MapboxAutocomplete` que llama `/web/geocode` on-blur, banner verde/amber si está/no en zona.
-- Decisiones a confirmar antes de 8.A:
-  - Mapbox vs Google Places (recomiendo Mapbox por free tier y SDK liviano).
-  - Manejo de fuera-de-zona en checkout: bloquear submit o ofrecer pickup como fallback?
-  - Geocode rate limit: por IP o por sesión (cookie temporal sin auth)?
-  - Mock dev: JSONs de direcciones fake o adapter "always-success"?
+Plan FASE 9 (decisión completa en sec 4.10):
+
+- Helper puro `@pos-tercos/domain/whatsapp/build-link.ts` con 3 builders:
+  - `buildAcceptedLink(sale, businessName)` — pide comprobante.
+  - `buildConfirmedLink(sale, businessName)` — confirma pago, va a cocina.
+  - `buildReadyLink(sale, businessName, businessAddressShort)` — listo para retirar.
+- Endpoint `POST /sales/:id/whatsapp-clicked` body `{stage: 'accepted'|'confirmed'|'ready'}` que solo audita (no cambia status). Audit `WHATSAPP_LINK_OPENED` con metadata.
+- UI POS:
+  - `WebOrdersDrawer`: PENDIENTE_PAGO sin "accepted" muestra badge "Sin aceptar" rojo + botón "Aceptar y contactar". Click → audit + `window.open(wa.me/...)`.
+  - `ConfirmWebPaymentModal`: post-confirm también abre WhatsApp con mensaje "tu pedido fue confirmado".
+- UI KDS:
+  - `OrderCard.handleReady`: para `WEB_*` además del transition, abre WhatsApp con "tu pedido está listo para retirar".
+- UI web pública:
+  - Eliminar botón "Ya pagué" de `/checkout/success/[id]` (flujo ahora es cajero-driven).
+- Variable env opcional: `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT="Cra 43A # 11-12, Medellín"`.
+- TODO marker existente del descuadre (FASE 11.A) cablea acá: cuando se detecta `SHIFT_DISCREPANCY_DETECTED`, abrir WhatsApp al Dueño (esto es opcional; el audit log alcanza).
+
+**No requiere:** Meta WABA, mock backend, templates aprobadas, tokens externos. Costo $0/mes.
 
 ---
 
-## 14. Pendientes externos (kickoff-plan)
+## 14. Pendientes externos (snapshot 2026-05-04)
 
-- Aprobación Meta WABA (WhatsApp Business). Mock vigente en dev.
-- Compra hardware (impresoras térmicas, lector códigos, tablets KDS).
-- Onboarding contador (DIAN, facturación electrónica si aplica).
-- Cuenta Cloudflare R2 para prod.
-- Cuenta Mapbox (token público + secret).
-- Decisión proveedor pagos (Wompi, Mercado Pago, etc.) para FASE 5+.
+Documento canónico actualizado: `pendientes-externos-y-deploy.md`. Resumen ejecutivo:
+
+| Item | Estado | Fase | Notas |
+|---|---|---|---|
+| `.env` local con secrets | ✅ | Hoy | `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `RESTAURANT_LAT/LNG` listos |
+| PIN Admin Operativo dev (`654321`) | ✅ | Hoy | Dueño dev sigue en `123456`, cambiar opcional |
+| Cron diario backup Postgres → `~/backups/tercos/` | ✅ | Hoy | 2 AM, gzip; verificar Full Disk Access para `cron` en macOS |
+| OpenAI fallback (`OPENAI_API_KEY`) | ⏳ | FASE 4 (ya activa) | Recomendado cargar $5 USD para failover Anthropic |
+| Cuenta Mapbox + token público | ✅ | FASE 8 | Token verificado responde Medellín correcto. Variable `NEXT_PUBLIC_MAPBOX_TOKEN` y `MAPBOX_TOKEN` (mismo token, sin secret) |
+| WhatsApp Meta WABA | ❌ DESCARTADO | — | Reemplazado por wa.me semi-automático (sec 4.10). Costo $0/mes vs $470k WABA |
+| Cloudflare R2 bucket `pos-tercos-prod` | ✅ | FASE 15 | Account ID `7f706ea0b23a5d402bab2ef03602ce15`, Account API Token creado, credenciales en password manager |
+| Railway backend | ⏸️ Pausado | FASE 15 | Crear servicios cuando arranque deploy. Eliminar los 5 servicios de prueba creados antes |
+| Vercel frontends (5 proyectos) | ⏸️ Pausado | FASE 15 | Crear cuando arranque deploy |
+| Dominio + DNS Cloudflare | ⏳ | FASE 15 | Recomendado: comprar `tercosburgers.co` en Cloudflare Registrar |
+| Hardware local (impresora, cajón, tablet, Pi) | ⏳ | FASE 15 | Comprar 2-3 sem antes de inaugurar. ~$2.5M COP versión económica |
+| Print Agent en Raspberry Pi | ⏳ | FASE 15 | Deploy systemd service tras hardware |
+| DIAN factura electrónica | ❌ DESCARTADO v1 | — | No aplica hasta superar umbral DIAN o decisión de negocio |
+| Pasarela pagos online (Wompi, MP) | ❌ DESCARTADO v1 | — | Flujo Nequi/transfer manual con verificación cajero alcanza |
