@@ -515,6 +515,47 @@ export class InvoicesService {
     };
   }
 
+  /**
+   * FASE 4 ajustes 2.10: borra un draft PENDING_REVIEW. Cascade borra
+   * invoice_items vía FK. Si tiene foto en storage, también la borra.
+   * NUNCA permite borrar CONFIRMED (preserva audit + movements) o REJECTED
+   * (queda en histórico para trazabilidad).
+   */
+  async delete(id: string, userId: string): Promise<void> {
+    const existing = await this.prisma.invoice.findUnique({
+      where: { id },
+      select: { id: true, status: true, photoStorageKey: true },
+    });
+    if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
+    if (existing.status !== 'PENDING_REVIEW') {
+      throw new BadRequestException(
+        `Solo se pueden borrar borradores PENDING_REVIEW (status actual: ${existing.status}). Para anular una factura confirmada usá REJECTED.`,
+      );
+    }
+
+    await this.prisma.invoice.delete({ where: { id } });
+    if (existing.photoStorageKey) {
+      try {
+        await this.storage.delete(existing.photoStorageKey);
+      } catch (err) {
+        // No falla la operación si storage falla — la DB ya commiteó.
+        // El archivo huérfano queda como deuda menor (sweep en FASE 14).
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[invoices.delete] storage.delete failed for ${existing.photoStorageKey}:`,
+          err,
+        );
+      }
+    }
+    await this.audit.log({
+      userId,
+      action: 'INVOICE_DELETED',
+      entityType: 'invoice',
+      entityId: id,
+      metadata: { hadPhoto: existing.photoStorageKey !== null },
+    });
+  }
+
   async reject(id: string, userId: string, reason?: string): Promise<Invoice> {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);

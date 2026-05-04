@@ -70,3 +70,15 @@ export function cloneInvoice(sourceInvoiceId: string): Promise<InvoiceDraftRespo
     InvoiceDraftResponseSchema,
   );
 }
+
+/** FASE 4 ajustes 2.10: borra borrador PENDING_REVIEW. */
+export async function deleteInvoiceDraft(id: string): Promise<void> {
+  const res = await fetch(`/api/invoices/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok && res.status !== 204) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Error ${res.status}`);
+  }
+}

@@ -10,4 +10,6 @@ export interface StorageProvider {
   put(prefix: string, data: Buffer, contentType: string, ext: string): Promise<StoragePutResult>;
   get(key: string): Promise<Buffer>;
   url(key: string): Promise<string>;
+  /** Borra el objeto. Idempotente — no falla si la key no existe. */
+  delete(key: string): Promise<void>;
 }

@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -128,5 +130,19 @@ export class InvoicesController {
     @Body() body: { reason?: string },
   ): Promise<Invoice> {
     return this.invoices.reject(id, user.sub, body?.reason);
+  }
+
+  /**
+   * FASE 4 ajustes 2.10: borra borrador PENDING_REVIEW. Para CONFIRMED o
+   * REJECTED el endpoint rechaza con 400 (preserva audit + movements).
+   */
+  @AdminAccess()
+  @Delete(':id')
+  @HttpCode(204)
+  async delete(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.invoices.delete(id, user.sub);
   }
 }

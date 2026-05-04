@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { StorageProvider, StoragePutResult } from '@pos-tercos/domain';
 import { randomUUID } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 
 @Injectable()
@@ -41,6 +41,15 @@ export class LocalFilesystemStorageAdapter implements StorageProvider {
 
   async url(key: string): Promise<string> {
     return `file://${join(this.basePath, sanitize(key))}`;
+  }
+
+  async delete(key: string): Promise<void> {
+    try {
+      await unlink(join(this.basePath, sanitize(key)));
+    } catch (err) {
+      // Idempotente: silenciamos ENOENT (archivo ya borrado o nunca existió).
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
   }
 }
 

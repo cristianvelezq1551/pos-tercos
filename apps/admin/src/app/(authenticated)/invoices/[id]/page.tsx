@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
-import { CloneInvoiceButton } from '../../../../features/invoices';
+import { CloneInvoiceButton, DeleteDraftButton } from '../../../../features/invoices';
 import { Button } from '@pos-tercos/ui';
 import type { Invoice } from '@pos-tercos/types';
 
@@ -53,9 +53,15 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           </div>
           <div className="flex items-center gap-2">
             {invoice.status === 'PENDING_REVIEW' && (
-              <Link href={`/invoices/${invoice.id}/edit`}>
-                <Button size="sm">Continuar edición</Button>
-              </Link>
+              <>
+                <Link href={`/invoices/${invoice.id}/edit`}>
+                  <Button size="sm">Continuar edición</Button>
+                </Link>
+                <DeleteDraftButton
+                  invoiceId={invoice.id}
+                  supplierName={invoice.supplierName ?? null}
+                />
+              </>
             )}
             {invoice.status === 'CONFIRMED' && (
               <CloneInvoiceButton sourceInvoiceId={invoice.id} />
