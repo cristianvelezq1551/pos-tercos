@@ -1,8 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { CreateWebOrder, PublicWebOrder, Sale } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesService } from '../sales/sales.service';
+import { PosGateway } from './pos.gateway';
 
 @Injectable()
 export class WebOrdersService {
@@ -12,6 +13,8 @@ export class WebOrdersService {
     private readonly prisma: PrismaService,
     private readonly sales: SalesService,
     private readonly audit: AuditService,
+    @Inject(forwardRef(() => PosGateway))
+    private readonly posGateway: PosGateway,
   ) {}
 
   /**
@@ -49,7 +52,9 @@ export class WebOrdersService {
       idempotencyKey,
     );
 
-    return this.toPublicDto(sale, null);
+    const dto = this.toPublicDto(sale, null);
+    this.posGateway.emit('web-order.created', dto);
+    return dto;
   }
 
   /** Lectura pública (con token). Devuelve solo campos seguros. */
@@ -91,7 +96,9 @@ export class WebOrdersService {
     });
 
     const customerPaidAt = await this.readCustomerPaidAt(saleId);
-    return this.toPublicDto(sale, customerPaidAt);
+    const dto = this.toPublicDto(sale, customerPaidAt);
+    this.posGateway.emit('web-order.customer-paid', dto);
+    return dto;
   }
 
   private async readCustomerPaidAt(saleId: string): Promise<string | null> {
