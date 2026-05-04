@@ -130,6 +130,30 @@ export class WorkersService {
     return toAttendanceDto(updated);
   }
 
+  /**
+   * Devuelve los usuarios elegibles para registrar asistencia / comisión.
+   * Filtra los activos en roles operativos. El propio TRABAJADOR (rol
+   * RRHH ligero) y CAJERO/COCINERO/REPARTIDOR son los más típicos.
+   */
+  async listWorkerCandidates(): Promise<
+    Array<{
+      id: string;
+      fullName: string;
+      role: string;
+      email: string;
+    }>
+  > {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        active: true,
+        role: { in: ['CAJERO', 'COCINERO', 'REPARTIDOR', 'TRABAJADOR', 'ADMIN_OPERATIVO'] },
+      },
+      select: { id: true, fullName: true, role: true, email: true },
+      orderBy: { fullName: 'asc' },
+    });
+    return rows;
+  }
+
   async listAttendance(opts: {
     userId?: string;
     from?: Date;

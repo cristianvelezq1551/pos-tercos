@@ -35,6 +35,17 @@ export class WorkersController {
   constructor(private readonly workers: WorkersService) {}
 
   // -----------------------
+  // Workers (lista de candidatos)
+  // -----------------------
+
+  @Get('users')
+  listUsers(): Promise<
+    Array<{ id: string; fullName: string; role: string; email: string }>
+  > {
+    return this.workers.listWorkerCandidates();
+  }
+
+  // -----------------------
   // Attendance
   // -----------------------
 
