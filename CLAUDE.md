@@ -39,12 +39,12 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-8 + 11 + 12 backend ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 backend ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes / promos / sugerencias IA | FASE 0-4 + 11 + 12 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA — venta + drawer pedidos web + cierre turno + cambiar PIN | FASE 5.E + 7.E + 11 UI ✅ |
-| KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | FASE 6.C UI ✅ |
+| POS Cajero | `apps/pos` | Next.js PWA — venta + drawer pedidos web + WhatsApp wa.me + cierre turno + cambiar PIN | FASE 5.E + 7.E + 9 + 11 UI ✅ |
+| KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina + WhatsApp al "Marcar listo" | FASE 6.C + 9 UI ✅ |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
-| Web Pública | `apps/web` | Next.js — menú + checkout pickup/delivery + status tracking | FASE 7.C-D UI ✅ |
+| Web Pública | `apps/web` | Next.js — menú + checkout pickup/delivery + status tracking (cajero-driven via WhatsApp) | FASE 7.C-D + 8.B + 9 UI ✅ |
 | Repartidor | `apps/repa` | Next.js PWA mobile — domicilios | placeholder |
 | Print Agent | `apps/print-agent` | Node service local — ESC/POS | no creado aún |
 
@@ -86,9 +86,9 @@ apps/api/src/<dominio>/
 └── <dominio>.service.spec.ts
 ```
 
-**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `sales`, `kds`, `shifts`, `promotions`, `web-orders`, `web-menu`, `public-display`, `reports`, `purchase-suggestions`, `adapters/llm`, `adapters/storage`, `adapters/printer`, `adapters/cash-drawer`, `adapters/maps`, `common`.
+**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `sales`, `kds`, `shifts`, `promotions`, `web-orders`, `web-menu`, `public-display`, `reports`, `purchase-suggestions`, `adapters/llm`, `adapters/storage`, `adapters/printer`, `adapters/cash-drawer`, `adapters/maps`, `common`. (WhatsApp wa.me NO crea módulo backend — es helper en `@pos-tercos/domain/whatsapp` + endpoint `POST /sales/:id/whatsapp-clicked` en SalesController.)
 
-**Dominios pendientes:** `delivery`, `workers`, `whatsapp`.
+**Dominios pendientes:** `delivery`, `workers`.
 
 **Reglas backend:**
 - ❌ NUNCA `PrismaService` en controller. Solo en service.
@@ -269,6 +269,16 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
   - **KDS `OrderCard`**: botón "Marcar listo" para sales WEB_*, además de transición, llama `whatsapp-clicked?stage=ready` + abre wa.me. Para COUNTER se mantiene igual sin WhatsApp.
 - Variable env nueva (opcional): `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT="Cra 43A # 11-12, Medellín"` — texto que aparece en mensaje "Te esperamos en X".
 
+**Estado actual (2026-05-04, FASE 9 ✅ implementada en `ee4a9f3 1bba4ea 990c9a3 44ed21b`):**
+
+- Helper puro vivo en `@pos-tercos/domain/whatsapp/` con 16/16 tests.
+- Endpoint vivo `POST /sales/:id/whatsapp-clicked` (audit-only).
+- POS drawer: row con 2 botones "📱 Aceptar y contactar" (emerald) + "Confirmar pago" (ghost).
+- POS modal: post-confirm exitoso abre wa.me automático.
+- KDS: post `Marcar listo` para WEB_* abre wa.me automático.
+- Web checkout/success: botón "Ya pagué" REMOVIDO. Banner blue explica que el local contactará por WA.
+- Configurar antes de prod: `NEXT_PUBLIC_BUSINESS_NAME` y opcional `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT` en `apps/pos/.env.local` y `apps/kds/.env.local`.
+
 **Lo que NO va al sistema:**
 - Cron `fifteen-min-warning` queda eliminado de scope (era plan en FASE 9 original).
 - Recordatorio post-listo manual: si el dueño quiere implementar después, agrega un botón ad-hoc en KDS o POS, no es parte de este ciclo.
@@ -371,6 +381,9 @@ _(ninguno — FASE 4 cerrada)_
 - `POST /web/orders/:id/mark-paid?token=` — `@Public()`, Throttle 10/60s. NO cambia status. Audit `SALE_STATUS_CHANGED` con `metadata.stage='customer-paid-claimed'`. Retorna `PublicWebOrder` con `customerPaidAt` poblado.
 - `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.customer-paid`, `web-order.cancelled` (este último reservado para FASE 9+).
 - Confirmación de pago de orden web reusa `POST /sales/:id/confirm-payment` (FASE 5). El cajero hace doble-validación digital normal y el sale pasa a PAGADO.
+
+### WhatsApp tracking (FASE 9)
+- `POST /sales/:id/whatsapp-clicked` body `{stage: 'accepted' | 'confirmed' | 'ready'}` — Cajero/Cocinero/Admin/Dueño. Audit-only (no cambia status). Coherencia stage↔status: accepted estricto (solo PENDIENTE_PAGO), confirmed permisivo, ready estricto (LISTO_DESPACHO+). Audit `WHATSAPP_LINK_OPENED` con `metadata.{stage, receiptNumber, saleStatus, hasPhone}`.
 
 ### Promociones (FASE 5.C + 12.B)
 - `GET /promotions[?only_active=true]` — Cajero+ leen para tachados POS; Admin/Dueño escriben.
@@ -649,9 +662,14 @@ apps/public-display/src/
 
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (70 hasta hoy)
+### Commits en `main` (74 hasta hoy)
 
 ```
+44ed21b feat(kds,web): FASE 9.D KDS abre wa.me al "Marcar listo" + remueve "Ya pagué"
+990c9a3 feat(pos): FASE 9.C drawer pedidos web con "Aceptar y contactar" (wa.me)
+1bba4ea feat(sales): FASE 9.B endpoint /sales/:id/whatsapp-clicked (audit-only)
+ee4a9f3 feat(domain): FASE 9.A wa.me builders puros + audit action
+ad34d2f docs(claude): FASE 12.F cierre — FASE 8 + FASE 12 + WhatsApp wa.me + pendientes-externos
 2cdf7f6 feat(admin): FASE 12.E UI sugerencias de compra
 626adbb feat(purchase-suggestions): FASE 12.D LLM evalúa sugerencias
 44ba01b feat(purchase-suggestions): FASE 12.C scan horario + accept/reject
@@ -976,14 +994,65 @@ Particionada en 2 lados: promociones (12.A-12.B) y auto-pedido IA (12.C-12.E).
   - LLM con max_tokens=256 → ~$0.0001 por eval con Haiku 4.5. Aceptable para uso diario.
   - Conversión de unidades en el prompt: actualmente puede confundir al LLM (mezcla `unit_stock` y `unit_purchase` sin conversion factor explícito). TODO menor: clarificar el prompt, pero no bloqueante.
 
-### Pendientes — FASES 9, 10, 13, 14, 15
+### FASE 9 — WhatsApp wa.me semi-automático · ✅ COMPLETADA (4 sub-sprints)
+
+Decisión completa en sec 4.10. Costo $0/mes. Sin Meta WABA, sin backend
+que envíe mensajes — el browser del cajero/cocinero abre wa.me deep
+links que WhatsApp Web/App ya logueado intercepta.
+
+Touchpoints donde se abre WhatsApp al cliente (3 únicos, todos acoplados
+al click de transición de status — sin botones extra):
+
+| Stage | Quién | Trigger | Tipos | Mensaje |
+|---|---|---|---|---|
+| `accepted` | Cajero (POS drawer) | Click "Aceptar y contactar" | WEB_PICKUP, WEB_DELIVERY | Pide comprobante de pago |
+| `confirmed` | Cajero (POS modal) | Post `/sales/:id/confirm-payment` | WEB_PICKUP, WEB_DELIVERY | "Pago verificado ✅, ya está en cocina" |
+| `ready` | Cocinero (KDS) | Post `/kds/orders/:id/ready` | WEB_PICKUP, WEB_DELIVERY | Pickup: "listo para retirar en X". Delivery: "salió, llega en ~20 min" |
+
+**No se notifica al cliente en**: COUNTER (cajero entrega en mano),
+sale creada (cliente recién la hizo), transiciones intermedias
+(EN_PREPARACION, ASIGNADO, EN_RUTA — el cliente las ve en el poller),
+cancelaciones (cajero matiza el mensaje manualmente).
+
+- [x] **9.A** (`ee4a9f3`) — Helper puro `@pos-tercos/domain/whatsapp/`:
+  - `WhatsAppStage = 'accepted' | 'confirmed' | 'ready'` + `WhatsAppSaleSnapshot` + `WhatsAppBuildOptions` (businessName + businessAddressShort opcional).
+  - 3 builders + dispatcher `buildLinkForStage`. Phone normalization (acepta `+57XXX`, `57XXX`, `XXX` 10 dígitos → prepend 57). Greeting solo primer nombre. Format COP minimalista (sin Intl, mantiene domain tree-shakable).
+  - PICKUP vs DELIVERY: copy distinto en `ready` (incluye dirección o "salió a entrega ~20 min").
+  - 16/16 tests unit pasan.
+  - Audit action nuevo: `WHATSAPP_LINK_OPENED`.
+
+- [x] **9.B** (`1bba4ea`) — Endpoint backend `POST /sales/:id/whatsapp-clicked`:
+  - Body Zod `{stage}`. Audit-only, no cambia status del sale.
+  - Coherencia stage↔status: `accepted` requiere PENDIENTE_PAGO (estricto), `confirmed` permisivo (tolera doble click), `ready` requiere LISTO_DESPACHO+.
+  - Roles: CAJERO + COCINERO + ADMIN + DUEÑO en un solo endpoint (no fragmentamos por stage para mantener UI simple).
+
+- [x] **9.C** (`990c9a3`) — UI POS:
+  - `apps/pos/.../web-orders/api/whatsapp.ts` — fire-and-forget audit (no bloquea apertura wa.me).
+  - `apps/pos/.../web-orders/lib/whatsapp.ts` — `openWhatsAppForSale(sale, stage)` con feedback `{opened, reason}`. `businessName` desde `NEXT_PUBLIC_BUSINESS_NAME`.
+  - `WebOrdersDrawer`: row con grid 2 columnas — primary "📱 Aceptar y contactar" (emerald) + secondary "Confirmar pago" (ghost). Hint inline + banner si popup blocked.
+  - `ConfirmWebPaymentModal`: post-confirm exitoso llama `openWhatsAppForSale(paid, 'confirmed')`. No bloquea si popup blocked (sale ya pagada).
+
+- [x] **9.D** (`44ed21b`) — KDS + remoción "Ya pagué" del web:
+  - `apps/kds/.../orders/lib/whatsapp.ts` — `openWhatsAppReady(sale)` solo para WEB_*. Audit fire-and-forget, no bloquea transición.
+  - `OrderCard.handleReady`: post `readyOrder()` llama `openWhatsAppReady(order)`. Click único del cocinero notifica al cliente.
+  - `apps/web/.../OrderStatusView`: removido botón "Ya pagué" + input referencia + estado claimed + llamada a `markOrderPaid`. Reemplazado por banner blue "¿Qué sigue? Te contactamos por WhatsApp para pedirte el comprobante".
+
+  **Decisiones tomadas en FASE 9 (no re-discutir):**
+  - WhatsApp se abre **acoplado** a transiciones de status (mismo click). Sin botón "Avisar cliente" separado. Si el cajero no quiere mandar mensaje, cierra la tab — no hay penalización.
+  - Cliente NO tiene botón "Ya pagué" — el flujo es cajero-driven via WA. Reduce confusión y elimina un estado intermedio (`customerPaidAt` ya no se setea desde web; queda en DB pero nadie lo escribe — eventualmente removible en hardening).
+  - `confirmed` tolera doble click sin error (cajero puede re-confirmar y reabrir wa.me con mensaje nuevo). `accepted` y `ready` validan estricto.
+  - Audit fire-and-forget desde UI: si falla, igual abre wa.me. La transición de status es lo que importa.
+  - `window.open(_blank, noopener,noreferrer)` desde click handler — popup blocker no debería bloquear; si bloquea, banner amber explica al cajero que permita popups.
+  - Endpoint `POST /web/orders/:id/mark-paid` queda colgado en el backend pero ya no se llama desde la UI. Mantener disponible (no breaking) pero documentado como deprecated.
+  - `customerPaidAt` field y evento WS `web-order.customer-paid` quedan funcionales pero sin escritor. Limpieza queda como TODO menor.
+
+### Pendientes — FASES 10, 13, 14, 15
 
 Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
 
-- **FASE 9** — WhatsApp wa.me semi-automático (con tracking): helper puro `@pos-tercos/domain/whatsapp/` con 3 builders + endpoint `POST /sales/:id/whatsapp-clicked` (audit) + UI cambios en POS drawer ("Aceptar y contactar"), `ConfirmWebPaymentModal` (post-confirm abre WhatsApp), KDS `OrderCard` (post "Marcar listo" abre WhatsApp para WEB_*). Eliminar botón "Ya pagué" del cliente en `/checkout/success`. Decisión completa en sec 4.10. **NO requiere Meta WABA, NO requiere mock backend, costo $0.**
 - **FASE 10** — Repartidor (DIFERIDA por decisión del usuario): `apps/repa`, asignación, GPS captura, transitions delivery.
-- **FASE 13** — Reportes y Dashboard.
-- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports + Vitest formal.
+- **FASE 13** — Reportes y Dashboard. Incluye reporte "% de pedidos con WhatsApp enviado por stage" desde audit log `WHATSAPP_LINK_OPENED`.
+- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports + Vitest formal + cleanup de `customerPaidAt`/`mark-paid` deprecated.
 - **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local.
 
 ---
@@ -1064,28 +1133,26 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 8 + FASE 12 cerradas. **Próximo: FASE 9 — WhatsApp wa.me semi-automático.**
+FASE 9 cerrada. **Próximo: FASE 13 — Reportes y Dashboard.**
 
-Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **9 → 13 → 14 → 15 → 10 (diferida)**.
+Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **13 → 14 → 15 → 10 (diferida)**.
 
-Plan FASE 9 (decisión completa en sec 4.10):
+Plan FASE 13 (Reportes y Dashboard):
 
-- Helper puro `@pos-tercos/domain/whatsapp/build-link.ts` con 3 builders:
-  - `buildAcceptedLink(sale, businessName)` — pide comprobante.
-  - `buildConfirmedLink(sale, businessName)` — confirma pago, va a cocina.
-  - `buildReadyLink(sale, businessName, businessAddressShort)` — listo para retirar.
-- Endpoint `POST /sales/:id/whatsapp-clicked` body `{stage: 'accepted'|'confirmed'|'ready'}` que solo audita (no cambia status). Audit `WHATSAPP_LINK_OPENED` con metadata.
-- UI POS:
-  - `WebOrdersDrawer`: PENDIENTE_PAGO sin "accepted" muestra badge "Sin aceptar" rojo + botón "Aceptar y contactar". Click → audit + `window.open(wa.me/...)`.
-  - `ConfirmWebPaymentModal`: post-confirm también abre WhatsApp con mensaje "tu pedido fue confirmado".
-- UI KDS:
-  - `OrderCard.handleReady`: para `WEB_*` además del transition, abre WhatsApp con "tu pedido está listo para retirar".
-- UI web pública:
-  - Eliminar botón "Ya pagué" de `/checkout/success/[id]` (flujo ahora es cajero-driven).
-- Variable env opcional: `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT="Cra 43A # 11-12, Medellín"`.
-- TODO marker existente del descuadre (FASE 11.A) cablea acá: cuando se detecta `SHIFT_DISCREPANCY_DETECTED`, abrir WhatsApp al Dueño (esto es opcional; el audit log alcanza).
+- Endpoints agregados sobre `audit_log` + `sales` + `inventory_movements` + `shifts`:
+  - Ventas por día/semana/mes (filtros por método de pago, tipo COUNTER/WEB_*, cajero, turno).
+  - Top productos por ingresos / cantidad / margen.
+  - Histograma de horarios (heatmap de ventas por hora del día).
+  - Métricas WhatsApp (FASE 9 audit log): `% pedidos con stage=accepted/confirmed/ready` enviado, tiempo promedio entre stages.
+  - Métricas LLM (FASE 12.D audit): cuántas sugerencias evaluadas / aceptadas / rechazadas + ahorro estimado vs costo del LLM.
+- UI admin `/reports` con tabs por dominio (Ventas / Productos / Cajeros / WhatsApp / IA / Stock).
+- Dashboard home `/` con 4-6 tarjetas resumen del día actual.
 
-**No requiere:** Meta WABA, mock backend, templates aprobadas, tokens externos. Costo $0/mes.
+Variable env opcional para FASE 9 ya implementada: `NEXT_PUBLIC_BUSINESS_NAME` y `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT`. Configurar en `apps/pos/.env.local` y `apps/kds/.env.local` antes de prod.
+
+TODO menor de FASE 9 (tracking en CLAUDE.md):
+- TODO marker del descuadre (FASE 11.A) podría cablear wa.me al Dueño cuando se detecta `SHIFT_DISCREPANCY_DETECTED`. Opcional: el audit log + reporte alcanza.
+- Endpoint `/web/orders/:id/mark-paid` y campo `customerPaidAt` quedaron sin escritor. Cleanup en FASE 14 hardening.
 
 ---
 
