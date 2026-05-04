@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { CloneInvoiceButton, DeleteDraftButton } from '../../../../features/invoices';
 import { Button } from '@pos-tercos/ui';
-import type { Invoice } from '@pos-tercos/types';
+import type { Invoice, InventoryMovement } from '@pos-tercos/types';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -33,6 +33,15 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     }
     throw err;
   }
+
+  // FASE 4 ajustes 2.6: cargar movements generados por esta factura
+  // (solo si CONFIRMED — antes no hay movements). Tolera fallo silenciosamente.
+  const movements: InventoryMovement[] =
+    invoice.status === 'CONFIRMED'
+      ? await serverFetchJson<InventoryMovement[]>(
+          `/inventory/movements?source_type=invoice&source_id=${invoice.id}&limit=200`,
+        ).catch(() => [])
+      : [];
 
   return (
     <div className="space-y-6">
@@ -172,6 +181,100 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           para asociar cada ítem y confirmar. Al confirmar, el stock se descuenta y queda como
           histórico.
         </p>
+      )}
+
+      {invoice.status === 'CONFIRMED' && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+            Movimientos de stock generados ({movements.length})
+          </h2>
+          {movements.length === 0 ? (
+            <p className="rounded-md border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
+              Sin movimientos registrados (caso inesperado para una factura CONFIRMED).
+            </p>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <Th>Item</Th>
+                    <Th>Tipo</Th>
+                    <Th align="right">Delta</Th>
+                    <Th>Notas</Th>
+                    <Th align="right">Acción</Th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {movements.map((m) => {
+                    const itemId = m.entityType === 'INGREDIENT' ? m.ingredientId : m.productId;
+                    const itemName = m.itemName;
+                    return (
+                      <tr key={m.id} className="hover:bg-gray-50">
+                        <Td>
+                          <span className="font-medium text-gray-900">
+                            {itemName ?? '(eliminado)'}
+                          </span>
+                        </Td>
+                        <Td>
+                          {m.entityType === 'INGREDIENT' ? '🌾 Insumo' : '📦 Producto'}
+                        </Td>
+                        <Td align="right" mono>
+                          <span
+                            className={
+                              m.delta > 0 ? 'font-medium text-green-700' : 'text-red-700'
+                            }
+                          >
+                            {m.delta > 0 ? '+' : ''}
+                            {formatNumber(m.delta)}
+                          </span>
+                        </Td>
+                        <Td>
+                          <span className="text-xs text-gray-600">{m.notes ?? '—'}</span>
+                        </Td>
+                        <Td align="right">
+                          {itemId ? (
+                            <Link
+                              href={`/inventory/${m.entityType.toLowerCase()}/${itemId}/adjust`}
+                              className="font-medium text-blue-600 hover:underline"
+                            >
+                              Ver stock
+                            </Link>
+                          ) : null}
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {invoice.photoStorageKey && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+            Foto original
+          </h2>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <a
+              href={`/api/invoices/${invoice.id}/photo`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/invoices/${invoice.id}/photo`}
+                alt={`Foto de la factura ${invoice.invoiceNumber ?? invoice.id.slice(0, 8)}`}
+                className="max-h-96 rounded-md border border-gray-200 object-contain"
+              />
+            </a>
+            <p className="mt-2 text-[11px] text-gray-500">
+              Click para abrir en pestaña nueva (full size).
+            </p>
+          </div>
+        </section>
       )}
     </div>
   );

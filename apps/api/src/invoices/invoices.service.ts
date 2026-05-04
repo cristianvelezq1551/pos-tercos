@@ -516,6 +516,21 @@ export class InvoicesService {
   }
 
   /**
+   * FASE 4 ajustes 2.9: lee la foto original de la factura desde storage.
+   * Devuelve null si la factura no tiene foto (ej. clonada manual).
+   */
+  async getPhoto(id: string): Promise<{ buffer: Buffer; key: string } | null> {
+    const inv = await this.prisma.invoice.findUnique({
+      where: { id },
+      select: { photoStorageKey: true },
+    });
+    if (!inv) throw new NotFoundException(`Invoice ${id} not found`);
+    if (!inv.photoStorageKey) return null;
+    const buffer = await this.storage.get(inv.photoStorageKey);
+    return { buffer, key: inv.photoStorageKey };
+  }
+
+  /**
    * FASE 4 ajustes 2.10: borra un draft PENDING_REVIEW. Cascade borra
    * invoice_items vía FK. Si tiene foto en storage, también la borra.
    * NUNCA permite borrar CONFIRMED (preserva audit + movements) o REJECTED

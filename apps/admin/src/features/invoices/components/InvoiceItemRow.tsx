@@ -180,6 +180,7 @@ export function InvoiceItemRow({
               defaultName={row.descriptionRaw}
               defaultUnitPurchase={row.unit}
               invoiceUnitCost={row.unitPrice}
+              invoiceUnit={row.unit}
               onCreated={(item) => {
                 onStockableCreated(item);
                 onChange({ selection: { entityType: item.type, id: item.id } });
@@ -222,11 +223,21 @@ interface CreateStockableInlineProps {
   defaultUnitPurchase: string;
   /** Costo unitario detectado en la factura (NO se prefilla en basePrice — son precios distintos). */
   invoiceUnitCost: number;
+  /** Unidad declarada en la línea de factura (kg, caja, etc.). Usada para
+   *  validar coherencia con unitPurchase del nuevo stockable (FASE 4 ajustes 2.11). */
+  invoiceUnit: string;
   onCreated: (item: Stockable) => void;
   onCancel: () => void;
 }
 
-function CreateStockableInline({ defaultName, defaultUnitPurchase, invoiceUnitCost, onCreated, onCancel }: CreateStockableInlineProps) {
+function CreateStockableInline({
+  defaultName,
+  defaultUnitPurchase,
+  invoiceUnitCost,
+  invoiceUnit,
+  onCreated,
+  onCancel,
+}: CreateStockableInlineProps) {
   const [type, setType] = useState<StockableType>('INGREDIENT');
   const [name, setName] = useState(defaultName);
   const [unitPurchase, setUnitPurchase] = useState(defaultUnitPurchase || 'kg');
@@ -348,6 +359,16 @@ function CreateStockableInline({ defaultName, defaultUnitPurchase, invoiceUnitCo
           <div className="space-y-1.5">
             <Label htmlFor="cs-up">Unidad compra</Label>
             <Input id="cs-up" disabled={submitting} value={unitPurchase} onChange={(e) => setUnitPurchase(e.target.value)} placeholder="kg, caja" />
+            {unitPurchase.trim().length > 0 &&
+            invoiceUnit.trim().length > 0 &&
+            unitPurchase.trim().toLowerCase() !== invoiceUnit.trim().toLowerCase() ? (
+              <p className="text-[10px] text-amber-700">
+                ⚠ La factura declara la cantidad en{' '}
+                <strong>{invoiceUnit}</strong> pero estás creando con{' '}
+                <strong>unitPurchase: {unitPurchase}</strong>. Asegurate que el factor refleje la
+                conversión real (ej. 1 caja = 10 kg → factor 10) o esto va a desestabilizar el stock.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="cs-us">Unidad stock</Label>

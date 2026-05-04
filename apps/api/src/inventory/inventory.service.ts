@@ -25,6 +25,9 @@ interface ListMovementsFilter {
   ingredientId?: string;
   productId?: string;
   type?: string;
+  /** FASE 4 ajustes 2.6: filtra por origen (ej. invoice). */
+  sourceType?: string;
+  sourceId?: string;
   from?: Date;
   to?: Date;
   limit?: number;
@@ -178,6 +181,8 @@ export class InventoryService {
     if (filter.ingredientId) where.ingredientId = filter.ingredientId;
     if (filter.productId) where.productId = filter.productId;
     if (filter.type) where.type = filter.type as Prisma.InventoryMovementWhereInput['type'];
+    if (filter.sourceType) where.sourceType = filter.sourceType;
+    if (filter.sourceId) where.sourceId = filter.sourceId;
     if (filter.from || filter.to) {
       where.createdAt = {};
       if (filter.from) where.createdAt.gte = filter.from;

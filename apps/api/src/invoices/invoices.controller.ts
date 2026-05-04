@@ -10,10 +10,12 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import {
   CloneInvoiceRequestSchema,
   ConfirmInvoiceSchema,
@@ -144,5 +146,27 @@ export class InvoicesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.invoices.delete(id, user.sub);
+  }
+
+  /**
+   * FASE 4 ajustes 2.9: sirve la foto original de la factura. Solo Admin/Dueño.
+   * 404 si no hay foto (clonada manual / sin upload).
+   */
+  @AdminAccess()
+  @Get(':id/photo')
+  async getPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const photo = await this.invoices.getPhoto(id);
+    if (!photo) {
+      throw new NotFoundException(
+        'Esta factura no tiene foto (fue ingresada manualmente o clonada).',
+      );
+    }
+    const mime = detectImageMime(photo.buffer);
+    res.setHeader('Content-Type', mime ?? 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.status(200).send(photo.buffer);
   }
 }
