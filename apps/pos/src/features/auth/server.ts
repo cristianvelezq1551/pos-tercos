@@ -22,3 +22,9 @@ export async function getCurrentUserServer(): Promise<User | null> {
     return null;
   }
 }
+
+/** Lee el access token de la cookie para handshake WS cross-origin (FASE 7.E). */
+export async function getAccessTokenServer(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return cookieStore.get(ACCESS_COOKIE)?.value ?? null;
+}

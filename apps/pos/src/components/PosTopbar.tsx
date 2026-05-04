@@ -1,6 +1,7 @@
-import type { Shift, User } from '@pos-tercos/types';
+import type { PublicWebOrder, Shift, User } from '@pos-tercos/types';
 import { LogoutButton } from '../features/auth';
 import { VoidSaleAction } from '../features/sales/components/VoidSaleAction';
+import { WebOrdersAction } from '../features/web-orders/components/WebOrdersAction';
 import { APP_LABEL } from '../lib/auth-config';
 
 const COP = new Intl.NumberFormat('es-CO', {
@@ -9,7 +10,17 @@ const COP = new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 0,
 });
 
-export function PosTopbar({ user, shift }: { user: User | null; shift: Shift | null }) {
+export function PosTopbar({
+  user,
+  shift,
+  webOrdersInitial,
+  wsToken,
+}: {
+  user: User | null;
+  shift: Shift | null;
+  webOrdersInitial: PublicWebOrder[];
+  wsToken: string | null;
+}) {
   return (
     <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
       <div className="flex items-center gap-3">
@@ -25,6 +36,7 @@ export function PosTopbar({ user, shift }: { user: User | null; shift: Shift | n
         ) : null}
       </div>
       <div className="flex items-center gap-3">
+        <WebOrdersAction initial={webOrdersInitial} wsToken={wsToken} />
         <VoidSaleAction shiftId={shift?.id ?? null} />
         {user ? (
           <span className="text-sm text-gray-600">
