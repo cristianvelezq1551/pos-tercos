@@ -1,9 +1,19 @@
-import { forwardRef, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { haversineKm, type GeoPoint } from '@pos-tercos/domain';
 import type { CreateWebOrder, PublicWebOrder, Sale } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesService } from '../sales/sales.service';
 import { PosGateway } from './pos.gateway';
+
+const DEFAULT_RADIUS_KM = 3;
 
 @Injectable()
 export class WebOrdersService {
@@ -39,6 +49,26 @@ export class WebOrdersService {
       throw new Error('No DUENO user found to act as system creator for web orders');
     }
 
+    // FASE 8: validación 3km en backend (defensa en profundidad — el cliente
+    // ya filtró en /web/geocode pero re-validamos por si manipuló el body).
+    if (input.type === 'WEB_DELIVERY') {
+      const origin: GeoPoint = {
+        lat: Number(process.env.RESTAURANT_LAT ?? '4.6533'),
+        lng: Number(process.env.RESTAURANT_LNG ?? '-74.0836'),
+      };
+      const radiusKm = Number(
+        process.env.RESTAURANT_DELIVERY_RADIUS_KM ?? DEFAULT_RADIUS_KM,
+      );
+      // El Zod superRefine ya garantiza que lat/lng están definidos.
+      const point: GeoPoint = { lat: input.deliveryLat!, lng: input.deliveryLng! };
+      const distanceKm = haversineKm(origin, point);
+      if (distanceKm > radiusKm) {
+        throw new BadRequestException(
+          `Esta dirección está a ${distanceKm.toFixed(2)} km del local — fuera del radio de delivery (${radiusKm} km). Usá pickup o cambiá la dirección.`,
+        );
+      }
+    }
+
     const sale = await this.sales.create(
       {
         type: input.type,
@@ -46,6 +76,8 @@ export class WebOrdersService {
         customerName: input.customerName,
         customerPhone: input.customerPhone,
         deliveryAddress: input.type === 'WEB_DELIVERY' ? input.deliveryAddress : undefined,
+        deliveryLat: input.type === 'WEB_DELIVERY' ? input.deliveryLat : undefined,
+        deliveryLng: input.type === 'WEB_DELIVERY' ? input.deliveryLng : undefined,
         notes: input.notes,
       },
       systemUser.id,
