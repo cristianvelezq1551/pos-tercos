@@ -74,6 +74,11 @@ export const AuditActionEnum = z.enum([
 
   // WhatsApp wa.me semi-automático (FASE 9)
   'WHATSAPP_LINK_OPENED',
+
+  // Workers RRHH (FASE 14.B)
+  'WORKER_CHECK_IN',
+  'WORKER_CHECK_OUT',
+  'WORKER_COMMISSION_CREATED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 

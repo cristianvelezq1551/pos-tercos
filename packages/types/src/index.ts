@@ -15,3 +15,4 @@ export * from './shifts';
 export * from './suppliers';
 export * from './web-menu';
 export * from './web-orders';
+export * from './workers';

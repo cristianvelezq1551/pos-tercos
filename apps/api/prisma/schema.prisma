@@ -33,6 +33,8 @@ model User {
   salesAsPaidBy      Sale[]                  @relation("SalePaidBy")
   salesAsRepartidor  Sale[]                  @relation("SaleRepartidor")
   shifts             Shift[]
+  workerAttendance   WorkerAttendance[]
+  workerCommissions  WorkerCommission[]
 
   @@index([role, active])
   @@map("users")
@@ -586,6 +588,58 @@ model ApprovalPin {
   @@map("approval_pins")
 }
 
+/// Asistencia de trabajadores (FASE 14.B). Cada fila representa UN
+/// día de trabajo: el `checkIn` lo registra el dueño/admin (o el
+/// trabajador desde su PIN) al llegar; `checkOut` se setea al finalizar
+/// la jornada. `notes` libre.
+///
+/// `hoursWorked` es columna calculada al setear checkOut:
+/// (checkOut - checkIn) en horas decimales (ej. 8.5 para 8h 30min).
+/// Si checkOut es null, hoursWorked queda null y la fila representa
+/// un turno abierto.
+///
+/// CHECK: checkOut > checkIn cuando ambos definidos.
+model WorkerAttendance {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  checkIn      DateTime  @map("check_in")
+  checkOut     DateTime? @map("check_out")
+  hoursWorked  Decimal?  @map("hours_worked") @db.Decimal(6, 2)
+  notes        String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, checkIn(sort: Desc)])
+  @@index([checkIn])
+  @@map("worker_attendance")
+}
+
+/// Comisión de un trabajador (FASE 14.B). Configuración asociada a un
+/// usuario: porcentaje sobre el revenue del turno (cajero) o monto fijo
+/// por sale (delivery, mesera con mesas). v1: solo PERCENT_OF_SHIFT.
+///
+/// `appliedAt` indica desde cuándo aplica esta config — un cambio crea
+/// una nueva fila, manteniendo histórico inmutable. La comisión vigente
+/// para una fecha dada es la fila con appliedAt <= fecha más reciente.
+///
+/// CHECK: percent en [0, 1) cuando type = PERCENT_OF_SHIFT.
+model WorkerCommission {
+  id          String                  @id @default(uuid())
+  userId      String                  @map("user_id")
+  type        WorkerCommissionType    @default(PERCENT_OF_SHIFT)
+  /// PERCENT_OF_SHIFT: % de revenue (0..1). FIXED_PER_SALE: ignorado.
+  percent     Decimal?                @db.Decimal(5, 4)
+  /// FIXED_PER_SALE: COP por sale. PERCENT_OF_SHIFT: ignorado.
+  fixedAmount Decimal?                @map("fixed_amount") @db.Decimal(12, 2)
+  appliedAt   DateTime                @default(now()) @map("applied_at")
+  notes       String?
+  createdAt   DateTime                @default(now()) @map("created_at")
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, appliedAt(sort: Desc)])
+  @@map("worker_commissions")
+}
+
 enum UserRole {
   CAJERO
   COCINERO
@@ -681,4 +735,11 @@ enum PurchaseSuggestionStatus {
   ACCEPTED
   REJECTED
   STALE
+}
+
+/// Tipo de comisión (FASE 14.B). v1 implementa solo PERCENT_OF_SHIFT;
+/// FIXED_PER_SALE queda como reserva para meseras / repartidor.
+enum WorkerCommissionType {
+  PERCENT_OF_SHIFT
+  FIXED_PER_SALE
 }
