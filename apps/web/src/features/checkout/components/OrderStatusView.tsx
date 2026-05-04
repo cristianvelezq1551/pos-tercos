@@ -1,9 +1,7 @@
 'use client';
 
 import type { PublicWebOrder } from '@pos-tercos/types';
-import { useState } from 'react';
 import { COP } from '../../../lib/format';
-import { markOrderPaid } from '../api/mark-paid';
 import { useOrderPoller } from './OrderStatusPoller';
 import { PaymentInstructionsView } from './PaymentInstructionsView';
 
@@ -63,7 +61,7 @@ export function OrderStatusView({
       </header>
 
       {order.status === 'PENDIENTE_PAGO' ? (
-        <PaymentSection order={order} token={token} instructions={paymentInstructions} />
+        <PaymentSection instructions={paymentInstructions} />
       ) : null}
 
       {order.status === 'LISTO_DESPACHO' && order.type === 'WEB_PICKUP' ? (
@@ -78,77 +76,23 @@ export function OrderStatusView({
   );
 }
 
-function PaymentSection({
-  order,
-  token,
-  instructions,
-}: {
-  order: PublicWebOrder;
-  token: string;
-  instructions: string;
-}) {
-  const [reference, setReference] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const claimed = order.customerPaidAt !== null;
-
-  const handleClick = async () => {
-    if (pending || claimed) return;
-    setPending(true);
-    setError(null);
-    try {
-      await markOrderPaid(order.id, token, reference.trim() || undefined);
-      // El próximo poll trae customerPaidAt actualizado
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error');
-    } finally {
-      setPending(false);
-    }
-  };
-
+function PaymentSection({ instructions }: { instructions: string }) {
+  // FASE 9: el flujo es cajero-driven via WhatsApp.
+  // El cliente sigue las instrucciones de pago (Nequi/transferencia) y
+  // espera el mensaje del local pidiendo el comprobante. Ya no hay
+  // botón "Ya pagué" — el cajero acepta el pedido + abre WA y desde
+  // ahí coordina el comprobante.
   return (
     <section className="space-y-4">
       <PaymentInstructionsView text={instructions} />
-
-      <div className="space-y-2">
-        <label htmlFor="ref" className="text-xs font-medium text-gray-700">
-          Referencia / id de transacción (opcional)
-        </label>
-        <input
-          id="ref"
-          type="text"
-          value={reference}
-          onChange={(e) => setReference(e.target.value)}
-          placeholder="Ej. NEQUI-12345"
-          maxLength={120}
-          disabled={claimed || pending}
-          className="block h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={claimed || pending}
-        className="inline-flex h-12 w-full items-center justify-center rounded-md bg-emerald-600 px-4 text-base font-bold text-white shadow hover:bg-emerald-700 disabled:bg-gray-300"
-      >
-        {claimed
-          ? `✓ Avisaste · esperando verificación del cajero`
-          : pending
-            ? 'Avisando…'
-            : 'Ya pagué'}
-      </button>
-
-      {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-      ) : null}
-
-      {claimed ? (
-        <p className="text-center text-[11px] text-gray-600">
-          El cajero está verificando tu pago. Tu orden pasa a cocina apenas confirme. Esta
-          página se actualiza sola.
+      <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-900">
+        <p className="font-semibold">¿Qué sigue?</p>
+        <p className="mt-1">
+          Te vamos a contactar por WhatsApp para pedirte el comprobante. Ahí
+          mismo te confirmamos cuando recibamos el pago. Esta página se
+          actualiza sola.
         </p>
-      ) : null}
+      </div>
     </section>
   );
 }

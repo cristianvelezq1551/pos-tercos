@@ -5,6 +5,7 @@ import { Button } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { readyOrder, startOrder } from '../api/transitions';
 import { useElapsed } from '../hooks/useElapsed';
+import { openWhatsAppReady } from '../lib/whatsapp';
 
 const STATUS_STYLES: Record<string, { bg: string; ring: string; label: string }> = {
   PAGADO: { bg: 'bg-amber-50', ring: 'ring-amber-300', label: 'En cola' },
@@ -38,6 +39,10 @@ export function OrderCard({ order }: { order: Sale }) {
     setError(null);
     try {
       await readyOrder(order.id);
+      // Acoplado: para WEB_PICKUP/WEB_DELIVERY abre wa.me con "tu pedido
+      // está listo". COUNTER no notifica (el cliente está esperando en
+      // mostrador). No bloquea si popup blocked: la transición ya pasó.
+      openWhatsAppReady(order);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error');
     } finally {
