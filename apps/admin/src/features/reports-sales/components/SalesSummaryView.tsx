@@ -1,0 +1,184 @@
+import type { SalesSummary } from '@pos-tercos/types';
+import { formatCop, formatNumber } from '../../../lib/format';
+
+interface SalesSummaryViewProps {
+  summary: SalesSummary;
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  COUNTER: 'Mostrador',
+  WEB_PICKUP: 'Web · recoger',
+  WEB_DELIVERY: 'Web · domicilio',
+};
+
+const METHOD_LABEL: Record<string, string> = {
+  CASH: 'Efectivo',
+  NEQUI: 'Nequi',
+  DAVIPLATA: 'DaviPlata',
+  QR_BANCOLOMBIA: 'QR Bancolombia',
+  TRANSFER: 'Transferencia',
+};
+
+export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
+  const maxBucketRevenue = summary.buckets.reduce(
+    (m, b) => (b.revenue > m ? b.revenue : m),
+    0,
+  );
+  return (
+    <div className="space-y-6">
+      {/* Totales */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Revenue" value={formatCop(summary.totals.revenue)} />
+        <Stat label="Ventas" value={String(summary.totals.count)} />
+        <Stat label="Ticket promedio" value={formatCop(summary.totals.avgTicket)} />
+        <Stat
+          label="Anuladas"
+          value={String(summary.totals.voidCount)}
+          tone={summary.totals.voidCount > 0 ? 'warning' : 'default'}
+        />
+      </div>
+
+      {/* Serie temporal — gráfica horizontal de barras */}
+      <section className="rounded-lg border border-gray-200 bg-white p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+          {summary.granularity === 'hourly' ? 'Por hora' : 'Por día'}
+        </h2>
+        {summary.buckets.length === 0 ? (
+          <p className="mt-3 text-sm text-gray-500">
+            Sin ventas en el período seleccionado.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {summary.buckets.map((b) => {
+              const pct =
+                maxBucketRevenue > 0
+                  ? (b.revenue / maxBucketRevenue) * 100
+                  : 0;
+              return (
+                <div key={b.bucket} className="flex items-center gap-3 text-xs">
+                  <span className="w-24 shrink-0 font-mono text-gray-600">
+                    {formatBucket(b.bucket, summary.granularity)}
+                  </span>
+                  <div className="relative h-6 flex-1 rounded-md bg-gray-100">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-md bg-blue-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="w-28 shrink-0 text-right tabular-nums font-medium text-gray-900">
+                    {formatCop(b.revenue)}
+                  </span>
+                  <span className="w-12 shrink-0 text-right tabular-nums text-gray-500">
+                    {b.count}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Breakdown */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <BreakdownTable
+          title="Por tipo de pedido"
+          rows={summary.byType.map((t) => ({
+            key: t.type,
+            label: TYPE_LABEL[t.type] ?? t.type,
+            count: t.count,
+            revenue: t.revenue,
+          }))}
+          total={summary.totals.revenue}
+        />
+        <BreakdownTable
+          title="Por método de pago"
+          rows={summary.byMethod.map((m) => ({
+            key: m.method,
+            label: METHOD_LABEL[m.method] ?? m.method,
+            count: m.count,
+            revenue: m.revenue,
+          }))}
+          total={summary.totals.revenue}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BreakdownTable({
+  title,
+  rows,
+  total,
+}: {
+  title: string;
+  rows: { key: string; label: string; count: number; revenue: number }[];
+  total: number;
+}) {
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+        {title}
+      </h2>
+      {rows.length === 0 ? (
+        <p className="mt-3 text-sm text-gray-500">Sin datos.</p>
+      ) : (
+        <table className="mt-4 w-full text-sm">
+          <thead>
+            <tr className="text-xs uppercase text-gray-500">
+              <th className="pb-2 text-left font-semibold">Categoría</th>
+              <th className="pb-2 text-right font-semibold">Ventas</th>
+              <th className="pb-2 text-right font-semibold">Revenue</th>
+              <th className="pb-2 text-right font-semibold">% del total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((r) => {
+              const pct = total > 0 ? (r.revenue / total) * 100 : 0;
+              return (
+                <tr key={r.key}>
+                  <td className="py-2 text-gray-900">{r.label}</td>
+                  <td className="py-2 text-right tabular-nums">{r.count}</td>
+                  <td className="py-2 text-right tabular-nums font-medium">{formatCop(r.revenue)}</td>
+                  <td className="py-2 text-right tabular-nums text-gray-500">{formatNumber(pct, { decimals: 1 })}%</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string;
+  value: string;
+  tone?: 'default' | 'warning';
+}) {
+  const valueClass = tone === 'warning' ? 'text-amber-600' : 'text-gray-900';
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+        {label}
+      </p>
+      <p className={`mt-1 text-2xl font-bold tracking-tight tabular-nums ${valueClass}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function formatBucket(bucket: string, granularity: 'daily' | 'hourly'): string {
+  if (granularity === 'hourly') {
+    // YYYY-MM-DDTHH:00 → "DD/MM HH:00"
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):/.exec(bucket);
+    return m ? `${m[3]}/${m[2]} ${m[4]}:00` : bucket;
+  }
+  // YYYY-MM-DD → "DD/MM"
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bucket);
+  return m ? `${m[3]}/${m[2]}` : bucket;
+}
