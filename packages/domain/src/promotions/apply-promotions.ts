@@ -15,14 +15,16 @@ const NO_PROMOTION: ApplyPromotionOutput = {
  *
  * Reglas (architecture.md §3.4):
  *   1. Filtrar promociones que matcheen `(productId, day-of-week, time-window,
- *      active-date-range)`.
- *   2. De las matching, elegir la de mayor `discountPct`.
+ *      active-date-range, type-specific-rules)`.
+ *   2. De las matching, elegir la de **mayor descuento ABSOLUTO en COP**.
+ *      (Antes era por discountPct, pero con types mixtos pct vs fixed
+ *      vs bogo, comparar el monto resuelto es la única forma justa.)
  *   3. NO acumulables: si hay 2 promos al mismo descuento, gana la primera
  *      por id (tiebreaker estable para idempotencia).
  *
  * Función pura: no IO, no logs, no efectos secundarios.
  *
- * @param input  Item a evaluar (productId, lineSubtotal, momento).
+ * @param input  Item a evaluar (productId, lineSubtotal, quantity, isCombo, momento).
  * @param activePromotions  Set de promociones candidatas (típicamente las que
  *   están `is_active=true` ese día). El motor filtra por matching adicional.
  */
@@ -32,18 +34,89 @@ export function applyPromotion(
 ): ApplyPromotionOutput {
   if (activePromotions.length === 0) return NO_PROMOTION;
 
-  const matching = activePromotions.filter((p) => promoMatches(p, input));
-  if (matching.length === 0) return NO_PROMOTION;
+  // Compute the discount amount for each matching promo.
+  type Candidate = { promo: PromotionDef; discount: number };
+  const candidates: Candidate[] = [];
+  for (const promo of activePromotions) {
+    if (!promoMatches(promo, input)) continue;
+    const discount = computeLineDiscount(promo, input);
+    if (discount <= 0) continue;
+    candidates.push({ promo, discount });
+  }
+  if (candidates.length === 0) return NO_PROMOTION;
 
-  // Mayor discountPct gana. Tiebreaker: id ascendente (estable).
-  const winner = matching.reduce((best, p) => {
-    if (p.discountPct > best.discountPct) return p;
-    if (p.discountPct === best.discountPct && p.id < best.id) return p;
+  // Mayor discount absoluto gana. Tiebreaker: id ascendente (estable).
+  const winner = candidates.reduce((best, c) => {
+    if (c.discount > best.discount) return c;
+    if (c.discount === best.discount && c.promo.id < best.promo.id) return c;
     return best;
   });
 
-  const lineDiscount = roundMoney(input.lineSubtotal * winner.discountPct);
-  return { appliedPromotionId: winner.id, lineDiscount };
+  return {
+    appliedPromotionId: winner.promo.id,
+    lineDiscount: roundMoney(winner.discount),
+  };
+}
+
+/**
+ * Calcula el monto del descuento que la promoción aplicaría a esta línea.
+ * Devuelve 0 si el tipo no tiene los datos requeridos (defensivo).
+ */
+function computeLineDiscount(
+  promo: PromotionDef,
+  input: ApplyPromotionInput,
+): number {
+  switch (promo.type) {
+    case 'PERCENT_OFF': {
+      if (promo.discountPct === undefined || promo.discountPct <= 0) return 0;
+      return input.lineSubtotal * promo.discountPct;
+    }
+    case 'FIXED_OFF': {
+      if (promo.discountFixed === undefined || promo.discountFixed <= 0) return 0;
+      // Cap: nunca descontamos más que el subtotal (evita lineTotal negativo).
+      return Math.min(promo.discountFixed, input.lineSubtotal);
+    }
+    case 'BOGO': {
+      if (
+        promo.bogoBuyQty === undefined ||
+        promo.bogoGetQty === undefined ||
+        promo.bogoBuyQty <= 0 ||
+        promo.bogoGetQty <= 0
+      ) {
+        return 0;
+      }
+      // Cada "set" = bogoBuyQty paid + bogoGetQty free. Calculamos cuántos
+      // sets completos caben en la cantidad y aplicamos el descuento por
+      // las unidades gratis.
+      const setSize = promo.bogoBuyQty + promo.bogoGetQty;
+      if (input.quantity < setSize) return 0;
+      const completeSets = Math.floor(input.quantity / setSize);
+      const freeUnits = completeSets * promo.bogoGetQty;
+      const unitPrice = input.lineSubtotal / input.quantity;
+      return freeUnits * unitPrice;
+    }
+    case 'COMBO_OFF': {
+      // Solo aplica si la línea es de un combo. El llamador setea isCombo.
+      if (!input.isCombo) return 0;
+      // Acepta pct o fixed; si ambos están definidos, gana el que produce
+      // mayor descuento (pero el creador del schema NO debería setear
+      // ambos; FASE 12.B Zod validará uno xor otro).
+      const pctDiscount =
+        promo.discountPct !== undefined && promo.discountPct > 0
+          ? input.lineSubtotal * promo.discountPct
+          : 0;
+      const fixedDiscount =
+        promo.discountFixed !== undefined && promo.discountFixed > 0
+          ? Math.min(promo.discountFixed, input.lineSubtotal)
+          : 0;
+      return Math.max(pctDiscount, fixedDiscount);
+    }
+    default: {
+      const _exhaustive: never = promo.type;
+      void _exhaustive;
+      return 0;
+    }
+  }
 }
 
 function promoMatches(p: PromotionDef, input: ApplyPromotionInput): boolean {

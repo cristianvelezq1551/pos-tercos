@@ -20,10 +20,13 @@ export interface CartTotalsResult {
   total: number;
 }
 
-/** Convierte Promotion (wire) → PromotionDef (dominio). */
+/** Convierte Promotion (wire) → PromotionDef (dominio). FASE 12.A: por
+ * ahora todas las promos del wire son PERCENT_OFF (FASE 12.B agrega los
+ * nuevos campos al schema DB y al type Zod). */
 export function toPromotionDef(p: Promotion): PromotionDef {
   return {
     id: p.id,
+    type: 'PERCENT_OFF',
     discountPct: p.discountPct,
     daysOfWeekMask: p.daysOfWeekMask,
     timeStart: p.timeStart,
@@ -47,7 +50,15 @@ export function computeCartTotals(
   const lines: CartLineTotals[] = items.map((it) => {
     const lineSubtotal = round(it.unitPrice * it.quantity);
     const { appliedPromotionId, lineDiscount } = applyPromotion(
-      { productId: it.productId, lineSubtotal, at },
+      {
+        productId: it.productId,
+        lineSubtotal,
+        quantity: it.quantity,
+        // Cart line del POS hoy no rastrea isCombo per-product. COMBO_OFF
+        // no aplica desde POS hasta que el carrito traquee el flag (FASE 12.B).
+        isCombo: false,
+        at,
+      },
       defs,
     );
     const lineTotal = round(lineSubtotal - lineDiscount);

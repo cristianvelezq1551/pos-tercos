@@ -72,6 +72,9 @@ export class PromotionsService {
     });
     return rows.map((r) => ({
       id: r.id,
+      // FASE 12.A: por ahora todas las promos en DB son PERCENT_OFF (Zod
+      // schema lo enforce). FASE 12.B agregará columnas y mapeo per-type.
+      type: 'PERCENT_OFF' as const,
       discountPct: Number(r.discountPct),
       daysOfWeekMask: r.daysOfWeekMask,
       timeStart: r.timeStart,

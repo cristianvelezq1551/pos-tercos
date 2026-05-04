@@ -810,12 +810,14 @@ function computeLine(
   const unitPrice = roundMoney(basePrice);
   const lineSubtotal = roundMoney(unitPrice * input.quantity);
 
-  // Motor de promociones puro (5.C). Devuelve appliedPromotionId=null +
-  // lineDiscount=0 cuando ninguna matchea producto/día/hora.
+  // Motor de promociones puro (5.C + 12.A: BOGO/FIXED_OFF/COMBO_OFF).
+  // Devuelve appliedPromotionId=null + lineDiscount=0 cuando ninguna matchea.
   const promo = applyPromotion(
     {
       productId: product.id,
       lineSubtotal,
+      quantity: input.quantity,
+      isCombo: product.isCombo,
       at,
     },
     activePromotions,
