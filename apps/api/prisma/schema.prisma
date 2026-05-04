@@ -33,6 +33,7 @@ model User {
   salesAsPaidBy      Sale[]                  @relation("SalePaidBy")
   salesAsRepartidor  Sale[]                  @relation("SaleRepartidor")
   shifts             Shift[]
+  paymentReconciliations PaymentReconciliation[]
   workerAttendance   WorkerAttendance[]
   workerCommissions  WorkerCommission[]
 
@@ -586,6 +587,34 @@ model ApprovalPin {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("approval_pins")
+}
+
+/// Reporte de reconciliación CSV (FASE 14.D). Persistencia del
+/// resultado del módulo FASE 11.E para que el dueño tenga histórico
+/// y pueda compararar imports a lo largo del tiempo. El detalle
+/// (rows con status matched / unmatched_csv / unmatched_sale) va en
+/// `report_json`.
+model PaymentReconciliation {
+  id              String   @id @default(uuid())
+  source          String
+  /// YYYY-MM-DD del primer txn detectado en el CSV.
+  periodFrom      String   @map("period_from")
+  /// YYYY-MM-DD del último txn detectado en el CSV.
+  periodTo        String   @map("period_to")
+  csvRowsParsed   Int      @map("csv_rows_parsed")
+  posSalesEvaluated Int    @map("pos_sales_evaluated")
+  matched         Int
+  unmatchedCsv    Int      @map("unmatched_csv")
+  unmatchedSale   Int      @map("unmatched_sale")
+  /// Snapshot completo de ReconciliationReport (incluye filas).
+  reportJson      Json     @map("report_json")
+  importedById    String?  @map("imported_by_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  importedBy      User?    @relation(fields: [importedById], references: [id])
+
+  @@index([createdAt(sort: Desc)])
+  @@index([source, createdAt(sort: Desc)])
+  @@map("payment_reconciliations")
 }
 
 /// Asistencia de trabajadores (FASE 14.B). Cada fila representa UN

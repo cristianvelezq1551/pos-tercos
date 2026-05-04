@@ -2,6 +2,8 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UploadedFile,
@@ -14,14 +16,18 @@ import {
   type CashierAnomalies,
   type DashboardSummary,
   type HourHeatmapReport,
+  type JwtAccessPayload,
   type ReconciliationReport,
   type ReconciliationSource,
   type SalesSummary,
+  type SavedReconciliation,
+  type SavedReconciliationDetail,
   type SuggestionsMetrics,
   type TopProductsReport,
   type WhatsAppMetrics,
 } from '@pos-tercos/types';
 import type { Express } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ReconciliationService } from './reconciliation.service';
 import { ReportsService } from './reports.service';
@@ -121,14 +127,19 @@ export class ReportsController {
     return this.reports.getAnomalies();
   }
 
-  /** FASE 11.E: import CSV Nequi/Bancolombia + match contra sales digitales. */
+  /**
+   * FASE 11.E + 14.D: import CSV Nequi/Bancolombia + match contra sales
+   * digitales. Si `?save=true`, persiste el reporte para histórico.
+   */
   @OnlyDueno()
   @Post('payment-reconciliation/import')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: MAX_CSV_BYTES } }),
   )
   async importReconciliation(
+    @CurrentUser() user: JwtAccessPayload,
     @Query('source') sourceRaw: string | undefined,
+    @Query('save') saveFlag: string | undefined,
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<ReconciliationReport> {
     if (!file) throw new BadRequestException('Multipart "file" requerido.');
@@ -141,7 +152,36 @@ export class ReportsController {
     }
     const source: ReconciliationSource = parsed.data;
     const csvText = file.buffer.toString('utf8');
-    return this.reconciliation.reconcile(source, csvText);
+    const report = await this.reconciliation.reconcile(source, csvText);
+    if (saveFlag === 'true') {
+      await this.reconciliation.saveReport(report, user.sub);
+    }
+    return report;
+  }
+
+  /** FASE 14.D: histórico de reports persistidos. */
+  @OnlyDueno()
+  @Get('payment-reconciliation/history')
+  listSavedReconciliations(
+    @Query('source') sourceRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ): Promise<SavedReconciliation[]> {
+    let source: ReconciliationSource | undefined;
+    if (sourceRaw) {
+      const parsed = ReconciliationSourceEnum.safeParse(sourceRaw);
+      if (parsed.success) source = parsed.data;
+    }
+    const limit = limitRaw ? Math.min(Math.max(Number(limitRaw) || 50, 1), 200) : 50;
+    return this.reconciliation.listSaved({ source, limit });
+  }
+
+  /** FASE 14.D: detalle de un report guardado (incluye filas). */
+  @OnlyDueno()
+  @Get('payment-reconciliation/history/:id')
+  getSavedReconciliation(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SavedReconciliationDetail> {
+    return this.reconciliation.getSavedDetail(id);
   }
 }
 

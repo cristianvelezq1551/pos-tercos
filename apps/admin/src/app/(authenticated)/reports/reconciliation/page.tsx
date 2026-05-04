@@ -1,8 +1,27 @@
-import { ReconciliationView } from '../../../../features/reports';
+import {
+  ReconciliationHistory,
+  ReconciliationView,
+} from '../../../../features/reports';
+import { ApiError, serverFetchJson } from '../../../../lib/api-server';
+import type { SavedReconciliation } from '@pos-tercos/types';
 
-export default function ReconciliationPage() {
+async function loadHistory(): Promise<SavedReconciliation[]> {
+  try {
+    return await serverFetchJson<SavedReconciliation[]>(
+      '/reports/payment-reconciliation/history?limit=20',
+    );
+  } catch (err) {
+    if (err instanceof ApiError) {
+      console.error('[reconciliation history] api error', err.status, err.body);
+    }
+    return [];
+  }
+}
+
+export default async function ReconciliationPage() {
+  const history = await loadHistory();
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Reconciliación de pagos</h1>
         <p className="mt-1 text-sm text-gray-600">
@@ -25,7 +44,20 @@ export default function ReconciliationPage() {
           </li>
         </ul>
       </div>
-      <ReconciliationView />
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          Importar nuevo CSV
+        </h2>
+        <ReconciliationView />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          Histórico (últimos 20)
+        </h2>
+        <ReconciliationHistory reports={history} />
+      </section>
     </div>
   );
 }

@@ -79,6 +79,9 @@ export const AuditActionEnum = z.enum([
   'WORKER_CHECK_IN',
   'WORKER_CHECK_OUT',
   'WORKER_COMMISSION_CREATED',
+
+  // Persistencia reconciliación (FASE 14.D)
+  'RECONCILIATION_IMPORTED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 

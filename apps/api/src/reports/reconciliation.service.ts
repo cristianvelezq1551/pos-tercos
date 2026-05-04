@@ -1,10 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import type {
-  ReconciliationReport,
-  ReconciliationRow,
-  ReconciliationSource,
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ReconciliationReportSchema,
+  type ReconciliationReport,
+  type ReconciliationRow,
+  type ReconciliationSource,
+  type SavedReconciliation,
+  type SavedReconciliationDetail,
 } from '@pos-tercos/types';
-import type { Prisma } from '@prisma/client';
+import type { PaymentReconciliation, Prisma, User } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Tolerancia para considerar match temporal: ±N horas entre CSV y sale.paidAt. */
@@ -18,7 +22,88 @@ interface CsvRow {
 
 @Injectable()
 export class ReconciliationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
+
+  // ==================================================================
+  // FASE 14.D — PERSISTENCIA DE REPORTS
+  // ==================================================================
+
+  /** Guarda un report ya generado por reconcile(). Inmutable. */
+  async saveReport(
+    report: ReconciliationReport,
+    userId: string,
+  ): Promise<SavedReconciliation> {
+    // Normalizamos a YYYY-MM-DD para que el rango sea legible.
+    const fromDay = report.periodFrom.slice(0, 10);
+    const toDay = report.periodTo.slice(0, 10);
+
+    const created = await this.prisma.paymentReconciliation.create({
+      data: {
+        source: report.source,
+        periodFrom: fromDay,
+        periodTo: toDay,
+        csvRowsParsed: report.csvRowsParsed,
+        posSalesEvaluated: report.posSalesEvaluated,
+        matched: report.summary.matched,
+        unmatchedCsv: report.summary.unmatchedCsv,
+        unmatchedSale: report.summary.unmatchedSale,
+        reportJson: report as unknown as Prisma.InputJsonValue,
+        importedById: userId,
+      },
+      include: { importedBy: { select: { fullName: true } } },
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'RECONCILIATION_IMPORTED',
+      entityType: 'payment_reconciliation',
+      entityId: created.id,
+      metadata: {
+        source: report.source,
+        periodFrom: fromDay,
+        periodTo: toDay,
+        matched: report.summary.matched,
+        unmatchedCsv: report.summary.unmatchedCsv,
+      },
+    });
+
+    return toSavedDto(created);
+  }
+
+  async listSaved(opts: {
+    source?: ReconciliationSource;
+    limit?: number;
+  } = {}): Promise<SavedReconciliation[]> {
+    const where: Prisma.PaymentReconciliationWhereInput = {};
+    if (opts.source) where.source = opts.source;
+    const rows = await this.prisma.paymentReconciliation.findMany({
+      where,
+      include: { importedBy: { select: { fullName: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: opts.limit ?? 50,
+    });
+    return rows.map(toSavedDto);
+  }
+
+  async getSavedDetail(id: string): Promise<SavedReconciliationDetail> {
+    const row = await this.prisma.paymentReconciliation.findUnique({
+      where: { id },
+      include: { importedBy: { select: { fullName: true } } },
+    });
+    if (!row) throw new NotFoundException(`Reconciliation ${id} not found`);
+    const parsed = ReconciliationReportSchema.safeParse(row.reportJson);
+    if (!parsed.success) {
+      throw new Error(`reportJson corrupto en reconciliation ${id}`);
+    }
+    return {
+      ...toSavedDto(row),
+      report: parsed.data,
+    };
+  }
+
 
   /**
    * FASE 11.E: parsea CSV, busca matches en sales del rango fecha vs txns
@@ -180,4 +265,25 @@ function methodsForSource(source: ReconciliationSource): string[] {
   if (source === 'NEQUI_CSV') return ['NEQUI'];
   // Bancolombia CSV puede traer transferencias y QR Bancolombia.
   return ['DAVIPLATA', 'QR_BANCOLOMBIA', 'TRANSFER'];
+}
+
+type SavedRowWithUser = PaymentReconciliation & {
+  importedBy: Pick<User, 'fullName'> | null;
+};
+
+function toSavedDto(row: SavedRowWithUser): SavedReconciliation {
+  return {
+    id: row.id,
+    source: row.source as ReconciliationSource,
+    periodFrom: row.periodFrom,
+    periodTo: row.periodTo,
+    csvRowsParsed: row.csvRowsParsed,
+    posSalesEvaluated: row.posSalesEvaluated,
+    matched: row.matched,
+    unmatchedCsv: row.unmatchedCsv,
+    unmatchedSale: row.unmatchedSale,
+    importedById: row.importedById,
+    importedByName: row.importedBy?.fullName ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
 }

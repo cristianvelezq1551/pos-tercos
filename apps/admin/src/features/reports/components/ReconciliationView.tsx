@@ -3,6 +3,7 @@
 import type { ReconciliationReport, ReconciliationSource } from '@pos-tercos/types';
 import { Button, Input, Label } from '@pos-tercos/ui';
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { formatCop, formatDate } from '../../../lib/format';
 
 const SOURCE_LABEL: Record<ReconciliationSource, string> = {
@@ -11,8 +12,10 @@ const SOURCE_LABEL: Record<ReconciliationSource, string> = {
 };
 
 export function ReconciliationView() {
+  const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
   const [source, setSource] = useState<ReconciliationSource>('NEQUI_CSV');
+  const [save, setSave] = useState(true);
   const [report, setReport] = useState<ReconciliationReport | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,8 +33,10 @@ export function ReconciliationView() {
     try {
       const fd = new FormData();
       fd.append('file', file);
+      const qs = new URLSearchParams({ source });
+      if (save) qs.set('save', 'true');
       const res = await fetch(
-        `/api/reports/payment-reconciliation/import?source=${source}`,
+        `/api/reports/payment-reconciliation/import?${qs.toString()}`,
         { method: 'POST', body: fd, credentials: 'include' },
       );
       if (!res.ok) {
@@ -40,6 +45,10 @@ export function ReconciliationView() {
       }
       const data = (await res.json()) as ReconciliationReport;
       setReport(data);
+      if (save) {
+        // Refrescar SSR para que el historial se actualice abajo.
+        router.refresh();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
@@ -82,6 +91,18 @@ export function ReconciliationView() {
             </p>
           </div>
         </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={save}
+            onChange={(e) => setSave(e.target.checked)}
+            disabled={pending}
+            className="h-4 w-4"
+          />
+          <span className="text-gray-700">
+            Guardar este reporte en el historial (FASE 14.D)
+          </span>
+        </label>
         {error ? (
           <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
         ) : null}

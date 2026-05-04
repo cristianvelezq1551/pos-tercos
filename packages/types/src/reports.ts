@@ -90,6 +90,35 @@ export const ReconciliationReportSchema = z.object({
 });
 export type ReconciliationReport = z.infer<typeof ReconciliationReportSchema>;
 
+/**
+ * Snapshot persistido de un report (FASE 14.D). Histórico inmutable —
+ * cada import del dueño deja una fila para que pueda comparar a lo
+ * largo del tiempo.
+ */
+export const SavedReconciliationSchema = z.object({
+  id: z.string().uuid(),
+  source: ReconciliationSourceEnum,
+  periodFrom: z.string(),
+  periodTo: z.string(),
+  csvRowsParsed: z.number().int().nonnegative(),
+  posSalesEvaluated: z.number().int().nonnegative(),
+  matched: z.number().int().nonnegative(),
+  unmatchedCsv: z.number().int().nonnegative(),
+  unmatchedSale: z.number().int().nonnegative(),
+  importedById: z.string().uuid().nullable(),
+  importedByName: z.string().nullable().optional(),
+  createdAt: z.string().datetime(),
+});
+export type SavedReconciliation = z.infer<typeof SavedReconciliationSchema>;
+
+/** Detalle: SavedReconciliation + reportJson completo. */
+export const SavedReconciliationDetailSchema = SavedReconciliationSchema.extend({
+  report: ReconciliationReportSchema,
+});
+export type SavedReconciliationDetail = z.infer<
+  typeof SavedReconciliationDetailSchema
+>;
+
 // ====================================================================
 // SALES REPORTS (FASE 13.A)
 // ====================================================================
