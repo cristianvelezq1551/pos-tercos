@@ -1,8 +1,20 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { OpenShift, Shift, ShiftStatus } from '@pos-tercos/types';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type { CloseShift, OpenShift, Shift, ShiftStatus } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+/**
+ * Threshold de descuadre absoluto (COP) que dispara `SHIFT_DISCREPANCY_DETECTED`.
+ * Por debajo de esto, la diferencia se registra pero no se considera anomalía.
+ */
+const DISCREPANCY_THRESHOLD_COP = 5_000;
 
 type DbShiftWithCashier = Prisma.ShiftGetPayload<{
   include: { cashier: { select: { fullName: true } } };
@@ -78,6 +90,93 @@ export class ShiftsService {
     });
     if (!row) throw new NotFoundException(`Shift ${id} not found`);
     return toShiftDto(row);
+  }
+
+  /**
+   * FASE 11.A: cierre del turno. Calcula `expectedCash` desde apertura +
+   * ventas CASH PAGADAS del turno; lo compara con `countedCash` declarado
+   * por el cajero. Si |diff| >= DISCREPANCY_THRESHOLD_COP → audit
+   * `SHIFT_DISCREPANCY_DETECTED` (en FASE 9 + WhatsApp se enviará alerta).
+   *
+   * Solo el cajero dueño del turno puede cerrarlo. El status pasa a CLOSED;
+   * RECONCILED se reservará para FASE 11.E (post import CSV).
+   */
+  async close(shiftId: string, input: CloseShift, cashierId: string): Promise<Shift> {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+      select: {
+        id: true,
+        cashierId: true,
+        status: true,
+        openingCash: true,
+        openedAt: true,
+      },
+    });
+    if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
+    if (shift.cashierId !== cashierId) {
+      throw new ForbiddenException('Solo el cajero dueño del turno puede cerrarlo.');
+    }
+    if (shift.status !== 'OPEN') {
+      throw new BadRequestException(
+        `Shift está en status ${shift.status}, ya no se puede cerrar.`,
+      );
+    }
+
+    // Sumar todas las ventas PAGADAS con method=CASH del turno.
+    const cashSales = await this.prisma.sale.aggregate({
+      where: {
+        shiftId,
+        status: { in: ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] },
+        paymentMethod: 'CASH',
+      },
+      _sum: { total: true },
+    });
+    const cashSalesTotal = Number(cashSales._sum.total ?? 0);
+    const expectedCash = Number(shift.openingCash) + cashSalesTotal;
+    const difference = input.countedCash - expectedCash; // (+) sobrante, (-) faltante
+
+    const closed = await this.prisma.shift.update({
+      where: { id: shiftId },
+      data: {
+        status: 'CLOSED',
+        closedAt: new Date(),
+        expectedCash,
+        countedCash: input.countedCash,
+        difference,
+        notes: input.notes ?? null,
+      },
+      include: { cashier: { select: { fullName: true } } },
+    });
+
+    await this.audit.log({
+      userId: cashierId,
+      action: 'SHIFT_CLOSED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: {
+        openingCash: Number(shift.openingCash),
+        cashSalesTotal,
+        expectedCash,
+        countedCash: input.countedCash,
+        difference,
+      },
+    });
+
+    if (Math.abs(difference) >= DISCREPANCY_THRESHOLD_COP) {
+      await this.audit.log({
+        userId: cashierId,
+        action: 'SHIFT_DISCREPANCY_DETECTED',
+        entityType: 'shift',
+        entityId: shiftId,
+        metadata: {
+          difference,
+          threshold: DISCREPANCY_THRESHOLD_COP,
+          // TODO FASE 9: trigger WhatsApp alert al dueño con este diff.
+        },
+      });
+    }
+
+    return toShiftDto(closed);
   }
 
   async list(filter: { cashierId?: string; status?: ShiftStatus; limit?: number } = {}): Promise<Shift[]> {

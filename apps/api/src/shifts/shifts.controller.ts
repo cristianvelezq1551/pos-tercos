@@ -8,8 +8,10 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  CloseShiftSchema,
   OpenShiftSchema,
   ShiftStatusEnum,
+  type CloseShift,
   type OpenShift,
   type Shift,
 } from '@pos-tercos/types';
@@ -30,6 +32,17 @@ export class ShiftsController {
     @Body(new ZodValidationPipe(OpenShiftSchema)) body: OpenShift,
   ): Promise<Shift> {
     return this.shifts.open(body, user.sub);
+  }
+
+  /** FASE 11.A: cierre del turno + cálculo expectedCash + diff. */
+  @CashierAccess()
+  @Post(':id/close')
+  close(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(CloseShiftSchema)) body: CloseShift,
+  ): Promise<Shift> {
+    return this.shifts.close(id, body, user.sub);
   }
 
   @CashierAccess()
