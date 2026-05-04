@@ -8,6 +8,7 @@ export * from './invoices';
 export * from './kds';
 export * from './promotions';
 export * from './public-display';
+export * from './reports';
 export * from './sales';
 export * from './shifts';
 export * from './suppliers';
