@@ -4,6 +4,12 @@ export {
   RecipeMissingNodeError,
   RecipeMaxDepthError,
 } from './expand-recipe';
+export {
+  computeProductCost,
+  computeComboCost,
+  type CostResult,
+  type IngredientCostMap,
+} from './compute-cost';
 export type {
   ChildRef,
   ExpandedIngredient,

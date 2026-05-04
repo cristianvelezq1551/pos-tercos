@@ -11,6 +11,10 @@ export const IngredientSchema = z.object({
   unitRecipe: z.string(),
   conversionFactor: z.number().positive(),
   thresholdMin: z.number().nonnegative(),
+  // Costo histórico (FASE 4 ajustes 2.2). En unitPurchase. Auto-actualizado
+  // al confirmar facturas (espejo de Product.lastUnitCost).
+  lastUnitCost: z.number().nullable(),
+  lastUnitCostDate: z.string().datetime().nullable(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -285,11 +289,40 @@ export const ExpandedIngredientUsageSchema = z.object({
   name: z.string(),
   unitRecipe: z.string(),
   totalQuantity: z.number(),
+  /** Costo del ingrediente por unidad de receta (lastUnitCost / conversionFactor). */
+  unitCostInRecipe: z.number().nullable(),
+  /** Aporte al costo total = totalQuantity × unitCostInRecipe. Null si falta cost. */
+  costContribution: z.number().nullable(),
 });
 export type ExpandedIngredientUsage = z.infer<typeof ExpandedIngredientUsageSchema>;
 
+/**
+ * Detalle por componente cuando el producto es un combo. Cada componente
+ * resuelve su costo via la misma lógica recursiva (directResale | recipe).
+ */
+export const ComboComponentCostSchema = z.object({
+  productId: z.string().uuid(),
+  productName: z.string(),
+  quantity: z.number().int().positive(),
+  /** Costo unitario del componente (igual modelo que un producto solo). */
+  unitCost: z.number().nullable(),
+  /** Aporte al costo del combo = quantity × unitCost. */
+  costContribution: z.number().nullable(),
+  /** Si null, explica por qué (ej. "ingrediente sin lastUnitCost"). */
+  missingReason: z.string().nullable(),
+});
+export type ComboComponentCost = z.infer<typeof ComboComponentCostSchema>;
+
 export const ExpandedCostResponseSchema = z.object({
   productId: z.string().uuid(),
+  /** 'product' | 'combo' — para que la UI sepa cómo renderear. */
+  kind: z.enum(['product', 'combo']),
   totals: z.array(ExpandedIngredientUsageSchema),
+  /** Solo poblado cuando kind='combo'. Vacío para productos. */
+  components: z.array(ComboComponentCostSchema),
+  /** Costo total estimado del producto. Null si falta info en algún componente/ingrediente. */
+  totalCost: z.number().nullable(),
+  /** Si totalCost es null, lista los faltantes para que la UI muestre tooltip. */
+  missingReasons: z.array(z.string()),
 });
 export type ExpandedCostResponse = z.infer<typeof ExpandedCostResponseSchema>;

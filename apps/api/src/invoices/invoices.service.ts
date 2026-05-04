@@ -337,6 +337,17 @@ export class InvoicesService {
               lastPurchaseDate: new Date(),
             },
           });
+
+          // FASE 4 ajustes 2.2: actualizar lastUnitCost del ingrediente
+          // (espejo de la actualización del producto direct-resale).
+          // En unitPurchase del ingrediente, igual que el campo en products.
+          await tx.ingredient.update({
+            where: { id: item.ingredientId as string },
+            data: {
+              lastUnitCost: item.unitPrice,
+              lastUnitCostDate: new Date(),
+            },
+          });
         } else {
           // PRODUCT direct-resale
           await tx.supplierProduct.upsert({

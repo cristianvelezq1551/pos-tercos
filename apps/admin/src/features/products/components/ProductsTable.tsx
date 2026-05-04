@@ -1,11 +1,14 @@
-import type { Product } from '@pos-tercos/types';
+import type { ExpandedCostResponse, Product } from '@pos-tercos/types';
 import Link from 'next/link';
 
 interface ProductsTableProps {
   products: Product[];
+  /** Costos pre-calculados por productId (FASE 4 ajustes 2.2). Si no
+   *  está, fallback a lastUnitCost para direct-resale. */
+  costsById?: Map<string, ExpandedCostResponse>;
 }
 
-export function ProductsTable({ products }: ProductsTableProps) {
+export function ProductsTable({ products, costsById }: ProductsTableProps) {
   if (products.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
@@ -51,8 +54,19 @@ export function ProductsTable({ products }: ProductsTableProps) {
         <tbody className="divide-y divide-gray-100">
           {products.map((p) => {
             const salePrice = p.isCombo ? (p.comboPrice ?? p.basePrice) : p.basePrice;
-            const costPerStock = computeCostPerStockUnit(p);
+            // Preferir el costo del endpoint expanded-cost (cubre combos +
+            // recetas + direct-resale). Fallback al cálculo legacy si la
+            // llamada falló para este producto.
+            const expanded = costsById?.get(p.id) ?? null;
+            const costPerStock =
+              expanded?.totalCost !== undefined && expanded?.totalCost !== null
+                ? expanded.totalCost
+                : computeCostPerStockUnit(p);
             const margin = computeMarginPct(salePrice, costPerStock);
+            const costMissing = expanded?.totalCost === null;
+            const missingHint = costMissing
+              ? expanded.missingReasons.join(' · ')
+              : undefined;
             return (
               <tr key={p.id} className="transition-colors hover:bg-gray-50">
                 <Td>
@@ -79,9 +93,16 @@ export function ProductsTable({ products }: ProductsTableProps) {
                 </Td>
                 <Td align="right" mono>
                   {costPerStock !== null ? (
-                    formatPrice(costPerStock)
+                    <span title={expanded?.kind === 'combo' ? 'suma de componentes' : undefined}>
+                      {formatPrice(costPerStock)}
+                    </span>
                   ) : (
-                    <span className="text-gray-300">—</span>
+                    <span
+                      className="text-gray-300"
+                      title={missingHint ?? 'Sin información de costo'}
+                    >
+                      —
+                    </span>
                   )}
                 </Td>
                 <Td align="right" mono>

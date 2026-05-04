@@ -79,6 +79,8 @@ function toIngredientDto(row: DbIngredient): Ingredient {
     unitRecipe: row.unitRecipe,
     conversionFactor: Number(row.conversionFactor),
     thresholdMin: Number(row.thresholdMin),
+    lastUnitCost: row.lastUnitCost !== null ? Number(row.lastUnitCost) : null,
+    lastUnitCostDate: row.lastUnitCostDate?.toISOString() ?? null,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

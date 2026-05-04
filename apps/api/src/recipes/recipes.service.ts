@@ -1,13 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  computeComboCost,
+  computeProductCost,
   expandRecipe,
   RecipeCycleError,
   RecipeMissingNodeError,
+  type IngredientCostMap,
   type ParentRef,
   type RecipeEdgeNode,
   type RecipeGraph,
 } from '@pos-tercos/domain';
 import type {
+  ComboComponentCost,
   ExpandedCostResponse,
   RecipeEdge,
   RecipeEdgeInput,
@@ -126,17 +130,152 @@ export class RecipesService {
   }
 
   async expandedCost(productId: string): Promise<ExpandedCostResponse> {
-    const { graph, root } = await this.loadGraphForProduct(productId);
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { comboComponents: true },
+    });
+    if (!product) throw new NotFoundException(`Product ${productId} not found`);
+
+    // Pre-cargar TODOS los ingredientes una vez (para tener lastUnitCost +
+    // conversionFactor a mano sin n+1).
+    const allIngredients = await this.prisma.ingredient.findMany({
+      select: { id: true, lastUnitCost: true, conversionFactor: true },
+    });
+    const ingredientCosts: IngredientCostMap = new Map(
+      allIngredients.map((i) => [
+        i.id,
+        i.lastUnitCost !== null && Number(i.conversionFactor) > 0
+          ? Number(i.lastUnitCost) / Number(i.conversionFactor)
+          : null,
+      ]),
+    );
+
     try {
-      const expanded = expandRecipe(graph, root);
+      // ============= COMBO PATH =============
+      if (product.isCombo) {
+        const componentIds = product.comboComponents.map((c) => c.productId);
+        const componentProducts = await this.prisma.product.findMany({
+          where: { id: { in: componentIds } },
+        });
+        const compMap = new Map(componentProducts.map((p) => [p.id, p]));
+
+        const componentResults: ComboComponentCost[] = [];
+        for (const cc of product.comboComponents) {
+          const comp = compMap.get(cc.productId);
+          if (!comp) {
+            componentResults.push({
+              productId: cc.productId,
+              productName: '(eliminado)',
+              quantity: cc.quantity,
+              unitCost: null,
+              costContribution: null,
+              missingReason: `Componente productId=${cc.productId} no existe`,
+            });
+            continue;
+          }
+
+          // Para cada componente, compute su unit cost
+          let recipe: { graph: RecipeGraph; root: ParentRef } | null = null;
+          if (!comp.directResale) {
+            recipe = await this.loadGraphForProduct(comp.id);
+          }
+          const r = computeProductCost({
+            product: {
+              id: comp.id,
+              name: comp.name,
+              directResale: comp.directResale,
+              lastUnitCost:
+                comp.lastUnitCost !== null ? Number(comp.lastUnitCost) : null,
+              conversionFactor:
+                comp.conversionFactor !== null ? Number(comp.conversionFactor) : null,
+              isCombo: comp.isCombo,
+            },
+            recipe,
+            ingredientCosts,
+          });
+          componentResults.push({
+            productId: comp.id,
+            productName: comp.name,
+            quantity: cc.quantity,
+            unitCost: r.totalCost,
+            costContribution:
+              r.totalCost !== null ? round(r.totalCost * cc.quantity) : null,
+            missingReason:
+              r.totalCost === null ? r.missingReasons.join(' · ') : null,
+          });
+        }
+
+        const comboResult = computeComboCost({
+          components: componentResults.map((c) => ({
+            productId: c.productId,
+            productName: c.productName,
+            quantity: c.quantity,
+            unitCost: c.unitCost,
+            missingReason: c.missingReason,
+          })),
+        });
+
+        return {
+          productId,
+          kind: 'combo',
+          totals: [],
+          components: comboResult.components.map((c) => ({
+            productId: c.productId,
+            productName: c.productName,
+            quantity: c.quantity,
+            unitCost: c.unitCost,
+            costContribution: c.costContribution,
+            missingReason: c.missingReason,
+          })),
+          totalCost: comboResult.totalCost,
+          missingReasons: comboResult.missingReasons,
+        };
+      }
+
+      // ============= NON-COMBO PATH =============
+      let recipe: { graph: RecipeGraph; root: ParentRef } | null = null;
+      let ingredients: ReturnType<typeof Array.from<ReturnType<typeof expandRecipe> extends Map<unknown, infer V> ? V : never>> = [];
+      if (!product.directResale) {
+        recipe = await this.loadGraphForProduct(productId);
+        const expanded = expandRecipe(recipe.graph, recipe.root);
+        ingredients = Array.from(expanded.values());
+      }
+
+      const r = computeProductCost({
+        product: {
+          id: product.id,
+          name: product.name,
+          directResale: product.directResale,
+          lastUnitCost:
+            product.lastUnitCost !== null ? Number(product.lastUnitCost) : null,
+          conversionFactor:
+            product.conversionFactor !== null
+              ? Number(product.conversionFactor)
+              : null,
+          isCombo: false,
+        },
+        recipe,
+        ingredientCosts,
+      });
+
       return {
         productId,
-        totals: Array.from(expanded.values()).map((e) => ({
-          ingredientId: e.ingredientId,
-          name: e.name,
-          unitRecipe: e.unitRecipe,
-          totalQuantity: e.totalQuantity,
-        })),
+        kind: 'product',
+        totals: ingredients.map((e) => {
+          const unitCost = ingredientCosts.get(e.ingredientId) ?? null;
+          return {
+            ingredientId: e.ingredientId,
+            name: e.name,
+            unitRecipe: e.unitRecipe,
+            totalQuantity: e.totalQuantity,
+            unitCostInRecipe: unitCost,
+            costContribution:
+              unitCost !== null ? round(e.totalQuantity * unitCost) : null,
+          };
+        }),
+        components: [],
+        totalCost: r.totalCost,
+        missingReasons: r.missingReasons,
       };
     } catch (err) {
       if (err instanceof RecipeCycleError) {
@@ -290,6 +429,10 @@ export class RecipesService {
       throw err;
     }
   }
+}
+
+function round(n: number): number {
+  return Math.round(n * 10000) / 10000;
 }
 
 function toRecipeEdgeDto(row: DbRecipeEdge): RecipeEdge {

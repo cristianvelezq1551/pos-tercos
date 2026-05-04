@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Button } from '@pos-tercos/ui';
 import { ProductsTable } from '../../../features/products';
 import { ApiError, serverFetchJson } from '../../../lib/api-server';
-import type { Product } from '@pos-tercos/types';
+import type { ExpandedCostResponse, Product } from '@pos-tercos/types';
 
 async function loadProducts(): Promise<Product[] | { error: string }> {
   try {
@@ -15,8 +15,36 @@ async function loadProducts(): Promise<Product[] | { error: string }> {
   }
 }
 
+/**
+ * Pre-fetch en paralelo del expanded-cost de todos los productos. La UI
+ * lo usa para mostrar costo + margen consistentes (combos + recetas +
+ * direct-resale). Si una llamada individual falla, se omite ese producto
+ * (UI muestra "—").
+ */
+async function loadCostsByProductId(
+  products: Product[],
+): Promise<Map<string, ExpandedCostResponse>> {
+  const map = new Map<string, ExpandedCostResponse>();
+  await Promise.all(
+    products.map(async (p) => {
+      try {
+        const cost = await serverFetchJson<ExpandedCostResponse>(
+          `/products/${p.id}/expanded-cost`,
+        );
+        map.set(p.id, cost);
+      } catch {
+        // omit — UI fallback
+      }
+    }),
+  );
+  return map;
+}
+
 export default async function ProductsPage() {
   const result = await loadProducts();
+  const costsById = Array.isArray(result)
+    ? await loadCostsByProductId(result)
+    : new Map<string, ExpandedCostResponse>();
 
   return (
     <div className="space-y-6">
@@ -34,7 +62,7 @@ export default async function ProductsPage() {
       </div>
 
       {Array.isArray(result) ? (
-        <ProductsTable products={result} />
+        <ProductsTable products={result} costsById={costsById} />
       ) : (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           No se pudieron cargar los productos. {result.error}
