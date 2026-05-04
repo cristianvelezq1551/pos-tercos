@@ -39,12 +39,12 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-6 backend ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-7 backend ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría | FASE 0-4 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA — venta en mostrador | FASE 5.E UI ✅ |
+| POS Cajero | `apps/pos` | Next.js PWA — venta en mostrador + drawer pedidos web | FASE 5.E + 7.E UI ✅ |
 | KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina | FASE 6.C UI ✅ |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
-| Web Pública | `apps/web` | Next.js — landing + menú | placeholder |
+| Web Pública | `apps/web` | Next.js — menú + checkout pickup/delivery + status tracking | FASE 7.C-D UI ✅ |
 | Repartidor | `apps/repa` | Next.js PWA mobile — domicilios | placeholder |
 | Print Agent | `apps/print-agent` | Node service local — ESC/POS | no creado aún |
 
@@ -315,6 +315,14 @@ _(ninguno — FASE 4 cerrada)_
 - `GET /public-display/state` — `@Public()`, snapshot `{ current, next[≤3], asOf }`. Filtra `type=COUNTER` + ventana 30 min
 - `GET /public-display/stream` — `@Public()`, SSE con NestJS `@Sse()`. Reconnect automático nativo del browser (`EventSource`)
 
+### Web pública pedidos (FASE 7)
+- `GET /web/menu` — `@Public()`, Throttle 60/60s. `PublicMenuResponse {products, categories, asOf}`. Subset SAFE del producto (sin `lastUnitCost`/`thresholdMin`/`directResale`)
+- `POST /web/orders` — `@Public()`, Throttle 30/60s. `CreateWebOrder {type WEB_*, items, customerName, customerPhone (E.164 +57XXXXXXXXXX), deliveryAddress?, notes?}`. Header `Idempotency-Key` opcional. Retorna `{order, token, tokenExpiresAt, paymentInstructions}`. Reusa `SalesService.create` (motor de promos + expandRecipe + idempotency cache). Reglas: WEB_DELIVERY exige `deliveryAddress`; phone E.164 obligatorio.
+- `GET /web/orders/:id?token=` — `@Public()`, Throttle 120/60s. `PublicWebOrder` (subset sin paymentMethod/cashier/shift/idempotencyKey). Token HMAC SHA256 firmado, TTL 24h, valida `expectedSaleId` match (timing-safe).
+- `POST /web/orders/:id/mark-paid?token=` — `@Public()`, Throttle 10/60s. NO cambia status. Audit `SALE_STATUS_CHANGED` con `metadata.stage='customer-paid-claimed'`. Retorna `PublicWebOrder` con `customerPaidAt` poblado.
+- `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.customer-paid`, `web-order.cancelled` (este último reservado para FASE 9+).
+- Confirmación de pago de orden web reusa `POST /sales/:id/confirm-payment` (FASE 5). El cajero hace doble-validación digital normal y el sale pasa a PAGADO.
+
 ---
 
 ## 7. Admin UI vigente
@@ -418,6 +426,12 @@ apps/pos/src/
 │   ├── store/cart-store.ts               # Zustand (items + lastSale + actions)
 │   ├── lib/{cart-types,totals,open-receipt-window}.ts
 │   └── components/{CartPanel,CheckoutModal,LastSaleBanner,VoidModal,VoidSaleAction}.tsx
+├── features/web-orders/                  # FASE 7.E
+│   ├── api/{list,get-sale}.ts            # GET /sales (filtros) + GET /sales/:id
+│   ├── server.ts                         # getPendingWebOrdersServer (SSR initial)
+│   ├── lib/project.ts                    # saleToPublicWebOrder
+│   ├── hooks/useWebOrdersSocket.ts       # socket.io-client → /ws/pos con auth.token
+│   └── components/{WebOrdersAction (topbar wrapper), WebOrdersDrawer, ConfirmWebPaymentModal}.tsx
 ├── lib/{api-server,auth-config}.ts       # serverFetchJson + POS_ALLOWED_ROLES
 └── middleware.ts                         # jose JWT verify + role gate (Edge runtime)
 ```
@@ -475,6 +489,56 @@ apps/kds/src/
 
 ---
 
+## 7.5 Web Pública UI vigente (FASE 7.C-D)
+
+### Rutas
+
+```
+/                                        # SIN auth, menú + carrito
+/checkout                                # form 1-página pickup/delivery
+/checkout/success/[id]?token=            # tracking + payment instructions + "ya pagué"
+```
+
+### Estructura
+
+```
+apps/web/src/
+├── app/
+│   ├── globals.css                       # light theme
+│   ├── layout.tsx
+│   ├── page.tsx                          # SSR getMenuServer + WebTopbar + CatalogGrid
+│   ├── checkout/page.tsx                 # CheckoutForm (client)
+│   └── checkout/success/[id]/page.tsx    # SSR getWebOrderServer + OrderStatusView
+├── components/WebTopbar.tsx              # logo + CartButton + CartDrawer
+├── features/catalog/
+│   ├── server.ts                         # getMenuServer (publicFetch /web/menu, fallback EMPTY)
+│   └── components/{CatalogGrid, ProductCard, ProductPickerModal}.tsx
+├── features/cart/
+│   ├── store/cart-store.ts               # Zustand + persist (localStorage 'pos-tercos-web-cart')
+│   ├── lib/cart-types.ts
+│   └── components/{CartButton, CartDrawer}.tsx
+├── features/checkout/
+│   ├── api/{create-order, get-order, mark-paid}.ts
+│   ├── server.ts                         # getWebOrderServer + buildPaymentInstructions (espeja API)
+│   └── components/{CheckoutForm, OrderStatusView, OrderStatusPoller (hook), PaymentInstructionsView}.tsx
+└── lib/{api-server, format}.ts           # publicFetch + COP Intl
+```
+
+### Decisiones de UX aplicadas
+
+- Sin auth, sin login. El cliente es anónimo.
+- Carrito en localStorage (`pos-tercos-web-cart`), survive a navigation/reload. Hydration flag para evitar SSR mismatch.
+- Checkout 1-página con toggle pickup/delivery (decisión confirmada: simpler que multi-step para 1 mesa, 1 ítem promedio).
+- Phone input con prefijo `+57` locked + 10 dígitos (E.164 estricto, alineado con backend).
+- Idempotency-Key uuid v4 generado al submit del checkout (no al abrir el modal — el form vive más).
+- Token HMAC siempre en URL `?token=`, NO en localStorage. Cliente puede compartir/recuperar URL.
+- Status poller cada 5s (NO SSE) — rate-limit holgado (120/60s) y evita conexiones colgadas en pestañas inactivas. Detiene en estados terminales (ENTREGADO, CANCELADO_*, VOID, DEVUELTO, EN_DISPUTA).
+- `paymentInstructions` se reconstruye server-side en el web app (lee `NEXT_PUBLIC_PAYMENT_NEQUI/TRANSFER`) — sobrevive a reload, devices distintos, share del URL.
+- Banner status tonal: amber pending / blue cooking / emerald ready / gray done / red failed.
+- "Ya pagué" deshabilitado tras claim — feedback "esperando verificación del cajero".
+
+---
+
 ## 7.quater Pantalla Pública UI vigente (FASE 6.D)
 
 ### Rutas
@@ -510,9 +574,15 @@ apps/public-display/src/
 
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (42 hasta hoy)
+### Commits en `main` (48 hasta hoy)
 
 ```
+858cb50 feat(pos): FASE 7.E drawer pedidos web pendientes + confirm modal
+18c928c feat(web): FASE 7.D checkout 1-página + status poller + mark-paid
+37165ea feat(web): FASE 7.C apps/web menú + carrito localStorage
+8577bf6 feat(web-orders): FASE 7.B PosGateway WS para notificar al POS
+cecbe6d feat(web-orders): FASE 7.A backend pedidos web públicos + web menu
+7ed3c09 docs(claude): cierre FASE 6 + roadmap a FASE 7
 2434523 feat(public-display): FASE 6.D apps/public-display SSE kiosko
 83c186e feat(kds): FASE 6.C apps/kds UI con WS auto-reconnect
 67dd921 feat(public-display): FASE 6.B SSE pantalla pública
@@ -661,11 +731,48 @@ Particionada en 5 sub-sprints. Plan completo en `fase5e-y-pendientes.md` sec 3.1
   - Sale tabla NO tiene `updatedAt` — para el `current` del public display derivamos timestamp desde `sale_status_log.changedAt`.
   - Token refresh automático en KDS: NO implementado en 6.C (TODO FASE 14 hardening).
 
-### Pendientes — FASES 7 a 15
+### FASE 7 — Web pública pedidos (sin Mapbox) · ✅ COMPLETADA
+
+Particionada en 6 sub-sprints. Plan completo en `fase5e-y-pendientes.md` sec 3.2.
+
+- [x] **7.A backend web-orders + web-menu + throttler + token HMAC** (`cecbe6d`):
+  - dep `@nestjs/throttler ^6.4.0` + `ThrottlerModule.forRoot([{ttl:60_000, limit:100}])` global + `ThrottlerGuard` como `APP_GUARD`
+  - `packages/types/web-menu`: `PublicMenuProductSchema` (subset SAFE) + `PublicMenuResponse {products, categories[], asOf}`
+  - `packages/types/web-orders`: `WebOrderTypeEnum (WEB_PICKUP, WEB_DELIVERY)` + `CreateWebOrder` con phone E.164 colombiano (`/^\+57\d{10}$/`) + `PublicWebOrder` (subset sin paymentMethod/cashier/shift) + `CreateWebOrderResponse {order, token, tokenExpiresAt, paymentInstructions}` + `MarkPaidSchema` + `WebOrderEvent`
+  - `WebMenuModule`: `GET /web/menu` `@Public() Throttle(60/60s)`, expone solo subset del producto
+  - `WebOrderTokenService`: HMAC-SHA256, formato `<base64url(payload)>.<base64url(sig)>`, payload `{sid, exp}`, TTL 24h, verify timing-safe + `expectedSaleId` match. Usa `WEB_ORDER_TOKEN_SECRET` (fallback `JWT_ACCESS_SECRET` en dev)
+  - `WebOrdersService`: `create()` reusa `SalesService.create` (idempotency + promos + expandRecipe). `getPublic()` lee + proyecta. `markPaid()` audit `SALE_STATUS_CHANGED metadata.stage='customer-paid-claimed'`
+  - `WebOrdersController` `@Public()`: `POST /web/orders` (Throttle 30/60s) + `GET /web/orders/:id?token=` (120/60s) + `POST /web/orders/:id/mark-paid?token=` (10/60s)
+  - `SalesService.create`: removido lock FASE 5 que rechazaba WEB_*. Shift exigido solo para COUNTER; `cashierId`/`shiftId` quedan null en WEB_* hasta que cajero confirme pago
+- [x] **7.B PosGateway WS** (`8577bf6`): namespace `/ws/pos`, room `pos.web-orders`, auth tri-modal idéntica a `KdsGateway`. Role gate `CashierAccess`. `emit()` para `web-order.created` y `web-order.customer-paid`. Hooks: `WebOrdersService.create` post-toPublicDto + `markPaid` post-audit
+- [x] **7.C apps/web menú + carrito localStorage** (`37165ea`): deps `zod`, `zustand`. `next.config` rewrite `/api/* → :3001`. `features/catalog` con SSR fetch + `CatalogGrid` chips de categoría sticky + `ProductCard` + `ProductPickerModal` autocontenido. `features/cart` con zustand+persist (key `pos-tercos-web-cart`, partialize items, hydration flag), `CartButton` con badge + total + placeholder estable, `CartDrawer` slide-right
+- [x] **7.D checkout 1-página + status poller + mark-paid** (`18c928c`):
+  - `CheckoutForm`: toggle pickup/delivery, phone con prefijo locked +57 + 10 dígitos, validación inline, idempotency-key uuid v4, post-success → router.push success URL + clear cart
+  - `OrderStatusPoller` hook: poll cada 5s, detiene en estados terminales, expone `{live, reconnecting, stopped}`
+  - `OrderStatusView`: header tonal por status, `PaymentSection` solo en PENDIENTE_PAGO con input opcional reference + botón "Ya pagué"
+  - `/checkout` y `/checkout/success/[id]` pages con `force-dynamic`
+- [x] **7.E POS drawer pedidos web** (`858cb50`):
+  - dep `socket.io-client ^4.8.1` para POS
+  - `getAccessTokenServer()` agregado a `features/auth` (extra para WS handshake cross-origin del `/ws/pos`)
+  - `useWebOrdersSocket`: socket.io-client → `/ws/pos` con `handshake.auth.token` desde SSR, dedupe + sort por createdAt asc, sale del state cuando status != PENDIENTE_PAGO o evento `web-order.cancelled`
+  - `WebOrdersDrawer` slide-right con header (count + ConnectionDot live) + lista con badge "Cliente avisó pago" emerald (si `customerPaidAt` no null) o "Pendiente confirmar" amber + botón "Confirmar pago"
+  - `ConfirmWebPaymentModal`: load full Sale on open (para ítems), método NEQUI default, doble validación digital con monto auto-precargado al total, llama `confirmPayment` del feature sales (mismo endpoint `POST /sales/:id/confirm-payment`)
+  - `WebOrdersAction` (topbar wrapper): badge contador (amber pending / emerald si cliente avisó) + animate-pulse 1.5s al recibir nueva orden
+  - PosTopbar acepta `webOrdersInitial` + `wsToken`; layout SSR fetcha en paralelo con user/shift
+
+  **Decisiones tomadas en FASE 7 (no re-discutir):**
+  - Token HMAC con TTL 24h. Siempre en URL (no localStorage del cliente). HMAC-SHA256 con `WEB_ORDER_TOKEN_SECRET` (fallback `JWT_ACCESS_SECRET` en dev).
+  - Checkout 1-página con toggle (no multi-step) — UX simple por defecto.
+  - Notificación POS: namespace nuevo `/ws/pos` + room `pos.web-orders` (separado del `/ws/kds` que es solo COCINERO). Auth tri-modal igual.
+  - "Ya pagué" del cliente NO cambia status del sale — solo audit `SALE_STATUS_CHANGED metadata.stage='customer-paid-claimed'`. El cajero verifica manualmente vía POS y llama el endpoint de confirmPayment normal.
+  - Web orders no exigen shift abierto al `create` — el shift se asocia recién en `confirmPayment` del cajero (que sí debe tener turno abierto).
+  - Status poller cliente cada 5s (no SSE) — evita conexiones colgadas en pestañas inactivas y rate-limit lo permite (120/60s).
+  - El POS usa el endpoint `/sales/:id/confirm-payment` existente para órdenes web (no se crea endpoint dedicado) — el modal precarga `amountReceived = total` y obliga doble validación.
+
+### Pendientes — FASES 8 a 15
 
 Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
 
-- **FASE 7** — Web pública pedidos (sin Mapbox): `apps/web`, menú público, checkout pickup/delivery, `POST /web/orders` con rate-limit, `GET /web/orders/:id?token=`, notificación POS via WS (extiende FASE 6).
 - **FASE 8** — Mapbox + validación 3km: geocoding + autocomplete address + cálculo de distancia haversine + bloqueo > 3km.
 - **FASE 9** — WhatsApp con Mock + Dev Inbox: adapter Meta Cloud API + `apps/api/tmp/whatsapp/` mock log + dashboard inbox.
 - **FASE 10** — Repartidor: `apps/repa`, asignación, GPS captura, transitions delivery.
@@ -753,25 +860,19 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 6 cerrada. **Próximo: FASE 7 — Web pública pedidos (sin Mapbox).**
+FASE 7 cerrada. **Próximo: FASE 8 — Mapbox + validación 3km.**
 
-Plan completo en `fase5e-y-pendientes.md` sec 3.2. Resumen:
-- `apps/web` (puerto 3000) — landing/menú online-only, carrito en localStorage anónimo, checkout flow con pickup/delivery, payment instructions post-checkout (Nequi/transfer + tracking ID).
-- Backend nuevo:
-  - `web-orders` module: `POST /web/orders` (público con rate-limit `@nestjs/throttler` 100 req/min/IP), `GET /web/orders/:id?token=` (público con token de orden), `POST /web/orders/:id/confirm-payment [cajero]`.
-  - `web-menu` module: endpoint público para listar productos activos + categorías + precio (NO costo).
-  - Token de orden: HMAC del saleId con secret env. El POS no expone /sales público — el web-orders module crea su propio endpoint dedicado.
-  - WS POS event: `web-order.pending-payment` para notificar al cajero (extiende FASE 6 con namespace `/ws/pos`).
-- Sales schema ya soporta `type=WEB_PICKUP` y `type=WEB_DELIVERY` desde 5.A.
-- Reglas críticas (`pos-spec.v1.md`):
-  - Web pública es **online-only** (no funciona offline).
-  - "NO HAY REEMBOLSO post pago confirmado".
-  - Rate-limit 100 req/min por IP en `/web/*` (`architecture.md:863`) — instalar `@nestjs/throttler`.
-- Decisiones a tomar antes de arrancar 7.A:
-  - Diseño del token de orden (HMAC con expiración 24h o sin expiración?).
-  - UX checkout: 1 página con pickup/delivery toggle vs flow multi-step.
-  - Notificación al POS de orden pendiente: WS namespace nuevo `/ws/pos` o reusar `/ws/kds` con room separada.
-  - Mock de payment: cliente debe pegar txId/comprobante? O solo "ya pagué" botón?
+Plan completo en `fase5e-y-pendientes.md` sec 3.3. Resumen:
+- Adapter `MapsProvider` interface en `@pos-tercos/domain` con `geocode(address) → {lat,lng}` y `reverseGeocode(lat,lng) → address`. Implementación `MapboxMapsAdapter` en `apps/api/src/adapters/maps/`. `MOCK` adapter para tests sin token.
+- Función pura `haversine(lat1,lng1,lat2,lng2): km` en `@pos-tercos/domain/geo/` (ya hay precedente con `expandRecipe`). Constantes `RESTAURANT_LAT/LNG/RADIUS_KM` desde env.
+- Endpoint público `GET /web/geocode?address=` con throttle agresivo (10/60s) — devuelve `{lat,lng,formattedAddress, withinDeliveryRadius}`.
+- `CreateWebOrderSchema` (FASE 7) extiende: si `type=WEB_DELIVERY`, requiere `deliveryLat` + `deliveryLng` además del address. Backend valida 3km vía haversine antes de crear el sale; rechaza con 400 + mensaje claro.
+- `apps/web/checkout` UX: agregar `GooglePlacesAutocomplete` (o Mapbox equivalent) que llama `/web/geocode` on-blur, muestra mapa pin, banner verde/amber si está/no en zona.
+- Decisiones a confirmar antes de 8.A:
+  - Mapbox vs Google Places (token cost, UX). Plan recomienda Mapbox pero pos-spec menciona Google Maps.
+  - Manejo de fuera-de-zona en checkout: bloquear submit o ofrecer pickup como fallback?
+  - Geocode rate limit: por IP o por sesión (cookie temporal sin auth)?
+  - Mock dev: archivos JSON con direcciones fake o adapter "always-success" centrado en restaurant?
 
 ---
 
