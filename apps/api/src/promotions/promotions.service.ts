@@ -72,10 +72,12 @@ export class PromotionsService {
     });
     return rows.map((r) => ({
       id: r.id,
-      // FASE 12.A: por ahora todas las promos en DB son PERCENT_OFF (Zod
-      // schema lo enforce). FASE 12.B agregará columnas y mapeo per-type.
-      type: 'PERCENT_OFF' as const,
-      discountPct: Number(r.discountPct),
+      type: r.type,
+      discountPct: r.discountPct === null ? undefined : Number(r.discountPct),
+      discountFixed:
+        r.discountFixed === null ? undefined : Number(r.discountFixed),
+      bogoBuyQty: r.bogoBuyQty ?? undefined,
+      bogoGetQty: r.bogoGetQty ?? undefined,
       daysOfWeekMask: r.daysOfWeekMask,
       timeStart: r.timeStart,
       timeEnd: r.timeEnd,
@@ -97,7 +99,10 @@ export class PromotionsService {
         data: {
           name: input.name,
           type: input.type,
-          discountPct: input.discountPct,
+          discountPct: input.discountPct ?? null,
+          discountFixed: input.discountFixed ?? null,
+          bogoBuyQty: input.bogoBuyQty ?? null,
+          bogoGetQty: input.bogoGetQty ?? null,
           daysOfWeekMask: input.daysOfWeekMask,
           timeStart: input.timeStart,
           timeEnd: input.timeEnd,
@@ -120,7 +125,7 @@ export class PromotionsService {
       entityId: created.id,
       metadata: {
         name: created.name,
-        discountPct: Number(created.discountPct),
+        type: created.type,
         productsCount: created.products.length,
       },
     });
@@ -148,7 +153,6 @@ export class PromotionsService {
         where: { id },
         data: {
           ...(input.name !== undefined && { name: input.name }),
-          ...(input.discountPct !== undefined && { discountPct: input.discountPct }),
           ...(input.daysOfWeekMask !== undefined && { daysOfWeekMask: input.daysOfWeekMask }),
           ...(input.timeStart !== undefined && { timeStart: input.timeStart }),
           ...(input.timeEnd !== undefined && { timeEnd: input.timeEnd }),
@@ -257,7 +261,11 @@ function toPromotionDto(row: DbPromotionWithRelations): Promotion {
     id: row.id,
     name: row.name,
     type: row.type,
-    discountPct: Number(row.discountPct),
+    discountPct: row.discountPct === null ? null : Number(row.discountPct),
+    discountFixed:
+      row.discountFixed === null ? null : Number(row.discountFixed),
+    bogoBuyQty: row.bogoBuyQty,
+    bogoGetQty: row.bogoGetQty,
     daysOfWeekMask: row.daysOfWeekMask,
     timeStart: row.timeStart,
     timeEnd: row.timeEnd,

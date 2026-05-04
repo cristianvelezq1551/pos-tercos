@@ -20,14 +20,15 @@ export interface CartTotalsResult {
   total: number;
 }
 
-/** Convierte Promotion (wire) → PromotionDef (dominio). FASE 12.A: por
- * ahora todas las promos del wire son PERCENT_OFF (FASE 12.B agrega los
- * nuevos campos al schema DB y al type Zod). */
+/** Convierte Promotion (wire) → PromotionDef (dominio). */
 export function toPromotionDef(p: Promotion): PromotionDef {
   return {
     id: p.id,
-    type: 'PERCENT_OFF',
-    discountPct: p.discountPct,
+    type: p.type,
+    discountPct: p.discountPct ?? undefined,
+    discountFixed: p.discountFixed ?? undefined,
+    bogoBuyQty: p.bogoBuyQty ?? undefined,
+    bogoGetQty: p.bogoGetQty ?? undefined,
     daysOfWeekMask: p.daysOfWeekMask,
     timeStart: p.timeStart,
     timeEnd: p.timeEnd,

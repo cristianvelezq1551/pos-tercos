@@ -456,10 +456,15 @@ model Shift {
   @@map("shifts")
 }
 
-/// Promociones automáticas aplicadas en cobro. v1 solo PERCENT_OFF.
+/// Promociones automáticas aplicadas en cobro. 4 tipos (FASE 12):
+/// - PERCENT_OFF: discount_pct requerido.
+/// - FIXED_OFF: discount_fixed requerido.
+/// - BOGO: bogo_buy_qty + bogo_get_qty requeridos.
+/// - COMBO_OFF: discount_pct o discount_fixed (al menos uno).
+///
 /// Resolución de overlap: para cada sale_item, buscar promociones activas
-/// que matcheen day-of-week + hora + producto, aplicar la de mayor
-/// discount_pct. No acumulables.
+/// que matcheen day-of-week + hora + producto, aplicar la de mayor descuento
+/// ABSOLUTO en COP. No acumulables.
 ///
 /// daysOfWeekMask es bitmask: lunes=1, martes=2, miércoles=4, jueves=8,
 /// viernes=16, sábado=32, domingo=64. 127 = todos los días.
@@ -467,7 +472,10 @@ model Promotion {
   id             String             @id @default(uuid())
   name           String
   type           PromotionType      @default(PERCENT_OFF)
-  discountPct    Decimal            @map("discount_pct") @db.Decimal(5, 4)
+  discountPct    Decimal?           @map("discount_pct") @db.Decimal(5, 4)
+  discountFixed  Decimal?           @map("discount_fixed") @db.Decimal(10, 2)
+  bogoBuyQty     Int?               @map("bogo_buy_qty")
+  bogoGetQty     Int?               @map("bogo_get_qty")
   daysOfWeekMask Int                @map("days_of_week_mask")
   timeStart      String             @map("time_start")
   timeEnd        String             @map("time_end")
