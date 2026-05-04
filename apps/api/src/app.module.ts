@@ -22,6 +22,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { PublicDisplayModule } from './public-display/public-display.module';
+import { PurchaseSuggestionsModule } from './purchase-suggestions/purchase-suggestions.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { ReportsModule } from './reports/reports.module';
 import { SalesModule } from './sales/sales.module';
@@ -62,6 +63,7 @@ import { WebOrdersModule } from './web-orders/web-orders.module';
     WebMenuModule,
     WebOrdersModule,
     ReportsModule,
+    PurchaseSuggestionsModule,
   ],
   controllers: [HealthController],
   providers: [

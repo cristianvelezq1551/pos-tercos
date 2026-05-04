@@ -26,6 +26,7 @@ model User {
   invoicesConfirmed  Invoice[]               @relation("InvoiceConfirmedBy")
   invoicesUploaded   Invoice[]               @relation("InvoiceUploadedBy")
   promotionsCreated  Promotion[]
+  purchaseSuggestionsResolved PurchaseSuggestion[]
   refreshTokens      RefreshToken[]
   saleStatusChanges  SaleStatusLog[]
   salesAsCashier     Sale[]                  @relation("SaleCashier")
@@ -77,6 +78,7 @@ model Product {
   modifiers             ProductModifier[]
   sizes                 ProductSize[]
   promotionProducts     PromotionProduct[]
+  purchaseSuggestions   PurchaseSuggestion[]
   recipeEdges           RecipeEdge[]        @relation("ProductRecipe")
   saleItems             SaleItem[]
   supplierResaleHistory SupplierProduct[]   @relation("SupplierProductResale")
@@ -156,6 +158,7 @@ model Ingredient {
   movements        InventoryMovement[]
   invoiceItems     InvoiceItem[]
   consumedAs       RecipeEdge[]        @relation("IngredientChild")
+  purchaseSuggestions PurchaseSuggestion[]
   supplierProducts SupplierProduct[]
 
   @@index([isActive])
@@ -521,6 +524,51 @@ model IdempotencyKey {
   @@map("idempotency_keys")
 }
 
+/// Sugerencia de compra automática (FASE 12.C). Generada por cron horario
+/// que detecta stockables (insumos + productos direct_resale) con
+/// `current_stock < threshold_min`. Polimórfico igual que InventoryMovement.
+///
+/// El cron deduplica: si ya hay una sugerencia PENDING/EVALUATED para la
+/// misma entidad, no crea una nueva (evita ruido). Cuando el stock se
+/// repone, las pendings pasan a STALE en el siguiente run.
+///
+/// 12.D agregará `llmRationale` + `llmModel` + `llmEvaluatedAt` populados
+/// por un adapter LLM que evalúa cada sugerencia (precio razonable, qty
+/// adecuada, alternativas).
+model PurchaseSuggestion {
+  id             String                   @id @default(uuid())
+  /// Polimórfico: una de (ingredientId, productId) NOT NULL coherente con entityType.
+  entityType     StockableType            @map("entity_type")
+  ingredientId   String?                  @map("ingredient_id")
+  productId      String?                  @map("product_id")
+  /// Snapshot al momento de la sugerencia (auditable post-hoc).
+  currentStock   Decimal                  @map("current_stock") @db.Decimal(14, 4)
+  thresholdMin   Decimal                  @map("threshold_min") @db.Decimal(14, 4)
+  unitPurchase   String                   @map("unit_purchase")
+  /// Cantidad sugerida en unitPurchase. v1: refill a 2× threshold.
+  suggestedQty   Decimal                  @map("suggested_qty") @db.Decimal(14, 4)
+  /// Costo unitario estimado (último conocido). NULL si nunca se compró.
+  estUnitCost    Decimal?                 @map("est_unit_cost") @db.Decimal(14, 4)
+  /// Total estimado = suggestedQty × estUnitCost. NULL si no hay costo.
+  estTotal       Decimal?                 @map("est_total") @db.Decimal(14, 2)
+  /// Análisis LLM (12.D). NULL hasta que un evaluador lo procese.
+  llmRationale   String?                  @map("llm_rationale")
+  llmModel       String?                  @map("llm_model")
+  llmEvaluatedAt DateTime?                @map("llm_evaluated_at")
+  status         PurchaseSuggestionStatus @default(PENDING)
+  resolvedById   String?                  @map("resolved_by")
+  resolvedAt     DateTime?                @map("resolved_at")
+  resolutionNote String?                  @map("resolution_note")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  ingredient     Ingredient?              @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  product        Product?                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  resolvedBy     User?                    @relation(fields: [resolvedById], references: [id])
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([entityType, ingredientId, productId])
+  @@map("purchase_suggestions")
+}
+
 /// PIN de aprobación de 6 dígitos para Admin Operativo / Dueño.
 /// Usado por cajero para anular ventas, aplicar descuentos >15%,
 /// abrir cajón sin venta. Header X-Approval-Pin: <pin>.
@@ -620,4 +668,17 @@ enum PromotionType {
   BOGO
   FIXED_OFF
   COMBO_OFF
+}
+
+/// Estado de una sugerencia de compra (FASE 12.C).
+/// Flujo: PENDING (recién detectada) → EVALUATED (LLM analizó, 12.D) →
+/// ACCEPTED / REJECTED por Dueño. STALE: la cron volvió a correr y el
+/// stock se repuso por otra ruta (factura confirmada o adj manual) — la
+/// sugerencia ya no es relevante.
+enum PurchaseSuggestionStatus {
+  PENDING
+  EVALUATED
+  ACCEPTED
+  REJECTED
+  STALE
 }

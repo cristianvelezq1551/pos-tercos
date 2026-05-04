@@ -64,6 +64,13 @@ export const AuditActionEnum = z.enum([
   'INVOICE_REJECTED',
   'INVOICE_CLONED',
   'INVOICE_DELETED',
+
+  // Purchase suggestions (FASE 12.C)
+  'PURCHASE_SUGGESTION_CREATED',
+  'PURCHASE_SUGGESTION_EVALUATED',
+  'PURCHASE_SUGGESTION_ACCEPTED',
+  'PURCHASE_SUGGESTION_REJECTED',
+  'PURCHASE_SUGGESTION_STALE',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 
