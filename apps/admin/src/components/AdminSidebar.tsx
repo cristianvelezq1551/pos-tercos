@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Compras', label: 'Proveedores', href: '/suppliers' },
   { section: 'Inventario', label: 'Stock', href: '/inventory' },
   { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements' },
+  { section: 'Caja', label: 'Turnos', href: '/shifts' },
   { section: 'Auditoría', label: 'Log', href: '/audit' },
 ];
 
