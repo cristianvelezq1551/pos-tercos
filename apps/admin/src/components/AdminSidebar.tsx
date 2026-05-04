@@ -2,14 +2,17 @@
 
 import { cn } from '@pos-tercos/ui';
 import {
+  Activity,
   ArrowLeftRight,
   BarChart3,
   Box,
+  CalendarRange,
   ClipboardList,
   FileText,
   History,
   LayoutDashboard,
   Layers,
+  LineChart,
   Package,
   PackageOpen,
   Receipt,
@@ -42,8 +45,11 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Inventario', label: 'Stock', href: '/inventory', icon: Box },
   { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements', icon: PackageOpen },
   { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet },
-  { section: 'Caja', label: 'Anomalías', href: '/reports/anomalies', icon: BarChart3 },
-  { section: 'Caja', label: 'Reconciliación', href: '/reports/reconciliation', icon: ArrowLeftRight },
+  { section: 'Reportes', label: 'Ventas', href: '/reports/sales', icon: LineChart },
+  { section: 'Reportes', label: 'Productos', href: '/reports/products', icon: BarChart3 },
+  { section: 'Reportes', label: 'Operación', href: '/reports/operations', icon: Activity },
+  { section: 'Reportes', label: 'Anomalías', href: '/reports/anomalies', icon: CalendarRange },
+  { section: 'Reportes', label: 'Reconciliación', href: '/reports/reconciliation', icon: ArrowLeftRight },
   { section: 'Auditoría', label: 'Log', href: '/audit', icon: History },
 ];
 
