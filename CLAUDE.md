@@ -39,8 +39,8 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 backend ✅ |
-| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes / promos / sugerencias IA | FASE 0-4 + 11 + 12 UI ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 backend ✅ |
+| Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes (ventas/productos/operación) / promos / sugerencias IA | FASE 0-4 + 11 + 12 + 13 UI ✅ |
 | POS Cajero | `apps/pos` | Next.js PWA — venta + drawer pedidos web + WhatsApp wa.me + cierre turno + cambiar PIN | FASE 5.E + 7.E + 9 + 11 UI ✅ |
 | KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina + WhatsApp al "Marcar listo" | FASE 6.C + 9 UI ✅ |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
@@ -382,6 +382,15 @@ _(ninguno — FASE 4 cerrada)_
 - `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.customer-paid`, `web-order.cancelled` (este último reservado para FASE 9+).
 - Confirmación de pago de orden web reusa `POST /sales/:id/confirm-payment` (FASE 5). El cajero hace doble-validación digital normal y el sale pasa a PAGADO.
 
+### Reportes y Dashboard (FASE 13)
+- `GET /reports/dashboard` — Admin/Dueño. Resumen del día (revenue + WoW% + counts en vivo).
+- `GET /reports/sales-summary?from=&to=&granularity=daily|hourly` — Admin/Dueño. Serie temporal + breakdowns por type/method.
+- `GET /reports/top-products?from=&to=&limit=` — Admin/Dueño. Ranking con costo/margen estimados.
+- `GET /reports/hour-heatmap?from=&to=` — Admin/Dueño. Matriz dow×hour (default 30d).
+- `GET /reports/whatsapp-metrics?from=&to=` — Admin/Dueño. Cobertura por stage desde audit `WHATSAPP_LINK_OPENED`.
+- `GET /reports/suggestions-metrics?from=&to=` — Admin/Dueño. Counts por status + acceptedEstTotal.
+- Default range: 7 días. Heatmap 30. parseDateRange acepta YYYY-MM-DD.
+
 ### WhatsApp tracking (FASE 9)
 - `POST /sales/:id/whatsapp-clicked` body `{stage: 'accepted' | 'confirmed' | 'ready'}` — Cajero/Cocinero/Admin/Dueño. Audit-only (no cambia status). Coherencia stage↔status: accepted estricto (solo PENDIENTE_PAGO), confirmed permisivo, ready estricto (LISTO_DESPACHO+). Audit `WHATSAPP_LINK_OPENED` con `metadata.{stage, receiptNumber, saleStatus, hasPhone}`.
 
@@ -434,6 +443,11 @@ _(ninguno — FASE 4 cerrada)_
 /promotions                              # lista + new + [id] (FASE 12.B)
 /purchase-suggestions                    # lista + tabs filtro + scan + evaluar (FASE 12.E)
 /purchase-suggestions/[id]               # detalle con rationale IA + accept/reject
+/reports/sales                           # serie + breakdowns (FASE 13.C)
+/reports/products                        # top productos con margen (FASE 13.D)
+/reports/operations                      # WhatsApp + IA + heatmap (FASE 13.E)
+/reports/anomalies                       # 2σ histórico personal (FASE 11.D)
+/reports/reconciliation                  # CSV match Nequi/Bancolombia (FASE 11.E)
 /audit                                   # solo Dueño
 ```
 
@@ -662,9 +676,15 @@ apps/public-display/src/
 
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (74 hasta hoy)
+### Commits en `main` (80 hasta hoy)
 
 ```
+b2ffa61 feat(admin): FASE 13.E UI /reports/operations + sección Reportes en sidebar
+806d55a feat(admin): FASE 13.D UI /reports/products — top productos con márgenes
+02cccba feat(admin): FASE 13.C UI /reports/sales — serie + breakdowns
+1bfc4fc feat(admin): FASE 13.B dashboard home con resumen del día
+8707725 feat(reports): FASE 13.A backend — sales/products/heatmap/whatsapp/IA + dashboard
+cbc9ddf docs(claude): FASE 9.E cierre — wa.me semi-automático completo
 44ed21b feat(kds,web): FASE 9.D KDS abre wa.me al "Marcar listo" + remueve "Ya pagué"
 990c9a3 feat(pos): FASE 9.C drawer pedidos web con "Aceptar y contactar" (wa.me)
 1bba4ea feat(sales): FASE 9.B endpoint /sales/:id/whatsapp-clicked (audit-only)
@@ -1046,13 +1066,50 @@ cancelaciones (cajero matiza el mensaje manualmente).
   - Endpoint `POST /web/orders/:id/mark-paid` queda colgado en el backend pero ya no se llama desde la UI. Mantener disponible (no breaking) pero documentado como deprecated.
   - `customerPaidAt` field y evento WS `web-order.customer-paid` quedan funcionales pero sin escritor. Limpieza queda como TODO menor.
 
-### Pendientes — FASES 10, 13, 14, 15
+### FASE 13 — Reportes y Dashboard · ✅ COMPLETADA (5 sub-sprints)
+
+- [x] **13.A** (`8707725`) — Backend `SalesReportsService` (nuevo) con 6 métodos:
+  - `getSalesSummary(from, to, granularity)`: serie temporal por bucket (daily o hourly) + breakdowns por type y por method + totales (count, revenue, discount, voidCount, avgTicket). Filtra ventas pagadas via `paidAt` y excluye PENDIENTE_PAGO/CANCELADO_NO_PAGO/VOID.
+  - `getTopProducts(from, to, limit)`: groupBy SaleItem.productId con costo y margen estimados. Costo recursivo: combo (sum components × lastUnitCost), directResale (lastUnitCost), receta (sum recipeEdges directos × lastUnitCost/conversionFactor con merma; subproducts no expandidos).
+  - `getHourHeatmap(from, to)`: matriz 7×24 dow × hour count + revenue.
+  - `getWhatsAppMetrics(from, to)`: cobertura por stage desde audit log `WHATSAPP_LINK_OPENED`. eligible accepted = todos los web sales; confirmed = los con `paidAt`; ready = los en LISTO_DESPACHO+. coverage = sales únicas alcanzadas / eligible.
+  - `getSuggestionsMetrics(from, to)`: counts por status + acceptedEstTotal (suma estTotal de las ACCEPTED).
+  - `getDashboardSummary()`: resumen del día con WoW% + conteo en vivo de pedidos pendientes / en cocina / listos / stock bajo / sugerencias pendientes.
+  - 6 endpoints `AdminAccess` en `ReportsController` con `parseDateRange` (YYYY-MM-DD → Date local 00:00/23:59, default 7 días, heatmap 30 días).
+  - 7 schemas nuevos en `packages/types/reports.ts`.
+
+- [x] **13.B** (`1bfc4fc`) — Dashboard home `/`:
+  - 4 stat cards grandes (revenue + WoW%, ventas, pedidos web por aceptar, stock crítico).
+  - 3 small cards tonales (en cocina blue, listos emerald, sugerencias purple).
+  - Grid 2-cols con 5 links a reportes detalle.
+
+- [x] **13.C** (`02cccba`) — UI `/reports/sales`:
+  - `RangeFilter` reutilizable con presets (Hoy/7d/30d/90d) + date pickers + toggle granularity (daily/hourly). URL search params como fuente de verdad — router.push y SSR refetch.
+  - `SalesSummaryView`: 4 stat cards (Revenue / Ventas / Ticket promedio / Anuladas) + gráfica horizontal de barras por bucket (sin lib externa, divs con width%) + 2 BreakdownTable (por tipo + por método) con count, revenue absoluto y % del total.
+
+- [x] **13.D** (`806d55a`) — UI `/reports/products`:
+  - `TopProductsTable`: ranking + name + qty + revenue + barra distribución + costo/margen/% margen estimados.
+  - Margen colorizado: ≥50% emerald, ≥30% blue, ≥15% amber, <15% red, null gray. Footer informativo sobre limitaciones del cálculo.
+
+- [x] **13.E** (`b2ffa61`) — UI `/reports/operations`:
+  - `WhatsAppMetricsCard`: 3 progress bars por stage con cobertura % + reached/eligible + hint inline. Tone ≥80% emerald, ≥50% amber, <50% red.
+  - `SuggestionsMetricsCard`: 5 pills por status + tarjeta destacada `acceptedEstTotal` en COP.
+  - `HourHeatmap`: matriz 7×24 con cells coloreadas (interpolación RGB lineal blue-50 → blue-700 por ratio del pico). Tooltip muestra revenue. Sin lib externa.
+  - Sidebar: nueva sección "Reportes" (Ventas/Productos/Operación/Anomalías/Reconciliación). Caja queda solo con Turnos.
+
+  **Decisiones tomadas en FASE 13 (no re-discutir):**
+  - Bucketization usa `paidAt` (no `createdAt`) para que el revenue caiga al día/hora del pago, no de la creación. Sales `PENDIENTE_PAGO` no aparecen en summary.
+  - Costo de producto con receta es **aproximación** (subproducts no expandidos). El dueño aceptó la simplificación; expansión recursiva queda para FASE 14 si se vuelve relevante.
+  - Sin libs de gráficas (recharts/victory). Barras y heatmap renderizados con divs/CSS para minimizar bundle. Cambiar después si el negocio pide funcionalidades complejas (zoom, drill-down).
+  - Cobertura WhatsApp se mide en sales **únicas** con click registrado, no en total de clicks (para no inflar % si el cajero hace doble click).
+  - WoW% se calcula contra el "mismo día de la semana pasada" (not 7-day rolling). Es lo que un dueño de restaurante intuitivamente compara.
+
+### Pendientes — FASES 10, 14, 15
 
 Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
 
 - **FASE 10** — Repartidor (DIFERIDA por decisión del usuario): `apps/repa`, asignación, GPS captura, transitions delivery.
-- **FASE 13** — Reportes y Dashboard. Incluye reporte "% de pedidos con WhatsApp enviado por stage" desde audit log `WHATSAPP_LINK_OPENED`.
-- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports + Vitest formal + cleanup de `customerPaidAt`/`mark-paid` deprecated.
+- **FASE 14** — Trabajadores RRHH ligero (asistencia, comisiones) + persistencia de reconciliation reports + Vitest formal + cleanup de `customerPaidAt`/`mark-paid` deprecated + expansión recursiva del costo en TopProducts.
 - **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local.
 
 ---
@@ -1133,26 +1190,25 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 9 cerrada. **Próximo: FASE 13 — Reportes y Dashboard.**
+FASE 13 cerrada. **Próximo: FASE 14 — RRHH ligero + persistencia de reconciliation + Vitest + cleanup.**
 
-Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **13 → 14 → 15 → 10 (diferida)**.
+Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **14 → 15 → 10 (diferida)**.
 
-Plan FASE 13 (Reportes y Dashboard):
+Plan FASE 14 (preview):
 
-- Endpoints agregados sobre `audit_log` + `sales` + `inventory_movements` + `shifts`:
-  - Ventas por día/semana/mes (filtros por método de pago, tipo COUNTER/WEB_*, cajero, turno).
-  - Top productos por ingresos / cantidad / margen.
-  - Histograma de horarios (heatmap de ventas por hora del día).
-  - Métricas WhatsApp (FASE 9 audit log): `% pedidos con stage=accepted/confirmed/ready` enviado, tiempo promedio entre stages.
-  - Métricas LLM (FASE 12.D audit): cuántas sugerencias evaluadas / aceptadas / rechazadas + ahorro estimado vs costo del LLM.
-- UI admin `/reports` con tabs por dominio (Ventas / Productos / Cajeros / WhatsApp / IA / Stock).
-- Dashboard home `/` con 4-6 tarjetas resumen del día actual.
+- **RRHH ligero**: schema `worker_attendance` (check-in / check-out simples por turno), `worker_commission` (% sobre revenue del turno o por sale específica), endpoints CRUD + reportes asociados.
+- **Persistencia de reconciliation**: tabla `payment_reconciliations` para guardar reports históricos del módulo FASE 11.E (hoy stateless).
+- **Vitest formal**: configurar runner en monorepo, migrar tests ad-hoc (16 tests wa.me + 11 promotions) a vitest. CI cuando llegue.
+- **Cleanup de FASE 9**:
+  - Eliminar campo `customerPaidAt` de Sale model (sin escritor desde 9.D).
+  - Deprecar/eliminar endpoint `POST /web/orders/:id/mark-paid` y schema `MarkPaidSchema`.
+  - Eliminar evento WS `web-order.customer-paid` y badge "Cliente avisó pago" residual.
+- **Mejoras menores**:
+  - Expandir costo de producto recursivo en TopProducts (incluir subproducts vía `expandRecipe` real).
+  - WhatsApp al Dueño cuando se detecta `SHIFT_DISCREPANCY_DETECTED` (TODO marker FASE 11.A).
+  - Test E2E end-to-end del flujo wa.me con DB real (Docker up).
 
-Variable env opcional para FASE 9 ya implementada: `NEXT_PUBLIC_BUSINESS_NAME` y `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT`. Configurar en `apps/pos/.env.local` y `apps/kds/.env.local` antes de prod.
-
-TODO menor de FASE 9 (tracking en CLAUDE.md):
-- TODO marker del descuadre (FASE 11.A) podría cablear wa.me al Dueño cuando se detecta `SHIFT_DISCREPANCY_DETECTED`. Opcional: el audit log + reporte alcanza.
-- Endpoint `/web/orders/:id/mark-paid` y campo `customerPaidAt` quedaron sin escritor. Cleanup en FASE 14 hardening.
+Variable env de FASE 9: `NEXT_PUBLIC_BUSINESS_NAME` y `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT` deben estar seteadas en `apps/pos/.env.local` y `apps/kds/.env.local` antes de prod.
 
 ---
 
