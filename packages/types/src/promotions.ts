@@ -62,7 +62,7 @@ export const PromotionSchema = z.object({
   createdByName: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   /** IDs de productos a los que aplica (resuelto desde join). */
-  productIds: z.array(z.string().uuid()).default([]),
+  productIds: z.array(z.string().uuid()),
 });
 export type Promotion = z.infer<typeof PromotionSchema>;
 
