@@ -45,3 +45,47 @@ export const CashierAnomaliesSchema = z.object({
   shifts: z.array(ShiftMetricsSchema),
 });
 export type CashierAnomalies = z.infer<typeof CashierAnomaliesSchema>;
+
+// ====================================================================
+// PAYMENT RECONCILIATION (FASE 11.E) — stateless por ahora
+// ====================================================================
+
+export const ReconciliationSourceEnum = z.enum(['NEQUI_CSV', 'BANCOLOMBIA_CSV']);
+export type ReconciliationSource = z.infer<typeof ReconciliationSourceEnum>;
+
+export const ReconciliationMatchStatusEnum = z.enum([
+  'matched', // CSV row + sale POS coinciden
+  'unmatched_csv', // CSV tiene txn sin sale correspondiente — RED FLAG
+  'unmatched_sale', // sale POS digital sin txn CSV — falta confirmación
+]);
+export type ReconciliationMatchStatus = z.infer<typeof ReconciliationMatchStatusEnum>;
+
+export const ReconciliationRowSchema = z.object({
+  status: ReconciliationMatchStatusEnum,
+  /** Datos del CSV (null si unmatched_sale). */
+  csvDate: z.string().nullable(),
+  csvAmount: z.number().nullable(),
+  csvReference: z.string().nullable(),
+  /** Datos de la sale POS (null si unmatched_csv). */
+  saleId: z.string().uuid().nullable(),
+  receiptNumber: z.number().int().positive().nullable(),
+  saleTotal: z.number().nullable(),
+  salePaidAt: z.string().datetime().nullable(),
+  paymentMethod: z.string().nullable(),
+});
+export type ReconciliationRow = z.infer<typeof ReconciliationRowSchema>;
+
+export const ReconciliationReportSchema = z.object({
+  source: ReconciliationSourceEnum,
+  periodFrom: z.string(),
+  periodTo: z.string(),
+  csvRowsParsed: z.number().int().nonnegative(),
+  posSalesEvaluated: z.number().int().nonnegative(),
+  summary: z.object({
+    matched: z.number().int().nonnegative(),
+    unmatchedCsv: z.number().int().nonnegative(),
+    unmatchedSale: z.number().int().nonnegative(),
+  }),
+  rows: z.array(ReconciliationRowSchema),
+});
+export type ReconciliationReport = z.infer<typeof ReconciliationReportSchema>;
