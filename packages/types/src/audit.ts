@@ -71,6 +71,9 @@ export const AuditActionEnum = z.enum([
   'PURCHASE_SUGGESTION_ACCEPTED',
   'PURCHASE_SUGGESTION_REJECTED',
   'PURCHASE_SUGGESTION_STALE',
+
+  // WhatsApp wa.me semi-automático (FASE 9)
+  'WHATSAPP_LINK_OPENED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 
