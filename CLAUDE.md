@@ -29,7 +29,9 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 - **IA:** Anthropic Claude Haiku 4.5 (primario) + OpenAI GPT-4o-mini (fallback) — vision para facturas
 - **WhatsApp:** wa.me semi-automático con tracking — sin backend, sin Meta WABA, sin costo. Ver sec 4.10. Pendiente FASE 9.
 - **Mapas:** Mapbox (geocoding + autocomplete + maps GL) — pendiente FASE 7
-- **Storage:** Cloudflare R2 en prod, filesystem local en dev (`./tmp/uploads/...`)
+- **Storage:** Cloudflare R2 en prod (`R2StorageAdapter` FASE 15.B), filesystem local en dev (`./tmp/uploads/...`)
+- **Impresora térmica:** Epson TM-T20III via Print Agent local (`apps/print-agent` FASE 15.C, ESC/POS bytes), cajón monedero RJ-11
+- **PWA:** POS y KDS instalables (manifest + SW offline-first FASE 15.D)
 
 ---
 
@@ -39,14 +41,14 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 + 14 backend ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 + 14 + 15 backend ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes (ventas/productos/operación) / promos / sugerencias IA / RRHH | FASE 0-4 + 11 + 12 + 13 + 14 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA — venta + drawer pedidos web + WhatsApp wa.me + cierre turno + cambiar PIN | FASE 5.E + 7.E + 9 + 11 UI ✅ |
-| KDS Cocina | `apps/kds` | Next.js PWA — comanda cocina + WhatsApp al "Marcar listo" | FASE 6.C + 9 UI ✅ |
+| POS Cajero | `apps/pos` | Next.js PWA (manifest + SW offline) — venta + drawer pedidos web + WhatsApp wa.me + cierre turno + cambiar PIN | FASE 5.E + 7.E + 9 + 11 + 15.D UI ✅ |
+| KDS Cocina | `apps/kds` | Next.js PWA (manifest + SW offline) — comanda cocina + WhatsApp al "Marcar listo" | FASE 6.C + 9 + 15.D UI ✅ |
 | Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
 | Web Pública | `apps/web` | Next.js — menú + checkout pickup/delivery + status tracking (cajero-driven via WhatsApp) | FASE 7.C-D + 8.B + 9 UI ✅ |
 | Repartidor | `apps/repa` | Next.js PWA mobile — domicilios | placeholder |
-| Print Agent | `apps/print-agent` | Node service local — ESC/POS | no creado aún |
+| Print Agent | `apps/print-agent` | Node service local — ESC/POS + cajón monedero | FASE 15.C ✅ |
 
 ### Packages compartidos
 
@@ -698,9 +700,15 @@ apps/public-display/src/
 
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (86 hasta hoy)
+### Commits en `main` (92 hasta hoy)
 
 ```
+8a51792 docs: FASE 15.E checklist deploy v1 (Railway + Vercel + Pi + DNS)
+b682f88 feat(pwa): FASE 15.D PWA en POS y KDS — manifest + service worker offline
+61b7e4e feat(printer,print-agent): FASE 15.C ESC/POS + Print Agent local
+949b0ed feat(storage): FASE 15.B R2StorageAdapter para producción
+e88b464 chore(api,domain): FASE 15.A hardening — alerta descuadre + sweep huérfanos
+d46dbb5 docs(claude): FASE 14.F cierre — RRHH + persistencia + Vitest + cleanup
 2ead261 chore(domain,reports): FASE 14.E Vitest formal + costo TopProducts recursivo
 13e0d67 feat(reports): FASE 14.D persistencia de reconciliation reports
 a86541f feat(admin): FASE 14.C UI /workers — asistencia + comisiones + payroll
@@ -1175,12 +1183,55 @@ cancelaciones (cajero matiza el mensaje manualmente).
   - TopProducts ahora hace N+1 queries pero es admin-only. Si se vuelve hot: pre-cargar TODOS los grafos en memoria una vez al arrancar el endpoint.
   - Reconciliation guardar es opt-in (default checked) — el dueño puede desactivar para tests sin contaminar histórico.
 
-### Pendientes — FASES 10, 15
+### FASE 15 — Hardening + Storage R2 + Print Agent + PWA + Deploy · ✅ COMPLETADA (5 sub-sprints + docs)
 
-Numeración canónica desde `fase5e-y-pendientes.md` sec 3:
+- [x] **15.A** (`e88b464`) — Hardening backend:
+  - `buildDiscrepancyAlertLink()` puro en `@pos-tercos/domain` con 3 tests Vitest. Cuando se detecta `SHIFT_DISCREPANCY_DETECTED`, se construye wa.me URL al Dueño (env `OWNER_WHATSAPP_PHONE`) y se persiste en `audit.metadata.whatsappAlertUrl` para click desde `/audit`. Cero costo.
+  - `StorageProvider.listKeys()` agregado a la interface + implementado en `LocalFilesystemStorageAdapter` (readdir).
+  - `InvoicesService.sweepOrphanInvoiceFiles()` con `@Cron(EVERY_WEEK)` + endpoint `POST /invoices/admin/sweep-orphans` (Dueño-only) para trigger manual. Limpia archivos en storage no referenciados por ninguna invoice.
+  - Doc fix: CLAUDE.md sec 4.8 R2StorageAdapter → FASE 15.B.
 
-- **FASE 10** — Repartidor (DIFERIDA por decisión del usuario): `apps/repa`, asignación, GPS captura, transitions delivery.
-- **FASE 15** — PWA + offline + hardening final + Print Agent ESC/POS local. Incluye: aplicar migrations 14.B y 14.D contra DB de prod (`pnpm prisma migrate deploy`), normalizar `report_json` en `payment_reconciliations` si crece.
+- [x] **15.B** (`949b0ed`) — `R2StorageAdapter` para producción:
+  - Cloudflare R2 (S3-compatible) con `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`.
+  - put/get/url/delete/listKeys implementados. Signed URLs TTL 1h o URL directa si `R2_PUBLIC_URL_BASE` (custom domain CF).
+  - Factory lazy en `StorageModule`: `STORAGE_PROVIDER=r2` instancia el adapter (que valida vars en constructor); default `local`. Dev sigue funcionando sin tocar nada.
+  - Keys idénticas en ambos adapters → no hay migration de datos al cutover local→R2.
+
+- [x] **15.C** (`61b7e4e`) — ESC/POS + Print Agent:
+  - `renderReceiptEscPos(receipt)` puro en `@pos-tercos/domain` retorna Buffer con secuencia ESC/POS para Epson TM-T20III (init, alignment, bold, double-height totals, partial cut). Latin1 encoding para acentos.
+  - `DRAWER_KICK` constant para abrir cajón conectado al RJ-11.
+  - 7 tests Vitest. Total domain: 37/37 pass.
+  - Nuevo app `apps/print-agent`: HTTP server Node nativo en puerto 9100. Endpoints `/print` (body `{escposBase64}`), `/drawer-open`, `/health`. Auth opcional `X-Agent-Secret`. Driver con fallback a disco cuando `PRINTER_DEVICE` no está set (modo dev).
+  - `EscPosPrinterAdapter` + `EscPosCashDrawerAdapter` en `apps/api/src/adapters/`: POSTean al print-agent. Backup HTML del recibo persiste igual que LocalFs (sirve como fallback si agent caído).
+  - Factory lazy en `PrinterModule` y `CashDrawerModule`: `PRINTER_PROVIDER=escpos` activa ambos. Default `local`.
+
+- [x] **15.D** (`b682f88`) — PWA en POS y KDS:
+  - `manifest.json` standalone landscape, theme color azul (POS) / rojo (KDS), íconos SVG inline.
+  - Service worker minimalista: online-first con fallback `/offline.html`, stale-while-revalidate para `/_next/static/*`, no cachea `/api/*`, no toca POSTs.
+  - Layouts agregan `metadata.manifest` + `viewport.themeColor` + `<link rel="apple-touch-icon">` + `<Script>` registrando SW.
+  - Web pública y public-display NO necesitan PWA (la web es one-off del cliente, el display es kiosko fijo).
+
+- [x] **15.E** (`8a51792`) — Deploy checklist `deploy.md`:
+  - §1 Backend Railway: build/start con `prisma migrate deploy` embebido. Lista completa de env vars agrupadas por dominio.
+  - §2 Frontends Vercel: 5 proyectos con build commands monorepo-aware.
+  - §3 Print Agent en Raspberry Pi: hardware, instalación, systemd unit, conectividad via Cloudflare Tunnel o Tailscale.
+  - §4 DNS Cloudflare: 8 records con SSL Full (strict).
+  - §5 Migrations en prod: las 4 pendientes que aplica el deploy.
+  - §6 Smoke test post-deploy: 8 pasos end-to-end.
+  - §7 Backup Postgres: GitHub Actions cron 2 AM Colombia → R2.
+
+  **Decisiones tomadas en FASE 15 (no re-discutir):**
+  - Storage adapter selection lazy via factory en module (no Conditional providers de Nest) — evita instanciar R2 en dev cuando faltan env vars.
+  - Print Agent es app separada (Node nativo, sin Nest) — corre en hardware modesto (Raspberry Pi 4 2GB), arranque instantáneo, sin overhead.
+  - PRINTER_DEVICE default null → modo "dump a disco" para dev sin hardware. Cuando llegue la impresora, el dueño edita systemd para apuntar a `/dev/usb/lp0`.
+  - HTML backup del recibo se mantiene aún con ESC/POS — sirve como fallback "imprimir desde browser" si el agent está caído. Costo: doble disk I/O por print, irrelevante.
+  - Theme colors PWA: azul para POS (sigue admin), rojo para KDS (sigue topbar dark). Auto-mantenibles si cambia el tema.
+  - Refresh JWT en KDS WS deferido a post-launch — token TTL 15min, tab reload trae fresco. Aceptable para 1 turno por día. Si en operación se vuelve fricción, agregar al hardening post-v1.
+  - Migrations pendientes (4) NO se aplican en sesión local (Docker estaba abajo). Se aplican en prod via `prisma migrate deploy` que está en el start command de Railway — automático.
+
+### Pendientes — FASE 10 (post-launch)
+
+- **FASE 10** — Repartidor (DIFERIDA): `apps/repa`, asignación, GPS captura, transitions delivery. Cuando el dueño expanda a delivery propio (hoy es solo PICKUP/DELIVERY del cliente que viene a buscar).
 
 ---
 
@@ -1260,32 +1311,31 @@ pnpm lint
 
 ## 13. Próxima tarea sugerida
 
-FASE 14 cerrada. **Próximo: FASE 15 — PWA + offline + hardening + Print Agent.**
+**v1 lista para desplegar.** FASES 0-9 + 11-15 cerradas. Solo queda FASE 10 (repartidor propio) que está diferida hasta que el dueño quiera operar delivery in-house.
 
-Per `pendientes-externos-y-deploy.md` el orden de fases pendientes (sin app de domiciliario por decisión del usuario) es: **15 → 10 (diferida)**.
+**Para inaugurar:** seguir `deploy.md` checklist completo:
+1. Crear servicios en Railway (api + Postgres) y Vercel (5 frontends).
+2. Configurar DNS Cloudflare con 8 records.
+3. Comprar hardware: tablets POS/KDS, impresora Epson TM-T20III, cajón monedero, Raspberry Pi 4.
+4. Setear todas las env vars (`deploy.md §1.2` y `§2.1`).
+5. Aplicar migrations en prod (`prisma migrate deploy` corre en start command de Railway).
+6. Smoke test 8 pasos (`deploy.md §6`).
+7. Backup Postgres con GitHub Actions cron (`deploy.md §7`).
 
-Plan FASE 15 (preview):
+**Variables env críticas** (referencia rápida):
+- API: `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `MAPBOX_TOKEN`, `RESTAURANT_LAT/LNG`, `STORAGE_PROVIDER=r2` + `R2_*`, `PRINTER_PROVIDER=escpos` + `PRINT_AGENT_URL/SECRET`, `OWNER_WHATSAPP_PHONE`, `BUSINESS_NAME`, `PAYMENT_INSTRUCTIONS_NEQUI/TRANSFER`.
+- Frontends: `JWT_ACCESS_SECRET` (POS/KDS edge middleware), `API_INTERNAL_URL`, `NEXT_PUBLIC_API_WS_URL`, `NEXT_PUBLIC_BUSINESS_NAME/ADDRESS_SHORT` (POS/KDS), `NEXT_PUBLIC_MAPBOX_TOKEN` (web).
+- Print Agent (Pi): `PRINTER_DEVICE=/dev/usb/lp0`, `PRINT_AGENT_PORT=9100`, `PRINT_AGENT_SECRET` (matches API).
 
-- **PWA**: agregar `manifest.json` + service worker en POS, KDS, public-display, web. Offline cache para catálogo + última lista de pedidos. Modo kiosko en pantalla pública.
-- **Hardware local**: instalar Print Agent (Node service local en :9100) en Raspberry Pi del local. Driver ESC/POS para Epson TM-T20III. Reemplazar `LocalFsPrinterAdapter` por `RaspberryPiPrinterAdapter`. Drawer físico vía RJ-11.
-- **Hardening prod**:
-  - Aplicar migrations pendientes de FASE 14 (`20260504220000_fase14b_workers`, `20260504220500_fase14d_payment_reconciliations`) contra DB de Railway.
-  - Refresh automático de JWT en KDS WS (TODO documentado desde FASE 6).
-  - Token Mapbox real con restricciones por dominio (hoy es público sin restricción).
-  - R2 bucket production setup + `R2StorageAdapter` reemplaza `LocalFilesystemStorageAdapter`.
-  - Cron diario de `IdempotencyService.purgeExpired` validar funciona en prod.
-- **Deploy**:
-  - Railway: backend + Postgres + R2 wired. Variables env desde `pendientes-externos-y-deploy.md`.
-  - Vercel: 5 frontends (admin, pos, kds, public-display, web). Domains custom.
-  - DNS Cloudflare: A records, SSL, CDN.
+**Operación día a día (post-launch):**
+- Backup automático nocturno (GH Actions → R2).
+- Logs Railway + Vercel para debug.
+- Audit log en `/audit` accesible solo para Dueño.
+- Dashboard `/` admin: revenue del día + WoW% + pedidos pendientes + stock crítico.
+- Sugerencias IA (`/purchase-suggestions`) — el cron horario detecta low-stock; el Dueño revisa, evalúa con IA si quiere y acepta/rechaza.
+- WhatsApp wa.me $0/mes — el cajero hace click "Aceptar y contactar" en cada pedido web.
 
-Variables env críticas para revisar antes de prod:
-- `NEXT_PUBLIC_BUSINESS_NAME` y `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT` (apps/pos, apps/kds).
-- `RESTAURANT_LAT`, `RESTAURANT_LNG`, `DELIVERY_RADIUS_KM` (apps/api).
-- `MAPBOX_TOKEN` (apps/api), `NEXT_PUBLIC_MAPBOX_TOKEN` (apps/web).
-- `PAYMENT_INSTRUCTIONS_NEQUI`, `PAYMENT_INSTRUCTIONS_TRANSFER` (apps/api).
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `WEB_ORDER_TOKEN_SECRET` (apps/api).
-- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (apps/api).
+**Si después se necesita FASE 10** (repartidor propio): `apps/repa` PWA mobile con asignación, GPS captura cada N segundos, transitions ASIGNADO/EN_RUTA/ENTREGADO. Schema ya tiene `Sale.repartidorId` listo. Plan en `fase5e-y-pendientes.md` sec 3.4.
 
 ---
 
