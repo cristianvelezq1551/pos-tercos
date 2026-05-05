@@ -218,7 +218,7 @@ Usado en `InvoiceConfirmModal` para sugerir el `Stockable` correcto a cada `Invo
 
 `StorageProvider` interface en `@pos-tercos/domain`:
 - `LocalFilesystemStorageAdapter` en dev → `./tmp/uploads/invoices/{uuid}.{ext}`
-- En prod se reemplaza por `R2StorageAdapter` (FASE 14).
+- En prod se reemplaza por `R2StorageAdapter` (FASE 15.B).
 
 Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 

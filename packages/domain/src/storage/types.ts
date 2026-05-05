@@ -12,4 +12,11 @@ export interface StorageProvider {
   url(key: string): Promise<string>;
   /** Borra el objeto. Idempotente — no falla si la key no existe. */
   delete(key: string): Promise<void>;
+  /**
+   * Lista keys bajo un prefijo (FASE 15.A para sweep de huérfanos). El
+   * adapter local recorre el filesystem; en R2 se traduce a list_objects.
+   * Devuelve keys con la misma forma que las almacenadas (ej.
+   * `invoices/{uuid}.jpg`).
+   */
+  listKeys(prefix: string): Promise<string[]>;
 }

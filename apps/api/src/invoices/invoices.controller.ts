@@ -27,7 +27,7 @@ import {
 } from '@pos-tercos/types';
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMime } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
@@ -38,6 +38,17 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 @Controller('invoices')
 export class InvoicesController {
   constructor(private readonly invoices: InvoicesService) {}
+
+  /** FASE 15.A — sweep manual de huérfanos. El cron corre semanal. */
+  @OnlyDueno()
+  @Post('admin/sweep-orphans')
+  async sweepOrphans(): Promise<{
+    storageKeys: number;
+    referencedKeys: number;
+    deleted: number;
+  }> {
+    return this.invoices.sweepOrphanInvoiceFiles();
+  }
 
   @Get()
   list(

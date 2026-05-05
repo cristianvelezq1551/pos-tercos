@@ -3,6 +3,7 @@ export {
   buildConfirmedLink,
   buildReadyLink,
   buildLinkForStage,
+  buildDiscrepancyAlertLink,
 } from './build-link';
 export type {
   WhatsAppBuildOptions,

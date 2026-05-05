@@ -70,6 +70,42 @@ export function buildReadyLink(
 }
 
 /**
+ * Alerta interna al Dueño cuando se detecta un descuadre en cierre de
+ * turno (FASE 11.A → 15.A). El cajero NO ve este link — solo se persiste
+ * en `audit_log.metadata.whatsappAlertUrl` para que el Dueño/Admin lo
+ * abra desde el log de auditoría.
+ *
+ * Devuelve null si:
+ *  - No hay `ownerPhone` configurado (env `OWNER_WHATSAPP_PHONE`).
+ *  - El phone no tiene formato válido.
+ */
+export function buildDiscrepancyAlertLink(input: {
+  ownerPhone: string | null;
+  cashierName: string;
+  difference: number;
+  shiftId: string;
+  closedAt: Date;
+  businessName: string;
+}): WhatsAppLinkResult | null {
+  const phone = normalizePhone(input.ownerPhone);
+  if (!phone) return null;
+
+  const sign = input.difference >= 0 ? '+' : '';
+  const closedHour = input.closedAt.toLocaleTimeString('es-CO', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const messagePlain =
+    `[${input.businessName}] ⚠ Descuadre detectado en turno cerrado a las ${closedHour}.\n\n` +
+    `Cajero: ${input.cashierName}\n` +
+    `Diferencia: ${sign}${formatCop(Math.abs(input.difference))} ` +
+    `(${input.difference >= 0 ? 'sobrante' : 'faltante'})\n` +
+    `Shift: ${input.shiftId.slice(0, 8)}\n\n` +
+    `Revisar el detalle en /shifts/${input.shiftId}.`;
+  return toLink(phone, messagePlain);
+}
+
+/**
  * Dispatcher general por stage. Útil para call-sites que ya conocen el
  * stage (controller, service) sin tener que importar 3 builders.
  */

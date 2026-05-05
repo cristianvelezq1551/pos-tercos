@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildAcceptedLink,
   buildConfirmedLink,
+  buildDiscrepancyAlertLink,
   buildLinkForStage,
   buildReadyLink,
 } from './build-link';
@@ -163,6 +164,49 @@ it('buildLinkForStage stage=ready PICKUP equivale a buildReadyLink', () => {
   const a = buildReadyLink(SALE_PICKUP, OPTS);
   const b = buildLinkForStage('ready', SALE_PICKUP, OPTS);
   eq(a!.messagePlain, b!.messagePlain);
+});
+
+// DISCREPANCY ALERT (FASE 15.A)
+it('buildDiscrepancyAlertLink genera link con monto y firma del faltante', () => {
+  const r = buildDiscrepancyAlertLink({
+    ownerPhone: '+573009999999',
+    cashierName: 'Juan Pérez',
+    difference: -8500,
+    shiftId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    closedAt: new Date('2026-05-04T22:30:00'),
+    businessName: 'Tercos',
+  });
+  truthy(r, 'link not null');
+  contains(r!.url, 'wa.me/573009999999');
+  contains(r!.messagePlain, 'Tercos');
+  contains(r!.messagePlain, 'Juan Pérez');
+  contains(r!.messagePlain, 'faltante');
+  contains(r!.messagePlain, '$8.500');
+});
+
+it('buildDiscrepancyAlertLink sobrante con signo +', () => {
+  const r = buildDiscrepancyAlertLink({
+    ownerPhone: '+573009999999',
+    cashierName: 'María',
+    difference: 12000,
+    shiftId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    closedAt: new Date('2026-05-04T22:30:00'),
+    businessName: 'Tercos',
+  });
+  contains(r!.messagePlain, 'sobrante');
+  contains(r!.messagePlain, '+$12.000');
+});
+
+it('buildDiscrepancyAlertLink sin ownerPhone → null', () => {
+  const r = buildDiscrepancyAlertLink({
+    ownerPhone: null,
+    cashierName: 'Juan',
+    difference: -8500,
+    shiftId: 'aaa',
+    closedAt: new Date(),
+    businessName: 'Tercos',
+  });
+  eq(r, null);
 });
 
 }); // describe('whatsapp build-link')

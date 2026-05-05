@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { StorageProvider, StoragePutResult } from '@pos-tercos/domain';
 import { randomUUID } from 'crypto';
-import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
+import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 
 @Injectable()
@@ -50,6 +50,19 @@ export class LocalFilesystemStorageAdapter implements StorageProvider {
       // Idempotente: silenciamos ENOENT (archivo ya borrado o nunca existió).
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
+  }
+
+  async listKeys(prefix: string): Promise<string[]> {
+    const safePrefix = sanitize(prefix);
+    const dirPath = join(this.basePath, safePrefix);
+    let files: string[];
+    try {
+      files = await readdir(dirPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+    return files.map((f) => `${safePrefix}/${f}`);
   }
 }
 

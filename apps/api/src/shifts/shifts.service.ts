@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { buildDiscrepancyAlertLink } from '@pos-tercos/domain';
 import type { CloseShift, OpenShift, Shift, ShiftStatus } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -163,6 +164,17 @@ export class ShiftsService {
     });
 
     if (Math.abs(difference) >= DISCREPANCY_THRESHOLD_COP) {
+      // FASE 15.A: pre-construimos el link wa.me al Dueño para que
+      // pueda abrirlo desde el log de auditoría con un solo click. El
+      // backend NO envía nada — solo deja la URL lista en metadata.
+      const alertLink = buildDiscrepancyAlertLink({
+        ownerPhone: process.env.OWNER_WHATSAPP_PHONE ?? null,
+        cashierName: closed.cashier.fullName,
+        difference,
+        shiftId,
+        closedAt: closed.closedAt ?? new Date(),
+        businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+      });
       await this.audit.log({
         userId: cashierId,
         action: 'SHIFT_DISCREPANCY_DETECTED',
@@ -171,7 +183,8 @@ export class ShiftsService {
         metadata: {
           difference,
           threshold: DISCREPANCY_THRESHOLD_COP,
-          // TODO FASE 9: trigger WhatsApp alert al dueño con este diff.
+          whatsappAlertUrl: alertLink?.url ?? null,
+          whatsappAlertMessage: alertLink?.messagePlain ?? null,
         },
       });
     }

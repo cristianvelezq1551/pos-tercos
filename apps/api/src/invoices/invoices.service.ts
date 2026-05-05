@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import type { LLMInvoiceExtractionResult, StorageProvider } from '@pos-tercos/domain';
 import {
   ExtractedInvoiceSchema,
@@ -52,6 +53,8 @@ function computeStockQty(opts: {
 
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LLMService,
@@ -60,6 +63,59 @@ export class InvoicesService {
     private readonly audit: AuditService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
+
+  /**
+   * FASE 15.A — Sweep semanal de archivos huérfanos en storage. Cuando
+   * se borra un draft `PENDING_REVIEW` (o el `storage.delete` falla en
+   * el flujo principal) puede quedar el binario sin row en la DB. Este
+   * cron lo limpia.
+   *
+   * Estrategia:
+   *  1. Listar todas las keys bajo prefix `invoices/`.
+   *  2. Cargar `photoStorageKey` de TODAS las invoices (cualquier status).
+   *  3. Borrar las keys del storage que NO aparecen en DB.
+   *
+   * Cron: domingo 5:00 AM (después de los crons diarios).
+   */
+  @Cron(CronExpression.EVERY_WEEK)
+  async sweepOrphanInvoiceFiles(): Promise<{
+    storageKeys: number;
+    referencedKeys: number;
+    deleted: number;
+  }> {
+    const [storageKeys, dbRows] = await Promise.all([
+      this.storage.listKeys('invoices'),
+      this.prisma.invoice.findMany({
+        where: { photoStorageKey: { not: null } },
+        select: { photoStorageKey: true },
+      }),
+    ]);
+    const referenced = new Set(
+      dbRows.map((r) => r.photoStorageKey).filter((k): k is string => k !== null),
+    );
+    let deleted = 0;
+    for (const key of storageKeys) {
+      if (referenced.has(key)) continue;
+      try {
+        await this.storage.delete(key);
+        deleted++;
+      } catch (err) {
+        this.logger.warn(
+          `sweep: failed to delete orphan ${key}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (deleted > 0) {
+      this.logger.log(
+        `sweep: ${deleted} archivos huérfanos limpiados de ${storageKeys.length} total (${referenced.size} referenced)`,
+      );
+    }
+    return {
+      storageKeys: storageKeys.length,
+      referencedKeys: referenced.size,
+      deleted,
+    };
+  }
 
   async uploadPhoto(input: {
     fileBuffer: Buffer;
@@ -554,7 +610,8 @@ export class InvoicesService {
         await this.storage.delete(existing.photoStorageKey);
       } catch (err) {
         // No falla la operación si storage falla — la DB ya commiteó.
-        // El archivo huérfano queda como deuda menor (sweep en FASE 14).
+        // El archivo huérfano lo limpia el cron sweepOrphanInvoiceFiles
+        // semanal (FASE 15.A).
         // eslint-disable-next-line no-console
         console.warn(
           `[invoices.delete] storage.delete failed for ${existing.photoStorageKey}:`,
