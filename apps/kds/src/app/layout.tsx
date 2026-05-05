@@ -1,9 +1,23 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'POS Tercos — KDS Cocina',
   description: 'Pantalla de cocina con tap para cambiar estado y cronómetros por orden',
+  manifest: '/manifest.json',
+  applicationName: 'KDS Tercos',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'KDS Tercos',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#dc2626',
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -13,7 +27,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es-CO">
-      <body>{children}</body>
+      <head>
+        <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+        <link rel="apple-touch-icon" href="/icon-192.svg" />
+      </head>
+      <body>
+        {children}
+        <Script id="sw-register" strategy="afterInteractive">
+          {`if ('serviceWorker' in navigator) {
+              window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(console.error);
+              });
+            }`}
+        </Script>
+      </body>
     </html>
   );
 }
