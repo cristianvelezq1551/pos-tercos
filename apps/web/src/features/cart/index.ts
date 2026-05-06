@@ -1,5 +1,6 @@
 export { CartButton } from './components/CartButton';
 export { CartDrawer } from './components/CartDrawer';
+export { useCartUI } from './ui/cart-ui-store';
 export {
   useCartStore,
   cartLinesToCreateItems,

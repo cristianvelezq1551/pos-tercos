@@ -34,7 +34,7 @@ export function buildPaymentInstructions(order: PublicWebOrder): string {
   }
   lines.push('');
   lines.push(
-    `Cuando termines el pago, hacé click en "Ya pagué". Tu orden #${order.receiptNumber} se enviará a cocina apenas el cajero verifique.`,
+    `Cuando termines el pago, envía el comprobante via WhatsApp. Tu orden #${order.receiptNumber} se enviará a cocina apenas el cajero verifique.`,
   );
   return lines.join('\n');
 }

@@ -1,10 +1,11 @@
 'use client';
 
-import { Button } from '@pos-tercos/ui';
-import { useEffect } from 'react';
+import { ArrowLeft, ShoppingBag, Minus, Plus, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { COP } from '../../../lib/format';
 import type { CartLine } from '../lib/cart-types';
-import { cartSubtotal, useCartStore } from '../store/cart-store';
+import { cartLineCount, cartSubtotal, useCartStore } from '../store/cart-store';
 
 export function CartDrawer({
   open,
@@ -18,7 +19,11 @@ export function CartDrawer({
   const items = useCartStore((s) => s.items);
   const removeLine = useCartStore((s) => s.removeLine);
   const updateQty = useCartStore((s) => s.updateQty);
-  const clear = useCartStore((s) => s.clear);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -34,57 +39,83 @@ export function CartDrawer({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   const subtotal = cartSubtotal(items);
+  const totalCount = cartLineCount(items);
+  const empty = items.length === 0;
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40"
-      onClick={onClose}
-      role="presentation"
-    >
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm motion-safe:animate-[fadeIn_120ms_ease-out_forwards]"
+        onClick={onClose}
+        role="presentation"
+        aria-hidden
+      />
       <aside
-        className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-50 flex flex-col bg-card will-change-transform motion-safe:animate-[slideIn_220ms_cubic-bezier(0.22,1,0.36,1)_forwards] sm:left-auto sm:right-0 sm:max-w-md sm:shadow-[-12px_0_32px_rgba(0,0,0,0.4)]"
+        style={{ height: '100dvh' }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="cart-title"
       >
-        <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-          <h2 id="cart-title" className="text-base font-semibold tracking-tight">
-            Tu pedido{' '}
-            <span className="ml-1 text-xs font-normal text-gray-500">({items.length})</span>
+        <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-6 sm:py-5">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="inline-flex items-center gap-2 text-foreground sm:hidden"
+          >
+            <ArrowLeft className="h-5 w-5" strokeWidth={2} />
+            <h2 id="cart-title-mobile" className="text-xl font-extrabold tracking-tight">
+              Tu carrito
+            </h2>
+          </button>
+          <h2
+            id="cart-title"
+            className="hidden text-xl font-extrabold tracking-tight text-foreground sm:block"
+          >
+            Tu carrito
           </h2>
-          <div className="flex items-center gap-2">
-            {items.length > 0 ? (
-              <Button variant="ghost" size="sm" onClick={clear}>
-                Vaciar
-              </Button>
+          <div className="flex items-center gap-3">
+            {totalCount > 0 ? (
+              <span className="inline-flex h-6 items-center rounded-full bg-primary px-2.5 text-[11px] font-bold text-primary-foreground sm:hidden">
+                {totalCount} {totalCount === 1 ? 'producto' : 'productos'}
+              </span>
             ) : null}
             <button
               type="button"
               onClick={onClose}
               aria-label="Cerrar"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100"
+              className="hidden h-8 w-8 items-center justify-center rounded-md bg-muted text-foreground transition-colors hover:bg-ink-700 sm:inline-flex"
             >
-              ✕
+              <X className="h-4 w-4" strokeWidth={2.25} />
             </button>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto">
-          {items.length === 0 ? (
-            <div className="flex h-full items-center justify-center p-6 text-center text-sm text-gray-500">
-              Tu carrito está vacío. Tocá un producto para empezar.
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {empty ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+              <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                <ShoppingBag className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Tu carrito está vacío. Toca un producto para empezar.
+              </p>
             </div>
           ) : (
-            <ul className="divide-y divide-gray-100">
+            <ul>
               {items.map((line) => (
                 <CartLineRow
                   key={line.lineId}
                   line={line}
-                  onQty={(qty) => updateQty(line.lineId, qty)}
+                  onDecrement={() => {
+                    if (line.quantity <= 1) removeLine(line.lineId);
+                    else updateQty(line.lineId, line.quantity - 1);
+                  }}
+                  onIncrement={() => updateQty(line.lineId, line.quantity + 1)}
                   onRemove={() => removeLine(line.lineId)}
                 />
               ))}
@@ -92,82 +123,128 @@ export function CartDrawer({
           )}
         </div>
 
-        <footer className="border-t border-gray-200 bg-gray-50 px-4 py-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600">Subtotal</span>
-            <span className="text-lg font-bold tabular-nums">{COP.format(subtotal)}</span>
+        <footer className="flex flex-col gap-4 border-t border-border px-5 py-4 pb-[max(env(safe-area-inset-bottom),1.25rem)] sm:px-6 sm:pb-6">
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                Subtotal ({totalCount} {totalCount === 1 ? 'producto' : 'productos'})
+              </span>
+              <span className="font-semibold tabular-nums text-foreground">
+                {COP.format(subtotal)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-base font-bold text-foreground">Total estimado</span>
+              <span className="text-2xl font-extrabold tabular-nums text-foreground">
+                {COP.format(subtotal)}
+              </span>
+            </div>
           </div>
-          <p className="mt-1 text-[11px] text-gray-500">
-            El total final se calcula al finalizar el pedido (incluye promos).
-          </p>
-          <Button
-            className="mt-3 h-12 w-full text-base"
-            disabled={items.length === 0}
+
+          <button
+            type="button"
             onClick={onCheckout}
+            disabled={empty}
+            className="press inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-base font-bold text-primary-foreground shadow-md transition-colors hover:bg-red-700 hover:shadow-primary/30 active:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Continuar al checkout
-          </Button>
+            <ShoppingBag className="h-5 w-5" strokeWidth={2} />
+            Ir a pagar
+          </button>
         </footer>
       </aside>
-    </div>
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes slideIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
+      `}</style>
+    </>,
+    document.body,
   );
 }
 
 function CartLineRow({
   line,
-  onQty,
+  onDecrement,
+  onIncrement,
   onRemove,
 }: {
   line: CartLine;
-  onQty: (qty: number) => void;
+  onDecrement: () => void;
+  onIncrement: () => void;
   onRemove: () => void;
 }) {
   const description = [line.size?.name, ...line.modifiers.map((m) => m.name)]
     .filter(Boolean)
     .join(' · ');
   const lineTotal = line.unitPrice * line.quantity;
+  const initial = line.productName.trim().charAt(0).toUpperCase() || 'T';
+  const willRemove = line.quantity <= 1;
 
   return (
-    <li className="px-4 py-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-gray-900">{line.productName}</p>
-          {description ? (
-            <p className="mt-0.5 text-xs text-gray-500">{description}</p>
-          ) : null}
-          <p className="mt-1 text-xs text-gray-500">{COP.format(line.unitPrice)} c/u</p>
-        </div>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="Quitar"
-          className="ml-2 text-gray-300 hover:text-red-600"
-        >
-          ✕
-        </button>
-      </div>
-      <div className="mt-2 flex items-center justify-between">
-        <div className="inline-flex items-center rounded-md border border-gray-200">
-          <button
-            type="button"
-            onClick={() => onQty(line.quantity - 1)}
-            disabled={line.quantity <= 1}
-            className="px-2 py-1 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-30"
-          >
-            −
-          </button>
-          <span className="w-8 text-center text-sm font-medium tabular-nums">
-            {line.quantity}
+    <li className="flex gap-3 border-b border-border px-5 py-4 sm:px-6">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-ink-800 to-ink-950">
+        {line.imageUrl ? (
+          <img
+            src={line.imageUrl}
+            alt={line.productName}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <span className="font-display text-3xl font-extrabold uppercase tracking-[0.04em] text-white/15">
+            {initial}
           </span>
+        )}
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {line.productName}
+          </p>
           <button
             type="button"
-            onClick={() => onQty(line.quantity + 1)}
-            className="px-2 py-1 text-sm text-gray-600 hover:bg-gray-50"
+            onClick={onRemove}
+            aria-label="Quitar línea"
+            className="-mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
           >
-            +
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
         </div>
-        <span className="text-sm font-semibold tabular-nums">{COP.format(lineTotal)}</span>
+        {description ? (
+          <p className="truncate text-xs text-muted-foreground">{description}</p>
+        ) : null}
+
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <span className="text-sm font-bold tabular-nums text-foreground">
+            {COP.format(lineTotal)}
+          </span>
+          <div className="inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onDecrement}
+              aria-label={willRemove ? 'Quitar línea' : 'Quitar uno'}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted"
+            >
+              {willRemove ? (
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+              ) : (
+                <Minus className="h-3.5 w-3.5" strokeWidth={2} />
+              )}
+            </button>
+            <span className="w-6 text-center text-sm font-semibold tabular-nums text-foreground">
+              {line.quantity}
+            </span>
+            <button
+              type="button"
+              onClick={onIncrement}
+              aria-label="Sumar uno"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-red-700"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+            </button>
+          </div>
+        </div>
       </div>
     </li>
   );

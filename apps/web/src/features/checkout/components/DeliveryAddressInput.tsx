@@ -77,7 +77,7 @@ export function DeliveryAddressInput({
   }, [value, onGeocode]);
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <Label htmlFor="address">Dirección de entrega</Label>
       <Input
         id="address"
@@ -92,25 +92,25 @@ export function DeliveryAddressInput({
       />
 
       {state.kind === 'pending' ? (
-        <p className="text-[11px] text-gray-500">📍 Buscando dirección…</p>
+        <p className="text-xs text-muted-foreground">📍 Buscando dirección…</p>
       ) : null}
 
       {state.kind === 'error' ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive-foreground">
           ⚠ {state.message}. Probá con calle + número + ciudad.
         </p>
       ) : null}
 
       {state.kind === 'success' && state.result.withinDeliveryRadius ? (
-        <div className="rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+        <div className="rounded-md border border-success-border bg-success-bg px-3 py-2 text-xs text-success-foreground">
           ✓ <strong>Dirección encontrada</strong> a {state.result.distanceKm} km del local.
           <br />
-          <span className="text-emerald-700">{state.result.formattedAddress}</span>
+          <span className="opacity-80">{state.result.formattedAddress}</span>
         </div>
       ) : null}
 
       {state.kind === 'success' && !state.result.withinDeliveryRadius ? (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-xs text-amber-900">
+        <div className="rounded-md border border-warning-border bg-warning-bg px-3 py-3 text-xs text-warning-foreground">
           <p className="font-semibold">📍 Fuera de la zona de delivery</p>
           <p className="mt-1">
             Tu dirección está a <strong>{state.result.distanceKm} km</strong> del local.
@@ -119,7 +119,7 @@ export function DeliveryAddressInput({
           <button
             type="button"
             onClick={onSwitchToPickup}
-            className="mt-2 inline-flex h-9 items-center justify-center rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+            className="mt-2 inline-flex h-9 items-center justify-center rounded-full border border-warning-border bg-warning/20 px-4 text-xs font-semibold text-foreground transition-colors hover:bg-warning/30"
           >
             Cambiar a recoger en tienda
           </button>
@@ -127,8 +127,8 @@ export function DeliveryAddressInput({
       ) : null}
 
       {state.kind === 'idle' && value.trim().length > 0 ? (
-        <p className="text-[11px] text-gray-500">
-          Escribí calle + número + ciudad para validar la cobertura.
+        <p className="text-xs text-muted-foreground">
+          Escribe calle + número + ciudad para validar la cobertura.
         </p>
       ) : null}
     </div>

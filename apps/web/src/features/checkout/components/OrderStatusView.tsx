@@ -1,143 +1,298 @@
 'use client';
 
 import type { PublicWebOrder } from '@pos-tercos/types';
+import { cn } from '@pos-tercos/ui';
+import {
+  AlertCircle,
+  Bike,
+  Check,
+  ChefHat,
+  Clock,
+  PackageCheck,
+  XCircle,
+  type LucideIcon,
+} from 'lucide-react';
+import Link from 'next/link';
+import { useEffect } from 'react';
 import { COP } from '../../../lib/format';
+import { CheckoutSteps } from '../../../components/CheckoutSteps';
+import { isTerminalStatus, useActiveOrder } from '../store/active-order-store';
 import { useOrderPoller } from './OrderStatusPoller';
 import { PaymentInstructionsView } from './PaymentInstructionsView';
+import { StatusTimeline } from './StatusTimeline';
+import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
 
-const STATUS_LABEL: Record<string, { label: string; tone: 'pending' | 'cooking' | 'ready' | 'done' | 'failed' }> = {
-  PENDIENTE_PAGO: { label: 'Esperando tu pago', tone: 'pending' },
-  PAGADO: { label: 'Pago verificado · pasamos a cocina', tone: 'cooking' },
-  EN_PREPARACION: { label: 'En preparación', tone: 'cooking' },
-  LISTO_DESPACHO: { label: '¡Listo para retirar!', tone: 'ready' },
-  ASIGNADO: { label: 'Repartidor asignado', tone: 'cooking' },
-  EN_RUTA: { label: 'En camino', tone: 'cooking' },
-  ENTREGADO: { label: 'Entregado', tone: 'done' },
-  CANCELADO_NO_PAGO: { label: 'Cancelado por falta de pago', tone: 'failed' },
-  CANCELADO_SIN_REEMBOLSO: { label: 'Cancelado', tone: 'failed' },
-  VOID: { label: 'Anulado', tone: 'failed' },
-  DEVUELTO: { label: 'Devuelto', tone: 'failed' },
-  EN_DISPUTA: { label: 'En disputa', tone: 'failed' },
-};
+interface StatusMeta {
+  icon: LucideIcon;
+  iconBg: string;
+  title: string;
+  subtitle: (order: PublicWebOrder) => string;
+  /** Active step index for the 3-pill timeline (0 = none active). */
+  timelineActive: 0 | 1 | 2 | 3;
+  footerNote?: string;
+  isFailed?: boolean;
+}
 
-const TONE_STYLES: Record<string, string> = {
-  pending: 'bg-amber-50 text-amber-900 ring-amber-200',
-  cooking: 'bg-blue-50 text-blue-900 ring-blue-200',
-  ready: 'bg-emerald-50 text-emerald-900 ring-emerald-300',
-  done: 'bg-gray-50 text-gray-700 ring-gray-200',
-  failed: 'bg-red-50 text-red-900 ring-red-200',
+const STATUS_MAP: Record<string, StatusMeta> = {
+  PENDIENTE_PAGO: {
+    icon: Clock,
+    iconBg: 'bg-[#C00101]',
+    title: 'Esperando tu pago',
+    subtitle: (o) =>
+      `Pedido #${o.receiptNumber} · Te contactaremos por WhatsApp para coordinar la transferencia`,
+    timelineActive: 0,
+    footerNote: 'Esta página se actualiza sola — puedes dejarla abierta.',
+  },
+  PAGADO: {
+    icon: Check,
+    iconBg: 'bg-[#16A34A]',
+    title: '¡Pago confirmado!',
+    subtitle: (o) => `Tu pedido #${o.receiptNumber} ha sido recibido`,
+    timelineActive: 1,
+    footerNote: 'Te avisamos por WhatsApp cuando esté listo.',
+  },
+  EN_PREPARACION: {
+    icon: ChefHat,
+    iconBg: 'bg-[#16A34A]',
+    title: 'Tu pedido está en cocina',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · Estamos preparándolo`,
+    timelineActive: 2,
+    footerNote: 'Te avisamos por WhatsApp cuando esté listo.',
+  },
+  LISTO_DESPACHO: {
+    icon: PackageCheck,
+    iconBg: 'bg-[#16A34A]',
+    title: '¡Listo para retirar!',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · Acércate al mostrador`,
+    timelineActive: 3,
+  },
+  ASIGNADO: {
+    icon: Bike,
+    iconBg: 'bg-[#16A34A]',
+    title: 'Repartidor asignado',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · Sale en breve`,
+    timelineActive: 2,
+  },
+  EN_RUTA: {
+    icon: Bike,
+    iconBg: 'bg-[#16A34A]',
+    title: 'En camino',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · El repartidor está llegando`,
+    timelineActive: 3,
+  },
+  ENTREGADO: {
+    icon: Check,
+    iconBg: 'bg-[#16A34A]',
+    title: '¡Pedido entregado!',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · Gracias por tu compra`,
+    timelineActive: 3,
+    footerNote: '¡Te esperamos pronto!',
+  },
+  CANCELADO_NO_PAGO: {
+    icon: XCircle,
+    iconBg: 'bg-destructive',
+    title: 'Pedido cancelado',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · Cancelado por falta de pago`,
+    timelineActive: 0,
+    isFailed: true,
+  },
+  CANCELADO_SIN_REEMBOLSO: {
+    icon: XCircle,
+    iconBg: 'bg-destructive',
+    title: 'Pedido cancelado',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · El local canceló este pedido`,
+    timelineActive: 0,
+    isFailed: true,
+  },
+  VOID: {
+    icon: AlertCircle,
+    iconBg: 'bg-destructive',
+    title: 'Pedido anulado',
+    subtitle: (o) => `Pedido #${o.receiptNumber}`,
+    timelineActive: 0,
+    isFailed: true,
+  },
+  DEVUELTO: {
+    icon: AlertCircle,
+    iconBg: 'bg-destructive',
+    title: 'Pedido devuelto',
+    subtitle: (o) => `Pedido #${o.receiptNumber}`,
+    timelineActive: 0,
+    isFailed: true,
+  },
+  EN_DISPUTA: {
+    icon: AlertCircle,
+    iconBg: 'bg-warning-foreground',
+    title: 'En disputa',
+    subtitle: (o) => `Pedido #${o.receiptNumber} · Estamos revisando`,
+    timelineActive: 0,
+    isFailed: true,
+  },
 };
 
 export function OrderStatusView({
   initial,
   token,
   paymentInstructions,
+  businessName,
 }: {
   initial: PublicWebOrder;
   token: string;
   paymentInstructions: string;
+  businessName: string;
 }) {
   const { order, conn } = useOrderPoller(initial, token);
-  const meta = STATUS_LABEL[order.status] ?? STATUS_LABEL.PENDIENTE_PAGO!;
-  const ringStyles = TONE_STYLES[meta.tone] ?? TONE_STYLES.pending!;
+  const meta = STATUS_MAP[order.status] ?? STATUS_MAP.PENDIENTE_PAGO!;
+  const Icon = meta.icon;
+
+  useEffect(() => {
+    const active = useActiveOrder.getState().order;
+    if (isTerminalStatus(order.status)) {
+      if (active?.saleId === initial.id) {
+        useActiveOrder.getState().clear();
+      }
+      return;
+    }
+    if (!active || active.saleId !== initial.id) {
+      useActiveOrder.getState().setOrder({
+        saleId: initial.id,
+        token,
+        receiptNumber: order.receiptNumber,
+        type: order.type,
+        createdAt:
+          active?.saleId === initial.id ? active.createdAt : Date.now(),
+      });
+    }
+  }, [order.status, initial.id, token, order.receiptNumber, order.type]);
+
+  const showPayment = order.status === 'PENDIENTE_PAGO';
+  const showPickupBanner =
+    order.status === 'LISTO_DESPACHO' && order.type === 'WEB_PICKUP';
+  const stepsCurrent: 1 | 2 | 3 = order.status === 'PENDIENTE_PAGO' ? 2 : 3;
 
   return (
-    <div className="space-y-6">
-      <header
-        className={`rounded-lg p-5 ring-2 ${ringStyles}`}
-        aria-live="polite"
+    <div className="flex flex-col" aria-live="polite">
+      <CheckoutSteps current={stepsCurrent} />
+      <div className="mx-auto flex max-w-[520px] flex-col items-center gap-7 px-6 py-10 sm:px-12 lg:px-20">
+      <div
+        className={cn(
+          'reveal-scale inline-flex h-20 w-20 items-center justify-center rounded-full shadow-lg',
+          meta.iconBg,
+        )}
       >
-        <p className="text-xs font-semibold uppercase tracking-wide opacity-70">
-          Pedido #{order.receiptNumber}
-        </p>
-        <p className="mt-1 text-2xl font-bold tracking-tight">{meta.label}</p>
-        <p className="mt-2 text-sm opacity-80">
-          {order.type === 'WEB_PICKUP' ? 'Recoger en tienda' : 'Domicilio'} ·{' '}
-          {order.customerName} · {COP.format(order.total)}
-        </p>
+        <Icon className="h-9 w-9 text-white" strokeWidth={2.25} />
+      </div>
+
+      <div className="flex flex-col gap-2 text-center">
+        <h1 className="reveal-up stagger-1 text-3xl font-extrabold leading-tight text-foreground sm:text-4xl">
+          {meta.title}
+        </h1>
+        <p className="reveal-up stagger-2 text-sm text-muted-foreground sm:text-base">{meta.subtitle(order)}</p>
         {conn === 'reconnecting' ? (
-          <p className="mt-2 text-[11px] opacity-60">⚠ Reconectando…</p>
+          <p className="text-xs text-warning-foreground">⚠ Reconectando…</p>
         ) : null}
-      </header>
+      </div>
 
-      {order.status === 'PENDIENTE_PAGO' ? (
-        <PaymentSection instructions={paymentInstructions} />
-      ) : null}
+      <DetailsCard order={order} businessName={businessName} />
 
-      {order.status === 'LISTO_DESPACHO' && order.type === 'WEB_PICKUP' ? (
-        <div className="rounded-md bg-emerald-50 p-4 text-sm text-emerald-900">
-          ¡Tu pedido está listo! Acercate al mostrador con el número{' '}
-          <strong>#{order.receiptNumber}</strong>.
+      <StatusTimeline active={meta.timelineActive} />
+
+      {showPickupBanner ? (
+        <div className="w-full max-w-[420px] rounded-xl border border-[#16A34A] bg-[#16A34A]/10 p-4 text-center">
+          <p className="text-sm text-foreground">
+            Acércate al mostrador con el número{' '}
+            <strong className="text-[#16A34A]">#{order.receiptNumber}</strong>.
+          </p>
         </div>
       ) : null}
 
-      <ItemsSummary order={order} />
-    </div>
-  );
-}
-
-function PaymentSection({ instructions }: { instructions: string }) {
-  // FASE 9: el flujo es cajero-driven via WhatsApp.
-  // El cliente sigue las instrucciones de pago (Nequi/transferencia) y
-  // espera el mensaje del local pidiendo el comprobante. Ya no hay
-  // botón "Ya pagué" — el cajero acepta el pedido + abre WA y desde
-  // ahí coordina el comprobante.
-  return (
-    <section className="space-y-4">
-      <PaymentInstructionsView text={instructions} />
-      <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-900">
-        <p className="font-semibold">¿Qué sigue?</p>
-        <p className="mt-1">
-          Te vamos a contactar por WhatsApp para pedirte el comprobante. Ahí
-          mismo te confirmamos cuando recibamos el pago. Esta página se
-          actualiza sola.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function ItemsSummary({ order }: { order: PublicWebOrder }) {
-  return (
-    <section className="rounded-md border border-gray-200 bg-white p-4 text-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-        Resumen
-      </p>
-      <div className="mt-3 space-y-1">
-        <Row label="Subtotal" value={order.subtotal} />
-        {order.discountTotal > 0 ? (
-          <Row label="Descuentos" value={-order.discountTotal} highlight />
-        ) : null}
-        <Row label="Total" value={order.total} bold />
-      </div>
-      {order.deliveryAddress ? (
-        <p className="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-600">
-          Entregar en: <span className="font-medium">{order.deliveryAddress}</span>
-        </p>
+      {showPayment ? (
+        <div className="flex w-full max-w-[420px] flex-col gap-4">
+          <WhatsAppPaymentInfo />
+          <PaymentInstructionsView text={paymentInstructions} />
+        </div>
       ) : null}
-    </section>
+
+      {meta.footerNote ? (
+        <p className="text-center text-sm text-muted-foreground">{meta.footerNote}</p>
+      ) : null}
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Link
+          href="/"
+          className={cn(
+            'inline-flex h-11 items-center justify-center rounded-full px-6 text-sm font-semibold transition-colors',
+            meta.isFailed
+              ? 'bg-primary text-primary-foreground hover:bg-red-700'
+              : 'border border-border bg-card text-foreground hover:bg-muted',
+          )}
+        >
+          Hacer otro pedido
+        </Link>
+      </div>
+      </div>
+    </div>
   );
 }
 
-function Row({
-  label,
-  value,
-  highlight = false,
-  bold = false,
+function DetailsCard({
+  order,
+  businessName,
 }: {
-  label: string;
-  value: number;
-  highlight?: boolean;
-  bold?: boolean;
+  order: PublicWebOrder;
+  businessName: string;
 }) {
+  const rows: { label: string; value: string }[] = [
+    { label: 'Total', value: COP.format(order.total) },
+  ];
+  if (order.type === 'WEB_PICKUP') {
+    rows.push({ label: 'Recoger en', value: businessName });
+    if (
+      order.status === 'PAGADO' ||
+      order.status === 'EN_PREPARACION'
+    ) {
+      rows.push({ label: 'Tiempo estimado', value: 'Listo en ~20 min' });
+    }
+  } else {
+    rows.push({
+      label: 'Entregar en',
+      value: order.deliveryAddress ?? 'A confirmar',
+    });
+    if (
+      order.status === 'PAGADO' ||
+      order.status === 'EN_PREPARACION' ||
+      order.status === 'ASIGNADO' ||
+      order.status === 'EN_RUTA'
+    ) {
+      rows.push({ label: 'Tiempo estimado', value: '~30–40 min' });
+    }
+  }
+
+  if (order.discountTotal > 0) {
+    rows.unshift({
+      label: 'Descuentos',
+      value: `−${COP.format(order.discountTotal)}`,
+    });
+    rows.unshift({ label: 'Subtotal', value: COP.format(order.subtotal) });
+  }
+
   return (
-    <div className="flex items-center justify-between text-sm">
-      <span className={highlight ? 'text-emerald-700' : 'text-gray-600'}>{label}</span>
-      <span
-        className={`tabular-nums ${highlight ? 'font-medium text-emerald-700' : 'text-gray-900'} ${bold ? 'text-base font-bold' : ''}`}
-      >
-        {COP.format(value)}
-      </span>
-    </div>
+    <section className="w-full max-w-[420px] rounded-xl border border-border bg-card p-6">
+      <ul className="flex flex-col gap-4">
+        {rows.map((row, idx) => (
+          <li key={row.label}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-muted-foreground">{row.label}</span>
+              <span className="text-right text-sm font-semibold text-foreground">
+                {row.value}
+              </span>
+            </div>
+            {idx < rows.length - 1 ? (
+              <div className="mt-4 h-px bg-border" />
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

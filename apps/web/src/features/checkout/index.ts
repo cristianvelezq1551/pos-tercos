@@ -8,3 +8,6 @@ export {
 } from './components/OrderStatusPoller';
 export { createWebOrder, getWebOrder, geocodeAddress } from './api';
 export { getWebOrderServer, buildPaymentInstructions } from './server';
+export { useActiveOrder, isTerminalStatus } from './store/active-order-store';
+export type { ActiveOrder } from './store/active-order-store';
+export { ActiveOrderBanner } from './components/ActiveOrderBanner';

@@ -7,6 +7,7 @@ import type { CartLine } from '../lib/cart-types';
 interface AddInput {
   productId: string;
   productName: string;
+  imageUrl?: string | null;
   size: CartLine['size'];
   modifiers: CartLine['modifiers'];
   quantity: number;
@@ -54,6 +55,7 @@ export const useCartStore = create<CartState>()(
                 lineId: nextLineId(),
                 productId: input.productId,
                 productName: input.productName,
+                imageUrl: input.imageUrl ?? null,
                 size: input.size,
                 modifiers: input.modifiers,
                 quantity: input.quantity,

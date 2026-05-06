@@ -1,6 +1,8 @@
 'use client';
 
 import type { PublicMenuProduct } from '@pos-tercos/types';
+import { cn } from '@pos-tercos/ui';
+import { Plus } from 'lucide-react';
 import { COP } from '../../../lib/format';
 
 export function ProductCard({
@@ -10,32 +12,71 @@ export function ProductCard({
   product: PublicMenuProduct;
   onClick: () => void;
 }) {
-  const hasVariants =
-    product.sizes.length > 0 || (product.modifiersEnabled && product.modifiers.length > 0);
-
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-4 text-left transition hover:border-blue-400 hover:shadow-md"
+      className={cn(
+        'group w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]',
+        'flex items-center gap-3 border-b border-border py-4',
+        'sm:card-lift sm:flex-col sm:items-stretch sm:gap-0 sm:overflow-hidden sm:rounded-xl sm:border-0 sm:bg-card sm:py-0 sm:hover:bg-muted/60 sm:active:scale-100',
+      )}
     >
-      <span className="line-clamp-2 text-base font-semibold text-gray-900">
-        {product.name}
-      </span>
-      {product.description ? (
-        <span className="mt-1 line-clamp-2 text-xs text-gray-500">{product.description}</span>
-      ) : null}
-      {product.category ? (
-        <span className="mt-2 text-[10px] uppercase tracking-wide text-gray-400">
-          {product.category}
-        </span>
-      ) : null}
-      <span className="mt-3 text-lg font-bold tabular-nums text-blue-700">
-        {COP.format(product.basePrice)}
-      </span>
-      {hasVariants ? (
-        <span className="mt-1 text-xs text-gray-400">+ opciones</span>
-      ) : null}
+      <div
+        className={cn(
+          'relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-muted',
+          'sm:aspect-[4/3] sm:h-auto sm:w-full sm:rounded-none',
+        )}
+      >
+        {product.imageUrl ? (
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="h-full w-full object-cover sm:transition-transform sm:duration-300 sm:group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <ImageFallback label={product.name} />
+        )}
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:gap-2 sm:p-4">
+        <h3 className="text-sm font-bold leading-tight text-foreground sm:text-base">
+          {product.name}
+        </h3>
+        {product.description ? (
+          <p className="line-clamp-2 text-xs leading-snug text-muted-foreground sm:text-sm">
+            {product.description}
+          </p>
+        ) : null}
+
+        <div className="mt-1 flex items-center justify-between gap-3 sm:mt-3">
+          <span className="text-sm font-bold tabular-nums text-foreground sm:order-2 sm:text-base sm:text-primary">
+            {COP.format(product.basePrice)}
+          </span>
+          <span
+            className={cn(
+              'inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors sm:order-1 sm:h-9',
+              'bg-primary text-primary-foreground hover:bg-red-700',
+              'sm:bg-muted sm:text-foreground sm:hover:bg-background',
+            )}
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+            Agregar
+          </span>
+        </div>
+      </div>
     </button>
+  );
+}
+
+function ImageFallback({ label }: { label: string }) {
+  const initial = label.trim().charAt(0).toUpperCase() || 'T';
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-ink-800 to-ink-950">
+      <span className="font-display text-5xl font-extrabold uppercase tracking-[0.04em] text-white/10 sm:text-7xl">
+        {initial}
+      </span>
+    </div>
   );
 }

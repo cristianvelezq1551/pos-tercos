@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import {
   buildPaymentInstructions,
   getWebOrderServer,
@@ -7,6 +8,8 @@ import {
 } from '../../../../features/checkout';
 
 export const dynamic = 'force-dynamic';
+
+const BUSINESS_NAME = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? 'TERCOS';
 
 export default async function CheckoutSuccessPage({
   params,
@@ -20,16 +23,26 @@ export default async function CheckoutSuccessPage({
 
   if (!token) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
-        <h1 className="text-2xl font-bold">Falta el token de tu pedido</h1>
-        <p className="mt-2 max-w-md text-sm text-gray-600">
-          La URL del pedido necesita el parámetro <code>?token=</code>. Si la perdiste, contactá
-          al local.
-        </p>
-        <Link href="/" className="mt-6 text-sm font-medium text-blue-700 hover:text-blue-900">
-          Volver al menú
-        </Link>
-      </main>
+      <div className="min-h-dvh bg-background text-foreground">
+        <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
+          >
+            <ArrowLeft className="h-4 w-4" strokeWidth={2} />
+            Volver al menú
+          </Link>
+        </header>
+        <main className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
+          <h1 className="font-display text-2xl font-bold text-foreground">
+            Falta el token de tu pedido
+          </h1>
+          <p className="max-w-md text-sm text-muted-foreground">
+            La URL del pedido necesita el parámetro <code>?token=</code>. Si la perdiste,
+            contacta al local.
+          </p>
+        </main>
+      </div>
     );
   }
 
@@ -39,19 +52,26 @@ export default async function CheckoutSuccessPage({
   const instructions = buildPaymentInstructions(order);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
-        <span className="text-sm font-semibold text-gray-700">Tu pedido</span>
+    <div className="min-h-dvh bg-background text-foreground">
+      <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
         <Link
           href="/"
-          className="text-sm font-medium text-blue-700 hover:text-blue-900"
+          className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
         >
-          Hacer otro pedido
+          <ArrowLeft className="h-4 w-4" strokeWidth={2} />
+          Volver al menú
         </Link>
+        <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Pedido #{order.receiptNumber}
+        </span>
       </header>
-      <main className="mx-auto max-w-md p-4">
-        <OrderStatusView initial={order} token={token} paymentInstructions={instructions} />
-      </main>
+
+      <OrderStatusView
+        initial={order}
+        token={token}
+        paymentInstructions={instructions}
+        businessName={BUSINESS_NAME}
+      />
     </div>
   );
 }

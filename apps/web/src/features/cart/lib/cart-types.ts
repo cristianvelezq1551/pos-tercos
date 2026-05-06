@@ -14,6 +14,8 @@ export interface CartLine {
   lineId: string;
   productId: string;
   productName: string;
+  /** Snapshot de la URL de imagen al momento de agregar. Solo presentación. */
+  imageUrl?: string | null;
   size: CartLineSize | null;
   modifiers: CartLineModifier[];
   quantity: number;

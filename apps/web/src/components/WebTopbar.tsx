@@ -1,29 +1,66 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { CartButton, CartDrawer } from '../features/cart';
+import { BrandLogo } from '@pos-tercos/brand';
+import { cn } from '@pos-tercos/ui';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { CartButton, CartDrawer, useCartUI } from '../features/cart';
 
-export function WebTopbar() {
+const NAV_LINKS = [
+  { label: 'Menú', href: '/' },
+  { label: 'Nosotros', href: '/nosotros' },
+  { label: 'Ubicaciones', href: '/ubicaciones' },
+] as const;
+
+export function WebTopbar({ transparent = false }: { transparent?: boolean }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const isOpen = useCartUI((s) => s.isOpen);
+  const open = useCartUI((s) => s.open);
+  const close = useCartUI((s) => s.close);
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
-      <div className="flex items-center gap-2">
-        <span className="rounded-md bg-blue-600 px-2 py-1 text-xs font-bold text-white">
-          TERCOS
-        </span>
-        <span className="text-sm font-semibold tracking-tight text-gray-900">
-          Pedí online
-        </span>
+    <header
+      className={cn(
+        'sticky top-0 z-30 flex h-16 items-center justify-between px-6 backdrop-blur-md sm:px-12 lg:px-20',
+        transparent
+          ? 'bg-black/30'
+          : 'bg-background/85 border-b border-border',
+      )}
+    >
+      <Link href="/" aria-label="Inicio Tercos" className="flex items-center">
+        <BrandLogo variant="wordmark" theme="dark" className="text-base" />
+      </Link>
+
+      <nav className="hidden items-center gap-8 md:flex">
+        {NAV_LINKS.map((link) => {
+          const active = link.href === pathname;
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={cn(
+                'text-sm font-medium transition-colors',
+                active
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="hidden md:block">
+        <CartButton onClick={open} />
       </div>
-      <CartButton onClick={() => setOpen(true)} />
+
       <CartDrawer
-        open={open}
-        onClose={() => setOpen(false)}
+        open={isOpen}
+        onClose={close}
         onCheckout={() => {
-          setOpen(false);
+          close();
           router.push('/checkout');
         }}
       />

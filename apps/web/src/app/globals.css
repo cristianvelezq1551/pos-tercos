@@ -1,13 +1,222 @@
 @import 'tailwindcss';
+@import '../../../../packages/ui/src/styles/tokens.css';
 @source '../../../../packages/ui/src/**/*.{ts,tsx}';
+@source '../../../../packages/brand/src/**/*.{ts,tsx}';
+
+/* ─────────────────────────────────────────────────────────────────
+ * Override de paleta · Web pública (alineado al Pencil web.pen).
+ * Scoped a apps/web para no alterar admin/POS/KDS.
+ * ───────────────────────────────────────────────────────────────── */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-background: #141414;
+  --color-foreground: #FFFFFF;
+
+  --color-card: #1E1E1E;
+  --color-card-foreground: #FFFFFF;
+
+  --color-popover: #1A1A1A;
+  --color-popover-foreground: #FFFFFF;
+
+  --color-muted: #2A2A2A;
+  --color-muted-foreground: #999999;
+
+  --color-accent: #2A2A2A;
+  --color-accent-foreground: #FFFFFF;
+
+  --color-secondary: #2A2A2A;
+  --color-secondary-foreground: #FFFFFF;
+
+  --color-primary: #DC2626;
+  --color-primary-foreground: #FFFFFF;
+
+  --color-destructive: #DC2626;
+  --color-destructive-foreground: #FFFFFF;
+
+  --color-border: #2E2E2E;
+  --color-input: #2E2E2E;
+  --color-ring: rgb(220 38 38 / 0.55);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #141414;
+  color: #FFFFFF;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Keyframes globales
+ * ───────────────────────────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translate3d(0, 24px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translate3d(0, -16px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInRight {
+  from { transform: translate3d(100%, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes slideUp {
+  from { transform: translate3d(0, 100%, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45); }
+  50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -800px 0; }
+  100% { background-position: 800px 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -6px, 0); }
+}
+
+@keyframes ringPulse {
+  0% { transform: scale(0.95); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Utility classes (motion-safe friendly)
+ * ───────────────────────────────────────────────────────────────── */
+
+@layer utilities {
+  .reveal-up {
+    opacity: 0;
+    animation: fadeInUp 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .reveal-fade {
+    opacity: 0;
+    animation: fadeIn 500ms ease-out forwards;
+  }
+  .reveal-down {
+    opacity: 0;
+    animation: fadeInDown 500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .reveal-scale {
+    opacity: 0;
+    animation: scaleIn 500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  .stagger-1 { animation-delay: 80ms; }
+  .stagger-2 { animation-delay: 160ms; }
+  .stagger-3 { animation-delay: 240ms; }
+  .stagger-4 { animation-delay: 320ms; }
+  .stagger-5 { animation-delay: 400ms; }
+  .stagger-6 { animation-delay: 480ms; }
+
+  /* Boton: hover lift + active press */
+  .press {
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 150ms cubic-bezier(0.22, 1, 0.36, 1),
+                background-color 150ms ease-out;
+  }
+  .press:hover { transform: translateY(-1px); }
+  .press:active { transform: translateY(0); }
+
+  /* Lift de tarjetas */
+  .card-lift {
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 250ms cubic-bezier(0.22, 1, 0.36, 1),
+                background-color 250ms ease-out;
+  }
+  .card-lift:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 32px -16px rgba(0, 0, 0, 0.6);
+  }
+
+  /* CTA principal: glow pulse */
+  .pulse-glow {
+    animation: pulseGlow 2.4s ease-out infinite;
+  }
+
+  /* Floating hint */
+  .floaty {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  /* Shimmer para skeletons / placeholders sutiles */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.04) 50%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    background-size: 800px 100%;
+    animation: shimmer 2.6s linear infinite;
+  }
+
+  /* Ring que se expande (usado debajo del cart icon cuando se agrega) */
+  .ring-pulse::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 2px solid currentColor;
+    animation: ringPulse 700ms ease-out forwards;
+  }
+
+  /* Scrollbar custom (desktop) */
+  @media (pointer: fine) {
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2E2E2E;
+      border-radius: 9999px;
+      border: 2px solid #141414;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3a3a3a;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-up,
+    .reveal-fade,
+    .reveal-down,
+    .reveal-scale,
+    .pulse-glow,
+    .floaty,
+    .shimmer {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    .press:hover,
+    .card-lift:hover {
+      transform: none !important;
+    }
+    html { scroll-behavior: auto; }
+  }
 }
