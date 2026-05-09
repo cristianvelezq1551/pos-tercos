@@ -6,7 +6,8 @@ export type IllustrationName =
   | 'empty-cart' // carrito vacío
   | 'no-results' // search vacío
   | 'broken-burger' // error 500 / desconexión
-  | 'closed-shift'; // turno cerrado
+  | 'closed-shift' // turno cerrado
+  | 'burger'; // hamburguesa entera (fallback de thumbs)
 
 export interface LineArtIllustrationProps extends SVGProps<SVGSVGElement> {
   name: IllustrationName;
@@ -105,6 +106,26 @@ const ILLUSTRATIONS: Record<IllustrationName, React.ReactNode> = {
       {/* Candado abajo */}
       <rect x="92" y="125" width="16" height="14" rx="2" />
       <path d="M96 125 v-4 a4 4 0 0 1 8 0 v4" />
+    </>
+  ),
+  burger: (
+    <>
+      {/* Pan superior */}
+      <path d="M40 80 q0 -40 60 -40 t60 40 z" />
+      {/* Sésamo */}
+      <path d="M75 60 l5 -3" opacity="0.7" />
+      <path d="M95 52 l5 -2" opacity="0.7" />
+      <path d="M118 55 l5 -2" opacity="0.7" />
+      <path d="M83 70 l4 -2" opacity="0.55" />
+      <path d="M108 65 l4 -1" opacity="0.55" />
+      {/* Lechuga (onda) */}
+      <path d="M40 84 q8 -5 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" />
+      {/* Carne / patty */}
+      <path d="M44 95 h112" strokeWidth="3" />
+      {/* Queso (esquinas onduladas) */}
+      <path d="M48 102 q8 4 16 0 t16 0 t16 0 t16 0 t16 0 t16 0" opacity="0.65" />
+      {/* Pan inferior */}
+      <path d="M44 108 q0 22 56 22 t56 -22 z" />
     </>
   ),
 };

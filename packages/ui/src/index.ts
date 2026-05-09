@@ -76,6 +76,14 @@ export { ConfirmDialog, type ConfirmDialogProps } from './components/confirm-dia
 export { Tooltip, type TooltipProps } from './components/tooltip';
 export { Popover, type PopoverProps } from './components/popover';
 
+// ─── Pantalla pública ──────────────────────────────────────────
+export { TurnBadgeXL, type TurnBadgeXLProps } from './components/turn-badge-xl';
+export {
+  OrderHero,
+  type OrderHeroProps,
+  type OrderHeroTone,
+} from './components/order-hero';
+
 // ─── Money & números ───────────────────────────────────────────
 export { Money, type MoneyProps } from './components/money';
 export { Quantity, type QuantityProps } from './components/quantity';

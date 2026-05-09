@@ -183,4 +183,68 @@ body {
     height: 1px;
     background: #2C3340;
   }
+
+  /* ── Pantalla pública: animaciones ─────────────────────────── */
+  @keyframes turn-tick-out {
+    0% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-32%);
+      opacity: 0;
+    }
+  }
+  @keyframes turn-tick-in {
+    0% {
+      transform: translateY(32%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes cycle-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    8%,
+    92% {
+      opacity: 1;
+    }
+  }
+  @keyframes broll-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    10%,
+    90% {
+      opacity: 1;
+    }
+  }
+  @keyframes broll-zoom {
+    0% {
+      transform: scale(1.04);
+    }
+    100% {
+      transform: scale(1.12);
+    }
+  }
+
+  .anim-tick-out {
+    animation: turn-tick-out 180ms var(--ease-out-quad) forwards;
+  }
+  .anim-tick-in {
+    animation: turn-tick-in 280ms var(--ease-out-quad) forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .anim-tick-out,
+    .anim-tick-in {
+      animation: none;
+    }
+  }
 }
