@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @pos-tercos/types build && pnpm --filter @pos-tercos/domain build && pnpm --filter @pos-tercos/pos build",
-  "installCommand": "echo 'install handled in build step'",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @pos-tercos/types build && pnpm --filter @pos-tercos/domain build && pnpm --filter @pos-tercos/pos build",
   "outputDirectory": ".next"
 }
