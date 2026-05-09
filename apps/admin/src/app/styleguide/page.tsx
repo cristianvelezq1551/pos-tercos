@@ -24,6 +24,8 @@ export const metadata = {
   title: 'Styleguide · POS Tercos',
 };
 
+export const dynamic = 'force-dynamic';
+
 const SAMPLE_ROWS = [
   { id: '1', name: 'Hamburguesa Tercos', sku: 'HMB-001', stock: 142, price: 28000 },
   { id: '2', name: 'Hamburguesa BBQ', sku: 'HMB-002', stock: 86, price: 32000 },
