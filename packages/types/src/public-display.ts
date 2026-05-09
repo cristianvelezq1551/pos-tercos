@@ -7,6 +7,18 @@ import { z } from 'zod';
 export const PUBLIC_DISPLAY_NAMESPACE = '/public-display';
 
 /**
+ * Item visible en la pantalla pública. Subset SAFE de SaleItem + Product:
+ * solo nombre, imagen y cantidad. NUNCA precio, modifiers ni totals — la
+ * pantalla es visible al público.
+ */
+export const PublicDisplayOrderItemSchema = z.object({
+  productName: z.string().min(1).max(120),
+  imageUrl: z.string().max(500).nullable(),
+  quantity: z.number().int().positive(),
+});
+export type PublicDisplayOrderItem = z.infer<typeof PublicDisplayOrderItemSchema>;
+
+/**
  * Datos seguros de exponer a una pantalla SIN autenticación. NO incluye
  * payment, total, customerPhone, etc. — solo lo mínimo para mostrar al
  * cliente "tu turno está listo".
@@ -17,6 +29,8 @@ export const PublicDisplayOrderSchema = z.object({
   customerName: z.string().nullable(),
   /** ISO datetime del momento en que pasó al estado actual. */
   at: z.string().datetime(),
+  /** Hasta 4 items para el thumb stack visual. Resto se omite. */
+  items: z.array(PublicDisplayOrderItemSchema).max(4),
 });
 export type PublicDisplayOrder = z.infer<typeof PublicDisplayOrderSchema>;
 

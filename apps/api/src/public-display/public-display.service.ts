@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
   PublicDisplayOrder,
+  PublicDisplayOrderItem,
   PublicDisplayState,
 } from '@pos-tercos/types';
 import { concat, defer, from, map, Subject, switchMap, type Observable } from 'rxjs';
@@ -10,6 +11,13 @@ import { PrismaService } from '../prisma/prisma.service';
  * órdenes "olvidadas" en la pantalla. */
 const CURRENT_WINDOW_MS = 30 * 60 * 1000; // 30 min
 const NEXT_LIMIT = 2;
+const ITEMS_LIMIT = 4;
+
+type SaleItemRow = {
+  id: string;
+  quantity: number;
+  product: { name: string; imageUrl: string | null };
+};
 
 @Injectable()
 export class PublicDisplayService {
@@ -61,7 +69,20 @@ export class PublicDisplayService {
       orderBy: { changedAt: 'desc' },
       include: {
         sale: {
-          select: { id: true, receiptNumber: true, customerName: true },
+          select: {
+            id: true,
+            receiptNumber: true,
+            customerName: true,
+            items: {
+              orderBy: { id: 'asc' },
+              take: ITEMS_LIMIT,
+              select: {
+                id: true,
+                quantity: true,
+                product: { select: { name: true, imageUrl: true } },
+              },
+            },
+          },
         },
       },
     });
@@ -79,6 +100,15 @@ export class PublicDisplayService {
         receiptNumber: true,
         customerName: true,
         paidAt: true,
+        items: {
+          orderBy: { id: 'asc' },
+          take: ITEMS_LIMIT,
+          select: {
+            id: true,
+            quantity: true,
+            product: { select: { name: true, imageUrl: true } },
+          },
+        },
       },
     });
 
@@ -88,6 +118,7 @@ export class PublicDisplayService {
           receiptNumber: Number(currentLog.sale.receiptNumber),
           customerName: currentLog.sale.customerName,
           at: currentLog.changedAt.toISOString(),
+          items: this.mapItems(currentLog.sale.items),
         }
       : null;
 
@@ -96,6 +127,7 @@ export class PublicDisplayService {
       receiptNumber: Number(r.receiptNumber),
       customerName: r.customerName,
       at: r.paidAt!.toISOString(),
+      items: this.mapItems(r.items),
     }));
 
     return {
@@ -104,6 +136,14 @@ export class PublicDisplayService {
       asOf: now.toISOString(),
       currentTurn: this.currentTurn,
     };
+  }
+
+  private mapItems(rows: SaleItemRow[]): PublicDisplayOrderItem[] {
+    return rows.slice(0, ITEMS_LIMIT).map((r) => ({
+      productName: r.product.name,
+      imageUrl: r.product.imageUrl,
+      quantity: r.quantity,
+    }));
   }
 
   /**
