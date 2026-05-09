@@ -19,7 +19,7 @@ export default async function AuthenticatedLayout({
     .map(saleToPublicWebOrder)
     .filter((o): o is NonNullable<typeof o> => o !== null);
   return (
-    <div className="flex h-screen flex-col bg-gray-50">
+    <div className="flex h-dvh flex-col bg-background text-foreground">
       <PosTopbar
         user={user}
         shift={shift}

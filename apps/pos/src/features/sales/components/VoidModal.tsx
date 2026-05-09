@@ -1,9 +1,18 @@
 'use client';
 
 import type { Sale } from '@pos-tercos/types';
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
+import {
+  Button,
+  Dialog,
+  EmptyState,
+  FormField,
+  Input,
+  LoadingSkeleton,
+  Money,
+  cn,
+  formatDate,
+} from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
-import { COP } from '../../catalog/lib/format';
 import { listSales } from '../api/list';
 import { voidSale } from '../api/void';
 
@@ -65,29 +74,37 @@ export function VoidModal({
       open={open}
       onClose={pending ? () => {} : onClose}
       title="Anular venta"
-      description="Selecciona la venta, registrá el motivo, e ingresa el PIN del Admin/Dueño."
+      description="Selecciona la venta, registra el motivo, e ingresa el PIN del Admin/Dueño."
       maxWidth="max-w-xl"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button variant="destructive" onClick={handleConfirm} disabled={!canConfirm}>
+            {pending ? 'Anulando…' : 'Anular venta'}
+          </Button>
+        </>
+      }
     >
       <div className="space-y-5">
-        <div>
-          <Label>Ventas pagadas del turno actual ({sales.length})</Label>
+        <FormField label={`Ventas pagadas del turno actual (${sales.length})`}>
           {loading ? (
-            <p className="mt-2 text-sm text-gray-500">Cargando…</p>
+            <LoadingSkeleton shape="table-row" count={3} />
           ) : sales.length === 0 ? (
-            <p className="mt-2 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-500">
-              No hay ventas pagadas para anular.
-            </p>
+            <EmptyState title="No hay ventas pagadas para anular." size="sm" />
           ) : (
-            <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-gray-200">
-              <ul className="divide-y divide-gray-100">
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-border">
+              <ul className="divide-y divide-border">
                 {sales.map((s) => (
                   <li key={s.id}>
                     <label
-                      className={`flex cursor-pointer items-center justify-between px-3 py-2 text-sm transition ${
+                      className={cn(
+                        'flex cursor-pointer items-center justify-between px-3 py-2 text-sm transition-colors',
                         selectedId === s.id
-                          ? 'bg-blue-50 text-blue-900'
-                          : 'hover:bg-gray-50'
-                      }`}
+                          ? 'bg-destructive/10 text-foreground'
+                          : 'hover:bg-muted/40',
+                      )}
                     >
                       <span className="flex items-center gap-2">
                         <input
@@ -95,51 +112,37 @@ export function VoidModal({
                           name="sale"
                           checked={selectedId === s.id}
                           onChange={() => setSelectedId(s.id)}
-                          className="h-4 w-4"
+                          className="h-4 w-4 accent-primary"
                         />
                         <span>
-                          <span className="font-medium">#{s.receiptNumber}</span>
-                          <span className="ml-2 text-xs text-gray-500">
-                            {s.paidAt
-                              ? new Date(s.paidAt).toLocaleTimeString('es-CO', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : '—'}{' '}
+                          <span className="font-semibold">#{s.receiptNumber}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {s.paidAt ? formatDate(s.paidAt, 'time-short') : '—'}{' '}
                             · {s.paymentMethod}
                           </span>
                         </span>
                       </span>
-                      <span className="tabular-nums font-semibold">
-                        {COP.format(s.total)}
-                      </span>
+                      <Money amount={s.total} weight="semibold" />
                     </label>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
-          <Label htmlFor="reason">Motivo (5-200 caracteres)</Label>
+        <FormField label="Motivo (5-200 caracteres)" hint={`${reason.trim().length}/200 · queda en audit log`}>
           <Input
-            id="reason"
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Ej. cliente devolvió por error en el pedido"
             maxLength={200}
           />
-          <p className="text-[11px] text-gray-500">
-            {reason.trim().length}/200 · queda en audit log
-          </p>
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
-          <Label htmlFor="pin">PIN del Admin/Dueño (6 dígitos)</Label>
+        <FormField label="PIN del Admin/Dueño (6 dígitos)">
           <Input
-            id="pin"
             type="password"
             inputMode="numeric"
             autoComplete="one-time-code"
@@ -147,26 +150,18 @@ export function VoidModal({
             onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
             placeholder="••••••"
             maxLength={6}
-            className="font-mono tracking-widest"
+            className="font-mono tracking-[0.4em]"
           />
-        </div>
+        </FormField>
 
         {error ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-        ) : null}
-
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={!canConfirm}
-            className="bg-red-600 hover:bg-red-700 disabled:bg-red-300"
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
-            {pending ? 'Anulando…' : 'Anular venta'}
-          </Button>
-        </div>
+            {error}
+          </p>
+        ) : null}
       </div>
     </Dialog>
   );

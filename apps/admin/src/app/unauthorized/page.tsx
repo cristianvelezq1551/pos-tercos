@@ -1,18 +1,24 @@
+import { Badge } from '@pos-tercos/ui';
+import { LineArtIllustration } from '@pos-tercos/brand';
 import Link from 'next/link';
 
 export default function UnauthorizedPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 text-center">
-      <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-background p-6 text-center">
+      <LineArtIllustration name="closed-shift" className="h-32 w-auto text-ink-300" />
+      <Badge tone="danger" className="mt-4">
         Acceso denegado
-      </span>
-      <h1 className="mt-6 text-3xl font-bold tracking-tight">Tu rol no tiene acceso al Admin</h1>
-      <p className="mt-3 max-w-md text-gray-600">
-        Solo los roles ADMIN_OPERATIVO y DUENO pueden acceder a esta aplicación.
+      </Badge>
+      <h1 className="mt-4 font-display text-3xl font-extrabold tracking-tight text-foreground">
+        Tu rol no tiene acceso al Admin
+      </h1>
+      <p className="mt-3 max-w-md text-sm text-muted-foreground">
+        Solo los roles <span className="font-semibold text-foreground">ADMIN_OPERATIVO</span> y{' '}
+        <span className="font-semibold text-foreground">DUEÑO</span> pueden acceder a esta aplicación.
       </p>
       <Link
         href="/login"
-        className="mt-8 inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        className="mt-8 inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-[background-color,box-shadow,transform] duration-150 hover:bg-red-700 hover:shadow-md active:translate-y-px"
       >
         Volver al login
       </Link>

@@ -13,12 +13,12 @@ export function SuggestionsMetricsCard({
     metrics.byStatus.rejected +
     metrics.byStatus.stale;
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5">
+    <section className="rounded-lg border border-border bg-card p-5">
       <div className="mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Sugerencias IA
         </h2>
-        <p className="mt-1 text-xs text-gray-600">
+        <p className="mt-1 text-xs text-muted-foreground">
           {total} sugerencia{total === 1 ? '' : 's'} en el período. {metrics.evaluatedCount}{' '}
           evaluada{metrics.evaluatedCount === 1 ? '' : 's'} con LLM.
         </p>
@@ -32,14 +32,14 @@ export function SuggestionsMetricsCard({
         <Pill label="Vencidas" value={metrics.byStatus.stale} tone="gray" />
       </div>
 
-      <div className="mt-4 rounded-md bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-200">
-        <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">
+      <div className="mt-4 rounded-md bg-success-bg/30 p-3 ring-1 ring-inset ring-success-border">
+        <p className="text-xs font-semibold uppercase tracking-wider text-success">
           Total estimado de sugerencias aceptadas
         </p>
-        <p className="mt-1 text-2xl font-bold text-emerald-900 tabular-nums">
+        <p className="mt-1 text-2xl font-bold text-success tabular-nums">
           {formatCop(metrics.acceptedEstTotal)}
         </p>
-        <p className="mt-1 text-xs text-emerald-700">
+        <p className="mt-1 text-xs text-success">
           Suma del costo estimado (suggestedQty × estUnitCost) de las sugerencias
           que el dueño aceptó en el período.
         </p>
@@ -58,11 +58,11 @@ function Pill({
   tone: 'amber' | 'purple' | 'emerald' | 'red' | 'gray';
 }) {
   const cls = {
-    amber: 'bg-amber-50 text-amber-900 ring-amber-200',
-    purple: 'bg-purple-50 text-purple-900 ring-purple-200',
-    emerald: 'bg-emerald-50 text-emerald-900 ring-emerald-200',
-    red: 'bg-red-50 text-red-900 ring-red-200',
-    gray: 'bg-gray-50 text-gray-700 ring-gray-200',
+    amber: 'bg-warning-bg/30 text-warning ring-warning-border',
+    purple: 'bg-muted text-foreground ring-purple-200',
+    emerald: 'bg-success-bg/30 text-success ring-success-border',
+    red: 'bg-destructive/10 text-destructive ring-destructive/30',
+    gray: 'bg-muted/40 text-foreground ring-gray-200',
   }[tone];
   return (
     <div className={`rounded-md p-3 ring-1 ring-inset ${cls}`}>

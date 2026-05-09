@@ -60,7 +60,7 @@ export function ReconciliationView() {
     <div className="space-y-6">
       <form
         onSubmit={handleSubmit}
-        className="space-y-4 rounded-lg border border-gray-200 bg-white p-4"
+        className="space-y-4 rounded-lg border border-border bg-card p-4"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
@@ -73,8 +73,8 @@ export function ReconciliationView() {
                   onClick={() => setSource(s)}
                   className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
                     source === s
-                      ? 'border-blue-600 bg-blue-50 text-blue-900'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-primary bg-destructive/10 text-primary'
+                      : 'border-border hover:border-input'
                   }`}
                 >
                   {SOURCE_LABEL[s]}
@@ -85,7 +85,7 @@ export function ReconciliationView() {
           <div className="space-y-2">
             <Label htmlFor="csv">CSV</Label>
             <Input id="csv" ref={fileInput} type="file" accept=".csv,text/csv" disabled={pending} />
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px] text-muted-foreground">
               Formato esperado: header + cols `fecha, monto, referencia` (CSV simple).
               Otros proveedores se agregan en FASE 14.
             </p>
@@ -99,12 +99,12 @@ export function ReconciliationView() {
             disabled={pending}
             className="h-4 w-4"
           />
-          <span className="text-gray-700">
+          <span className="text-foreground">
             Guardar este reporte en el historial (FASE 14.D)
           </span>
         </label>
         {error ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
         ) : null}
         <Button type="submit" disabled={pending}>
           {pending ? 'Procesando…' : 'Procesar reconciliación'}
@@ -133,14 +133,14 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
         />
       </section>
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         Periodo CSV: {formatDate(report.periodFrom, 'datetime')} →{' '}
         {formatDate(report.periodTo, 'datetime')}
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
               <Th>Estado</Th>
               <Th>Fecha CSV</Th>
@@ -152,16 +152,16 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
               <Th>Método</Th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {report.rows.map((r, idx) => (
               <tr
                 key={idx}
                 className={
                   r.status === 'matched'
-                    ? 'hover:bg-gray-50'
+                    ? 'hover:bg-muted/40'
                     : r.status === 'unmatched_csv'
-                      ? 'bg-red-50/40 hover:bg-red-50'
-                      : 'bg-amber-50/40 hover:bg-amber-50'
+                      ? 'bg-destructive/10 hover:bg-destructive/10'
+                      : 'bg-warning-bg/30 hover:bg-warning-bg/30'
                 }
               >
                 <Td>
@@ -172,7 +172,7 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
                   {r.csvAmount !== null ? formatCop(r.csvAmount) : <Dash />}
                 </Td>
                 <Td>
-                  <span className="text-xs text-gray-600">{r.csvReference ?? <Dash />}</span>
+                  <span className="text-xs text-muted-foreground">{r.csvReference ?? <Dash />}</span>
                 </Td>
                 <Td align="right" mono>
                   {r.receiptNumber !== null ? `#${r.receiptNumber}` : <Dash />}
@@ -193,9 +193,9 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
 
 function StatusBadge({ status }: { status: ReconciliationReport['rows'][number]['status'] }) {
   const map = {
-    matched: { label: '✓ Match', cls: 'bg-emerald-100 text-emerald-800' },
-    unmatched_csv: { label: '⚠ CSV sin POS', cls: 'bg-red-100 text-red-800' },
-    unmatched_sale: { label: '? POS sin CSV', cls: 'bg-amber-100 text-amber-800' },
+    matched: { label: '✓ Match', cls: 'bg-success-bg text-success' },
+    unmatched_csv: { label: '⚠ CSV sin POS', cls: 'bg-destructive/15 text-destructive' },
+    unmatched_sale: { label: '? POS sin CSV', cls: 'bg-warning-bg text-warning' },
   } as const;
   const m = map[status];
   return (
@@ -214,20 +214,20 @@ function Stat({
 }) {
   const cls =
     tone === 'good'
-      ? 'text-emerald-700'
+      ? 'text-success'
       : tone === 'bad'
-        ? 'text-red-700'
-        : 'text-gray-900';
+        ? 'text-destructive'
+        : 'text-foreground';
   return (
-    <div className="rounded-md bg-gray-50 px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+    <div className="rounded-md bg-muted/40 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className={`mt-0.5 text-base font-bold tabular-nums ${cls}`}>{value}</p>
     </div>
   );
 }
 
 function Dash() {
-  return <span className="text-gray-300">—</span>;
+  return <span className="text-ink-500">—</span>;
 }
 
 function Th({
@@ -240,7 +240,7 @@ function Th({
   return (
     <th
       scope="col"
-      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 ${
+      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >
@@ -260,7 +260,7 @@ function Td({
 }) {
   return (
     <td
-      className={`px-3 py-2 text-gray-700 ${align === 'right' ? 'text-right' : 'text-left'} ${
+      className={`px-3 py-2 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
         mono ? 'tabular-nums' : ''
       }`}
     >

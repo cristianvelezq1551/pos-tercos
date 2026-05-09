@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { IngredientForm } from '../../../../features/ingredients';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import type { Ingredient } from '@pos-tercos/types';
@@ -15,23 +15,24 @@ export default async function EditIngredientPage({ params }: PageProps) {
   try {
     ingredient = await serverFetchJson<Ingredient>(`/ingredients/${id}`);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      notFound();
-    }
+    if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/ingredients" className="text-sm text-blue-600 hover:underline">
-          ← Volver a insumos
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Editar: {ingredient.name}</h1>
-      </div>
-      <div className="max-w-2xl">
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title={ingredient.name}
+        description="Edita los datos del insumo. Los cambios afectan a todas las recetas que lo usan."
+        breadcrumbs={[
+          { label: 'Insumos', href: '/ingredients' },
+          { label: ingredient.name },
+        ]}
+      />
+      <Container size="4xl" padY="md">
         <IngredientForm initial={ingredient} />
-      </div>
-    </div>
+      </Container>
+    </>
   );
 }

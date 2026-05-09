@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { ApiError, serverFetchJson } from '../../../../../lib/api-server';
 import { EditDraftScreen } from '../../../../../features/invoices';
 import type {
@@ -20,9 +20,7 @@ export default async function EditInvoiceDraftPage({ params }: PageProps) {
   try {
     invoice = await serverFetchJson<Invoice>(`/invoices/${id}`);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      notFound();
-    }
+    if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
 
@@ -30,9 +28,6 @@ export default async function EditInvoiceDraftPage({ params }: PageProps) {
     redirect(`/invoices/${id}`);
   }
 
-  // Estrategia: intentar primero la extracción IA cruda guardada en
-  // aiExtractionJson (existe para uploads y para clones). Si no hay,
-  // sintetizar desde los items persistidos.
   let extraction: ExtractedInvoice;
   try {
     extraction = await serverFetchJson<ExtractedInvoice>(`/invoices/${id}/raw-extraction`);
@@ -50,25 +45,26 @@ export default async function EditInvoiceDraftPage({ params }: PageProps) {
   ]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href={`/invoices/${id}`} className="text-sm text-blue-600 hover:underline">
-          ← Volver al detalle
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Editar borrador</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Revisá y editá los ítems de esta factura antes de confirmar. El stock se descuenta solo
-          al confirmar.
-        </p>
-      </div>
-
-      <EditDraftScreen
-        invoice={invoice}
-        extraction={extraction}
-        initialSuppliers={suppliers}
-        initialStockables={stockables}
+    <>
+      <PageHeader
+        eyebrow="Compras"
+        title="Editar borrador"
+        description="Revisa y edita los ítems de esta factura antes de confirmar. Las existencias se descuentan solo al confirmar."
+        breadcrumbs={[
+          { label: 'Facturas', href: '/invoices' },
+          { label: invoice.invoiceNumber ?? 'Factura', href: `/invoices/${id}` },
+          { label: 'Editar' },
+        ]}
       />
-    </div>
+      <Container size="7xl" padY="md">
+        <EditDraftScreen
+          invoice={invoice}
+          extraction={extraction}
+          initialSuppliers={suppliers}
+          initialStockables={stockables}
+        />
+      </Container>
+    </>
   );
 }
 
@@ -88,7 +84,7 @@ function synthesizeExtraction(invoice: Invoice): ExtractedInvoice {
     })),
     warnings:
       (invoice.items?.length ?? 0) === 0
-        ? ['No hay extracción IA ni ítems guardados. Empezá agregando filas manualmente.']
+        ? ['No hay extracción inteligente ni ítems guardados. Empieza agregando filas manualmente.']
         : [],
   };
 }

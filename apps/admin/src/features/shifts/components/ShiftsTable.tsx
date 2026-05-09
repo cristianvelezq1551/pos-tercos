@@ -12,17 +12,17 @@ const STATUS_LABEL: Record<Shift['status'], string> = {
 };
 
 const STATUS_TONE: Record<Shift['status'], string> = {
-  OPEN: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  CLOSED: 'bg-gray-100 text-gray-700 ring-gray-500/20',
-  RECONCILED: 'bg-blue-50 text-blue-700 ring-blue-600/20',
+  OPEN: 'bg-success-bg/30 text-success ring-success-border',
+  CLOSED: 'bg-muted text-foreground ring-gray-500/20',
+  RECONCILED: 'bg-destructive/10 text-primary ring-primary/20',
 };
 
 export function ShiftsTable({ shifts }: Props) {
   if (shifts.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-gray-300 bg-white p-12 text-center">
-        <p className="text-sm font-medium text-gray-900">Aún no hay turnos registrados.</p>
-        <p className="mt-1 text-sm text-gray-500">
+      <div className="rounded-md border border-dashed border-input bg-card p-12 text-center">
+        <p className="text-sm font-medium text-foreground">Aún no hay turnos registrados.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
           Cuando un cajero abra turno desde el POS aparecerá acá.
         </p>
       </div>
@@ -30,9 +30,9 @@ export function ShiftsTable({ shifts }: Props) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40">
           <tr>
             <Th>Cajero</Th>
             <Th>Apertura</Th>
@@ -44,11 +44,11 @@ export function ShiftsTable({ shifts }: Props) {
             <Th>Estado</Th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-border">
           {shifts.map((s) => (
-            <tr key={s.id} className="transition-colors hover:bg-gray-50">
+            <tr key={s.id} className="transition-colors hover:bg-muted/40">
               <Td>
-                <span className="font-medium text-gray-900">
+                <span className="font-medium text-foreground">
                   {s.cashierName ?? '—'}
                 </span>
               </Td>
@@ -57,7 +57,7 @@ export function ShiftsTable({ shifts }: Props) {
                 {s.closedAt ? (
                   formatDate(s.closedAt, 'datetime')
                 ) : (
-                  <span className="text-gray-400">—</span>
+                  <span className="text-muted-foreground">—</span>
                 )}
               </Td>
               <Td align="right" mono>
@@ -67,14 +67,14 @@ export function ShiftsTable({ shifts }: Props) {
                 {s.expectedCash !== null ? (
                   formatCop(s.expectedCash)
                 ) : (
-                  <span className="text-gray-400">—</span>
+                  <span className="text-muted-foreground">—</span>
                 )}
               </Td>
               <Td align="right" mono>
                 {s.countedCash !== null ? (
                   formatCop(s.countedCash)
                 ) : (
-                  <span className="text-gray-400">—</span>
+                  <span className="text-muted-foreground">—</span>
                 )}
               </Td>
               <Td align="right" mono>
@@ -96,16 +96,16 @@ export function ShiftsTable({ shifts }: Props) {
 }
 
 function DiffCell({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-gray-400">—</span>;
-  if (Math.abs(value) < 1) return <span className="text-emerald-700">{formatCop(0)}</span>;
+  if (value === null) return <span className="text-muted-foreground">—</span>;
+  if (Math.abs(value) < 1) return <span className="text-success">{formatCop(0)}</span>;
   const tone =
     Math.abs(value) >= 5000
       ? value < 0
-        ? 'text-red-700 font-bold'
-        : 'text-amber-700 font-bold'
+        ? 'text-destructive font-bold'
+        : 'text-warning font-bold'
       : value < 0
-        ? 'text-red-600'
-        : 'text-amber-600';
+        ? 'text-destructive'
+        : 'text-warning';
   return (
     <span className={tone}>
       {value > 0 ? '+' : ''}
@@ -124,7 +124,7 @@ function Th({
   return (
     <th
       scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 ${
+      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >
@@ -144,7 +144,7 @@ function Td({
 }) {
   return (
     <td
-      className={`px-4 py-3 text-gray-700 ${align === 'right' ? 'text-right' : 'text-left'} ${
+      className={`px-4 py-3 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
         mono ? 'tabular-nums' : ''
       }`}
     >

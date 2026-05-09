@@ -1,18 +1,18 @@
-import Link from 'next/link';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { IngredientForm } from '../../../../features/ingredients';
 
 export default function NewIngredientPage() {
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/ingredients" className="text-sm text-blue-600 hover:underline">
-          ← Volver a insumos
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Nuevo insumo</h1>
-      </div>
-      <div className="max-w-2xl">
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title="Nuevo insumo"
+        description="Materia prima que compras a proveedores. Define unidad de compra, unidad de receta y factor de conversión."
+        breadcrumbs={[{ label: 'Insumos', href: '/ingredients' }, { label: 'Nuevo' }]}
+      />
+      <Container size="4xl" padY="md">
         <IngredientForm />
-      </div>
-    </div>
+      </Container>
+    </>
   );
 }

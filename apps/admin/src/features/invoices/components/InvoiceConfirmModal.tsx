@@ -213,7 +213,7 @@ export function InvoiceConfirmModal({
       if (!r.selection) {
         return {
           valid: false,
-          reason: `Asociá todos los ítems con un Insumo o Producto. Falta: "${r.descriptionRaw || '(sin descripción)'}"`,
+          reason: `Asocia todos los ítems con un Insumo o Producto. Falta: "${r.descriptionRaw || '(sin descripción)'}"`,
         };
       }
       if (!r.descriptionRaw.trim()) return { valid: false, reason: 'Cada ítem necesita descripción.' };
@@ -332,7 +332,7 @@ export function InvoiceConfirmModal({
     >
       <div className="space-y-6">
         {warnings.length > 0 && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <div className="rounded-md border border-warning-border bg-warning-bg/30 p-3 text-sm text-warning">
             <p className="font-semibold">⚠️ La IA marcó estas observaciones:</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
               {warnings.map((w, i) => (<li key={i}>{w}</li>))}
@@ -340,31 +340,31 @@ export function InvoiceConfirmModal({
           </div>
         )}
 
-        <section className="space-y-3 rounded-lg border border-gray-200 p-4">
-          <header><h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Proveedor</h3></header>
+        <section className="space-y-3 rounded-lg border border-border p-4">
+          <header><h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Proveedor</h3></header>
 
           <div className="flex gap-4 text-sm">
             <label className="flex cursor-pointer items-center gap-2">
-              <input type="radio" name="supplierMode" checked={supplierMode === 'existing'} onChange={() => setSupplierMode('existing')} disabled={submitting} className="h-4 w-4 text-blue-600 focus:ring-blue-500" />
+              <input type="radio" name="supplierMode" checked={supplierMode === 'existing'} onChange={() => setSupplierMode('existing')} disabled={submitting} className="h-4 w-4 text-primary focus:ring-ring" />
               Existente
             </label>
             <label className="flex cursor-pointer items-center gap-2">
-              <input type="radio" name="supplierMode" checked={supplierMode === 'new'} onChange={() => setSupplierMode('new')} disabled={submitting} className="h-4 w-4 text-blue-600 focus:ring-blue-500" />
+              <input type="radio" name="supplierMode" checked={supplierMode === 'new'} onChange={() => setSupplierMode('new')} disabled={submitting} className="h-4 w-4 text-primary focus:ring-ring" />
               Nuevo
             </label>
             {matchedSupplier && supplierMode === 'existing' && (
-              <span className="text-xs text-green-700">✓ Matcheado por NIT con &ldquo;{matchedSupplier.name}&rdquo;</span>
+              <span className="text-xs text-success">✓ Matcheado por NIT con &ldquo;{matchedSupplier.name}&rdquo;</span>
             )}
           </div>
 
           {supplierMode === 'existing' ? (
             <div className="space-y-1.5">
               <Label htmlFor="supplierId">Seleccionar proveedor</Label>
-              <select id="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} disabled={submitting} className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+              <select id="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} disabled={submitting} className="flex h-10 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <option value="">— Seleccionar —</option>
                 {suppliers.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.nit})</option>))}
               </select>
-              {suppliers.length === 0 && (<p className="text-xs text-amber-700">No hay proveedores cargados. Cambiá a &quot;Nuevo&quot; para crear uno.</p>)}
+              {suppliers.length === 0 && (<p className="text-xs text-warning">No hay proveedores cargados. Cambiá a &quot;Nuevo&quot; para crear uno.</p>)}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -376,13 +376,13 @@ export function InvoiceConfirmModal({
                 <Label htmlFor="newSupplierName">Nombre</Label>
                 <Input id="newSupplierName" required disabled={submitting} value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="Distribuidora XX SA" />
               </div>
-              <p className="col-span-full text-xs text-gray-500">Si el NIT ya existe, el sistema lo reutiliza automáticamente.</p>
+              <p className="col-span-full text-xs text-muted-foreground">Si el NIT ya existe, el sistema lo reutiliza automáticamente.</p>
             </div>
           )}
         </section>
 
-        <section className="space-y-3 rounded-lg border border-gray-200 p-4">
-          <header><h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Datos de la factura</h3></header>
+        <section className="space-y-3 rounded-lg border border-border p-4">
+          <header><h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Datos de la factura</h3></header>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -393,7 +393,7 @@ export function InvoiceConfirmModal({
               <Label htmlFor="total">Total (COP)</Label>
               <Input id="total" type="number" inputMode="decimal" step="any" min="0" required disabled={submitting} value={total} onChange={(e) => setTotal(e.target.value)} />
               {Math.abs(Number(total) - computedItemsTotal) > 1 && total !== '' && (
-                <p className="text-xs text-amber-700">Suma de ítems: {computedItemsTotal.toLocaleString('es-CO')}.</p>
+                <p className="text-xs text-warning">Suma de ítems: {computedItemsTotal.toLocaleString('es-CO')}.</p>
               )}
             </div>
             <div className="space-y-1.5">
@@ -404,20 +404,20 @@ export function InvoiceConfirmModal({
 
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notas</Label>
-            <textarea id="notes" rows={2} maxLength={500} disabled={submitting} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Comentarios opcionales sobre la factura." className="flex w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
+            <textarea id="notes" rows={2} maxLength={500} disabled={submitting} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Comentarios opcionales sobre la factura." className="flex w-full rounded-md border border-input bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
           </div>
         </section>
 
         <section className="space-y-3">
           <header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Ítems ({rows.length})</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Ítems ({rows.length})</h3>
             <Button type="button" variant="outline" size="sm" onClick={addRow} disabled={submitting}>+ Agregar fila</Button>
           </header>
 
           <div className="space-y-2">
             {rows.length === 0 && (
-              <p className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-sm text-gray-500">
-                La IA no extrajo ítems o los borraste todos. Agregá al menos uno.
+              <p className="rounded-md border border-dashed border-input bg-muted/40 p-4 text-center text-sm text-muted-foreground">
+                La IA no extrajo ítems o los borraste todos. Agrega al menos uno.
               </p>
             )}
             {rows.map((row, idx) => (
@@ -436,7 +436,7 @@ export function InvoiceConfirmModal({
         </section>
 
         {error && (
-          <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
         )}
       </div>
     </Dialog>

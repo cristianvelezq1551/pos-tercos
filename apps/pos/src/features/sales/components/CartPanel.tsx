@@ -1,9 +1,10 @@
 'use client';
 
-import { Button } from '@pos-tercos/ui';
+import { Button, EmptyState, IconButton, Money, cn } from '@pos-tercos/ui';
+import { LineArtIllustration } from '@pos-tercos/brand';
+import { Minus, Plus, X } from 'lucide-react';
 import type { Promotion } from '@pos-tercos/types';
 import { useEffect, useMemo, useState } from 'react';
-import { COP } from '../../catalog/lib/format';
 import { fetchActivePromotions } from '../api';
 import type { CartLine } from '../lib/cart-types';
 import { computeCartTotals } from '../lib/totals';
@@ -63,11 +64,13 @@ export function CartPanel() {
   };
 
   return (
-    <aside className="flex h-full flex-col bg-white">
-      <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-        <h2 className="text-sm font-semibold tracking-tight">
-          Carrito{' '}
-          <span className="ml-1 text-xs font-normal text-gray-500">({items.length})</span>
+    <aside className="flex h-full flex-col border-l border-border bg-card">
+      <header className="flex items-center justify-between border-b border-border px-4 py-3">
+        <h2 className="font-display text-lg font-bold tracking-tight text-foreground">
+          Carrito
+          <span className="ml-2 text-xs font-medium text-muted-foreground">
+            {items.length} ítem{items.length === 1 ? '' : 's'}
+          </span>
         </h2>
         {items.length > 0 ? (
           <Button variant="ghost" size="sm" onClick={clear}>
@@ -78,11 +81,16 @@ export function CartPanel() {
 
       <div className="flex-1 overflow-y-auto">
         {items.length === 0 ? (
-          <div className="flex h-full items-center justify-center p-6 text-center text-xs text-gray-400">
-            Tocá un producto del catálogo para empezar.
+          <div className="flex h-full items-center justify-center p-4">
+            <EmptyState
+              illustration={<LineArtIllustration name="empty-cart" />}
+              title="Carrito vacío"
+              description="Toca un producto del catálogo para empezar."
+              size="sm"
+            />
           </div>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-border">
             {items.map((line) => {
               const totalLine = totals.lines.find((l) => l.lineId === line.lineId);
               return (
@@ -102,30 +110,42 @@ export function CartPanel() {
         )}
       </div>
 
-      <footer className="border-t border-gray-200 bg-gray-50 px-4 py-3">
+      <footer className="border-t border-border bg-muted/40 px-4 py-3">
         {promoError ? (
-          <p className="mb-2 text-xs text-amber-700">⚠ Promos: {promoError}</p>
+          <p
+            role="alert"
+            className="mb-2 rounded-md border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning"
+          >
+            Promos: {promoError}
+          </p>
         ) : null}
         <div className="space-y-1 text-sm">
           <Row label="Subtotal" value={totals.subtotal} />
           {totals.discount > 0 ? (
-            <Row label="Descuentos" value={-totals.discount} muted={false} highlight />
+            <Row label="Descuentos" value={-totals.discount} highlight />
           ) : null}
-          <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
-            <span className="text-sm font-medium">Total</span>
-            <span className="text-lg font-bold tabular-nums">
-              {COP.format(totals.total)}
-            </span>
+          <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+            <span className="font-display text-base font-bold text-foreground">Total</span>
+            <Money amount={totals.total} size="2xl" weight="bold" />
           </div>
         </div>
         <Button
+          size="xl"
           className="mt-3 w-full"
           disabled={items.length === 0}
           onClick={() => setCheckoutOpen(true)}
         >
-          Cobrar {items.length > 0 ? COP.format(totals.total) : ''}
+          {items.length > 0 ? (
+            <>
+              Cobrar <Money amount={totals.total} size="lg" weight="bold" className="ml-2 text-current" />
+            </>
+          ) : (
+            'Cobrar'
+          )}
         </Button>
-        {lastSale ? <LastSaleBanner sale={lastSale} onDismiss={() => setLastSale(null)} /> : null}
+        {lastSale ? (
+          <LastSaleBanner sale={lastSale} onDismiss={() => setLastSale(null)} />
+        ) : null}
       </footer>
 
       <CheckoutModal
@@ -146,17 +166,16 @@ function Row({
 }: {
   label: string;
   value: number;
-  muted?: boolean;
   highlight?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className={highlight ? 'text-emerald-700' : 'text-gray-600'}>{label}</span>
-      <span
-        className={`tabular-nums ${highlight ? 'text-emerald-700 font-medium' : 'text-gray-900'}`}
-      >
-        {COP.format(value)}
-      </span>
+      <span className={highlight ? 'text-success' : 'text-muted-foreground'}>{label}</span>
+      <Money
+        amount={value}
+        weight={highlight ? 'semibold' : 'medium'}
+        className={highlight ? 'text-success' : ''}
+      />
     </div>
   );
 }
@@ -178,10 +197,7 @@ function CartLineRow({
   onQty: (qty: number) => void;
   onRemove: () => void;
 }) {
-  const description = [
-    line.size?.name,
-    ...line.modifiers.map((m) => m.name),
-  ]
+  const description = [line.size?.name, ...line.modifiers.map((m) => m.name)]
     .filter(Boolean)
     .join(' · ');
 
@@ -189,61 +205,64 @@ function CartLineRow({
     <li className="px-4 py-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-gray-900">{line.productName}</p>
+          <p className="truncate text-sm font-semibold text-foreground">{line.productName}</p>
           {description ? (
-            <p className="mt-0.5 text-xs text-gray-500">{description}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
           ) : null}
-          <p className="mt-1 text-xs text-gray-500">
-            {COP.format(line.unitPrice)} c/u
+          <p className="mt-1 text-xs text-muted-foreground">
+            <Money amount={line.unitPrice} size="xs" weight="normal" className="text-current" /> c/u
           </p>
         </div>
-        <button
-          type="button"
+        <IconButton
+          aria-label="Quitar línea"
+          variant="ghost"
+          size="sm"
           onClick={onRemove}
-          aria-label="Quitar"
-          className="ml-2 text-gray-300 hover:text-red-600"
+          className="-mr-1 text-ink-400 hover:text-destructive"
         >
-          ✕
-        </button>
+          <X className="h-4 w-4" strokeWidth={1.75} />
+        </IconButton>
       </div>
       <div className="mt-2 flex items-center justify-between">
-        <div className="inline-flex items-center rounded-md border border-gray-200">
+        <div className="inline-flex items-center rounded-lg border border-border">
           <button
             type="button"
             onClick={() => onQty(line.quantity - 1)}
             disabled={line.quantity <= 1}
-            className="px-2 py-1 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+            className="inline-flex h-8 w-8 items-center justify-center text-ink-600 transition-colors hover:bg-muted/40 disabled:opacity-30"
+            aria-label="Restar uno"
           >
-            −
+            <Minus className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
-          <span className="w-8 text-center text-sm font-medium tabular-nums">
+          <span className="w-8 text-center text-sm font-semibold tabular text-foreground">
             {line.quantity}
           </span>
           <button
             type="button"
             onClick={() => onQty(line.quantity + 1)}
-            className="px-2 py-1 text-sm text-gray-600 hover:bg-gray-50"
+            className="inline-flex h-8 w-8 items-center justify-center text-ink-600 transition-colors hover:bg-muted/40"
+            aria-label="Sumar uno"
           >
-            +
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
         </div>
         <div className="text-right">
           {hasPromo ? (
             <>
-              <span className="mr-1 text-xs text-gray-400 line-through tabular-nums">
-                {COP.format(lineSubtotal)}
+              <span className="mr-1.5 text-xs text-ink-400 line-through tabular">
+                <Money amount={lineSubtotal} size="xs" weight="normal" className="text-current" />
               </span>
-              <span className="text-sm font-semibold tabular-nums text-emerald-700">
-                {COP.format(lineTotal)}
-              </span>
-              <span className="block text-[10px] text-emerald-600">
-                −{COP.format(lineDiscount)} promo
+              <Money
+                amount={lineTotal}
+                weight="bold"
+                className={cn('text-success')}
+              />
+              <span className="block text-[10px] font-medium text-success">
+                −<Money amount={lineDiscount} size="xs" weight="normal" className="text-current" /> promo
               </span>
             </>
           ) : (
-            <span className="text-sm font-semibold tabular-nums">
-              {COP.format(lineSubtotal)}
-            </span>
+            <Money amount={lineSubtotal} weight="semibold" />
           )}
         </div>
       </div>

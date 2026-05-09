@@ -1,18 +1,21 @@
-import Link from 'next/link';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { ProductForm } from '../../../../features/products';
 
 export default function NewProductPage() {
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/products" className="text-sm text-blue-600 hover:underline">
-          ← Volver a productos
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Nuevo producto</h1>
-      </div>
-      <div className="max-w-2xl">
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title="Nuevo producto"
+        description="Lo que vendes en mostrador. Define el precio, la categoría y, si aplica, marca como combo."
+        breadcrumbs={[
+          { label: 'Productos', href: '/products' },
+          { label: 'Nuevo' },
+        ]}
+      />
+      <Container size="4xl" padY="md">
         <ProductForm />
-      </div>
-    </div>
+      </Container>
+    </>
   );
 }

@@ -1,9 +1,16 @@
 'use client';
 
 import type { Product, ProductModifier, ProductSize } from '@pos-tercos/types';
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
+import {
+  Button,
+  Dialog,
+  FormField,
+  Money,
+  NumberInput,
+  cn,
+  formatCop,
+} from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { COP } from '../lib/format';
 
 export type PickerSelection = {
   productId: string;
@@ -33,7 +40,7 @@ export function ProductPickerModal({
 
   const [sizeId, setSizeId] = useState<string | null>(null);
   const [modifierIds, setModifierIds] = useState<Set<string>>(new Set());
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState<number | null>(1);
 
   useEffect(() => {
     if (open && product) {
@@ -62,7 +69,8 @@ export function ProductPickerModal({
 
   if (!product) return null;
 
-  const canConfirm = (!requiresSize || sizeId !== null) && quantity > 0;
+  const qty = quantity ?? 0;
+  const canConfirm = (!requiresSize || sizeId !== null) && qty > 0;
   const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const toggleModifier = (id: string) => {
@@ -81,117 +89,121 @@ export function ProductPickerModal({
       productName: product.name,
       size: selectedSize,
       modifiers: selectedModifiers,
-      quantity,
+      quantity: qty,
       unitPrice,
     });
     onClose();
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={product.name} description={product.description ?? undefined}>
-      <div className="space-y-5">
-        {requiresSize ? (
-          <div className="space-y-2">
-            <Label>Tamaño</Label>
-            <div className="grid grid-cols-1 gap-2">
-              {sortedSizes.map((s) => (
-                <label
-                  key={s.id}
-                  className={`flex cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
-                    sizeId === s.id
-                      ? 'border-blue-600 bg-blue-50 font-medium text-blue-900'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="size"
-                      value={s.id}
-                      checked={sizeId === s.id}
-                      onChange={() => setSizeId(s.id)}
-                      className="h-4 w-4"
-                    />
-                    {s.name}
-                  </span>
-                  <span className="tabular-nums text-gray-700">
-                    {s.priceModifier === 0
-                      ? '—'
-                      : `${s.priceModifier > 0 ? '+' : ''}${COP.format(s.priceModifier)}`}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {modifiersEnabled && modifiers.length > 0 ? (
-          <div className="space-y-2">
-            <Label>Modificadores</Label>
-            <div className="grid grid-cols-1 gap-2">
-              {modifiers.map((m) => {
-                const checked = modifierIds.has(m.id);
-                return (
-                  <label
-                    key={m.id}
-                    className={`flex cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
-                      checked
-                        ? 'border-blue-600 bg-blue-50 font-medium text-blue-900'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleModifier(m.id)}
-                        className="h-4 w-4"
-                      />
-                      {m.name}
-                    </span>
-                    <span className="tabular-nums text-gray-700">
-                      {m.priceDelta === 0
-                        ? '—'
-                        : `${m.priceDelta > 0 ? '+' : ''}${COP.format(m.priceDelta)}`}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="space-y-2">
-          <Label htmlFor="qty">Cantidad</Label>
-          <Input
-            id="qty"
-            type="number"
-            min="1"
-            step="1"
-            value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-            className="w-24"
-          />
-        </div>
-
-        <div className="flex items-center justify-between rounded-md bg-gray-50 px-4 py-3">
-          <span className="text-sm text-gray-600">
-            {COP.format(unitPrice)} × {quantity}
-          </span>
-          <span className="text-lg font-semibold tabular-nums">
-            {COP.format(unitPrice * quantity)}
-          </span>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={product.name}
+      description={product.description ?? undefined}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
           <Button onClick={handleConfirm} disabled={!canConfirm}>
             Agregar al carrito
           </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {requiresSize ? (
+          <FormField label="Tamaño">
+            <div className="grid grid-cols-1 gap-2">
+              {sortedSizes.map((s) => (
+                <SelectableRow
+                  key={s.id}
+                  selected={sizeId === s.id}
+                  onSelect={() => setSizeId(s.id)}
+                  type="radio"
+                  name="size"
+                  label={s.name}
+                  delta={s.priceModifier}
+                />
+              ))}
+            </div>
+          </FormField>
+        ) : null}
+
+        {modifiersEnabled && modifiers.length > 0 ? (
+          <FormField label="Modificadores">
+            <div className="grid grid-cols-1 gap-2">
+              {modifiers.map((m) => (
+                <SelectableRow
+                  key={m.id}
+                  selected={modifierIds.has(m.id)}
+                  onSelect={() => toggleModifier(m.id)}
+                  type="checkbox"
+                  label={m.name}
+                  delta={m.priceDelta}
+                />
+              ))}
+            </div>
+          </FormField>
+        ) : null}
+
+        <FormField label="Cantidad">
+          <div className="w-32">
+            <NumberInput value={quantity} onChange={setQuantity} min={1} decimals={0} />
+          </div>
+        </FormField>
+
+        <div className="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
+          <span className="text-sm text-muted-foreground">
+            <Money amount={unitPrice} className="text-current" /> × {qty}
+          </span>
+          <Money amount={unitPrice * qty} size="xl" weight="bold" />
         </div>
       </div>
     </Dialog>
+  );
+}
+
+function SelectableRow({
+  selected,
+  onSelect,
+  type,
+  name,
+  label,
+  delta,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  type: 'radio' | 'checkbox';
+  name?: string;
+  label: string;
+  delta: number;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors duration-150 ease-out',
+        'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-background',
+        selected
+          ? 'border-primary bg-destructive/10 font-semibold text-foreground'
+          : 'border-border hover:border-ink-300 hover:bg-muted/40',
+        'motion-reduce:transition-none',
+      )}
+    >
+      <span className="flex items-center gap-2">
+        <input
+          type={type}
+          name={name}
+          checked={selected}
+          onChange={onSelect}
+          className="h-4 w-4 accent-primary"
+        />
+        {label}
+      </span>
+      <span className="tabular text-foreground">
+        {delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${formatCop(delta)}`}
+      </span>
+    </label>
   );
 }

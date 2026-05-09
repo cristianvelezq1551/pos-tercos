@@ -1,6 +1,13 @@
 'use client';
 
-import { Button, Input, Label } from '@pos-tercos/ui';
+import {
+  Button,
+  Checkbox,
+  ConfirmDialog,
+  FormField,
+  Input,
+  NumberInput,
+} from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Ingredient } from '@pos-tercos/types';
@@ -14,8 +21,8 @@ interface FormState {
   name: string;
   unitPurchase: string;
   unitRecipe: string;
-  conversionFactor: string;
-  thresholdMin: string;
+  conversionFactor: number | null;
+  thresholdMin: number | null;
   isActive: boolean;
 }
 
@@ -23,12 +30,13 @@ export function IngredientForm({ initial }: IngredientFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [form, setForm] = useState<FormState>(() => ({
     name: initial?.name ?? '',
     unitPurchase: initial?.unitPurchase ?? '',
     unitRecipe: initial?.unitRecipe ?? '',
-    conversionFactor: initial ? String(initial.conversionFactor) : '',
-    thresholdMin: initial ? String(initial.thresholdMin) : '0',
+    conversionFactor: initial?.conversionFactor ?? null,
+    thresholdMin: initial?.thresholdMin ?? 0,
     isActive: initial?.isActive ?? true,
   }));
 
@@ -38,13 +46,11 @@ export function IngredientForm({ initial }: IngredientFormProps) {
     e.preventDefault();
     setError(null);
 
-    const conversionFactor = Number(form.conversionFactor);
-    const thresholdMin = Number(form.thresholdMin);
-    if (!Number.isFinite(conversionFactor) || conversionFactor <= 0) {
+    if (form.conversionFactor === null || form.conversionFactor <= 0) {
       setError('El factor de conversión debe ser un número positivo.');
       return;
     }
-    if (!Number.isFinite(thresholdMin) || thresholdMin < 0) {
+    if (form.thresholdMin === null || form.thresholdMin < 0) {
       setError('El threshold debe ser un número ≥ 0.');
       return;
     }
@@ -55,8 +61,8 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           name: form.name,
           unitPurchase: form.unitPurchase,
           unitRecipe: form.unitRecipe,
-          conversionFactor,
-          thresholdMin,
+          conversionFactor: form.conversionFactor,
+          thresholdMin: form.thresholdMin,
           isActive: form.isActive,
         });
       } else {
@@ -64,8 +70,8 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           name: form.name,
           unitPurchase: form.unitPurchase,
           unitRecipe: form.unitRecipe,
-          conversionFactor,
-          thresholdMin,
+          conversionFactor: form.conversionFactor,
+          thresholdMin: form.thresholdMin,
         });
       }
       startTransition(() => {
@@ -79,7 +85,6 @@ export function IngredientForm({ initial }: IngredientFormProps) {
 
   const handleDeactivate = async () => {
     if (!initial) return;
-    if (!window.confirm(`¿Desactivar el insumo "${initial.name}"?`)) return;
     setError(null);
     try {
       await deactivateIngredient(initial.id);
@@ -89,145 +94,142 @@ export function IngredientForm({ initial }: IngredientFormProps) {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error desconocido');
+    } finally {
+      setConfirmDeactivate(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6">
-      <div className="space-y-2">
-        <Label htmlFor="name">Nombre</Label>
-        <Input
-          id="name"
-          required
-          maxLength={120}
-          disabled={pending}
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder="Pollo crudo, Sal, Pan brioche…"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="unitPurchase">Unidad de compra</Label>
+    <>
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-6 rounded-2xl border border-border bg-card p-6"
+      >
+        <FormField label="Nombre" required>
           <Input
-            id="unitPurchase"
             required
-            maxLength={20}
+            maxLength={120}
             disabled={pending}
-            value={form.unitPurchase}
-            onChange={(e) => setForm((f) => ({ ...f, unitPurchase: e.target.value }))}
-            placeholder="kg, lt, caja"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Pollo crudo, Sal, Pan brioche…"
           />
-          <p className="text-xs text-gray-500">Unidad como se compra al proveedor.</p>
+        </FormField>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField label="Unidad de compra" hint="Unidad como se compra al proveedor." required>
+            <Input
+              required
+              maxLength={20}
+              disabled={pending}
+              value={form.unitPurchase}
+              onChange={(e) => setForm((f) => ({ ...f, unitPurchase: e.target.value }))}
+              placeholder="kg, lt, caja"
+            />
+          </FormField>
+
+          <FormField label="Unidad de receta" hint="Unidad como la consume la receta." required>
+            <Input
+              required
+              maxLength={20}
+              disabled={pending}
+              value={form.unitRecipe}
+              onChange={(e) => setForm((f) => ({ ...f, unitRecipe: e.target.value }))}
+              placeholder="g, ml, unidad"
+            />
+          </FormField>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="unitRecipe">Unidad de receta</Label>
-          <Input
-            id="unitRecipe"
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label="Factor de conversión"
+            hint={`1 ${form.unitPurchase || 'compra'} = N ${form.unitRecipe || 'receta'}.`}
             required
-            maxLength={20}
-            disabled={pending}
-            value={form.unitRecipe}
-            onChange={(e) => setForm((f) => ({ ...f, unitRecipe: e.target.value }))}
-            placeholder="g, ml, unidad"
-          />
-          <p className="text-xs text-gray-500">Unidad como la consume la receta.</p>
-        </div>
-      </div>
+          >
+            <NumberInput
+              value={form.conversionFactor}
+              onChange={(v) => setForm((f) => ({ ...f, conversionFactor: v }))}
+              decimals={4}
+              min={0}
+              disabled={pending}
+              placeholder="1000"
+            />
+          </FormField>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="conversionFactor">Factor de conversión</Label>
-          <Input
-            id="conversionFactor"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min="0"
-            required
-            disabled={pending}
-            value={form.conversionFactor}
-            onChange={(e) => setForm((f) => ({ ...f, conversionFactor: e.target.value }))}
-            placeholder="1000"
-          />
-          <p className="text-xs text-gray-500">
-            1 {form.unitPurchase || 'compra'} = N {form.unitRecipe || 'receta'}.
-          </p>
+          <FormField
+            label="Mínimo de alerta"
+            hint="En unidad de receta. Por debajo de este valor → aviso de existencias bajas."
+          >
+            <NumberInput
+              value={form.thresholdMin}
+              onChange={(v) => setForm((f) => ({ ...f, thresholdMin: v }))}
+              decimals={4}
+              min={0}
+              disabled={pending}
+              placeholder="0"
+            />
+          </FormField>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="thresholdMin">Stock mínimo (alerta)</Label>
-          <Input
-            id="thresholdMin"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min="0"
-            disabled={pending}
-            value={form.thresholdMin}
-            onChange={(e) => setForm((f) => ({ ...f, thresholdMin: e.target.value }))}
-            placeholder="0"
-          />
-          <p className="text-xs text-gray-500">
-            En unidad de receta. Bajo este valor → alerta de stock crítico.
-          </p>
-        </div>
-      </div>
-
-      {isEdit && (
-        <div className="flex items-center gap-2">
-          <input
-            id="isActive"
-            type="checkbox"
+        {isEdit ? (
+          <Checkbox
+            label="Activo"
             disabled={pending}
             checked={form.isActive}
             onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
-          <Label htmlFor="isActive">Activo</Label>
-        </div>
-      )}
+        ) : null}
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
-          {error}
-        </p>
-      )}
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </p>
+        ) : null}
 
-      <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
-        {isEdit ? (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={handleDeactivate}
-            disabled={pending}
-          >
-            Desactivar
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => router.push('/ingredients')}
-            disabled={pending}
-          >
-            Cancelar
-          </Button>
-          <Button type="submit" size="sm" disabled={pending}>
-            {pending ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear insumo'}
-          </Button>
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+          {isEdit ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => setConfirmDeactivate(true)}
+              disabled={pending}
+            >
+              Desactivar
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/ingredients')}
+              disabled={pending}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" size="sm" disabled={pending}>
+              {pending ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear insumo'}
+            </Button>
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
+
+      <ConfirmDialog
+        open={confirmDeactivate}
+        onCancel={() => setConfirmDeactivate(false)}
+        onConfirm={handleDeactivate}
+        title="¿Desactivar insumo?"
+        description={`Vas a desactivar "${initial?.name ?? ''}". No se borra del histórico.`}
+        confirmLabel="Sí, desactivar"
+        destructive
+        pending={pending}
+      />
+    </>
   );
 }

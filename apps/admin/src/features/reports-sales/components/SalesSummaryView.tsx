@@ -39,12 +39,12 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
       </div>
 
       {/* Serie temporal — gráfica horizontal de barras */}
-      <section className="rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+      <section className="rounded-lg border border-border bg-card p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           {summary.granularity === 'hourly' ? 'Por hora' : 'Por día'}
         </h2>
         {summary.buckets.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-500">
+          <p className="mt-3 text-sm text-muted-foreground">
             Sin ventas en el período seleccionado.
           </p>
         ) : (
@@ -56,19 +56,19 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
                   : 0;
               return (
                 <div key={b.bucket} className="flex items-center gap-3 text-xs">
-                  <span className="w-24 shrink-0 font-mono text-gray-600">
+                  <span className="w-24 shrink-0 font-mono text-muted-foreground">
                     {formatBucket(b.bucket, summary.granularity)}
                   </span>
-                  <div className="relative h-6 flex-1 rounded-md bg-gray-100">
+                  <div className="relative h-6 flex-1 rounded-md bg-muted">
                     <div
-                      className="absolute inset-y-0 left-0 rounded-md bg-blue-500"
+                      className="absolute inset-y-0 left-0 rounded-md bg-primary"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="w-28 shrink-0 text-right tabular-nums font-medium text-gray-900">
+                  <span className="w-28 shrink-0 text-right tabular-nums font-medium text-foreground">
                     {formatCop(b.revenue)}
                   </span>
-                  <span className="w-12 shrink-0 text-right tabular-nums text-gray-500">
+                  <span className="w-12 shrink-0 text-right tabular-nums text-muted-foreground">
                     {b.count}
                   </span>
                 </div>
@@ -115,31 +115,31 @@ function BreakdownTable({
   total: number;
 }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+    <section className="rounded-lg border border-border bg-card p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </h2>
       {rows.length === 0 ? (
-        <p className="mt-3 text-sm text-gray-500">Sin datos.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Sin datos.</p>
       ) : (
         <table className="mt-4 w-full text-sm">
           <thead>
-            <tr className="text-xs uppercase text-gray-500">
+            <tr className="text-xs uppercase text-muted-foreground">
               <th className="pb-2 text-left font-semibold">Categoría</th>
               <th className="pb-2 text-right font-semibold">Ventas</th>
               <th className="pb-2 text-right font-semibold">Revenue</th>
               <th className="pb-2 text-right font-semibold">% del total</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {rows.map((r) => {
               const pct = total > 0 ? (r.revenue / total) * 100 : 0;
               return (
                 <tr key={r.key}>
-                  <td className="py-2 text-gray-900">{r.label}</td>
+                  <td className="py-2 text-foreground">{r.label}</td>
                   <td className="py-2 text-right tabular-nums">{r.count}</td>
                   <td className="py-2 text-right tabular-nums font-medium">{formatCop(r.revenue)}</td>
-                  <td className="py-2 text-right tabular-nums text-gray-500">{formatNumber(pct, { decimals: 1 })}%</td>
+                  <td className="py-2 text-right tabular-nums text-muted-foreground">{formatNumber(pct, { decimals: 1 })}%</td>
                 </tr>
               );
             })}
@@ -159,10 +159,10 @@ function Stat({
   value: string;
   tone?: 'default' | 'warning';
 }) {
-  const valueClass = tone === 'warning' ? 'text-amber-600' : 'text-gray-900';
+  const valueClass = tone === 'warning' ? 'text-warning' : 'text-foreground';
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
       <p className={`mt-1 text-2xl font-bold tracking-tight tabular-nums ${valueClass}`}>

@@ -1,9 +1,18 @@
 'use client';
 
 import type { Sale, Shift } from '@pos-tercos/types';
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
+import {
+  Button,
+  Dialog,
+  FormField,
+  Input,
+  LoadingSkeleton,
+  Money,
+  NumberInput,
+  cn,
+  formatDate,
+} from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { COP } from '../../catalog/lib/format';
 import { listSales } from '../../sales/api/list';
 import { closeShift } from '../api/close';
 
@@ -27,7 +36,7 @@ export function CloseShiftModal({
 }) {
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [counted, setCounted] = useState('');
+  const [counted, setCounted] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -35,7 +44,7 @@ export function CloseShiftModal({
   useEffect(() => {
     if (!open || !shift) return;
     setSummary(null);
-    setCounted('');
+    setCounted(null);
     setNotes('');
     setError(null);
     setPending(false);
@@ -53,9 +62,9 @@ export function CloseShiftModal({
     return shift.openingCash + summary.cashSalesTotal;
   }, [shift, summary]);
 
-  const countedNum = Number(counted) || 0;
+  const countedNum = counted ?? 0;
   const difference = expectedCash !== null ? countedNum - expectedCash : 0;
-  const canConfirm = summary !== null && counted.length > 0 && countedNum >= 0 && !pending;
+  const canConfirm = summary !== null && counted !== null && countedNum >= 0 && !pending;
 
   const handleConfirm = async () => {
     if (!shift || !canConfirm) return;
@@ -74,30 +83,38 @@ export function CloseShiftModal({
   };
 
   if (!shift) return null;
-  const opened = new Date(shift.openedAt).toLocaleString('es-CO', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 
   return (
     <Dialog
       open={open}
       onClose={pending ? () => {} : onClose}
       title="Cerrar turno"
-      description={`Apertura ${opened} · Cajero ${shift.cashierName ?? '—'}`}
+      description={`Apertura ${formatDate(shift.openedAt, 'datetime')} · Cajero ${shift.cashierName ?? '—'}`}
       maxWidth="max-w-xl"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button onClick={handleConfirm} disabled={!canConfirm}>
+            {pending ? 'Cerrando…' : 'Cerrar turno'}
+          </Button>
+        </>
+      }
     >
       <div className="space-y-5">
         {loading ? (
-          <p className="text-sm text-gray-500">Calculando Z-report…</p>
+          <LoadingSkeleton shape="text" count={5} />
         ) : summary ? (
-          <section className="rounded-md bg-gray-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Z-report del turno
-            </p>
-            <div className="mt-3 space-y-1 text-sm">
-              <Row label="Apertura (efectivo inicial)" value={COP.format(shift.openingCash)} />
-              <Row label={`Ventas en efectivo (${summary.byMethod.CASH?.count ?? 0})`} value={`+ ${COP.format(summary.cashSalesTotal)}`} />
+          <section className="rounded-xl bg-muted/40 p-4">
+            <p className="caps text-[0.625rem] text-muted-foreground">Reporte de cierre del turno</p>
+            <div className="mt-3 space-y-1.5 text-sm">
+              <Row label="Apertura (efectivo inicial)" value={shift.openingCash} />
+              <Row
+                label={`Ventas en efectivo (${summary.byMethod.CASH?.count ?? 0})`}
+                value={summary.cashSalesTotal}
+                positive
+              />
               {Object.entries(summary.byMethod)
                 .filter(([m]) => m !== 'CASH')
                 .map(([method, v]) => (
@@ -105,69 +122,64 @@ export function CloseShiftModal({
                     key={method}
                     muted
                     label={`${method} (${v.count})`}
-                    value={COP.format(v.total)}
+                    value={v.total}
                   />
                 ))}
-              <div className="border-t border-gray-300 pt-2">
-                <Row
-                  label="Esperado en caja"
-                  value={COP.format(expectedCash ?? 0)}
-                  bold
-                />
+              <div className="border-t border-border pt-2">
+                <Row label="Esperado en caja" value={expectedCash ?? 0} bold />
               </div>
-              <p className="mt-1 text-[11px] text-gray-500">
-                Total ventas del turno: {summary.countSales} · {COP.format(summary.totalSales)}
+              <p className="mt-1 text-[0.6875rem] text-muted-foreground">
+                Total ventas del turno: {summary.countSales} ·{' '}
+                <Money amount={summary.totalSales} size="xs" weight="medium" className="text-current" />
               </p>
             </div>
           </section>
         ) : null}
 
-        <div className="space-y-2">
-          <Label htmlFor="counted">Efectivo contado físicamente (COP)</Label>
-          <Input
-            id="counted"
-            type="number"
-            min="0"
-            step="100"
-            inputMode="decimal"
+        <FormField label="Efectivo contado físicamente (COP)" required>
+          <NumberInput
             value={counted}
-            onChange={(e) => setCounted(e.target.value)}
+            onChange={setCounted}
+            prefix="$"
+            min={0}
             placeholder={expectedCash !== null ? String(expectedCash) : '0'}
             disabled={loading || pending}
             autoFocus
             required
           />
-        </div>
+        </FormField>
 
-        {expectedCash !== null && counted.length > 0 ? (
+        {expectedCash !== null && counted !== null ? (
           <div
-            className={`rounded-md p-3 text-sm ${
+            className={cn(
+              'rounded-xl border p-3 text-sm',
               Math.abs(difference) < 1
-                ? 'bg-emerald-50 text-emerald-900'
+                ? 'border-success-border bg-success-bg text-success'
                 : difference < 0
-                  ? 'bg-red-50 text-red-900'
-                  : 'bg-amber-50 text-amber-900'
-            }`}
+                  ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                  : 'border-warning-border bg-warning-bg text-warning',
+            )}
           >
             <div className="flex items-center justify-between">
               <span>Diferencia (counted − expected)</span>
-              <span className="font-bold tabular-nums">
-                {difference > 0 ? '+' : ''}
-                {COP.format(difference)}
-              </span>
+              <Money
+                amount={difference}
+                size="lg"
+                weight="bold"
+                withSign
+                className="text-current"
+              />
             </div>
             {Math.abs(difference) >= 5000 ? (
-              <p className="mt-1 text-[11px]">
-                ⚠ Descuadre &gt;= $5.000 — se registra en audit como anomalía.
+              <p className="mt-1 text-[0.6875rem]">
+                Descuadre ≥ $5.000 — se registra en audit como anomalía.
               </p>
             ) : null}
           </div>
         ) : null}
 
-        <div className="space-y-2">
-          <Label htmlFor="notes">Notas (opcional)</Label>
+        <FormField label="Notas (opcional)">
           <Input
-            id="notes"
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -175,20 +187,16 @@ export function CloseShiftModal({
             maxLength={500}
             disabled={pending}
           />
-        </div>
+        </FormField>
 
         {error ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </p>
         ) : null}
-
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button onClick={handleConfirm} disabled={!canConfirm}>
-            {pending ? 'Cerrando…' : 'Cerrar turno'}
-          </Button>
-        </div>
       </div>
     </Dialog>
   );
@@ -199,20 +207,28 @@ function Row({
   value,
   bold,
   muted,
+  positive,
 }: {
   label: string;
-  value: string;
+  value: number;
   bold?: boolean;
   muted?: boolean;
+  positive?: boolean;
 }) {
   return (
     <div
-      className={`flex items-center justify-between ${muted ? 'text-xs text-gray-500' : ''}`}
+      className={cn(
+        'flex items-center justify-between',
+        muted ? 'text-xs text-muted-foreground' : 'text-foreground',
+      )}
     >
-      <span className={muted ? '' : 'text-gray-600'}>{label}</span>
-      <span className={`tabular-nums ${bold ? 'text-base font-bold text-gray-900' : ''}`}>
-        {value}
-      </span>
+      <span>{label}</span>
+      <Money
+        amount={value}
+        size={bold ? 'lg' : 'sm'}
+        weight={bold ? 'bold' : 'medium'}
+        withSign={positive}
+      />
     </div>
   );
 }

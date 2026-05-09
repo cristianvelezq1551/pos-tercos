@@ -6,9 +6,18 @@ import {
   type PublicWebOrder,
   type Sale,
 } from '@pos-tercos/types';
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  FormField,
+  LoadingSkeleton,
+  Money,
+  NumberInput,
+  cn,
+  formatCop,
+} from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { COP } from '../../catalog/lib/format';
 import { confirmPayment } from '../../sales/api/confirm-payment';
 import { fetchSaleById } from '../api/get-sale';
 import { openWhatsAppForSale } from '../lib/whatsapp';
@@ -37,8 +46,8 @@ export function ConfirmWebPaymentModal({
   const [fullSale, setFullSale] = useState<Sale | null>(null);
   const [loadingSale, setLoadingSale] = useState(false);
   const [method, setMethod] = useState<PaymentMethod | null>('NEQUI');
-  const [digital1, setDigital1] = useState('');
-  const [digital2, setDigital2] = useState('');
+  const [digital1, setDigital1] = useState<number | null>(null);
+  const [digital2, setDigital2] = useState<number | null>(null);
   const [doubleVerified, setDoubleVerified] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +55,8 @@ export function ConfirmWebPaymentModal({
   useEffect(() => {
     if (!open || !order) return;
     setMethod('NEQUI');
-    setDigital1('');
-    setDigital2('');
+    setDigital1(null);
+    setDigital2(null);
     setDoubleVerified(false);
     setError(null);
     setPending(false);
@@ -62,21 +71,16 @@ export function ConfirmWebPaymentModal({
 
   const isDigital = method !== null && DIGITAL_SET.has(method);
   const total = order?.total ?? 0;
-  const d1 = useMemo(() => Number(digital1) || 0, [digital1]);
-  const d2 = useMemo(() => Number(digital2) || 0, [digital2]);
+  const d1 = digital1 ?? 0;
+  const d2 = digital2 ?? 0;
 
   const validation = useMemo(() => {
     if (!order || !method) return { ok: false, reason: 'Elegí un método' };
-    if (method === 'CASH') {
-      // CASH para web es raro (no hay efectivo) pero soportado por backend.
-      return { ok: true, reason: null };
-    }
-    if (d1 !== total) return { ok: false, reason: `Monto 1 debe ser ${COP.format(total)}` };
-    if (d2 !== total) return { ok: false, reason: `Monto 2 debe ser ${COP.format(total)}` };
+    if (method === 'CASH') return { ok: true, reason: null };
+    if (d1 !== total) return { ok: false, reason: `Monto 1 debe ser ${formatCop(total)}` };
+    if (d2 !== total) return { ok: false, reason: `Monto 2 debe ser ${formatCop(total)}` };
     if (d1 !== d2) return { ok: false, reason: 'Los dos montos no coinciden' };
-    if (!doubleVerified) {
-      return { ok: false, reason: 'Confirmá doble verificación' };
-    }
+    if (!doubleVerified) return { ok: false, reason: 'Confirma doble verificación' };
     return { ok: true, reason: null };
   }, [order, method, d1, d2, doubleVerified, total]);
 
@@ -92,10 +96,6 @@ export function ConfirmWebPaymentModal({
         amountReceived: total,
         digitalDoubleVerified: isDigital ? true : undefined,
       });
-      // Acoplado al click: post-confirm abrimos WhatsApp con "ya está
-      // en cocina". El backend audit registra el click. Si el browser
-      // bloquea el popup, no falla la confirmación — el cajero puede
-      // mensajear manual desde el chat existente.
       openWhatsAppForSale(paid, 'confirmed');
       onConfirmed(paid);
     } catch (err) {
@@ -111,121 +111,106 @@ export function ConfirmWebPaymentModal({
       title={`Confirmar pago · #${order.receiptNumber}`}
       description={`${order.customerName} · ${order.customerPhone}`}
       maxWidth="max-w-xl"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button onClick={handleConfirm} disabled={!validation.ok || pending}>
+            {pending ? 'Confirmando…' : <>Confirmar <Money amount={total} weight="bold" className="ml-1 text-current" /></>}
+          </Button>
+        </>
+      }
     >
       <div className="space-y-5">
-        <section className="rounded-md bg-gray-50 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">
+        <section className="rounded-xl bg-muted/40 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-muted-foreground">
               {order.type === 'WEB_PICKUP' ? 'Recoger en tienda' : 'Domicilio'}
               {order.deliveryAddress ? ` · ${order.deliveryAddress}` : ''}
             </span>
-            <span className="text-lg font-bold tabular-nums">{COP.format(total)}</span>
+            <Money amount={total} size="lg" weight="bold" />
           </div>
-          <p className="mt-1 text-xs text-amber-700">
-            Verificá el comprobante en WhatsApp antes de confirmar.
+          <p className="mt-1 text-xs text-warning">
+            Verifica el comprobante en WhatsApp antes de confirmar.
           </p>
         </section>
 
         {loadingSale ? (
-          <p className="text-sm text-gray-500">Cargando ítems…</p>
+          <LoadingSkeleton shape="text" count={4} />
         ) : fullSale && fullSale.items ? (
-          <section className="rounded-md border border-gray-200 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase text-gray-500">Ítems</p>
+          <section className="rounded-xl border border-border p-3 text-sm">
+            <p className="caps text-[0.625rem] text-muted-foreground">Ítems</p>
             <ul className="mt-2 space-y-1">
               {fullSale.items.map((it) => (
                 <li key={it.id} className="flex justify-between gap-2">
                   <span>
                     <span className="font-mono font-bold">×{it.quantity}</span>{' '}
                     <span className="font-medium">{it.productName ?? 'producto'}</span>
-                    {it.sizeName ? <span className="text-gray-500"> · {it.sizeName}</span> : null}
+                    {it.sizeName ? (
+                      <span className="text-muted-foreground"> · {it.sizeName}</span>
+                    ) : null}
                   </span>
-                  <span className="tabular-nums">{COP.format(it.lineTotal)}</span>
+                  <Money amount={it.lineTotal} size="sm" weight="medium" />
                 </li>
               ))}
             </ul>
           </section>
         ) : null}
 
-        <section>
-          <Label>Método de pago verificado</Label>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <FormField label="Método de pago verificado">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {METHODS.map((m) => (
               <button
                 key={m.method}
                 type="button"
                 onClick={() => setMethod(m.method)}
-                className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-sm font-semibold transition-colors duration-150 ease-out',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                   method === m.method
-                    ? 'border-blue-600 bg-blue-50 text-blue-900'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                    ? 'border-primary bg-destructive/10 text-primary'
+                    : 'border-border bg-card text-foreground hover:border-ink-300 hover:bg-muted/40',
+                  'motion-reduce:transition-none',
+                )}
               >
                 {m.label}
               </button>
             ))}
           </div>
-        </section>
+        </FormField>
 
         {isDigital ? (
-          <section className="space-y-3 rounded-md bg-gray-50 p-4">
+          <div className="space-y-3 rounded-xl bg-muted/40 p-4">
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="d1">Monto 1</Label>
-                <Input
-                  id="d1"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputMode="decimal"
-                  value={digital1}
-                  onChange={(e) => setDigital1(e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="d2">Monto 2</Label>
-                <Input
-                  id="d2"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputMode="decimal"
-                  value={digital2}
-                  onChange={(e) => setDigital2(e.target.value)}
-                />
-              </div>
+              <FormField label="Monto 1">
+                <NumberInput value={digital1} onChange={setDigital1} prefix="$" autoFocus />
+              </FormField>
+              <FormField label="Monto 2">
+                <NumberInput value={digital2} onChange={setDigital2} prefix="$" />
+              </FormField>
             </div>
-            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-gray-200 bg-white p-3">
-              <input
-                type="checkbox"
-                checked={doubleVerified}
-                onChange={(e) => setDoubleVerified(e.target.checked)}
-                className="mt-0.5 h-4 w-4"
-              />
-              <span className="text-xs text-gray-700">
-                Verifiqué app del negocio + comprobante del cliente.
-              </span>
-            </label>
-          </section>
+            <Checkbox
+              checked={doubleVerified}
+              onChange={(e) => setDoubleVerified(e.target.checked)}
+              label="Verifiqué app del negocio + comprobante del cliente"
+            />
+          </div>
         ) : null}
 
         {!validation.ok && method ? (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
             {validation.reason}
           </p>
         ) : null}
         {error ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </p>
         ) : null}
-
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button onClick={handleConfirm} disabled={!validation.ok || pending}>
-            {pending ? 'Confirmando…' : `Confirmar ${COP.format(total)}`}
-          </Button>
-        </div>
       </div>
     </Dialog>
   );

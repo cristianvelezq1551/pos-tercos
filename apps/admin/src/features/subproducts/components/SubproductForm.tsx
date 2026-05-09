@@ -1,6 +1,13 @@
 'use client';
 
-import { Button, Input, Label } from '@pos-tercos/ui';
+import {
+  Button,
+  Checkbox,
+  ConfirmDialog,
+  FormField,
+  Input,
+  NumberInput,
+} from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Subproduct } from '@pos-tercos/types';
@@ -12,7 +19,7 @@ interface SubproductFormProps {
 
 interface FormState {
   name: string;
-  yield: string;
+  yield: number | null;
   unit: string;
   isActive: boolean;
 }
@@ -21,9 +28,10 @@ export function SubproductForm({ initial }: SubproductFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [form, setForm] = useState<FormState>(() => ({
     name: initial?.name ?? '',
-    yield: initial ? String(initial.yield) : '',
+    yield: initial?.yield ?? null,
     unit: initial?.unit ?? 'unidad',
     isActive: initial?.isActive ?? true,
   }));
@@ -34,8 +42,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     e.preventDefault();
     setError(null);
 
-    const yieldValue = Number(form.yield);
-    if (!Number.isFinite(yieldValue) || yieldValue <= 0) {
+    if (form.yield === null || form.yield <= 0) {
       setError('El yield debe ser un número positivo.');
       return;
     }
@@ -44,14 +51,14 @@ export function SubproductForm({ initial }: SubproductFormProps) {
       if (isEdit && initial) {
         await updateSubproduct(initial.id, {
           name: form.name,
-          yield: yieldValue,
+          yield: form.yield,
           unit: form.unit,
           isActive: form.isActive,
         });
       } else {
         await createSubproduct({
           name: form.name,
-          yield: yieldValue,
+          yield: form.yield,
           unit: form.unit,
         });
       }
@@ -66,7 +73,6 @@ export function SubproductForm({ initial }: SubproductFormProps) {
 
   const handleDeactivate = async () => {
     if (!initial) return;
-    if (!window.confirm(`¿Desactivar el subproducto "${initial.name}"?`)) return;
     setError(null);
     try {
       await deactivateSubproduct(initial.id);
@@ -76,111 +82,115 @@ export function SubproductForm({ initial }: SubproductFormProps) {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error desconocido');
+    } finally {
+      setConfirmDeactivate(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6">
-      <div className="space-y-2">
-        <Label htmlFor="name">Nombre</Label>
-        <Input
-          id="name"
-          required
-          maxLength={120}
-          disabled={pending}
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder="Pollo Nashville cocido, masa pizza fermentada…"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="yield">Yield (unidades por batch)</Label>
+    <>
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-6 rounded-2xl border border-border bg-card p-6"
+      >
+        <FormField label="Nombre" required>
           <Input
-            id="yield"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min="0"
             required
+            maxLength={120}
             disabled={pending}
-            value={form.yield}
-            onChange={(e) => setForm((f) => ({ ...f, yield: e.target.value }))}
-            placeholder="7"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Pollo Nashville cocido, masa pizza fermentada…"
           />
-          <p className="text-xs text-gray-500">
-            Cuántas unidades produce 1 corrida de la receta.
-          </p>
+        </FormField>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label="Yield (unidades por batch)"
+            hint="Cuántas unidades produce 1 corrida de la receta."
+            required
+          >
+            <NumberInput
+              value={form.yield}
+              onChange={(v) => setForm((f) => ({ ...f, yield: v }))}
+              decimals={4}
+              min={0}
+              disabled={pending}
+              placeholder="7"
+            />
+          </FormField>
+
+          <FormField label="Unidad" hint="Cómo se cuenta cada unidad del subproducto." required>
+            <Input
+              required
+              maxLength={20}
+              disabled={pending}
+              value={form.unit}
+              onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+              placeholder="unidad"
+            />
+          </FormField>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="unit">Unidad</Label>
-          <Input
-            id="unit"
-            required
-            maxLength={20}
-            disabled={pending}
-            value={form.unit}
-            onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
-            placeholder="unidad"
-          />
-          <p className="text-xs text-gray-500">Cómo se cuenta cada unidad del subproducto.</p>
-        </div>
-      </div>
-
-      {isEdit && (
-        <div className="flex items-center gap-2">
-          <input
-            id="isActive"
-            type="checkbox"
+        {isEdit ? (
+          <Checkbox
+            label="Activo"
             disabled={pending}
             checked={form.isActive}
             onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
-          <Label htmlFor="isActive">Activo</Label>
-        </div>
-      )}
+        ) : null}
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
-          {error}
-        </p>
-      )}
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </p>
+        ) : null}
 
-      <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
-        {isEdit ? (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={handleDeactivate}
-            disabled={pending}
-          >
-            Desactivar
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => router.push('/subproducts')}
-            disabled={pending}
-          >
-            Cancelar
-          </Button>
-          <Button type="submit" size="sm" disabled={pending}>
-            {pending ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear subproducto'}
-          </Button>
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+          {isEdit ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => setConfirmDeactivate(true)}
+              disabled={pending}
+            >
+              Desactivar
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/subproducts')}
+              disabled={pending}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" size="sm" disabled={pending}>
+              {pending ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear subproducto'}
+            </Button>
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
+
+      <ConfirmDialog
+        open={confirmDeactivate}
+        onCancel={() => setConfirmDeactivate(false)}
+        onConfirm={handleDeactivate}
+        title="¿Desactivar subproducto?"
+        description={`Vas a desactivar "${initial?.name ?? ''}". No se borra del histórico.`}
+        confirmLabel="Sí, desactivar"
+        destructive
+        pending={pending}
+      />
+    </>
   );
 }

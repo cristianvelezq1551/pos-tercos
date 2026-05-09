@@ -12,7 +12,7 @@ export default async function PosHomePage() {
   const products = await getActiveProductsServer();
   return (
     <div className="grid h-full grid-cols-1 lg:grid-cols-[1fr_360px]">
-      <section className="flex flex-col overflow-hidden border-r border-gray-200">
+      <section className="flex flex-col overflow-hidden border-r border-border">
         <CatalogGrid products={products} />
       </section>
       <CartPanel />

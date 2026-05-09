@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { RecipeEditor } from '../../../../../features/recipes';
 import { ApiError, serverFetchJson } from '../../../../../lib/api-server';
 import type {
@@ -28,25 +28,32 @@ export default async function SubproductRecipePage({ params }: PageProps) {
       serverFetchJson<Subproduct[]>('/subproducts?only_active=true'),
     ]);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      notFound();
-    }
+    if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
 
   return (
-    <div className="space-y-6">
-      <Link href={`/subproducts/${id}`} className="text-sm text-blue-600 hover:underline">
-        ← Volver a editar subproducto
-      </Link>
-      <RecipeEditor
-        parentType="subproduct"
-        parentId={id}
-        parentName={subproduct.name}
-        initialRecipe={recipe}
-        ingredients={ingredients}
-        subproducts={subproducts}
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title={`Receta de ${subproduct.name}`}
+        description="Componentes que se usan al preparar este subproducto."
+        breadcrumbs={[
+          { label: 'Subproductos', href: '/subproducts' },
+          { label: subproduct.name, href: `/subproducts/${id}` },
+          { label: 'Receta' },
+        ]}
       />
-    </div>
+      <Container size="6xl" padY="md">
+        <RecipeEditor
+          parentType="subproduct"
+          parentId={id}
+          parentName={subproduct.name}
+          initialRecipe={recipe}
+          ingredients={ingredients}
+          subproducts={subproducts}
+        />
+      </Container>
+    </>
   );
 }

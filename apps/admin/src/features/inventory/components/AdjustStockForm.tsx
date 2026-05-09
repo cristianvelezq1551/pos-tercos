@@ -1,6 +1,14 @@
 'use client';
 
-import { Button, Input, Label } from '@pos-tercos/ui';
+import {
+  Badge,
+  Button,
+  FormField,
+  NumberInput,
+  RadioGroup,
+  Quantity,
+  Textarea,
+} from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { Stockable } from '@pos-tercos/types';
@@ -12,21 +20,21 @@ interface AdjustStockFormProps {
 
 type MovementKind = 'MANUAL_ADJUSTMENT' | 'WASTE' | 'INITIAL';
 
-const TYPE_OPTIONS: Array<{ value: MovementKind; label: string; hint: string }> = [
+const TYPE_OPTIONS = [
   {
     value: 'MANUAL_ADJUSTMENT',
     label: 'Ajuste manual',
-    hint: 'Corrección por conteo físico o error de captura.',
+    description: 'Corrección por conteo físico o error de captura.',
   },
   {
     value: 'WASTE',
     label: 'Merma',
-    hint: 'Pérdida durante limpieza, vencimiento, derrame, etc.',
+    description: 'Pérdida durante limpieza, vencimiento, derrame, etc.',
   },
   {
     value: 'INITIAL',
     label: 'Stock inicial',
-    hint: 'Solo al cargar el sistema por primera vez.',
+    description: 'Solo al cargar el sistema por primera vez.',
   },
 ];
 
@@ -36,14 +44,13 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<MovementKind>('MANUAL_ADJUSTMENT');
   const [direction, setDirection] = useState<'IN' | 'OUT'>('IN');
-  const [magnitude, setMagnitude] = useState('');
+  const [magnitude, setMagnitude] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const projected = useMemo(() => {
-    const m = Number(magnitude);
-    if (!Number.isFinite(m) || m <= 0) return null;
-    const delta = direction === 'IN' ? m : -m;
+    if (magnitude === null || magnitude <= 0) return null;
+    const delta = direction === 'IN' ? magnitude : -magnitude;
     return stockable.currentStock + delta;
   }, [magnitude, direction, stockable.currentStock]);
 
@@ -53,14 +60,13 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
     e.preventDefault();
     setError(null);
 
-    const m = Number(magnitude);
-    if (!Number.isFinite(m) || m <= 0) {
+    if (magnitude === null || magnitude <= 0) {
       setError('La magnitud debe ser un número positivo.');
       return;
     }
 
     const effectiveDirection = wasteForcesNegative ? 'OUT' : direction;
-    const delta = effectiveDirection === 'IN' ? m : -m;
+    const delta = effectiveDirection === 'IN' ? magnitude : -magnitude;
 
     setSubmitting(true);
     try {
@@ -95,159 +101,130 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-6 rounded-lg border border-gray-200 bg-white p-6"
+      className="space-y-6 rounded-2xl border border-border bg-card p-6"
     >
-      <section className="rounded-md bg-gray-50 p-4 text-sm">
-        <p className="font-medium text-gray-900">{stockable.name}</p>
+      <section className="rounded-xl bg-muted/40 p-4 text-sm">
+        <p className="font-display text-base font-bold text-foreground">{stockable.name}</p>
         <dl className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
           <div>
-            <dt className="text-gray-500">Stock actual</dt>
-            <dd className="font-mono font-semibold text-gray-900">
-              {stockable.currentStock.toLocaleString('es-CO', { maximumFractionDigits: 4 })}{' '}
-              {stockable.unitStock}
+            <dt className="text-muted-foreground">Stock actual</dt>
+            <dd className="font-semibold text-foreground">
+              <Quantity value={stockable.currentStock} unit={stockable.unitStock} decimals={4} />
             </dd>
           </div>
           <div>
-            <dt className="text-gray-500">Threshold</dt>
-            <dd className="font-mono text-gray-900">
-              {stockable.thresholdMin.toLocaleString('es-CO', { maximumFractionDigits: 4 })}{' '}
-              {stockable.unitStock}
+            <dt className="text-muted-foreground">Threshold</dt>
+            <dd>
+              <Quantity value={stockable.thresholdMin} unit={stockable.unitStock} decimals={4} />
             </dd>
           </div>
           <div>
-            <dt className="text-gray-500">Estado</dt>
+            <dt className="text-muted-foreground">Estado</dt>
             <dd>
               {stockable.lowStock ? (
-                <span className="font-semibold text-amber-700">Stock crítico</span>
+                <Badge tone="warning" size="sm" withDot>
+                  Stock crítico
+                </Badge>
               ) : (
-                <span className="font-semibold text-green-700">OK</span>
+                <Badge tone="success" size="sm">
+                  OK
+                </Badge>
               )}
             </dd>
           </div>
         </dl>
       </section>
 
-      <fieldset className="space-y-3">
-        <legend className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Tipo de movimiento
-        </legend>
-        <div className="space-y-2">
-          {TYPE_OPTIONS.map((opt) => (
-            <label
-              key={opt.value}
-              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors ${
-                type === opt.value
-                  ? 'border-blue-300 bg-blue-50/50'
-                  : 'border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              <input
-                type="radio"
-                name="type"
-                checked={type === opt.value}
-                onChange={() => {
-                  setType(opt.value);
-                  if (opt.value === 'WASTE') setDirection('OUT');
-                }}
-                disabled={submitting}
-                className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500"
-              />
-              <span>
-                <span className="font-medium text-gray-900">{opt.label}</span>
-                <span className="block text-xs text-gray-500">{opt.hint}</span>
-              </span>
-            </label>
-          ))}
-        </div>
+      <fieldset className="space-y-2">
+        <legend className="caps text-[0.6875rem] text-muted-foreground">Tipo de movimiento</legend>
+        <RadioGroup
+          name="type"
+          value={type}
+          onChange={(v) => {
+            setType(v as MovementKind);
+            if (v === 'WASTE') setDirection('OUT');
+          }}
+          options={TYPE_OPTIONS}
+          layout="card"
+        />
       </fieldset>
 
-      {!wasteForcesNegative && (
+      {!wasteForcesNegative ? (
         <fieldset className="space-y-2">
-          <legend className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-            Dirección
-          </legend>
-          <div className="flex gap-3 text-sm">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="radio"
-                name="direction"
-                checked={direction === 'IN'}
-                onChange={() => setDirection('IN')}
-                disabled={submitting}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-              />
-              Entrada (+)
-            </label>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="radio"
-                name="direction"
-                checked={direction === 'OUT'}
-                onChange={() => setDirection('OUT')}
-                disabled={submitting}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-              />
-              Salida (−)
-            </label>
-          </div>
+          <legend className="caps text-[0.6875rem] text-muted-foreground">Dirección</legend>
+          <RadioGroup
+            name="direction"
+            value={direction}
+            onChange={(v) => setDirection(v as 'IN' | 'OUT')}
+            options={[
+              { value: 'IN', label: 'Entrada (+)' },
+              { value: 'OUT', label: 'Salida (−)' },
+            ]}
+            layout="inline"
+          />
         </fieldset>
-      )}
+      ) : null}
 
-      <div className="space-y-2">
-        <Label htmlFor="magnitude">Magnitud ({stockable.unitStock})</Label>
-        <Input
-          id="magnitude"
-          type="number"
-          inputMode="decimal"
-          step="any"
-          min="0"
-          required
-          disabled={submitting}
+      <FormField
+        label={`Magnitud (${stockable.unitStock})`}
+        hint={
+          projected !== null ? (
+            <>
+              Proyección:{' '}
+              <Quantity value={stockable.currentStock} decimals={4} className="text-current" />
+              {' '}
+              {wasteForcesNegative || direction === 'OUT' ? '−' : '+'}{' '}
+              <span className="tabular">{magnitude}</span>
+              {' = '}
+              <span
+                className={`tabular font-semibold ${
+                  projected < stockable.thresholdMin ? 'text-warning' : 'text-foreground'
+                }`}
+              >
+                <Quantity
+                  value={projected}
+                  unit={stockable.unitStock}
+                  decimals={4}
+                  className="text-current"
+                />
+              </span>
+            </>
+          ) : undefined
+        }
+        required
+      >
+        <NumberInput
           value={magnitude}
-          onChange={(e) => setMagnitude(e.target.value)}
+          onChange={setMagnitude}
+          decimals={4}
+          min={0}
+          disabled={submitting}
+          suffix={stockable.unitStock}
           placeholder="100"
         />
-        {projected !== null && (
-          <p className="text-xs text-gray-600">
-            Proyección: <span className="font-mono">{stockable.currentStock.toLocaleString('es-CO', { maximumFractionDigits: 4 })}</span>
-            {' '}
-            {wasteForcesNegative || direction === 'OUT' ? '−' : '+'} <span className="font-mono">{magnitude}</span>
-            {' = '}
-            <span
-              className={`font-mono font-semibold ${
-                projected < stockable.thresholdMin ? 'text-amber-700' : 'text-gray-900'
-              }`}
-            >
-              {projected.toLocaleString('es-CO', { maximumFractionDigits: 4 })} {stockable.unitStock}
-            </span>
-          </p>
-        )}
-      </div>
+      </FormField>
 
-      <div className="space-y-2">
-        <Label htmlFor="notes">Notas (opcional)</Label>
-        <textarea
-          id="notes"
+      <FormField label="Notas (opcional)">
+        <Textarea
           maxLength={500}
           rows={3}
           disabled={submitting}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Razón del ajuste, referencia a una factura, etc."
-          className="flex w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50"
         />
-      </div>
+      </FormField>
 
-      {error && (
+      {error ? (
         <p
           role="alert"
-          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {error}
         </p>
-      )}
+      ) : null}
 
-      <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
+      <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
         <Button
           type="button"
           variant="outline"

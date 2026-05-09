@@ -1,6 +1,21 @@
 import type { Metadata, Viewport } from 'next';
+import { Big_Shoulders, Inter } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';
+
+const fontSans = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sans-app',
+});
+
+const fontDisplay = Big_Shoulders({
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['600', '700', '800'],
+  variable: '--font-display-app',
+});
 
 export const metadata: Metadata = {
   title: 'POS Tercos — POS Cajero',
@@ -15,7 +30,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#1d4ed8',
+  themeColor: '#B81F2A',
   width: 'device-width',
   initialScale: 1,
 };
@@ -26,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es-CO">
+    <html lang="es-CO" className={`${fontSans.variable} ${fontDisplay.variable}`}>
       <head>
         <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
         <link rel="apple-touch-icon" href="/icon-192.svg" />
@@ -34,11 +49,25 @@ export default function RootLayout({
       <body>
         {children}
         <Script id="sw-register" strategy="afterInteractive">
-          {`if ('serviceWorker' in navigator) {
+          {`(function() {
+              if (!('serviceWorker' in navigator)) return;
+              // En localhost desregistramos cualquier SW previo y NO instalamos
+              // uno nuevo: HMR + caché del SW pelean entre sí en dev y dejan
+              // bundles viejos sirviendo. SW solo en prod.
+              const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+              if (isLocal) {
+                navigator.serviceWorker.getRegistrations().then(regs => {
+                  regs.forEach(r => r.unregister());
+                });
+                if ('caches' in window) {
+                  caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+                }
+                return;
+              }
               window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js').catch(console.error);
               });
-            }`}
+            })();`}
         </Script>
       </body>
     </html>

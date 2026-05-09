@@ -1,7 +1,7 @@
 'use client';
 
 import type { PublicWebOrder } from '@pos-tercos/types';
-import { Button } from '@pos-tercos/ui';
+import { Button, cn } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { useWebOrdersSocket } from '../hooks/useWebOrdersSocket';
 import { WebOrdersDrawer } from './WebOrdersDrawer';
@@ -19,12 +19,9 @@ export function WebOrdersAction({
   wsToken: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  // Suscripción WS dedicada para la badge (drawer mantiene la suya — son
-  // eventos broadcast a la misma room, ambas reciben las mismas updates).
   const { orders } = useWebOrdersSocket(initial, wsToken);
   const [pulse, setPulse] = useState(false);
 
-  // Pulso visual cuando llega una orden nueva
   useEffect(() => {
     if (orders.length === 0) return;
     setPulse(true);
@@ -40,11 +37,14 @@ export function WebOrdersAction({
         variant="outline"
         size="sm"
         onClick={() => setOpen(true)}
-        className={pulse ? 'animate-pulse' : ''}
+        className={cn('relative', pulse && 'motion-safe:animate-pulse')}
       >
         Pedidos web
         {total > 0 ? (
-          <span className="ml-2 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+          <span
+            aria-label={`${total} pedidos en espera`}
+            className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[0.625rem] font-bold text-warning-foreground"
+          >
             {total}
           </span>
         ) : null}

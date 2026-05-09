@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { Chip, Container, PageHeader } from '@pos-tercos/ui';
+import { Sparkles } from 'lucide-react';
 import {
   RunActionsBar,
   SuggestionsTable,
@@ -25,9 +27,7 @@ async function loadSuggestions(
 ): Promise<PurchaseSuggestion[] | { error: string }> {
   const qs = status ? `?status=${encodeURIComponent(status)}` : '';
   try {
-    return await serverFetchJson<PurchaseSuggestion[]>(
-      `/purchase-suggestions${qs}`,
-    );
+    return await serverFetchJson<PurchaseSuggestion[]>(`/purchase-suggestions${qs}`);
   } catch (err) {
     if (err instanceof ApiError) return { error: `API ${err.status}` };
     return { error: 'Network error' };
@@ -40,51 +40,42 @@ export default async function PurchaseSuggestionsPage({ searchParams }: PageProp
   const result = await loadSuggestions(filterValue || undefined);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Sugerencias de compra
-          </h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Cron horario detecta stockables con stock por debajo del threshold y
-            crea sugerencias automáticamente. Podés evaluarlas con IA y
-            aceptarlas o rechazarlas.
+    <>
+      <PageHeader
+        eyebrow="Compras"
+        title="Sugerencias de compra"
+        description="Detección automática de insumos con stock por debajo del mínimo. La IA evalúa el costo y la cantidad sugerida, tú decides si la apruebas."
+        icon={<Sparkles className="h-6 w-6" strokeWidth={1.75} />}
+        actions={<RunActionsBar />}
+      />
+      <Container size="7xl" padY="md">
+        <nav className="mb-5 flex flex-wrap gap-2">
+          {FILTER_TABS.map((t) => {
+            const isActive = filterValue === t.value;
+            const href = t.value
+              ? `/purchase-suggestions?status=${encodeURIComponent(t.value)}`
+              : '/purchase-suggestions?status=';
+            return (
+              <Link key={t.value || 'all'} href={href}>
+                <Chip selected={isActive} type="button">
+                  {t.label}
+                </Chip>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {Array.isArray(result) ? (
+          <SuggestionsTable suggestions={result} />
+        ) : (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            No se pudieron cargar las sugerencias. {result.error}
           </p>
-        </div>
-        <RunActionsBar />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {FILTER_TABS.map((t) => {
-          const isActive = filterValue === t.value;
-          return (
-            <Link
-              key={t.value || 'all'}
-              href={
-                t.value
-                  ? `/purchase-suggestions?status=${encodeURIComponent(t.value)}`
-                  : '/purchase-suggestions?status='
-              }
-              className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
-                isActive
-                  ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
-                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              {t.label}
-            </Link>
-          );
-        })}
-      </div>
-
-      {Array.isArray(result) ? (
-        <SuggestionsTable suggestions={result} />
-      ) : (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          No se pudieron cargar las sugerencias. {result.error}
-        </p>
-      )}
-    </div>
+        )}
+      </Container>
+    </>
   );
 }

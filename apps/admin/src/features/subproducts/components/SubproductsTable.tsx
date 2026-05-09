@@ -1,4 +1,13 @@
 import type { Subproduct } from '@pos-tercos/types';
+import {
+  Badge,
+  Button,
+  DataTable,
+  EmptyState,
+  Quantity,
+  type DataTableColumn,
+} from '@pos-tercos/ui';
+import { LineArtIllustration } from '@pos-tercos/brand';
 import Link from 'next/link';
 
 interface SubproductsTableProps {
@@ -6,123 +15,82 @@ interface SubproductsTableProps {
 }
 
 export function SubproductsTable({ subproducts }: SubproductsTableProps) {
-  if (subproducts.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
-        <p className="text-sm font-medium text-gray-900">Aún no tenés subproductos cargados.</p>
-        <p className="mt-1 text-sm text-gray-500">
-          Subproductos son intermedios cocinados (ej. &quot;pollo Nashville cocido&quot;) que se usan
-          en la receta de productos vendibles.
-        </p>
-        <Link
-          href="/subproducts/new"
-          className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          Crear primer subproducto
-        </Link>
-      </div>
-    );
-  }
+  const columns: DataTableColumn<Subproduct>[] = [
+    {
+      key: 'name',
+      header: 'Nombre',
+      cell: (s) => <span className="font-medium text-foreground">{s.name}</span>,
+    },
+    {
+      key: 'yield',
+      header: 'Yield (por batch)',
+      align: 'right',
+      numeric: true,
+      cell: (s) => <Quantity value={s.yield} decimals={4} />,
+    },
+    {
+      key: 'unit',
+      header: 'Unidad',
+      hideOnMobile: true,
+      cell: (s) => s.unit,
+    },
+    {
+      key: 'status',
+      header: 'Estado',
+      cell: (s) =>
+        s.isActive ? (
+          <Badge tone="success" size="sm">
+            Activo
+          </Badge>
+        ) : (
+          <Badge tone="neutral" size="sm">
+            Inactivo
+          </Badge>
+        ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      cell: (s) => (
+        <span className="flex items-center justify-end gap-2">
+          <Link
+            href={`/subproducts/${s.id}/recipe`}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Receta
+          </Link>
+          <span className="text-ink-300" aria-hidden>
+            ·
+          </span>
+          <Link
+            href={`/subproducts/${s.id}`}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Editar
+          </Link>
+        </span>
+      ),
+    },
+  ];
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <Th>Nombre</Th>
-            <Th align="right">Yield (por batch)</Th>
-            <Th>Unidad</Th>
-            <Th>Estado</Th>
-            <Th align="right">Acciones</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {subproducts.map((s) => (
-            <tr key={s.id} className="transition-colors hover:bg-gray-50">
-              <Td>
-                <span className="font-medium text-gray-900">{s.name}</span>
-              </Td>
-              <Td align="right" mono>
-                {formatNumber(s.yield)}
-              </Td>
-              <Td>{s.unit}</Td>
-              <Td>
-                {s.isActive ? (
-                  <Badge tone="success">Activo</Badge>
-                ) : (
-                  <Badge tone="muted">Inactivo</Badge>
-                )}
-              </Td>
-              <Td align="right">
-                <Link
-                  href={`/subproducts/${s.id}/recipe`}
-                  className="font-medium text-blue-600 hover:underline"
-                >
-                  Receta
-                </Link>
-                <span className="mx-2 text-gray-300">·</span>
-                <Link
-                  href={`/subproducts/${s.id}`}
-                  className="font-medium text-blue-600 hover:underline"
-                >
-                  Editar
-                </Link>
-              </Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      rows={subproducts}
+      rowKey={(s) => s.id}
+      columns={columns}
+      emptyState={
+        <EmptyState
+          illustration={<LineArtIllustration name="empty-plate" />}
+          title="Aún no tienes subproductos cargados"
+          description='Subproductos son intermedios cocinados (ej. "pollo Nashville cocido") que se usan en la receta de productos vendibles.'
+          action={
+            <Link href="/subproducts/new">
+              <Button>Crear primer subproducto</Button>
+            </Link>
+          }
+        />
+      }
+    />
   );
-}
-
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
-  return (
-    <th
-      scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align,
-  mono,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-4 py-3 text-gray-700 ${align === 'right' ? 'text-right' : 'text-left'} ${
-        mono ? 'tabular-nums' : ''
-      }`}
-    >
-      {children}
-    </td>
-  );
-}
-
-function Badge({ children, tone }: { children: React.ReactNode; tone: 'success' | 'muted' }) {
-  const cls =
-    tone === 'success'
-      ? 'bg-green-50 text-green-700 ring-green-600/20'
-      : 'bg-gray-100 text-gray-600 ring-gray-500/20';
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function formatNumber(n: number): string {
-  return n.toLocaleString('es-CO', { maximumFractionDigits: 4 });
 }

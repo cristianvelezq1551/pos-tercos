@@ -2,189 +2,172 @@
 
 import { useState } from 'react';
 import type { AuditLogEntry } from '@pos-tercos/types';
+import {
+  Badge,
+  DataTable,
+  EmptyState,
+  formatDate,
+  type BadgeTone,
+  type DataTableColumn,
+} from '@pos-tercos/ui';
+import { LineArtIllustration } from '@pos-tercos/brand';
 
 interface AuditTableProps {
   rows: AuditLogEntry[];
 }
 
-export function AuditTable({ rows }: AuditTableProps) {
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
-        <p className="text-sm font-medium text-gray-900">No hay entradas de auditoría todavía.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <Th>Fecha</Th>
-            <Th>Acción</Th>
-            <Th>Usuario</Th>
-            <Th>Entidad</Th>
-            <Th>Detalle</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {rows.map((entry) => (
-            <AuditRow key={entry.id} entry={entry} />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+interface AuditRowState {
+  entry: AuditLogEntry;
+  open: boolean;
+  toggle: () => void;
 }
 
-function AuditRow({ entry }: { entry: AuditLogEntry }) {
-  const [open, setOpen] = useState(false);
-  const hasDetails =
-    entry.beforeJson !== null || entry.afterJson !== null || entry.metadata !== null;
+export function AuditTable({ rows }: AuditTableProps) {
+  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
+
+  const data: AuditRowState[] = rows.map((entry) => ({
+    entry,
+    open: openIds.has(entry.id),
+    toggle: () =>
+      setOpenIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(entry.id)) next.delete(entry.id);
+        else next.add(entry.id);
+        return next;
+      }),
+  }));
+
+  const columns: DataTableColumn<AuditRowState>[] = [
+    {
+      key: 'date',
+      header: 'Fecha',
+      cell: ({ entry }) => (
+        <time className="tabular text-xs text-muted-foreground" dateTime={entry.createdAt}>
+          {formatDate(entry.createdAt, 'datetime')}
+        </time>
+      ),
+    },
+    {
+      key: 'action',
+      header: 'Acción',
+      cell: ({ entry }) => (
+        <Badge tone={toneFor(entry.action)} size="sm" className="font-mono">
+          {entry.action}
+        </Badge>
+      ),
+    },
+    {
+      key: 'user',
+      header: 'Usuario',
+      cell: ({ entry }) =>
+        entry.userEmail ? (
+          <div className="flex flex-col leading-tight">
+            <span className="font-medium text-foreground">
+              {entry.userFullName ?? entry.userEmail}
+            </span>
+            <span className="text-xs text-muted-foreground">{entry.userEmail}</span>
+          </div>
+        ) : (
+          <span className="text-xs text-ink-400">(sin user)</span>
+        ),
+    },
+    {
+      key: 'entity',
+      header: 'Entidad',
+      hideOnMobile: true,
+      cell: ({ entry }) =>
+        entry.entityType ? (
+          <div className="flex flex-col leading-tight">
+            <span className="caps text-[0.625rem] text-muted-foreground">{entry.entityType}</span>
+            {entry.entityId ? (
+              <span className="font-mono text-xs text-ink-600">
+                {entry.entityId.slice(0, 8)}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <span className="text-xs text-ink-400">—</span>
+        ),
+    },
+    {
+      key: 'detail',
+      header: 'Detalle',
+      cell: ({ entry, open, toggle }) => {
+        const hasDetails =
+          entry.beforeJson !== null || entry.afterJson !== null || entry.metadata !== null;
+        if (!hasDetails) return <span className="text-xs text-ink-400">—</span>;
+        return (
+          <button
+            type="button"
+            onClick={toggle}
+            className="text-xs font-semibold text-primary hover:underline"
+          >
+            {open ? 'Ocultar' : 'Ver detalle'}
+          </button>
+        );
+      },
+    },
+  ];
+
+  // Custom render: tras la tabla, listar los rows expandidos como bloques abajo.
+  const expanded = data.filter((d) => d.open);
 
   return (
-    <>
-      <tr className="hover:bg-gray-50">
-        <Td>
-          <time className="font-mono text-xs text-gray-600" dateTime={entry.createdAt}>
-            {formatDate(entry.createdAt)}
-          </time>
-        </Td>
-        <Td>
-          <ActionBadge action={entry.action} />
-        </Td>
-        <Td>
-          {entry.userEmail ? (
-            <div className="flex flex-col leading-tight">
-              <span className="font-medium text-gray-900">
-                {entry.userFullName ?? entry.userEmail}
-              </span>
-              <span className="text-xs text-gray-500">{entry.userEmail}</span>
-            </div>
-          ) : (
-            <span className="text-xs text-gray-400">(sin user)</span>
-          )}
-        </Td>
-        <Td>
-          {entry.entityType ? (
-            <div className="flex flex-col leading-tight">
-              <span className="text-xs uppercase tracking-wider text-gray-500">
-                {entry.entityType}
-              </span>
-              {entry.entityId && (
-                <span className="font-mono text-xs text-gray-600">
-                  {entry.entityId.slice(0, 8)}
-                </span>
-              )}
-            </div>
-          ) : (
-            <span className="text-xs text-gray-400">—</span>
-          )}
-        </Td>
-        <Td>
-          {hasDetails ? (
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              className="text-xs font-medium text-blue-600 hover:underline"
-            >
-              {open ? 'Ocultar' : 'Ver detalle'}
-            </button>
-          ) : (
-            <span className="text-xs text-gray-400">—</span>
-          )}
-        </Td>
-      </tr>
-      {open && hasDetails && (
-        <tr>
-          <td colSpan={5} className="bg-gray-50 px-4 py-3">
-            <DetailBlock label="Metadata" value={entry.metadata} />
-            <DetailBlock label="Antes" value={entry.beforeJson} />
-            <DetailBlock label="Después" value={entry.afterJson} />
-          </td>
-        </tr>
-      )}
-    </>
+    <div className="space-y-3">
+      <DataTable
+        rows={data}
+        rowKey={({ entry }) => entry.id}
+        columns={columns}
+        emptyState={
+          <EmptyState
+            illustration={<LineArtIllustration name="empty-plate" />}
+            title="No hay entradas de auditoría todavía"
+          />
+        }
+      />
+      {expanded.map(({ entry }) => (
+        <div
+          key={`detail-${entry.id}`}
+          className="rounded-xl border border-border bg-muted/30 p-4 text-sm"
+        >
+          <p className="caps mb-2 text-[0.625rem] text-muted-foreground">
+            Detalle · {entry.action} · {formatDate(entry.createdAt, 'datetime')}
+          </p>
+          <DetailBlock label="Metadata" value={entry.metadata} />
+          <DetailBlock label="Antes" value={entry.beforeJson} />
+          <DetailBlock label="Después" value={entry.afterJson} />
+        </div>
+      ))}
+    </div>
   );
 }
 
 function DetailBlock({ label, value }: { label: string; value: unknown }) {
   if (value === null || value === undefined) return null;
   return (
-    <div className="mb-2 last:mb-0">
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
-      <pre className="mt-1 overflow-x-auto rounded-md border border-gray-200 bg-white p-2 font-mono text-xs text-gray-700">
+    <div className="mb-3 last:mb-0">
+      <p className="caps text-[0.625rem] text-muted-foreground">{label}</p>
+      <pre className="mt-1 overflow-x-auto rounded-md border border-border bg-card p-2 font-mono text-xs text-ink-700">
         {JSON.stringify(value, null, 2)}
       </pre>
     </div>
   );
 }
 
-function ActionBadge({ action }: { action: string }) {
-  const tone = toneFor(action);
-  const map = {
-    auth: 'bg-blue-50 text-blue-700 ring-blue-600/20',
-    failed: 'bg-red-50 text-red-700 ring-red-600/20',
-    inventory: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-    catalog: 'bg-purple-50 text-purple-700 ring-purple-600/20',
-    sale: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-    invoice: 'bg-indigo-50 text-indigo-700 ring-indigo-600/20',
-    other: 'bg-gray-100 text-gray-700 ring-gray-500/20',
-  } as const;
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 font-mono text-xs font-medium ring-1 ring-inset ${map[tone]}`}
-    >
-      {action}
-    </span>
-  );
-}
-
-function toneFor(
-  action: string,
-): 'auth' | 'failed' | 'inventory' | 'catalog' | 'sale' | 'invoice' | 'other' {
-  if (action.endsWith('_FAILED') || action.endsWith('_DENIED')) return 'failed';
-  if (action.startsWith('AUTH_')) return 'auth';
-  // FASE 4 ajustes 2.5: actions específicos de invoice (antes todo era
-  // INVENTORY_MOVEMENT_PURCHASE con metadata.stage).
-  if (action.startsWith('INVOICE_')) return 'invoice';
-  if (action.startsWith('INVENTORY_')) return 'inventory';
+function toneFor(action: string): BadgeTone {
+  if (action.endsWith('_FAILED') || action.endsWith('_DENIED')) return 'danger';
+  if (action.startsWith('AUTH_')) return 'primary';
+  if (action.startsWith('INVOICE_')) return 'info';
+  if (action.startsWith('INVENTORY_')) return 'success';
   if (
     action.startsWith('PRODUCT_') ||
     action.startsWith('SUBPRODUCT_') ||
     action.startsWith('INGREDIENT_') ||
     action.startsWith('RECIPE_')
   ) {
-    return 'catalog';
+    return 'info';
   }
   if (action.startsWith('SALE_') || action.startsWith('SHIFT_') || action.startsWith('CASH_'))
-    return 'sale';
-  return 'other';
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th
-      scope="col"
-      className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({ children }: { children: React.ReactNode }) {
-  return <td className="px-4 py-3 align-top text-gray-700">{children}</td>;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    year: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+    return 'warning';
+  return 'neutral';
 }

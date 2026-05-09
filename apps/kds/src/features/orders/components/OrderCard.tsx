@@ -1,16 +1,17 @@
 'use client';
 
 import type { Sale } from '@pos-tercos/types';
-import { Button } from '@pos-tercos/ui';
+import { Button, Countdown, StatusBadge, cn, type StatusMapping } from '@pos-tercos/ui';
+import { BrandIcon } from '@pos-tercos/brand';
 import { useState } from 'react';
 import { readyOrder, startOrder } from '../api/transitions';
 import { useElapsed } from '../hooks/useElapsed';
 import { openWhatsAppReady } from '../lib/whatsapp';
 
-const STATUS_STYLES: Record<string, { bg: string; ring: string; label: string }> = {
-  PAGADO: { bg: 'bg-amber-50', ring: 'ring-amber-300', label: 'En cola' },
-  EN_PREPARACION: { bg: 'bg-blue-50', ring: 'ring-blue-300', label: 'En preparación' },
-  LISTO_DESPACHO: { bg: 'bg-emerald-50', ring: 'ring-emerald-300', label: 'Listo' },
+const STATUS_MAPPING: StatusMapping = {
+  PAGADO: { label: 'En cola', tone: 'warning', pulse: true },
+  EN_PREPARACION: { label: 'En preparación', tone: 'primary', pulse: true },
+  LISTO_DESPACHO: { label: 'Listo', tone: 'success' },
 };
 
 const ESCALATE_AFTER_MINS = 10;
@@ -20,7 +21,6 @@ export function OrderCard({ order }: { order: Sale }) {
   const [error, setError] = useState<string | null>(null);
   const elapsed = useElapsed(order.paidAt);
 
-  const styles = STATUS_STYLES[order.status] ?? STATUS_STYLES.PAGADO!;
   const isLate = elapsed !== null && elapsed.mins >= ESCALATE_AFTER_MINS;
 
   const handleStart = async () => {
@@ -34,14 +34,12 @@ export function OrderCard({ order }: { order: Sale }) {
       setPending(null);
     }
   };
+
   const handleReady = async () => {
     setPending('ready');
     setError(null);
     try {
       await readyOrder(order.id);
-      // Acoplado: para WEB_PICKUP/WEB_DELIVERY abre wa.me con "tu pedido
-      // está listo". COUNTER no notifica (el cliente está esperando en
-      // mostrador). No bloquea si popup blocked: la transición ya pasó.
       openWhatsAppReady(order);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error');
@@ -52,43 +50,54 @@ export function OrderCard({ order }: { order: Sale }) {
 
   return (
     <article
-      className={`flex flex-col rounded-lg p-4 ring-2 ${styles.bg} ${
-        isLate ? 'ring-red-500 ring-4' : styles.ring
-      }`}
+      className={cn(
+        'flex flex-col rounded-xl border bg-card p-4 transition-colors',
+        isLate
+          ? 'border-destructive ring-2 ring-destructive/30'
+          : order.status === 'LISTO_DESPACHO'
+            ? 'border-success-border'
+            : 'border-border',
+      )}
     >
-      <header className="flex items-baseline justify-between">
-        <span className="text-3xl font-extrabold tabular-nums">#{order.receiptNumber}</span>
-        <span className={`rounded-full bg-white px-2 py-0.5 text-xs font-semibold ${
-          isLate ? 'text-red-700' : 'text-gray-700'
-        }`}>
-          {styles.label}
+      <header className="flex items-baseline justify-between gap-3">
+        <span className="font-display text-3xl font-extrabold tabular tracking-tight text-foreground">
+          #{order.receiptNumber}
         </span>
+        <StatusBadge status={order.status} mapping={STATUS_MAPPING} size="sm" />
       </header>
 
-      {elapsed ? (
-        <p
-          className={`mt-1 font-mono text-sm tabular-nums ${
-            isLate ? 'font-bold text-red-700' : 'text-gray-600'
-          }`}
-        >
-          {String(elapsed.mins).padStart(2, '0')}:{String(elapsed.secs).padStart(2, '0')}
-          {isLate ? ' ⚠' : ''}
-        </p>
-      ) : null}
+      <div className="mt-2 flex items-center gap-2">
+        {order.status === 'EN_PREPARACION' ? (
+          <BrandIcon
+            name="flame"
+            className={cn('h-4 w-4', isLate ? 'text-destructive' : 'text-primary')}
+          />
+        ) : null}
+        <Countdown
+          startedAt={order.paidAt}
+          warningAfterMinutes={7}
+          dangerAfterMinutes={ESCALATE_AFTER_MINS}
+          className="font-display text-2xl font-bold tabular"
+        />
+      </div>
 
       {order.customerName ? (
-        <p className="mt-1 text-sm font-medium text-gray-700">{order.customerName}</p>
+        <p className="mt-2 text-sm font-medium text-foreground">{order.customerName}</p>
       ) : null}
 
-      <ul className="mt-3 flex-1 space-y-1 text-sm text-gray-800">
+      <ul className="mt-3 flex-1 space-y-1.5 text-sm text-foreground">
         {(order.items ?? []).map((item) => (
           <li key={item.id} className="flex items-start gap-2">
-            <span className="font-mono font-bold tabular-nums">×{item.quantity}</span>
+            <span className="font-mono font-bold tabular text-muted-foreground">
+              ×{item.quantity}
+            </span>
             <span className="flex-1">
               <span className="font-medium">{item.productName ?? 'producto'}</span>
-              {item.sizeName ? <span className="text-gray-500"> · {item.sizeName}</span> : null}
+              {item.sizeName ? (
+                <span className="text-muted-foreground"> · {item.sizeName}</span>
+              ) : null}
               {item.modifiers && item.modifiers.length > 0 ? (
-                <span className="text-gray-500">
+                <span className="text-muted-foreground">
                   {' · '}
                   {item.modifiers.map((m) => m.name).join(', ')}
                 </span>
@@ -99,7 +108,12 @@ export function OrderCard({ order }: { order: Sale }) {
       </ul>
 
       {error ? (
-        <p className="mt-2 rounded bg-red-100 px-2 py-1 text-xs text-red-800">{error}</p>
+        <p
+          role="alert"
+          className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive"
+        >
+          {error}
+        </p>
       ) : null}
 
       <footer className="mt-4">
@@ -107,7 +121,8 @@ export function OrderCard({ order }: { order: Sale }) {
           <Button
             onClick={handleStart}
             disabled={pending !== null}
-            className="h-14 w-full text-lg font-bold"
+            size="xl"
+            className="w-full"
           >
             {pending === 'start' ? 'Iniciando…' : 'Iniciar'}
           </Button>
@@ -116,13 +131,17 @@ export function OrderCard({ order }: { order: Sale }) {
           <Button
             onClick={handleReady}
             disabled={pending !== null}
-            className="h-14 w-full bg-emerald-600 text-lg font-bold hover:bg-emerald-700"
+            variant="success"
+            size="xl"
+            className="w-full"
           >
             {pending === 'ready' ? 'Marcando…' : 'Marcar listo'}
           </Button>
         ) : null}
         {order.status === 'LISTO_DESPACHO' ? (
-          <p className="text-center text-sm font-medium text-emerald-700">✓ Listo para entregar</p>
+          <p className="text-center text-sm font-semibold text-success">
+            ✓ Listo para entregar
+          </p>
         ) : null}
       </footer>
     </article>

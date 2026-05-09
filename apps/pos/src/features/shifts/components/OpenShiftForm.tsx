@@ -1,13 +1,13 @@
 'use client';
 
-import { Button, Input, Label } from '@pos-tercos/ui';
+import { Button, FormField, Input, NumberInput } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition, type FormEvent } from 'react';
 import { openShift } from '../api/open';
 
 export function OpenShiftForm() {
   const router = useRouter();
-  const [openingCash, setOpeningCash] = useState('');
+  const [openingCash, setOpeningCash] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -16,15 +16,14 @@ export function OpenShiftForm() {
     e.preventDefault();
     setError(null);
 
-    const parsed = Number(openingCash.replace(/[\s.,]/g, (m) => (m === ',' ? '.' : '')));
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      setError('Ingresá un monto válido (>= 0)');
+    if (openingCash === null || openingCash < 0) {
+      setError('Ingresa un monto válido (>= 0)');
       return;
     }
 
     try {
       await openShift({
-        openingCash: parsed,
+        openingCash,
         notes: notes.trim() || undefined,
       });
       startTransition(() => {
@@ -39,48 +38,49 @@ export function OpenShiftForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-md space-y-5 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+      className="w-full max-w-md space-y-5 rounded-2xl border border-border bg-card p-6 shadow-sm"
     >
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Abrir turno</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Contá la plata que hay en caja antes de empezar a vender.
+        <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground">
+          Abrir turno
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Cuenta la plata que hay en caja antes de empezar a vender.
         </p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="openingCash">Efectivo inicial (COP)</Label>
-        <Input
-          id="openingCash"
-          type="number"
-          min="0"
-          step="100"
-          inputMode="decimal"
-          placeholder="50000"
+      <FormField label="Efectivo inicial (COP)" required>
+        <NumberInput
           value={openingCash}
-          onChange={(e) => setOpeningCash(e.target.value)}
+          onChange={setOpeningCash}
+          prefix="$"
+          min={0}
+          placeholder="50000"
           autoFocus
           required
         />
-      </div>
+      </FormField>
 
-      <div className="space-y-2">
-        <Label htmlFor="notes">Notas (opcional)</Label>
+      <FormField label="Notas (opcional)">
         <Input
-          id="notes"
           type="text"
           placeholder="Ej. cambio recibido del turno anterior"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           maxLength={200}
         />
-      </div>
+      </FormField>
 
       {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          {error}
+        </p>
       ) : null}
 
-      <Button type="submit" className="w-full" disabled={pending}>
+      <Button type="submit" size="lg" className="w-full" disabled={pending}>
         {pending ? 'Abriendo turno…' : 'Abrir turno'}
       </Button>
     </form>

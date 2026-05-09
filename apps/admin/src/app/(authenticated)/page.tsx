@@ -1,6 +1,26 @@
+import {
+  Card,
+  Container,
+  Money,
+  PageHeader,
+  Section,
+  StatCard,
+  formatDate,
+} from '@pos-tercos/ui';
+import { BrandIcon } from '@pos-tercos/brand';
 import Link from 'next/link';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeftRight,
+  ArrowUpRight,
+  BarChart3,
+  ChefHat,
+  LineChart,
+  PackageCheck,
+  Sparkles,
+} from 'lucide-react';
 import { ApiError, serverFetchJson } from '../../lib/api-server';
-import { formatCop } from '../../lib/format';
 import type { DashboardSummary } from '@pos-tercos/types';
 
 async function loadDashboard(): Promise<DashboardSummary | null> {
@@ -14,198 +34,223 @@ async function loadDashboard(): Promise<DashboardSummary | null> {
   }
 }
 
-export default async function DashboardPage() {
+export default async function InicioPage() {
   const summary = await loadDashboard();
+  const today = summary ? formatDate(summary.date, 'long') : null;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Resumen del día — {summary ? new Date(summary.date).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' }) : 'cargando…'}
-        </p>
-      </div>
-
-      {summary ? (
-        <>
-          {/* Tarjetas: revenue / count / pendientes / stock */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Revenue de hoy"
-              value={formatCop(summary.todayRevenue)}
-              hint={
-                summary.weekOverWeekPct === null
-                  ? 'sin sample semana pasada'
-                  : `${summary.weekOverWeekPct >= 0 ? '+' : ''}${(summary.weekOverWeekPct * 100).toFixed(1)}% vs hace 7 días`
-              }
-              hintTone={
-                summary.weekOverWeekPct === null
-                  ? 'muted'
-                  : summary.weekOverWeekPct >= 0
-                    ? 'positive'
-                    : 'negative'
-              }
-              href="/reports/sales"
-            />
-            <StatCard
-              label="Ventas hoy"
-              value={String(summary.todayCount)}
-              hint={`Descuentos: ${formatCop(summary.todayDiscount)}`}
-              href="/reports/sales"
-            />
-            <StatCard
-              label="Pedidos web por aceptar"
-              value={String(summary.pendingWebOrders)}
-              tone={summary.pendingWebOrders > 0 ? 'warning' : 'default'}
-              hint="Aceptar y contactar desde POS"
-            />
-            <StatCard
-              label="Stock crítico"
-              value={String(summary.lowStockCount)}
-              tone={summary.lowStockCount > 0 ? 'warning' : 'default'}
-              hint={
-                summary.pendingSuggestions > 0
-                  ? `${summary.pendingSuggestions} sugerencias IA esperando`
-                  : 'sin sugerencias pendientes'
-              }
-              href="/purchase-suggestions"
-            />
-          </div>
-
-          {/* Tarjetas operación */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <SmallCard
-              label="En cocina"
-              value={summary.ordersInKitchen}
-              tone="blue"
-            />
-            <SmallCard
-              label="Listos para entregar"
-              value={summary.ordersReady}
-              tone="emerald"
-            />
-            <SmallCard
-              label="Sugerencias pendientes"
-              value={summary.pendingSuggestions}
-              tone="purple"
-              href="/purchase-suggestions"
-            />
-          </div>
-        </>
-      ) : (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          No se pudo cargar el resumen. Verificá que el API esté corriendo.
-        </p>
-      )}
-
-      <section className="rounded-lg border border-gray-200 bg-white p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
-          Reportes
-        </h2>
-        <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <ReportLink href="/reports/sales" title="Ventas y métodos de pago" desc="Serie temporal, breakdown por tipo y método" />
-          <ReportLink href="/reports/products" title="Top productos y márgenes" desc="Qty, revenue y margen estimado por receta" />
-          <ReportLink href="/reports/operations" title="Operación: WhatsApp + IA + horarios" desc="Cobertura WA, métricas IA, heatmap día/hora" />
-          <ReportLink href="/reports/anomalies" title="Anomalías por cajero" desc="Detección 2σ de descuadres y voids" />
-          <ReportLink href="/reports/reconciliation" title="Reconciliación CSV pagos" desc="Match Nequi/Bancolombia vs sales digitales" />
-        </ul>
-      </section>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  href,
-  tone = 'default',
-  hint,
-  hintTone = 'muted',
-}: {
-  label: string;
-  value: string;
-  href?: string;
-  tone?: 'default' | 'warning';
-  hint?: string;
-  hintTone?: 'muted' | 'positive' | 'negative';
-}) {
-  const valueClass = tone === 'warning' ? 'text-amber-600' : 'text-gray-900';
-  const hintClass =
-    hintTone === 'positive'
-      ? 'text-emerald-600'
-      : hintTone === 'negative'
-        ? 'text-red-600'
-        : 'text-gray-500';
-  const cardClass =
-    'block rounded-lg border border-gray-200 bg-white p-5 transition-colors hover:border-blue-300 hover:bg-blue-50/30';
-  const inner = (
     <>
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
-      <p className={`mt-2 text-3xl font-bold tracking-tight tabular-nums ${valueClass}`}>{value}</p>
-      {hint && <p className={`mt-1 text-xs ${hintClass}`}>{hint}</p>}
+      <PageHeader
+        eyebrow="Operación"
+        title="Inicio"
+        description={
+          summary ? `Resumen del día — ${today}` : 'No se pudo cargar el resumen.'
+        }
+        icon={<BrandIcon name="flame" className="h-6 w-6" />}
+      />
+
+      <Container size="7xl" padY="md">
+        <div className="space-y-10">
+          {summary ? (
+            <>
+              <Section
+                eyebrow="Hoy en números"
+                title="Pulso del local"
+                size="md"
+                actions={
+                  <Link
+                    href="/reports/sales"
+                    className="caps inline-flex items-center gap-1 text-[0.6875rem] text-primary hover:underline"
+                  >
+                    Ver reporte completo
+                    <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
+                  </Link>
+                }
+              >
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <StatCard
+                    label="Revenue de hoy"
+                    value={<Money amount={summary.todayRevenue} size="3xl" weight="bold" />}
+                    delta={
+                      summary.weekOverWeekPct == null
+                        ? null
+                        : Number((summary.weekOverWeekPct * 100).toFixed(1))
+                    }
+                    deltaLabel={
+                      summary.weekOverWeekPct == null ? 'sin datos previos' : 'vs hace 7 días'
+                    }
+                    icon={<BrandIcon name="flame" className="h-5 w-5" />}
+                    tone="primary"
+                  />
+                  <StatCard
+                    label="Ventas hoy"
+                    value={String(summary.todayCount)}
+                    hint={
+                      <>
+                        Descuentos:{' '}
+                        <Money amount={summary.todayDiscount} size="xs" weight="medium" />
+                      </>
+                    }
+                    icon={<BrandIcon name="burger" className="h-5 w-5" />}
+                  />
+                  <StatCard
+                    label="Pedidos web por aceptar"
+                    value={String(summary.pendingWebOrders)}
+                    hint="Aceptar y contactar desde POS"
+                    tone={summary.pendingWebOrders > 0 ? 'warning' : 'neutral'}
+                    icon={<AlertTriangle className="h-5 w-5" strokeWidth={1.75} />}
+                  />
+                  <StatCard
+                    label="Stock crítico"
+                    value={String(summary.lowStockCount)}
+                    hint={
+                      summary.pendingSuggestions > 0
+                        ? `${summary.pendingSuggestions} sugerencias IA esperando`
+                        : 'sin sugerencias pendientes'
+                    }
+                    tone={summary.lowStockCount > 0 ? 'warning' : 'neutral'}
+                    icon={<PackageCheck className="h-5 w-5" strokeWidth={1.75} />}
+                  />
+                </div>
+              </Section>
+
+              <Section eyebrow="Cocina" title="En vivo" size="md">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <KitchenCard
+                    label="En cocina"
+                    value={summary.ordersInKitchen}
+                    icon={<ChefHat className="h-5 w-5" strokeWidth={1.75} />}
+                    tone="warning"
+                  />
+                  <KitchenCard
+                    label="Listos para entregar"
+                    value={summary.ordersReady}
+                    icon={<BrandIcon name="flame" className="h-5 w-5" />}
+                    tone="success"
+                  />
+                  <KitchenCard
+                    label="Sugerencias pendientes"
+                    value={summary.pendingSuggestions}
+                    icon={<Sparkles className="h-5 w-5" strokeWidth={1.75} />}
+                    href="/purchase-suggestions"
+                  />
+                </div>
+              </Section>
+            </>
+          ) : (
+            <div
+              role="alert"
+              className="rounded-2xl border border-warning-border bg-warning-bg px-4 py-3 text-sm text-warning"
+            >
+              No se pudo cargar el resumen. Verifica que el API esté corriendo.
+            </div>
+          )}
+
+          <Section eyebrow="Profundizar" title="Reportes" size="md">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <ReportLink
+                href="/reports/sales"
+                title="Ventas y métodos de pago"
+                desc="Serie temporal, breakdown por tipo y método"
+                icon={<LineChart className="h-4 w-4" strokeWidth={1.75} />}
+              />
+              <ReportLink
+                href="/reports/products"
+                title="Top productos y márgenes"
+                desc="Qty, revenue y margen estimado por receta"
+                icon={<BarChart3 className="h-4 w-4" strokeWidth={1.75} />}
+              />
+              <ReportLink
+                href="/reports/operations"
+                title="Operación: WhatsApp + IA + horarios"
+                desc="Cobertura WA, métricas IA, heatmap día/hora"
+                icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
+              />
+              <ReportLink
+                href="/reports/anomalies"
+                title="Anomalías por cajero"
+                desc="Detección 2σ de descuadres y voids"
+                icon={<AlertTriangle className="h-4 w-4" strokeWidth={1.75} />}
+              />
+              <ReportLink
+                href="/reports/reconciliation"
+                title="Reconciliación CSV pagos"
+                desc="Match Nequi/Bancolombia vs sales digitales"
+                icon={<ArrowLeftRight className="h-4 w-4" strokeWidth={1.75} />}
+              />
+            </div>
+          </Section>
+        </div>
+      </Container>
     </>
   );
-  if (href) {
-    return (
-      <Link href={href} className={cardClass}>
-        {inner}
-      </Link>
-    );
-  }
-  return <div className={cardClass}>{inner}</div>;
 }
 
-function SmallCard({
+function KitchenCard({
   label,
   value,
+  icon,
   tone,
   href,
 }: {
   label: string;
   value: number;
-  tone: 'blue' | 'emerald' | 'purple';
+  icon?: React.ReactNode;
+  tone?: 'success' | 'warning' | 'primary';
   href?: string;
 }) {
-  const cls = {
-    blue: 'bg-blue-50 text-blue-900 ring-blue-200',
-    emerald: 'bg-emerald-50 text-emerald-900 ring-emerald-200',
-    purple: 'bg-purple-50 text-purple-900 ring-purple-200',
-  }[tone];
-  const base = `flex items-center justify-between rounded-lg p-4 ring-1 ring-inset ${cls}`;
+  const variant = tone === 'warning' ? 'accent' : 'default';
   const inner = (
-    <>
-      <span className="text-sm font-medium">{label}</span>
-      <span className="text-2xl font-bold tabular-nums">{value}</span>
-    </>
+    <Card
+      variant={variant}
+      tone={tone === 'warning' ? 'warning' : tone === 'success' ? 'success' : 'none'}
+      className="px-5 py-4"
+      interactive={Boolean(href)}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          {icon}
+          {label}
+        </span>
+        <span className="font-display text-3xl font-extrabold tabular tracking-tight text-foreground">
+          {value}
+        </span>
+      </div>
+    </Card>
   );
   if (href) {
-    return (
-      <Link href={href} className={`${base} hover:opacity-80`}>
-        {inner}
-      </Link>
-    );
+    return <Link href={href}>{inner}</Link>;
   }
-  return <div className={base}>{inner}</div>;
+  return inner;
 }
 
 function ReportLink({
   href,
   title,
   desc,
+  icon,
 }: {
   href: string;
   title: string;
   desc: string;
+  icon?: React.ReactNode;
 }) {
   return (
-    <li>
-      <Link
-        href={href}
-        className="block rounded-md border border-gray-200 bg-white p-3 transition-colors hover:border-blue-300 hover:bg-blue-50/30"
-      >
-        <p className="text-sm font-semibold text-gray-900">{title}</p>
-        <p className="mt-0.5 text-xs text-gray-600">{desc}</p>
-      </Link>
-    </li>
+    <Link
+      href={href}
+      className="group flex items-start gap-3 rounded-2xl border border-border bg-card p-4 transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:border-ink-300 hover:bg-muted/40 hover:shadow-sm motion-reduce:hover:translate-y-0"
+    >
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-ink-700 transition-colors group-hover:border-primary group-hover:text-primary">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="font-display text-sm font-bold tracking-tight text-foreground">{title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
+      </div>
+      <ArrowUpRight
+        className="mt-1 h-4 w-4 shrink-0 text-ink-400 transition-colors group-hover:text-primary"
+        strokeWidth={1.75}
+      />
+    </Link>
   );
 }

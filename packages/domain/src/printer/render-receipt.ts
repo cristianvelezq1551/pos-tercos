@@ -48,8 +48,12 @@ export function renderReceiptHtml(r: ReceiptData): string {
 <meta charset="utf-8" />
 <title>Recibo #${r.receiptNumber}</title>
 <style>
-  @page { size: 80mm auto; margin: 4mm; }
-  body { width: 72mm; margin: 0 auto; padding: 0; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.35; color: #000; }
+  @page { size: 80mm auto; margin: 0; }
+  html, body { background: #fff; }
+  body { width: 76mm; margin: 0 auto; padding: 2mm; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.35; color: #000; }
+  /* Evita page-breaks dentro del recibo — previene loops de alimentación
+     en impresoras térmicas configuradas como genéricas */
+  body, table.items, .totals, .footer { page-break-inside: avoid; break-inside: avoid; }
   .biz { text-align: center; }
   .biz .name { font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
   .biz .meta { font-size: 10px; }

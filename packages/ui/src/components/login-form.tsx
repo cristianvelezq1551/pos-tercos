@@ -12,10 +12,33 @@ export interface LoginFormProps {
   isLoading?: boolean;
   errorMessage?: string | null;
   className?: string;
+  /**
+   * Slot opcional que reemplaza el header default ({appLabel + título}).
+   * Pasar p.ej. un `<BrandHeader>` para layouts editoriales con logo grande.
+   */
+  header?: React.ReactNode;
+  /**
+   * Slot debajo del botón submit. Útil para footer legal, links secundarios.
+   */
+  footerSlot?: React.ReactNode;
+  /** Personalizar texto del botón submit. Default "Ingresar". */
+  submitLabel?: string;
 }
 
 const LoginForm = React.forwardRef<HTMLFormElement, LoginFormProps>(
-  ({ appLabel, onSubmit, isLoading = false, errorMessage = null, className }, ref) => {
+  (
+    {
+      appLabel,
+      onSubmit,
+      isLoading = false,
+      errorMessage = null,
+      className,
+      header,
+      footerSlot,
+      submitLabel = 'Ingresar',
+    },
+    ref,
+  ) => {
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
 
@@ -30,16 +53,23 @@ const LoginForm = React.forwardRef<HTMLFormElement, LoginFormProps>(
         ref={ref}
         onSubmit={handleSubmit}
         className={cn(
-          'mx-auto w-full max-w-sm space-y-6 rounded-lg border border-gray-200 bg-white p-8 shadow-sm',
+          'w-full space-y-6',
+          !header && 'mx-auto max-w-sm rounded-2xl border border-border bg-card p-8 shadow-md',
           className,
         )}
         noValidate
       >
-        <header className="space-y-1 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">{appLabel}</p>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Iniciar sesión</h1>
-          <p className="text-sm text-gray-500">Ingresá tus credenciales para continuar.</p>
-        </header>
+        {header ?? (
+          <header className="space-y-1.5 text-center">
+            <p className="caps text-[0.6875rem] text-primary">{appLabel}</p>
+            <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">
+              Iniciar sesión
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Ingresá tus credenciales para continuar.
+            </p>
+          </header>
+        )}
 
         <div className="space-y-4">
           <div className="space-y-2">
@@ -75,15 +105,23 @@ const LoginForm = React.forwardRef<HTMLFormElement, LoginFormProps>(
         {errorMessage ? (
           <p
             role="alert"
-            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            aria-live="polite"
+            className="rounded-md border border-destructive/30 bg-red-50 px-3 py-2 text-sm text-destructive"
           >
             {errorMessage}
           </p>
         ) : null}
 
-        <Button type="submit" className="w-full" disabled={isLoading || !email || !password}>
-          {isLoading ? 'Ingresando…' : 'Ingresar'}
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full"
+          disabled={isLoading || !email || !password}
+        >
+          {isLoading ? 'Ingresando…' : submitLabel}
         </Button>
+
+        {footerSlot}
       </form>
     );
   },

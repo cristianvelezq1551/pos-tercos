@@ -38,7 +38,7 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-5">
+      <div className="rounded-lg border border-border bg-card p-5">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Row label="Tipo" value={promotion.type} mono />
           <Row label="Estado" value={promotion.isActive ? 'Activa' : 'Inactiva'} />
@@ -67,18 +67,18 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
         </dl>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-sm font-semibold text-gray-900">
+      <div className="rounded-lg border border-border bg-card p-5">
+        <h2 className="mb-3 text-sm font-semibold text-foreground">
           Productos ({linkedProducts.length})
         </h2>
         {linkedProducts.length === 0 ? (
-          <p className="text-sm text-gray-500">Sin productos asociados.</p>
+          <p className="text-sm text-muted-foreground">Sin productos asociados.</p>
         ) : (
           <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
             {linkedProducts.map((p) => (
               <li
                 key={p.id}
-                className="flex items-center gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5 text-sm"
+                className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-sm"
               >
                 <span>{p.name}</span>
                 {p.isCombo && (
@@ -91,7 +91,7 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
       </div>
 
       {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -106,9 +106,9 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
           </Button>
         )}
       </div>
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         Editar campos por-tipo (ej. cambiar % o monto fijo) no está soportado: para
-        modificar el descuento, desactivá esta promo y creá una nueva.
+        modificar el descuento, desactivá esta promo y crea una nueva.
       </p>
     </div>
   );
@@ -156,8 +156,8 @@ function Row({
 }) {
   return (
     <>
-      <dt className="text-gray-500">{label}</dt>
-      <dd className={`text-gray-900 ${mono ? 'tabular-nums' : ''}`}>{value}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={`text-foreground ${mono ? 'tabular-nums' : ''}`}>{value}</dd>
     </>
   );
 }

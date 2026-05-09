@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { CloneInvoiceButton, DeleteDraftButton } from '../../../../features/invoices';
-import { Button } from '@pos-tercos/ui';
+import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import type { Invoice, InventoryMovement } from '@pos-tercos/types';
+import { StockableTypeBadge } from '../../../../components/StockableTypeBadge';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -16,9 +17,9 @@ const STATUS_LABEL: Record<Invoice['status'], string> = {
 };
 
 const STATUS_TONE: Record<Invoice['status'], string> = {
-  PENDING_REVIEW: 'bg-amber-50 text-amber-700 ring-amber-600/30',
-  CONFIRMED: 'bg-green-50 text-green-700 ring-green-600/20',
-  REJECTED: 'bg-red-50 text-red-700 ring-red-600/20',
+  PENDING_REVIEW: 'bg-warning-bg/30 text-warning ring-warning-border',
+  CONFIRMED: 'bg-success-bg/30 text-success ring-success-border',
+  REJECTED: 'bg-destructive/10 text-destructive ring-destructive/30',
 };
 
 export default async function InvoiceDetailPage({ params }: PageProps) {
@@ -44,40 +45,43 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
       : [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/invoices" className="text-sm text-blue-600 hover:underline">
-          ← Volver a facturas
-        </Link>
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {invoice.supplierName ?? '— sin proveedor —'}
-            </h1>
-            <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_TONE[invoice.status]}`}
-            >
-              {STATUS_LABEL[invoice.status]}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {invoice.status === 'PENDING_REVIEW' && (
+    <>
+      <PageHeader
+        eyebrow="Compras"
+        title={invoice.supplierName ?? 'Sin proveedor'}
+        description={STATUS_LABEL[invoice.status]}
+        breadcrumbs={[
+          { label: 'Facturas', href: '/invoices' },
+          { label: invoice.invoiceNumber ?? invoice.id.slice(0, 8) },
+        ]}
+        actions={
+          <>
+            {invoice.status === 'PENDING_REVIEW' ? (
               <>
                 <Link href={`/invoices/${invoice.id}/edit`}>
-                  <Button size="sm">Continuar edición</Button>
+                  <Button>Continuar edición</Button>
                 </Link>
                 <DeleteDraftButton
                   invoiceId={invoice.id}
                   supplierName={invoice.supplierName ?? null}
                 />
               </>
-            )}
-            {invoice.status === 'CONFIRMED' && (
+            ) : null}
+            {invoice.status === 'CONFIRMED' ? (
               <CloneInvoiceButton sourceInvoiceId={invoice.id} />
-            )}
-          </div>
+            ) : null}
+          </>
+        }
+      />
+      <Container size="7xl" padY="md">
+       <div className="space-y-6">
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${STATUS_TONE[invoice.status]}`}
+          >
+            {STATUS_LABEL[invoice.status]}
+          </span>
         </div>
-      </div>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Número factura" value={invoice.invoiceNumber ?? '—'} />
@@ -98,8 +102,8 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
         />
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Auditoría
         </h2>
         <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
@@ -116,13 +120,13 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Ítems ({invoice.items?.length ?? 0})
         </h2>
         {invoice.items && invoice.items.length > 0 ? (
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <table className="min-w-full divide-y divide-border text-sm">
+              <thead className="bg-muted/40">
                 <tr>
                   <Th>Insumo</Th>
                   <Th>Descripción</Th>
@@ -132,23 +136,24 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                   <Th align="right">Total</Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {invoice.items.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
+                  <tr key={item.id} className="hover:bg-muted/40">
                     <Td>
                       <div className="flex flex-col leading-tight">
-                        <span className="font-medium text-gray-900">
-                          {item.itemName ?? <span className="text-gray-400">—</span>}
+                        <span className="font-medium text-foreground">
+                          {item.itemName ?? <span className="text-muted-foreground">—</span>}
                         </span>
                         {item.entityType && (
-                          <span className="text-xs text-gray-500">
-                            {item.entityType === 'INGREDIENT' ? '🌾 Insumo' : '📦 Producto'}
-                          </span>
+                          <StockableTypeBadge
+                            type={item.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
+                            size="sm"
+                          />
                         )}
                       </div>
                     </Td>
                     <Td>
-                      <span className="text-xs text-gray-600">{item.descriptionRaw}</span>
+                      <span className="text-xs text-muted-foreground">{item.descriptionRaw}</span>
                     </Td>
                     <Td align="right" mono>
                       {formatNumber(item.quantity)}
@@ -166,14 +171,14 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
             </table>
           </div>
         ) : (
-          <p className="rounded-md border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
+          <p className="rounded-md border border-dashed border-input bg-card p-6 text-center text-sm text-muted-foreground">
             La factura no tiene ítems registrados.
           </p>
         )}
       </section>
 
       {invoice.status === 'PENDING_REVIEW' && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-sm text-warning">
           Esta factura está como borrador. Usá{' '}
           <Link href={`/invoices/${invoice.id}/edit`} className="font-medium underline">
             Continuar edición
@@ -185,17 +190,17 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
       {invoice.status === 'CONFIRMED' && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Movimientos de stock generados ({movements.length})
           </h2>
           {movements.length === 0 ? (
-            <p className="rounded-md border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
+            <p className="rounded-md border border-dashed border-input bg-card p-6 text-center text-sm text-muted-foreground">
               Sin movimientos registrados (caso inesperado para una factura CONFIRMED).
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <table className="min-w-full divide-y divide-border text-sm">
+                <thead className="bg-muted/40">
                   <tr>
                     <Th>Item</Th>
                     <Th>Tipo</Th>
@@ -204,24 +209,27 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                     <Th align="right">Acción</Th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border">
                   {movements.map((m) => {
                     const itemId = m.entityType === 'INGREDIENT' ? m.ingredientId : m.productId;
                     const itemName = m.itemName;
                     return (
-                      <tr key={m.id} className="hover:bg-gray-50">
+                      <tr key={m.id} className="hover:bg-muted/40">
                         <Td>
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-foreground">
                             {itemName ?? '(eliminado)'}
                           </span>
                         </Td>
                         <Td>
-                          {m.entityType === 'INGREDIENT' ? '🌾 Insumo' : '📦 Producto'}
+                          <StockableTypeBadge
+                            type={m.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
+                            size="sm"
+                          />
                         </Td>
                         <Td align="right" mono>
                           <span
                             className={
-                              m.delta > 0 ? 'font-medium text-green-700' : 'text-red-700'
+                              m.delta > 0 ? 'font-medium text-success' : 'text-destructive'
                             }
                           >
                             {m.delta > 0 ? '+' : ''}
@@ -229,13 +237,13 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                           </span>
                         </Td>
                         <Td>
-                          <span className="text-xs text-gray-600">{m.notes ?? '—'}</span>
+                          <span className="text-xs text-muted-foreground">{m.notes ?? '—'}</span>
                         </Td>
                         <Td align="right">
                           {itemId ? (
                             <Link
                               href={`/inventory/${m.entityType.toLowerCase()}/${itemId}/adjust`}
-                              className="font-medium text-blue-600 hover:underline"
+                              className="font-medium text-primary hover:underline"
                             >
                               Ver stock
                             </Link>
@@ -253,10 +261,10 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
       {invoice.photoStorageKey && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Foto original
           </h2>
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <a
               href={`/api/invoices/${invoice.id}/photo`}
               target="_blank"
@@ -267,16 +275,18 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               <img
                 src={`/api/invoices/${invoice.id}/photo`}
                 alt={`Foto de la factura ${invoice.invoiceNumber ?? invoice.id.slice(0, 8)}`}
-                className="max-h-96 rounded-md border border-gray-200 object-contain"
+                className="max-h-96 rounded-md border border-border object-contain"
               />
             </a>
-            <p className="mt-2 text-[11px] text-gray-500">
+            <p className="mt-2 text-[11px] text-muted-foreground">
               Click para abrir en pestaña nueva (full size).
             </p>
           </div>
         </section>
       )}
-    </div>
+       </div>
+      </Container>
+    </>
   );
 }
 
@@ -290,9 +300,9 @@ function Card({
   mono?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
-      <p className={`mt-1 text-base font-semibold text-gray-900 ${mono ? 'tabular-nums' : ''}`}>
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-base font-semibold text-foreground ${mono ? 'tabular-nums' : ''}`}>
         {value}
       </p>
     </div>
@@ -302,8 +312,8 @@ function Card({
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex gap-2">
-      <dt className="font-medium text-gray-500">{k}:</dt>
-      <dd className="text-gray-900">{v}</dd>
+      <dt className="font-medium text-muted-foreground">{k}:</dt>
+      <dd className="text-foreground">{v}</dd>
     </div>
   );
 }
@@ -312,7 +322,7 @@ function Th({ children, align }: { children: React.ReactNode; align?: 'right' })
   return (
     <th
       scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 ${
+      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >
@@ -332,7 +342,7 @@ function Td({
 }) {
   return (
     <td
-      className={`px-4 py-3 text-gray-700 ${align === 'right' ? 'text-right' : 'text-left'} ${
+      className={`px-4 py-3 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
         mono ? 'tabular-nums' : ''
       }`}
     >

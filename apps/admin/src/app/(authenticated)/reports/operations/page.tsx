@@ -1,3 +1,5 @@
+import { Container, PageHeader } from '@pos-tercos/ui';
+import { Activity } from 'lucide-react';
 import { RangeFilter } from '../../../../features/reports-sales';
 import {
   HourHeatmap,
@@ -48,30 +50,34 @@ export default async function ReportsOperationsPage({ searchParams }: PageProps)
   const result = await loadAll(sp.from, sp.to);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Operación</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Cobertura WhatsApp por stage, métricas de sugerencias IA y heatmap
-          día × hora del demand.
-        </p>
-      </div>
-
-      <RangeFilter />
-
-      {'error' in result ? (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          No se pudo cargar el reporte. {result.error}
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <WhatsAppMetricsCard metrics={result.whatsapp} />
-            <SuggestionsMetricsCard metrics={result.suggestions} />
-          </div>
-          <HourHeatmap report={result.heatmap} />
-        </>
-      )}
-    </div>
+    <>
+      <PageHeader
+        eyebrow="Reportes"
+        title="Operación"
+        description="Cobertura de WhatsApp por etapa, métricas de las sugerencias con IA y mapa de calor por día y hora."
+        icon={<Activity className="h-6 w-6" strokeWidth={1.75} />}
+      />
+      <Container size="7xl" padY="md">
+        <div className="space-y-5">
+          <RangeFilter />
+          {'error' in result ? (
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              No se pudo cargar el reporte. {result.error}
+            </p>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <WhatsAppMetricsCard metrics={result.whatsapp} />
+                <SuggestionsMetricsCard metrics={result.suggestions} />
+              </div>
+              <HourHeatmap report={result.heatmap} />
+            </div>
+          )}
+        </div>
+      </Container>
+    </>
   );
 }

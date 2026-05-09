@@ -1,15 +1,11 @@
 import type { PublicWebOrder, Shift, User } from '@pos-tercos/types';
+import { Badge, Topbar, UserMenu, formatCop } from '@pos-tercos/ui';
+import { BrandLogo } from '@pos-tercos/brand';
 import { ChangePinAction, LogoutButton } from '../features/auth';
 import { VoidSaleAction } from '../features/sales/components/VoidSaleAction';
 import { CloseShiftAction } from '../features/shifts/components/CloseShiftAction';
+import { TurnAction } from '../features/turn';
 import { WebOrdersAction } from '../features/web-orders/components/WebOrdersAction';
-import { APP_LABEL } from '../lib/auth-config';
-
-const COP = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
 
 export function PosTopbar({
   user,
@@ -23,31 +19,48 @@ export function PosTopbar({
   wsToken: string | null;
 }) {
   return (
-    <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
-      <div className="flex items-center gap-3">
-        <span className="rounded-md bg-blue-600 px-2 py-1 text-xs font-bold text-white">POS</span>
-        <span className="text-sm font-semibold tracking-tight">{APP_LABEL}</span>
+    <Topbar variant="light">
+      <Topbar.Brand>
+        <BrandLogo variant="full" theme="dark" size="h-7" />
         {shift ? (
-          <span
-            className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700"
-            title={`Apertura ${COP.format(shift.openingCash)}`}
-          >
-            ● Turno abierto
+          <Badge tone="success" size="md" withDot className="ml-2">
+            Turno abierto · {formatCop(shift.openingCash)}
+          </Badge>
+        ) : (
+          <span className="caps ml-2 text-[0.625rem] text-muted-foreground">
+            Sin turno
           </span>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-3">
+        )}
+      </Topbar.Brand>
+
+      <Topbar.Actions>
+        <TurnAction />
         <WebOrdersAction initial={webOrdersInitial} wsToken={wsToken} />
         <VoidSaleAction shiftId={shift?.id ?? null} />
         <CloseShiftAction shift={shift} />
         <ChangePinAction user={user} />
         {user ? (
-          <span className="text-sm text-gray-600">
-            {user.email} · <span className="font-medium text-gray-900">{user.role}</span>
-          </span>
-        ) : null}
-        <LogoutButton />
-      </div>
-    </header>
+          <UserMenu
+            variant="dark"
+            user={{ email: user.email, name: user.fullName, role: roleLabel(user.role) }}
+            trailing={<LogoutButton />}
+          />
+        ) : (
+          <LogoutButton />
+        )}
+      </Topbar.Actions>
+    </Topbar>
   );
+}
+
+function roleLabel(role: string): string {
+  const map: Record<string, string> = {
+    DUENO: 'Dueño',
+    ADMIN_OPERATIVO: 'Administrador operativo',
+    ADMIN_FINANCIERO: 'Administrador financiero',
+    CAJERO: 'Cajero',
+    COCINERO: 'Cocinero',
+    REPARTIDOR: 'Repartidor',
+  };
+  return map[role] ?? role;
 }

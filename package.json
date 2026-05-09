@@ -33,7 +33,8 @@
       "bcrypt",
       "prisma",
       "sharp",
-      "unrs-resolver"
+      "unrs-resolver",
+      "usb"
     ]
   }
 }

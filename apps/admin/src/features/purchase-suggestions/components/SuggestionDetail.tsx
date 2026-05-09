@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@pos-tercos/ui';
 import type { PurchaseSuggestion } from '@pos-tercos/types';
 import { formatCop, formatNumber } from '../../../lib/format';
+import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
 import {
   acceptSuggestion,
   evaluateSuggestion,
@@ -55,13 +56,16 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-5">
+      <div className="rounded-lg border border-border bg-card p-5">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Row label="Item" value={suggestion.entityName} />
           <Row
             label="Tipo"
             value={
-              suggestion.entityType === 'INGREDIENT' ? '🌾 Insumo' : '📦 Producto'
+              <StockableTypeBadge
+                type={suggestion.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
+                size="sm"
+              />
             }
           />
           <Row
@@ -115,8 +119,8 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
           )}
           {suggestion.resolutionNote && (
             <>
-              <dt className="col-span-2 mt-2 text-gray-500">Nota:</dt>
-              <dd className="col-span-2 -mt-1 rounded-md bg-gray-50 px-3 py-2 text-gray-800">
+              <dt className="col-span-2 mt-2 text-muted-foreground">Nota:</dt>
+              <dd className="col-span-2 -mt-1 rounded-md bg-muted/40 px-3 py-2 text-foreground">
                 {suggestion.resolutionNote}
               </dd>
             </>
@@ -124,9 +128,9 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
         </dl>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-5">
+      <div className="rounded-lg border border-border bg-card p-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">
+          <h2 className="text-sm font-semibold text-foreground">
             Análisis del asistente IA
           </h2>
           {isOpen && (
@@ -146,10 +150,10 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
         </div>
         {suggestion.llmRationale ? (
           <div className="mt-3 space-y-2">
-            <p className="rounded-md bg-purple-50 px-4 py-3 text-sm leading-relaxed text-gray-800">
+            <p className="rounded-md bg-muted px-4 py-3 text-sm leading-relaxed text-foreground">
               {suggestion.llmRationale}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {suggestion.llmModel} ·{' '}
               {suggestion.llmEvaluatedAt
                 ? new Date(suggestion.llmEvaluatedAt).toLocaleString('es-CO')
@@ -157,7 +161,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
             </p>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-gray-500">
+          <p className="mt-3 text-sm text-muted-foreground">
             Aún no fue evaluada. Al evaluar, el asistente revisa el costo
             estimado contra el histórico de compras y comenta si la cantidad +
             timing son razonables.
@@ -166,17 +170,17 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
       </div>
 
       {isOpen && (
-        <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Resolver</h2>
+        <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">Resolver</h2>
           <label className="block text-sm">
-            <span className="text-gray-700">Nota (opcional)</span>
+            <span className="text-foreground">Nota (opcional)</span>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={500}
               rows={2}
-              placeholder="Ej. ya pedí por whatsapp / espero a viernes"
-              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              placeholder="Ej. ya pide por whatsapp / espero a viernes"
+              className="mt-1 block w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring"
             />
           </label>
           <div className="flex justify-end gap-2">
@@ -198,7 +202,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
       )}
 
       {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -216,13 +220,13 @@ function Row({
   mono,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   mono?: boolean;
 }) {
   return (
     <>
-      <dt className="text-gray-500">{label}</dt>
-      <dd className={`text-gray-900 ${mono ? 'tabular-nums' : ''}`}>{value}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={`text-foreground ${mono ? 'tabular-nums' : ''}`}>{value}</dd>
     </>
   );
 }

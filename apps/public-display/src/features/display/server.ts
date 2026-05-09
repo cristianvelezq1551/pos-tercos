@@ -9,6 +9,7 @@ const EMPTY_STATE: PublicDisplayState = {
   current: null,
   next: [],
   asOf: new Date(0).toISOString(),
+  currentTurn: 1,
 };
 
 export async function getInitialDisplayState(): Promise<PublicDisplayState> {

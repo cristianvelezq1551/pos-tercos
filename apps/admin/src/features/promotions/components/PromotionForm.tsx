@@ -123,8 +123,8 @@ export function PromotionForm() {
                 key={t}
                 className={`cursor-pointer rounded-md border px-3 py-2 text-center text-sm ${
                   state.type === t
-                    ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
-                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    ? 'border-primary bg-destructive/10 text-primary font-semibold'
+                    : 'border-border bg-card text-foreground hover:bg-muted/40'
                 }`}
               >
                 <input
@@ -139,7 +139,7 @@ export function PromotionForm() {
               </label>
             ))}
           </div>
-          <p className="mt-1 text-xs text-gray-500">{descriptionFor(state.type)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{descriptionFor(state.type)}</p>
         </Field>
       </Section>
 
@@ -158,7 +158,7 @@ export function PromotionForm() {
                 className={`${inputClass} max-w-[120px]`}
                 placeholder="20"
               />
-              <span className="text-sm text-gray-500">%</span>
+              <span className="text-sm text-muted-foreground">%</span>
             </div>
           </Field>
         )}
@@ -166,7 +166,7 @@ export function PromotionForm() {
         {state.type === 'FIXED_OFF' && (
           <Field label="Monto en COP" required>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">$</span>
+              <span className="text-sm text-muted-foreground">$</span>
               <input
                 type="number"
                 min={1}
@@ -205,7 +205,7 @@ export function PromotionForm() {
                 className={inputClass}
               />
             </Field>
-            <p className="col-span-2 text-xs text-gray-500">
+            <p className="col-span-2 text-xs text-muted-foreground">
               Cada vez que el cliente compre {state.bogoBuyQty || '?'} unidades, se le
               regalan {state.bogoGetQty || '?'}. Solo aplica si la línea tiene al menos{' '}
               {Number(state.bogoBuyQty || 0) + Number(state.bogoGetQty || 0)} unidades.
@@ -248,13 +248,13 @@ export function PromotionForm() {
                     onChange={(e) => update('discountPctPercent', e.target.value)}
                     className={`${inputClass} max-w-[120px]`}
                   />
-                  <span className="text-sm text-gray-500">%</span>
+                  <span className="text-sm text-muted-foreground">%</span>
                 </div>
               </Field>
             ) : (
               <Field label="Monto en COP" required>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">$</span>
+                  <span className="text-sm text-muted-foreground">$</span>
                   <input
                     type="number"
                     min={1}
@@ -267,7 +267,7 @@ export function PromotionForm() {
                 </div>
               </Field>
             )}
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               COMBO_OFF solo aplica cuando el producto vendido es un combo (Product.isCombo).
             </p>
           </>
@@ -282,8 +282,8 @@ export function PromotionForm() {
                 key={d.mask}
                 className={`cursor-pointer rounded-md border px-3 py-2 text-sm ${
                   (state.daysMask & d.mask) !== 0
-                    ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
-                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    ? 'border-primary bg-destructive/10 text-primary font-semibold'
+                    : 'border-border bg-card text-foreground hover:bg-muted/40'
                 }`}
               >
                 <input
@@ -296,7 +296,7 @@ export function PromotionForm() {
               </label>
             ))}
           </div>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             Mask actual: {state.daysMask}{state.daysMask === 127 ? ' (todos)' : ''}
           </p>
         </Field>
@@ -321,7 +321,7 @@ export function PromotionForm() {
             />
           </Field>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Si la hora fin es menor que inicio, la ventana cruza medianoche
           (ej. 22:00 → 02:00).
         </p>
@@ -348,22 +348,22 @@ export function PromotionForm() {
 
       <Section title={`Productos (${state.productIds.size} seleccionados)`}>
         {productsError && (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             No se pudieron cargar productos: {productsError}
           </p>
         )}
         {!productsError && products.length === 0 && (
-          <p className="text-sm text-gray-500">Cargando productos…</p>
+          <p className="text-sm text-muted-foreground">Cargando productos…</p>
         )}
         {products.length > 0 && (
-          <div className="grid max-h-80 grid-cols-1 gap-1 overflow-y-auto rounded-md border border-gray-200 bg-white p-2 sm:grid-cols-2">
+          <div className="grid max-h-80 grid-cols-1 gap-1 overflow-y-auto rounded-md border border-border bg-card p-2 sm:grid-cols-2">
             {products.map((p) => (
               <label
                 key={p.id}
                 className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
                   state.productIds.has(p.id)
-                    ? 'border-blue-600 bg-blue-50'
-                    : 'border-transparent hover:bg-gray-50'
+                    ? 'border-primary bg-destructive/10'
+                    : 'border-transparent hover:bg-muted/40'
                 }`}
               >
                 <input
@@ -384,12 +384,12 @@ export function PromotionForm() {
       </Section>
 
       {validation.error && state.name.length > 0 && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-sm text-warning">
           {validation.error}
         </p>
       )}
       {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -407,7 +407,7 @@ export function PromotionForm() {
 }
 
 const inputClass =
-  'block h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 shadow-sm outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600';
+  'block h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring';
 
 function Section({
   title,
@@ -417,8 +417,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <fieldset className="space-y-4 rounded-lg border border-gray-200 bg-white p-5">
-      <legend className="px-2 text-sm font-semibold text-gray-900">{title}</legend>
+    <fieldset className="space-y-4 rounded-lg border border-border bg-card p-5">
+      <legend className="px-2 text-sm font-semibold text-foreground">{title}</legend>
       {children}
     </fieldset>
   );
@@ -435,7 +435,7 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="block text-sm font-medium text-gray-700">
+      <label className="block text-sm font-medium text-foreground">
         {label}
         {required && <span className="ml-0.5 text-red-500">*</span>}
       </label>

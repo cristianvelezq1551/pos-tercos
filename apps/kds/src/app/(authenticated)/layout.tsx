@@ -8,9 +8,9 @@ export default async function AuthenticatedLayout({
 }) {
   const user = await getCurrentUserServer();
   return (
-    <div className="flex h-screen flex-col bg-gray-100">
+    <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       <KdsTopbar user={user} />
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main className="flex-1 overflow-y-auto">{children}</main>
     </div>
   );
 }

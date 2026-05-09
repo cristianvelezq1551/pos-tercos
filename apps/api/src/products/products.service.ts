@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   ComboComponent,
   CreateProduct,
@@ -7,8 +7,11 @@ import type {
   ProductSize,
   UpdateProduct,
 } from '@pos-tercos/types';
+import type { StorageProvider } from '@pos-tercos/domain';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
+import { mimeForExtension } from '../common/image-mime';
 
 type ProductWithChildren = Prisma.ProductGetPayload<{
   include: {
@@ -20,7 +23,41 @@ type ProductWithChildren = Prisma.ProductGetPayload<{
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+  ) {}
+
+  async uploadImage(input: {
+    fileBuffer: Buffer;
+    mimeType: string;
+    extension: string;
+  }): Promise<{ imageUrl: string; key: string }> {
+    const stored = await this.storage.put(
+      'products',
+      input.fileBuffer,
+      input.mimeType,
+      input.extension,
+    );
+    const filename = stored.key.replace(/^products\//, '');
+    return {
+      key: stored.key,
+      imageUrl: `/api/products/images/${filename}`,
+    };
+  }
+
+  async getImage(filename: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    const safe = filename.replace(/\.\.+/g, '').replace(/^\/+/, '');
+    if (!safe || safe.includes('/')) return null;
+    const key = `products/${safe}`;
+    try {
+      const buffer = await this.storage.get(key);
+      const ext = safe.includes('.') ? safe.split('.').pop()! : '';
+      return { buffer, mimeType: mimeForExtension(ext) };
+    } catch {
+      return null;
+    }
+  }
 
   async list(opts: { onlyActive?: boolean; category?: string } = {}): Promise<Product[]> {
     const where: Prisma.ProductWhereInput = {};

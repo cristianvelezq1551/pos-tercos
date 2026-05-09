@@ -1,0 +1,186 @@
+/* ─────────────────────────────────────────────────────────────────
+ * POS TERCOS · Design Tokens · v6 · DARK GRAFITO AZULADO
+ * ─────────────────────────────────────────────────────────────────
+ * Tailwind v4 @theme requiere VALORES ESTÁTICOS LITERALES (HEX).
+ * NO usar `var(--otra)` aquí porque las utilities no se generan
+ * correctamente y caen al fallback.
+ *
+ * Modo oscuro permanente.
+ * ───────────────────────────────────────────────────────────────── */
+
+@theme {
+  /* ─── Tipografía ─────────────────────────────────── */
+  --font-sans:
+    var(--font-sans-app), 'Inter', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --font-display:
+    var(--font-display-app), 'Big Shoulders Display', 'Inter Display',
+    ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+
+  /* ─── Rojo Tizón · saturado ─────────────────────── */
+  --color-red-50: #FFE5E8;
+  --color-red-100: #FFB8C0;
+  --color-red-200: #FF8893;
+  --color-red-300: #FF5867;
+  --color-red-400: #F2384A;
+  --color-red-500: #E5293E;
+  --color-red-600: #CB1E32;
+  --color-red-700: #A91824;
+  --color-red-800: #821218;
+  --color-red-900: #5C0D11;
+  --color-red-950: #3A080B;
+
+  /* ─── Neutros · grafito azulado ─────────────────── */
+  --color-ink-50: #F1F5FA;
+  --color-ink-100: #DEE5EE;
+  --color-ink-200: #BFC9D6;
+  --color-ink-300: #94A0B0;
+  --color-ink-400: #6E7A8C;
+  --color-ink-500: #525D6E;
+  --color-ink-600: #3B4453;
+  --color-ink-700: #2C3340;
+  --color-ink-800: #232A36;
+  --color-ink-850: #1D232E;
+  --color-ink-900: #181D26;
+  --color-ink-950: #131822;
+
+  /* ─── Tonales ─────────────────────────────────── */
+  --color-success: #4ADE80;
+  --color-success-foreground: #042713;
+  --color-success-bg: #042713;
+  --color-success-border: #166534;
+
+  --color-warning: #FBBF24;
+  --color-warning-foreground: #1F1300;
+  --color-warning-bg: #2D1F00;
+  --color-warning-border: #92400E;
+
+  /* ─── Tokens semánticos · HEX LITERALES ───────── */
+  --color-background: #131822;
+  --color-foreground: #F1F5FA;
+
+  --color-card: #1D232E;
+  --color-card-foreground: #F1F5FA;
+
+  --color-popover: #232A36;
+  --color-popover-foreground: #F1F5FA;
+
+  --color-muted: #232A36;
+  --color-muted-foreground: #94A0B0;
+
+  --color-accent: #232A36;
+  --color-accent-foreground: #F1F5FA;
+
+  --color-primary: #E5293E;
+  --color-primary-foreground: #FFFFFF;
+
+  --color-secondary: #232A36;
+  --color-secondary-foreground: #F1F5FA;
+
+  --color-destructive: #E5293E;
+  --color-destructive-foreground: #FFFFFF;
+
+  --color-border: #2C3340;
+  --color-input: #2C3340;
+  --color-ring: rgb(229 41 62 / 0.55);
+
+  /* ─── Radius ─────────────────────────────────── */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.75rem;
+
+  /* ─── Sombras ──────────────────────────────── */
+  --shadow-xs: 0 1px 0 0 rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 6px 16px -3px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 16px 32px -8px rgb(0 0 0 / 0.55);
+  --shadow-xl: 0 28px 56px -12px rgb(0 0 0 / 0.6);
+  --shadow-inner: inset 0 1px 2px 0 rgb(0 0 0 / 0.4);
+
+  /* ─── Motion ─────────────────────────────────── */
+  --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ─── Tracking ───────────────────────────────── */
+  --tracking-display: -0.01em;
+  --tracking-caps: 0.04em;
+  --tracking-caps-tight: 0.02em;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Body (dark permanente, valores HEX literales para que NO dependa
+ * de cascada de tokens — la página siempre arranca con el bg correcto)
+ * ───────────────────────────────────────────────────────────────── */
+
+body {
+  color: #F1F5FA;
+  background: #131822;
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color-scheme: dark;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  font-feature-settings: 'ss01', 'ss02';
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  .caps {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+
+  .caps-tight {
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    font-weight: 700;
+  }
+
+  .focus-ring {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  .hover-lift {
+    transition:
+      transform 150ms var(--ease-out-quad),
+      box-shadow 150ms var(--ease-out-quad);
+  }
+  .hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hover-lift,
+    .hover-lift:hover {
+      transition: none;
+      transform: none;
+    }
+  }
+
+  .hairline {
+    height: 1px;
+    background: #2C3340;
+  }
+}

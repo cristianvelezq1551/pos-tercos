@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { SubproductForm } from '../../../../features/subproducts';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import type { Subproduct } from '@pos-tercos/types';
@@ -15,23 +15,24 @@ export default async function EditSubproductPage({ params }: PageProps) {
   try {
     subproduct = await serverFetchJson<Subproduct>(`/subproducts/${id}`);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      notFound();
-    }
+    if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/subproducts" className="text-sm text-blue-600 hover:underline">
-          ← Volver a subproductos
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Editar: {subproduct.name}</h1>
-      </div>
-      <div className="max-w-2xl">
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title={subproduct.name}
+        description="Edita los datos del subproducto."
+        breadcrumbs={[
+          { label: 'Subproductos', href: '/subproducts' },
+          { label: subproduct.name },
+        ]}
+      />
+      <Container size="4xl" padY="md">
         <SubproductForm initial={subproduct} />
-      </div>
-    </div>
+      </Container>
+    </>
   );
 }

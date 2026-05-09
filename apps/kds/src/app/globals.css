@@ -1,20 +1,6 @@
 @import 'tailwindcss';
+@import '../../../../packages/ui/src/styles/tokens.css';
 @source '../../../../packages/ui/src/**/*.{ts,tsx}';
+@source '../../../../packages/brand/src/**/*.{ts,tsx}';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-}
+/* KDS arranca en tema oscuro por default — ver layout.tsx (data-theme="dark") */

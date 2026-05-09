@@ -8,7 +8,6 @@ export {
   createSale,
   confirmPayment,
   printReceipt,
-  openDrawerForSale,
   listSales,
   voidSale,
 } from './api';

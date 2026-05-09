@@ -49,3 +49,4 @@ docker-data
 # Legacy code from previous attempts (Flutter)
 _legacy
 .vercel
+.claude/worktrees/

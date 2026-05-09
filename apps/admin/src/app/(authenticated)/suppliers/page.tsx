@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { Button } from '@pos-tercos/ui';
+import { Button, Container, PageHeader } from '@pos-tercos/ui';
+import { Truck } from 'lucide-react';
 import { SuppliersTable } from '../../../features/suppliers';
 import { ApiError, serverFetchJson } from '../../../lib/api-server';
 import type { Supplier } from '@pos-tercos/types';
@@ -19,27 +20,30 @@ export default async function SuppliersPage() {
   const result = await loadSuppliers();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Proveedores</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Distribuidores que te facturan insumos o productos. Se crean automáticamente al
-            confirmar facturas, pero podés editarlos o cargarlos manualmente.
+    <>
+      <PageHeader
+        eyebrow="Compras"
+        title="Proveedores"
+        description="Distribuidores que te facturan insumos o productos. Se crean automáticamente al confirmar facturas, pero puedes editarlos o cargarlos manualmente."
+        icon={<Truck className="h-6 w-6" strokeWidth={1.75} />}
+        actions={
+          <Link href="/suppliers/new">
+            <Button>Nuevo proveedor</Button>
+          </Link>
+        }
+      />
+      <Container size="7xl" padY="md">
+        {Array.isArray(result) ? (
+          <SuppliersTable suppliers={result} />
+        ) : (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            No se pudieron cargar los proveedores. {result.error}
           </p>
-        </div>
-        <Link href="/suppliers/new">
-          <Button size="sm">Nuevo proveedor</Button>
-        </Link>
-      </div>
-
-      {Array.isArray(result) ? (
-        <SuppliersTable suppliers={result} />
-      ) : (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          No se pudieron cargar los proveedores. {result.error}
-        </p>
-      )}
-    </div>
+        )}
+      </Container>
+    </>
   );
 }

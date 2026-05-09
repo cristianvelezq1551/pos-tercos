@@ -55,14 +55,14 @@ export function RangeFilter({
   };
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4">
+    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4">
       <div className="flex gap-2">
         {PRESETS.map((p) => (
           <button
             key={p.label}
             type="button"
             onClick={() => handlePreset(p.days)}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted/40"
           >
             {p.label}
           </button>
@@ -70,21 +70,21 @@ export function RangeFilter({
       </div>
       <div className="flex items-end gap-2">
         <label className="text-xs">
-          <span className="block text-gray-600">Desde</span>
+          <span className="block text-muted-foreground">Desde</span>
           <input
             type="date"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="mt-0.5 h-9 rounded-md border border-gray-300 bg-white px-2 text-sm"
+            className="mt-0.5 h-9 rounded-md border border-input bg-card px-2 text-sm"
           />
         </label>
         <label className="text-xs">
-          <span className="block text-gray-600">Hasta</span>
+          <span className="block text-muted-foreground">Hasta</span>
           <input
             type="date"
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="mt-0.5 h-9 rounded-md border border-gray-300 bg-white px-2 text-sm"
+            className="mt-0.5 h-9 rounded-md border border-input bg-card px-2 text-sm"
           />
         </label>
         <Button size="sm" onClick={handleApply}>
@@ -93,14 +93,14 @@ export function RangeFilter({
       </div>
       {showGranularity && (
         <div className="ml-auto flex items-center gap-2 text-xs">
-          <span className="text-gray-600">Granularidad:</span>
+          <span className="text-muted-foreground">Granularidad:</span>
           <button
             type="button"
             onClick={() => apply({ granularity: 'daily' })}
             className={`rounded-md border px-2.5 py-1 ${
               granularity === 'daily'
-                ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
-                : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                ? 'border-primary bg-destructive/10 text-primary font-semibold'
+                : 'border-border text-foreground hover:bg-muted/40'
             }`}
           >
             Por día
@@ -110,8 +110,8 @@ export function RangeFilter({
             onClick={() => apply({ granularity: 'hourly' })}
             className={`rounded-md border px-2.5 py-1 ${
               granularity === 'hourly'
-                ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
-                : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                ? 'border-primary bg-destructive/10 text-primary font-semibold'
+                : 'border-border text-foreground hover:bg-muted/40'
             }`}
           >
             Por hora

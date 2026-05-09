@@ -1,30 +1,27 @@
 /**
- * Formatters compartidos. Reemplazan duplicaciones en componentes admin.
- * (FASE 4 ajustes 2.14.)
+ * Shim de compatibilidad sobre los formatters canónicos en `@pos-tercos/ui`.
+ *
+ * Mantiene la API exacta usada por componentes admin (single source of truth
+ * vive en packages/ui/src/lib/format.ts).
+ *
+ * Para nuevos usos, importar directamente desde `@pos-tercos/ui`.
  */
-
-const COP = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
-
-const NUM4 = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 4 });
+import {
+  formatCop as fmtCop,
+  formatNumber as fmtNumber,
+} from '@pos-tercos/ui';
 
 export function formatCop(amount: number): string {
-  return COP.format(amount);
+  return fmtCop(amount);
 }
 
 export function formatNumber(n: number, opts?: { decimals?: number }): string {
-  if (opts?.decimals !== undefined) {
-    return n.toLocaleString('es-CO', { maximumFractionDigits: opts.decimals });
-  }
-  return NUM4.format(n);
+  return fmtNumber(n, { decimals: opts?.decimals ?? 4 });
 }
 
 /**
  * Formatos:
- *  - 'short'    → "04 may"
+ *  - 'short'    → "04 may"   (día + mes corto, sin año)
  *  - 'long'     → "04 may 2026"
  *  - 'datetime' → "04 may 2026, 14:32"
  */

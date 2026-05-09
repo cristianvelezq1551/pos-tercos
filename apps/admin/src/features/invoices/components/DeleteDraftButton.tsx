@@ -52,7 +52,7 @@ export function DeleteDraftButton({
       >
         {pending ? 'Eliminando…' : 'Eliminar borrador'}
       </Button>
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="text-xs text-destructive">{error}</span> : null}
     </span>
   );
 }

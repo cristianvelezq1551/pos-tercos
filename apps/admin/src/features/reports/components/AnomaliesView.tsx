@@ -13,7 +13,7 @@ const FLAG_LABEL: Record<ShiftAnomalyFlag, string> = {
 export function AnomaliesView({ data }: { data: CashierAnomalies[] }) {
   if (data.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-gray-300 bg-white p-12 text-center text-sm text-gray-500">
+      <div className="rounded-md border border-dashed border-input bg-card p-12 text-center text-sm text-muted-foreground">
         Aún no hay turnos cerrados para analizar.
       </div>
     );
@@ -32,13 +32,13 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
   const recent = c.shifts[0];
   const recentFlags = recent?.flags ?? [];
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
+    <section className="rounded-lg border border-border bg-card p-4">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold tracking-tight">
             {c.cashierName ?? '—'}
           </h2>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             {c.totalShifts} turno{c.totalShifts === 1 ? '' : 's'} cerrados
           </p>
         </div>
@@ -47,18 +47,18 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
             {recentFlags.map((f) => (
               <span
                 key={f}
-                className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800"
+                className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive"
               >
                 ⚠ {FLAG_LABEL[f]}
               </span>
             ))}
           </div>
         ) : c.baseline !== null ? (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+          <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success">
             ✓ Sin anomalías
           </span>
         ) : (
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
             Sin baseline (≥5 turnos requeridos)
           </span>
         )}
@@ -84,9 +84,9 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
         </div>
       ) : null}
 
-      <div className="mt-4 overflow-hidden rounded-md border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="mt-4 overflow-hidden rounded-md border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
               <Th>Turno (apertura)</Th>
               <Th align="right">Descuadre</Th>
@@ -95,48 +95,48 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
               <Th>Flags</Th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {c.shifts.map((s, idx) => (
               <tr
                 key={s.shiftId}
-                className={idx === 0 && s.flags.length > 0 ? 'bg-red-50/50' : ''}
+                className={idx === 0 && s.flags.length > 0 ? 'bg-destructive/10' : ''}
               >
                 <Td>{formatDate(s.openedAt, 'datetime')}</Td>
                 <Td align="right" mono>
                   {s.difference !== null ? (
                     <span
                       className={
-                        Math.abs(s.difference) >= 5000 ? 'font-bold text-red-700' : ''
+                        Math.abs(s.difference) >= 5000 ? 'font-bold text-destructive' : ''
                       }
                     >
                       {s.difference > 0 ? '+' : ''}
                       {formatCop(s.difference)}
                     </span>
                   ) : (
-                    <span className="text-gray-400">—</span>
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </Td>
                 <Td align="right" mono>
                   {s.voidCount > 0 ? (
-                    <span className="font-medium text-amber-700">{s.voidCount}</span>
+                    <span className="font-medium text-warning">{s.voidCount}</span>
                   ) : (
                     s.voidCount
                   )}
                 </Td>
                 <Td align="right" mono>
                   {s.noSaleCount > 0 ? (
-                    <span className="font-medium text-amber-700">{s.noSaleCount}</span>
+                    <span className="font-medium text-warning">{s.noSaleCount}</span>
                   ) : (
                     s.noSaleCount
                   )}
                 </Td>
                 <Td>
                   {s.flags.length > 0 ? (
-                    <span className="text-xs text-red-700">
+                    <span className="text-xs text-destructive">
                       {s.flags.map((f) => f.replace('_', ' ')).join(' · ')}
                     </span>
                   ) : (
-                    <span className="text-xs text-gray-400">—</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </Td>
               </tr>
@@ -158,12 +158,12 @@ function BaselineCard({
   hint: string;
 }) {
   return (
-    <div className="rounded-md bg-gray-50 px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+    <div className="rounded-md bg-muted/40 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <p className="mt-0.5 text-base font-semibold tabular-nums text-gray-900">{value}</p>
-      <p className="text-[10px] text-gray-500">{hint}</p>
+      <p className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="text-[10px] text-muted-foreground">{hint}</p>
     </div>
   );
 }
@@ -178,7 +178,7 @@ function Th({
   return (
     <th
       scope="col"
-      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 ${
+      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >
@@ -198,7 +198,7 @@ function Td({
 }) {
   return (
     <td
-      className={`px-3 py-2 text-gray-700 ${align === 'right' ? 'text-right' : 'text-left'} ${
+      className={`px-3 py-2 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
         mono ? 'tabular-nums' : ''
       }`}
     >

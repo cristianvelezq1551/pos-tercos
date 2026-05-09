@@ -53,11 +53,11 @@ export function InvoiceItemRow({
     <div
       className={cn(
         'rounded-lg border p-3',
-        isMatched ? 'border-green-200 bg-green-50/30' : 'border-amber-300 bg-amber-50/30',
+        isMatched ? 'border-success-border bg-success-bg/30' : 'border-warning-border bg-warning-bg/30',
       )}
     >
       <div className="flex items-start gap-2 text-xs">
-        <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-200 font-mono text-[10px] font-semibold text-gray-700">
+        <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink-700 font-mono text-[10px] font-semibold text-foreground">
           {index}
         </span>
         <div className="flex-1 space-y-3">
@@ -77,7 +77,7 @@ export function InvoiceItemRow({
                   ✓ Asociado
                 </span>
               ) : (
-                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                <span className="inline-flex items-center rounded-full bg-warning-bg px-2 py-1 text-xs font-medium text-warning">
                   ⚠ Sin asociar
                 </span>
               )}
@@ -85,7 +85,7 @@ export function InvoiceItemRow({
                 type="button"
                 onClick={onRemove}
                 disabled={disabled}
-                className="rounded-md p-1.5 text-red-500 hover:bg-red-50"
+                className="rounded-md p-1.5 text-red-500 hover:bg-destructive/10"
                 aria-label="Quitar fila"
               >
                 <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -131,10 +131,10 @@ export function InvoiceItemRow({
                   }
                 }}
                 disabled={disabled}
-                className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="flex h-10 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="">— Seleccionar —</option>
-                <optgroup label="🌾 Insumos (entran en recetas)">
+                <optgroup label="Insumos (entran en recetas)">
                   {stockables
                     .filter((s) => s.type === 'INGREDIENT')
                     .map((s) => (
@@ -143,7 +143,7 @@ export function InvoiceItemRow({
                       </option>
                     ))}
                 </optgroup>
-                <optgroup label="📦 Productos direct-resale (se venden tal cual)">
+                <optgroup label="Productos direct-resale (se venden tal cual)">
                   {stockables
                     .filter((s) => s.type === 'PRODUCT')
                     .map((s) => (
@@ -168,7 +168,7 @@ export function InvoiceItemRow({
               <button
                 type="button"
                 onClick={applySuggestion}
-                className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-600/20 hover:bg-purple-100"
+                className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground ring-1 ring-inset ring-purple-600/20 hover:bg-purple-100"
               >
                 🤖 Sugerencia: {row.suggestion.name} ({Math.round(row.suggestion.score * 100)}% similar) — click para aplicar
               </button>
@@ -328,24 +328,24 @@ function CreateStockableInline({
   };
 
   return (
-    <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/40 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
+    <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-primary">
         Crear nuevo (se asocia automáticamente a esta línea)
       </p>
 
       <div className="flex gap-3 text-sm">
-        <label className={cn('flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-2.5 transition-colors', type === 'INGREDIENT' ? 'border-emerald-300 bg-emerald-50/60' : 'border-gray-200 bg-white hover:bg-gray-50')}>
-          <input type="radio" name="stk-type" checked={type === 'INGREDIENT'} onChange={() => setType('INGREDIENT')} disabled={submitting} className="mt-0.5 h-4 w-4 text-emerald-600" />
+        <label className={cn('flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-2.5 transition-colors', type === 'INGREDIENT' ? 'border-success-border bg-success-bg/30' : 'border-border bg-card hover:bg-muted/40')}>
+          <input type="radio" name="stk-type" checked={type === 'INGREDIENT'} onChange={() => setType('INGREDIENT')} disabled={submitting} className="mt-0.5 h-4 w-4 text-success" />
           <span>
-            <span className="block font-medium text-gray-900">🌾 Insumo</span>
-            <span className="text-xs text-gray-600">Entra en recetas (pollo, harina, sal)</span>
+            <span className="block font-medium text-foreground">Insumo</span>
+            <span className="text-xs text-muted-foreground">Entra en recetas (pollo, harina, sal)</span>
           </span>
         </label>
-        <label className={cn('flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-2.5 transition-colors', type === 'PRODUCT' ? 'border-blue-300 bg-blue-50/60' : 'border-gray-200 bg-white hover:bg-gray-50')}>
-          <input type="radio" name="stk-type" checked={type === 'PRODUCT'} onChange={() => setType('PRODUCT')} disabled={submitting} className="mt-0.5 h-4 w-4 text-blue-600" />
+        <label className={cn('flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-2.5 transition-colors', type === 'PRODUCT' ? 'border-primary bg-destructive/10' : 'border-border bg-card hover:bg-muted/40')}>
+          <input type="radio" name="stk-type" checked={type === 'PRODUCT'} onChange={() => setType('PRODUCT')} disabled={submitting} className="mt-0.5 h-4 w-4 text-primary" />
           <span>
-            <span className="block font-medium text-gray-900">📦 Producto direct-resale</span>
-            <span className="text-xs text-gray-600">Comprado y vendido tal cual (Coca-Cola)</span>
+            <span className="block font-medium text-foreground">Producto direct-resale</span>
+            <span className="text-xs text-muted-foreground">Comprado y vendido tal cual (Coca-Cola)</span>
           </span>
         </label>
       </div>
@@ -362,7 +362,7 @@ function CreateStockableInline({
             {unitPurchase.trim().length > 0 &&
             invoiceUnit.trim().length > 0 &&
             unitPurchase.trim().toLowerCase() !== invoiceUnit.trim().toLowerCase() ? (
-              <p className="text-[10px] text-amber-700">
+              <p className="text-[10px] text-warning">
                 ⚠ La factura declara la cantidad en{' '}
                 <strong>{invoiceUnit}</strong> pero estás creando con{' '}
                 <strong>unitPurchase: {unitPurchase}</strong>. Asegurate que el factor refleje la
@@ -385,7 +385,7 @@ function CreateStockableInline({
         </div>
         {type === 'PRODUCT' && (
           <>
-            <div className="col-span-full rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+            <div className="col-span-full rounded-md border border-warning-border bg-warning-bg/30 p-2.5 text-xs text-warning">
               <p className="font-semibold">⚠️ El costo y el precio de venta son distintos:</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 <li>
@@ -393,7 +393,7 @@ function CreateStockableInline({
                   Se guarda automáticamente al confirmar.
                 </li>
                 <li>
-                  <strong>Precio de venta:</strong> lo que cobrás al cliente final. Definilo abajo.
+                  <strong>Precio de venta:</strong> lo que cobras al cliente final. Definilo abajo.
                 </li>
               </ul>
             </div>
@@ -411,9 +411,9 @@ function CreateStockableInline({
                 placeholder="3500"
               />
               {basePrice && invoiceUnitCost > 0 && Number(conversionFactor) > 0 && (
-                <p className="text-xs text-gray-600">
+                <p className="text-xs text-muted-foreground">
                   Margen estimado por {unitStock || 'unidad'}:{' '}
-                  <span className="font-mono font-semibold text-emerald-700">
+                  <span className="font-mono font-semibold text-success">
                     {formatCop(Number(basePrice) - invoiceUnitCost / Number(conversionFactor))}
                   </span>
                 </p>
@@ -428,7 +428,7 @@ function CreateStockableInline({
       </div>
 
       {err && (
-        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{err}</p>
+        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">{err}</p>
       )}
 
       <div className="flex justify-end gap-2">

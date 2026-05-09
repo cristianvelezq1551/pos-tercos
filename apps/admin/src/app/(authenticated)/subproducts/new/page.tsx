@@ -1,18 +1,21 @@
-import Link from 'next/link';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { SubproductForm } from '../../../../features/subproducts';
 
 export default function NewSubproductPage() {
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/subproducts" className="text-sm text-blue-600 hover:underline">
-          ← Volver a subproductos
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Nuevo subproducto</h1>
-      </div>
-      <div className="max-w-2xl">
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title="Nuevo subproducto"
+        description="Intermedio cocinado que se usa en la receta de productos vendibles. Define cuántas unidades produce 1 corrida."
+        breadcrumbs={[
+          { label: 'Subproductos', href: '/subproducts' },
+          { label: 'Nuevo' },
+        ]}
+      />
+      <Container size="4xl" padY="md">
         <SubproductForm />
-      </div>
-    </div>
+      </Container>
+    </>
   );
 }

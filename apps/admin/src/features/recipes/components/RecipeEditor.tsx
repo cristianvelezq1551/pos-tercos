@@ -119,7 +119,7 @@ export function RecipeEditor({
       return;
     }
     if (childAlreadyInDraft(addType, addChildId)) {
-      setError('Ese item ya está en la receta. Editá la cantidad existente.');
+      setError('Ese item ya está en la receta. Edita la cantidad existente.');
       return;
     }
 
@@ -198,14 +198,14 @@ export function RecipeEditor({
   return (
     <div className="space-y-6">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
           Receta · {parentType === 'product' ? 'Producto' : 'Subproducto'}
         </p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">{parentName}</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <p className="mt-1 text-sm text-muted-foreground">
           Define qué insumos o subproductos consume {parentType === 'product' ? 'el producto' : 'el subproducto'}.
           La merma se aplica como pérdida proporcional: la cantidad bruta descontada del stock es
-          <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">cant_neta / (1 - merma)</code>.
+          <code className="mx-1 rounded bg-muted px-1 py-0.5 font-mono text-xs">cant_neta / (1 - merma)</code>.
         </p>
       </header>
 
@@ -234,18 +234,18 @@ export function RecipeEditor({
       {error && (
         <p
           role="alert"
-          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {error}
         </p>
       )}
 
-      <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+      <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
         <div className="text-sm">
           {isDirty ? (
-            <span className="font-medium text-amber-700">Cambios sin guardar</span>
+            <span className="font-medium text-warning">Cambios sin guardar</span>
           ) : (
-            <span className="text-gray-500">Receta sincronizada con servidor.</span>
+            <span className="text-muted-foreground">Receta sincronizada con servidor.</span>
           )}
         </div>
         <div className="flex gap-2">
@@ -293,19 +293,19 @@ function DraftTable({
 }) {
   if (draft.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
-        <p className="text-sm font-medium text-gray-900">La receta está vacía.</p>
-        <p className="mt-1 text-sm text-gray-500">
-          Agregá insumos o subproductos abajo para empezar.
+      <div className="rounded-lg border border-dashed border-input bg-card p-8 text-center">
+        <p className="text-sm font-medium text-foreground">La receta está vacía.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Agrega insumos o subproductos abajo para empezar.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40">
           <tr>
             <Th>Tipo</Th>
             <Th>Item</Th>
@@ -316,7 +316,7 @@ function DraftTable({
             <Th align="right">Acción</Th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-border">
           {draft.map((edge, index) => {
             const ing = edge.childType === 'ingredient' ? ingredientById.get(edge.childId) : null;
             const sub = edge.childType === 'subproduct' ? subproductById.get(edge.childId) : null;
@@ -324,14 +324,14 @@ function DraftTable({
             const unit = ing?.unitRecipe ?? sub?.unit ?? '?';
             const gross = edge.mermaPct < 1 ? edge.quantityNeta / (1 - edge.mermaPct) : 0;
             return (
-              <tr key={`${edge.childType}-${edge.childId}-${index}`} className="hover:bg-gray-50">
+              <tr key={`${edge.childType}-${edge.childId}-${index}`} className="hover:bg-muted/40">
                 <Td>
                   <Badge tone={edge.childType === 'ingredient' ? 'ingredient' : 'subproduct'}>
                     {edge.childType === 'ingredient' ? 'Insumo' : 'Subproducto'}
                   </Badge>
                 </Td>
                 <Td>
-                  <span className="font-medium text-gray-900">{name}</span>
+                  <span className="font-medium text-foreground">{name}</span>
                 </Td>
                 <Td align="right" mono>
                   {formatNumber(edge.quantityNeta)}
@@ -347,7 +347,7 @@ function DraftTable({
                   <button
                     type="button"
                     onClick={() => onRemove(index)}
-                    className="font-medium text-red-600 hover:underline"
+                    className="font-medium text-destructive hover:underline"
                   >
                     Quitar
                   </button>
@@ -390,8 +390,8 @@ function AddEdgeForm({
 }) {
   const options = addType === 'ingredient' ? ingredients : subproductsAvailable;
   return (
-    <fieldset className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-      <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+    <fieldset className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Agregar item a la receta
       </legend>
 
@@ -406,7 +406,7 @@ function AddEdgeForm({
               onChangeChild('');
             }}
             disabled={disabled}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 text-primary focus:ring-ring"
           />
           Insumo
         </label>
@@ -420,7 +420,7 @@ function AddEdgeForm({
               onChangeChild('');
             }}
             disabled={disabled}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 text-primary focus:ring-ring"
           />
           Subproducto
         </label>
@@ -434,7 +434,7 @@ function AddEdgeForm({
             value={addChildId}
             onChange={(e) => onChangeChild(e.target.value)}
             disabled={disabled}
-            className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50"
+            className="flex h-10 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             <option value="">— Seleccionar —</option>
             {options.map((o) => {
@@ -497,9 +497,9 @@ function ExpandedCostView({
 }) {
   if (isDirty) {
     return (
-      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-        <p className="text-sm text-amber-800">
-          Hay cambios sin guardar. Guardá la receta para recalcular el desglose de insumos.
+      <section className="rounded-lg border border-warning-border bg-warning-bg/30 p-4">
+        <p className="text-sm text-warning">
+          Hay cambios sin guardar. Guarda la receta para recalcular el desglose de insumos.
         </p>
       </section>
     );
@@ -507,24 +507,24 @@ function ExpandedCostView({
 
   if (error) {
     return (
-      <section className="rounded-lg border border-red-200 bg-red-50 p-4">
-        <p className="text-sm text-red-700">No se pudo calcular el desglose: {error}</p>
+      <section className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+        <p className="text-sm text-destructive">No se pudo calcular el desglose: {error}</p>
       </section>
     );
   }
 
   if (!cost) {
     return (
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <p className="text-sm text-gray-500">Calculando desglose…</p>
+      <section className="rounded-lg border border-border bg-card p-4">
+        <p className="text-sm text-muted-foreground">Calculando desglose…</p>
       </section>
     );
   }
 
   if (cost.totals.length === 0) {
     return (
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <p className="text-sm text-gray-500">
+      <section className="rounded-lg border border-border bg-card p-4">
+        <p className="text-sm text-muted-foreground">
           La receta está vacía — sin insumos para descontar al vender 1 unidad.
         </p>
       </section>
@@ -534,26 +534,26 @@ function ExpandedCostView({
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Desglose de insumos por unidad vendida</h2>
-        <p className="mt-1 text-xs text-gray-500">
+        <h2 className="text-lg font-semibold text-foreground">Desglose de insumos por unidad vendida</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
           Cantidad bruta a descontar de cada insumo cuando se vende 1 unidad de este producto,
           considerando merma y yield de subproductos transitivamente.
         </p>
       </div>
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
               <Th>Insumo</Th>
               <Th align="right">Cantidad total</Th>
               <Th>Unidad</Th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {cost.totals.map((t) => (
-              <tr key={t.ingredientId} className="hover:bg-gray-50">
+              <tr key={t.ingredientId} className="hover:bg-muted/40">
                 <Td>
-                  <span className="font-medium text-gray-900">{t.name}</span>
+                  <span className="font-medium text-foreground">{t.name}</span>
                 </Td>
                 <Td align="right" mono>
                   {formatNumber(t.totalQuantity)}
@@ -572,7 +572,7 @@ function Th({ children, align }: { children: React.ReactNode; align?: 'right' })
   return (
     <th
       scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 ${
+      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >
@@ -592,7 +592,7 @@ function Td({
 }) {
   return (
     <td
-      className={`px-4 py-3 text-gray-700 ${align === 'right' ? 'text-right' : 'text-left'} ${
+      className={`px-4 py-3 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
         mono ? 'tabular-nums' : ''
       }`}
     >
@@ -610,8 +610,8 @@ function Badge({
 }) {
   const cls =
     tone === 'ingredient'
-      ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
-      : 'bg-purple-50 text-purple-700 ring-purple-600/20';
+      ? 'bg-success-bg/30 text-success ring-success-border'
+      : 'bg-muted text-foreground ring-purple-600/20';
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}

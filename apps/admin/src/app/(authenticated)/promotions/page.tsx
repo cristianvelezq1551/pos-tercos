@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { Button } from '@pos-tercos/ui';
+import { Button, Container, PageHeader } from '@pos-tercos/ui';
+import { Tag } from 'lucide-react';
 import { PromotionsTable } from '../../../features/promotions';
 import { ApiError, serverFetchJson } from '../../../lib/api-server';
 import type { Promotion } from '@pos-tercos/types';
@@ -19,27 +20,30 @@ export default async function PromotionsPage() {
   const result = await loadPromotions();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Promociones</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Descuentos automáticos que se aplican al cobrar la venta. 4 tipos:
-            descuento %, descuento fijo, BOGO y combo.
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title="Promociones"
+        description="Descuentos automáticos que se aplican al cobrar la venta. 4 tipos: descuento %, descuento fijo, BOGO y combo."
+        icon={<Tag className="h-6 w-6" strokeWidth={1.75} />}
+        actions={
+          <Link href="/promotions/new">
+            <Button>Nueva promoción</Button>
+          </Link>
+        }
+      />
+      <Container size="7xl" padY="md">
+        {Array.isArray(result) ? (
+          <PromotionsTable promotions={result} />
+        ) : (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            No se pudieron cargar las promociones. {result.error}
           </p>
-        </div>
-        <Link href="/promotions/new">
-          <Button size="sm">Nueva promoción</Button>
-        </Link>
-      </div>
-
-      {Array.isArray(result) ? (
-        <PromotionsTable promotions={result} />
-      ) : (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          No se pudieron cargar las promociones. {result.error}
-        </p>
-      )}
-    </div>
+        )}
+      </Container>
+    </>
   );
 }

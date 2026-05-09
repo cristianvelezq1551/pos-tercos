@@ -27,5 +27,17 @@ export const PublicDisplayStateSchema = z.object({
   next: z.array(PublicDisplayOrderSchema).max(3),
   /** Server timestamp del momento en que se construyó el snapshot. */
   asOf: z.string().datetime(),
+  /** Número de turno actual visible en pantalla (lo controla el cajero). */
+  currentTurn: z.number().int().min(1).max(9999),
 });
 export type PublicDisplayState = z.infer<typeof PublicDisplayStateSchema>;
+
+export const SetTurnSchema = z.object({
+  value: z.number().int().min(1).max(9999),
+});
+export type SetTurn = z.infer<typeof SetTurnSchema>;
+
+export const TurnResponseSchema = z.object({
+  currentTurn: z.number().int().min(1).max(9999),
+});
+export type TurnResponse = z.infer<typeof TurnResponseSchema>;

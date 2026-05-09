@@ -56,3 +56,26 @@ export function updateProduct(id: string, input: UpdateProduct): Promise<Product
 export function deactivateProduct(id: string): Promise<Product> {
   return request(`/products/${id}`, { method: 'DELETE' }, ProductSchema);
 }
+
+const UploadImageResponseSchema = z.object({
+  imageUrl: z.string(),
+  key: z.string(),
+});
+
+export async function uploadProductImage(
+  file: File,
+): Promise<{ imageUrl: string; key: string }> {
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch('/api/products/upload-image', {
+    method: 'POST',
+    credentials: 'include',
+    body: fd,
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `Upload failed (${res.status})`);
+  }
+  const json = (await res.json()) as unknown;
+  return UploadImageResponseSchema.parse(json);
+}

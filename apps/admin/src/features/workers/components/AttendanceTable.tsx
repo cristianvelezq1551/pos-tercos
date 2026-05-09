@@ -1,10 +1,19 @@
 'use client';
 
 import type { WorkerAttendance } from '@pos-tercos/types';
-import { Button } from '@pos-tercos/ui';
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  Quantity,
+  formatDate,
+  type DataTableColumn,
+} from '@pos-tercos/ui';
+import { LineArtIllustration } from '@pos-tercos/brand';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { formatNumber } from '../../../lib/format';
 import { checkOut } from '../api';
 
 interface AttendanceTableProps {
@@ -12,114 +21,133 @@ interface AttendanceTableProps {
 }
 
 export function AttendanceTable({ attendance }: AttendanceTableProps) {
-  if (attendance.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
-        <p className="text-sm text-gray-700">Sin registros de asistencia.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <Th>Trabajador</Th>
-            <Th>Rol</Th>
-            <Th>Check-in</Th>
-            <Th>Check-out</Th>
-            <Th align="right">Horas</Th>
-            <Th>Estado</Th>
-            <Th align="right">Acciones</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {attendance.map((a) => (
-            <Row key={a.id} a={a} />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Row({ a }: { a: WorkerAttendance }) {
   const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [errorByRow, setErrorByRow] = useState<Record<string, string>>({});
 
-  const handleCheckOut = async () => {
-    if (!confirm(`¿Cerrar turno de ${a.userFullName ?? a.userId}?`)) return;
-    setPending(true);
-    setError(null);
+  const targetRow = attendance.find((a) => a.id === confirmId) ?? null;
+
+  const handleCheckOut = async (id: string) => {
+    setPendingId(id);
+    setErrorByRow((prev) => ({ ...prev, [id]: '' }));
     try {
-      await checkOut(a.id, {});
+      await checkOut(id, {});
       router.refresh();
     } catch (e) {
-      setError((e as Error).message);
-      setPending(false);
+      setErrorByRow((prev) => ({ ...prev, [id]: (e as Error).message }));
+    } finally {
+      setPendingId(null);
+      setConfirmId(null);
     }
   };
 
-  const isOpen = a.checkOut === null;
-  return (
-    <tr className="transition-colors hover:bg-gray-50">
-      <Td>
-        <span className="font-medium text-gray-900">{a.userFullName ?? '—'}</span>
-      </Td>
-      <Td><span className="text-xs text-gray-600">{a.userRole ?? '—'}</span></Td>
-      <Td mono>{formatDateTime(a.checkIn)}</Td>
-      <Td mono>{a.checkOut ? formatDateTime(a.checkOut) : <span className="text-gray-400">—</span>}</Td>
-      <Td mono align="right">
-        {a.hoursWorked === null ? (
-          <span className="text-gray-400">—</span>
+  const columns: DataTableColumn<WorkerAttendance>[] = [
+    {
+      key: 'worker',
+      header: 'Trabajador',
+      cell: (a) => <span className="font-medium text-foreground">{a.userFullName ?? '—'}</span>,
+    },
+    {
+      key: 'role',
+      header: 'Rol',
+      hideOnMobile: true,
+      cell: (a) => <span className="text-xs text-muted-foreground">{a.userRole ?? '—'}</span>,
+    },
+    {
+      key: 'checkIn',
+      header: 'Check-in',
+      numeric: true,
+      cell: (a) => (
+        <span className="tabular text-sm">{formatDate(a.checkIn, 'datetime')}</span>
+      ),
+    },
+    {
+      key: 'checkOut',
+      header: 'Check-out',
+      numeric: true,
+      cell: (a) =>
+        a.checkOut ? (
+          <span className="tabular text-sm">{formatDate(a.checkOut, 'datetime')}</span>
         ) : (
-          formatNumber(a.hoursWorked, { decimals: 2 })
-        )}
-      </Td>
-      <Td>
-        {isOpen ? (
-          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+          <span className="text-ink-400">—</span>
+        ),
+    },
+    {
+      key: 'hours',
+      header: 'Horas',
+      align: 'right',
+      numeric: true,
+      cell: (a) =>
+        a.hoursWorked === null ? (
+          <span className="text-ink-400">—</span>
+        ) : (
+          <Quantity value={a.hoursWorked} decimals={2} />
+        ),
+    },
+    {
+      key: 'status',
+      header: 'Estado',
+      cell: (a) =>
+        a.checkOut === null ? (
+          <Badge tone="warning" size="sm" withDot>
             Abierto
-          </span>
+          </Badge>
         ) : (
-          <span className="inline-flex items-center rounded-full bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">
+          <Badge tone="neutral" size="sm">
             Cerrado
-          </span>
-        )}
-      </Td>
-      <Td align="right">
-        {isOpen ? (
-          <Button size="sm" onClick={handleCheckOut} disabled={pending}>
-            {pending ? 'Cerrando…' : 'Check-out'}
-          </Button>
-        ) : null}
-        {error && <p className="mt-1 text-xs text-red-700">{error}</p>}
-      </Td>
-    </tr>
-  );
-}
+          </Badge>
+        ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      cell: (a) => {
+        if (a.checkOut !== null) return null;
+        const error = errorByRow[a.id];
+        return (
+          <div className="flex flex-col items-end gap-0.5">
+            <Button
+              size="sm"
+              onClick={() => setConfirmId(a.id)}
+              disabled={pendingId === a.id}
+            >
+              {pendingId === a.id ? 'Cerrando…' : 'Check-out'}
+            </Button>
+            {error ? <p className="text-xs text-destructive">{error}</p> : null}
+          </div>
+        );
+      },
+    },
+  ];
 
-function formatDateTime(s: string): string {
-  return new Date(s).toLocaleString('es-CO', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
   return (
-    <th className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 ${align === 'right' ? 'text-right' : 'text-left'}`}>
-      {children}
-    </th>
-  );
-}
-function Td({ children, align, mono }: { children: React.ReactNode; align?: 'right'; mono?: boolean }) {
-  return (
-    <td className={`px-4 py-3 text-gray-700 ${align === 'right' ? 'text-right' : 'text-left'} ${mono ? 'tabular-nums' : ''}`}>
-      {children}
-    </td>
+    <>
+      <DataTable
+        rows={attendance}
+        rowKey={(a) => a.id}
+        columns={columns}
+        emptyState={
+          <EmptyState
+            illustration={<LineArtIllustration name="empty-plate" />}
+            title="Sin registros de asistencia"
+          />
+        }
+      />
+      <ConfirmDialog
+        open={confirmId !== null}
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => (confirmId ? handleCheckOut(confirmId) : undefined)}
+        pending={pendingId !== null}
+        title="¿Cerrar turno?"
+        description={
+          targetRow
+            ? `Vas a cerrar el turno de ${targetRow.userFullName ?? targetRow.userId}.`
+            : ''
+        }
+        confirmLabel="Sí, cerrar"
+      />
+    </>
   );
 }

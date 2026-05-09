@@ -142,13 +142,21 @@ export const ProductSchema = z.object({
 });
 export type Product = z.infer<typeof ProductSchema>;
 
+const ProductImageUrlSchema = z
+  .string()
+  .max(500)
+  .refine(
+    (v) => v === '' || /^https?:\/\//i.test(v) || v.startsWith('/'),
+    { message: 'imageUrl debe ser una URL absoluta o un path relativo a /' },
+  );
+
 export const CreateProductSchema = z
   .object({
     name: z.string().min(1).max(120),
     description: z.string().max(500).nullable().optional(),
     basePrice: z.number().nonnegative(),
     category: z.string().max(60).nullable().optional(),
-    imageUrl: z.string().url().max(500).nullable().optional(),
+    imageUrl: ProductImageUrlSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),
     comboPrice: z.number().nonnegative().nullable().optional(),
@@ -217,7 +225,7 @@ export const UpdateProductSchema = z
     description: z.string().max(500).nullable().optional(),
     basePrice: z.number().nonnegative().optional(),
     category: z.string().max(60).nullable().optional(),
-    imageUrl: z.string().url().max(500).nullable().optional(),
+    imageUrl: ProductImageUrlSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),
     comboPrice: z.number().nonnegative().nullable().optional(),

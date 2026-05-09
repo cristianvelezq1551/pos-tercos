@@ -15,12 +15,12 @@ const STAGE_DESC: Record<string, string> = {
 
 export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5">
+    <section className="rounded-lg border border-border bg-card p-5">
       <div className="mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Cobertura WhatsApp
         </h2>
-        <p className="mt-1 text-xs text-gray-600">
+        <p className="mt-1 text-xs text-muted-foreground">
           {metrics.totalWebSales} pedido{metrics.totalWebSales === 1 ? '' : 's'} web en
           el período. Cobertura = sales únicas con click registrado /
           sales elegibles para ese stage.
@@ -30,32 +30,32 @@ export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
         {metrics.stages.map((s) => {
           const pct = s.coveragePct === null ? null : s.coveragePct * 100;
           const tone = pct === null
-            ? 'bg-gray-200'
+            ? 'bg-ink-700'
             : pct >= 80
-              ? 'bg-emerald-500'
+              ? 'bg-success-bg/300'
               : pct >= 50
-                ? 'bg-amber-500'
-                : 'bg-red-500';
+                ? 'bg-warning-bg/300'
+                : 'bg-destructive/100';
           return (
             <div key={s.stage}>
               <div className="flex items-baseline justify-between">
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-foreground">
                   {STAGE_LABEL[s.stage]}
                 </span>
                 <span className="text-sm tabular-nums">
                   {pct === null ? (
-                    <span className="text-gray-400">—</span>
+                    <span className="text-muted-foreground">—</span>
                   ) : (
                     <span className="font-semibold">
                       {formatNumber(pct, { decimals: 1 })}%
                     </span>
                   )}
-                  <span className="ml-2 text-xs text-gray-500">
+                  <span className="ml-2 text-xs text-muted-foreground">
                     {s.reached}/{s.eligible}
                   </span>
                 </span>
               </div>
-              <div className="mt-1 h-2 rounded-full bg-gray-100">
+              <div className="mt-1 h-2 rounded-full bg-muted">
                 {pct !== null && (
                   <div
                     className={`h-full rounded-full ${tone}`}
@@ -63,7 +63,7 @@ export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
                   />
                 )}
               </div>
-              <p className="mt-1 text-[11px] text-gray-500">
+              <p className="mt-1 text-[11px] text-muted-foreground">
                 {STAGE_DESC[s.stage]}
               </p>
             </div>

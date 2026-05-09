@@ -66,3 +66,85 @@ export function extensionForMime(mime: SupportedImageMime): string {
       return 'webp';
   }
 }
+
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  avif: 'image/avif',
+};
+
+export function mimeForExtension(ext: string): string {
+  const clean = ext.toLowerCase().replace(/^\./, '');
+  return EXTENSION_MIME_MAP[clean] ?? 'application/octet-stream';
+}
+
+/**
+ * Detector permisivo para uploads de productos. A diferencia de
+ * detectImageMime (estricto, lo usa invoices porque el LLM rechaza
+ * media types incorrectos), acepta más formatos raster: agrega BMP,
+ * TIFF, HEIC/HEIF y AVIF. Rechaza SVG por XSS (puede contener JS).
+ *
+ * Si los magic bytes no matchean pero el browser declaró image/* y
+ * la extensión está en el whitelist, lo aceptamos confiando en el
+ * declared mime (último recurso para formatos exóticos).
+ */
+export function detectImageMimeLoose(
+  buffer: Buffer,
+  declaredMime: string,
+  filename: string,
+): { mime: string; ext: string } | null {
+  const strict = detectImageMime(buffer);
+  if (strict) {
+    return { mime: strict, ext: extensionForMime(strict) };
+  }
+
+  if (buffer.length >= 2 && buffer[0] === 0x42 && buffer[1] === 0x4d) {
+    return { mime: 'image/bmp', ext: 'bmp' };
+  }
+
+  if (
+    buffer.length >= 4 &&
+    ((buffer[0] === 0x49 && buffer[1] === 0x49 && buffer[2] === 0x2a && buffer[3] === 0x00) ||
+      (buffer[0] === 0x4d && buffer[1] === 0x4d && buffer[2] === 0x00 && buffer[3] === 0x2a))
+  ) {
+    return { mime: 'image/tiff', ext: 'tiff' };
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer[4] === 0x66 &&
+    buffer[5] === 0x74 &&
+    buffer[6] === 0x79 &&
+    buffer[7] === 0x70
+  ) {
+    const brand = buffer.slice(8, 12).toString('ascii');
+    if (['heic', 'heix', 'mif1', 'msf1', 'heim', 'heis'].includes(brand)) {
+      return { mime: 'image/heic', ext: 'heic' };
+    }
+    if (brand === 'avif') {
+      return { mime: 'image/avif', ext: 'avif' };
+    }
+  }
+
+  const head = buffer.slice(0, 256).toString('utf8').toLowerCase();
+  if (head.includes('<svg') || head.includes('<?xml')) {
+    return null;
+  }
+
+  if (declaredMime.toLowerCase().startsWith('image/')) {
+    const fileExt = filename.includes('.') ? filename.split('.').pop()!.toLowerCase() : '';
+    if (fileExt && /^[a-z0-9]{1,5}$/.test(fileExt) && EXTENSION_MIME_MAP[fileExt]) {
+      return { mime: EXTENSION_MIME_MAP[fileExt], ext: fileExt };
+    }
+  }
+
+  return null;
+}

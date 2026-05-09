@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { PromotionDetail } from '../../../../features/promotions';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import type { Product, Promotion } from '@pos-tercos/types';
@@ -26,12 +27,19 @@ export default async function PromotionDetailPage({ params }: PageProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{promotion.name}</h1>
-        <p className="mt-1 text-sm text-gray-600">Detalle de la promoción.</p>
-      </div>
-      <PromotionDetail promotion={promotion} products={products} />
-    </div>
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title={promotion.name}
+        description="Detalle de la promoción."
+        breadcrumbs={[
+          { label: 'Promociones', href: '/promotions' },
+          { label: promotion.name },
+        ]}
+      />
+      <Container size="6xl" padY="md">
+        <PromotionDetail promotion={promotion} products={products} />
+      </Container>
+    </>
   );
 }

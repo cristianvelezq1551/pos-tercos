@@ -1,9 +1,10 @@
 'use client';
 
 import type { Product } from '@pos-tercos/types';
+import { EmptyState, Money, cn } from '@pos-tercos/ui';
+import { LineArtIllustration } from '@pos-tercos/brand';
 import { useMemo, useState } from 'react';
 import { useCartStore } from '../../sales/store/cart-store';
-import { COP } from '../lib/format';
 import { ProductPickerModal, type PickerSelection } from './ProductPickerModal';
 
 const ALL = '__all__';
@@ -50,29 +51,34 @@ export function CatalogGrid({ products }: { products: Product[] }) {
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-3">
-        <CategoryChip
+    <div className="flex h-full flex-col bg-background">
+      {/* Tabs categoría · estilo flat con underline activo */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border px-4 py-3">
+        <CategoryTab
           label="Todo"
           active={activeCategory === ALL}
           onClick={() => setActiveCategory(ALL)}
         />
         {categories.map((c) => (
-          <CategoryChip
+          <CategoryTab
             key={c}
             label={c}
             active={activeCategory === c}
             onClick={() => setActiveCategory(c)}
           />
         ))}
-        <span className="ml-auto text-xs text-gray-500">
+        <span className="caps ml-auto shrink-0 text-[0.625rem] text-muted-foreground">
           {visible.length} de {products.length}
         </span>
       </div>
 
       {visible.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-12 text-center text-sm text-gray-500">
-          No hay productos activos en esta categoría.
+        <div className="flex flex-1 items-center justify-center p-8">
+          <EmptyState
+            illustration={<LineArtIllustration name="empty-plate" />}
+            title="No hay productos activos en esta categoría"
+            size="sm"
+          />
         </div>
       ) : (
         <div className="grid flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -92,7 +98,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
   );
 }
 
-function CategoryChip({
+function CategoryTab({
   label,
   active,
   onClick,
@@ -105,11 +111,13 @@ function CategoryChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+      className={cn(
+        'relative shrink-0 px-3 py-2 text-sm font-semibold transition-colors duration-150',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-md',
         active
-          ? 'bg-blue-600 text-white'
-          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-      }`}
+          ? 'text-foreground after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:bg-primary'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
     >
       {label}
     </button>
@@ -125,20 +133,35 @@ function ProductTile({ product, onClick }: { product: Product; onClick: () => vo
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-blue-400 hover:shadow-sm"
+      className={cn(
+        'group flex flex-col rounded-2xl border border-transparent bg-card p-4 text-left transition-[background-color,border-color,transform] duration-150 ease-out',
+        'hover:bg-ink-800',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'active:scale-[0.98]',
+        'motion-reduce:transition-none motion-reduce:active:scale-100',
+      )}
     >
-      <span className="line-clamp-2 text-sm font-semibold text-gray-900">
+      {product.category ? (
+        <span className="caps text-[0.625rem] text-muted-foreground">
+          {product.category}
+        </span>
+      ) : null}
+      <span className="mt-1 line-clamp-2 text-base font-semibold leading-tight text-foreground">
         {product.name}
       </span>
-      {product.category ? (
-        <span className="mt-1 text-xs text-gray-500">{product.category}</span>
-      ) : null}
-      <span className="mt-2 text-base font-bold tabular-nums text-blue-700">
-        {COP.format(product.basePrice)}
-      </span>
-      {hasVariants ? (
-        <span className="mt-1 text-xs text-gray-400">+ opciones</span>
-      ) : null}
+      <div className="mt-auto pt-4">
+        <Money
+          amount={product.basePrice}
+          size="lg"
+          weight="bold"
+          className="text-foreground"
+        />
+        {hasVariants ? (
+          <span className="ml-2 text-[0.6875rem] font-medium text-muted-foreground">
+            + opciones
+          </span>
+        ) : null}
+      </div>
     </button>
   );
 }

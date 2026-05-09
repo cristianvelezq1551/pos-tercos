@@ -40,7 +40,7 @@ export function CloneInvoiceButton({ sourceInvoiceId }: CloneInvoiceButtonProps)
         {busy || pending ? 'Clonando…' : 'Clonar para nueva entrada'}
       </Button>
       {error && (
-        <p role="alert" className="text-xs text-red-700">
+        <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}

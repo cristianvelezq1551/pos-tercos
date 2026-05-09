@@ -2,9 +2,9 @@
 
 import { Button, Input, Label } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import type { CreateProduct, Product, UpdateProduct } from '@pos-tercos/types';
-import { createProduct, deactivateProduct, updateProduct } from '../api/client';
+import { createProduct, deactivateProduct, updateProduct, uploadProductImage } from '../api/client';
 import { formatCop as fmtCop } from '../../../lib/format';
 import { marginTone } from '../../../lib/margin-thresholds';
 
@@ -201,7 +201,7 @@ export function ProductForm({ initial }: ProductFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6">
+    <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-border bg-card p-6">
       <div className="space-y-2">
         <Label htmlFor="name">Nombre</Label>
         <Input
@@ -224,7 +224,7 @@ export function ProductForm({ initial }: ProductFormProps) {
           disabled={pending}
           value={form.description}
           onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-          className="flex w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50"
+          className="flex w-full rounded-md border border-input bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
           placeholder="Descripción opcional para el menú."
         />
       </div>
@@ -244,7 +244,7 @@ export function ProductForm({ initial }: ProductFormProps) {
             onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
             placeholder="18000"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Precio de <strong>venta</strong> al cliente. No es el costo de compra.
           </p>
         </div>
@@ -265,18 +265,11 @@ export function ProductForm({ initial }: ProductFormProps) {
         <CostInfoPanel product={initial} basePriceInput={form.basePrice} />
       )}
 
-      <div className="space-y-2">
-        <Label htmlFor="imageUrl">URL de imagen</Label>
-        <Input
-          id="imageUrl"
-          type="url"
-          maxLength={500}
-          disabled={pending}
-          value={form.imageUrl}
-          onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-          placeholder="https://…"
-        />
-      </div>
+      <ImageUploadField
+        imageUrl={form.imageUrl}
+        onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))}
+        disabled={pending}
+      />
 
       <DirectResaleSection
         form={form}
@@ -285,8 +278,8 @@ export function ProductForm({ initial }: ProductFormProps) {
         directResaleLocked={directResaleLocked}
       />
 
-      <fieldset className="space-y-3 rounded-md border border-gray-200 p-4">
-        <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+      <fieldset className="space-y-3 rounded-md border border-border p-4">
+        <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Configuración
         </legend>
 
@@ -297,7 +290,7 @@ export function ProductForm({ initial }: ProductFormProps) {
             disabled={pending}
             checked={form.modifiersEnabled}
             onChange={(e) => setForm((f) => ({ ...f, modifiersEnabled: e.target.checked }))}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
           />
           <Label htmlFor="modifiersEnabled">
             Permite modificadores (sin queso, agregar tocino, etc.)
@@ -317,12 +310,12 @@ export function ProductForm({ initial }: ProductFormProps) {
                 comboPrice: e.target.checked ? f.comboPrice : '',
               }))
             }
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
           />
           <Label htmlFor="isCombo">
             Es un combo (incluye otros productos)
             {form.directResale ? (
-              <span className="ml-2 text-xs text-gray-500">— deshabilitado: ya es reventa directa</span>
+              <span className="ml-2 text-xs text-muted-foreground">— deshabilitado: ya es reventa directa</span>
             ) : null}
           </Label>
         </div>
@@ -342,21 +335,21 @@ export function ProductForm({ initial }: ProductFormProps) {
               onChange={(e) => setForm((f) => ({ ...f, comboPrice: e.target.value }))}
               placeholder="35000"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Precio total del combo (típicamente con descuento sobre la suma de componentes).
             </p>
           </div>
         )}
 
         {isEdit && (
-          <div className="flex items-center gap-2 border-t border-gray-100 pt-3">
+          <div className="flex items-center gap-2 border-t border-border pt-3">
             <input
               id="isActive"
               type="checkbox"
               disabled={pending}
               checked={form.isActive}
               onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
             />
             <Label htmlFor="isActive">Activo</Label>
           </div>
@@ -364,7 +357,7 @@ export function ProductForm({ initial }: ProductFormProps) {
       </fieldset>
 
       {!isEdit && (
-        <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-primary">
           Las variantes (tamaños), modificadores específicos y componentes del combo se gestionan en
           una pantalla dedicada (próximamente). La receta se asigna después de crear el producto.
         </p>
@@ -373,13 +366,13 @@ export function ProductForm({ initial }: ProductFormProps) {
       {error && (
         <p
           role="alert"
-          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {error}
         </p>
       )}
 
-      <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
         {isEdit ? (
           <Button
             type="button"
@@ -424,8 +417,8 @@ function DirectResaleSection({
   directResaleLocked: boolean;
 }) {
   return (
-    <fieldset className="space-y-3 rounded-md border border-gray-200 p-4">
-      <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+    <fieldset className="space-y-3 rounded-md border border-border p-4">
+      <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Reventa directa
       </legend>
 
@@ -442,18 +435,18 @@ function DirectResaleSection({
               ...(e.target.checked ? { isCombo: false, comboPrice: '' } : {}),
             }))
           }
-          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className="mt-0.5 h-4 w-4 rounded border-input text-primary focus:ring-ring"
         />
         <div>
           <Label htmlFor="directResale">
             Es producto de <strong>reventa directa</strong>
           </Label>
-          <p className="mt-0.5 text-xs text-gray-500">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Marcar para productos que se venden tal como se compran (Coca-Cola, snacks, papas
             empacadas). Se descontará stock al cobrar — no usa receta.
           </p>
           {directResaleLocked ? (
-            <p className="mt-1 text-xs text-amber-700">
+            <p className="mt-1 text-xs text-warning">
               ⚠ Este flag NO se puede desactivar porque cambiaría el modelo de stock del producto
               (rompería conversiones históricas).
             </p>
@@ -463,8 +456,8 @@ function DirectResaleSection({
 
       {form.directResale && (
         <div className="space-y-3 pl-6 pt-2">
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <strong>Costo ≠ Precio.</strong> El <code>basePrice</code> es lo que cobrás al cliente.
+          <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+            <strong>Costo ≠ Precio.</strong> El <code>basePrice</code> es lo que cobras al cliente.
             El costo histórico se actualiza solo al confirmar facturas con este producto.
           </p>
 
@@ -480,7 +473,7 @@ function DirectResaleSection({
                 onChange={(e) => setForm((f) => ({ ...f, unitPurchase: e.target.value }))}
                 placeholder="caja, six-pack, bulto"
               />
-              <p className="text-[10px] text-gray-500">Cómo viene del proveedor.</p>
+              <p className="text-[10px] text-muted-foreground">Cómo viene del proveedor.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="unitStock">Unidad de venta</Label>
@@ -493,7 +486,7 @@ function DirectResaleSection({
                 onChange={(e) => setForm((f) => ({ ...f, unitStock: e.target.value }))}
                 placeholder="botella, lata, unidad"
               />
-              <p className="text-[10px] text-gray-500">Cómo lo vendés al cliente.</p>
+              <p className="text-[10px] text-muted-foreground">Cómo lo vendés al cliente.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="conversionFactor">Factor de conversión</Label>
@@ -509,7 +502,7 @@ function DirectResaleSection({
                 onChange={(e) => setForm((f) => ({ ...f, conversionFactor: e.target.value }))}
                 placeholder="24"
               />
-              <p className="text-[10px] text-gray-500">
+              <p className="text-[10px] text-muted-foreground">
                 Cuántas <em>{form.unitStock || 'unidades de venta'}</em> hay en{' '}
                 <em>1 {form.unitPurchase || 'unidad de compra'}</em>.
               </p>
@@ -528,7 +521,7 @@ function DirectResaleSection({
                 onChange={(e) => setForm((f) => ({ ...f, thresholdMin: e.target.value }))}
                 placeholder="12"
               />
-              <p className="text-[10px] text-gray-500">
+              <p className="text-[10px] text-muted-foreground">
                 En <em>{form.unitStock || 'unidades de venta'}</em>. Cuando el stock baja de acá,
                 aparece alerta.
               </p>
@@ -569,9 +562,9 @@ function CostInfoPanel({
 
   if (cost === null || cost === undefined) {
     return (
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+      <div className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-3 text-sm text-warning">
         <p className="font-medium">Sin costo histórico aún</p>
-        <p className="mt-1 text-xs text-amber-800">
+        <p className="mt-1 text-xs text-warning">
           Este producto se creó como reventa directa, pero todavía no se cargó en ninguna factura
           confirmada. Una vez registres una factura con este producto, vas a ver acá su último
           costo y el margen sobre el precio de venta.
@@ -581,13 +574,13 @@ function CostInfoPanel({
   }
 
   return (
-    <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-4">
+    <div className="space-y-2 rounded-md border border-border bg-muted/40 p-4">
       <div className="flex items-baseline justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Costo histórico (read-only)
         </p>
         {date && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted-foreground">
             actualizado {new Date(date).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
           </span>
         )}
@@ -621,8 +614,8 @@ function CostInfoPanel({
         />
       </div>
 
-      <p className="text-xs text-gray-500">
-        El costo se actualiza automáticamente cada vez que confirmás una factura con este producto.
+      <p className="text-xs text-muted-foreground">
+        El costo se actualiza automáticamente cada vez que confirmas una factura con este producto.
         El margen se recalcula en vivo según el precio de venta que estás editando arriba.
       </p>
     </div>
@@ -642,21 +635,110 @@ function Stat({
 }) {
   const toneClass =
     tone === 'good'
-      ? 'text-green-700'
+      ? 'text-success'
       : tone === 'warn'
-        ? 'text-amber-700'
+        ? 'text-warning'
         : tone === 'bad'
-          ? 'text-red-700'
-          : 'text-gray-900';
+          ? 'text-destructive'
+          : 'text-foreground';
   return (
-    <div className="rounded-md bg-white px-3 py-2 ring-1 ring-gray-200">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+    <div className="rounded-md bg-card px-3 py-2 ring-1 ring-gray-200">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className={`mt-1 text-base font-semibold tabular-nums ${toneClass}`}>{value}</p>
-      {hint && <p className="mt-0.5 text-[10px] text-gray-400">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
 function formatCop(amount: number): string {
   return fmtCop(amount);
+}
+
+function ImageUploadField({
+  imageUrl,
+  onChange,
+  disabled,
+}: {
+  imageUrl: string;
+  onChange: (url: string) => void;
+  disabled?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFile = async (file: File) => {
+    setError(null);
+    setUploading(true);
+    try {
+      const result = await uploadProductImage(file);
+      onChange(result.imageUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al subir imagen.');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>Imagen del producto</Label>
+      {imageUrl ? (
+        <div className="flex items-start gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt="Imagen actual"
+            className="h-24 w-24 rounded-md border border-border object-cover"
+          />
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={disabled || uploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              {uploading ? 'Subiendo…' : 'Reemplazar'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled || uploading}
+              onClick={() => onChange('')}
+            >
+              Quitar
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={disabled || uploading}
+          onClick={() => inputRef.current?.click()}
+        >
+          {uploading ? 'Subiendo…' : 'Subir imagen'}
+        </Button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleFile(file);
+        }}
+      />
+      <p className="text-xs text-muted-foreground">
+        Formatos: PNG, JPG, WebP, GIF, BMP, TIFF, HEIC, AVIF. Máx 5 MB.
+      </p>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }

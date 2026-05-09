@@ -1,16 +1,15 @@
 'use client';
 
-import { Button } from '@pos-tercos/ui';
+import { Button, IconButton, Money } from '@pos-tercos/ui';
+import { Check, X } from 'lucide-react';
 import { useState } from 'react';
-import { COP } from '../../catalog/lib/format';
-import { openDrawerForSale } from '../api/open-drawer';
 import { printReceipt } from '../api/print';
 import { openReceiptWindow } from '../lib/open-receipt-window';
 import type { LastSaleSummary } from '../store/cart-store';
 
 type ActionState =
   | { kind: 'idle' }
-  | { kind: 'pending'; action: 'print' | 'drawer' }
+  | { kind: 'pending' }
   | { kind: 'ok'; message: string }
   | { kind: 'error'; message: string };
 
@@ -22,21 +21,13 @@ export function LastSaleBanner({
   onDismiss: () => void;
 }) {
   const [state, setState] = useState<ActionState>({ kind: 'idle' });
-  const isCash = sale.paymentMethod === 'CASH';
 
   const handlePrint = async () => {
-    setState({ kind: 'pending', action: 'print' });
+    setState({ kind: 'pending' });
     try {
       const { html } = await printReceipt(sale.id);
-      const opened = openReceiptWindow(html);
-      setState(
-        opened
-          ? { kind: 'ok', message: 'Recibo abierto en nueva pestaña' }
-          : {
-              kind: 'error',
-              message: 'Pop-up bloqueado. Permití pop-ups para localhost:3002.',
-            },
-      );
+      openReceiptWindow(html);
+      setState({ kind: 'ok', message: 'Diálogo de impresión abierto' });
     } catch (err) {
       setState({
         kind: 'error',
@@ -45,64 +36,47 @@ export function LastSaleBanner({
     }
   };
 
-  const handleOpenDrawer = async () => {
-    setState({ kind: 'pending', action: 'drawer' });
-    try {
-      const r = await openDrawerForSale(sale.id);
-      setState({
-        kind: 'ok',
-        message: `Cajón abierto · ${new Date(r.at).toLocaleTimeString('es-CO')}`,
-      });
-    } catch (err) {
-      setState({
-        kind: 'error',
-        message: err instanceof Error ? err.message : 'Error abriendo cajón',
-      });
-    }
-  };
-
   const isPending = state.kind === 'pending';
 
   return (
-    <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+    <div className="mt-3 rounded-xl border border-success-border bg-success-bg px-3 py-2.5 text-xs text-success">
       <div className="flex items-start gap-2">
-        <span className="mt-0.5">✓</span>
-        <div className="flex-1">
-          <p className="font-semibold">Venta #{sale.receiptNumber} pagada</p>
-          <p className="mt-0.5">
-            {COP.format(sale.total)} · {sale.paymentMethod}
-            {sale.changeDue > 0 ? ` · cambio ${COP.format(sale.changeDue)}` : ''}
+        <Check className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+        <div className="flex-1 leading-tight">
+          <p className="text-sm font-semibold text-foreground">Venta #{sale.receiptNumber} pagada</p>
+          <p className="mt-0.5 text-muted-foreground">
+            <Money amount={sale.total} size="xs" weight="medium" className="text-current" /> ·{' '}
+            {sale.paymentMethod}
+            {sale.changeDue > 0 ? (
+              <>
+                {' '}
+                · cambio{' '}
+                <Money amount={sale.changeDue} size="xs" weight="medium" className="text-current" />
+              </>
+            ) : null}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onDismiss}
+        <IconButton
           aria-label="Ocultar"
-          className="ml-1 text-emerald-600 hover:text-emerald-800"
+          variant="ghost"
+          size="sm"
+          onClick={onDismiss}
           disabled={isPending}
+          className="-mr-1 -mt-1 text-success hover:text-foreground"
         >
-          ✕
-        </button>
+          <X className="h-4 w-4" strokeWidth={1.75} />
+        </IconButton>
       </div>
-      <div className="mt-2 flex gap-2">
+      <div className="mt-2">
         <Button size="sm" variant="outline" onClick={handlePrint} disabled={isPending}>
-          {state.kind === 'pending' && state.action === 'print'
-            ? 'Imprimiendo…'
-            : 'Imprimir recibo'}
+          {isPending ? 'Imprimiendo…' : 'Imprimir recibo'}
         </Button>
-        {isCash ? (
-          <Button size="sm" variant="outline" onClick={handleOpenDrawer} disabled={isPending}>
-            {state.kind === 'pending' && state.action === 'drawer'
-              ? 'Abriendo…'
-              : 'Abrir cajón'}
-          </Button>
-        ) : null}
       </div>
       {state.kind === 'ok' ? (
-        <p className="mt-2 text-[11px] text-emerald-700">{state.message}</p>
+        <p className="mt-2 text-[11px] text-success">{state.message}</p>
       ) : null}
       {state.kind === 'error' ? (
-        <p className="mt-2 text-[11px] text-red-700">⚠ {state.message}</p>
+        <p className="mt-2 text-[11px] text-destructive">{state.message}</p>
       ) : null}
     </div>
   );

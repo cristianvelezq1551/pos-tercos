@@ -69,12 +69,12 @@ export function RunActionsBar() {
         </Button>
       </div>
       {feedback && (
-        <p className="text-xs text-emerald-700 sm:order-first sm:mr-3">
+        <p className="text-xs text-success sm:order-first sm:mr-3">
           {feedback}
         </p>
       )}
       {error && (
-        <p className="text-xs text-red-700 sm:order-first sm:mr-3">{error}</p>
+        <p className="text-xs text-destructive sm:order-first sm:mr-3">{error}</p>
       )}
     </div>
   );

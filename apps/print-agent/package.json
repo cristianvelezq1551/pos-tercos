@@ -13,6 +13,8 @@
   "dependencies": {
     "@pos-tercos/domain": "workspace:*",
     "@pos-tercos/types": "workspace:*",
+    "escpos": "3.0.0-alpha.6",
+    "escpos-usb": "3.0.0-alpha.4",
     "zod": "^3.24.1"
   },
   "devDependencies": {

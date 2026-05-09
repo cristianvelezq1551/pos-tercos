@@ -36,7 +36,7 @@ interface StatusMeta {
 const STATUS_MAP: Record<string, StatusMeta> = {
   PENDIENTE_PAGO: {
     icon: Clock,
-    iconBg: 'bg-[#C00101]',
+    iconBg: 'bgç-[#C00101]',
     title: 'Esperando tu pago',
     subtitle: (o) =>
       `Pedido #${o.receiptNumber} · Te contactaremos por WhatsApp para coordinar la transferencia`,

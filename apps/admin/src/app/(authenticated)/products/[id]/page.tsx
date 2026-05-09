@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { ProductForm } from '../../../../features/products';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import type { Product } from '@pos-tercos/types';
@@ -15,23 +15,24 @@ export default async function EditProductPage({ params }: PageProps) {
   try {
     product = await serverFetchJson<Product>(`/products/${id}`);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      notFound();
-    }
+    if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/products" className="text-sm text-blue-600 hover:underline">
-          ← Volver a productos
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Editar: {product.name}</h1>
-      </div>
-      <div className="max-w-2xl">
+    <>
+      <PageHeader
+        eyebrow="Catálogo"
+        title={product.name}
+        description="Edita los datos del producto. Los cambios se aplican inmediatamente al catálogo."
+        breadcrumbs={[
+          { label: 'Productos', href: '/products' },
+          { label: product.name },
+        ]}
+      />
+      <Container size="4xl" padY="md">
         <ProductForm initial={product} />
-      </div>
-    </div>
+      </Container>
+    </>
   );
 }

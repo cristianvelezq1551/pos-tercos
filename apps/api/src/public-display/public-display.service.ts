@@ -15,11 +15,34 @@ const NEXT_LIMIT = 2;
 export class PublicDisplayService {
   private readonly logger = new Logger(PublicDisplayService.name);
   private readonly notifications = new Subject<void>();
+  private currentTurn = 1;
 
   constructor(private readonly prisma: PrismaService) {}
 
   notify(): void {
     this.notifications.next();
+  }
+
+  getCurrentTurn(): number {
+    return this.currentTurn;
+  }
+
+  advanceTurn(): number {
+    this.currentTurn = Math.min(this.currentTurn + 1, 9999);
+    this.notify();
+    return this.currentTurn;
+  }
+
+  setTurn(value: number): number {
+    this.currentTurn = Math.min(Math.max(value, 1), 9999);
+    this.notify();
+    return this.currentTurn;
+  }
+
+  resetTurn(): number {
+    this.currentTurn = 1;
+    this.notify();
+    return this.currentTurn;
   }
 
   async getState(): Promise<PublicDisplayState> {
@@ -75,7 +98,12 @@ export class PublicDisplayService {
       at: r.paidAt!.toISOString(),
     }));
 
-    return { current, next, asOf: now.toISOString() };
+    return {
+      current,
+      next,
+      asOf: now.toISOString(),
+      currentTurn: this.currentTurn,
+    };
   }
 
   /**

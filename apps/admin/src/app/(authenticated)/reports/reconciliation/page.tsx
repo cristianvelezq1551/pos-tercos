@@ -1,3 +1,5 @@
+import { Container, PageHeader, Section } from '@pos-tercos/ui';
+import { ArrowLeftRight } from 'lucide-react';
 import {
   ReconciliationHistory,
   ReconciliationView,
@@ -21,43 +23,39 @@ async function loadHistory(): Promise<SavedReconciliation[]> {
 export default async function ReconciliationPage() {
   const history = await loadHistory();
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Reconciliación de pagos</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Subí el extracto CSV de Nequi/Bancolombia. Compara cada transacción contra las
-          ventas POS confirmadas como digital. Marca:
-        </p>
-        <ul className="mt-2 list-disc pl-6 text-sm text-gray-600">
-          <li>
-            <strong className="text-emerald-700">Match</strong> — CSV row + sale POS
-            coinciden por monto + fecha (±24h).
-          </li>
-          <li>
-            <strong className="text-red-700">CSV sin POS</strong> — pago en banco que NO
-            aparece en POS (sospechoso: pago de cliente no registrado).
-          </li>
-          <li>
-            <strong className="text-amber-700">POS sin CSV</strong> — venta digital
-            confirmada en POS sin txn correspondiente en banco (cajero podría haber
-            confirmado sin verificar).
-          </li>
-        </ul>
-      </div>
+    <>
+      <PageHeader
+        eyebrow="Reportes"
+        title="Reconciliación de pagos"
+        description="Sube el extracto CSV de Nequi o Bancolombia. Comparamos cada transacción contra las ventas confirmadas como digitales."
+        icon={<ArrowLeftRight className="h-6 w-6" strokeWidth={1.75} />}
+      />
+      <Container size="7xl" padY="md">
+        <div className="space-y-8">
+          <ul className="space-y-1.5 rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
+            <li className="flex gap-2">
+              <strong className="shrink-0 text-success">Coincide</strong>
+              <span>· la fila del CSV y la venta del POS coinciden por monto y fecha (±24h).</span>
+            </li>
+            <li className="flex gap-2">
+              <strong className="shrink-0 text-destructive">CSV sin POS</strong>
+              <span>· pago en banco que no aparece en el POS (sospechoso).</span>
+            </li>
+            <li className="flex gap-2">
+              <strong className="shrink-0 text-warning">POS sin CSV</strong>
+              <span>· venta digital del POS sin transacción en banco (revisar al cajero).</span>
+            </li>
+          </ul>
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
-          Importar nuevo CSV
-        </h2>
-        <ReconciliationView />
-      </section>
+          <Section eyebrow="Importar" title="Nuevo CSV" size="md">
+            <ReconciliationView />
+          </Section>
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
-          Histórico (últimos 20)
-        </h2>
-        <ReconciliationHistory reports={history} />
-      </section>
-    </div>
+          <Section eyebrow="Histórico" title="Últimos 20" size="md">
+            <ReconciliationHistory reports={history} />
+          </Section>
+        </div>
+      </Container>
+    </>
   );
 }

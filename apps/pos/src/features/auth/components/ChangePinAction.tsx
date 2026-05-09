@@ -1,7 +1,7 @@
 'use client';
 
 import type { User } from '@pos-tercos/types';
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
+import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { setOwnApprovalPin } from '../api/setPin';
 
@@ -64,12 +64,20 @@ export function ChangePinAction({ user }: { user: User | null }) {
         title="Cambiar mi PIN de aprobaciones"
         description="6 dígitos numéricos. Lo usás para autorizar anulaciones, descuentos altos y apertura de cajón sin venta."
         maxWidth="max-w-md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={pending || success}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirm} disabled={!canSubmit || success}>
+              {pending ? 'Guardando…' : 'Guardar PIN'}
+            </Button>
+          </>
+        }
       >
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="newpin">PIN nuevo</Label>
+          <FormField label="PIN nuevo">
             <Input
-              id="newpin"
               type="password"
               inputMode="numeric"
               autoComplete="new-password"
@@ -77,15 +85,16 @@ export function ChangePinAction({ user }: { user: User | null }) {
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="••••••"
               maxLength={6}
-              className="font-mono tracking-widest"
+              className="font-mono tracking-[0.4em]"
               disabled={pending || success}
               autoFocus
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirmpin">Repetir PIN</Label>
+          </FormField>
+          <FormField
+            label="Repetir PIN"
+            error={confirm.length > 0 && !matches ? 'Los PINs no coinciden.' : undefined}
+          >
             <Input
-              id="confirmpin"
               type="password"
               inputMode="numeric"
               autoComplete="new-password"
@@ -93,35 +102,27 @@ export function ChangePinAction({ user }: { user: User | null }) {
               onChange={(e) => setConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="••••••"
               maxLength={6}
-              className="font-mono tracking-widest"
+              className="font-mono tracking-[0.4em]"
               disabled={pending || success}
             />
-            {confirm.length > 0 && !matches ? (
-              <p className="text-xs text-amber-700">Los PINs no coinciden.</p>
-            ) : null}
-          </div>
+          </FormField>
 
           {error ? (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-          ) : null}
-          {success ? (
-            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              ✓ PIN actualizado.
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {error}
             </p>
           ) : null}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setOpen(false)}
-              disabled={pending || success}
+          {success ? (
+            <p
+              role="status"
+              className="rounded-md border border-success-border bg-success-bg px-3 py-2 text-sm text-success"
             >
-              Cancelar
-            </Button>
-            <Button onClick={handleConfirm} disabled={!canSubmit || success}>
-              {pending ? 'Guardando…' : 'Guardar PIN'}
-            </Button>
-          </div>
+              PIN actualizado.
+            </p>
+          ) : null}
         </div>
       </Dialog>
     </>

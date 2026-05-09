@@ -8,7 +8,7 @@ export default async function OpenShiftPage() {
     redirect('/');
   }
   return (
-    <div className="flex h-full items-center justify-center bg-gray-50 p-6">
+    <div className="flex h-full items-center justify-center bg-muted/40 p-6">
       <OpenShiftForm />
     </div>
   );

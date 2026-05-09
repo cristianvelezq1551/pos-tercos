@@ -1,7 +1,7 @@
 'use client';
 
 import type { Sale } from '@pos-tercos/types';
-import { Button } from '@pos-tercos/ui';
+import { Badge, Button } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { VoidModal } from './VoidModal';
 
@@ -33,9 +33,9 @@ export function VoidSaleAction({ shiftId }: { shiftId: string | null }) {
         onSuccess={handleSuccess}
       />
       {lastVoided ? (
-        <span className="ml-2 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+        <Badge tone="warning" size="md" className="ml-1">
           Anulada #{lastVoided.receiptNumber}
-        </span>
+        </Badge>
       ) : null}
     </>
   );

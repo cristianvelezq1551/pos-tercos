@@ -1,22 +1,41 @@
 import type { User } from '@pos-tercos/types';
+import { Topbar, UserMenu } from '@pos-tercos/ui';
+import { BrandLogo } from '@pos-tercos/brand';
 import { LogoutButton } from '../features/auth';
-import { APP_LABEL } from '../lib/auth-config';
 
 export function KdsTopbar({ user }: { user: User | null }) {
   return (
-    <header className="flex h-12 items-center justify-between border-b border-gray-800 bg-gray-900 px-4 text-white">
-      <div className="flex items-center gap-3">
-        <span className="rounded-md bg-red-600 px-2 py-0.5 text-xs font-bold">KDS</span>
-        <span className="text-sm font-semibold tracking-tight">{APP_LABEL}</span>
-      </div>
-      <div className="flex items-center gap-3">
+    <Topbar variant="light">
+      <Topbar.Brand>
+        <BrandLogo variant="full" theme="dark" size="h-7" />
+        <span className="caps ml-2 rounded-md bg-primary px-2 py-1 text-[0.625rem] text-primary-foreground">
+          Cocina
+        </span>
+      </Topbar.Brand>
+
+      <Topbar.Actions>
         {user ? (
-          <span className="text-xs text-gray-300">
-            {user.email} · <span className="font-medium text-white">{user.role}</span>
-          </span>
-        ) : null}
-        <LogoutButton />
-      </div>
-    </header>
+          <UserMenu
+            variant="dark"
+            user={{ email: user.email, name: user.fullName, role: roleLabel(user.role) }}
+            trailing={<LogoutButton />}
+          />
+        ) : (
+          <LogoutButton />
+        )}
+      </Topbar.Actions>
+    </Topbar>
   );
+}
+
+function roleLabel(role: string): string {
+  const map: Record<string, string> = {
+    DUENO: 'Dueño',
+    ADMIN_OPERATIVO: 'Administrador operativo',
+    ADMIN_FINANCIERO: 'Administrador financiero',
+    CAJERO: 'Cajero',
+    COCINERO: 'Cocinero',
+    REPARTIDOR: 'Repartidor',
+  };
+  return map[role] ?? role;
 }

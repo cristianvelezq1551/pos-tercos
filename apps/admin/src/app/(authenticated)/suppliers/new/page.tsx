@@ -1,18 +1,18 @@
-import Link from 'next/link';
+import { Container, PageHeader } from '@pos-tercos/ui';
 import { SupplierForm } from '../../../../features/suppliers';
 
 export default function NewSupplierPage() {
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/suppliers" className="text-sm text-blue-600 hover:underline">
-          ← Volver a proveedores
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Nuevo proveedor</h1>
-      </div>
-      <div className="max-w-2xl">
+    <>
+      <PageHeader
+        eyebrow="Compras"
+        title="Nuevo proveedor"
+        description="Distribuidor que te factura insumos o productos para reventa."
+        breadcrumbs={[{ label: 'Proveedores', href: '/suppliers' }, { label: 'Nuevo' }]}
+      />
+      <Container size="4xl" padY="md">
         <SupplierForm />
-      </div>
-    </div>
+      </Container>
+    </>
   );
 }

@@ -1,12 +1,17 @@
 'use client';
 
+import { DIGITAL_PAYMENT_METHODS, type PaymentMethod } from '@pos-tercos/types';
 import {
-  DIGITAL_PAYMENT_METHODS,
-  type PaymentMethod,
-} from '@pos-tercos/types';
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
+  Button,
+  Checkbox,
+  Dialog,
+  FormField,
+  Money,
+  NumberInput,
+  cn,
+  formatCop,
+} from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { COP } from '../../catalog/lib/format';
 import { confirmPayment } from '../api/confirm-payment';
 import { createSale } from '../api/create';
 import type { CartLine } from '../lib/cart-types';
@@ -44,25 +49,22 @@ export function CheckoutModal({
   onSuccess: (s: CheckoutSuccess) => void;
 }) {
   const [method, setMethod] = useState<PaymentMethod | null>(null);
-  const [cashReceived, setCashReceived] = useState('');
-  const [digitalAmount1, setDigitalAmount1] = useState('');
-  const [digitalAmount2, setDigitalAmount2] = useState('');
+  const [cashReceived, setCashReceived] = useState<number | null>(null);
+  const [digital1, setDigital1] = useState<number | null>(null);
+  const [digital2, setDigital2] = useState<number | null>(null);
   const [doubleVerified, setDoubleVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  // Idempotency key generado UNA vez al abrir el modal — si el cajero le da
-  // múltiples veces a Confirmar (network flake) el backend cachea la 1ra
-  // response y devuelve la misma sale.
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
 
   useEffect(() => {
     if (open) {
       setIdempotencyKey(crypto.randomUUID());
       setMethod(null);
-      setCashReceived('');
-      setDigitalAmount1('');
-      setDigitalAmount2('');
+      setCashReceived(null);
+      setDigital1(null);
+      setDigital2(null);
       setDoubleVerified(false);
       setError(null);
       setPending(false);
@@ -70,32 +72,34 @@ export function CheckoutModal({
   }, [open]);
 
   const isDigital = method !== null && DIGITAL_SET.has(method);
-  const cashReceivedNum = useMemo(() => Number(cashReceived) || 0, [cashReceived]);
-  const digital1Num = useMemo(() => Number(digitalAmount1) || 0, [digitalAmount1]);
-  const digital2Num = useMemo(() => Number(digitalAmount2) || 0, [digitalAmount2]);
+  const cashNum = cashReceived ?? 0;
+  const d1 = digital1 ?? 0;
+  const d2 = digital2 ?? 0;
 
-  const changeDue = method === 'CASH' ? Math.max(0, cashReceivedNum - total) : 0;
+  const changeDue = method === 'CASH' ? Math.max(0, cashNum - total) : 0;
 
   const validation = useMemo(() => {
     if (!method) return { ok: false, reason: 'Elegí un método de pago' };
     if (method === 'CASH') {
-      if (cashReceivedNum < total) {
-        return { ok: false, reason: `Recibido < total (faltan ${COP.format(total - cashReceivedNum)})` };
+      if (cashNum < total) {
+        return {
+          ok: false,
+          reason: `Recibido < total (faltan ${formatCop(total - cashNum)})`,
+        };
       }
       return { ok: true, reason: null };
     }
-    // digital
-    if (digital1Num !== total) return { ok: false, reason: `Monto 1 debe ser igual al total ${COP.format(total)}` };
-    if (digital2Num !== total) return { ok: false, reason: `Monto 2 debe ser igual al total ${COP.format(total)}` };
-    if (digital1Num !== digital2Num) return { ok: false, reason: 'Los dos montos no coinciden' };
+    if (d1 !== total) return { ok: false, reason: `Monto 1 debe ser igual a ${formatCop(total)}` };
+    if (d2 !== total) return { ok: false, reason: `Monto 2 debe ser igual a ${formatCop(total)}` };
+    if (d1 !== d2) return { ok: false, reason: 'Los dos montos no coinciden' };
     if (!doubleVerified) {
       return {
         ok: false,
-        reason: 'Confirmá que verificaste app del negocio + comprobante del cliente',
+        reason: 'Confirma que verificaste app del negocio + comprobante del cliente',
       };
     }
     return { ok: true, reason: null };
-  }, [method, cashReceivedNum, digital1Num, digital2Num, doubleVerified, total]);
+  }, [method, cashNum, d1, d2, doubleVerified, total]);
 
   const handleConfirm = async () => {
     if (!validation.ok || !method || pending) return;
@@ -106,7 +110,7 @@ export function CheckoutModal({
         { type: 'COUNTER', items: cartLinesToCreateItems(items) },
         idempotencyKey,
       );
-      const amountReceived = method === 'CASH' ? cashReceivedNum : total;
+      const amountReceived = method === 'CASH' ? cashNum : total;
       const paid = await confirmPayment(sale.id, {
         method,
         amountReceived,
@@ -130,137 +134,125 @@ export function CheckoutModal({
       open={open}
       onClose={pending ? () => {} : onClose}
       title="Cobrar venta"
-      description={`Total ${COP.format(total)} · ${items.length} ${items.length === 1 ? 'línea' : 'líneas'}`}
+      description={`Total ${formatCop(total)} · ${items.length} ${
+        items.length === 1 ? 'línea' : 'líneas'
+      }`}
       maxWidth="max-w-lg"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button size="lg" onClick={handleConfirm} disabled={!validation.ok || pending}>
+            {pending ? 'Cobrando…' : <>Confirmar <Money amount={total} weight="bold" className="ml-1 text-current" /></>}
+          </Button>
+        </>
+      }
     >
       <div className="space-y-5">
-        <div>
-          <Label>Método de pago</Label>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <FormField label="Método de pago">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {METHODS.map((m) => (
               <button
                 key={m.method}
                 type="button"
                 onClick={() => setMethod(m.method)}
-                className={`rounded-md border px-3 py-3 text-sm font-medium transition ${
+                className={cn(
+                  'rounded-lg border px-3 py-3 text-sm font-semibold transition-[background-color,border-color,box-shadow] duration-150 ease-out',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                   method === m.method
-                    ? 'border-blue-600 bg-blue-50 text-blue-900'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                    ? 'border-primary bg-destructive/10 text-primary shadow-xs'
+                    : 'border-border bg-card text-foreground hover:border-ink-300 hover:bg-muted/40',
+                  'motion-reduce:transition-none',
+                )}
               >
                 {m.label}
               </button>
             ))}
           </div>
-        </div>
+        </FormField>
 
         {method === 'CASH' ? (
-          <div className="space-y-3 rounded-md bg-gray-50 p-4">
-            <div className="space-y-2">
-              <Label htmlFor="received">Recibido</Label>
-              <Input
-                id="received"
-                type="number"
-                min="0"
-                step="100"
-                inputMode="decimal"
+          <div className="space-y-3 rounded-xl bg-muted/40 p-4">
+            <FormField label="Recibido">
+              <NumberInput
                 value={cashReceived}
-                onChange={(e) => setCashReceived(e.target.value)}
-                autoFocus
+                onChange={setCashReceived}
+                prefix="$"
+                min={0}
                 placeholder={total.toString()}
+                autoFocus
               />
-            </div>
-            <div className="flex items-center justify-between border-t border-gray-200 pt-3">
-              <span className="text-sm text-gray-600">Cambio</span>
-              <span
-                className={`text-lg font-semibold tabular-nums ${
-                  cashReceivedNum >= total ? 'text-emerald-700' : 'text-gray-400'
-                }`}
-              >
-                {COP.format(changeDue)}
-              </span>
+            </FormField>
+            <div className="flex items-center justify-between border-t border-border pt-3">
+              <span className="text-sm text-muted-foreground">Cambio</span>
+              <Money
+                amount={changeDue}
+                size="xl"
+                weight="bold"
+                className={cashNum >= total ? 'text-success' : 'text-ink-300'}
+              />
             </div>
           </div>
         ) : null}
 
         {isDigital ? (
-          <div className="space-y-3 rounded-md bg-gray-50 p-4">
-            <p className="text-xs text-gray-600">
-              Doble validación: ingresá el monto cobrado <strong>dos veces</strong>. El total
+          <div className="space-y-3 rounded-xl bg-muted/40 p-4">
+            <p className="text-xs text-muted-foreground">
+              Doble validación: ingresa el monto cobrado <strong>dos veces</strong>. El total
               debe coincidir exactamente con la venta.
             </p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="d1">Monto 1</Label>
-                <Input
-                  id="d1"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputMode="decimal"
-                  value={digitalAmount1}
-                  onChange={(e) => setDigitalAmount1(e.target.value)}
+              <FormField label="Monto 1">
+                <NumberInput
+                  value={digital1}
+                  onChange={setDigital1}
+                  prefix="$"
+                  min={0}
                   autoFocus
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="d2">Monto 2 (verificación)</Label>
-                <Input
-                  id="d2"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputMode="decimal"
-                  value={digitalAmount2}
-                  onChange={(e) => setDigitalAmount2(e.target.value)}
-                />
-              </div>
+              </FormField>
+              <FormField label="Monto 2 (verificación)">
+                <NumberInput value={digital2} onChange={setDigital2} prefix="$" min={0} />
+              </FormField>
             </div>
-            {digital1Num > 0 && digital2Num > 0 ? (
+            {d1 > 0 && d2 > 0 ? (
               <p
-                className={`text-xs ${
-                  digital1Num === digital2Num && digital1Num === total
-                    ? 'text-emerald-700'
-                    : 'text-amber-700'
-                }`}
+                className={cn(
+                  'text-xs font-medium',
+                  d1 === d2 && d1 === total ? 'text-success' : 'text-warning',
+                )}
               >
-                {digital1Num === digital2Num && digital1Num === total
+                {d1 === d2 && d1 === total
                   ? '✓ Montos coinciden y matchean el total'
-                  : `✗ ${digital1Num !== digital2Num ? 'No coinciden entre sí' : `No matchean total ${COP.format(total)}`}`}
+                  : d1 !== d2
+                    ? '✗ No coinciden entre sí'
+                    : `✗ No matchean total ${formatCop(total)}`}
               </p>
             ) : null}
-            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-gray-200 bg-white p-3">
-              <input
-                type="checkbox"
-                checked={doubleVerified}
-                onChange={(e) => setDoubleVerified(e.target.checked)}
-                className="mt-0.5 h-4 w-4"
-              />
-              <span className="text-xs text-gray-700">
-                Verifiqué el monto en la app del negocio (Nequi/DaviPlata/Bancolombia) <strong>y</strong> en el comprobante que me mostró el cliente.
-              </span>
-            </label>
+            <Checkbox
+              checked={doubleVerified}
+              onChange={(e) => setDoubleVerified(e.target.checked)}
+              label="Verifiqué el monto en la app del negocio y en el comprobante del cliente"
+              description="Nequi / DaviPlata / Bancolombia"
+            />
           </div>
         ) : null}
 
         {error ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-        ) : null}
-
-        {!validation.ok && method ? (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            {validation.reason}
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
           </p>
         ) : null}
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button onClick={handleConfirm} disabled={!validation.ok || pending}>
-            {pending ? 'Cobrando…' : `Confirmar ${COP.format(total)}`}
-          </Button>
-        </div>
+        {!validation.ok && method ? (
+          <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
+            {validation.reason}
+          </p>
+        ) : null}
       </div>
     </Dialog>
   );
