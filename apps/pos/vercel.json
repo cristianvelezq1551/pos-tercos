@@ -2,6 +2,5 @@
   "framework": "nextjs",
   "buildCommand": "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @pos-tercos/types build && pnpm --filter @pos-tercos/domain build && pnpm --filter @pos-tercos/pos build",
   "installCommand": "echo 'install handled in build step'",
-  "outputDirectory": ".next",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ./ ../../packages/ui ../../packages/brand ../../packages/types ../../packages/domain ../../pnpm-lock.yaml"
+  "outputDirectory": ".next"
 }
