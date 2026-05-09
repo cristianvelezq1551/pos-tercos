@@ -1,0 +1,6 @@
+{
+  "framework": "nextjs",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @pos-tercos/types build && pnpm --filter @pos-tercos/domain build && pnpm --filter @pos-tercos/admin build",
+  "outputDirectory": ".next"
+}
