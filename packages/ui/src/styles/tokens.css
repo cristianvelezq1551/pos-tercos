@@ -233,6 +233,44 @@ body {
       transform: scale(1.12);
     }
   }
+  @keyframes fade-rise {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes hero-kenburns {
+    0% {
+      transform: scale(1) translate3d(0, 0, 0);
+    }
+    100% {
+      transform: scale(1.15) translate3d(-2%, -2%, 0);
+    }
+  }
+  @keyframes hero-kenburns-alt {
+    0% {
+      transform: scale(1.12) translate3d(2%, 0, 0);
+    }
+    100% {
+      transform: scale(1) translate3d(-1%, 1%, 0);
+    }
+  }
+  @keyframes caption-slide {
+    0% {
+      opacity: 0;
+      transform: translateY(24px) scale(0.97);
+      filter: blur(6px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
 
   .anim-tick-out {
     animation: turn-tick-out 180ms var(--ease-out-quad) forwards;

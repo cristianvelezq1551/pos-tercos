@@ -23,6 +23,12 @@ export {
   type MarqueeBRollImage,
 } from './components/marquee-broll';
 export {
+  HeroCarousel,
+  FAST_FOOD_CAPTIONS,
+  type HeroCarouselProps,
+  type HeroCarouselImage,
+} from './components/hero-carousel';
+export {
   BrandTaglineCycler,
   type BrandTaglineCyclerProps,
   TERCOS_TAGLINES,

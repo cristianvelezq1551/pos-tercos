@@ -8,6 +8,11 @@ html,
 body {
   height: 100%;
   cursor: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
 
 body {
@@ -16,4 +21,10 @@ body {
 
 ::-webkit-scrollbar {
   display: none;
+}
+
+img,
+svg {
+  -webkit-user-drag: none;
+  user-select: none;
 }
