@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,8 +15,11 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController(text: 'cocinero@dev.local');
-  final _passwordController = TextEditingController(text: 'dev12345');
+  // Pre-rellenado solo en dev; vacío en release.
+  final _emailController =
+      TextEditingController(text: kReleaseMode ? '' : 'cocinero@dev.local');
+  final _passwordController =
+      TextEditingController(text: kReleaseMode ? '' : 'dev12345');
 
   bool _loading = false;
   String? _errorMessage;

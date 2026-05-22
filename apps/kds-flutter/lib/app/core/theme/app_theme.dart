@@ -3,24 +3,24 @@ import 'package:flutter/material.dart';
 /// Tema oscuro de alto contraste para tablet de cocina.
 /// Colores pensados para legibilidad a distancia y bajo luz intensa.
 abstract class AppTheme {
-  // Colores semánticos KDS
-  static const Color background = Color(0xFF111827); // gray-900
-  static const Color surface = Color(0xFF1F2937); // gray-800
-  static const Color surfaceVariant = Color(0xFF374151); // gray-700
-  static const Color border = Color(0xFF4B5563); // gray-600
+  // Colores semánticos KDS — alto contraste para tablet con poco brillo.
+  static const Color background = Color(0xFF0A0E16); // casi negro
+  static const Color surface = Color(0xFF1A2330); // card
+  static const Color surfaceVariant = Color(0xFF2C3848);
+  static const Color border = Color(0xFF5A6678); // borde más claro = cards delimitadas
 
-  static const Color primary = Color(0xFF3B82F6); // blue-500 — botón Iniciar
-  static const Color primaryDark = Color(0xFF1D4ED8); // blue-700
-  static const Color success = Color(0xFF22C55E); // green-500 — botón Marcar listo
-  static const Color successDark = Color(0xFF15803D); // green-700
-  static const Color error = Color(0xFFEF4444); // red-500 — tiempo > 10 min
-  static const Color warning = Color(0xFFF59E0B); // amber-500
+  static const Color primary = Color(0xFF4D8DFF); // azul vivo
+  static const Color primaryDark = Color(0xFF1D4ED8);
+  static const Color success = Color(0xFF2EE06A); // verde vivo — "marcar listo" / a tiempo
+  static const Color successDark = Color(0xFF15803D);
+  static const Color error = Color(0xFFFF5A5A); // rojo vivo — > 10 min / urgente
+  static const Color warning = Color(0xFFFFB224); // ámbar vivo — 7-10 min
 
-  static const Color textPrimary = Color(0xFFF9FAFB); // gray-50
-  static const Color textSecondary = Color(0xFF9CA3AF); // gray-400
-  static const Color textMuted = Color(0xFF6B7280); // gray-500
+  static const Color textPrimary = Color(0xFFFFFFFF); // blanco puro
+  static const Color textSecondary = Color(0xFFC7D0DD); // gris claro legible
+  static const Color textMuted = Color(0xFF93A0B2);
 
-  static const Color badgeCounter = Color(0xFFDC2626); // red-600 — badge KDS
+  static const Color badgeCounter = Color(0xFFEF2D3C); // rojo vivo — badge KDS
 
   static ThemeData get darkTheme => ThemeData(
         useMaterial3: true,

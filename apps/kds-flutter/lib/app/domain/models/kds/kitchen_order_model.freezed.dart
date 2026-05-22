@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$KitchenOrderModel {
 
- String get id; int get receiptNumber; OrderType get type; KitchenStatus get status; String? get customerName; DateTime? get paidAt; DateTime get createdAt; List<KitchenOrderItemModel> get items;
+ String get id; int get receiptNumber; OrderType get type; KitchenStatus get status; String? get customerName; String? get notes; DateTime? get paidAt; DateTime get createdAt; List<KitchenOrderItemModel> get items;
 /// Create a copy of KitchenOrderModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $KitchenOrderModelCopyWith<KitchenOrderModel> get copyWith => _$KitchenOrderMode
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is KitchenOrderModel&&(identical(other.id, id) || other.id == id)&&(identical(other.receiptNumber, receiptNumber) || other.receiptNumber == receiptNumber)&&(identical(other.type, type) || other.type == type)&&(identical(other.status, status) || other.status == status)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other.items, items));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is KitchenOrderModel&&(identical(other.id, id) || other.id == id)&&(identical(other.receiptNumber, receiptNumber) || other.receiptNumber == receiptNumber)&&(identical(other.type, type) || other.type == type)&&(identical(other.status, status) || other.status == status)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other.items, items));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,receiptNumber,type,status,customerName,paidAt,createdAt,const DeepCollectionEquality().hash(items));
+int get hashCode => Object.hash(runtimeType,id,receiptNumber,type,status,customerName,notes,paidAt,createdAt,const DeepCollectionEquality().hash(items));
 
 @override
 String toString() {
-  return 'KitchenOrderModel(id: $id, receiptNumber: $receiptNumber, type: $type, status: $status, customerName: $customerName, paidAt: $paidAt, createdAt: $createdAt, items: $items)';
+  return 'KitchenOrderModel(id: $id, receiptNumber: $receiptNumber, type: $type, status: $status, customerName: $customerName, notes: $notes, paidAt: $paidAt, createdAt: $createdAt, items: $items)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $KitchenOrderModelCopyWith<$Res>  {
   factory $KitchenOrderModelCopyWith(KitchenOrderModel value, $Res Function(KitchenOrderModel) _then) = _$KitchenOrderModelCopyWithImpl;
 @useResult
 $Res call({
- String id, int receiptNumber, OrderType type, KitchenStatus status, String? customerName, DateTime? paidAt, DateTime createdAt, List<KitchenOrderItemModel> items
+ String id, int receiptNumber, OrderType type, KitchenStatus status, String? customerName, String? notes, DateTime? paidAt, DateTime createdAt, List<KitchenOrderItemModel> items
 });
 
 
@@ -65,13 +65,14 @@ class _$KitchenOrderModelCopyWithImpl<$Res>
 
 /// Create a copy of KitchenOrderModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? receiptNumber = null,Object? type = null,Object? status = null,Object? customerName = freezed,Object? paidAt = freezed,Object? createdAt = null,Object? items = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? receiptNumber = null,Object? type = null,Object? status = null,Object? customerName = freezed,Object? notes = freezed,Object? paidAt = freezed,Object? createdAt = null,Object? items = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,receiptNumber: null == receiptNumber ? _self.receiptNumber : receiptNumber // ignore: cast_nullable_to_non_nullable
 as int,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
 as OrderType,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as KitchenStatus,customerName: freezed == customerName ? _self.customerName : customerName // ignore: cast_nullable_to_non_nullable
+as String?,notes: freezed == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String?,paidAt: freezed == paidAt ? _self.paidAt : paidAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,items: null == items ? _self.items : items // ignore: cast_nullable_to_non_nullable
@@ -160,10 +161,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  int receiptNumber,  OrderType type,  KitchenStatus status,  String? customerName,  DateTime? paidAt,  DateTime createdAt,  List<KitchenOrderItemModel> items)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  int receiptNumber,  OrderType type,  KitchenStatus status,  String? customerName,  String? notes,  DateTime? paidAt,  DateTime createdAt,  List<KitchenOrderItemModel> items)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _KitchenOrderModel() when $default != null:
-return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.customerName,_that.paidAt,_that.createdAt,_that.items);case _:
+return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.customerName,_that.notes,_that.paidAt,_that.createdAt,_that.items);case _:
   return orElse();
 
 }
@@ -181,10 +182,10 @@ return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.custo
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  int receiptNumber,  OrderType type,  KitchenStatus status,  String? customerName,  DateTime? paidAt,  DateTime createdAt,  List<KitchenOrderItemModel> items)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  int receiptNumber,  OrderType type,  KitchenStatus status,  String? customerName,  String? notes,  DateTime? paidAt,  DateTime createdAt,  List<KitchenOrderItemModel> items)  $default,) {final _that = this;
 switch (_that) {
 case _KitchenOrderModel():
-return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.customerName,_that.paidAt,_that.createdAt,_that.items);case _:
+return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.customerName,_that.notes,_that.paidAt,_that.createdAt,_that.items);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -201,10 +202,10 @@ return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.custo
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  int receiptNumber,  OrderType type,  KitchenStatus status,  String? customerName,  DateTime? paidAt,  DateTime createdAt,  List<KitchenOrderItemModel> items)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  int receiptNumber,  OrderType type,  KitchenStatus status,  String? customerName,  String? notes,  DateTime? paidAt,  DateTime createdAt,  List<KitchenOrderItemModel> items)?  $default,) {final _that = this;
 switch (_that) {
 case _KitchenOrderModel() when $default != null:
-return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.customerName,_that.paidAt,_that.createdAt,_that.items);case _:
+return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.customerName,_that.notes,_that.paidAt,_that.createdAt,_that.items);case _:
   return null;
 
 }
@@ -216,7 +217,7 @@ return $default(_that.id,_that.receiptNumber,_that.type,_that.status,_that.custo
 @JsonSerializable()
 
 class _KitchenOrderModel implements KitchenOrderModel {
-  const _KitchenOrderModel({required this.id, required this.receiptNumber, required this.type, required this.status, this.customerName, this.paidAt, required this.createdAt, final  List<KitchenOrderItemModel> items = const []}): _items = items;
+  const _KitchenOrderModel({required this.id, required this.receiptNumber, required this.type, required this.status, this.customerName, this.notes, this.paidAt, required this.createdAt, final  List<KitchenOrderItemModel> items = const []}): _items = items;
   factory _KitchenOrderModel.fromJson(Map<String, dynamic> json) => _$KitchenOrderModelFromJson(json);
 
 @override final  String id;
@@ -224,6 +225,7 @@ class _KitchenOrderModel implements KitchenOrderModel {
 @override final  OrderType type;
 @override final  KitchenStatus status;
 @override final  String? customerName;
+@override final  String? notes;
 @override final  DateTime? paidAt;
 @override final  DateTime createdAt;
  final  List<KitchenOrderItemModel> _items;
@@ -247,16 +249,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _KitchenOrderModel&&(identical(other.id, id) || other.id == id)&&(identical(other.receiptNumber, receiptNumber) || other.receiptNumber == receiptNumber)&&(identical(other.type, type) || other.type == type)&&(identical(other.status, status) || other.status == status)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other._items, _items));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _KitchenOrderModel&&(identical(other.id, id) || other.id == id)&&(identical(other.receiptNumber, receiptNumber) || other.receiptNumber == receiptNumber)&&(identical(other.type, type) || other.type == type)&&(identical(other.status, status) || other.status == status)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.paidAt, paidAt) || other.paidAt == paidAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other._items, _items));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,receiptNumber,type,status,customerName,paidAt,createdAt,const DeepCollectionEquality().hash(_items));
+int get hashCode => Object.hash(runtimeType,id,receiptNumber,type,status,customerName,notes,paidAt,createdAt,const DeepCollectionEquality().hash(_items));
 
 @override
 String toString() {
-  return 'KitchenOrderModel(id: $id, receiptNumber: $receiptNumber, type: $type, status: $status, customerName: $customerName, paidAt: $paidAt, createdAt: $createdAt, items: $items)';
+  return 'KitchenOrderModel(id: $id, receiptNumber: $receiptNumber, type: $type, status: $status, customerName: $customerName, notes: $notes, paidAt: $paidAt, createdAt: $createdAt, items: $items)';
 }
 
 
@@ -267,7 +269,7 @@ abstract mixin class _$KitchenOrderModelCopyWith<$Res> implements $KitchenOrderM
   factory _$KitchenOrderModelCopyWith(_KitchenOrderModel value, $Res Function(_KitchenOrderModel) _then) = __$KitchenOrderModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, int receiptNumber, OrderType type, KitchenStatus status, String? customerName, DateTime? paidAt, DateTime createdAt, List<KitchenOrderItemModel> items
+ String id, int receiptNumber, OrderType type, KitchenStatus status, String? customerName, String? notes, DateTime? paidAt, DateTime createdAt, List<KitchenOrderItemModel> items
 });
 
 
@@ -284,13 +286,14 @@ class __$KitchenOrderModelCopyWithImpl<$Res>
 
 /// Create a copy of KitchenOrderModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? receiptNumber = null,Object? type = null,Object? status = null,Object? customerName = freezed,Object? paidAt = freezed,Object? createdAt = null,Object? items = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? receiptNumber = null,Object? type = null,Object? status = null,Object? customerName = freezed,Object? notes = freezed,Object? paidAt = freezed,Object? createdAt = null,Object? items = null,}) {
   return _then(_KitchenOrderModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,receiptNumber: null == receiptNumber ? _self.receiptNumber : receiptNumber // ignore: cast_nullable_to_non_nullable
 as int,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
 as OrderType,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as KitchenStatus,customerName: freezed == customerName ? _self.customerName : customerName // ignore: cast_nullable_to_non_nullable
+as String?,notes: freezed == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String?,paidAt: freezed == paidAt ? _self.paidAt : paidAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,items: null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable

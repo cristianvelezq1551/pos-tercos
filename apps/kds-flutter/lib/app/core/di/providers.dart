@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:kds/app/core/network/dio_http_provider.dart';
 import 'package:kds/app/core/network/kds_socket.dart';
+import 'package:kds/app/core/sound/sound_service.dart';
 import 'package:kds/app/data/repositories_impl/auth_repository_impl.dart';
 import 'package:kds/app/data/repositories_impl/kds_repository_impl.dart';
 import 'package:kds/app/data/use_cases/get_kitchen_orders_use_case.dart';
@@ -25,6 +26,12 @@ final kdsSocketProvider = Provider<KdsSocket>((ref) {
   final socket = KdsSocket();
   ref.onDispose(socket.disconnect);
   return socket;
+});
+
+final soundServiceProvider = Provider<SoundService>((ref) {
+  final service = SoundService();
+  ref.onDispose(service.dispose);
+  return service;
 });
 
 // ── Repositories ──────────────────────────────────────────────────────────────

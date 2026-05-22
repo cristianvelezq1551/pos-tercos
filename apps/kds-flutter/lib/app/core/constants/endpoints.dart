@@ -2,6 +2,7 @@
 abstract class Endpoints {
   // Auth
   static const String login = '/auth/login';
+  static const String authRefresh = '/auth/refresh';
 
   // KDS
   static const String kdsOrders = '/kds/orders';

@@ -47,6 +47,7 @@ abstract class KitchenOrderModel with _$KitchenOrderModel {
     required OrderType type,
     required KitchenStatus status,
     String? customerName,
+    String? notes,
     DateTime? paidAt,
     required DateTime createdAt,
     @Default([]) List<KitchenOrderItemModel> items,
@@ -59,6 +60,7 @@ abstract class KitchenOrderModel with _$KitchenOrderModel {
         type: OrderTypeX.fromString(json['type'] as String? ?? 'COUNTER'),
         status: KitchenStatusX.fromString(json['status'] as String? ?? 'PAGADO'),
         customerName: json['customerName'] as String?,
+        notes: json['notes'] as String?,
         paidAt: json['paidAt'] != null
             ? DateTime.tryParse(json['paidAt'] as String)
             : null,
