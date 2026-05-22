@@ -5,11 +5,6 @@ import 'package:kds/app/core/di/providers.dart';
 import 'package:kds/app/core/network/failure.dart';
 import 'package:kds/app/domain/models/kds/kitchen_order_model.dart';
 
-// TODO: reemplazar polling por WS /ws/kds con socket_io_client
-//   - conectar con socket.io-client al namespace /ws/kds
-//   - escuchar eventos 'order.created' y 'order.status.changed'
-//   - auth handshake: { token: accessToken } (no cookie cross-origin)
-
 /// Estado inmutable del board KDS.
 sealed class BoardState {
   const BoardState();
@@ -33,15 +28,30 @@ final class BoardError extends BoardState {
 class BoardController extends Notifier<BoardState> {
   Timer? _timer;
 
-  static const _pollInterval = Duration(seconds: 5);
+  /// El WS `/ws/kds` es el canal primario de tiempo real. Este polling es
+  /// solo red de seguridad por si el socket se cae sin avisar.
+  static const _pollInterval = Duration(seconds: 30);
 
   @override
   BoardState build() {
-    // Cancela el timer cuando el provider se destruye.
-    ref.onDispose(() => _timer?.cancel());
+    final socket = ref.read(kdsSocketProvider);
+    ref.onDispose(() {
+      _timer?.cancel();
+      socket.disconnect();
+    });
     _load();
+    _connectSocket();
     _startPolling();
     return const BoardLoading();
+  }
+
+  /// Conecta al WS y recarga la cola en cada evento del backend.
+  void _connectSocket() {
+    Future(() async {
+      final token = await ref.read(dioHttpProvider).getStoredToken();
+      if (token == null) return;
+      ref.read(kdsSocketProvider).connect(token: token, onChange: _load);
+    });
   }
 
   void _startPolling() {
