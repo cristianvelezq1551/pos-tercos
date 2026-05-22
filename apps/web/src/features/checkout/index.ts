@@ -1,12 +1,11 @@
 export { CheckoutForm } from './components/CheckoutForm';
-export { DeliveryAddressInput } from './components/DeliveryAddressInput';
 export { OrderStatusView } from './components/OrderStatusView';
 export { PaymentInstructionsView } from './components/PaymentInstructionsView';
 export {
   useOrderPoller,
   type OrderConnState,
 } from './components/OrderStatusPoller';
-export { createWebOrder, getWebOrder, geocodeAddress } from './api';
+export { createWebOrder, getWebOrder } from './api';
 export { getWebOrderServer, buildPaymentInstructions } from './server';
 export { useActiveOrder, isTerminalStatus } from './store/active-order-store';
 export type { ActiveOrder } from './store/active-order-store';

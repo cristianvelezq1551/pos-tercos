@@ -141,7 +141,7 @@ export const SalesBucketSchema = z.object({
 export type SalesBucket = z.infer<typeof SalesBucketSchema>;
 
 export const SalesByTypeSchema = z.object({
-  type: z.enum(['COUNTER', 'WEB_PICKUP', 'WEB_DELIVERY']),
+  type: z.enum(['COUNTER', 'WEB_PICKUP']),
   count: z.number().int().nonnegative(),
   revenue: z.number().nonnegative(),
 });

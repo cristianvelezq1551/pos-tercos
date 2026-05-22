@@ -32,7 +32,6 @@ function roleLabel(role: string): string {
     ADMIN_FINANCIERO: 'Administrador financiero',
     CAJERO: 'Cajero',
     COCINERO: 'Cocinero',
-    REPARTIDOR: 'Repartidor',
   };
   return map[role] ?? role;
 }

@@ -42,7 +42,7 @@ export function Hero() {
         </div>
 
         <p className="reveal-up stagger-2 max-w-md text-base leading-relaxed text-muted-foreground">
-          Pídelo en linea. Recógelo en tienda o lo enviamos a domicilio.
+          Pídelo en línea. Recógelo en tienda.
           Hamburguesas, burritos y más.
         </p>
 

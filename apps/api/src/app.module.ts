@@ -4,7 +4,6 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CashDrawerModule } from './adapters/cash-drawer/cash-drawer.module';
 import { LLMModule } from './adapters/llm/llm.module';
-import { MapsModule } from './adapters/maps/maps.module';
 import { PrinterModule } from './adapters/printer/printer.module';
 import { StorageModule } from './adapters/storage/storage.module';
 import { ApprovalsModule } from './approvals/approvals.module';
@@ -42,7 +41,6 @@ import { WebOrdersModule } from './web-orders/web-orders.module';
     AuditModule,
     StorageModule,
     LLMModule,
-    MapsModule,
     PrinterModule,
     CashDrawerModule,
     IdempotencyModule,

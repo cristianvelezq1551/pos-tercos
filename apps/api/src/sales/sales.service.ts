@@ -46,7 +46,6 @@ type DbSaleWithDetail = Prisma.SaleGetPayload<{
   include: {
     cashier: { select: { fullName: true } };
     paidBy: { select: { fullName: true } };
-    repartidor: { select: { fullName: true } };
     items: {
       include: {
         product: { select: { name: true } };
@@ -190,9 +189,6 @@ export class SalesService {
           customerName: input.customerName ?? null,
           customerPhone: input.customerPhone ?? null,
           customerNit: input.customerNit ?? null,
-          deliveryAddress: input.deliveryAddress ?? null,
-          deliveryLat: input.deliveryLat ?? null,
-          deliveryLng: input.deliveryLng ?? null,
           subtotal,
           discountTotal,
           total,
@@ -440,9 +436,7 @@ export class SalesService {
       throw new BadRequestException('Sale ya está anulada');
     }
     if (existing.status === 'ENTREGADO') {
-      throw new BadRequestException(
-        'Sale ya está ENTREGADO; usar DEVUELTO o EN_DISPUTA en su lugar (FASE 7+).',
-      );
+      throw new BadRequestException('Sale ya está ENTREGADO y no se puede anular.');
     }
 
     const oldStatus = existing.status;
@@ -526,12 +520,12 @@ export class SalesService {
    * sale — solo deja audit log.
    *
    * Validaciones:
-   *  - El sale existe y es WEB_PICKUP/WEB_DELIVERY (COUNTER no aplica).
+   *  - El sale existe y es WEB_PICKUP (COUNTER no aplica).
    *  - El stage es coherente con el status del sale:
    *      accepted  → status = PENDIENTE_PAGO
    *      confirmed → status in (PAGADO, EN_PREPARACION, ...) — sea ya
    *                  pagado, no rechazamos si el cajero confirma 2 veces.
-   *      ready     → status = LISTO_DESPACHO o posterior.
+   *      ready     → status = LISTO_DESPACHO o ENTREGADO.
    *  - No deduplica clicks: si el cajero hace click 2 veces, quedan 2
    *    audit entries. Es info, no acción.
    */
@@ -553,7 +547,7 @@ export class SalesService {
     if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
     if (sale.type === 'COUNTER') {
       throw new BadRequestException(
-        'WhatsApp tracking only applies to WEB_PICKUP/WEB_DELIVERY sales',
+        'WhatsApp tracking only applies to WEB_PICKUP sales',
       );
     }
 
@@ -565,7 +559,7 @@ export class SalesService {
       );
     }
     if (stage === 'ready') {
-      const okStatuses = ['LISTO_DESPACHO', 'ASIGNADO', 'EN_RUTA', 'ENTREGADO'];
+      const okStatuses = ['LISTO_DESPACHO', 'ENTREGADO'];
       if (!okStatuses.includes(sale.status)) {
         throw new BadRequestException(
           `Stage "ready" requires status LISTO_DESPACHO+ (got ${sale.status})`,
@@ -643,8 +637,7 @@ export class SalesService {
     });
     if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
     if (sale.status !== 'PAGADO' && sale.status !== 'EN_PREPARACION' &&
-        sale.status !== 'LISTO_DESPACHO' && sale.status !== 'ENTREGADO' &&
-        sale.status !== 'ASIGNADO' && sale.status !== 'EN_RUTA') {
+        sale.status !== 'LISTO_DESPACHO' && sale.status !== 'ENTREGADO') {
       throw new BadRequestException(
         `Sale en status ${sale.status} no se puede imprimir (solo desde PAGADO en adelante).`,
       );
@@ -922,7 +915,6 @@ function includeFull() {
   return {
     cashier: { select: { fullName: true } },
     paidBy: { select: { fullName: true } },
-    repartidor: { select: { fullName: true } },
     items: {
       include: {
         product: { select: { name: true } },
@@ -997,9 +989,6 @@ function toSaleDto(row: DbSaleWithDetail): Sale {
     customerName: row.customerName,
     customerPhone: row.customerPhone,
     customerNit: row.customerNit,
-    deliveryAddress: row.deliveryAddress,
-    deliveryLat: row.deliveryLat !== null ? Number(row.deliveryLat) : null,
-    deliveryLng: row.deliveryLng !== null ? Number(row.deliveryLng) : null,
     subtotal: Number(row.subtotal),
     discountTotal: Number(row.discountTotal),
     total: Number(row.total),
@@ -1010,13 +999,6 @@ function toSaleDto(row: DbSaleWithDetail): Sale {
     cashierId: row.cashierId,
     cashierName: row.cashier?.fullName ?? null,
     shiftId: row.shiftId,
-    repartidorId: row.repartidorId,
-    repartidorName: row.repartidor?.fullName ?? null,
-    assignedAt: row.assignedAt?.toISOString() ?? null,
-    pickedUpAt: row.pickedUpAt?.toISOString() ?? null,
-    departedAt: row.departedAt?.toISOString() ?? null,
-    deliveredAt: row.deliveredAt?.toISOString() ?? null,
-    failedAttempts: row.failedAttempts,
     notes: row.notes,
     idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),

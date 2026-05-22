@@ -21,7 +21,7 @@ export interface OpenWhatsAppResult {
 type SaleLike = PublicWebOrder | Sale;
 
 function toSnapshot(sale: SaleLike): WhatsAppSaleSnapshot | null {
-  if (sale.type !== 'WEB_PICKUP' && sale.type !== 'WEB_DELIVERY') return null;
+  if (sale.type !== 'WEB_PICKUP') return null;
   return {
     receiptNumber: sale.receiptNumber,
     customerName: sale.customerName ?? null,

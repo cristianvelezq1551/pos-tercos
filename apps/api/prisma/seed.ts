@@ -10,7 +10,6 @@ const SEED_USERS: Array<{ email: string; fullName: string; role: UserRole }> = [
   { email: 'admin@dev.local', fullName: 'Admin Operativo Dev', role: 'ADMIN_OPERATIVO' },
   { email: 'cajero@dev.local', fullName: 'Cajero Dev', role: 'CAJERO' },
   { email: 'cocinero@dev.local', fullName: 'Cocinero Dev', role: 'COCINERO' },
-  { email: 'repa@dev.local', fullName: 'Repartidor Dev', role: 'REPARTIDOR' },
   { email: 'trabajador@dev.local', fullName: 'Trabajador Dev', role: 'TRABAJADOR' },
 ];
 
@@ -28,7 +27,6 @@ async function main(): Promise<void> {
         passwordHash,
         mustChangePwd: false,
         active: true,
-        availability: seed.role === 'REPARTIDOR' ? 'OFFLINE' : null,
       },
     });
     console.log(`✓ user ${seed.email} (${seed.role})`);

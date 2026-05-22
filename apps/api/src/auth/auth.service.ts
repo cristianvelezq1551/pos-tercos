@@ -124,7 +124,6 @@ export class AuthService {
     role: string;
     mustChangePwd: boolean;
     active: boolean;
-    availability: string | null;
     createdAt: Date;
   }): User {
     return {
@@ -135,7 +134,6 @@ export class AuthService {
       role: dbUser.role as User['role'],
       mustChangePwd: dbUser.mustChangePwd,
       active: dbUser.active,
-      availability: dbUser.availability as User['availability'],
       createdAt: dbUser.createdAt.toISOString(),
     };
   }

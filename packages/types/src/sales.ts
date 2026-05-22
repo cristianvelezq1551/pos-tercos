@@ -4,7 +4,7 @@ import { z } from 'zod';
 // ENUMS (espejo de Prisma SaleType / SaleStatus / PaymentMethod)
 // ====================================================================
 
-export const SaleTypeEnum = z.enum(['COUNTER', 'WEB_PICKUP', 'WEB_DELIVERY']);
+export const SaleTypeEnum = z.enum(['COUNTER', 'WEB_PICKUP']);
 export type SaleType = z.infer<typeof SaleTypeEnum>;
 
 export const SaleStatusEnum = z.enum([
@@ -12,14 +12,9 @@ export const SaleStatusEnum = z.enum([
   'PAGADO',
   'EN_PREPARACION',
   'LISTO_DESPACHO',
-  'ASIGNADO',
-  'EN_RUTA',
   'ENTREGADO',
   'CANCELADO_NO_PAGO',
   'CANCELADO_SIN_REEMBOLSO',
-  'INTENTO_FALLIDO',
-  'DEVUELTO',
-  'EN_DISPUTA',
   'VOID',
 ]);
 export type SaleStatus = z.infer<typeof SaleStatusEnum>;
@@ -95,10 +90,6 @@ export const SaleSchema = z.object({
   customerPhone: z.string().nullable(),
   customerNit: z.string().nullable(),
 
-  deliveryAddress: z.string().nullable(),
-  deliveryLat: z.number().nullable(),
-  deliveryLng: z.number().nullable(),
-
   subtotal: z.number().nonnegative(),
   discountTotal: z.number().nonnegative(),
   total: z.number().nonnegative(),
@@ -112,15 +103,6 @@ export const SaleSchema = z.object({
   cashierName: z.string().nullable().optional(),
 
   shiftId: z.string().uuid().nullable(),
-
-  // Delivery (FASE 7+)
-  repartidorId: z.string().uuid().nullable(),
-  repartidorName: z.string().nullable().optional(),
-  assignedAt: z.string().datetime().nullable(),
-  pickedUpAt: z.string().datetime().nullable(),
-  departedAt: z.string().datetime().nullable(),
-  deliveredAt: z.string().datetime().nullable(),
-  failedAttempts: z.number().int().nonnegative(),
 
   notes: z.string().nullable(),
   idempotencyKey: z.string().nullable(),
@@ -173,10 +155,6 @@ export const CreateSaleSchema = z
     customerPhone: z.string().min(1).max(40).optional(),
     customerNit: z.string().min(1).max(40).optional(),
 
-    deliveryAddress: z.string().min(1).max(500).optional(),
-    deliveryLat: z.number().min(-90).max(90).optional(),
-    deliveryLng: z.number().min(-180).max(180).optional(),
-
     notes: z.string().max(500).optional(),
   })
   .superRefine((data, ctx) => {
@@ -194,15 +172,6 @@ export const CreateSaleSchema = z
           code: z.ZodIssueCode.custom,
           message: ctxMsg,
           path: ['customerPhone'],
-        });
-      }
-    }
-    if (data.type === 'WEB_DELIVERY') {
-      if (!data.deliveryAddress) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'WEB_DELIVERY requires deliveryAddress',
-          path: ['deliveryAddress'],
         });
       }
     }

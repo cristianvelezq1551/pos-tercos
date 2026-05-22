@@ -14,9 +14,6 @@ export function ActiveOrderBanner() {
   if (pathname?.startsWith('/checkout')) return null;
 
   const href = `/checkout/success/${order.saleId}?token=${encodeURIComponent(order.token)}`;
-  const modeLabel =
-    order.type === 'WEB_PICKUP' ? 'Recoger en tienda' : 'Domicilio';
-
   return (
     <div className="sticky top-16 z-20 border-b border-primary/30 bg-primary/[0.08] px-4 backdrop-blur-md sm:px-12 lg:px-20">
       <Link
@@ -31,7 +28,7 @@ export function ActiveOrderBanner() {
             Tu pedido #{order.receiptNumber} en curso
           </span>
           <span className="truncate text-xs text-muted-foreground">
-            {modeLabel} · Toca para ver el estado
+            Recoger en tienda · Toca para ver el estado
           </span>
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.25} />

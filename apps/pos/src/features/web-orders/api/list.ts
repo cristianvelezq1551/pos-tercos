@@ -16,5 +16,5 @@ export async function fetchPendingWebOrders(): Promise<Sale[]> {
   if (!res.ok) throw new Error(`fetchPendingWebOrders failed: ${res.status}`);
   const json = (await res.json()) as unknown;
   const all = ListSchema.parse(json);
-  return all.filter((s) => s.type === 'WEB_PICKUP' || s.type === 'WEB_DELIVERY');
+  return all.filter((s) => s.type === 'WEB_PICKUP');
 }

@@ -21,8 +21,8 @@ import { RecipesService } from '../recipes/recipes.service';
  * - Período se interpreta como "fecha local Bogotá" (timezone-naive ok
  *   para v1 — el backend corre en TZ Colombia).
  * - "Sales pagadas" = status NOT IN (PENDIENTE_PAGO, CANCELADO_NO_PAGO,
- *   VOID). Esto incluye PAGADO, EN_PREPARACION, LISTO, ASIGNADO, EN_RUTA,
- *   ENTREGADO, INTENTO_FALLIDO, DEVUELTO, EN_DISPUTA, CANCELADO_SIN_REEMBOLSO.
+ *   VOID). Esto incluye PAGADO, EN_PREPARACION, LISTO_DESPACHO, ENTREGADO,
+ *   CANCELADO_SIN_REEMBOLSO.
  *   Idea: una vez que el cliente pagó, eso ya es revenue del día.
  */
 @Injectable()
@@ -124,7 +124,7 @@ export class SalesReportsService {
           discount: round(v.discount),
         })),
       byType: Array.from(byType.entries()).map(([type, v]) => ({
-        type: type as 'COUNTER' | 'WEB_PICKUP' | 'WEB_DELIVERY',
+        type: type as 'COUNTER' | 'WEB_PICKUP',
         count: v.count,
         revenue: round(v.revenue),
       })),
@@ -252,10 +252,10 @@ export class SalesReportsService {
   // ==================================================================
 
   async getWhatsAppMetrics(from: Date, to: Date): Promise<WhatsAppMetrics> {
-    // Sales web (PICKUP + DELIVERY) en el período.
+    // Sales WEB_PICKUP en el período.
     const webSales = await this.prisma.sale.findMany({
       where: {
-        type: { in: ['WEB_PICKUP', 'WEB_DELIVERY'] },
+        type: 'WEB_PICKUP',
         createdAt: { gte: from, lte: to },
       },
       select: { id: true, status: true, paidAt: true },
@@ -267,12 +267,7 @@ export class SalesReportsService {
       (s) => s.paidAt !== null,
     ).length;
     const eligibleReady = webSales.filter((s) =>
-      [
-        'LISTO_DESPACHO',
-        'ASIGNADO',
-        'EN_RUTA',
-        'ENTREGADO',
-      ].includes(s.status),
+      ['LISTO_DESPACHO', 'ENTREGADO'].includes(s.status),
     ).length;
 
     // Audit log WHATSAPP_LINK_OPENED por stage.
@@ -394,7 +389,7 @@ export class SalesReportsService {
       }),
       this.prisma.sale.count({
         where: {
-          type: { in: ['WEB_PICKUP', 'WEB_DELIVERY'] },
+          type: 'WEB_PICKUP',
           status: 'PENDIENTE_PAGO',
         },
       }),

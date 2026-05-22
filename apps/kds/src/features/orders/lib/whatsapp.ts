@@ -13,14 +13,14 @@ const ResponseSchema = z.object({ recorded: z.literal(true) });
 
 /**
  * Acoplado al click "Marcar listo" del cocinero. Solo aplica a sales
- * WEB_PICKUP/WEB_DELIVERY (COUNTER no notifica al cliente).
+ * WEB_PICKUP (COUNTER no notifica al cliente).
  *
  * Diseño: NO bloquea la transición de status. Si el LLM pop-up es
  * bloqueado o el sale no tiene phone, la transición YA pasó (status =
  * LISTO_DESPACHO) y el cliente lo verá en su /checkout/success poller.
  */
 export function openWhatsAppReady(sale: Sale): void {
-  if (sale.type !== 'WEB_PICKUP' && sale.type !== 'WEB_DELIVERY') return;
+  if (sale.type !== 'WEB_PICKUP') return;
   const snapshot: WhatsAppSaleSnapshot = {
     receiptNumber: sale.receiptNumber,
     customerName: sale.customerName ?? null,

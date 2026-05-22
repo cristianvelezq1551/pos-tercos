@@ -1,5 +1,4 @@
-import { Clock, Map, MapPin, Phone, Truck } from 'lucide-react';
-import Link from 'next/link';
+import { Clock, Map, MapPin, Phone } from 'lucide-react';
 import { WebTopbar } from '../../components/WebTopbar';
 import { WebFooter } from '../../components/WebFooter';
 import { MobileTabBar } from '../../components/MobileTabBar';
@@ -7,7 +6,7 @@ import { ActiveOrderBanner } from '../../features/checkout';
 
 export const metadata = {
   title: 'Ubicaciones · TERCOS',
-  description: 'Encuéntranos en Bogotá y Medellín. Dos sedes con domicilio en 3 km a la redonda.',
+  description: 'Encuéntranos en Envigado. Pedidos para recoger en tienda.',
 };
 
 interface Location {
@@ -34,7 +33,6 @@ export default function UbicacionesPage() {
       <main className="flex-1">
         <PageHeader />
         <CardsRow />
-        <DeliveryBanner />
       </main>
       <WebFooter />
       <MobileTabBar />
@@ -151,19 +149,3 @@ function DetailRow({
   );
 }
 
-function DeliveryBanner() {
-  return (
-    <section className="flex items-center justify-center gap-3 border-t border-border bg-[#111111] px-6 py-6 text-center sm:px-12 lg:px-20">
-      <Truck className="h-6 w-6 shrink-0 text-primary" strokeWidth={1.75} />
-      <p className="text-sm font-medium text-muted-foreground sm:text-base">
-        Pedidos a domicilio con cobertura de 3 km desde cada sede.{' '}
-        <Link
-          href="/"
-          className="font-semibold text-primary transition-colors hover:text-red-500"
-        >
-          Pedir ahora →
-        </Link>
-      </p>
-    </section>
-  );
-}

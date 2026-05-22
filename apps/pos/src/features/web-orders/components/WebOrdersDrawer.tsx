@@ -116,12 +116,8 @@ function WebOrderRow({
       <p className="mt-1 text-sm font-semibold text-foreground">{order.customerName}</p>
       <p className="text-xs text-muted-foreground">
         {order.customerPhone}
-        {' · '}
-        {order.type === 'WEB_PICKUP' ? 'Recoger' : 'Domicilio'}
+        {' · Recoger en local'}
       </p>
-      {order.deliveryAddress ? (
-        <p className="mt-0.5 text-xs text-muted-foreground">{order.deliveryAddress}</p>
-      ) : null}
       <Money amount={order.total} size="lg" weight="bold" className="mt-2" />
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Button variant="success" size="sm" onClick={handleAccept}>

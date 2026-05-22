@@ -19,7 +19,7 @@ const fontDisplay = Big_Shoulders({
 
 export const metadata: Metadata = {
   title: 'POS Tercos — Web Pública',
-  description: 'Pedidos online — recoger en tienda o domicilio',
+  description: 'Pedidos online — recoger en tienda',
 };
 
 export default function RootLayout({

@@ -1,10 +1,9 @@
 'use client';
 
 import { cn, FormField, Input } from '@pos-tercos/ui';
-import type { GeocodeResponse, WebOrderType } from '@pos-tercos/types';
-import { Bike, MessageCircle, Store } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useCallback, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import {
   cartLinesToCreateItems,
   cartSubtotal,
@@ -12,7 +11,6 @@ import {
 } from '../../cart';
 import { createWebOrder } from '../api/create-order';
 import { useActiveOrder } from '../store/active-order-store';
-import { DeliveryAddressInput } from './DeliveryAddressInput';
 import { OrderSummaryCard } from './OrderSummaryCard';
 import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
 import { COP } from '../../../lib/format';
@@ -24,11 +22,8 @@ export function CheckoutForm() {
   const clear = useCartStore((s) => s.clear);
   const setActiveOrder = useActiveOrder((s) => s.setOrder);
 
-  const [type, setType] = useState<WebOrderType>('WEB_PICKUP');
   const [name, setName] = useState('');
   const [phone10, setPhone10] = useState('');
-  const [address, setAddress] = useState('');
-  const [geocode, setGeocode] = useState<GeocodeResponse | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,17 +31,7 @@ export function CheckoutForm() {
   const subtotal = cartSubtotal(items);
   const phoneValid = /^\d{10}$/.test(phone10);
   const nameValid = name.trim().length >= 2;
-  const deliveryReady =
-    type === 'WEB_PICKUP' || (geocode !== null && geocode.withinDeliveryRadius);
-  const canSubmit = items.length > 0 && nameValid && phoneValid && deliveryReady;
-
-  const handleGeocode = useCallback((g: GeocodeResponse | null) => {
-    setGeocode(g);
-  }, []);
-  const handleSwitchToPickup = useCallback(() => {
-    setType('WEB_PICKUP');
-    setGeocode(null);
-  }, []);
+  const canSubmit = items.length > 0 && nameValid && phoneValid;
 
   if (hydrated && items.length === 0) {
     return (
@@ -72,16 +57,10 @@ export function CheckoutForm() {
       const idempotencyKey = crypto.randomUUID();
       const result = await createWebOrder(
         {
-          type,
+          type: 'WEB_PICKUP',
           items: cartLinesToCreateItems(items),
           customerName: name.trim(),
           customerPhone: `+57${phone10}`,
-          deliveryAddress:
-            type === 'WEB_DELIVERY'
-              ? geocode?.formattedAddress ?? address.trim()
-              : undefined,
-          deliveryLat: type === 'WEB_DELIVERY' ? geocode?.lat : undefined,
-          deliveryLng: type === 'WEB_DELIVERY' ? geocode?.lng : undefined,
           notes: notes.trim() || undefined,
         },
         idempotencyKey,
@@ -90,7 +69,6 @@ export function CheckoutForm() {
         saleId: result.order.id,
         token: result.token,
         receiptNumber: result.order.receiptNumber,
-        type: result.order.type,
         createdAt: Date.now(),
       });
       clear();
@@ -106,26 +84,6 @@ export function CheckoutForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-8">
       <OrderSummaryCard items={items} />
-
-      <section className="flex flex-col gap-4">
-        <h2 className="text-base font-bold text-foreground">¿Cómo recibes el pedido?</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <DeliveryOptionCard
-            icon={<Store className="h-5 w-5" strokeWidth={1.75} />}
-            title="Recoger en tienda"
-            description="Carrera 31 # 37s-49"
-            active={type === 'WEB_PICKUP'}
-            onClick={() => setType('WEB_PICKUP')}
-          />
-          <DeliveryOptionCard
-            icon={<Bike className="h-5 w-5" strokeWidth={1.75} />}
-            title="Domicilio"
-            description="Cobertura 3 km"
-            active={type === 'WEB_DELIVERY'}
-            onClick={() => setType('WEB_DELIVERY')}
-          />
-        </div>
-      </section>
 
       <section className="flex flex-col gap-5">
         <FormField label="Tu nombre" required>
@@ -165,16 +123,6 @@ export function CheckoutForm() {
             />
           </div>
         </FormField>
-
-        {type === 'WEB_DELIVERY' ? (
-          <DeliveryAddressInput
-            value={address}
-            onChange={setAddress}
-            onGeocode={handleGeocode}
-            onSwitchToPickup={handleSwitchToPickup}
-            disabled={pending}
-          />
-        ) : null}
 
         <FormField label="Notas (opcional)">
           <Input
@@ -231,46 +179,5 @@ export function CheckoutForm() {
         </p>
       </div>
     </form>
-  );
-}
-
-function DeliveryOptionCard({
-  icon,
-  title,
-  description,
-  active,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'press flex items-start gap-3 rounded-xl border p-4 text-left transition-colors',
-        active
-          ? 'border-primary bg-primary/[0.06] shadow-sm shadow-primary/10'
-          : 'border-border bg-card hover:border-muted-foreground',
-      )}
-    >
-      <span
-        className={cn(
-          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-          active ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
-        )}
-      >
-        {icon}
-      </span>
-      <span className="flex flex-col gap-0.5">
-        <span className="text-sm font-bold text-foreground">{title}</span>
-        <span className="text-xs text-muted-foreground">{description}</span>
-      </span>
-    </button>
   );
 }

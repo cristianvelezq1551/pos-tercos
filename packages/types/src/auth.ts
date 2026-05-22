@@ -3,15 +3,11 @@ import { z } from 'zod';
 export const UserRoleEnum = z.enum([
   'CAJERO',
   'COCINERO',
-  'REPARTIDOR',
   'ADMIN_OPERATIVO',
   'DUENO',
   'TRABAJADOR',
 ]);
 export type UserRole = z.infer<typeof UserRoleEnum>;
-
-export const RepartidorAvailabilityEnum = z.enum(['DISPONIBLE', 'OCUPADO', 'OFFLINE']);
-export type RepartidorAvailability = z.infer<typeof RepartidorAvailabilityEnum>;
 
 export const UserSchema = z.object({
   id: z.string().uuid(),
@@ -21,7 +17,6 @@ export const UserSchema = z.object({
   role: UserRoleEnum,
   mustChangePwd: z.boolean(),
   active: z.boolean(),
-  availability: RepartidorAvailabilityEnum.nullable().optional(),
   createdAt: z.string().datetime(),
 });
 export type User = z.infer<typeof UserSchema>;

@@ -125,10 +125,7 @@ export function ConfirmWebPaymentModal({
       <div className="space-y-5">
         <section className="rounded-xl bg-muted/40 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-muted-foreground">
-              {order.type === 'WEB_PICKUP' ? 'Recoger en tienda' : 'Domicilio'}
-              {order.deliveryAddress ? ` · ${order.deliveryAddress}` : ''}
-            </span>
+            <span className="text-sm text-muted-foreground">Recoger en tienda</span>
             <Money amount={total} size="lg" weight="bold" />
           </div>
           <p className="mt-1 text-xs text-warning">

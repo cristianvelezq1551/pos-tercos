@@ -17,8 +17,6 @@ model User {
   mustChangePwd      Boolean                 @default(true) @map("must_change_pwd")
   active             Boolean                 @default(true)
   createdAt          DateTime                @default(now()) @map("created_at")
-  availability       RepartidorAvailability?
-  lastActiveAt       DateTime?               @map("last_active_at")
   approvalPin        ApprovalPin?
   auditLogs          AuditLog[]
   idempotencyKeys    IdempotencyKey[]
@@ -31,7 +29,6 @@ model User {
   saleStatusChanges  SaleStatusLog[]
   salesAsCashier     Sale[]                  @relation("SaleCashier")
   salesAsPaidBy      Sale[]                  @relation("SalePaidBy")
-  salesAsRepartidor  Sale[]                  @relation("SaleRepartidor")
   shifts             Shift[]
   paymentReconciliations PaymentReconciliation[]
   workerAttendance   WorkerAttendance[]
@@ -329,8 +326,7 @@ model InvoiceItem {
   @@map("invoice_items")
 }
 
-/// Header de venta. Campos delivery (repartidor_id, addresses, picked_up_at,
-/// etc.) quedan NULL en FASE 5 — se rellenan desde FASE 7.
+/// Header de venta. Solo COUNTER (mostrador) y WEB_PICKUP (recoger en local).
 ///
 /// receipt_number tiene default `nextval('receipt_seq')` aplicado vía
 /// migration manual. La sequence garantiza monotonicidad incluso si
@@ -347,9 +343,6 @@ model Sale {
   customerName                  String?         @map("customer_name")
   customerPhone                 String?         @map("customer_phone")
   customerNit                   String?         @map("customer_nit")
-  deliveryAddress               String?         @map("delivery_address")
-  deliveryLat                   Decimal?        @map("delivery_lat") @db.Decimal(10, 7)
-  deliveryLng                   Decimal?        @map("delivery_lng") @db.Decimal(10, 7)
   subtotal                      Decimal         @db.Decimal(14, 2)
   discountTotal                 Decimal         @default(0) @map("discount_total") @db.Decimal(14, 2)
   total                         Decimal         @db.Decimal(14, 2)
@@ -358,12 +351,6 @@ model Sale {
   paidByUserId                  String?         @map("paid_by_user_id")
   cashierId                     String?         @map("cashier_id")
   shiftId                       String?         @map("shift_id")
-  repartidorId                  String?         @map("repartidor_id")
-  assignedAt                    DateTime?       @map("assigned_at")
-  pickedUpAt                    DateTime?       @map("picked_up_at")
-  departedAt                    DateTime?       @map("departed_at")
-  deliveredAt                   DateTime?       @map("delivered_at")
-  failedAttempts                Int             @default(0) @map("failed_attempts")
   notes                         String?
   idempotencyKey                String?         @unique @map("idempotency_key")
   createdAt                     DateTime        @default(now()) @map("created_at")
@@ -371,22 +358,15 @@ model Sale {
   notified_payment_instructions Boolean         @default(false)
   notified_payment_received     Boolean         @default(false)
   notified_ready_for_pickup     Boolean         @default(false)
-  notified_fifteen_min_warning  Boolean         @default(false)
-  notified_in_route             Boolean         @default(false)
   notified_canceled             Boolean         @default(false)
-  delivered_gps_lat             Decimal?        @db.Decimal(10, 7)
-  delivered_gps_lng             Decimal?        @db.Decimal(10, 7)
-  delivery_proof_url            String?
   items                         SaleItem[]
   statusLog                     SaleStatusLog[]
   cashier                       User?           @relation("SaleCashier", fields: [cashierId], references: [id])
   paidBy                        User?           @relation("SalePaidBy", fields: [paidByUserId], references: [id])
-  repartidor                    User?           @relation("SaleRepartidor", fields: [repartidorId], references: [id])
   shift                         Shift?          @relation(fields: [shiftId], references: [id])
 
   @@index([status, createdAt(sort: Desc)])
   @@index([cashierId, createdAt(sort: Desc)])
-  @@index([repartidorId, status])
   @@index([type, status, createdAt(sort: Desc)])
   @@index([shiftId])
   @@map("sales")
@@ -645,7 +625,7 @@ model WorkerAttendance {
 
 /// Comisión de un trabajador (FASE 14.B). Configuración asociada a un
 /// usuario: porcentaje sobre el revenue del turno (cajero) o monto fijo
-/// por sale (delivery, mesera con mesas). v1: solo PERCENT_OF_SHIFT.
+/// por sale (mesera con mesas). v1: solo PERCENT_OF_SHIFT.
 ///
 /// `appliedAt` indica desde cuándo aplica esta config — un cambio crea
 /// una nueva fila, manteniendo histórico inmutable. La comisión vigente
@@ -672,16 +652,9 @@ model WorkerCommission {
 enum UserRole {
   CAJERO
   COCINERO
-  REPARTIDOR
   ADMIN_OPERATIVO
   DUENO
   TRABAJADOR
-}
-
-enum RepartidorAvailability {
-  DISPONIBLE
-  OCUPADO
-  OFFLINE
 }
 
 enum InventoryMovementType {
@@ -707,26 +680,20 @@ enum InvoiceStatus {
 enum SaleType {
   COUNTER
   WEB_PICKUP
-  WEB_DELIVERY
 }
 
-/// Estado completo del ciclo de vida de una venta. Algunos estados solo
-/// aplican a tipos WEB_* (FASE 7+). En FASE 5 una venta COUNTER va:
-/// PENDIENTE_PAGO -> PAGADO (-> EN_PREPARACION -> LISTO_DESPACHO via FASE 6 KDS)
-/// o PENDIENTE_PAGO -> CANCELADO_NO_PAGO o cualquier -> VOID.
+/// Estado del ciclo de vida de una venta (solo COUNTER + WEB_PICKUP).
+/// COUNTER: PENDIENTE_PAGO -> PAGADO -> EN_PREPARACION -> LISTO_DESPACHO
+/// -> ENTREGADO (retirado). PENDIENTE_PAGO -> CANCELADO_NO_PAGO, o
+/// cualquier -> CANCELADO_SIN_REEMBOLSO / VOID.
 enum SaleStatus {
   PENDIENTE_PAGO
   PAGADO
   EN_PREPARACION
   LISTO_DESPACHO
-  ASIGNADO
-  EN_RUTA
   ENTREGADO
   CANCELADO_NO_PAGO
   CANCELADO_SIN_REEMBOLSO
-  INTENTO_FALLIDO
-  DEVUELTO
-  EN_DISPUTA
   VOID
 }
 
@@ -767,7 +734,7 @@ enum PurchaseSuggestionStatus {
 }
 
 /// Tipo de comisión (FASE 14.B). v1 implementa solo PERCENT_OF_SHIFT;
-/// FIXED_PER_SALE queda como reserva para meseras / repartidor.
+/// FIXED_PER_SALE queda como reserva para meseras.
 enum WorkerCommissionType {
   PERCENT_OF_SHIFT
   FIXED_PER_SALE

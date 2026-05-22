@@ -10,5 +10,5 @@ export async function getPendingWebOrdersServer(): Promise<Sale[]> {
   const json = (await res.json().catch(() => null)) as unknown;
   const parsed = ListSchema.safeParse(json);
   if (!parsed.success) return [];
-  return parsed.data.filter((s) => s.type === 'WEB_PICKUP' || s.type === 'WEB_DELIVERY');
+  return parsed.data.filter((s) => s.type === 'WEB_PICKUP');
 }

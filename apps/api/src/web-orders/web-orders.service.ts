@@ -1,17 +1,13 @@
 import {
-  BadRequestException,
   forwardRef,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { haversineKm, type GeoPoint } from '@pos-tercos/domain';
 import type { CreateWebOrder, PublicWebOrder, Sale } from '@pos-tercos/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesService } from '../sales/sales.service';
 import { PosGateway } from './pos.gateway';
-
-const DEFAULT_RADIUS_KM = 3;
 
 @Injectable()
 export class WebOrdersService {
@@ -23,18 +19,14 @@ export class WebOrdersService {
   ) {}
 
   /**
-   * Crea una venta WEB_PICKUP o WEB_DELIVERY en estado PENDIENTE_PAGO.
+   * Crea una venta WEB_PICKUP en estado PENDIENTE_PAGO.
    * Reusa SalesService.create (que ya valida productos, calcula totales,
-   * aplica promos y soporta idempotency-key). El cajero/admin que
-   * "crea" la venta es null (público), por eso pasamos un user "system"
-   * o el id del primer DUEÑO encontrado.
-   *
-   * NOTA: la sale.cashierId queda en null hasta que el cajero confirme
-   * el pago — eso ya está modelado en el schema (cashier_id nullable).
+   * aplica promos y soporta idempotency-key). El cashierId queda en null
+   * hasta que el cajero confirme el pago vía POS.
    */
   async create(input: CreateWebOrder, idempotencyKey?: string): Promise<PublicWebOrder> {
     // SalesService.create necesita un userId. Para ventas web, usamos el
-    // primer DUEÑO como "system user" — no afecta cashierId/paidByUserId
+    // primer DUENO como "system user" — no afecta cashierId/paidByUserId
     // (ambos quedan null hasta confirmPayment).
     const systemUser = await this.prisma.user.findFirst({
       where: { role: 'DUENO' },
@@ -44,35 +36,12 @@ export class WebOrdersService {
       throw new Error('No DUENO user found to act as system creator for web orders');
     }
 
-    // FASE 8: validación 3km en backend (defensa en profundidad — el cliente
-    // ya filtró en /web/geocode pero re-validamos por si manipuló el body).
-    if (input.type === 'WEB_DELIVERY') {
-      const origin: GeoPoint = {
-        lat: Number(process.env.RESTAURANT_LAT ?? '4.6533'),
-        lng: Number(process.env.RESTAURANT_LNG ?? '-74.0836'),
-      };
-      const radiusKm = Number(
-        process.env.RESTAURANT_DELIVERY_RADIUS_KM ?? DEFAULT_RADIUS_KM,
-      );
-      // El Zod superRefine ya garantiza que lat/lng están definidos.
-      const point: GeoPoint = { lat: input.deliveryLat!, lng: input.deliveryLng! };
-      const distanceKm = haversineKm(origin, point);
-      if (distanceKm > radiusKm) {
-        throw new BadRequestException(
-          `Esta dirección está a ${distanceKm.toFixed(2)} km del local — fuera del radio de delivery (${radiusKm} km). Usá pickup o cambiá la dirección.`,
-        );
-      }
-    }
-
     const sale = await this.sales.create(
       {
         type: input.type,
         items: input.items,
         customerName: input.customerName,
         customerPhone: input.customerPhone,
-        deliveryAddress: input.type === 'WEB_DELIVERY' ? input.deliveryAddress : undefined,
-        deliveryLat: input.type === 'WEB_DELIVERY' ? input.deliveryLat : undefined,
-        deliveryLng: input.type === 'WEB_DELIVERY' ? input.deliveryLng : undefined,
         notes: input.notes,
       },
       systemUser.id,
@@ -108,7 +77,6 @@ export class WebOrdersService {
       status: sale.status,
       customerName: sale.customerName ?? '',
       customerPhone: sale.customerPhone ?? '',
-      deliveryAddress: sale.deliveryAddress,
       subtotal: sale.subtotal,
       discountTotal: sale.discountTotal,
       total: sale.total,

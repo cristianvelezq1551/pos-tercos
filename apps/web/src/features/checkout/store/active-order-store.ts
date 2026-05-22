@@ -9,7 +9,6 @@ export interface ActiveOrder {
   saleId: string;
   token: string;
   receiptNumber: number;
-  type: 'WEB_PICKUP' | 'WEB_DELIVERY';
   /** Epoch ms — sirve para auto-purgar a las 24h. */
   createdAt: number;
 }
@@ -55,8 +54,6 @@ const TERMINAL_STATUSES = new Set([
   'CANCELADO_NO_PAGO',
   'CANCELADO_SIN_REEMBOLSO',
   'VOID',
-  'DEVUELTO',
-  'EN_DISPUTA',
 ]);
 
 export function isTerminalStatus(status: string): boolean {

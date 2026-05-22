@@ -8,7 +8,6 @@ interface SalesSummaryViewProps {
 const TYPE_LABEL: Record<string, string> = {
   COUNTER: 'Mostrador',
   WEB_PICKUP: 'Web · recoger',
-  WEB_DELIVERY: 'Web · domicilio',
 };
 
 const METHOD_LABEL: Record<string, string> = {

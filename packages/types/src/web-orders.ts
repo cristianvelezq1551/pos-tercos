@@ -5,8 +5,8 @@ import { CreateSaleItemSchema } from './sales';
 // WEB ORDER — pedido público desde apps/web (FASE 7)
 // ====================================================================
 
-/** Solo WEB_*, NO COUNTER (esos vienen del POS). */
-export const WebOrderTypeEnum = z.enum(['WEB_PICKUP', 'WEB_DELIVERY']);
+/** Solo WEB_PICKUP (recoger en local). COUNTER viene del POS. */
+export const WebOrderTypeEnum = z.enum(['WEB_PICKUP']);
 export type WebOrderType = z.infer<typeof WebOrderTypeEnum>;
 
 /**
@@ -15,9 +15,7 @@ export type WebOrderType = z.infer<typeof WebOrderTypeEnum>;
  * confía en lo que llega del browser).
  *
  * Reglas:
- *  - WEB_PICKUP requiere customerName + customerPhone. NO acepta deliveryAddress.
- *  - WEB_DELIVERY requiere customerName + customerPhone + deliveryAddress.
- *    (lat/lng + validación 3km llegan en FASE 8.)
+ *  - WEB_PICKUP requiere customerName + customerPhone (solo recoger en local).
  *  - phone: ^\+57\d{10}$ (Colombia E.164 sin espacios). Backend rechaza otros.
  */
 const PhoneSchema = z
@@ -30,38 +28,7 @@ export const CreateWebOrderSchema = z
     items: z.array(CreateSaleItemSchema).min(1).max(20),
     customerName: z.string().min(1).max(120),
     customerPhone: PhoneSchema,
-    /** WEB_DELIVERY: requerido. WEB_PICKUP: ignorado si viene. */
-    deliveryAddress: z.string().min(1).max(500).optional(),
-    /** WEB_DELIVERY: requeridos (FASE 8). Backend revalida la distancia 3km
-     *  con haversine antes de crear el sale. WEB_PICKUP: ignorados. */
-    deliveryLat: z.number().min(-90).max(90).optional(),
-    deliveryLng: z.number().min(-180).max(180).optional(),
     notes: z.string().max(500).optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.type === 'WEB_DELIVERY') {
-      if (!data.deliveryAddress) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'WEB_DELIVERY requires deliveryAddress',
-          path: ['deliveryAddress'],
-        });
-      }
-      if (data.deliveryLat === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'WEB_DELIVERY requires deliveryLat (use /web/geocode primero)',
-          path: ['deliveryLat'],
-        });
-      }
-      if (data.deliveryLng === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'WEB_DELIVERY requires deliveryLng (use /web/geocode primero)',
-          path: ['deliveryLng'],
-        });
-      }
-    }
   });
 export type CreateWebOrder = z.infer<typeof CreateWebOrderSchema>;
 
@@ -82,7 +49,6 @@ export const PublicWebOrderSchema = z.object({
   status: z.string(),
   customerName: z.string(),
   customerPhone: z.string(),
-  deliveryAddress: z.string().nullable(),
   subtotal: z.number().nonnegative(),
   discountTotal: z.number().nonnegative(),
   total: z.number().nonnegative(),
@@ -124,28 +90,3 @@ export const WebOrderEventSchema = z.object({
   emittedAt: z.string().datetime(),
 });
 export type WebOrderEvent = z.infer<typeof WebOrderEventSchema>;
-
-// ====================================================================
-// GEOCODE (FASE 8) — endpoint público GET /web/geocode?address=
-// ====================================================================
-
-export const GeocodeAccuracyEnum = z.enum([
-  'address',
-  'street',
-  'neighborhood',
-  'low',
-]);
-export type GeocodeAccuracy = z.infer<typeof GeocodeAccuracyEnum>;
-
-export const GeocodeResponseSchema = z.object({
-  lat: z.number(),
-  lng: z.number(),
-  formattedAddress: z.string(),
-  accuracy: GeocodeAccuracyEnum,
-  /** Distancia haversine al local en km, redondeada a 2 decimales. */
-  distanceKm: z.number().nonnegative(),
-  /** ¿Está dentro de RESTAURANT_DELIVERY_RADIUS_KM? Si no, el cliente
-   *  debe usar pickup. */
-  withinDeliveryRadius: z.boolean(),
-});
-export type GeocodeResponse = z.infer<typeof GeocodeResponseSchema>;

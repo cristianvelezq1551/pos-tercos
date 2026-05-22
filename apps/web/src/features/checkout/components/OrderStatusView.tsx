@@ -4,7 +4,6 @@ import type { PublicWebOrder } from '@pos-tercos/types';
 import { cn } from '@pos-tercos/ui';
 import {
   AlertCircle,
-  Bike,
   Check,
   ChefHat,
   Clock,
@@ -66,20 +65,6 @@ const STATUS_MAP: Record<string, StatusMeta> = {
     subtitle: (o) => `Pedido #${o.receiptNumber} · Acércate al mostrador`,
     timelineActive: 3,
   },
-  ASIGNADO: {
-    icon: Bike,
-    iconBg: 'bg-[#16A34A]',
-    title: 'Repartidor asignado',
-    subtitle: (o) => `Pedido #${o.receiptNumber} · Sale en breve`,
-    timelineActive: 2,
-  },
-  EN_RUTA: {
-    icon: Bike,
-    iconBg: 'bg-[#16A34A]',
-    title: 'En camino',
-    subtitle: (o) => `Pedido #${o.receiptNumber} · El repartidor está llegando`,
-    timelineActive: 3,
-  },
   ENTREGADO: {
     icon: Check,
     iconBg: 'bg-[#16A34A]',
@@ -109,22 +94,6 @@ const STATUS_MAP: Record<string, StatusMeta> = {
     iconBg: 'bg-destructive',
     title: 'Pedido anulado',
     subtitle: (o) => `Pedido #${o.receiptNumber}`,
-    timelineActive: 0,
-    isFailed: true,
-  },
-  DEVUELTO: {
-    icon: AlertCircle,
-    iconBg: 'bg-destructive',
-    title: 'Pedido devuelto',
-    subtitle: (o) => `Pedido #${o.receiptNumber}`,
-    timelineActive: 0,
-    isFailed: true,
-  },
-  EN_DISPUTA: {
-    icon: AlertCircle,
-    iconBg: 'bg-warning-foreground',
-    title: 'En disputa',
-    subtitle: (o) => `Pedido #${o.receiptNumber} · Estamos revisando`,
     timelineActive: 0,
     isFailed: true,
   },
@@ -158,16 +127,14 @@ export function OrderStatusView({
         saleId: initial.id,
         token,
         receiptNumber: order.receiptNumber,
-        type: order.type,
         createdAt:
           active?.saleId === initial.id ? active.createdAt : Date.now(),
       });
     }
-  }, [order.status, initial.id, token, order.receiptNumber, order.type]);
+  }, [order.status, initial.id, token, order.receiptNumber]);
 
   const showPayment = order.status === 'PENDIENTE_PAGO';
-  const showPickupBanner =
-    order.status === 'LISTO_DESPACHO' && order.type === 'WEB_PICKUP';
+  const showPickupBanner = order.status === 'LISTO_DESPACHO';
   const stepsCurrent: 1 | 2 | 3 = order.status === 'PENDIENTE_PAGO' ? 2 : 3;
 
   return (
@@ -244,28 +211,10 @@ function DetailsCard({
 }) {
   const rows: { label: string; value: string }[] = [
     { label: 'Total', value: COP.format(order.total) },
+    { label: 'Recoger en', value: businessName },
   ];
-  if (order.type === 'WEB_PICKUP') {
-    rows.push({ label: 'Recoger en', value: businessName });
-    if (
-      order.status === 'PAGADO' ||
-      order.status === 'EN_PREPARACION'
-    ) {
-      rows.push({ label: 'Tiempo estimado', value: 'Listo en ~20 min' });
-    }
-  } else {
-    rows.push({
-      label: 'Entregar en',
-      value: order.deliveryAddress ?? 'A confirmar',
-    });
-    if (
-      order.status === 'PAGADO' ||
-      order.status === 'EN_PREPARACION' ||
-      order.status === 'ASIGNADO' ||
-      order.status === 'EN_RUTA'
-    ) {
-      rows.push({ label: 'Tiempo estimado', value: '~30–40 min' });
-    }
+  if (order.status === 'PAGADO' || order.status === 'EN_PREPARACION') {
+    rows.push({ label: 'Tiempo estimado', value: 'Listo en ~20 min' });
   }
 
   if (order.discountTotal > 0) {
