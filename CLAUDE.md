@@ -26,7 +26,7 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 - **Backend:** NestJS 11 + Prisma 6 + PostgreSQL 16 (Railway en prod, Docker en dev)
 - **Frontends:** Next.js 15 App Router + React 19 + Tailwind v4 (Vercel en prod)
 - **Monorepo:** Turborepo + pnpm workspaces
-- **Auth:** JWT (access 15min en cookie+Bearer + refresh 7d httpOnly cookie con rotación)
+- **Auth:** JWT (access **24h** en cookie+Bearer + refresh 7d httpOnly cookie con rotación). KDS refresca en `auth.error` del WS; POS y admin con `SessionKeeper` (refresh cada 6h + al volver el foco).
 - **Realtime:** WebSocket (KDS Flutter via `socket_io_client`, POS via socket.io-client) + SSE (pantalla pública)
 - **IA:** Anthropic Claude Haiku 4.5 (primario) + OpenAI GPT-4o-mini (fallback) — vision para facturas
 - **WhatsApp:** OpenWA (gateway self-hosted, `whatsapp-web.js`) — envío automático desde backend. Ver sec 4.10. Dev: `MockWhatsAppAdapter` (sin config OpenWA).
@@ -260,9 +260,10 @@ apps/api/src/notifications/
 
 | Stage | `notified_*` flag en Sale | Trigger | Mensaje |
 |---|---|---|---|
-| `payment_instructions` | `notified_payment_instructions` | `POST /sales/:id/accept` (cajero) | Instrucciones de pago Nequi/transfer |
+| `payment_instructions` | `notified_payment_instructions` | `WebOrdersService.create` (al crear el pedido web) | Instrucciones de pago Nequi/transfer + "enviá comprobante" |
 | `payment_received` | `notified_payment_received` | `SalesService.confirmPayment` | "Pago verificado, ya en cocina" |
 | `pickup_ready` | `notified_ready_for_pickup` | `KdsService.ready` | "Listo para retirar" + dirección |
+| `canceled` | `notified_canceled` | `SalesService.cancelWebOrder` (cajero rechaza) | "Tu pedido fue cancelado" |
 
 **Reglas duras:**
 - ✅ **Idempotente por flags**: si el flag `notified_*` ya está en `true` para ese stage, `NotificationService.notify` no envía de nuevo (previene doble-envío en reintentos).
@@ -271,11 +272,9 @@ apps/api/src/notifications/
 - ✅ **Persiste en `whatsapp_messages`**: cada envío (exitoso o fallido) queda registrado en la tabla con `status: 'sent' | 'failed'`.
 - ✅ **MockAdapter en dev**: sin las 3 vars `OPENWA_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID`, el módulo instancia `MockWhatsAppAdapter` que loggea el mensaje sin enviarlo. Dev funciona sin OpenWA.
 - ❌ **`POST /sales/:id/whatsapp-clicked` ELIMINADO** — era del flujo wa.me manual y ya no existe.
+- ❌ **`POST /sales/:id/accept` ELIMINADO** (2026-05-22) — el paso de "aceptar para enviar instrucciones" se eliminó. Las instrucciones de pago ahora salen automáticamente al **crear** el pedido (`WebOrdersService.create`). El cajero solo tiene una acción: **confirmar el pago** cuando valida el comprobante (`POST /sales/:id/confirm-payment`).
 - ❌ **wa.me deep links en el frontend ELIMINADOS** — POS y web ya no abren pestañas de WhatsApp.
 - ❌ **No existe `WEB_DELIVERY`** — el campo de dirección y los mensajes de delivery fueron eliminados junto con el módulo Mapbox.
-
-**Nuevo endpoint de aceptación (reemplaza "Aceptar y contactar" del POS):**
-- `POST /sales/:id/accept` — `CashierAccess()`. No cambia el status del sale; llama `notifications.notify(id, 'payment_instructions')` fire-and-forget. Retorna `{ ok: true }`.
 
 **Variables de entorno (OpenWA):**
 - `OPENWA_URL` — URL del gateway OpenWA self-hosted (ej. `http://localhost:3000`)
@@ -384,11 +383,12 @@ _(ninguno — FASE 4 cerrada)_
 
 ### Web pública pedidos (FASE 7 — solo WEB_PICKUP)
 - `GET /web/menu` — `@Public()`, Throttle 60/60s. `PublicMenuResponse {products, categories, asOf}`. Subset SAFE del producto (sin `lastUnitCost`/`thresholdMin`/`directResale`)
-- `POST /web/orders` — `@Public()`, Throttle 30/60s. `CreateWebOrder {type WEB_PICKUP, items, customerName, customerPhone (E.164 +57XXXXXXXXXX), notes?}`. Header `Idempotency-Key` opcional. Retorna `{order, token, tokenExpiresAt, paymentInstructions}`. Reusa `SalesService.create`. No acepta `WEB_DELIVERY` ni `deliveryAddress` (eliminados en v2).
+- `POST /web/orders` — `@Public()`, Throttle 30/60s. `CreateWebOrder {type WEB_PICKUP, items, customerName, customerPhone (E.164 +57XXXXXXXXXX), notes?}`. Header `Idempotency-Key` opcional. Retorna `{order, token, tokenExpiresAt, paymentInstructions}`. Reusa `SalesService.create`. **Dispara `notifications.notify(id, 'payment_instructions')` automáticamente** (el cliente recibe las instrucciones de pago apenas crea el pedido). No acepta `WEB_DELIVERY` ni `deliveryAddress` (eliminados en v2).
 - `GET /web/orders/:id?token=` — `@Public()`, Throttle 120/60s. `PublicWebOrder` (subset sin paymentMethod/cashier/shift/idempotencyKey). Token HMAC SHA256, TTL 24h.
 - `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.cancelled`.
-- `POST /sales/:id/accept` — `CashierAccess()`. El cajero acepta el pedido web; fire-and-forget `notifications.notify(id, 'payment_instructions')` vía OpenWA. Retorna `{ ok: true }`.
-- Confirmación de pago: `POST /sales/:id/confirm-payment` (sin cambios). Al confirmar, `SalesService.confirmPayment` llama `notifications.notify(id, 'payment_received')` fire-and-forget.
+- Confirmación de pago: `POST /sales/:id/confirm-payment` — acción del cajero cuando valida el comprobante. `SalesService.confirmPayment` es **TOCTOU-safe** (update condicionado por status dentro de la tx → no doble-cobro), re-valida monto exacto + doble verificación para pagos digitales, **asocia el turno+cajero** a las ventas WEB_PICKUP (entran al cierre de caja), notifica `payment_received` y manda a cocina.
+- `POST /sales/:id/cancel` — `CashierAccess()`. El cajero rechaza un pedido web `PENDIENTE_PAGO` que nunca se pagó → `CANCELADO_NO_PAGO` + `notifications.notify(id, 'canceled')`. No revierte stock (nunca se descontó).
+- **Eliminado:** `POST /sales/:id/accept` — el paso de "aceptar para enviar instrucciones" se quitó (las instrucciones salen al crear el pedido).
 - **Eliminado:** `POST /web/orders/:id/mark-paid` — deprecated, no se llama desde ninguna UI.
 
 ### RRHH (FASE 14.B)
@@ -753,13 +753,13 @@ aea24b8 feat(public-display): completa rediseño turnero kiosko + limpieza
 | Enums eliminados | `RepartidorAvailability`, `WEB_DELIVERY`, `ASIGNADO`, `EN_RUTA`, `INTENTO_FALLIDO`, `DEVUELTO`, `EN_DISPUTA`, `REPARTIDOR` | Removidos del schema y tipos |
 | Tabla nueva | — | `whatsapp_messages` (auditoría OpenWA) |
 | Endpoint eliminado | `POST /sales/:id/whatsapp-clicked` | No existe |
-| Endpoint nuevo | — | `POST /sales/:id/accept` |
+| Instrucciones de pago | click del cajero (wa.me) | automáticas al crear el pedido (`WebOrdersService.create`) |
 
 ### Lo que NO cambió
 
 - Todo el backend (excepto: se agrega `notifications` + `adapters/whatsapp`, se elimina `adapters/maps`).
 - `apps/admin` — sin cambios de fondo.
-- `apps/pos` — sin cambios de fondo (botón "Aceptar" ahora llama `/sales/:id/accept` en vez de abrir wa.me).
+- `apps/pos` — pedidos web en un **modal** (`WebOrdersModal`); la única acción del cajero es "Confirmar pago" (las instrucciones de pago las recibe el cliente solo al crear el pedido).
 - `apps/web` — mínimos cambios (removido toggle delivery y `mark-paid`).
 - `apps/public-display` — rediseño visual (turnero), sin cambios de backend.
 - FASES 0-15 del historial `main` — siguen siendo válidas como referencia del trabajo previo.
@@ -1364,7 +1364,7 @@ pnpm lint          # eslint funcional (sin ignoreDuringBuilds)
 - Audit log en `/audit` accesible solo para Dueño.
 - Dashboard `/` admin: revenue del día + WoW% + pedidos pendientes + stock crítico.
 - Sugerencias IA (`/purchase-suggestions`) — el cron horario detecta low-stock; el Dueño revisa, evalúa con IA si quiere y acepta/rechaza.
-- WhatsApp automático vía OpenWA — el backend envía solo. El cajero solo hace `POST /sales/:id/accept`; las otras 2 notificaciones se disparan sin intervención.
+- WhatsApp automático vía OpenWA — el backend envía solo. Las instrucciones de pago salen al crear el pedido web; "pago recibido" y "listo para retirar" se disparan en `confirmPayment` y `KdsService.ready`. El cajero solo confirma el pago (`POST /sales/:id/confirm-payment`) cuando valida el comprobante.
 
 **FASE 10 (repartidor): DESCARTADA.** No hay plans de delivery propio en v1.
 

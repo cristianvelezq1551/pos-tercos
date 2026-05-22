@@ -45,14 +45,15 @@ PID=$(curl -s -X POST $API/products -H "$AUTH" -H 'Content-Type: application/jso
 curl -s -X POST $API/shifts/open -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"openingCash":100000}' -o /dev/null -w "turno HTTP %{http_code}\n"
 
+# Crear el pedido web YA dispara la notificación de instrucciones de pago (📲)
 curl -s -X POST $API/web/orders -H 'Content-Type: application/json' \
   -d "{\"type\":\"WEB_PICKUP\",\"items\":[{\"productId\":\"$PID\",\"quantity\":1}],\"customerName\":\"Cristian\",\"customerPhone\":\"$CUSTOMER_PHONE\"}" \
-  -o /tmp/order.json
+  -o /tmp/order.json    # 📲 instrucciones de pago (automático al crear)
 SID=$(python3 -c "import json;print(json.load(open('/tmp/order.json'))['order']['id'])")
 TOTAL=$(python3 -c "import json;print(json.load(open('/tmp/order.json'))['order']['total'])")
 echo "pedido $SID · total $TOTAL"
 
-curl -s -X POST $API/sales/$SID/accept -H "$AUTH" -w "  aceptar → HTTP %{http_code}\n"            # 📲 instrucciones de pago
+# El cajero confirma el pago cuando valida el comprobante (única acción suya)
 curl -s -X POST $API/sales/$SID/confirm-payment -H "$AUTH" -H 'Content-Type: application/json' \
   -d "{\"method\":\"CASH\",\"amountReceived\":$TOTAL}" -o /dev/null -w "  confirmar → HTTP %{http_code}\n"  # 📲 pago recibido
 curl -s -X POST $API/kds/orders/$SID/start -H "$AUTH" -o /dev/null -w "  cocina inicia → HTTP %{http_code}\n"
