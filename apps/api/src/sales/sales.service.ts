@@ -16,6 +16,7 @@ import {
   type PromotionDef,
   type ReceiptData,
 } from '@pos-tercos/domain';
+import { DIGITAL_PAYMENT_METHODS } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -38,8 +39,8 @@ import { KdsGateway } from '../kds/kds.gateway';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
-import { PublicDisplayService } from '../public-display/public-display.service';
 import { RecipesService } from '../recipes/recipes.service';
+import { ShiftsService } from '../shifts/shifts.service';
 
 const SALES_CREATE_ENDPOINT = 'POST /sales';
 
@@ -79,8 +80,8 @@ export class SalesService {
     @Inject(PRINTER_PROVIDER) private readonly printer: PrinterProvider,
     @Inject(CASH_DRAWER_PROVIDER) private readonly drawer: CashDrawerProvider,
     @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
-    private readonly publicDisplay: PublicDisplayService,
     private readonly notifications: NotificationService,
+    private readonly shifts: ShiftsService,
   ) {}
 
   // ==================================================================
@@ -206,6 +207,7 @@ export class SalesService {
               quantity: c.quantity,
               unitPrice: c.unitPrice,
               modifiersJson: c.modifiers as unknown as Prisma.InputJsonValue,
+              notes: c.notes,
               appliedPromotionId: c.appliedPromotionId,
               lineSubtotal: c.lineSubtotal,
               lineDiscount: c.lineDiscount,
@@ -278,10 +280,40 @@ export class SalesService {
         `Sale está en status ${existing.status}, no se puede cobrar (solo PENDIENTE_PAGO).`,
       );
     }
-    if (input.amountReceived < Number(existing.total) - 0.005) {
+    const total = Number(existing.total);
+    if (input.amountReceived < total - 0.005) {
       throw new BadRequestException(
-        `Amount received (${input.amountReceived}) < total (${Number(existing.total)})`,
+        `Amount received (${input.amountReceived}) < total (${total})`,
       );
+    }
+    // Defensa server-side (no confiar solo en el Zod del controller): los pagos
+    // digitales exigen monto exacto + doble verificación.
+    const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
+      input.method as PaymentMethod,
+    );
+    if (isDigital) {
+      if (!input.digitalDoubleVerified) {
+        throw new BadRequestException(
+          `${input.method} requiere doble verificación (app del negocio + comprobante).`,
+        );
+      }
+      if (Math.abs(input.amountReceived - total) > 0.005) {
+        throw new BadRequestException(
+          `Pago digital: el monto debe ser exacto al total (${total}).`,
+        );
+      }
+    }
+
+    // WEB_PICKUP entra sin turno; al confirmar el cajero le asocia SU turno
+    // abierto (si no, la venta nunca entra al cierre de caja / Z-report).
+    let shiftId = existing.shiftId;
+    let cashierId = existing.cashierId;
+    if (existing.type === 'WEB_PICKUP' && shiftId === null) {
+      const shift = await this.shifts.getCurrent(userId);
+      if (shift) {
+        shiftId = shift.id;
+        cashierId = userId;
+      }
     }
 
     // Cargar productos con flags relevantes para descuento de stock
@@ -354,16 +386,25 @@ export class SalesService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const sale = await tx.sale.update({
-        where: { id: saleId },
+      // Guard transaccional contra doble-cobro (doble-click / retry de red):
+      // el status se condiciona DENTRO del UPDATE. Si otra request ya cobró,
+      // count===0 y abortamos sin descontar stock dos veces.
+      const res = await tx.sale.updateMany({
+        where: { id: saleId, status: 'PENDIENTE_PAGO' },
         data: {
           status: 'PAGADO',
           paymentMethod: input.method as PaymentMethod,
           paidAt: new Date(),
           paidByUserId: userId,
+          shiftId,
+          cashierId,
         },
-        include: includeFull(),
       });
+      if (res.count === 0) {
+        throw new BadRequestException(
+          'La venta ya fue cobrada o cambió de estado.',
+        );
+      }
       await tx.saleStatusLog.create({
         data: {
           saleId,
@@ -378,7 +419,10 @@ export class SalesService {
           data: stockMovementsToCreate,
         });
       }
-      return sale;
+      return tx.sale.findUniqueOrThrow({
+        where: { id: saleId },
+        include: includeFull(),
+      });
     });
 
     await this.audit.log({
@@ -396,12 +440,11 @@ export class SalesService {
     const dto = toSaleDto(updated);
     // Notifica al KDS: la venta entra al queue de cocina.
     this.kdsGateway.emit('order.created', dto);
-    // Notifica a la pantalla pública: si es COUNTER, podría aparecer en "next".
-    if (dto.type === 'COUNTER') {
-      this.publicDisplay.notify();
-    }
     // Notifica al cliente via WhatsApp que el pago fue verificado (WEB_PICKUP).
-    void this.notifications.notify(saleId, 'payment_received');
+    // `silent` (cobro retroactivo offline) lo omite — el cliente ya retiró.
+    if (!input.silent) {
+      void this.notifications.notify(saleId, 'payment_received');
+    }
     return dto;
   }
 
@@ -436,15 +479,20 @@ export class SalesService {
       include: { items: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (existing.status === 'VOID') {
-      throw new BadRequestException('Sale ya está anulada');
-    }
-    if (existing.status === 'ENTREGADO') {
-      throw new BadRequestException('Sale ya está ENTREGADO y no se puede anular.');
+    // Solo se anula ANTES de que cocina empiece a prepararla: PENDIENTE_PAGO o
+    // PAGADO (aún sin iniciar). Una vez EN_PREPARACION/LISTO/ENTREGADO la comida
+    // ya se hizo y no se revierte por anulación.
+    if (existing.status !== 'PENDIENTE_PAGO' && existing.status !== 'PAGADO') {
+      throw new BadRequestException(
+        `No se puede anular en estado ${existing.status}: la cocina ya inició la preparación. ` +
+          'Solo se anula cuando está PENDIENTE_PAGO o PAGADO sin iniciar.',
+      );
     }
 
     const oldStatus = existing.status;
-    const wasStockDecremented = oldStatus !== 'PENDIENTE_PAGO' && oldStatus !== 'CANCELADO_NO_PAGO';
+    // Solo PAGADO descontó stock (PENDIENTE_PAGO nunca lo hizo). Son los únicos
+    // dos estados anulables tras el guard de arriba.
+    const wasStockDecremented = oldStatus === 'PAGADO';
 
     // Revertir movements: el sourceId es la sale → buscar todos los SALE
     // movements con ese sourceId y crear movements compensatorios con
@@ -510,6 +558,72 @@ export class SalesService {
       metadata: { reason: 'void', cashierId },
     });
 
+    const dto = toSaleDto(updated);
+    // Si estaba PAGADO ya estaba en la cola de cocina → avisar al KDS para que
+    // la saque del board. (EN_PREPARACION ya no es anulable.)
+    if (oldStatus === 'PAGADO') {
+      this.kdsGateway.emit('order.status.changed', dto);
+    }
+    return dto;
+  }
+
+  // ==================================================================
+  // CANCEL WEB ORDER (pedido web nunca pagado)
+  // ==================================================================
+
+  /**
+   * El cajero rechaza un pedido web que sigue PENDIENTE_PAGO (cliente nunca
+   * pagó). Transiciona a CANCELADO_NO_PAGO (sin reverso de stock: nunca se
+   * descontó) y avisa al cliente por WhatsApp. Solo WEB_PICKUP.
+   */
+  async cancelWebOrder(saleId: string, cashierId: string): Promise<Sale> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { type: true, status: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (existing.type !== 'WEB_PICKUP') {
+      throw new BadRequestException('Solo se pueden rechazar pedidos web.');
+    }
+    if (existing.status !== 'PENDIENTE_PAGO') {
+      throw new BadRequestException(
+        `No se puede rechazar: el pedido está en ${existing.status}.`,
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.sale.updateMany({
+        where: { id: saleId, status: 'PENDIENTE_PAGO' },
+        data: { status: 'CANCELADO_NO_PAGO' },
+      });
+      if (res.count === 0) {
+        throw new BadRequestException('El pedido cambió de estado.');
+      }
+      await tx.saleStatusLog.create({
+        data: {
+          saleId,
+          statusFrom: 'PENDIENTE_PAGO',
+          statusTo: 'CANCELADO_NO_PAGO',
+          userId: cashierId,
+          notes: 'Pedido web rechazado por el cajero',
+        },
+      });
+      return tx.sale.findUniqueOrThrow({
+        where: { id: saleId },
+        include: includeFull(),
+      });
+    });
+
+    await this.audit.log({
+      userId: cashierId,
+      action: 'SALE_STATUS_CHANGED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: { from: 'PENDIENTE_PAGO', to: 'CANCELADO_NO_PAGO', stage: 'web-canceled' },
+    });
+
+    // Avisa al cliente que su pedido fue cancelado (fire-and-forget).
+    void this.notifications.notify(saleId, 'canceled');
     return toSaleDto(updated);
   }
 
@@ -732,6 +846,7 @@ interface ComputedSaleItem {
   quantity: number;
   unitPrice: number;
   modifiers: AppliedModifier[];
+  notes: string | null;
   appliedPromotionId: string | null;
   lineSubtotal: number;
   lineDiscount: number;
@@ -829,6 +944,7 @@ function computeLine(
     quantity: input.quantity,
     unitPrice,
     modifiers,
+    notes: input.notes?.trim() ? input.notes.trim() : null,
     appliedPromotionId: promo.appliedPromotionId,
     lineSubtotal,
     lineDiscount,
@@ -883,6 +999,8 @@ function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
     discountTotal: sale.discountTotal,
     total: sale.total,
     reprintLabel: isReprint ? 'DUPLICADO' : null,
+    // En efectivo el print abre el cajón (RJ-11). En transferencia no hace falta.
+    openDrawer: sale.paymentMethod === 'CASH',
     business: {
       name: process.env.BUSINESS_NAME ?? 'POS Tercos',
       address: process.env.BUSINESS_ADDRESS ?? 'Dirección por configurar',
@@ -903,6 +1021,7 @@ function toSaleDto(row: DbSaleWithDetail): Sale {
     quantity: it.quantity,
     unitPrice: Number(it.unitPrice),
     modifiers: (it.modifiersJson as unknown as AppliedModifier[]) ?? [],
+    notes: it.notes ?? null,
     appliedPromotionId: it.appliedPromotionId,
     appliedPromotionName: it.appliedPromotion?.name ?? null,
     lineSubtotal: Number(it.lineSubtotal),

@@ -21,7 +21,7 @@ import { cleanDb } from './helpers/db-cleaner';
 describe('Invoices E2E', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let request: supertest.SuperTest<supertest.Test>;
+  let request: ReturnType<typeof supertest>;
 
   let duenoToken: string;
   let adminToken: string;

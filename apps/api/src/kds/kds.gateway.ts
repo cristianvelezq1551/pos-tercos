@@ -15,7 +15,9 @@ import {
 } from '@pos-tercos/types';
 import type { Server, Socket } from 'socket.io';
 
-const ALLOWED_ROLES = new Set(['COCINERO', 'ADMIN_OPERATIVO', 'DUENO']);
+// CAJERO incluido: necesita el estado de cocina en tiempo real (mismo board
+// que el KDS) para gestionar los pedidos cuando el cocinero está ocupado.
+const ALLOWED_ROLES = new Set(['COCINERO', 'CAJERO', 'ADMIN_OPERATIVO', 'DUENO']);
 const ACCESS_COOKIE = 'pos_access';
 
 @WebSocketGateway({

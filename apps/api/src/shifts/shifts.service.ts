@@ -123,18 +123,29 @@ export class ShiftsService {
       );
     }
 
-    // Sumar todas las ventas PAGADAS con method=CASH del turno.
+    // Efectivo que debe estar en el cajón: ventas CASH cuyo dinero se cobró y
+    // NO se devolvió. Excluye VOID (reembolsado → neto 0) y CANCELADO_NO_PAGO
+    // (nunca se pagó). Incluye CANCELADO_SIN_REEMBOLSO (el efectivo se quedó).
     const cashSales = await this.prisma.sale.aggregate({
       where: {
         shiftId,
-        status: { in: ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] },
+        status: {
+          in: [
+            'PAGADO',
+            'EN_PREPARACION',
+            'LISTO_DESPACHO',
+            'ENTREGADO',
+            'CANCELADO_SIN_REEMBOLSO',
+          ],
+        },
         paymentMethod: 'CASH',
       },
       _sum: { total: true },
     });
-    const cashSalesTotal = Number(cashSales._sum.total ?? 0);
-    const expectedCash = Number(shift.openingCash) + cashSalesTotal;
-    const difference = input.countedCash - expectedCash; // (+) sobrante, (-) faltante
+    // COP son enteros; redondeamos para evitar cualquier drift Decimal→Number.
+    const cashSalesTotal = Math.round(Number(cashSales._sum.total ?? 0));
+    const expectedCash = Math.round(Number(shift.openingCash)) + cashSalesTotal;
+    const difference = Math.round(input.countedCash) - expectedCash; // (+) sobrante, (-) faltante
 
     const closed = await this.prisma.shift.update({
       where: { id: shiftId },

@@ -8,7 +8,7 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 export interface AppContext {
   app: INestApplication;
   prisma: PrismaService;
-  request: supertest.SuperTest<supertest.Test>;
+  request: ReturnType<typeof supertest>;
 }
 
 export async function bootstrapApp(): Promise<AppContext> {
@@ -30,7 +30,7 @@ export async function bootstrapApp(): Promise<AppContext> {
  * Login with a test user and return the Bearer token.
  */
 export async function loginAs(
-  request: supertest.SuperTest<supertest.Test>,
+  request: ReturnType<typeof supertest>,
   email: string,
   password = 'dev12345',
 ): Promise<string> {

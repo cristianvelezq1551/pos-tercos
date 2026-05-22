@@ -20,7 +20,7 @@ const TEST_DB_URL = process.env.DATABASE_URL;
 describe('Sales E2E', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let request: supertest.SuperTest<supertest.Test>;
+  let request: ReturnType<typeof supertest>;
 
   // Tokens
   let duenoToken: string;

@@ -385,6 +385,7 @@ model SaleItem {
   quantity           Int
   unitPrice          Decimal      @map("unit_price") @db.Decimal(12, 2)
   modifiersJson      Json         @default("[]") @map("modifiers_json")
+  notes              String?
   appliedPromotionId String?      @map("applied_promotion_id")
   lineSubtotal       Decimal      @map("line_subtotal") @db.Decimal(14, 2)
   lineDiscount       Decimal      @default(0) @map("line_discount") @db.Decimal(14, 2)

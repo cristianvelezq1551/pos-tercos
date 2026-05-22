@@ -3,8 +3,8 @@ import type { Sale, SaleStatus } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { PublicDisplayService } from '../public-display/public-display.service';
 import { SalesService } from '../sales/sales.service';
+import { KdsGateway } from './kds.gateway';
 
 const KITCHEN_QUEUE_STATUSES = ['PAGADO', 'EN_PREPARACION'] as const satisfies readonly SaleStatus[];
 
@@ -14,7 +14,7 @@ export class KdsService {
     private readonly prisma: PrismaService,
     private readonly sales: SalesService,
     private readonly audit: AuditService,
-    private readonly publicDisplay: PublicDisplayService,
+    private readonly gateway: KdsGateway,
     private readonly notifications: NotificationService,
   ) {}
 
@@ -41,10 +41,13 @@ export class KdsService {
     return this.transition(saleId, 'PAGADO', 'EN_PREPARACION', userId);
   }
 
-  /** EN_PREPARACION → LISTO_DESPACHO. */
-  async ready(saleId: string, userId: string): Promise<Sale> {
+  /**
+   * EN_PREPARACION → LISTO_DESPACHO. `silent=true` (cajero actualizando un
+   * pedido viejo de forma retroactiva) NO avisa al cliente por WhatsApp.
+   */
+  async ready(saleId: string, userId: string, silent = false): Promise<Sale> {
     const sale = await this.transition(saleId, 'EN_PREPARACION', 'LISTO_DESPACHO', userId);
-    void this.notifications.notify(saleId, 'pickup_ready');
+    if (!silent) void this.notifications.notify(saleId, 'pickup_ready');
     return sale;
   }
 
@@ -84,9 +87,9 @@ export class KdsService {
     });
 
     const sale = await this.sales.getById(saleId);
-    if (sale.type === 'COUNTER') {
-      this.publicDisplay.notify();
-    }
+    // Emit centralizado acá (no en el controller): cualquier caller de
+    // start/ready dispara la actualización del board del KDS.
+    this.gateway.emit('order.status.changed', sale);
     return sale;
   }
 

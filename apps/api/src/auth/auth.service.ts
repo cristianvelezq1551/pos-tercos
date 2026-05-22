@@ -7,7 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 
-const ACCESS_TOKEN_TTL = '15m';
+const ACCESS_TOKEN_TTL = '24h';
 const REFRESH_TOKEN_TTL_DAYS = 7;
 const REFRESH_TOKEN_BYTES = 48;
 const BCRYPT_ROUNDS = 10;

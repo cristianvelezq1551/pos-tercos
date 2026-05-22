@@ -4,7 +4,17 @@ import type {
   PublicDisplayOrderItem,
   PublicDisplayState,
 } from '@pos-tercos/types';
-import { concat, defer, from, map, Subject, switchMap, type Observable } from 'rxjs';
+import {
+  concat,
+  defer,
+  from,
+  interval,
+  map,
+  merge,
+  Subject,
+  switchMap,
+  type Observable,
+} from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Solo COUNTER y limitado a las últimas X minutos para evitar mostrar
@@ -148,15 +158,21 @@ export class PublicDisplayService {
 
   /**
    * Stream SSE: emite snapshot inicial + cada vez que `notify()` se llama,
-   * recalcula y empuja el state nuevo.
+   * recalcula y empuja el state nuevo. Además un keepalive cada 20 s (evento
+   * `ping` que el cliente ignora) para que proxies/balanceadores no corten la
+   * conexión idle durante horas muertas.
    */
   stream(): Observable<MessageEvent> {
     const initial$ = defer(() => from(this.getState()));
     const updates$ = this.notifications.pipe(
       switchMap(() => from(this.getState())),
     );
-    return concat(initial$, updates$).pipe(
+    const data$ = concat(initial$, updates$).pipe(
       map((state) => ({ data: state }) as MessageEvent),
     );
+    const keepalive$ = interval(20_000).pipe(
+      map(() => ({ type: 'ping', data: '' }) as MessageEvent),
+    );
+    return merge(data$, keepalive$);
   }
 }

@@ -10,7 +10,6 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
-  Res,
 } from '@nestjs/common';
 import type { DrawerOpenResult } from '@pos-tercos/domain';
 import {
@@ -31,14 +30,12 @@ import {
   type SaleStatusLogEntry,
   type VoidSale,
 } from '@pos-tercos/types';
-import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import {
   CashierAccess,
   OnlyDueno,
 } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { NotificationService } from '../notifications/notification.service';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
 import { SalesService } from './sales.service';
 
@@ -47,7 +44,6 @@ export class SalesController {
   constructor(
     private readonly sales: SalesService,
     private readonly receiptIntegrity: ReceiptIntegrityService,
-    private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -114,19 +110,15 @@ export class SalesController {
     return this.sales.void(id, body, user.sub, approvalPin);
   }
 
-  /**
-   * El cajero acepta un pedido web y el backend envía las instrucciones
-   * de pago al cliente vía WhatsApp (OpenWA). Fire-and-forget: si falla
-   * la notificación la transición no se revierte.
-   */
+  /** El cajero rechaza un pedido web que nunca se pagó (PENDIENTE_PAGO). */
   @CashierAccess()
-  @Post(':id/accept')
+  @Post(':id/cancel')
   @HttpCode(200)
-  async acceptWebOrder(
+  cancelWebOrder(
+    @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<{ ok: true }> {
-    void this.notifications.notify(id, 'payment_instructions');
-    return { ok: true };
+  ): Promise<Sale> {
+    return this.sales.cancelWebOrder(id, user.sub);
   }
 
   @CashierAccess()
@@ -172,14 +164,11 @@ export class SalesController {
   }
 
   /**
-   * Imprime/reimprime el recibo. Devuelve el HTML inline (Content-Type
-   * text/html) para que el POS pueda hacer `window.open(blob)` directo
-   * o un iframe. La 1ra invocación audita RECEIPT_PRINTED, las siguientes
-   * RECEIPT_REPRINTED + el HTML lleva banner DUPLICADO.
-   *
-   * Usa @Res() sin passthrough porque el Buffer-as-JSON serializer default
-   * de Nest convertiría el HTML a `{"type":"Buffer","data":[...]}`. Mandamos
-   * los bytes con res.send() directo.
+   * Imprime/reimprime el recibo. La impresión REAL la hace el backend vía el
+   * PrinterProvider (ESC/POS → print-agent → impresora térmica Neotek 58mm).
+   * El POS solo dispara este endpoint; NO imprime desde el navegador (eso
+   * causaba el papel infinito en la térmica). 1ra vez audita RECEIPT_PRINTED,
+   * las siguientes RECEIPT_REPRINTED.
    */
   @CashierAccess()
   @Post(':id/print')
@@ -187,13 +176,9 @@ export class SalesController {
   async print(
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
-    @Res() res: Response,
-  ): Promise<void> {
+  ): Promise<{ ok: true; key: string }> {
     const result = await this.sales.printReceipt(id, user.sub);
-    res.setHeader('Content-Type', result.contentType);
-    res.setHeader('X-Receipt-Key', result.key);
-    res.setHeader('X-Receipt-Url', result.url);
-    res.status(200).send(result.body);
+    return { ok: true, key: result.key };
   }
 
   /**

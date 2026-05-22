@@ -18,7 +18,7 @@ import { cleanDb } from './helpers/db-cleaner';
 describe('Shifts E2E', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let request: supertest.SuperTest<supertest.Test>;
+  let request: ReturnType<typeof supertest>;
 
   let duenoToken: string;
   let cajeroToken: string;

@@ -39,6 +39,7 @@ export class NotificationService {
           notified_payment_instructions: true,
           notified_payment_received: true,
           notified_ready_for_pickup: true,
+          notified_canceled: true,
         },
       });
       if (!sale || sale.type !== 'WEB_PICKUP' || !sale.customerPhone) return;
@@ -91,6 +92,7 @@ export class NotificationService {
       notified_payment_instructions: boolean;
       notified_payment_received: boolean;
       notified_ready_for_pickup: boolean;
+      notified_canceled: boolean;
     },
     stage: WhatsAppNotificationStage,
   ): boolean {
@@ -101,6 +103,8 @@ export class NotificationService {
         return sale.notified_payment_received;
       case 'pickup_ready':
         return sale.notified_ready_for_pickup;
+      case 'canceled':
+        return sale.notified_canceled;
     }
   }
 
@@ -112,6 +116,8 @@ export class NotificationService {
         return { notified_payment_received: true };
       case 'pickup_ready':
         return { notified_ready_for_pickup: true };
+      case 'canceled':
+        return { notified_canceled: true };
     }
   }
 

@@ -8,5 +8,8 @@ export const OnlyDueno = () => Roles('DUENO');
 export const AdminAccess = () => Roles('ADMIN_OPERATIVO', 'DUENO');
 export const CashierAccess = () => Roles('CAJERO', 'ADMIN_OPERATIVO', 'DUENO');
 export const KitchenAccess = () => Roles('COCINERO', 'ADMIN_OPERATIVO', 'DUENO');
+/** Cocina o caja: el cajero puede avanzar pedidos cuando el cocinero está ocupado. */
+export const KitchenOrCashierAccess = () =>
+  Roles('COCINERO', 'CAJERO', 'ADMIN_OPERATIVO', 'DUENO');
 export const InternalAccess = () =>
   Roles('CAJERO', 'COCINERO', 'ADMIN_OPERATIVO', 'DUENO', 'TRABAJADOR');

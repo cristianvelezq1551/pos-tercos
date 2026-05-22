@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { CreateWebOrder, PublicWebOrder, Sale } from '@pos-tercos/types';
+import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesService } from '../sales/sales.service';
 import { PosGateway } from './pos.gateway';
@@ -14,6 +15,7 @@ export class WebOrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sales: SalesService,
+    private readonly notifications: NotificationService,
     @Inject(forwardRef(() => PosGateway))
     private readonly posGateway: PosGateway,
   ) {}
@@ -50,6 +52,10 @@ export class WebOrdersService {
 
     const dto = this.toPublicDto(sale);
     this.posGateway.emit('web-order.created', dto);
+    // El cliente recibe las instrucciones de pago apenas crea el pedido
+    // (Nequi/transferencia + total + "enviá comprobante"). Fire-and-forget +
+    // idempotente por flag: no bloquea la creación ni reenvía en reintentos.
+    void this.notifications.notify(sale.id, 'payment_instructions');
     return dto;
   }
 
