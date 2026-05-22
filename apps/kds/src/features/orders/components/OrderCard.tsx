@@ -6,7 +6,6 @@ import { BrandIcon } from '@pos-tercos/brand';
 import { useState } from 'react';
 import { readyOrder, startOrder } from '../api/transitions';
 import { useElapsed } from '../hooks/useElapsed';
-import { openWhatsAppReady } from '../lib/whatsapp';
 
 const STATUS_MAPPING: StatusMapping = {
   PAGADO: { label: 'En cola', tone: 'warning', pulse: true },
@@ -40,7 +39,6 @@ export function OrderCard({ order }: { order: Sale }) {
     setError(null);
     try {
       await readyOrder(order.id);
-      openWhatsAppReady(order);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error');
     } finally {

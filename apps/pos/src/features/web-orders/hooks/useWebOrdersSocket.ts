@@ -19,8 +19,7 @@ export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'err
  * - `web-order.created` → agrega al state si type=WEB_*.
  * - `web-order.cancelled` → quita del state.
  *
- * (`web-order.customer-paid` removido en FASE 14.A; el flujo es
- *  cajero-driven via wa.me desde FASE 9.)
+ * (`web-order.customer-paid` removido en FASE 14.A.)
  */
 export function useWebOrdersSocket(
   initial: PublicWebOrder[],

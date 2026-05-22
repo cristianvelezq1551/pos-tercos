@@ -7,14 +7,12 @@ import {
   Drawer,
   EmptyState,
   Money,
-  cn,
   formatDate,
 } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
-import { MessageCircle } from 'lucide-react';
 import { useState } from 'react';
+import { acceptWebOrder } from '../api/accept';
 import { useWebOrdersSocket, type ConnectionState } from '../hooks/useWebOrdersSocket';
-import { openWhatsAppForSale } from '../lib/whatsapp';
 import { ConfirmWebPaymentModal } from './ConfirmWebPaymentModal';
 
 const STATE_MAP: Record<ConnectionState, 'live' | 'connecting' | 'error' | 'idle'> = {
@@ -93,13 +91,18 @@ function WebOrderRow({
   order: PublicWebOrder;
   onConfirm: () => void;
 }) {
-  const [popupBlocked, setPopupBlocked] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
-  const handleAccept = () => {
-    setPopupBlocked(false);
-    const r = openWhatsAppForSale(order, 'accepted');
-    if (!r.opened && r.reason === 'popup-blocked') {
-      setPopupBlocked(true);
+  const handleAccept = async () => {
+    setAccepting(true);
+    setAcceptError(null);
+    try {
+      await acceptWebOrder(order.id);
+    } catch (err) {
+      setAcceptError(err instanceof Error ? err.message : 'Error al aceptar');
+    } finally {
+      setAccepting(false);
     }
   };
 
@@ -120,20 +123,16 @@ function WebOrderRow({
       </p>
       <Money amount={order.total} size="lg" weight="bold" className="mt-2" />
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Button variant="success" size="sm" onClick={handleAccept}>
-          <MessageCircle className="mr-1.5 h-4 w-4" strokeWidth={1.75} />
-          Aceptar y contactar
+        <Button variant="success" size="sm" onClick={handleAccept} disabled={accepting}>
+          {accepting ? 'Aceptando…' : 'Aceptar'}
         </Button>
         <Button variant="outline" size="sm" onClick={onConfirm}>
           Confirmar pago
         </Button>
       </div>
-      <p className={cn('mt-2 text-[0.6875rem] leading-snug text-muted-foreground')}>
-        Pide el comprobante por WhatsApp. Cuando llegue, &ldquo;Confirmar pago&rdquo;.
-      </p>
-      {popupBlocked ? (
-        <p className="mt-1.5 rounded-md border border-warning-border bg-warning-bg px-2 py-1 text-[0.6875rem] text-warning">
-          El navegador bloqueó WhatsApp. Permití popups para esta página y volvé a intentar.
+      {acceptError ? (
+        <p className="mt-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[0.6875rem] text-destructive">
+          {acceptError}
         </p>
       ) : null}
     </div>

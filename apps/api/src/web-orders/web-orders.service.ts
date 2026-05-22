@@ -62,9 +62,9 @@ export class WebOrdersService {
     return this.toPublicDto(sale);
   }
 
-  // FASE 14.A — markPaid + readCustomerPaidAt removidos. El flujo es
-  // cajero-driven via wa.me desde FASE 9: el cliente nunca afirma pago,
-  // el cajero lo verifica en WhatsApp y confirma desde POS.
+  // Flujo cajero-driven: el cliente nunca afirma pago. El cajero acepta
+  // (instrucciones por WhatsApp/OpenWA), verifica el comprobante y confirma
+  // el pago desde POS.
 
   private toPublicDto(sale: Sale): PublicWebOrder {
     if (sale.type === 'COUNTER') {

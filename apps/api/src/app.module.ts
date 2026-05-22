@@ -6,6 +6,8 @@ import { CashDrawerModule } from './adapters/cash-drawer/cash-drawer.module';
 import { LLMModule } from './adapters/llm/llm.module';
 import { PrinterModule } from './adapters/printer/printer.module';
 import { StorageModule } from './adapters/storage/storage.module';
+import { WhatsAppModule } from './adapters/whatsapp/whatsapp.module';
+import { NotificationModule } from './notifications/notification.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
@@ -43,6 +45,8 @@ import { WebOrdersModule } from './web-orders/web-orders.module';
     LLMModule,
     PrinterModule,
     CashDrawerModule,
+    WhatsAppModule,
+    NotificationModule,
     IdempotencyModule,
     ApprovalsModule,
     UsersModule,

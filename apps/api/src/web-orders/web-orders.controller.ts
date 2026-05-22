@@ -72,10 +72,9 @@ export class WebOrdersController {
     return this.orders.getPublic(id);
   }
 
-  // FASE 14.A — endpoint POST :id/mark-paid removido. El flujo es
-  // cajero-driven via wa.me desde FASE 9: el cliente nunca afirma pago,
-  // el cajero verifica el comprobante en WhatsApp y confirma desde POS
-  // (POST /sales/:id/confirm-payment).
+  // Flujo cajero-driven: el cliente nunca afirma pago. El cajero acepta
+  // el pedido (POST /sales/:id/accept → instrucciones por WhatsApp/OpenWA),
+  // verifica el comprobante y confirma desde POS (/sales/:id/confirm-payment).
 }
 
 function buildPaymentInstructions(order: PublicWebOrder): string {

@@ -16,7 +16,6 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { confirmPayment } from '../../sales';
 import { fetchSaleById } from '../api/get-sale';
-import { openWhatsAppForSale } from '../lib/whatsapp';
 import { OrderItemsList } from './OrderItemsList';
 import { WebDigitalDoubleValidation } from './WebDigitalDoubleValidation';
 import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
@@ -87,7 +86,6 @@ export function ConfirmWebPaymentModal({
         amountReceived: total,
         digitalDoubleVerified: isDigital ? true : undefined,
       });
-      openWhatsAppForSale(paid, 'confirmed');
       onConfirmed(paid);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');

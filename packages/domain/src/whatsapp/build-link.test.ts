@@ -1,212 +1,50 @@
 /**
- * Tests de los builders wa.me. Migrado a Vitest en FASE 14.E.
- * Ejecutar con `pnpm -F @pos-tercos/domain test`.
+ * Tests del builder de alerta de descuadre (wa.me al Dueño, no al cliente).
  */
-
 import { describe, it, expect } from 'vitest';
-import {
-  buildAcceptedLink,
-  buildConfirmedLink,
-  buildDiscrepancyAlertLink,
-  buildLinkForStage,
-  buildReadyLink,
-} from './build-link';
-import type { WhatsAppSaleSnapshot } from './types';
+import { buildDiscrepancyAlertLink } from './build-link';
 
-const OPTS = {
-  businessName: 'Tercos',
-  businessAddressShort: 'Cra 43A # 11-12, Medellín',
-};
+const SHIFT_ID = 'abcdef12-3456-7890-abcd-ef1234567890';
 
-const SALE_PICKUP: WhatsAppSaleSnapshot = {
-  receiptNumber: 42,
-  customerName: 'Juan Pérez',
-  customerPhone: '+573001234567',
-  total: 25500,
-  type: 'WEB_PICKUP',
-};
-
-const SALE_DELIVERY: WhatsAppSaleSnapshot = {
-  ...SALE_PICKUP,
-  type: 'WEB_DELIVERY',
-};
-
-function eq(actual: unknown, expected: unknown): void {
-  expect(actual).toBe(expected);
-}
-function truthy(v: unknown, msg: string): void {
-  expect(v, msg).toBeTruthy();
-}
-function contains(haystack: string, needle: string): void {
-  expect(haystack).toContain(needle);
-}
-
-describe('whatsapp build-link', () => {
-
-// PHONE NORMALIZATION
-it('phone +57 prefix → solo dígitos en URL', () => {
-  const r = buildAcceptedLink(SALE_PICKUP, OPTS);
-  truthy(r, 'link not null');
-  eq(r!.url.startsWith('https://wa.me/573001234567?text='), true);
-});
-
-it('phone con espacios y dashes → normaliza', () => {
-  const r = buildAcceptedLink(
-    { ...SALE_PICKUP, customerPhone: '+57 300 123-4567' },
-    OPTS,
-  );
-  eq(r!.url.startsWith('https://wa.me/573001234567?'), true);
-});
-
-it('phone sin país (10 dígitos) → prepend 57', () => {
-  const r = buildAcceptedLink(
-    { ...SALE_PICKUP, customerPhone: '3001234567' },
-    OPTS,
-  );
-  eq(r!.url.startsWith('https://wa.me/573001234567?'), true);
-});
-
-it('phone null → devuelve null (no link)', () => {
-  const r = buildAcceptedLink(
-    { ...SALE_PICKUP, customerPhone: null },
-    OPTS,
-  );
-  eq(r, null);
-});
-
-it('phone con menos de 10 dígitos → null', () => {
-  const r = buildAcceptedLink(
-    { ...SALE_PICKUP, customerPhone: '+571234' },
-    OPTS,
-  );
-  eq(r, null);
-});
-
-// GREETING
-it('customerName con apellido → solo primer nombre', () => {
-  const r = buildAcceptedLink(SALE_PICKUP, OPTS);
-  contains(r!.messagePlain, 'Hola Juan,');
-});
-
-it('customerName null → "Hola"', () => {
-  const r = buildAcceptedLink(
-    { ...SALE_PICKUP, customerName: null },
-    OPTS,
-  );
-  contains(r!.messagePlain, 'Hola, ');
-});
-
-it('customerName vacío → "Hola"', () => {
-  const r = buildAcceptedLink(
-    { ...SALE_PICKUP, customerName: '   ' },
-    OPTS,
-  );
-  contains(r!.messagePlain, 'Hola, ');
-});
-
-// ACCEPTED MESSAGE
-it('accepted incluye número de pedido + total + nombre del local', () => {
-  const r = buildAcceptedLink(SALE_PICKUP, OPTS);
-  contains(r!.messagePlain, '#42');
-  contains(r!.messagePlain, '$25.500');
-  contains(r!.messagePlain, 'Tercos');
-  contains(r!.messagePlain, 'comprobante');
-});
-
-// CONFIRMED MESSAGE
-it('confirmed incluye check + nombre del local', () => {
-  const r = buildConfirmedLink(SALE_PICKUP, OPTS);
-  contains(r!.messagePlain, '#42');
-  contains(r!.messagePlain, '✅');
-  contains(r!.messagePlain, 'cocina');
-  contains(r!.messagePlain, 'Tercos');
-});
-
-// READY: PICKUP vs DELIVERY
-it('ready PICKUP incluye dirección', () => {
-  const r = buildReadyLink(SALE_PICKUP, OPTS);
-  contains(r!.messagePlain, 'listo para retirar');
-  contains(r!.messagePlain, 'Cra 43A # 11-12, Medellín');
-});
-
-it('ready PICKUP sin dirección → omite "Te esperamos"', () => {
-  const r = buildReadyLink(SALE_PICKUP, {
-    businessName: 'Tercos',
-    businessAddressShort: null,
+describe('whatsapp discrepancy alert', () => {
+  it('genera link con monto y firma del faltante', () => {
+    const r = buildDiscrepancyAlertLink({
+      ownerPhone: '+573001234567',
+      cashierName: 'Ana',
+      difference: -15000,
+      shiftId: SHIFT_ID,
+      closedAt: new Date('2026-05-21T22:30:00'),
+      businessName: 'Tercos',
+    });
+    expect(r).toBeTruthy();
+    expect(r!.url).toContain('https://wa.me/573001234567');
+    expect(r!.messagePlain).toContain('faltante');
+    expect(r!.messagePlain).toContain('$15.000');
   });
-  contains(r!.messagePlain, 'listo para retirar');
-  if (r!.messagePlain.includes('Te esperamos')) {
-    throw new Error('ready PICKUP sin dirección no debería decir "Te esperamos"');
-  }
-});
 
-it('ready DELIVERY dice "salió a entrega"', () => {
-  const r = buildReadyLink(SALE_DELIVERY, OPTS);
-  contains(r!.messagePlain, 'salió a entrega');
-  contains(r!.messagePlain, '~20 min');
-});
-
-// URL ENCODING
-it('mensaje con espacios y # se encodea correctamente', () => {
-  const r = buildAcceptedLink(SALE_PICKUP, OPTS);
-  contains(r!.url, '%20');
-  contains(r!.url, '%23'); // # encoded
-});
-
-// DISPATCHER
-it('buildLinkForStage stage=accepted equivale a buildAcceptedLink', () => {
-  const a = buildAcceptedLink(SALE_PICKUP, OPTS);
-  const b = buildLinkForStage('accepted', SALE_PICKUP, OPTS);
-  eq(a!.url, b!.url);
-});
-
-it('buildLinkForStage stage=ready PICKUP equivale a buildReadyLink', () => {
-  const a = buildReadyLink(SALE_PICKUP, OPTS);
-  const b = buildLinkForStage('ready', SALE_PICKUP, OPTS);
-  eq(a!.messagePlain, b!.messagePlain);
-});
-
-// DISCREPANCY ALERT (FASE 15.A)
-it('buildDiscrepancyAlertLink genera link con monto y firma del faltante', () => {
-  const r = buildDiscrepancyAlertLink({
-    ownerPhone: '+573009999999',
-    cashierName: 'Juan Pérez',
-    difference: -8500,
-    shiftId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-    closedAt: new Date('2026-05-04T22:30:00'),
-    businessName: 'Tercos',
+  it('sobrante con signo +', () => {
+    const r = buildDiscrepancyAlertLink({
+      ownerPhone: '573001234567',
+      cashierName: 'Ana',
+      difference: 8000,
+      shiftId: SHIFT_ID,
+      closedAt: new Date('2026-05-21T22:30:00'),
+      businessName: 'Tercos',
+    });
+    expect(r).toBeTruthy();
+    expect(r!.messagePlain).toContain('+$8.000');
+    expect(r!.messagePlain).toContain('sobrante');
   });
-  truthy(r, 'link not null');
-  contains(r!.url, 'wa.me/573009999999');
-  contains(r!.messagePlain, 'Tercos');
-  contains(r!.messagePlain, 'Juan Pérez');
-  contains(r!.messagePlain, 'faltante');
-  contains(r!.messagePlain, '$8.500');
-});
 
-it('buildDiscrepancyAlertLink sobrante con signo +', () => {
-  const r = buildDiscrepancyAlertLink({
-    ownerPhone: '+573009999999',
-    cashierName: 'María',
-    difference: 12000,
-    shiftId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-    closedAt: new Date('2026-05-04T22:30:00'),
-    businessName: 'Tercos',
+  it('sin ownerPhone → null', () => {
+    const r = buildDiscrepancyAlertLink({
+      ownerPhone: null,
+      cashierName: 'Ana',
+      difference: 8000,
+      shiftId: SHIFT_ID,
+      closedAt: new Date('2026-05-21T22:30:00'),
+      businessName: 'Tercos',
+    });
+    expect(r).toBeNull();
   });
-  contains(r!.messagePlain, 'sobrante');
-  contains(r!.messagePlain, '+$12.000');
 });
-
-it('buildDiscrepancyAlertLink sin ownerPhone → null', () => {
-  const r = buildDiscrepancyAlertLink({
-    ownerPhone: null,
-    cashierName: 'Juan',
-    difference: -8500,
-    shiftId: 'aaa',
-    closedAt: new Date(),
-    businessName: 'Tercos',
-  });
-  eq(r, null);
-});
-
-}); // describe('whatsapp build-link')

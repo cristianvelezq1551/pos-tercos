@@ -1,13 +1,15 @@
 export {
-  buildAcceptedLink,
-  buildConfirmedLink,
-  buildReadyLink,
-  buildLinkForStage,
-  buildDiscrepancyAlertLink,
-} from './build-link';
+  buildPaymentInstructionsMessage,
+  buildPaymentReceivedMessage,
+  buildPickupReadyMessage,
+  buildNotificationMessage,
+} from './messages';
+export { buildDiscrepancyAlertLink } from './build-link';
 export type {
-  WhatsAppBuildOptions,
-  WhatsAppLinkResult,
+  WhatsAppProvider,
+  WhatsAppSendResult,
   WhatsAppSaleSnapshot,
-  WhatsAppStage,
+  WhatsAppMessageOptions,
+  WhatsAppNotificationStage,
+  WhatsAppLinkResult,
 } from './types';

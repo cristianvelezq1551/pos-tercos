@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Sale, SaleStatus } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PublicDisplayService } from '../public-display/public-display.service';
 import { SalesService } from '../sales/sales.service';
@@ -14,6 +15,7 @@ export class KdsService {
     private readonly sales: SalesService,
     private readonly audit: AuditService,
     private readonly publicDisplay: PublicDisplayService,
+    private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -41,7 +43,9 @@ export class KdsService {
 
   /** EN_PREPARACION → LISTO_DESPACHO. */
   async ready(saleId: string, userId: string): Promise<Sale> {
-    return this.transition(saleId, 'EN_PREPARACION', 'LISTO_DESPACHO', userId);
+    const sale = await this.transition(saleId, 'EN_PREPARACION', 'LISTO_DESPACHO', userId);
+    void this.notifications.notify(saleId, 'pickup_ready');
+    return sale;
   }
 
   private async transition(

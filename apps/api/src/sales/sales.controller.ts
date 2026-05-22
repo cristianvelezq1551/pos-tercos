@@ -22,7 +22,6 @@ import {
   OpenDrawerSchema,
   SaleStatusEnum,
   VoidSaleSchema,
-  WhatsAppClickedSchema,
   type ConfirmPayment,
   type CreateSale,
   type JwtAccessPayload,
@@ -31,16 +30,15 @@ import {
   type SaleStatus,
   type SaleStatusLogEntry,
   type VoidSale,
-  type WhatsAppClicked,
 } from '@pos-tercos/types';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import {
   CashierAccess,
   OnlyDueno,
-  Roles,
 } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { NotificationService } from '../notifications/notification.service';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
 import { SalesService } from './sales.service';
 
@@ -49,6 +47,7 @@ export class SalesController {
   constructor(
     private readonly sales: SalesService,
     private readonly receiptIntegrity: ReceiptIntegrityService,
+    private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -116,22 +115,18 @@ export class SalesController {
   }
 
   /**
-   * FASE 9 — Tracking de clicks wa.me. NO envía nada (lo abre el browser
-   * via wa.me) y NO cambia el status del sale. Solo audit log.
-   *
-   * Roles: cajero (accepted/confirmed) + cocinero (ready) + admin/dueño.
-   * Para no fragmentar el endpoint, aceptamos los 4 roles y validamos
-   * coherencia stage↔status en el service.
+   * El cajero acepta un pedido web y el backend envía las instrucciones
+   * de pago al cliente vía WhatsApp (OpenWA). Fire-and-forget: si falla
+   * la notificación la transición no se revierte.
    */
-  @Roles('CAJERO', 'COCINERO', 'ADMIN_OPERATIVO', 'DUENO')
-  @Post(':id/whatsapp-clicked')
+  @CashierAccess()
+  @Post(':id/accept')
   @HttpCode(200)
-  recordWhatsAppClick(
+  async acceptWebOrder(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(WhatsAppClickedSchema)) body: WhatsAppClicked,
-  ): Promise<{ recorded: true }> {
-    return this.sales.recordWhatsAppClick(id, body.stage, user.sub);
+  ): Promise<{ ok: true }> {
+    void this.notifications.notify(id, 'payment_instructions');
+    return { ok: true };
   }
 
   @CashierAccess()

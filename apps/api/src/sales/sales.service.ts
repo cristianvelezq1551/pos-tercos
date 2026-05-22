@@ -35,6 +35,7 @@ import { CASH_DRAWER_PROVIDER } from '../adapters/cash-drawer/cash-drawer.module
 import { PRINTER_PROVIDER } from '../adapters/printer/printer.module';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { KdsGateway } from '../kds/kds.gateway';
+import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { PublicDisplayService } from '../public-display/public-display.service';
@@ -79,6 +80,7 @@ export class SalesService {
     @Inject(CASH_DRAWER_PROVIDER) private readonly drawer: CashDrawerProvider,
     @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
     private readonly publicDisplay: PublicDisplayService,
+    private readonly notifications: NotificationService,
   ) {}
 
   // ==================================================================
@@ -398,6 +400,8 @@ export class SalesService {
     if (dto.type === 'COUNTER') {
       this.publicDisplay.notify();
     }
+    // Notifica al cliente via WhatsApp que el pago fue verificado (WEB_PICKUP).
+    void this.notifications.notify(saleId, 'payment_received');
     return dto;
   }
 
@@ -507,81 +511,6 @@ export class SalesService {
     });
 
     return toSaleDto(updated);
-  }
-
-  // ==================================================================
-  // WHATSAPP CLICK TRACKING (FASE 9)
-  // ==================================================================
-
-  /**
-   * Registra que el operador hizo click en "Aceptar y contactar" /
-   * "Confirmar pago" / "Marcar listo" para una venta web. NO envía
-   * WhatsApp (lo abre el browser via wa.me) y NO cambia el status del
-   * sale — solo deja audit log.
-   *
-   * Validaciones:
-   *  - El sale existe y es WEB_PICKUP (COUNTER no aplica).
-   *  - El stage es coherente con el status del sale:
-   *      accepted  → status = PENDIENTE_PAGO
-   *      confirmed → status in (PAGADO, EN_PREPARACION, ...) — sea ya
-   *                  pagado, no rechazamos si el cajero confirma 2 veces.
-   *      ready     → status = LISTO_DESPACHO o ENTREGADO.
-   *  - No deduplica clicks: si el cajero hace click 2 veces, quedan 2
-   *    audit entries. Es info, no acción.
-   */
-  async recordWhatsAppClick(
-    saleId: string,
-    stage: 'accepted' | 'confirmed' | 'ready',
-    userId: string,
-  ): Promise<{ recorded: true }> {
-    const sale = await this.prisma.sale.findUnique({
-      where: { id: saleId },
-      select: {
-        id: true,
-        type: true,
-        status: true,
-        receiptNumber: true,
-        customerPhone: true,
-      },
-    });
-    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (sale.type === 'COUNTER') {
-      throw new BadRequestException(
-        'WhatsApp tracking only applies to WEB_PICKUP sales',
-      );
-    }
-
-    // Coherencia de stage vs status. Permisivo: el cajero puede tener
-    // el botón abierto en condiciones reales que no encajan exactamente.
-    if (stage === 'accepted' && sale.status !== 'PENDIENTE_PAGO') {
-      throw new BadRequestException(
-        `Stage "accepted" requires status PENDIENTE_PAGO (got ${sale.status})`,
-      );
-    }
-    if (stage === 'ready') {
-      const okStatuses = ['LISTO_DESPACHO', 'ENTREGADO'];
-      if (!okStatuses.includes(sale.status)) {
-        throw new BadRequestException(
-          `Stage "ready" requires status LISTO_DESPACHO+ (got ${sale.status})`,
-        );
-      }
-    }
-    // confirmed: no validamos status para tolerar doble click.
-
-    await this.audit.log({
-      userId,
-      action: 'WHATSAPP_LINK_OPENED',
-      entityType: 'sale',
-      entityId: saleId,
-      metadata: {
-        stage,
-        receiptNumber: sale.receiptNumber,
-        saleStatus: sale.status,
-        hasPhone: sale.customerPhone !== null,
-      },
-    });
-
-    return { recorded: true };
   }
 
   // ==================================================================

@@ -361,6 +361,7 @@ model Sale {
   notified_canceled             Boolean         @default(false)
   items                         SaleItem[]
   statusLog                     SaleStatusLog[]
+  whatsappMessages              WhatsAppMessage[]
   cashier                       User?           @relation("SaleCashier", fields: [cashierId], references: [id])
   paidBy                        User?           @relation("SalePaidBy", fields: [paidByUserId], references: [id])
   shift                         Shift?          @relation(fields: [shiftId], references: [id])
@@ -647,6 +648,28 @@ model WorkerCommission {
 
   @@index([userId, appliedAt(sort: Desc)])
   @@map("worker_commissions")
+}
+
+/// Log de notificaciones WhatsApp al cliente vía OpenWA (WS-2). Auditoría
+/// + detalle de cada envío (status sent/failed). La idempotencia la dan
+/// los flags notified_* en Sale; esta tabla guarda el historial.
+model WhatsAppMessage {
+  id                String   @id @default(uuid())
+  saleId            String?  @map("sale_id")
+  /// payment_instructions | payment_received | pickup_ready
+  stage             String
+  toPhone           String   @map("to_phone")
+  body              String
+  /// sent | failed
+  status            String
+  providerMessageId String?  @map("provider_message_id")
+  error             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  sale              Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  @@index([saleId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("whatsapp_messages")
 }
 
 enum UserRole {
