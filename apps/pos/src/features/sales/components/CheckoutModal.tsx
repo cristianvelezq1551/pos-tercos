@@ -3,12 +3,9 @@
 import { DIGITAL_PAYMENT_METHODS, type PaymentMethod } from '@pos-tercos/types';
 import {
   Button,
-  Checkbox,
   Dialog,
   FormField,
   Money,
-  NumberInput,
-  cn,
   formatCop,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
@@ -16,14 +13,9 @@ import { confirmPayment } from '../api/confirm-payment';
 import { createSale } from '../api/create';
 import type { CartLine } from '../lib/cart-types';
 import { cartLinesToCreateItems } from '../store/cart-store';
-
-const METHODS: { method: PaymentMethod; label: string }[] = [
-  { method: 'CASH', label: 'Efectivo' },
-  { method: 'NEQUI', label: 'Nequi' },
-  { method: 'DAVIPLATA', label: 'DaviPlata' },
-  { method: 'QR_BANCOLOMBIA', label: 'QR Bancolombia' },
-  { method: 'TRANSFER', label: 'Transferencia' },
-];
+import { CashSection } from './CashSection';
+import { DigitalSection } from './DigitalSection';
+import { PaymentMethodSelector } from './PaymentMethodSelector';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
@@ -151,92 +143,27 @@ export function CheckoutModal({
     >
       <div className="space-y-5">
         <FormField label="Método de pago">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {METHODS.map((m) => (
-              <button
-                key={m.method}
-                type="button"
-                onClick={() => setMethod(m.method)}
-                className={cn(
-                  'rounded-lg border px-3 py-3 text-sm font-semibold transition-[background-color,border-color,box-shadow] duration-150 ease-out',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  method === m.method
-                    ? 'border-primary bg-destructive/10 text-primary shadow-xs'
-                    : 'border-border bg-card text-foreground hover:border-ink-300 hover:bg-muted/40',
-                  'motion-reduce:transition-none',
-                )}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          <PaymentMethodSelector selected={method} onSelect={setMethod} />
         </FormField>
 
         {method === 'CASH' ? (
-          <div className="space-y-3 rounded-xl bg-muted/40 p-4">
-            <FormField label="Recibido">
-              <NumberInput
-                value={cashReceived}
-                onChange={setCashReceived}
-                prefix="$"
-                min={0}
-                placeholder={total.toString()}
-                autoFocus
-              />
-            </FormField>
-            <div className="flex items-center justify-between border-t border-border pt-3">
-              <span className="text-sm text-muted-foreground">Cambio</span>
-              <Money
-                amount={changeDue}
-                size="xl"
-                weight="bold"
-                className={cashNum >= total ? 'text-success' : 'text-ink-300'}
-              />
-            </div>
-          </div>
+          <CashSection
+            total={total}
+            cashReceived={cashReceived}
+            onChange={setCashReceived}
+          />
         ) : null}
 
         {isDigital ? (
-          <div className="space-y-3 rounded-xl bg-muted/40 p-4">
-            <p className="text-xs text-muted-foreground">
-              Doble validación: ingresa el monto cobrado <strong>dos veces</strong>. El total
-              debe coincidir exactamente con la venta.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Monto 1">
-                <NumberInput
-                  value={digital1}
-                  onChange={setDigital1}
-                  prefix="$"
-                  min={0}
-                  autoFocus
-                />
-              </FormField>
-              <FormField label="Monto 2 (verificación)">
-                <NumberInput value={digital2} onChange={setDigital2} prefix="$" min={0} />
-              </FormField>
-            </div>
-            {d1 > 0 && d2 > 0 ? (
-              <p
-                className={cn(
-                  'text-xs font-medium',
-                  d1 === d2 && d1 === total ? 'text-success' : 'text-warning',
-                )}
-              >
-                {d1 === d2 && d1 === total
-                  ? '✓ Montos coinciden y matchean el total'
-                  : d1 !== d2
-                    ? '✗ No coinciden entre sí'
-                    : `✗ No matchean total ${formatCop(total)}`}
-              </p>
-            ) : null}
-            <Checkbox
-              checked={doubleVerified}
-              onChange={(e) => setDoubleVerified(e.target.checked)}
-              label="Verifiqué el monto en la app del negocio y en el comprobante del cliente"
-              description="Nequi / DaviPlata / Bancolombia"
-            />
-          </div>
+          <DigitalSection
+            total={total}
+            digital1={digital1}
+            digital2={digital2}
+            doubleVerified={doubleVerified}
+            onDigital1={setDigital1}
+            onDigital2={setDigital2}
+            onDoubleVerified={setDoubleVerified}
+          />
         ) : null}
 
         {error ? (

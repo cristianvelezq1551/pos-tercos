@@ -4,12 +4,13 @@ import { Button, IconButton, Money } from '@pos-tercos/ui';
 import { Check, X } from 'lucide-react';
 import { useState } from 'react';
 import { printReceipt } from '../api/print';
+import { openDrawerForSale } from '../api/open-drawer';
 import { openReceiptWindow } from '../lib/open-receipt-window';
 import type { LastSaleSummary } from '../store/cart-store';
 
 type ActionState =
   | { kind: 'idle' }
-  | { kind: 'pending' }
+  | { kind: 'pending'; action: 'print' | 'drawer' }
   | { kind: 'ok'; message: string }
   | { kind: 'error'; message: string };
 
@@ -23,7 +24,7 @@ export function LastSaleBanner({
   const [state, setState] = useState<ActionState>({ kind: 'idle' });
 
   const handlePrint = async () => {
-    setState({ kind: 'pending' });
+    setState({ kind: 'pending', action: 'print' });
     try {
       const { html } = await printReceipt(sale.id);
       openReceiptWindow(html);
@@ -36,7 +37,21 @@ export function LastSaleBanner({
     }
   };
 
+  const handleOpenDrawer = async () => {
+    setState({ kind: 'pending', action: 'drawer' });
+    try {
+      await openDrawerForSale(sale.id);
+      setState({ kind: 'ok', message: 'Cajón abierto' });
+    } catch (err) {
+      setState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Error abriendo el cajón',
+      });
+    }
+  };
+
   const isPending = state.kind === 'pending';
+  const isCash = sale.paymentMethod === 'CASH';
 
   return (
     <div className="mt-3 rounded-xl border border-success-border bg-success-bg px-3 py-2.5 text-xs text-success">
@@ -67,10 +82,15 @@ export function LastSaleBanner({
           <X className="h-4 w-4" strokeWidth={1.75} />
         </IconButton>
       </div>
-      <div className="mt-2">
+      <div className="mt-2 flex gap-2">
         <Button size="sm" variant="outline" onClick={handlePrint} disabled={isPending}>
-          {isPending ? 'Imprimiendo…' : 'Imprimir recibo'}
+          {isPending && state.action === 'print' ? 'Imprimiendo…' : 'Imprimir recibo'}
         </Button>
+        {isCash ? (
+          <Button size="sm" variant="outline" onClick={handleOpenDrawer} disabled={isPending}>
+            {isPending && state.action === 'drawer' ? 'Abriendo…' : 'Abrir cajón'}
+          </Button>
+        ) : null}
       </div>
       {state.kind === 'ok' ? (
         <p className="mt-2 text-[11px] text-success">{state.message}</p>

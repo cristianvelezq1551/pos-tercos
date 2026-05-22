@@ -1,18 +1,15 @@
 'use client';
 
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
-import { bestMatch } from '@pos-tercos/domain';
+import { Button, Dialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, useTransition } from 'react';
-import type {
-  ConfirmInvoice,
-  ConfirmInvoiceItem,
-  InvoiceDraftResponse,
-  Stockable,
-  Supplier,
-} from '@pos-tercos/types';
+import { useMemo, useState, useTransition } from 'react';
+import type { InvoiceDraftResponse, Stockable, Supplier } from '@pos-tercos/types';
 import { confirmInvoice, rejectInvoice } from '../api/client';
-import { InvoiceItemRow, type DraftRow } from './InvoiceItemRow';
+import { SupplierSection } from './SupplierSection';
+import { InvoiceMetaSection } from './InvoiceMetaSection';
+import { ItemsSection } from './ItemsSection';
+import { validateInvoice } from './validate-invoice';
+import { useInvoiceRows } from '../hooks/useInvoiceRows';
 
 interface InvoiceConfirmModalProps {
   draft: InvoiceDraftResponse;
@@ -24,12 +21,6 @@ interface InvoiceConfirmModalProps {
 }
 
 type SupplierMode = 'existing' | 'new';
-
-let rowCounter = 0;
-function nextRowId(): string {
-  rowCounter += 1;
-  return `row-${rowCounter}`;
-}
 
 export function InvoiceConfirmModal({
   draft,
@@ -66,226 +57,17 @@ export function InvoiceConfirmModal({
   );
   const [notes, setNotes] = useState('');
 
-  // Si la draft trae items ya persistidos (clon o reanudación de un draft
-  // existente con selecciones resueltas), usamos ESOS como fuente y
-  // pre-rellenamos la selección. Si no hay items persistidos, usamos
-  // extraction.items + fuzzy match como antes.
-  const [rows, setRows] = useState<DraftRow[]>(() => {
-    const persistedItems = draft.invoice.items ?? [];
-    const useDbItems =
-      persistedItems.length > 0 &&
-      persistedItems.length === draft.extraction.items.length;
-
-    return draft.extraction.items.map((item, idx) => {
-      const persisted = useDbItems ? persistedItems[idx] : undefined;
-
-      let selection: DraftRow['selection'] = null;
-      if (persisted?.entityType) {
-        const id =
-          persisted.entityType === 'INGREDIENT'
-            ? persisted.ingredientId
-            : persisted.productId;
-        if (id) {
-          const stockable = stockables.find(
-            (s) => s.id === id && s.type === persisted.entityType,
-          );
-          if (stockable) {
-            selection = {
-              entityType: stockable.type,
-              id: stockable.id,
-            };
-          }
-        }
-      }
-
-      let suggestion: DraftRow['suggestion'] = null;
-      if (!selection) {
-        const match = bestMatch(item.descriptionRaw, stockables, (s) => s.name, 0.4);
-        if (match) {
-          suggestion = {
-            entityType: match.candidate.type,
-            id: match.candidate.id,
-            name: match.candidate.name,
-            score: match.score,
-          };
-        }
-      }
-
-      return {
-        localId: nextRowId(),
-        selection,
-        descriptionRaw: item.descriptionRaw,
-        quantity: item.quantity,
-        unit: item.unit,
-        unitPrice: item.unitPrice,
-        total: item.total,
-        suggestion,
-      };
-    });
-  });
-
-  // Recompute suggestions when stockables change (e.g. user creates a new one
-  // and we want to update sugerencias para otras filas).
-  useEffect(() => {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.selection) return r;
-        const match = bestMatch(r.descriptionRaw, stockables, (s) => s.name, 0.4);
-        return {
-          ...r,
-          suggestion: match
-            ? {
-                entityType: match.candidate.type,
-                id: match.candidate.id,
-                name: match.candidate.name,
-                score: match.score,
-              }
-            : null,
-        };
-      }),
-    );
-  }, [stockables]);
-
-  const updateRow = (localId: string, patch: Partial<DraftRow>): void => {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.localId !== localId) return r;
-        const merged = { ...r, ...patch };
-        if (
-          (patch.quantity !== undefined || patch.unitPrice !== undefined) &&
-          patch.total === undefined
-        ) {
-          merged.total = roundMoney(merged.quantity * merged.unitPrice);
-        }
-        return merged;
-      }),
-    );
-  };
-
-  const removeRow = (localId: string): void => {
-    setRows((prev) => prev.filter((r) => r.localId !== localId));
-  };
-
-  const addRow = (): void => {
-    setRows((prev) => [
-      ...prev,
-      {
-        localId: nextRowId(),
-        selection: null,
-        descriptionRaw: '',
-        quantity: 1,
-        unit: 'kg',
-        unitPrice: 0,
-        total: 0,
-        suggestion: null,
-      },
-    ]);
-  };
-
-  const computedItemsTotal = useMemo(
-    () => rows.reduce((acc, r) => acc + r.total, 0),
-    [rows],
-  );
-
-  type Validation = { valid: true; payload: ConfirmInvoice } | { valid: false; reason: string };
-
-  const validate = (): Validation => {
-    let nit = '';
-    let name = '';
-    if (supplierMode === 'existing') {
-      if (!supplierId) return { valid: false, reason: 'Seleccioná un proveedor.' };
-      const found = suppliers.find((s) => s.id === supplierId);
-      if (!found) return { valid: false, reason: 'Proveedor seleccionado no existe.' };
-      nit = found.nit;
-      name = found.name;
-    } else {
-      if (!newSupplierNit.trim()) return { valid: false, reason: 'NIT del proveedor requerido.' };
-      if (!newSupplierName.trim()) return { valid: false, reason: 'Nombre del proveedor requerido.' };
-      nit = newSupplierNit.trim();
-      name = newSupplierName.trim();
-    }
-
-    if (rows.length === 0) {
-      return { valid: false, reason: 'La factura debe tener al menos un ítem.' };
-    }
-
-    for (const r of rows) {
-      if (!r.selection) {
-        return {
-          valid: false,
-          reason: `Asocia todos los ítems con un Insumo o Producto. Falta: "${r.descriptionRaw || '(sin descripción)'}"`,
-        };
-      }
-      if (!r.descriptionRaw.trim()) return { valid: false, reason: 'Cada ítem necesita descripción.' };
-      if (!Number.isFinite(r.quantity) || r.quantity <= 0)
-        return { valid: false, reason: `Cantidad inválida en "${r.descriptionRaw}".` };
-      if (!Number.isFinite(r.unitPrice) || r.unitPrice < 0)
-        return { valid: false, reason: `Precio unitario inválido en "${r.descriptionRaw}".` };
-      if (!Number.isFinite(r.total) || r.total < 0)
-        return { valid: false, reason: `Total inválido en "${r.descriptionRaw}".` };
-      if (!r.unit.trim()) return { valid: false, reason: `Unidad requerida en "${r.descriptionRaw}".` };
-    }
-
-    const totalNum = Number(total);
-    if (!Number.isFinite(totalNum) || totalNum < 0) {
-      return { valid: false, reason: 'Total de la factura inválido.' };
-    }
-
-    const ivaNum = iva.trim() === '' ? undefined : Number(iva);
-    if (ivaNum !== undefined && (!Number.isFinite(ivaNum) || ivaNum < 0)) {
-      return { valid: false, reason: 'IVA inválido.' };
-    }
-
-    const items: ConfirmInvoiceItem[] = rows.map((r) => {
-      const sel = r.selection!;
-      return sel.entityType === 'INGREDIENT'
-        ? {
-            entityType: 'INGREDIENT',
-            ingredientId: sel.id,
-            descriptionRaw: r.descriptionRaw.trim(),
-            quantity: r.quantity,
-            unit: r.unit.trim(),
-            unitPrice: r.unitPrice,
-            total: r.total,
-          }
-        : {
-            entityType: 'PRODUCT',
-            productId: sel.id,
-            descriptionRaw: r.descriptionRaw.trim(),
-            quantity: r.quantity,
-            unit: r.unit.trim(),
-            unitPrice: r.unitPrice,
-            total: r.total,
-          };
-    });
-
-    const payload: ConfirmInvoice = {
-      supplierNit: nit,
-      supplierName: name,
-      invoiceNumber: invoiceNumber.trim() || undefined,
-      total: totalNum,
-      iva: ivaNum,
-      items,
-      notes: notes.trim() || undefined,
-    };
-    return { valid: true, payload };
-  };
+  const { rows, updateRow, removeRow, addRow, computedItemsTotal } = useInvoiceRows(draft, stockables);
 
   const handleConfirm = async (): Promise<void> => {
     setError(null);
-    const v = validate();
-    if (!v.valid) {
-      setError(v.reason);
-      return;
-    }
+    const v = validateInvoice({ supplierMode, supplierId, newSupplierNit, newSupplierName, suppliers, rows, total, iva, invoiceNumber, notes });
+    if (!v.valid) { setError(v.reason); return; }
     setSubmitting(true);
     try {
       await confirmInvoice(draft.invoice.id, v.payload);
       onConfirmed();
-      startTransition(() => {
-        router.push('/invoices');
-        router.refresh();
-      });
+      startTransition(() => { router.push('/invoices'); router.refresh(); });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al confirmar');
     } finally {
@@ -300,9 +82,7 @@ export function InvoiceConfirmModal({
     try {
       await rejectInvoice(draft.invoice.id);
       onClose();
-      startTransition(() => {
-        router.refresh();
-      });
+      startTransition(() => { router.refresh(); });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al rechazar');
     } finally {
@@ -340,100 +120,42 @@ export function InvoiceConfirmModal({
           </div>
         )}
 
-        <section className="space-y-3 rounded-lg border border-border p-4">
-          <header><h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Proveedor</h3></header>
+        <SupplierSection
+          supplierMode={supplierMode}
+          onSupplierModeChange={setSupplierMode}
+          supplierId={supplierId}
+          onSupplierIdChange={setSupplierId}
+          newSupplierNit={newSupplierNit}
+          onNewSupplierNitChange={setNewSupplierNit}
+          newSupplierName={newSupplierName}
+          onNewSupplierNameChange={setNewSupplierName}
+          matchedSupplier={matchedSupplier}
+          suppliers={suppliers}
+          disabled={submitting}
+        />
 
-          <div className="flex gap-4 text-sm">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input type="radio" name="supplierMode" checked={supplierMode === 'existing'} onChange={() => setSupplierMode('existing')} disabled={submitting} className="h-4 w-4 text-primary focus:ring-ring" />
-              Existente
-            </label>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input type="radio" name="supplierMode" checked={supplierMode === 'new'} onChange={() => setSupplierMode('new')} disabled={submitting} className="h-4 w-4 text-primary focus:ring-ring" />
-              Nuevo
-            </label>
-            {matchedSupplier && supplierMode === 'existing' && (
-              <span className="text-xs text-success">✓ Matcheado por NIT con &ldquo;{matchedSupplier.name}&rdquo;</span>
-            )}
-          </div>
+        <InvoiceMetaSection
+          invoiceNumber={invoiceNumber}
+          onInvoiceNumberChange={setInvoiceNumber}
+          total={total}
+          onTotalChange={setTotal}
+          iva={iva}
+          onIvaChange={setIva}
+          notes={notes}
+          onNotesChange={setNotes}
+          computedItemsTotal={computedItemsTotal}
+          disabled={submitting}
+        />
 
-          {supplierMode === 'existing' ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="supplierId">Seleccionar proveedor</Label>
-              <select id="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} disabled={submitting} className="flex h-10 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <option value="">— Seleccionar —</option>
-                {suppliers.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.nit})</option>))}
-              </select>
-              {suppliers.length === 0 && (<p className="text-xs text-warning">No hay proveedores cargados. Cambiá a &quot;Nuevo&quot; para crear uno.</p>)}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="newSupplierNit">NIT</Label>
-                <Input id="newSupplierNit" required disabled={submitting} value={newSupplierNit} onChange={(e) => setNewSupplierNit(e.target.value)} placeholder="900.123.456-7" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="newSupplierName">Nombre</Label>
-                <Input id="newSupplierName" required disabled={submitting} value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="Distribuidora XX SA" />
-              </div>
-              <p className="col-span-full text-xs text-muted-foreground">Si el NIT ya existe, el sistema lo reutiliza automáticamente.</p>
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-3 rounded-lg border border-border p-4">
-          <header><h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Datos de la factura</h3></header>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="invoiceNumber">Número</Label>
-              <Input id="invoiceNumber" disabled={submitting} value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="F-12345" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="total">Total (COP)</Label>
-              <Input id="total" type="number" inputMode="decimal" step="any" min="0" required disabled={submitting} value={total} onChange={(e) => setTotal(e.target.value)} />
-              {Math.abs(Number(total) - computedItemsTotal) > 1 && total !== '' && (
-                <p className="text-xs text-warning">Suma de ítems: {computedItemsTotal.toLocaleString('es-CO')}.</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="iva">IVA (COP)</Label>
-              <Input id="iva" type="number" inputMode="decimal" step="any" min="0" disabled={submitting} value={iva} onChange={(e) => setIva(e.target.value)} placeholder="opcional" />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="notes">Notas</Label>
-            <textarea id="notes" rows={2} maxLength={500} disabled={submitting} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Comentarios opcionales sobre la factura." className="flex w-full rounded-md border border-input bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <header className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Ítems ({rows.length})</h3>
-            <Button type="button" variant="outline" size="sm" onClick={addRow} disabled={submitting}>+ Agregar fila</Button>
-          </header>
-
-          <div className="space-y-2">
-            {rows.length === 0 && (
-              <p className="rounded-md border border-dashed border-input bg-muted/40 p-4 text-center text-sm text-muted-foreground">
-                La IA no extrajo ítems o los borraste todos. Agrega al menos uno.
-              </p>
-            )}
-            {rows.map((row, idx) => (
-              <InvoiceItemRow
-                key={row.localId}
-                index={idx + 1}
-                row={row}
-                stockables={stockables}
-                disabled={submitting}
-                onChange={(patch) => updateRow(row.localId, patch)}
-                onRemove={() => removeRow(row.localId)}
-                onStockableCreated={onStockableCreated}
-              />
-            ))}
-          </div>
-        </section>
+        <ItemsSection
+          rows={rows}
+          stockables={stockables}
+          disabled={submitting}
+          onAdd={addRow}
+          onUpdate={updateRow}
+          onRemove={removeRow}
+          onStockableCreated={onStockableCreated}
+        />
 
         {error && (
           <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
@@ -441,8 +163,4 @@ export function InvoiceConfirmModal({
       </div>
     </Dialog>
   );
-}
-
-function roundMoney(n: number): number {
-  return Math.round(n * 100) / 100;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Input, Label } from '@pos-tercos/ui';
+import { Button } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import type {
@@ -15,6 +15,9 @@ import {
   setProductRecipe,
   setSubproductRecipe,
 } from '../api/client';
+import { RecipeDraftTable, type DraftEdge } from './RecipeDraftTable';
+import { RecipeAddEdgeForm } from './RecipeAddEdgeForm';
+import { RecipeExpandedCostView } from './RecipeExpandedCostView';
 
 interface RecipeEditorProps {
   parentType: 'product' | 'subproduct';
@@ -26,14 +29,6 @@ interface RecipeEditorProps {
   showExpandedCost?: boolean;
 }
 
-interface DraftEdge {
-  childType: 'ingredient' | 'subproduct';
-  childId: string;
-  quantityNeta: number;
-  /** stored as fraction in [0,1) (eg 0.05 = 5%) */
-  mermaPct: number;
-}
-
 function recipeToDraft(recipe: RecipeResponse): DraftEdge[] {
   return recipe.edges.map((e) => ({
     childType: e.childIngredientId !== null ? 'ingredient' : 'subproduct',
@@ -41,6 +36,15 @@ function recipeToDraft(recipe: RecipeResponse): DraftEdge[] {
     quantityNeta: e.quantityNeta,
     mermaPct: e.mermaPct,
   }));
+}
+
+function sameEdges(a: DraftEdge[], b: DraftEdge[]): boolean {
+  if (a.length !== b.length) return false;
+  const norm = (e: DraftEdge): string =>
+    `${e.childType}:${e.childId}:${e.quantityNeta}:${e.mermaPct}`;
+  const sa = a.map(norm).sort();
+  const sb = b.map(norm).sort();
+  return sa.every((x, i) => x === sb[i]);
 }
 
 export function RecipeEditor({
@@ -80,13 +84,11 @@ export function RecipeEditor({
 
   const isDirty = !sameEdges(draft, savedSnapshot);
 
-  // Filter subproduct picker to exclude self-cycle option
   const subproductsAvailable = useMemo(() => {
     if (parentType !== 'subproduct') return subproducts;
     return subproducts.filter((s) => s.id !== parentId);
   }, [parentType, parentId, subproducts]);
 
-  // Fetch expanded cost when applicable and recipe is saved (not dirty)
   useEffect(() => {
     if (!showExpandedCost || isDirty) return;
     let cancelled = false;
@@ -108,49 +110,27 @@ export function RecipeEditor({
     };
   }, [showExpandedCost, isDirty, parentId, savedSnapshot]);
 
-  const childAlreadyInDraft = (type: 'ingredient' | 'subproduct', id: string): boolean =>
-    draft.some((d) => d.childType === type && d.childId === id);
-
   const handleAddRow = () => {
     setError(null);
-
-    if (!addChildId) {
-      setError('Elegí un insumo o subproducto.');
-      return;
+    if (!addChildId) { setError('Elegí un insumo o subproducto.'); return; }
+    if (draft.some((d) => d.childType === addType && d.childId === addChildId)) {
+      setError('Ese item ya está en la receta. Edita la cantidad existente.'); return;
     }
-    if (childAlreadyInDraft(addType, addChildId)) {
-      setError('Ese item ya está en la receta. Edita la cantidad existente.');
-      return;
-    }
-
     const qty = Number(addQty);
     if (!Number.isFinite(qty) || qty <= 0) {
-      setError('La cantidad debe ser un número positivo.');
-      return;
+      setError('La cantidad debe ser un número positivo.'); return;
     }
-
     const mermaPercent = Number(addMermaPercent);
     if (!Number.isFinite(mermaPercent) || mermaPercent < 0 || mermaPercent >= 100) {
-      setError('La merma debe ser un porcentaje entre 0 y menos de 100.');
-      return;
+      setError('La merma debe ser un porcentaje entre 0 y menos de 100.'); return;
     }
-
     setDraft((d) => [
       ...d,
-      {
-        childType: addType,
-        childId: addChildId,
-        quantityNeta: qty,
-        mermaPct: mermaPercent / 100,
-      },
+      { childType: addType, childId: addChildId, quantityNeta: qty, mermaPct: mermaPercent / 100 },
     ]);
     setAddChildId('');
     setAddQty('');
     setAddMermaPercent('0');
-  };
-
-  const handleRemoveRow = (index: number) => {
-    setDraft((d) => d.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -158,20 +138,9 @@ export function RecipeEditor({
     setSavingState('saving');
     const edges: RecipeEdgeInput[] = draft.map((d) =>
       d.childType === 'ingredient'
-        ? {
-            childType: 'ingredient',
-            childId: d.childId,
-            quantityNeta: d.quantityNeta,
-            mermaPct: d.mermaPct,
-          }
-        : {
-            childType: 'subproduct',
-            childId: d.childId,
-            quantityNeta: d.quantityNeta,
-            mermaPct: d.mermaPct,
-          },
+        ? { childType: 'ingredient', childId: d.childId, quantityNeta: d.quantityNeta, mermaPct: d.mermaPct }
+        : { childType: 'subproduct', childId: d.childId, quantityNeta: d.quantityNeta, mermaPct: d.mermaPct },
     );
-
     try {
       const updated =
         parentType === 'product'
@@ -180,19 +149,12 @@ export function RecipeEditor({
       const next = recipeToDraft(updated);
       setDraft(next);
       setSavedSnapshot(next);
-      startTransition(() => {
-        router.refresh();
-      });
+      startTransition(() => { router.refresh(); });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al guardar');
     } finally {
       setSavingState('idle');
     }
-  };
-
-  const handleDiscard = () => {
-    setDraft(savedSnapshot);
-    setError(null);
   };
 
   return (
@@ -209,14 +171,14 @@ export function RecipeEditor({
         </p>
       </header>
 
-      <DraftTable
+      <RecipeDraftTable
         draft={draft}
         ingredientById={ingredientById}
         subproductById={subproductById}
-        onRemove={handleRemoveRow}
+        onRemove={(index) => setDraft((d) => d.filter((_, i) => i !== index))}
       />
 
-      <AddEdgeForm
+      <RecipeAddEdgeForm
         addType={addType}
         addChildId={addChildId}
         addQty={addQty}
@@ -253,7 +215,7 @@ export function RecipeEditor({
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleDiscard}
+            onClick={() => { setDraft(savedSnapshot); setError(null); }}
             disabled={!isDirty || savingState === 'saving'}
           >
             Descartar
@@ -270,7 +232,7 @@ export function RecipeEditor({
       </div>
 
       {showExpandedCost && (
-        <ExpandedCostView
+        <RecipeExpandedCostView
           cost={expandedCost}
           error={expandedCostError}
           isDirty={isDirty}
@@ -278,358 +240,4 @@ export function RecipeEditor({
       )}
     </div>
   );
-}
-
-function DraftTable({
-  draft,
-  ingredientById,
-  subproductById,
-  onRemove,
-}: {
-  draft: DraftEdge[];
-  ingredientById: Map<string, Ingredient>;
-  subproductById: Map<string, Subproduct>;
-  onRemove: (index: number) => void;
-}) {
-  if (draft.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-input bg-card p-8 text-center">
-        <p className="text-sm font-medium text-foreground">La receta está vacía.</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Agrega insumos o subproductos abajo para empezar.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <table className="min-w-full divide-y divide-border text-sm">
-        <thead className="bg-muted/40">
-          <tr>
-            <Th>Tipo</Th>
-            <Th>Item</Th>
-            <Th align="right">Cantidad neta</Th>
-            <Th>Unidad</Th>
-            <Th align="right">Merma</Th>
-            <Th align="right">Bruto</Th>
-            <Th align="right">Acción</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {draft.map((edge, index) => {
-            const ing = edge.childType === 'ingredient' ? ingredientById.get(edge.childId) : null;
-            const sub = edge.childType === 'subproduct' ? subproductById.get(edge.childId) : null;
-            const name = ing?.name ?? sub?.name ?? '(item eliminado)';
-            const unit = ing?.unitRecipe ?? sub?.unit ?? '?';
-            const gross = edge.mermaPct < 1 ? edge.quantityNeta / (1 - edge.mermaPct) : 0;
-            return (
-              <tr key={`${edge.childType}-${edge.childId}-${index}`} className="hover:bg-muted/40">
-                <Td>
-                  <Badge tone={edge.childType === 'ingredient' ? 'ingredient' : 'subproduct'}>
-                    {edge.childType === 'ingredient' ? 'Insumo' : 'Subproducto'}
-                  </Badge>
-                </Td>
-                <Td>
-                  <span className="font-medium text-foreground">{name}</span>
-                </Td>
-                <Td align="right" mono>
-                  {formatNumber(edge.quantityNeta)}
-                </Td>
-                <Td>{unit}</Td>
-                <Td align="right" mono>
-                  {(edge.mermaPct * 100).toLocaleString('es-CO', { maximumFractionDigits: 2 })}%
-                </Td>
-                <Td align="right" mono>
-                  {formatNumber(gross)}
-                </Td>
-                <Td align="right">
-                  <button
-                    type="button"
-                    onClick={() => onRemove(index)}
-                    className="font-medium text-destructive hover:underline"
-                  >
-                    Quitar
-                  </button>
-                </Td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function AddEdgeForm({
-  addType,
-  addChildId,
-  addQty,
-  addMermaPercent,
-  ingredients,
-  subproductsAvailable,
-  onChangeType,
-  onChangeChild,
-  onChangeQty,
-  onChangeMerma,
-  onAdd,
-  disabled,
-}: {
-  addType: 'ingredient' | 'subproduct';
-  addChildId: string;
-  addQty: string;
-  addMermaPercent: string;
-  ingredients: Ingredient[];
-  subproductsAvailable: Subproduct[];
-  onChangeType: (t: 'ingredient' | 'subproduct') => void;
-  onChangeChild: (id: string) => void;
-  onChangeQty: (q: string) => void;
-  onChangeMerma: (m: string) => void;
-  onAdd: () => void;
-  disabled: boolean;
-}) {
-  const options = addType === 'ingredient' ? ingredients : subproductsAvailable;
-  return (
-    <fieldset className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Agregar item a la receta
-      </legend>
-
-      <div className="flex gap-3 text-sm">
-        <label className="flex cursor-pointer items-center gap-2">
-          <input
-            type="radio"
-            name="addType"
-            checked={addType === 'ingredient'}
-            onChange={() => {
-              onChangeType('ingredient');
-              onChangeChild('');
-            }}
-            disabled={disabled}
-            className="h-4 w-4 text-primary focus:ring-ring"
-          />
-          Insumo
-        </label>
-        <label className="flex cursor-pointer items-center gap-2">
-          <input
-            type="radio"
-            name="addType"
-            checked={addType === 'subproduct'}
-            onChange={() => {
-              onChangeType('subproduct');
-              onChangeChild('');
-            }}
-            disabled={disabled}
-            className="h-4 w-4 text-primary focus:ring-ring"
-          />
-          Subproducto
-        </label>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[2fr_1fr_1fr_auto]">
-        <div className="space-y-1.5">
-          <Label htmlFor="addChild">{addType === 'ingredient' ? 'Insumo' : 'Subproducto'}</Label>
-          <select
-            id="addChild"
-            value={addChildId}
-            onChange={(e) => onChangeChild(e.target.value)}
-            disabled={disabled}
-            className="flex h-10 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          >
-            <option value="">— Seleccionar —</option>
-            {options.map((o) => {
-              const unit = 'unitRecipe' in o ? o.unitRecipe : o.unit;
-              return (
-                <option key={o.id} value={o.id}>
-                  {o.name} ({unit})
-                </option>
-              );
-            })}
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="addQty">Cant. neta</Label>
-          <Input
-            id="addQty"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min="0"
-            disabled={disabled}
-            value={addQty}
-            onChange={(e) => onChangeQty(e.target.value)}
-            placeholder="180"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="addMerma">Merma %</Label>
-          <Input
-            id="addMerma"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min="0"
-            max="99.99"
-            disabled={disabled}
-            value={addMermaPercent}
-            onChange={(e) => onChangeMerma(e.target.value)}
-            placeholder="0"
-          />
-        </div>
-        <div className="flex items-end">
-          <Button type="button" size="sm" onClick={onAdd} disabled={disabled}>
-            + Agregar
-          </Button>
-        </div>
-      </div>
-    </fieldset>
-  );
-}
-
-function ExpandedCostView({
-  cost,
-  error,
-  isDirty,
-}: {
-  cost: ExpandedCostResponse | null;
-  error: string | null;
-  isDirty: boolean;
-}) {
-  if (isDirty) {
-    return (
-      <section className="rounded-lg border border-warning-border bg-warning-bg/30 p-4">
-        <p className="text-sm text-warning">
-          Hay cambios sin guardar. Guarda la receta para recalcular el desglose de insumos.
-        </p>
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-        <p className="text-sm text-destructive">No se pudo calcular el desglose: {error}</p>
-      </section>
-    );
-  }
-
-  if (!cost) {
-    return (
-      <section className="rounded-lg border border-border bg-card p-4">
-        <p className="text-sm text-muted-foreground">Calculando desglose…</p>
-      </section>
-    );
-  }
-
-  if (cost.totals.length === 0) {
-    return (
-      <section className="rounded-lg border border-border bg-card p-4">
-        <p className="text-sm text-muted-foreground">
-          La receta está vacía — sin insumos para descontar al vender 1 unidad.
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">Desglose de insumos por unidad vendida</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Cantidad bruta a descontar de cada insumo cuando se vende 1 unidad de este producto,
-          considerando merma y yield de subproductos transitivamente.
-        </p>
-      </div>
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <table className="min-w-full divide-y divide-border text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <Th>Insumo</Th>
-              <Th align="right">Cantidad total</Th>
-              <Th>Unidad</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {cost.totals.map((t) => (
-              <tr key={t.ingredientId} className="hover:bg-muted/40">
-                <Td>
-                  <span className="font-medium text-foreground">{t.name}</span>
-                </Td>
-                <Td align="right" mono>
-                  {formatNumber(t.totalQuantity)}
-                </Td>
-                <Td>{t.unitRecipe}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
-  return (
-    <th
-      scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align,
-  mono,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-4 py-3 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
-        mono ? 'tabular-nums' : ''
-      }`}
-    >
-      {children}
-    </td>
-  );
-}
-
-function Badge({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone: 'ingredient' | 'subproduct';
-}) {
-  const cls =
-    tone === 'ingredient'
-      ? 'bg-success-bg/30 text-success ring-success-border'
-      : 'bg-muted text-foreground ring-purple-600/20';
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function formatNumber(n: number): string {
-  return n.toLocaleString('es-CO', { maximumFractionDigits: 4 });
-}
-
-function sameEdges(a: DraftEdge[], b: DraftEdge[]): boolean {
-  if (a.length !== b.length) return false;
-  const norm = (e: DraftEdge): string =>
-    `${e.childType}:${e.childId}:${e.quantityNeta}:${e.mermaPct}`;
-  const sa = a.map(norm).sort();
-  const sb = b.map(norm).sort();
-  return sa.every((x, i) => x === sb[i]);
 }

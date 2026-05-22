@@ -7,14 +7,14 @@ import {
   FormField,
   Input,
   LoadingSkeleton,
-  Money,
   NumberInput,
-  cn,
   formatDate,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { listSales } from '../../sales/api/list';
+import { listSales } from '../../sales';
 import { closeShift } from '../api/close';
+import { DifferenceWidget } from './DifferenceWidget';
+import { ShiftZReport } from './ShiftZReport';
 
 interface ShiftSummary {
   totalSales: number;
@@ -106,34 +106,11 @@ export function CloseShiftModal({
         {loading ? (
           <LoadingSkeleton shape="text" count={5} />
         ) : summary ? (
-          <section className="rounded-xl bg-muted/40 p-4">
-            <p className="caps text-[0.625rem] text-muted-foreground">Reporte de cierre del turno</p>
-            <div className="mt-3 space-y-1.5 text-sm">
-              <Row label="Apertura (efectivo inicial)" value={shift.openingCash} />
-              <Row
-                label={`Ventas en efectivo (${summary.byMethod.CASH?.count ?? 0})`}
-                value={summary.cashSalesTotal}
-                positive
-              />
-              {Object.entries(summary.byMethod)
-                .filter(([m]) => m !== 'CASH')
-                .map(([method, v]) => (
-                  <Row
-                    key={method}
-                    muted
-                    label={`${method} (${v.count})`}
-                    value={v.total}
-                  />
-                ))}
-              <div className="border-t border-border pt-2">
-                <Row label="Esperado en caja" value={expectedCash ?? 0} bold />
-              </div>
-              <p className="mt-1 text-[0.6875rem] text-muted-foreground">
-                Total ventas del turno: {summary.countSales} ·{' '}
-                <Money amount={summary.totalSales} size="xs" weight="medium" className="text-current" />
-              </p>
-            </div>
-          </section>
+          <ShiftZReport
+            shift={shift}
+            summary={summary}
+            expectedCash={expectedCash ?? 0}
+          />
         ) : null}
 
         <FormField label="Efectivo contado físicamente (COP)" required>
@@ -150,32 +127,7 @@ export function CloseShiftModal({
         </FormField>
 
         {expectedCash !== null && counted !== null ? (
-          <div
-            className={cn(
-              'rounded-xl border p-3 text-sm',
-              Math.abs(difference) < 1
-                ? 'border-success-border bg-success-bg text-success'
-                : difference < 0
-                  ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                  : 'border-warning-border bg-warning-bg text-warning',
-            )}
-          >
-            <div className="flex items-center justify-between">
-              <span>Diferencia (counted − expected)</span>
-              <Money
-                amount={difference}
-                size="lg"
-                weight="bold"
-                withSign
-                className="text-current"
-              />
-            </div>
-            {Math.abs(difference) >= 5000 ? (
-              <p className="mt-1 text-[0.6875rem]">
-                Descuadre ≥ $5.000 — se registra en audit como anomalía.
-              </p>
-            ) : null}
-          </div>
+          <DifferenceWidget difference={difference} />
         ) : null}
 
         <FormField label="Notas (opcional)">
@@ -199,37 +151,6 @@ export function CloseShiftModal({
         ) : null}
       </div>
     </Dialog>
-  );
-}
-
-function Row({
-  label,
-  value,
-  bold,
-  muted,
-  positive,
-}: {
-  label: string;
-  value: number;
-  bold?: boolean;
-  muted?: boolean;
-  positive?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex items-center justify-between',
-        muted ? 'text-xs text-muted-foreground' : 'text-foreground',
-      )}
-    >
-      <span>{label}</span>
-      <Money
-        amount={value}
-        size={bold ? 'lg' : 'sm'}
-        weight={bold ? 'bold' : 'medium'}
-        withSign={positive}
-      />
-    </div>
   );
 }
 

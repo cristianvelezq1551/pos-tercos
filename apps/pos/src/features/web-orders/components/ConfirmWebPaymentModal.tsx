@@ -8,27 +8,18 @@ import {
 } from '@pos-tercos/types';
 import {
   Button,
-  Checkbox,
   Dialog,
   FormField,
-  LoadingSkeleton,
   Money,
-  NumberInput,
-  cn,
   formatCop,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { confirmPayment } from '../../sales/api/confirm-payment';
+import { confirmPayment } from '../../sales';
 import { fetchSaleById } from '../api/get-sale';
 import { openWhatsAppForSale } from '../lib/whatsapp';
-
-const METHODS: { method: PaymentMethod; label: string }[] = [
-  { method: 'CASH', label: 'Efectivo' },
-  { method: 'NEQUI', label: 'Nequi' },
-  { method: 'DAVIPLATA', label: 'DaviPlata' },
-  { method: 'QR_BANCOLOMBIA', label: 'QR Bancolombia' },
-  { method: 'TRANSFER', label: 'Transferencia' },
-];
+import { OrderItemsList } from './OrderItemsList';
+import { WebDigitalDoubleValidation } from './WebDigitalDoubleValidation';
+import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
@@ -133,66 +124,21 @@ export function ConfirmWebPaymentModal({
           </p>
         </section>
 
-        {loadingSale ? (
-          <LoadingSkeleton shape="text" count={4} />
-        ) : fullSale && fullSale.items ? (
-          <section className="rounded-xl border border-border p-3 text-sm">
-            <p className="caps text-[0.625rem] text-muted-foreground">Ítems</p>
-            <ul className="mt-2 space-y-1">
-              {fullSale.items.map((it) => (
-                <li key={it.id} className="flex justify-between gap-2">
-                  <span>
-                    <span className="font-mono font-bold">×{it.quantity}</span>{' '}
-                    <span className="font-medium">{it.productName ?? 'producto'}</span>
-                    {it.sizeName ? (
-                      <span className="text-muted-foreground"> · {it.sizeName}</span>
-                    ) : null}
-                  </span>
-                  <Money amount={it.lineTotal} size="sm" weight="medium" />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        <OrderItemsList loading={loadingSale} sale={fullSale} />
 
         <FormField label="Método de pago verificado">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {METHODS.map((m) => (
-              <button
-                key={m.method}
-                type="button"
-                onClick={() => setMethod(m.method)}
-                className={cn(
-                  'rounded-lg border px-3 py-2 text-sm font-semibold transition-colors duration-150 ease-out',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  method === m.method
-                    ? 'border-primary bg-destructive/10 text-primary'
-                    : 'border-border bg-card text-foreground hover:border-ink-300 hover:bg-muted/40',
-                  'motion-reduce:transition-none',
-                )}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          <WebPaymentMethodSelector selected={method} onSelect={setMethod} />
         </FormField>
 
         {isDigital ? (
-          <div className="space-y-3 rounded-xl bg-muted/40 p-4">
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Monto 1">
-                <NumberInput value={digital1} onChange={setDigital1} prefix="$" autoFocus />
-              </FormField>
-              <FormField label="Monto 2">
-                <NumberInput value={digital2} onChange={setDigital2} prefix="$" />
-              </FormField>
-            </div>
-            <Checkbox
-              checked={doubleVerified}
-              onChange={(e) => setDoubleVerified(e.target.checked)}
-              label="Verifiqué app del negocio + comprobante del cliente"
-            />
-          </div>
+          <WebDigitalDoubleValidation
+            digital1={digital1}
+            digital2={digital2}
+            doubleVerified={doubleVerified}
+            onDigital1={setDigital1}
+            onDigital2={setDigital2}
+            onDoubleVerified={setDoubleVerified}
+          />
         ) : null}
 
         {!validation.ok && method ? (

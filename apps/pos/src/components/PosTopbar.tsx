@@ -2,10 +2,10 @@ import type { PublicWebOrder, Shift, User } from '@pos-tercos/types';
 import { Badge, Topbar, UserMenu, formatCop } from '@pos-tercos/ui';
 import { BrandLogo } from '@pos-tercos/brand';
 import { ChangePinAction, LogoutButton } from '../features/auth';
-import { VoidSaleAction } from '../features/sales/components/VoidSaleAction';
-import { CloseShiftAction } from '../features/shifts/components/CloseShiftAction';
+import { VoidSaleAction } from '../features/sales';
+import { CloseShiftAction } from '../features/shifts';
 import { TurnAction } from '../features/turn';
-import { WebOrdersAction } from '../features/web-orders/components/WebOrdersAction';
+import { WebOrdersAction } from '../features/web-orders';
 
 export function PosTopbar({
   user,

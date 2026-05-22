@@ -5,6 +5,7 @@ import { Button, Input, Label } from '@pos-tercos/ui';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatCop, formatDate } from '../../../lib/format';
+import { importReconciliation } from '../api/reconciliation';
 
 const SOURCE_LABEL: Record<ReconciliationSource, string> = {
   NEQUI_CSV: 'Nequi (CSV)',
@@ -31,19 +32,7 @@ export function ReconciliationView() {
     setPending(true);
     setReport(null);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const qs = new URLSearchParams({ source });
-      if (save) qs.set('save', 'true');
-      const res = await fetch(
-        `/api/reports/payment-reconciliation/import?${qs.toString()}`,
-        { method: 'POST', body: fd, credentials: 'include' },
-      );
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message ?? `Error ${res.status}`);
-      }
-      const data = (await res.json()) as ReconciliationReport;
+      const data = await importReconciliation(source, file, save);
       setReport(data);
       if (save) {
         // Refrescar SSR para que el historial se actualice abajo.

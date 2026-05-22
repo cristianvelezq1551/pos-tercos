@@ -4,7 +4,7 @@ import type { Product } from '@pos-tercos/types';
 import { EmptyState, Money, cn } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
 import { useMemo, useState } from 'react';
-import { useCartStore } from '../../sales/store/cart-store';
+import { useCartStore } from '../../sales';
 import { ProductPickerModal, type PickerSelection } from './ProductPickerModal';
 
 const ALL = '__all__';
