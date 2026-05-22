@@ -1,9 +1,9 @@
 import type { PublicWebOrder, Shift, User } from '@pos-tercos/types';
-import { Badge, Topbar, UserMenu, formatCop } from '@pos-tercos/ui';
+import { Topbar, UserMenu } from '@pos-tercos/ui';
 import { BrandLogo } from '@pos-tercos/brand';
 import { ChangePinAction, LogoutButton } from '../features/auth';
-import { VoidSaleAction } from '../features/sales';
-import { CloseShiftAction } from '../features/shifts';
+import { DayHistoryAction, VoidSaleAction } from '../features/sales';
+import { CajaAction, CloseShiftAction, ShiftCashBadge } from '../features/shifts';
 import { TurnAction } from '../features/turn';
 import { WebOrdersAction } from '../features/web-orders';
 
@@ -22,20 +22,14 @@ export function PosTopbar({
     <Topbar variant="light">
       <Topbar.Brand>
         <BrandLogo variant="full" theme="dark" size="h-7" />
-        {shift ? (
-          <Badge tone="success" size="md" withDot className="ml-2">
-            Turno abierto · {formatCop(shift.openingCash)}
-          </Badge>
-        ) : (
-          <span className="caps ml-2 text-[0.625rem] text-muted-foreground">
-            Sin turno
-          </span>
-        )}
+        <ShiftCashBadge shift={shift} />
       </Topbar.Brand>
 
       <Topbar.Actions>
         <TurnAction />
         <WebOrdersAction initial={webOrdersInitial} wsToken={wsToken} />
+        <DayHistoryAction />
+        <CajaAction shift={shift} />
         <VoidSaleAction shiftId={shift?.id ?? null} />
         <CloseShiftAction shift={shift} />
         <ChangePinAction user={user} />

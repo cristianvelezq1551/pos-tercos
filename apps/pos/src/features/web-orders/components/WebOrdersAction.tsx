@@ -4,7 +4,7 @@ import type { PublicWebOrder } from '@pos-tercos/types';
 import { Button, cn } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { useWebOrdersSocket } from '../hooks/useWebOrdersSocket';
-import { WebOrdersDrawer } from './WebOrdersDrawer';
+import { WebOrdersModal } from './WebOrdersModal';
 
 /**
  * Topbar action: badge con contador en vivo + botón que abre el drawer.
@@ -19,6 +19,8 @@ export function WebOrdersAction({
   wsToken: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  // El hook (WS) alimenta el badge contador + el pulse de "nuevo pedido".
+  // El contenido del modal lo maneja el propio modal vía REST (más resiliente).
   const { orders } = useWebOrdersSocket(initial, wsToken);
   const [pulse, setPulse] = useState(false);
 
@@ -49,10 +51,9 @@ export function WebOrdersAction({
           </span>
         ) : null}
       </Button>
-      <WebOrdersDrawer
+      <WebOrdersModal
         open={open}
         onClose={() => setOpen(false)}
-        initial={initial}
         wsToken={wsToken}
       />
     </>

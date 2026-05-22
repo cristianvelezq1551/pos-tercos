@@ -20,4 +20,6 @@ export interface CartLine {
   quantity: number;
   /** basePrice + sizeModifier + sum(modifierDeltas). Sin promos. */
   unitPrice: number;
+  /** Nota de cocina para la línea (ej. "sin cebolla"). */
+  notes?: string;
 }

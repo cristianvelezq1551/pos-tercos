@@ -1,4 +1,5 @@
 import { PosTopbar } from '../../components/PosTopbar';
+import { SessionKeeper } from '../../features/auth';
 import { getAccessTokenServer, getCurrentUserServer } from '../../features/auth/server';
 import { getCurrentShiftServer } from '../../features/shifts/server';
 import { getPendingWebOrdersServer } from '../../features/web-orders/server';
@@ -20,6 +21,7 @@ export default async function AuthenticatedLayout({
     .filter((o): o is NonNullable<typeof o> => o !== null);
   return (
     <div className="flex h-dvh flex-col bg-background text-foreground">
+      <SessionKeeper />
       <PosTopbar
         user={user}
         shift={shift}

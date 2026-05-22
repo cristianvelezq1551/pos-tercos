@@ -5,6 +5,7 @@ import { LineArtIllustration } from '@pos-tercos/brand';
 import type { Promotion } from '@pos-tercos/types';
 import { useEffect, useMemo, useState } from 'react';
 import { fetchActivePromotions } from '../api';
+import { printReceipt } from '../api/print';
 import { computeCartTotals } from '../lib/totals';
 import { useCartStore } from '../store/cart-store';
 import { CartLineRow } from './CartLineRow';
@@ -17,6 +18,7 @@ export function CartPanel() {
   const items = useCartStore((s) => s.items);
   const removeLine = useCartStore((s) => s.removeLine);
   const updateQty = useCartStore((s) => s.updateQty);
+  const setNotes = useCartStore((s) => s.setNotes);
   const clear = useCartStore((s) => s.clear);
   const lastSale = useCartStore((s) => s.lastSale);
   const setLastSale = useCartStore((s) => s.setLastSale);
@@ -60,6 +62,9 @@ export function CartPanel() {
     });
     clear();
     setCheckoutOpen(false);
+    // Auto-imprime: dispara el print del backend (ESC/POS → agente → térmica).
+    // Sin botón ni ventana de navegador.
+    void printReceipt(s.saleId).catch(() => undefined);
   };
 
   return (
@@ -102,6 +107,7 @@ export function CartPanel() {
                   hasPromo={!!totalLine?.appliedPromotionId}
                   onQty={(qty) => updateQty(line.lineId, qty)}
                   onRemove={() => removeLine(line.lineId)}
+                  onNotes={(notes) => setNotes(line.lineId, notes)}
                 />
               );
             })}

@@ -10,6 +10,7 @@ interface AddInput {
   modifiers: CartLine['modifiers'];
   quantity: number;
   unitPrice: number;
+  notes?: string;
 }
 
 export interface LastSaleSummary {
@@ -26,6 +27,7 @@ interface CartState {
   addItem: (input: AddInput) => void;
   removeLine: (lineId: string) => void;
   updateQty: (lineId: string, qty: number) => void;
+  setNotes: (lineId: string, notes: string) => void;
   clear: () => void;
   setLastSale: (sale: LastSaleSummary | null) => void;
 }
@@ -33,7 +35,8 @@ interface CartState {
 function lineSignature(item: AddInput | CartLine): string {
   const sizeId = item.size?.id ?? '';
   const modIds = [...item.modifiers].map((m) => m.id).sort().join('|');
-  return `${item.productId}::${sizeId}::${modIds}`;
+  // Las notas distinguen líneas: una "sin cebolla" no se fusiona con una normal.
+  return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}`;
 }
 
 let lineCounter = 0;
@@ -63,6 +66,7 @@ export const useCartStore = create<CartState>((set) => ({
             modifiers: input.modifiers,
             quantity: input.quantity,
             unitPrice: input.unitPrice,
+            notes: input.notes,
           },
         ],
       };
@@ -73,6 +77,14 @@ export const useCartStore = create<CartState>((set) => ({
     set((state) => ({
       items: state.items.map((it) =>
         it.lineId === lineId ? { ...it, quantity: Math.max(1, Math.floor(qty || 1)) } : it,
+      ),
+    })),
+  setNotes: (lineId, notes) =>
+    set((state) => ({
+      items: state.items.map((it) =>
+        it.lineId === lineId
+          ? { ...it, notes: notes.trim() ? notes : undefined }
+          : it,
       ),
     })),
   clear: () => set({ items: [] }),
@@ -86,5 +98,6 @@ export function cartLinesToCreateItems(items: readonly CartLine[]) {
     sizeId: it.size?.id,
     quantity: it.quantity,
     modifiers: it.modifiers.map((m) => ({ modifierId: m.id })),
+    notes: it.notes,
   }));
 }

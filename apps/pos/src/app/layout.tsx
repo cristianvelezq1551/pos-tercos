@@ -43,32 +43,37 @@ export default function RootLayout({
   return (
     <html lang="es-CO" className={`${fontSans.variable} ${fontDisplay.variable}`}>
       <head>
-        <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
-        <link rel="apple-touch-icon" href="/icon-192.svg" />
+        {/* El favicon lo genera Next desde src/app/icon.png (logoTercos). */}
+        <link rel="apple-touch-icon" href="/icon-512.png" />
       </head>
       <body>
         {children}
-        <Script id="sw-register" strategy="afterInteractive">
-          {`(function() {
-              if (!('serviceWorker' in navigator)) return;
-              // En localhost desregistramos cualquier SW previo y NO instalamos
-              // uno nuevo: HMR + caché del SW pelean entre sí en dev y dejan
-              // bundles viejos sirviendo. SW solo en prod.
-              const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-              if (isLocal) {
+        {process.env.NODE_ENV === 'production' ? (
+          <Script id="sw-register" strategy="afterInteractive">
+            {`(function() {
+                if (!('serviceWorker' in navigator)) return;
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js').catch(console.error);
+                });
+              })();`}
+          </Script>
+        ) : (
+          <Script id="sw-unregister" strategy="afterInteractive">
+            {`(function() {
+                // En dev NUNCA registramos SW (sin importar el hostname: localhost
+                // o IP de red para la tablet). HMR + caché del SW pelean y dejan
+                // bundles viejos sirviendo. Además limpiamos cualquier SW/caché
+                // que haya quedado de un build previo.
+                if (!('serviceWorker' in navigator)) return;
                 navigator.serviceWorker.getRegistrations().then(regs => {
                   regs.forEach(r => r.unregister());
                 });
                 if ('caches' in window) {
                   caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
                 }
-                return;
-              }
-              window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(console.error);
-              });
-            })();`}
-        </Script>
+              })();`}
+          </Script>
+        )}
       </body>
     </html>
   );

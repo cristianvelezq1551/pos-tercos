@@ -88,6 +88,12 @@ export function VoidModal({
       }
     >
       <div className="space-y-5">
+        <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs leading-relaxed text-warning">
+          Al anular: la venta pasa a <strong>ANULADA</strong>, se{' '}
+          <strong>revierte el stock</strong> y queda registrada en auditoría. Solo
+          se permite si la cocina <strong>aún no inició</strong> la preparación
+          (PENDIENTE_PAGO o PAGADO sin iniciar). Requiere PIN de Admin/Dueño.
+        </div>
         <FormField label={`Ventas pagadas del turno actual (${sales.length})`}>
           {loading ? (
             <LoadingSkeleton shape="table-row" count={3} />

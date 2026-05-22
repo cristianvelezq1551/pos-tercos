@@ -1,6 +1,6 @@
 'use client';
 
-import type { Sale, Shift } from '@pos-tercos/types';
+import type { Shift } from '@pos-tercos/types';
 import {
   Button,
   Dialog,
@@ -13,15 +13,9 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { listSales } from '../../sales';
 import { closeShift } from '../api/close';
+import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
 import { DifferenceWidget } from './DifferenceWidget';
 import { ShiftZReport } from './ShiftZReport';
-
-interface ShiftSummary {
-  totalSales: number;
-  countSales: number;
-  byMethod: Record<string, { count: number; total: number }>;
-  cashSalesTotal: number;
-}
 
 export function CloseShiftModal({
   shift,
@@ -50,7 +44,7 @@ export function CloseShiftModal({
     setPending(false);
     setLoading(true);
     listSales({ shiftId: shift.id, limit: 200 })
-      .then((sales) => setSummary(computeSummary(sales)))
+      .then((sales) => setSummary(computeShiftSummary(sales)))
       .catch((err) =>
         setError(err instanceof Error ? err.message : 'Error cargando ventas'),
       )
@@ -152,23 +146,4 @@ export function CloseShiftModal({
       </div>
     </Dialog>
   );
-}
-
-function computeSummary(sales: Sale[]): ShiftSummary {
-  const byMethod: Record<string, { count: number; total: number }> = {};
-  let totalSales = 0;
-  let countSales = 0;
-  for (const s of sales) {
-    if (s.status === 'PENDIENTE_PAGO' || s.status === 'VOID' || s.status === 'CANCELADO_NO_PAGO') {
-      continue;
-    }
-    countSales += 1;
-    totalSales += s.total;
-    const method = s.paymentMethod ?? 'UNKNOWN';
-    if (!byMethod[method]) byMethod[method] = { count: 0, total: 0 };
-    byMethod[method].count += 1;
-    byMethod[method].total += s.total;
-  }
-  const cashSalesTotal = byMethod.CASH?.total ?? 0;
-  return { totalSales, countSales, byMethod, cashSalesTotal };
 }

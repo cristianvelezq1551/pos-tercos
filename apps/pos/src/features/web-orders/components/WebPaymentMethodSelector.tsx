@@ -5,9 +5,6 @@ import { cn } from '@pos-tercos/ui';
 
 const METHODS: { method: PaymentMethod; label: string }[] = [
   { method: 'CASH', label: 'Efectivo' },
-  { method: 'NEQUI', label: 'Nequi' },
-  { method: 'DAVIPLATA', label: 'DaviPlata' },
-  { method: 'QR_BANCOLOMBIA', label: 'QR Bancolombia' },
   { method: 'TRANSFER', label: 'Transferencia' },
 ];
 

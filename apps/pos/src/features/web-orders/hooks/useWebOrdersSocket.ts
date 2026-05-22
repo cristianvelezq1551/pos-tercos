@@ -2,12 +2,13 @@
 
 import {
   POS_NAMESPACE,
-  POS_WEB_ORDERS_ROOM,
   WebOrderEventSchema,
   type PublicWebOrder,
 } from '@pos-tercos/types';
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { fetchPendingWebOrders } from '../api';
+import { saleToPublicWebOrder } from '../lib/project';
 
 const API_WS_URL =
   process.env.NEXT_PUBLIC_API_WS_URL ?? 'http://localhost:3001';
@@ -31,14 +32,13 @@ export function useWebOrdersSocket(
   );
   const socketRef = useRef<Socket | null>(null);
 
-  useEffect(() => {
-    setOrders(initial);
-  }, [initial]);
+  // `initial` (SSR) solo siembra el estado en el primer mount; después manda
+  // el WS. No re-sincronizamos con `initial` para no revertir un removeLocal
+  // optimista cuando el layout hace router.refresh.
 
   useEffect(() => {
     if (!token) return;
 
-    void POS_WEB_ORDERS_ROOM; // imported for clarity
     const socket = io(`${API_WS_URL}${POS_NAMESPACE}`, {
       transports: ['websocket'],
       auth: { token },
@@ -48,7 +48,19 @@ export function useWebOrdersSocket(
     });
     socketRef.current = socket;
 
-    socket.on('connect', () => setConnection('connected'));
+    socket.on('connect', () => {
+      setConnection('connected');
+      // Al (re)conectar, recuperar pedidos que entraron mientras estábamos
+      // desconectados (el WS no reenvía eventos perdidos durante la caída).
+      void fetchPendingWebOrders()
+        .then((sales) => {
+          const projected = sales
+            .map(saleToPublicWebOrder)
+            .filter((o): o is PublicWebOrder => o !== null);
+          setOrders(projected);
+        })
+        .catch(() => undefined);
+    });
     socket.on('disconnect', () => setConnection('disconnected'));
     socket.on('connect_error', () => setConnection('error'));
     socket.on('auth.error', () => setConnection('error'));
@@ -90,9 +102,5 @@ export function useWebOrdersSocket(
     };
   }, [token]);
 
-  /** Patch local: usado tras confirm-payment para sacar la sale del drawer. */
-  const removeLocal = (saleId: string) =>
-    setOrders((c) => c.filter((o) => o.id !== saleId));
-
-  return { orders, connection, removeLocal };
+  return { orders, connection };
 }

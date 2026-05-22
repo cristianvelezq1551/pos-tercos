@@ -89,22 +89,31 @@ export function TurnAction() {
 
           <div className="grid grid-cols-2 gap-3">
             <Button
+              variant="outline"
+              size="lg"
+              disabled={pending || (turn ?? 1) <= 1}
+              onClick={() => void run(() => setTurn(Math.max(1, (turn ?? 1) - 1)))}
+            >
+              ← Anterior
+            </Button>
+            <Button
               variant="default"
               size="lg"
               disabled={pending}
               onClick={() => void run(advanceTurn)}
             >
-              Siguiente turno
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              disabled={pending}
-              onClick={() => void run(resetTurn)}
-            >
-              Volver a #1
+              Siguiente →
             </Button>
           </div>
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-full"
+            disabled={pending}
+            onClick={() => void run(resetTurn)}
+          >
+            Reiniciar a #1
+          </Button>
 
           <div className="space-y-2">
             <label className="caps text-[0.6875rem] tracking-[0.2em] text-muted-foreground">

@@ -1,10 +1,9 @@
-export interface PrintReceiptResult {
-  html: string;
-  receiptKey: string | null;
-  receiptUrl: string | null;
-}
-
-export async function printReceipt(saleId: string): Promise<PrintReceiptResult> {
+/**
+ * Dispara la impresión del recibo. La impresión REAL la hace el backend vía
+ * el print-agent (ESC/POS → impresora térmica Neotek 58mm). El POS NO imprime
+ * desde el navegador (eso causaba papel infinito en la térmica).
+ */
+export async function printReceipt(saleId: string): Promise<void> {
   const res = await fetch(`/api/sales/${saleId}/print`, {
     method: 'POST',
     credentials: 'include',
@@ -13,10 +12,4 @@ export async function printReceipt(saleId: string): Promise<PrintReceiptResult> 
     const text = await res.text().catch(() => '');
     throw new Error(`Error ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`);
   }
-  const html = await res.text();
-  return {
-    html,
-    receiptKey: res.headers.get('x-receipt-key'),
-    receiptUrl: res.headers.get('x-receipt-url'),
-  };
 }

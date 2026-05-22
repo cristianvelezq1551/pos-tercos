@@ -12,6 +12,7 @@ export function CartLineRow({
   hasPromo,
   onQty,
   onRemove,
+  onNotes,
 }: {
   line: CartLine;
   lineSubtotal: number;
@@ -20,6 +21,7 @@ export function CartLineRow({
   hasPromo: boolean;
   onQty: (qty: number) => void;
   onRemove: () => void;
+  onNotes: (notes: string) => void;
 }) {
   const description = [line.size?.name, ...line.modifiers.map((m) => m.name)]
     .filter(Boolean)
@@ -90,6 +92,14 @@ export function CartLineRow({
           )}
         </div>
       </div>
+      <input
+        type="text"
+        value={line.notes ?? ''}
+        onChange={(e) => onNotes(e.target.value)}
+        placeholder="Nota para cocina (ej. sin cebolla)"
+        maxLength={200}
+        className="mt-2 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+      />
     </li>
   );
 }

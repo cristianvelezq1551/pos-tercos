@@ -6,18 +6,11 @@ import {
   type PublicWebOrder,
   type Sale,
 } from '@pos-tercos/types';
-import {
-  Button,
-  Dialog,
-  FormField,
-  Money,
-  formatCop,
-} from '@pos-tercos/ui';
+import { Button, Dialog, FormField, Money } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { confirmPayment } from '../../sales';
+import { confirmPayment, TransferSection } from '../../sales';
 import { fetchSaleById } from '../api/get-sale';
 import { OrderItemsList } from './OrderItemsList';
-import { WebDigitalDoubleValidation } from './WebDigitalDoubleValidation';
 import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
@@ -25,28 +18,27 @@ const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 export function ConfirmWebPaymentModal({
   order,
   open,
+  silent = false,
   onClose,
   onConfirmed,
 }: {
   order: PublicWebOrder | null;
   open: boolean;
+  /** true = no avisar al cliente (cobro retroactivo offline). */
+  silent?: boolean;
   onClose: () => void;
   onConfirmed: (sale: Sale) => void;
 }) {
   const [fullSale, setFullSale] = useState<Sale | null>(null);
   const [loadingSale, setLoadingSale] = useState(false);
-  const [method, setMethod] = useState<PaymentMethod | null>('NEQUI');
-  const [digital1, setDigital1] = useState<number | null>(null);
-  const [digital2, setDigital2] = useState<number | null>(null);
+  const [method, setMethod] = useState<PaymentMethod | null>('TRANSFER');
   const [doubleVerified, setDoubleVerified] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !order) return;
-    setMethod('NEQUI');
-    setDigital1(null);
-    setDigital2(null);
+    setMethod('TRANSFER');
     setDoubleVerified(false);
     setError(null);
     setPending(false);
@@ -61,18 +53,15 @@ export function ConfirmWebPaymentModal({
 
   const isDigital = method !== null && DIGITAL_SET.has(method);
   const total = order?.total ?? 0;
-  const d1 = digital1 ?? 0;
-  const d2 = digital2 ?? 0;
 
   const validation = useMemo(() => {
     if (!order || !method) return { ok: false, reason: 'Elegí un método' };
     if (method === 'CASH') return { ok: true, reason: null };
-    if (d1 !== total) return { ok: false, reason: `Monto 1 debe ser ${formatCop(total)}` };
-    if (d2 !== total) return { ok: false, reason: `Monto 2 debe ser ${formatCop(total)}` };
-    if (d1 !== d2) return { ok: false, reason: 'Los dos montos no coinciden' };
-    if (!doubleVerified) return { ok: false, reason: 'Confirma doble verificación' };
+    if (!doubleVerified) {
+      return { ok: false, reason: 'Confirmá que la transferencia llegó' };
+    }
     return { ok: true, reason: null };
-  }, [order, method, d1, d2, doubleVerified, total]);
+  }, [order, method, doubleVerified]);
 
   if (!order) return null;
 
@@ -85,6 +74,7 @@ export function ConfirmWebPaymentModal({
         method,
         amountReceived: total,
         digitalDoubleVerified: isDigital ? true : undefined,
+        silent: silent || undefined,
       });
       onConfirmed(paid);
     } catch (err) {
@@ -129,13 +119,10 @@ export function ConfirmWebPaymentModal({
         </FormField>
 
         {isDigital ? (
-          <WebDigitalDoubleValidation
-            digital1={digital1}
-            digital2={digital2}
-            doubleVerified={doubleVerified}
-            onDigital1={setDigital1}
-            onDigital2={setDigital2}
-            onDoubleVerified={setDoubleVerified}
+          <TransferSection
+            total={total}
+            verified={doubleVerified}
+            onVerified={setDoubleVerified}
           />
         ) : null}
 

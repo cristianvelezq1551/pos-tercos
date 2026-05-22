@@ -14,8 +14,8 @@ import { createSale } from '../api/create';
 import type { CartLine } from '../lib/cart-types';
 import { cartLinesToCreateItems } from '../store/cart-store';
 import { CashSection } from './CashSection';
-import { DigitalSection } from './DigitalSection';
 import { PaymentMethodSelector } from './PaymentMethodSelector';
+import { TransferSection } from './TransferSection';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
@@ -42,8 +42,6 @@ export function CheckoutModal({
 }) {
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [cashReceived, setCashReceived] = useState<number | null>(null);
-  const [digital1, setDigital1] = useState<number | null>(null);
-  const [digital2, setDigital2] = useState<number | null>(null);
   const [doubleVerified, setDoubleVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -55,8 +53,6 @@ export function CheckoutModal({
       setIdempotencyKey(crypto.randomUUID());
       setMethod(null);
       setCashReceived(null);
-      setDigital1(null);
-      setDigital2(null);
       setDoubleVerified(false);
       setError(null);
       setPending(false);
@@ -65,8 +61,6 @@ export function CheckoutModal({
 
   const isDigital = method !== null && DIGITAL_SET.has(method);
   const cashNum = cashReceived ?? 0;
-  const d1 = digital1 ?? 0;
-  const d2 = digital2 ?? 0;
 
   const changeDue = method === 'CASH' ? Math.max(0, cashNum - total) : 0;
 
@@ -76,22 +70,20 @@ export function CheckoutModal({
       if (cashNum < total) {
         return {
           ok: false,
-          reason: `Recibido < total (faltan ${formatCop(total - cashNum)})`,
+          reason: `Faltan ${formatCop(total - cashNum)} para completar el pago`,
         };
       }
       return { ok: true, reason: null };
     }
-    if (d1 !== total) return { ok: false, reason: `Monto 1 debe ser igual a ${formatCop(total)}` };
-    if (d2 !== total) return { ok: false, reason: `Monto 2 debe ser igual a ${formatCop(total)}` };
-    if (d1 !== d2) return { ok: false, reason: 'Los dos montos no coinciden' };
+    // Transferencia: solo confirmar que llegó (monto = total exacto).
     if (!doubleVerified) {
       return {
         ok: false,
-        reason: 'Confirma que verificaste app del negocio + comprobante del cliente',
+        reason: 'Confirmá que la transferencia llegó a la cuenta',
       };
     }
     return { ok: true, reason: null };
-  }, [method, cashNum, d1, d2, doubleVerified, total]);
+  }, [method, cashNum, doubleVerified, total]);
 
   const handleConfirm = async () => {
     if (!validation.ok || !method || pending) return;
@@ -142,6 +134,9 @@ export function CheckoutModal({
       }
     >
       <div className="space-y-5">
+        <p className="rounded-md border border-border bg-muted/60 px-3 py-2 text-sm font-medium text-foreground">
+          📋 Repasá el pedido en voz alta con el cliente antes de cobrar.
+        </p>
         <FormField label="Método de pago">
           <PaymentMethodSelector selected={method} onSelect={setMethod} />
         </FormField>
@@ -155,14 +150,10 @@ export function CheckoutModal({
         ) : null}
 
         {isDigital ? (
-          <DigitalSection
+          <TransferSection
             total={total}
-            digital1={digital1}
-            digital2={digital2}
-            doubleVerified={doubleVerified}
-            onDigital1={setDigital1}
-            onDigital2={setDigital2}
-            onDoubleVerified={setDoubleVerified}
+            verified={doubleVerified}
+            onVerified={setDoubleVerified}
           />
         ) : null}
 
