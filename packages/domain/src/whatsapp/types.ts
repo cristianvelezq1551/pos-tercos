@@ -13,7 +13,8 @@
 export type WhatsAppNotificationStage =
   | 'payment_instructions'
   | 'payment_received'
-  | 'pickup_ready';
+  | 'pickup_ready'
+  | 'canceled';
 
 export interface WhatsAppSaleSnapshot {
   /** Número de recibo (corto, lo que ve el cliente). */

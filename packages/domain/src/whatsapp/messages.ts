@@ -49,6 +49,17 @@ export function buildPickupReadyMessage(
   );
 }
 
+/** Cajero rechazó/canceló el pedido (nunca se pagó). */
+export function buildCanceledMessage(
+  sale: WhatsAppSaleSnapshot,
+  opts: WhatsAppMessageOptions,
+): string {
+  return (
+    `${greet(sale.customerName)}, lamentablemente tu pedido #${sale.receiptNumber} fue cancelado. ` +
+    `Si creés que es un error o querés volver a pedir, escribinos por este chat. — ${opts.businessName}`
+  );
+}
+
 /** Dispatcher por stage para call-sites que ya conocen la etapa. */
 export function buildNotificationMessage(
   stage: WhatsAppNotificationStage,
@@ -62,5 +73,7 @@ export function buildNotificationMessage(
       return buildPaymentReceivedMessage(sale, opts);
     case 'pickup_ready':
       return buildPickupReadyMessage(sale, opts);
+    case 'canceled':
+      return buildCanceledMessage(sale, opts);
   }
 }

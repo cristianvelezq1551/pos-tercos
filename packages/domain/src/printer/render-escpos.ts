@@ -1,7 +1,8 @@
 import type { ReceiptData } from './types';
 
 /**
- * ESC/POS bytes para impresoras térmicas 80mm (Epson TM-T20III, similares).
+ * ESC/POS bytes para impresoras térmicas de 58mm (32 caracteres por línea;
+ * ej. Neotek 58mm USB/Bluetooth, similares).
  * Función pura: recibe ReceiptData, devuelve Buffer con la secuencia
  * de comandos. El Print Agent local toma estos bytes y los envía al
  * device físico (USB / serial / network).
@@ -111,6 +112,11 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   out.push(LF);
   out.push(LF);
   out.push(LF);
+
+  // Abrir cajón monedero (ventas en efectivo) — pulso RJ-11 antes del corte.
+  if (receipt.openDrawer) {
+    out.push(DRAWER_KICK);
+  }
 
   // Cut
   out.push(CUT_PARTIAL);

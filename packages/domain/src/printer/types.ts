@@ -25,6 +25,9 @@ export interface ReceiptData {
   total: number;
   /** Marcador para reimpresiones (ej. "DUPLICADO"). null si es la 1ra. */
   reprintLabel: string | null;
+  /** Si true, el ESC/POS incluye el pulso para abrir el cajón monedero
+   *  (RJ-11 en la impresora). Se usa en ventas en efectivo. */
+  openDrawer?: boolean;
   /** Branding del negocio (env-provided, no del Sale). */
   business: {
     name: string;

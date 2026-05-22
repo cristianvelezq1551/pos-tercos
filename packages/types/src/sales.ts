@@ -67,6 +67,8 @@ export const SaleItemSchema = z.object({
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
   modifiers: z.array(AppliedModifierSchema).default([]),
+  /** Notas de cocina por línea (ej. "sin cebolla"). */
+  notes: z.string().nullable().optional(),
   appliedPromotionId: z.string().uuid().nullable(),
   appliedPromotionName: z.string().nullable().optional(),
   lineSubtotal: z.number().nonnegative(),
@@ -191,6 +193,8 @@ export const ConfirmPaymentSchema = z
      *  (verificar app del negocio + comprobante cliente). UI obliga true. */
     digitalDoubleVerified: z.boolean().optional(),
     notes: z.string().max(200).optional(),
+    /** true = actualización retroactiva (offline) → NO avisar al cliente por WhatsApp. */
+    silent: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
