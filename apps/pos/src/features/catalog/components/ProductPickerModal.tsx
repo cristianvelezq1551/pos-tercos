@@ -33,8 +33,8 @@ export function ProductPickerModal({
   onClose: () => void;
   onConfirm: (sel: PickerSelection) => void;
 }) {
-  const sizes = product?.sizes ?? [];
-  const modifiers = product?.modifiers ?? [];
+  const sizes = useMemo(() => product?.sizes ?? [], [product]);
+  const modifiers = useMemo(() => product?.modifiers ?? [], [product]);
   const modifiersEnabled = product?.modifiersEnabled ?? false;
   const requiresSize = sizes.length > 0;
 

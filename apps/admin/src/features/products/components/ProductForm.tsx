@@ -686,7 +686,6 @@ function ImageUploadField({
       <Label>Imagen del producto</Label>
       {imageUrl ? (
         <div className="flex items-start gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imageUrl}
             alt="Imagen actual"

@@ -20,8 +20,6 @@ export interface FormFieldProps {
   className?: string;
 }
 
-let idCounter = 0;
-
 /**
  * Wrapper canónico para TODA forma. Encadena Label + control + (hint | error).
  * Inyecta automáticamente `id`, `aria-invalid`, `aria-describedby` en el child.
@@ -88,6 +86,3 @@ export function FormField({
   );
 }
 FormField.displayName = 'FormField';
-
-// Re-uso interno (count incremental no usado tras useId, lo dejamos por compat).
-export { idCounter as __formFieldIdCounter };

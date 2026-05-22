@@ -271,7 +271,6 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               rel="noopener noreferrer"
               className="inline-block"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`/api/invoices/${invoice.id}/photo`}
                 alt={`Foto de la factura ${invoice.invoiceNumber ?? invoice.id.slice(0, 8)}`}

@@ -44,7 +44,6 @@ export function openWhatsAppReady(sale: Sale): void {
     .then((res) => res.json())
     .then((j) => ResponseSchema.parse(j))
     .catch(() => {
-      // eslint-disable-next-line no-console
       console.warn('whatsapp-clicked audit failed (kds, ready)');
     });
 

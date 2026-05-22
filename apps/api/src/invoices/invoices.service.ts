@@ -612,7 +612,6 @@ export class InvoicesService {
         // No falla la operación si storage falla — la DB ya commiteó.
         // El archivo huérfano lo limpia el cron sweepOrphanInvoiceFiles
         // semanal (FASE 15.A).
-        // eslint-disable-next-line no-console
         console.warn(
           `[invoices.delete] storage.delete failed for ${existing.photoStorageKey}:`,
           err,

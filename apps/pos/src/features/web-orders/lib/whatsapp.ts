@@ -56,7 +56,6 @@ export function openWhatsAppForSale(
 
   // Audit fire-and-forget. Nunca bloquea la apertura del wa.me.
   recordWhatsAppClicked(sale.id, stage).catch(() => {
-    // eslint-disable-next-line no-console
     console.warn('whatsapp-clicked audit failed for', sale.id, stage);
   });
 

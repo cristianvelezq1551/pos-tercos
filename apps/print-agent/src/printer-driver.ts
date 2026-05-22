@@ -94,7 +94,6 @@ export async function sendBytes(bytes: Buffer): Promise<void> {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const path = join(FALLBACK_DIR, `${ts}.bin`);
   await writeFile(path, bytes);
-  // eslint-disable-next-line no-console
   console.log(
     `[print-agent] no PRINTER_USB_* ni PRINTER_DEVICE — wrote ${bytes.length}B to ${path}`,
   );

@@ -37,7 +37,6 @@ import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import {
   CashierAccess,
-  KitchenAccess,
   OnlyDueno,
   Roles,
 } from '../auth/decorators/roles.decorator';

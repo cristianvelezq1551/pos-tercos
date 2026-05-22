@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
@@ -11,6 +12,8 @@ export default tseslint.config(
       '**/.turbo/**',
       '**/coverage/**',
       '**/next-env.d.ts',
+      '**/public/sw.js',
+      '.claude/**',
       '_legacy/**',
       'apps/api/prisma/generated/**',
     ],
@@ -40,6 +43,18 @@ export default tseslint.config(
     files: ['apps/api/**/*.ts'],
     rules: {
       '@typescript-eslint/no-extraneous-class': 'off',
+    },
+  },
+  {
+    // React surfaces: enforce hooks correctness
+    files: [
+      'apps/{admin,pos,kds,web,public-display,repa}/**/*.{ts,tsx}',
+      'packages/{ui,brand}/**/*.{ts,tsx}',
+    ],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
     },
   },
 );

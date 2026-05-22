@@ -52,7 +52,6 @@ export function useKDSSocket(initial: Sale[], token: string | null) {
     socket.on('disconnect', () => setConnection('disconnected'));
     socket.on('connect_error', () => setConnection('error'));
     socket.on('auth.error', (err: { reason?: string }) => {
-      // eslint-disable-next-line no-console
       console.error('[KDS WS] auth.error', err);
       setConnection('error');
     });

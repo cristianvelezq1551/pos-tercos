@@ -9,7 +9,6 @@ const nextConfig: NextConfig = {
     '@pos-tercos/types',
     '@pos-tercos/domain',
   ],
-  eslint: { ignoreDuringBuilds: true },
   async rewrites() {
     return [
       {

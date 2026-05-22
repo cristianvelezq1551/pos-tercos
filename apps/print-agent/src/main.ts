@@ -74,7 +74,6 @@ const server = createServer(async (req, res) => {
 
     json(res, 404, { error: 'not found' });
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error('[print-agent] error', err);
     json(res, 500, {
       error: err instanceof Error ? err.message : String(err),
@@ -83,6 +82,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  // eslint-disable-next-line no-console
   console.log(`[print-agent] listening on :${PORT}`);
 });
