@@ -10,12 +10,14 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 **Documentos fuente** (leer en este orden si arrancás cold):
 
-1. `CLAUDE.md` (este archivo) — estado vigente, decisiones, módulos vivos
+1. `CLAUDE.md` (este archivo) — estado vigente, decisiones, módulos vivos. **Único doc canónico de arquitectura del POS.**
 2. `pos-spec.v1.md` — alcance v1 cerrado (qué entra, qué no)
-3. `architecture.md` — arquitectura técnica completa, modelo de datos, API surface
-4. `implementation-plan.md` — fases de implementación local-first (15 fases)
-5. `kickoff-plan.md` — pendientes externos (Meta WABA, hardware, contador, etc.)
+3. `ARCHITECTURE.md` — plantilla Flutter (CrediClub) usada como referencia para `apps/kds-flutter`. **NO describe el POS backend/frontend.**
+4. `implementation-plan.md` — fases de implementación local-first (15 fases; algunas obsoletas por reorientación v2)
+5. `kickoff-plan.md` — pendientes externos (hardware, contador, etc.)
 6. `testing-guide.md` — checklist e2e ~50 tests sec 1-11 (FASES 0-3)
+7. `openwa-setup.md` — guía para levantar el gateway OpenWA self-hosted
+8. `probar-backend-sin-apps.md` — flujo para testear el backend (venta web + WhatsApp) sin abrir las apps
 
 ---
 
@@ -25,13 +27,12 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 - **Frontends:** Next.js 15 App Router + React 19 + Tailwind v4 (Vercel en prod)
 - **Monorepo:** Turborepo + pnpm workspaces
 - **Auth:** JWT (access 15min en cookie+Bearer + refresh 7d httpOnly cookie con rotación)
-- **Realtime:** WebSocket (KDS, repartidor, POS) + SSE (pantalla pública) — pendiente FASE 5+
+- **Realtime:** WebSocket (KDS Flutter via `socket_io_client`, POS via socket.io-client) + SSE (pantalla pública)
 - **IA:** Anthropic Claude Haiku 4.5 (primario) + OpenAI GPT-4o-mini (fallback) — vision para facturas
-- **WhatsApp:** wa.me semi-automático con tracking — sin backend, sin Meta WABA, sin costo. Ver sec 4.10. Pendiente FASE 9.
-- **Mapas:** Mapbox (geocoding + autocomplete + maps GL) — pendiente FASE 7
-- **Storage:** Cloudflare R2 en prod (`R2StorageAdapter` FASE 15.B), filesystem local en dev (`./tmp/uploads/...`)
-- **Impresora térmica:** Epson TM-T20III via Print Agent local (`apps/print-agent` FASE 15.C, ESC/POS bytes), cajón monedero RJ-11
-- **PWA:** POS y KDS instalables (manifest + SW offline-first FASE 15.D)
+- **WhatsApp:** OpenWA (gateway self-hosted, `whatsapp-web.js`) — envío automático desde backend. Ver sec 4.10. Dev: `MockWhatsAppAdapter` (sin config OpenWA).
+- **Storage:** Cloudflare R2 en prod (`R2StorageAdapter`), filesystem local en dev (`./tmp/uploads/...`)
+- **Impresora térmica:** Epson TM-T20III via Print Agent local (`apps/print-agent`, ESC/POS bytes), cajón monedero RJ-11
+- **PWA:** Solo POS instalable (manifest + SW offline-first). KDS es app Flutter nativa (APK en tablet Android).
 
 ---
 
@@ -41,27 +42,30 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 | App | Path | Rol | Estado |
 |---|---|---|---|
-| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 + 14 + 15 backend ✅ |
+| API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 + 14 + 15 backend ✅ + WS-1/2/3/4 v2 ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes (ventas/productos/operación) / promos / sugerencias IA / RRHH | FASE 0-4 + 11 + 12 + 13 + 14 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA (manifest + SW offline) — venta + drawer pedidos web + WhatsApp wa.me + cierre turno + cambiar PIN | FASE 5.E + 7.E + 9 + 11 + 15.D UI ✅ |
-| KDS Cocina | `apps/kds` | Next.js PWA (manifest + SW offline) — comanda cocina + WhatsApp al "Marcar listo" | FASE 6.C + 9 + 15.D UI ✅ |
-| Pantalla Pública | `apps/public-display` | Next.js + SSE — orden listo | FASE 6.D UI ✅ |
-| Web Pública | `apps/web` | Next.js — menú + checkout pickup/delivery + status tracking (cajero-driven via WhatsApp) | FASE 7.C-D + 8.B + 9 UI ✅ |
-| Repartidor | `apps/repa` | Next.js PWA mobile — domicilios | placeholder |
+| POS Cajero | `apps/pos` | Next.js PWA (manifest + SW offline) — venta + drawer pedidos web + cierre turno + cambiar PIN | FASE 5.E + 7.E + 11 + 15.D UI ✅ |
+| KDS Cocina | `apps/kds-flutter` | Flutter (tablet Android) — comanda cocina, Clean Architecture (Riverpod + Freezed + Dio + GoRouter) | WS-3 ✅ |
+| Pantalla Pública | `apps/public-display` | Next.js + SSE — turnero kiosko (sin auth) | FASE 6.D + rediseño ✅ |
+| Web Pública | `apps/web` | Next.js — menú + checkout WEB_PICKUP + status tracking | FASE 7.C-D UI ✅ |
 | Print Agent | `apps/print-agent` | Node service local — ESC/POS + cajón monedero | FASE 15.C ✅ |
+
+> **Eliminados en reorientación v2:** `apps/kds` (Next.js KDS), `apps/repa` (repartidor). No existen en este branch.
 
 ### Packages compartidos
 
 | Package | Path | Contenido | SOLO entra | NUNCA entra |
 |---|---|---|---|---|
 | Types | `packages/types` | Schemas Zod + tipos inferidos + enums | Zod, tipos, enums | Lógica, IO, deps pesadas |
-| Domain | `packages/domain` | Funciones puras: `expandRecipe`, fuzzy `bestMatch`, prompts LLM, interfaces de adapters | Lógica pura | IO, HTTP, DB, side-effects |
+| Domain | `packages/domain` | Funciones puras: `expandRecipe`, fuzzy `bestMatch`, prompts LLM, interfaces de adapters, builders WhatsApp | Lógica pura | IO, HTTP, DB, side-effects |
 | UI | `packages/ui` | Componentes visuales (Button, Dialog, LoginForm, Input, Label) | Componentes puros | Lógica de negocio, fetch, estado global |
+| Brand | `packages/brand` | Identidad visual compartida entre apps (assets, componentes de marca, data) | Componentes de marca, assets estáticos | Lógica de negocio |
 
 **Build pipeline:**
 - `types/` y `domain/` compilan a `dist/` CJS (`pnpm -F @pos-tercos/types build`).
-- `ui/` se queda como source y se transpila vía `transpilePackages` en cada `next.config.ts`.
+- `ui/` y `brand/` se quedan como source y se transpilan vía `transpilePackages` en cada `next.config.ts`.
 - Turbo con `dependsOn: ["^build"]` garantiza orden.
+- `packages/config` fue eliminado (estaba vacío).
 
 ---
 
@@ -75,7 +79,7 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 - **Idempotency keys** en POST que crean recursos críticos (ventas, movements, confirmaciones).
 - **Audit log inmutable** (insert-only via trigger DB) para acciones sensibles.
 - **Comentarios mínimos**. Solo "por qué" no evidente, nunca "qué" hace el código.
-- **Adapter pattern** OBLIGATORIO para WhatsApp, IA, pagos, billing, delivery aggregator, storage.
+- **Adapter pattern** OBLIGATORIO para WhatsApp, IA, pagos, billing, storage.
 
 ### Backend (`apps/api`) — un módulo por dominio
 
@@ -88,9 +92,9 @@ apps/api/src/<dominio>/
 └── <dominio>.service.spec.ts
 ```
 
-**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `sales`, `kds`, `shifts`, `promotions`, `web-orders`, `web-menu`, `public-display`, `reports`, `purchase-suggestions`, `workers`, `adapters/llm`, `adapters/storage`, `adapters/printer`, `adapters/cash-drawer`, `adapters/maps`, `common`. (WhatsApp wa.me NO crea módulo backend — es helper en `@pos-tercos/domain/whatsapp` + endpoint `POST /sales/:id/whatsapp-clicked` en SalesController.)
+**Dominios vivos hoy:** `auth`, `users`, `prisma`, `health`, `ingredients`, `subproducts`, `products`, `recipes`, `inventory`, `audit`, `suppliers`, `invoices`, `sales`, `kds`, `shifts`, `promotions`, `web-orders`, `web-menu`, `public-display`, `reports`, `purchase-suggestions`, `workers`, `notifications`, `adapters/llm`, `adapters/storage`, `adapters/printer`, `adapters/cash-drawer`, `adapters/whatsapp`, `common`. (WhatsApp se envía automáticamente desde `NotificationService` via `WhatsAppProvider` + `OpenWaWhatsAppAdapter`/`MockWhatsAppAdapter`. El endpoint `POST /sales/:id/whatsapp-clicked` fue **eliminado** en v2.)
 
-**Dominios pendientes:** `delivery`.
+**Dominios eliminados en v2:** `adapters/maps` (Mapbox/geocoding). **No existen más.** `delivery` nunca se creó y está descartado.
 
 **Reglas backend:**
 - ❌ NUNCA `PrismaService` en controller. Solo en service.
@@ -230,86 +234,83 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 - `apps/api` levanta en puerto `3001`. `apps/admin` en `3004`. Ambos vía `pnpm dev`.
 - En `next.config.ts` rewrites: `/api/* → http://localhost:3001/*` para que el admin cliente pegue cookies httpOnly.
 
-### 4.10 WhatsApp wa.me semi-automático con tracking (decisión 2026-05-04)
+### 4.10 WhatsApp automático vía OpenWA (decisión 2026-05-22, reorientación v2)
 
-**Cambio drástico vs plan original:** se elimina por completo el módulo WhatsApp del backend. NO hay `WhatsAppProvider`, NO hay adapter Meta, NO hay mock dev inbox, NO hay templates aprobadas, NO hay tokens de Meta. Razón: presupuesto del usuario ≤$10 USD/mes, WABA mínimo viable arranca en ~$30 USD/mes.
+> **ATENCIÓN — Esta sección reemplaza completamente la decisión anterior de wa.me (2026-05-04).** El flujo wa.me manual (FASE 9 en `main`) fue descartado y reemplazado por envío automático desde el backend.
 
-**Flujo nuevo (todo frontend, cero costo):**
+**Arquitectura actual (commit `e739ef2`):**
 
-1. **Cliente hace pedido web** → sale queda en `PENDIENTE_PAGO` y aparece en POS drawer marcado como **"Sin aceptar"**.
-2. **Cajero presiona "Aceptar y contactar"** en POS drawer:
-   - El mismo click ABRE WhatsApp Web (en su computadora) con la conversación al cliente y mensaje pre-llenado pidiendo comprobante.
-   - El click registra `POST /sales/:id/whatsapp-clicked?stage=accepted` en backend → audit log.
-3. **Cliente envía comprobante por WhatsApp** (foto Nequi/transferencia). El cajero recibe en WhatsApp normal del local.
-4. **Cajero verifica comprobante** y presiona **"Confirmar pago"** en POS:
-   - Sale pasa a `PAGADO` (flujo actual sin cambios).
-   - El mismo click ABRE WhatsApp con mensaje pre-llenado "tu pedido fue confirmado, lo estamos preparando".
-   - El click registra `POST /sales/:id/whatsapp-clicked?stage=confirmed`.
-5. **Cocinero presiona "Marcar listo"** en KDS:
-   - Sale pasa a `LISTO_DESPACHO` (flujo actual sin cambios).
-   - El mismo click ABRE WhatsApp con mensaje pre-llenado "tu pedido está listo para retirar".
-   - Solo aplica a `WEB_PICKUP`/`WEB_DELIVERY`. Para `COUNTER` no abre nada.
-   - Registra `POST /sales/:id/whatsapp-clicked?stage=ready`.
+```
+@pos-tercos/domain/whatsapp/
+├── whatsapp-provider.ts      # interface WhatsAppProvider { sendText(phone, text) }
+├── notification-messages.ts  # buildNotificationMessage(stage, snapshot, opts)
+└── index.ts
 
-**Reglas duras de la decisión:**
-- ❌ NO existe el botón "Avisar cliente" como acción separada — siempre va **acoplado** al click de transición de status (Aceptar / Confirmar pago / Marcar listo). UX casi-obligatoria: para hacer la transición de status, abre WhatsApp como side-effect del mismo click.
-- ❌ NO existe el botón "Ya pagué" del cliente en `/checkout/success/[id]` — se elimina porque el flujo es cajero-driven via WhatsApp. El sale arranca esperando "aceptación + contacto WhatsApp" del cajero.
-- ✅ El mensaje sale del WhatsApp del comercio hacia el cliente (negocio→cliente, nunca al revés). Cliente puede responder normal (comprobantes, dudas) y le llega al WhatsApp del local.
-- ✅ Tracking obligatorio: cada click registra audit log para reportes ("% de pedidos con WhatsApp enviado en cada stage").
-- ✅ Operador usa **WhatsApp Web/Desktop en el computador del POS**. El click `target="_blank"` abre `https://wa.me/<phone>?text=<encoded>` en pestaña nueva — WhatsApp Web ya logueado lo intercepta.
+apps/api/src/adapters/whatsapp/
+├── openwa.adapter.ts          # OpenWaWhatsAppAdapter — HTTP a OpenWA self-hosted
+├── mock.adapter.ts            # MockWhatsAppAdapter — loggea, no envía (dev sin OPENWA_*)
+└── whatsapp.module.ts         # @Global(), factory lazy: OPENWA_* presentes → real, si no → mock
 
-**Implementación (cuando lleguemos a FASE 9):**
+apps/api/src/notifications/
+├── notification.service.ts    # NotificationService — idempotente, fire-and-forget
+└── notification.module.ts     # importa WhatsAppModule, PrismaModule
+```
 
-- Helper puro `@pos-tercos/domain/whatsapp/build-link.ts`:
-  - `buildAcceptedLink(sale, businessName)` — pide comprobante.
-  - `buildConfirmedLink(sale, businessName)` — confirma pago, va a cocina.
-  - `buildReadyLink(sale, businessName, businessAddressShort)` — listo para retirar.
-- Endpoint backend: `POST /sales/:id/whatsapp-clicked` body `{stage: 'accepted'|'confirmed'|'ready'}`. Audit `WHATSAPP_LINK_OPENED` con metadata.
-- UI cambios:
-  - **POS `WebOrdersDrawer`**: pedidos PENDIENTE_PAGO sin click previo de "accepted" muestran badge "Sin aceptar" rojo + botón principal **"Aceptar y contactar"** (en vez del actual "Confirmar pago" directo). Click → llama `whatsapp-clicked?stage=accepted` + abre wa.me en tab nueva.
-  - **POS `ConfirmWebPaymentModal`**: al hacer click "Confirmar pago" exitoso, además de cerrar modal y refrescar, llama `whatsapp-clicked?stage=confirmed` + abre wa.me.
-  - **KDS `OrderCard`**: botón "Marcar listo" para sales WEB_*, además de transición, llama `whatsapp-clicked?stage=ready` + abre wa.me. Para COUNTER se mantiene igual sin WhatsApp.
-- Variable env nueva (opcional): `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT="Cra 43A # 11-12, Medellín"` — texto que aparece en mensaje "Te esperamos en X".
+**Flujo automático (3 notificaciones, solo WEB_PICKUP):**
 
-**Estado actual (2026-05-04, FASE 9 ✅ implementada en `ee4a9f3 1bba4ea 990c9a3 44ed21b`):**
+| Stage | `notified_*` flag en Sale | Trigger | Mensaje |
+|---|---|---|---|
+| `payment_instructions` | `notified_payment_instructions` | `POST /sales/:id/accept` (cajero) | Instrucciones de pago Nequi/transfer |
+| `payment_received` | `notified_payment_received` | `SalesService.confirmPayment` | "Pago verificado, ya en cocina" |
+| `pickup_ready` | `notified_ready_for_pickup` | `KdsService.ready` | "Listo para retirar" + dirección |
 
-- Helper puro vivo en `@pos-tercos/domain/whatsapp/` con 16/16 tests.
-- Endpoint vivo `POST /sales/:id/whatsapp-clicked` (audit-only).
-- POS drawer: row con 2 botones "📱 Aceptar y contactar" (emerald) + "Confirmar pago" (ghost).
-- POS modal: post-confirm exitoso abre wa.me automático.
-- KDS: post `Marcar listo` para WEB_* abre wa.me automático.
-- Web checkout/success: botón "Ya pagué" REMOVIDO. Banner blue explica que el local contactará por WA.
-- Configurar antes de prod: `NEXT_PUBLIC_BUSINESS_NAME` y opcional `NEXT_PUBLIC_BUSINESS_ADDRESS_SHORT` en `apps/pos/.env.local` y `apps/kds/.env.local`.
+**Reglas duras:**
+- ✅ **Idempotente por flags**: si el flag `notified_*` ya está en `true` para ese stage, `NotificationService.notify` no envía de nuevo (previene doble-envío en reintentos).
+- ✅ **Fire-and-forget**: un fallo de WhatsApp NUNCA revierte la transición de negocio. El caller usa `void this.notifications.notify(...)`.
+- ✅ **Solo WEB_PICKUP**: COUNTER no tiene notificaciones. El servicio revisa `sale.type !== 'WEB_PICKUP'` y retorna sin enviar.
+- ✅ **Persiste en `whatsapp_messages`**: cada envío (exitoso o fallido) queda registrado en la tabla con `status: 'sent' | 'failed'`.
+- ✅ **MockAdapter en dev**: sin las 3 vars `OPENWA_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID`, el módulo instancia `MockWhatsAppAdapter` que loggea el mensaje sin enviarlo. Dev funciona sin OpenWA.
+- ❌ **`POST /sales/:id/whatsapp-clicked` ELIMINADO** — era del flujo wa.me manual y ya no existe.
+- ❌ **wa.me deep links en el frontend ELIMINADOS** — POS y web ya no abren pestañas de WhatsApp.
+- ❌ **No existe `WEB_DELIVERY`** — el campo de dirección y los mensajes de delivery fueron eliminados junto con el módulo Mapbox.
 
-**Lo que NO va al sistema:**
-- Cron `fifteen-min-warning` queda eliminado de scope (era plan en FASE 9 original).
-- Recordatorio post-listo manual: si el dueño quiere implementar después, agrega un botón ad-hoc en KDS o POS, no es parte de este ciclo.
+**Nuevo endpoint de aceptación (reemplaza "Aceptar y contactar" del POS):**
+- `POST /sales/:id/accept` — `CashierAccess()`. No cambia el status del sale; llama `notifications.notify(id, 'payment_instructions')` fire-and-forget. Retorna `{ ok: true }`.
 
-**Por qué tracking sí:** vos quisiste métricas. El audit log responde "¿qué % de pedidos efectivamente recibió WhatsApp?" — útil para detectar cajeros que olvidan hacer click. Reporte va en FASE 13.
+**Variables de entorno (OpenWA):**
+- `OPENWA_URL` — URL del gateway OpenWA self-hosted (ej. `http://localhost:3000`)
+- `OPENWA_API_KEY` — API key del gateway
+- `OPENWA_SESSION_ID` — ID de sesión (ej. `tercos`)
+- `BUSINESS_NAME` — Nombre del negocio en los mensajes (server-side, no `NEXT_PUBLIC_`)
+- `BUSINESS_ADDRESS_SHORT` — Dirección corta en mensaje de "listo para retirar"
+- `PAYMENT_INSTRUCTIONS` — Texto Nequi/transfer que va en el mensaje de instrucciones
+
+**Setup OpenWA:** ver `openwa-setup.md` en raíz. **Cómo probar flujo completo:** ver `probar-backend-sin-apps.md`.
 
 ---
 
-## 5. Schema DB (28 tablas + 12 enums + 1 sequence)
+## 5. Schema DB (29 tablas + 11 enums + 1 sequence)
+
+> Actualizado en reorientación v2 (2026-05-22). Eliminados: `RepartidorAvailability`, `WEB_DELIVERY` de `SaleType`, 5 estados de delivery de `SaleStatus`. Agregada: tabla `whatsapp_messages`.
 
 ### Enums Prisma
-- `UserRole` — CAJERO, COCINERO, REPARTIDOR, ADMIN_OPERATIVO, DUENO, TRABAJADOR
-- `RepartidorAvailability` — DISPONIBLE, OCUPADO, OFFLINE
+- `UserRole` — CAJERO, COCINERO, ADMIN_OPERATIVO, DUENO, TRABAJADOR (sin REPARTIDOR)
 - `InventoryMovementType` — PURCHASE, SALE, MANUAL_ADJUSTMENT, WASTE, INITIAL
 - `StockableType` — INGREDIENT, PRODUCT
 - `InvoiceStatus` — PENDING_REVIEW, CONFIRMED, REJECTED
-- `SaleType` (FASE 5) — COUNTER, WEB_PICKUP, WEB_DELIVERY
-- `SaleStatus` (FASE 5) — PENDIENTE_PAGO, PAGADO, EN_PREPARACION, LISTO_DESPACHO, ASIGNADO, EN_RUTA, ENTREGADO, CANCELADO_NO_PAGO, CANCELADO_SIN_REEMBOLSO, INTENTO_FALLIDO, DEVUELTO, EN_DISPUTA, VOID
-- `PaymentMethod` (FASE 5) — CASH, NEQUI, DAVIPLATA, QR_BANCOLOMBIA, TRANSFER
-- `ShiftStatus` (FASE 5) — OPEN, CLOSED, RECONCILED
-- `PromotionType` (FASE 5 + 12.A) — PERCENT_OFF, BOGO, FIXED_OFF, COMBO_OFF (los 4 implementados en motor + DB + UI)
-- `PurchaseSuggestionStatus` (FASE 12.C) — PENDING, EVALUATED, ACCEPTED, REJECTED, STALE
-- `WorkerCommissionType` (FASE 14.B) — PERCENT_OF_SHIFT, FIXED_PER_SALE
+- `SaleType` — COUNTER, WEB_PICKUP (sin WEB_DELIVERY)
+- `SaleStatus` — PENDIENTE_PAGO, PAGADO, EN_PREPARACION, LISTO_DESPACHO, ENTREGADO, CANCELADO_NO_PAGO, CANCELADO_SIN_REEMBOLSO, VOID (sin ASIGNADO, EN_RUTA, INTENTO_FALLIDO, DEVUELTO, EN_DISPUTA)
+- `PaymentMethod` — CASH, NEQUI, DAVIPLATA, QR_BANCOLOMBIA, TRANSFER
+- `ShiftStatus` — OPEN, CLOSED, RECONCILED
+- `PromotionType` — PERCENT_OFF, BOGO, FIXED_OFF, COMBO_OFF (4 tipos implementados)
+- `PurchaseSuggestionStatus` — PENDING, EVALUATED, ACCEPTED, REJECTED, STALE
+- `WorkerCommissionType` — PERCENT_OF_SHIFT, FIXED_PER_SALE
 
 ### Sequences
-- `receipt_seq` (FASE 5) — monotónica, default de `sales.receipt_number`. Saltos detectables vía cron.
+- `receipt_seq` — monotónica. **Nota:** el schema actual usa `@default(autoincrement())` en `sales.receipt_number` (Prisma drift con `nextval`). Saltos detectables vía cron.
 
 ### Tablas
-1. `users`
+1. `users` — sin campo `repartidor_*`. Solo `role` enum sin REPARTIDOR.
 2. `refresh_tokens`
 3. `products` — con `direct_resale`, `unit_purchase`, `unit_stock`, `conversion_factor`, `threshold_min`, `last_unit_cost`, `last_unit_cost_date`, `is_combo`, `combo_price`
 4. `product_sizes`
@@ -324,19 +325,20 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 13. `supplier_products` — polimórfico, last_unit_price + currency + last_seen
 14. `invoices` — supplier_name, invoice_number, total, iva, status, image_url, ai_model_used, raw_extraction (JSON), uploaded_by, confirmed_by
 15. `invoice_items` — polimórfico, description_raw + matched entity
-16. `sales` (FASE 5) — receipt_number (default nextval), type, status, totals, payment, cashier, shift, delivery (NULL hasta FASE 7), idempotency_key UNIQUE
-17. `sale_items` (FASE 5) — product_id (no polimórfico), size_id NULL, modifiers_json snapshot, applied_promotion_id, line_subtotal/discount/total con CHECK
-18. `sale_status_log` (FASE 5) — insert-only via trigger; trazabilidad de cambios de status
-19. `shifts` (FASE 5) — apertura completa; cierre + reconciliación quedan para FASE 11
-20. `promotions` (FASE 5 + 12.B) — `type` enum + `discount_pct` (NULL para FIXED/BOGO) + `discount_fixed` + `bogo_buy_qty` + `bogo_get_qty` + 4 CHECK constraints per-type defensivos
-21. `promotion_products` (FASE 5) — N:M, PRIMARY KEY composite
-22. `idempotency_keys` (FASE 5) — cache de respuestas para POSTs idempotentes, TTL 7d
-23. `approval_pins` (FASE 5) — PIN hash por usuario; trigger valida que role IN (ADMIN_OPERATIVO, DUENO)
-24. `purchase_suggestions` (FASE 12.C) — polimórfico (entity_type + ingredient_id xor product_id), snapshot stock/threshold/qty/cost, `llm_rationale` + `llm_model` + `llm_evaluated_at`, status + resolved_by/at/note, CHECK polimórfico + `suggested_qty > 0`
-25. `worker_attendance` (FASE 14.B) — userId + checkIn + checkOut nullable + hoursWorked Decimal calculado, CHECK checkOut > checkIn
-26. `worker_commissions` (FASE 14.B) — userId + type enum + percent / fixedAmount + appliedAt, histórico inmutable. CHECK per-type
-27. `payment_reconciliations` (FASE 14.D) — snapshot del módulo FASE 11.E con counts + reportJson completo + importedById
-28. `_prisma_migrations`
+16. `sales` — receipt_number (autoincrement), type (COUNTER|WEB_PICKUP), status, turn_number, customer_name, customer_phone, customer_nit, totals, payment, cashier, shift, idempotency_key UNIQUE. Flags idempotencia WhatsApp: `notified_payment_instructions`, `notified_payment_received`, `notified_ready_for_pickup`, `notified_canceled`. Sin campos de delivery.
+17. `sale_items` — product_id (no polimórfico), size_id NULL, modifiers_json snapshot, applied_promotion_id, line_subtotal/discount/total con CHECK
+18. `sale_status_log` — insert-only via trigger; trazabilidad de cambios de status
+19. `shifts` — apertura + cierre completos
+20. `promotions` — `type` enum + `discount_pct` (NULL para FIXED/BOGO) + `discount_fixed` + `bogo_buy_qty` + `bogo_get_qty` + 4 CHECK constraints per-type defensivos
+21. `promotion_products` — N:M, PRIMARY KEY composite
+22. `idempotency_keys` — cache de respuestas para POSTs idempotentes, TTL 7d
+23. `approval_pins` — PIN hash por usuario; trigger valida que role IN (ADMIN_OPERATIVO, DUENO)
+24. `purchase_suggestions` — polimórfico (entity_type + ingredient_id xor product_id), snapshot stock/threshold/qty/cost, `llm_rationale` + `llm_model` + `llm_evaluated_at`, status + resolved_by/at/note
+25. `worker_attendance` — userId + checkIn + checkOut nullable + hoursWorked Decimal calculado, CHECK checkOut > checkIn
+26. `worker_commissions` — userId + type enum + percent / fixedAmount + appliedAt, histórico inmutable. CHECK per-type
+27. `payment_reconciliations` — snapshot del módulo FASE 11.E con counts + reportJson completo + importedById
+28. `whatsapp_messages` — auditoría de envíos OpenWA: saleId, stage, toPhone, body, status (`sent`|`failed`), providerMessageId, error, createdAt
+29. `_prisma_migrations`
 
 ---
 
@@ -380,13 +382,14 @@ _(ninguno — FASE 4 cerrada)_
 - `GET /public-display/state` — `@Public()`, snapshot `{ current, next[≤3], asOf }`. Filtra `type=COUNTER` + ventana 30 min
 - `GET /public-display/stream` — `@Public()`, SSE con NestJS `@Sse()`. Reconnect automático nativo del browser (`EventSource`)
 
-### Web pública pedidos (FASE 7)
+### Web pública pedidos (FASE 7 — solo WEB_PICKUP)
 - `GET /web/menu` — `@Public()`, Throttle 60/60s. `PublicMenuResponse {products, categories, asOf}`. Subset SAFE del producto (sin `lastUnitCost`/`thresholdMin`/`directResale`)
-- `POST /web/orders` — `@Public()`, Throttle 30/60s. `CreateWebOrder {type WEB_*, items, customerName, customerPhone (E.164 +57XXXXXXXXXX), deliveryAddress?, notes?}`. Header `Idempotency-Key` opcional. Retorna `{order, token, tokenExpiresAt, paymentInstructions}`. Reusa `SalesService.create` (motor de promos + expandRecipe + idempotency cache). Reglas: WEB_DELIVERY exige `deliveryAddress`; phone E.164 obligatorio.
-- `GET /web/orders/:id?token=` — `@Public()`, Throttle 120/60s. `PublicWebOrder` (subset sin paymentMethod/cashier/shift/idempotencyKey). Token HMAC SHA256 firmado, TTL 24h, valida `expectedSaleId` match (timing-safe).
-- `POST /web/orders/:id/mark-paid?token=` — `@Public()`, Throttle 10/60s. NO cambia status. Audit `SALE_STATUS_CHANGED` con `metadata.stage='customer-paid-claimed'`. Retorna `PublicWebOrder` con `customerPaidAt` poblado.
-- `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.customer-paid`, `web-order.cancelled` (este último reservado para FASE 9+).
-- Confirmación de pago de orden web reusa `POST /sales/:id/confirm-payment` (FASE 5). El cajero hace doble-validación digital normal y el sale pasa a PAGADO.
+- `POST /web/orders` — `@Public()`, Throttle 30/60s. `CreateWebOrder {type WEB_PICKUP, items, customerName, customerPhone (E.164 +57XXXXXXXXXX), notes?}`. Header `Idempotency-Key` opcional. Retorna `{order, token, tokenExpiresAt, paymentInstructions}`. Reusa `SalesService.create`. No acepta `WEB_DELIVERY` ni `deliveryAddress` (eliminados en v2).
+- `GET /web/orders/:id?token=` — `@Public()`, Throttle 120/60s. `PublicWebOrder` (subset sin paymentMethod/cashier/shift/idempotencyKey). Token HMAC SHA256, TTL 24h.
+- `WS /ws/pos` (socket.io, namespace `/ws/pos`, room `pos.web-orders`) — auth tri-modal idéntica a `/ws/kds`. Role gate `CashierAccess`. Eventos: `web-order.created`, `web-order.cancelled`.
+- `POST /sales/:id/accept` — `CashierAccess()`. El cajero acepta el pedido web; fire-and-forget `notifications.notify(id, 'payment_instructions')` vía OpenWA. Retorna `{ ok: true }`.
+- Confirmación de pago: `POST /sales/:id/confirm-payment` (sin cambios). Al confirmar, `SalesService.confirmPayment` llama `notifications.notify(id, 'payment_received')` fire-and-forget.
+- **Eliminado:** `POST /web/orders/:id/mark-paid` — deprecated, no se llama desde ninguna UI.
 
 ### RRHH (FASE 14.B)
 - `GET /workers/users` — Admin/Dueño. Lista candidatos a registrar.
@@ -411,8 +414,10 @@ _(ninguno — FASE 4 cerrada)_
 - `GET /reports/suggestions-metrics?from=&to=` — Admin/Dueño. Counts por status + acceptedEstTotal.
 - Default range: 7 días. Heatmap 30. parseDateRange acepta YYYY-MM-DD.
 
-### WhatsApp tracking (FASE 9)
-- `POST /sales/:id/whatsapp-clicked` body `{stage: 'accepted' | 'confirmed' | 'ready'}` — Cajero/Cocinero/Admin/Dueño. Audit-only (no cambia status). Coherencia stage↔status: accepted estricto (solo PENDIENTE_PAGO), confirmed permisivo, ready estricto (LISTO_DESPACHO+). Audit `WHATSAPP_LINK_OPENED` con `metadata.{stage, receiptNumber, saleStatus, hasPhone}`.
+### WhatsApp automático (v2 — reemplaza FASE 9 wa.me)
+- **NO existe** `POST /sales/:id/whatsapp-clicked` — eliminado en v2.
+- Las 3 notificaciones se disparan automáticamente desde el backend (ver sec 4.10). Métricas de cobertura quedan en tabla `whatsapp_messages` (`status='sent'`), no en `audit_log`.
+- `GET /reports/whatsapp-metrics` sigue disponible pero puede necesitar ajuste para leer de `whatsapp_messages` en lugar del audit `WHATSAPP_LINK_OPENED` (deuda menor).
 
 ### Promociones (FASE 5.C + 12.B)
 - `GET /promotions[?only_active=true]` — Cajero+ leen para tachados POS; Admin/Dueño escriben.
@@ -573,45 +578,63 @@ apps/pos/src/
 
 ---
 
-## 7.ter KDS UI vigente (FASE 6.C)
+## 7.ter KDS — Flutter (reorientación v2, WS-3)
 
-### Rutas
+> **`apps/kds` (Next.js) fue eliminado.** El KDS ahora es una app Flutter nativa (`apps/kds-flutter`) para tablet Android en la cocina.
 
-```
-/login                                   # roles permitidos: COCINERO, ADMIN_OPERATIVO, DUENO
-/unauthorized
-/                                        # OrdersGrid (server-fetch initial → WS live)
-```
+### Stack Flutter
+
+- Flutter + Dart (sin null-safety issues, SDK 3.x)
+- **Arquitectura:** Clean Architecture (core / domain / data / presentation)
+- **State:** Riverpod (providers)
+- **Models:** Freezed + json_serializable (código generado en `*.freezed.dart`, `*.g.dart`)
+- **HTTP:** Dio (`DioHttpProvider`)
+- **WS:** `socket_io_client` (conecta directo al backend `/ws/kds`)
+- **Router:** GoRouter
+- **Temas:** `AppTheme` centralizado (dark, accent rojo)
 
 ### Estructura
 
 ```
-apps/kds/src/
-├── app/
-│   ├── (authenticated)/
-│   │   ├── layout.tsx                   # KdsTopbar + main; oscuro (gray-900)
-│   │   └── page.tsx                     # SSR: getKitchenQueueServer + getAccessTokenServer en paralelo
-│   ├── login/page.tsx
-│   └── unauthorized/page.tsx
-├── components/KdsTopbar.tsx              # badge rojo "KDS" sobre fondo dark
-├── features/auth/                        # replicado de pos + getAccessTokenServer (extra)
-├── features/orders/
-│   ├── api/{list,transitions}.ts         # GET /kds/orders, POST /:id/start, /ready
-│   ├── server.ts                         # getKitchenQueueServer (SSR)
-│   ├── hooks/useElapsed.ts               # cronómetro 1s tick, isLate >= 10 min
-│   ├── hooks/useKDSSocket.ts             # socket.io-client + auth.token + dedupe + sort por paidAt
-│   └── components/{OrderCard,OrdersGrid}.tsx
-├── lib/{api-server,auth-config}.ts       # KDS_ALLOWED_ROLES = [COCINERO, ADMIN_OPERATIVO, DUENO]
-└── middleware.ts
+apps/kds-flutter/lib/
+├── main.dart
+└── app/
+    ├── core/
+    │   ├── config/app_config.dart          # vars de entorno (API URL, WS URL)
+    │   ├── constants/endpoints.dart        # rutas de API
+    │   ├── di/providers.dart               # providers Riverpod globales
+    │   ├── network/
+    │   │   ├── dio_http_provider.dart      # cliente HTTP
+    │   │   ├── kds_socket.dart             # socket.io-client /ws/kds
+    │   │   └── failure.dart + either.dart  # manejo de errores
+    │   ├── router/app_router.dart          # GoRouter (login → board)
+    │   └── theme/app_theme.dart
+    ├── domain/
+    │   ├── models/kds/
+    │   │   ├── kitchen_order_model.dart + .freezed.dart + .g.dart
+    │   │   └── kitchen_order_item_model.dart + .freezed.dart + .g.dart
+    │   └── repositories/{auth,kds}_repository.dart
+    ├── data/
+    │   ├── sources/{auth,kds}_api_provider.dart
+    │   ├── repositories_impl/{auth,kds}_repository_impl.dart
+    │   └── use_cases/{login,get_kitchen_orders,start_order,ready_order}_use_case.dart
+    └── presentation/
+        ├── auth/login_screen.dart
+        └── kds/{board_screen.dart, board_controller.dart}
 ```
 
-### Decisiones de UX/auth aplicadas
+### Pantallas
 
-- **Auth WS cross-origin**: cookie httpOnly del POS dominio (:3003) NO se envía cross-origin a la API (:3001). SSR lee la cookie con `getAccessTokenServer()` y la pasa al cliente como prop `wsToken` → `socket.io-client.handshake.auth.token`. Token TTL 15 min — si expira, el WS se desconecta y el badge muestra "Error WS"; reload trae token fresco. (Refresh automático queda como TODO para FASE 14 hardening.)
-- Socket conecta directo a `http://localhost:3001/ws/kds` (configurable con `NEXT_PUBLIC_API_WS_URL`). No usa rewrite — Next.js no proxea WebSockets confiable.
-- Cards con cronómetro live (1s tick) + ring rojo + ⚠ cuando `elapsed >= 10 min` (escalation visual sin bloqueante).
-- Botones grandes h-14 ("Iniciar" azul / "Marcar listo" verde) — pensado para tap en tablet en la cocina.
-- ConnectionBadge top-right del grid: `bg-emerald-500` live / `bg-amber-500` connecting / `bg-red-500` error.
+- **LoginScreen** — email + password, llama `POST /auth/login`, guarda token en memoria.
+- **BoardScreen** — grid de órdenes vivas (PAGADO + EN_PREPARACION). Recarga inicial vía REST (`GET /kds/orders`) y actualizaciones en tiempo real por WebSocket `/ws/kds`. Cards con cronómetro, botón "Iniciar" y "Marcar listo".
+
+### Decisiones de arquitectura Flutter
+
+- Auth WS: el token JWT se pasa en `handshake.auth.token` (no en cookie — la app no es browser). Se obtiene de `loginScreen` y lo maneja `KdsSocket`.
+- `BoardController` es un `Notifier` (Riverpod); el socket emite eventos que el controller procesa para actualizar la lista sin refetch completo.
+- Freezed para modelos: inmutables, con `copyWith`, JSON serialization autogenerada.
+- **No hay middleware de auth** (es nativo, no browser). El router solo verifica si el token está presente para decidir entre login y board.
+- Al hacer "Marcar listo", el backend (`KdsService.ready`) envía `notifications.notify(saleId, 'pickup_ready')` automáticamente (no hay acción en el Flutter para WhatsApp).
 
 ---
 
@@ -621,8 +644,8 @@ apps/kds/src/
 
 ```
 /                                        # SIN auth, menú + carrito
-/checkout                                # form 1-página pickup/delivery
-/checkout/success/[id]?token=            # tracking + payment instructions + "ya pagué"
+/checkout                                # form 1-página pickup (solo WEB_PICKUP)
+/checkout/success/[id]?token=            # tracking + instrucciones de pago
 ```
 
 ### Estructura
@@ -644,8 +667,8 @@ apps/web/src/
 │   ├── lib/cart-types.ts
 │   └── components/{CartButton, CartDrawer}.tsx
 ├── features/checkout/
-│   ├── api/{create-order, get-order, mark-paid}.ts
-│   ├── server.ts                         # getWebOrderServer + buildPaymentInstructions (espeja API)
+│   ├── api/{create-order, get-order}.ts  # mark-paid.ts ELIMINADO
+│   ├── server.ts                         # getWebOrderServer + buildPaymentInstructions
 │   └── components/{CheckoutForm, OrderStatusView, OrderStatusPoller (hook), PaymentInstructionsView}.tsx
 └── lib/{api-server, format}.ts           # publicFetch + COP Intl
 ```
@@ -654,14 +677,14 @@ apps/web/src/
 
 - Sin auth, sin login. El cliente es anónimo.
 - Carrito en localStorage (`pos-tercos-web-cart`), survive a navigation/reload. Hydration flag para evitar SSR mismatch.
-- Checkout 1-página con toggle pickup/delivery (decisión confirmada: simpler que multi-step para 1 mesa, 1 ítem promedio).
+- Checkout solo WEB_PICKUP (no delivery). Toggle pickup/delivery **eliminado** en v2.
 - Phone input con prefijo `+57` locked + 10 dígitos (E.164 estricto, alineado con backend).
-- Idempotency-Key uuid v4 generado al submit del checkout (no al abrir el modal — el form vive más).
+- Idempotency-Key uuid v4 generado al submit del checkout.
 - Token HMAC siempre en URL `?token=`, NO en localStorage. Cliente puede compartir/recuperar URL.
-- Status poller cada 5s (NO SSE) — rate-limit holgado (120/60s) y evita conexiones colgadas en pestañas inactivas. Detiene en estados terminales (ENTREGADO, CANCELADO_*, VOID, DEVUELTO, EN_DISPUTA).
-- `paymentInstructions` se reconstruye server-side en el web app (lee `NEXT_PUBLIC_PAYMENT_NEQUI/TRANSFER`) — sobrevive a reload, devices distintos, share del URL.
+- Status poller cada 5s (NO SSE) — rate-limit holgado (120/60s) y evita conexiones colgadas en pestañas inactivas. Detiene en estados terminales (ENTREGADO, CANCELADO_*, VOID).
+- `paymentInstructions` se reconstruye server-side en el web app — sobrevive a reload, devices distintos, share del URL.
 - Banner status tonal: amber pending / blue cooking / emerald ready / gray done / red failed.
-- "Ya pagué" deshabilitado tras claim — feedback "esperando verificación del cajero".
+- **"Ya pagué" REMOVIDO** (FASE 14.A + v2). Banner blue explica que el local contactará por WhatsApp con instrucciones.
 
 ---
 
@@ -698,9 +721,58 @@ apps/public-display/src/
 
 ---
 
+## 7.v2 Reorientación v2 — resumen de cambios (2026-05-22)
+
+Esta sección documenta los cambios estructurales introducidos en la rama `refactor/v2-reorientacion` sobre la base de `main` (FASES 0-15 completas). Una sesión nueva que lea este doc NO debe trabajar con los supuestos de `main`.
+
+### Commits v2 (sobre main)
+
+```
+e96ffd6 feat(kds-flutter): WebSocket /ws/kds en vivo (socket_io_client)
+99cb6a1 feat(kds-flutter): WS-3 KDS en Flutter (Clean Architecture) + elimina KDS Next
+08eca88 docs: guía para probar el backend (flujo venta web + WhatsApp) sin abrir las apps
+e739ef2 feat(whatsapp)!: WS-2 envío automático vía OpenWA (reemplaza wa.me)
+6ee44ae refactor(admin,pos): WS-4 calidad — abrir cajón + barrels + partir componentes gigantes
+385635d feat(delivery)!: elimina delivery/repartidor — solo COUNTER + WEB_PICKUP
+f1324ea chore: higiene de base — lint funcional + limpieza de código muerto
+aea24b8 feat(public-display): completa rediseño turnero kiosko + limpieza
+4b58ac5 feat(public-display): rediseño completo + watchdog kiosko + chime de turno + B-roll
+```
+
+### Cambios críticos
+
+| Área | Antes (main) | Ahora (v2) |
+|---|---|---|
+| Delivery | WEB_DELIVERY, Mapbox, 3km, `apps/repa` | **ELIMINADO**. Solo COUNTER + WEB_PICKUP |
+| WhatsApp | wa.me manual (click en frontend) | OpenWA automático desde backend (sec 4.10) |
+| KDS | `apps/kds` Next.js PWA | `apps/kds-flutter` Flutter nativo (tablet Android) |
+| `ARCHITECTURE.md` | Doc del POS | Plantilla Flutter (CrediClub) — guía para kds-flutter |
+| `packages/brand` | No existía | Nuevo — identidad visual compartida |
+| `packages/config` | Existía (vacío) | **Eliminado** |
+| Lint | `ignoreDuringBuilds: true` en varios frontends | Funcional. `eslint-plugin-react-hooks` registrado |
+| Enums eliminados | `RepartidorAvailability`, `WEB_DELIVERY`, `ASIGNADO`, `EN_RUTA`, `INTENTO_FALLIDO`, `DEVUELTO`, `EN_DISPUTA`, `REPARTIDOR` | Removidos del schema y tipos |
+| Tabla nueva | — | `whatsapp_messages` (auditoría OpenWA) |
+| Endpoint eliminado | `POST /sales/:id/whatsapp-clicked` | No existe |
+| Endpoint nuevo | — | `POST /sales/:id/accept` |
+
+### Lo que NO cambió
+
+- Todo el backend (excepto: se agrega `notifications` + `adapters/whatsapp`, se elimina `adapters/maps`).
+- `apps/admin` — sin cambios de fondo.
+- `apps/pos` — sin cambios de fondo (botón "Aceptar" ahora llama `/sales/:id/accept` en vez de abrir wa.me).
+- `apps/web` — mínimos cambios (removido toggle delivery y `mark-paid`).
+- `apps/public-display` — rediseño visual (turnero), sin cambios de backend.
+- FASES 0-15 del historial `main` — siguen siendo válidas como referencia del trabajo previo.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
-### Commits en `main` (92 hasta hoy)
+### Commits en `main` (base v1, 92 commits) + rama v2
+
+> La rama activa es `refactor/v2-reorientacion`. Los commits de `main` son historial válido de FASES 0-15. Los commits v2 están documentados en sec 7.v2.
+
+### Commits en `main` (92, base v1)
 
 ```
 8a51792 docs: FASE 15.E checklist deploy v1 (Railway + Vercel + Pi + DNS)
@@ -886,13 +958,13 @@ Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en `fase5e-y-pendient
   - Botón "Abrir cajón" solo aparece en CASH (otros métodos no manejan efectivo).
   - `directResale=true` rechaza `isCombo=true` (ya enforced en Zod). 5.E no construye combos — el "Combo Familiar" seed con `basePrice=0` queda como gap para fase 4 ajustes.
 
-### FASE 6 — KDS + Pantalla Pública · ✅ COMPLETADA
+### FASE 6 — KDS + Pantalla Pública · ✅ COMPLETADA en `main` / KDS Next.js eliminado en v2
 
 Particionada en 5 sub-sprints. Plan completo en `fase5e-y-pendientes.md` sec 3.1.
 
 - [x] **6.A backend KDS** (`1b06ffd`): deps `@nestjs/websockets` + `@nestjs/platform-socket.io` + `socket.io`. `packages/types/kds`: `KitchenStatusEnum`, `KitchenOrderSchema` (alias Sale), `KdsEventSchema`, constantes `KDS_NAMESPACE='/ws/kds'` + `KDS_QUEUE_ROOM='kitchen.queue'`. Decorator `KitchenAccess()`. `KdsModule` (forwardRef SalesModule) con: `KdsGateway` (auth tri-modal: handshake.auth.token | Authorization Bearer | cookie pos_access; verify JWT con JwtService; role gate; join room; emit), `KdsService` con `getQueue` (PAGADO + EN_PREPARACION FIFO) + `start`/`ready` (transitions con sale_status_log + audit `SALE_STATUS_CHANGED`), `KdsController` con `GET /kds/orders` + `POST /:id/start` + `POST /:id/ready`. Hook `SalesService.confirmPayment` → `kdsGateway.emit('order.created')`.
 - [x] **6.B SSE pantalla pública** (`67dd921`): `packages/types/public-display`: `PublicDisplayOrder` (saleId/receiptNumber/customerName/at — minimal seguro) + `PublicDisplayState` ({current, next[≤3], asOf}). `PublicDisplayModule` `@Global()` sin auth deps. `PublicDisplayService.getState` (current = última transición LISTO_DESPACHO de COUNTER en últimos 30 min vía sale_status_log; next = top 2 PAGADO/EN_PREPARACION FIFO). `notify()` → RxJS Subject; `stream()` con `concat(initial, updates)` emite snapshot completo. `PublicDisplayController` `@Public()` con `GET /state` + `@Sse('/stream')`. Hooks: `confirmPayment` y `KdsService.transition` llaman `publicDisplay.notify()` cuando type=COUNTER.
-- [x] **6.C apps/kds UI** (`83c186e`): scaffold replica POS con middleware Edge + `KDS_ALLOWED_ROLES = [COCINERO, ADMIN_OPERATIVO, DUENO]`. Layout dark (gray-900) + KdsTopbar rojo. `features/orders` con `useKDSSocket` (socket.io-client cross-origin :3003→:3001 con `handshake.auth.token` desde SSR), `useElapsed` (1s tick, ⚠ red ring >= 10 min), `OrderCard` con #receipt grande + items + botones h-14 ("Iniciar" azul / "Marcar listo" verde), `OrdersGrid` responsive con ConnectionBadge live.
+- [x] **6.C apps/kds UI** (`83c186e`): implementó `apps/kds` Next.js — **eliminado en v2 (commit `99cb6a1`)**. Reemplazado por `apps/kds-flutter` (ver sec 7.ter).
 - [x] **6.D apps/public-display UI** (`2434523`): kiosko CSS (cursor:none, overflow:hidden, bg-gray-950). Layout viewport sin user-scalable. `useDisplayStream` con `EventSource` (reconnect nativo + backoff browser-managed). `Display` full-screen split: current section gigante (#N text-9xl + customerName) | next section abajo. ConnectionDot top-right debug. Empty state amigable.
 
   **Decisiones tomadas en FASE 6 (no re-discutir):**
@@ -975,22 +1047,11 @@ Particionada según `fase5e-y-pendientes.md` sec 3.6.
 - 2σ requiere ≥5 shifts de baseline — si hay menos, se marca como "Sin baseline" sin error. Razonable: necesitás histórico personal para detectar desviación personal.
 - Greedy match en reconciliation prioriza primer match por orden (CSV asc, sale asc) — no el "mejor match" temporal. Aceptable para v1; FASE 14 puede sofisticar con scoring por proximidad.
 
-### FASE 8 — Mapbox + validación 3km · ✅ COMPLETADA (2 sub-sprints)
+### FASE 8 — Mapbox + validación 3km · ✅ COMPLETADA en `main` / ELIMINADA en v2
 
-- [x] **8.A** (`0a4b09a`) — backend Mapbox + haversine + 3km validation:
-  - `packages/domain/src/maps/`: `MapsProvider` interface + `GeoPoint`/`GeocodeResult` + `haversineKm` puro + `withinRadius`.
-  - `apps/api/src/adapters/maps/`: `MapboxMapsAdapter` (real geocoding), `MockMapsAdapter` (deterministic offset por hash, sin token), `MapsModule` `@Global()` con factory auto-fallback (si no hay `MAPBOX_TOKEN` → mock).
-  - `WebGeoController` `@Public() Throttle(30/60s)`: `GET /web/geocode?address=` retorna `{lat, lng, formattedAddress, withinDeliveryRadius}`. Restaurant lat/lng + radius desde env (`RESTAURANT_LAT/LNG`, `DELIVERY_RADIUS_KM=3`).
-  - `WebOrdersService.create`: si `type=WEB_DELIVERY`, valida `haversineKm(restaurant, delivery) <= radius` antes de crear (rechaza con 400 + mensaje claro).
-- [x] **8.B** (`417204d`) — apps/web checkout con autocomplete:
-  - `DeliveryAddressInput`: debounced geocode (700ms) + status banners (verde dentro de zona / amber fuera de zona / red error) + CTA "Cambiar a pickup" cuando está fuera.
-  - `CheckoutForm`: cuando `type=delivery`, exige geocode válido y dentro de radius antes de submit. Pasa `deliveryLat/Lng` al backend.
+> **En v2 (`refactor/v2-reorientacion`) todo el código de Mapbox y delivery geográfico fue eliminado (commit `385635d`).** `apps/api/src/adapters/maps/` no existe, `GET /web/geocode` no existe, `WEB_DELIVERY` no existe.
 
-  **Decisiones tomadas en FASE 8 (no re-discutir):**
-  - Mapbox > Google Places (free tier mejor + SDK liviano). Token público (`pk.`) técnicamente sirve server-side.
-  - Manejo fuera-de-zona: bloquear submit + ofrecer pickup como alternativa (banner amber + CTA), no error fatal.
-  - Mock dev: deterministic offset por hash del address. Pensado para devs sin token.
-  - Cliente del web app NUNCA llama Mapbox directo — siempre vía `/web/geocode` (throttle + auth boundary). Token Mapbox queda solo en backend.
+Historial en `main` (commits `0a4b09a 417204d`): implementó `MapsProvider` interface + `MapboxMapsAdapter` + `WebGeoController` + validación 3km + autocomplete en web checkout.
 
 ### FASE 12 — Promociones avanzadas + Auto-pedido IA · ✅ COMPLETADA (5 sub-sprints)
 
@@ -1050,57 +1111,18 @@ Particionada en 2 lados: promociones (12.A-12.B) y auto-pedido IA (12.C-12.E).
   - LLM con max_tokens=256 → ~$0.0001 por eval con Haiku 4.5. Aceptable para uso diario.
   - Conversión de unidades en el prompt: actualmente puede confundir al LLM (mezcla `unit_stock` y `unit_purchase` sin conversion factor explícito). TODO menor: clarificar el prompt, pero no bloqueante.
 
-### FASE 9 — WhatsApp wa.me semi-automático · ✅ COMPLETADA (4 sub-sprints)
+### FASE 9 — WhatsApp wa.me semi-automático · ✅ COMPLETADA en `main` / SUPERSEDIDA en v2
 
-Decisión completa en sec 4.10. Costo $0/mes. Sin Meta WABA, sin backend
-que envíe mensajes — el browser del cajero/cocinero abre wa.me deep
-links que WhatsApp Web/App ya logueado intercepta.
+> **En la rama v2 (`refactor/v2-reorientacion`) esta FASE fue reemplazada por el flujo OpenWA automático (commit `e739ef2`). El código de wa.me ya NO existe en v2.** El historial a continuación es para referencia del trabajo en `main`.
 
-Touchpoints donde se abre WhatsApp al cliente (3 únicos, todos acoplados
-al click de transición de status — sin botones extra):
+Implementación en `main` (commits `ee4a9f3 1bba4ea 990c9a3 44ed21b`):
+- Helper puro `@pos-tercos/domain/whatsapp/` con 16/16 tests (wa.me builders).
+- Endpoint `POST /sales/:id/whatsapp-clicked` (audit-only) — **eliminado en v2**.
+- POS drawer: botón "Aceptar y contactar" (wa.me) — **reemplazado en v2** por llamada a `POST /sales/:id/accept`.
+- KDS Next.js abría wa.me al "Marcar listo" — **KDS Next.js eliminado en v2**.
+- Web: botón "Ya pagué" removido en FASE 14.A.
 
-| Stage | Quién | Trigger | Tipos | Mensaje |
-|---|---|---|---|---|
-| `accepted` | Cajero (POS drawer) | Click "Aceptar y contactar" | WEB_PICKUP, WEB_DELIVERY | Pide comprobante de pago |
-| `confirmed` | Cajero (POS modal) | Post `/sales/:id/confirm-payment` | WEB_PICKUP, WEB_DELIVERY | "Pago verificado ✅, ya está en cocina" |
-| `ready` | Cocinero (KDS) | Post `/kds/orders/:id/ready` | WEB_PICKUP, WEB_DELIVERY | Pickup: "listo para retirar en X". Delivery: "salió, llega en ~20 min" |
-
-**No se notifica al cliente en**: COUNTER (cajero entrega en mano),
-sale creada (cliente recién la hizo), transiciones intermedias
-(EN_PREPARACION, ASIGNADO, EN_RUTA — el cliente las ve en el poller),
-cancelaciones (cajero matiza el mensaje manualmente).
-
-- [x] **9.A** (`ee4a9f3`) — Helper puro `@pos-tercos/domain/whatsapp/`:
-  - `WhatsAppStage = 'accepted' | 'confirmed' | 'ready'` + `WhatsAppSaleSnapshot` + `WhatsAppBuildOptions` (businessName + businessAddressShort opcional).
-  - 3 builders + dispatcher `buildLinkForStage`. Phone normalization (acepta `+57XXX`, `57XXX`, `XXX` 10 dígitos → prepend 57). Greeting solo primer nombre. Format COP minimalista (sin Intl, mantiene domain tree-shakable).
-  - PICKUP vs DELIVERY: copy distinto en `ready` (incluye dirección o "salió a entrega ~20 min").
-  - 16/16 tests unit pasan.
-  - Audit action nuevo: `WHATSAPP_LINK_OPENED`.
-
-- [x] **9.B** (`1bba4ea`) — Endpoint backend `POST /sales/:id/whatsapp-clicked`:
-  - Body Zod `{stage}`. Audit-only, no cambia status del sale.
-  - Coherencia stage↔status: `accepted` requiere PENDIENTE_PAGO (estricto), `confirmed` permisivo (tolera doble click), `ready` requiere LISTO_DESPACHO+.
-  - Roles: CAJERO + COCINERO + ADMIN + DUEÑO en un solo endpoint (no fragmentamos por stage para mantener UI simple).
-
-- [x] **9.C** (`990c9a3`) — UI POS:
-  - `apps/pos/.../web-orders/api/whatsapp.ts` — fire-and-forget audit (no bloquea apertura wa.me).
-  - `apps/pos/.../web-orders/lib/whatsapp.ts` — `openWhatsAppForSale(sale, stage)` con feedback `{opened, reason}`. `businessName` desde `NEXT_PUBLIC_BUSINESS_NAME`.
-  - `WebOrdersDrawer`: row con grid 2 columnas — primary "📱 Aceptar y contactar" (emerald) + secondary "Confirmar pago" (ghost). Hint inline + banner si popup blocked.
-  - `ConfirmWebPaymentModal`: post-confirm exitoso llama `openWhatsAppForSale(paid, 'confirmed')`. No bloquea si popup blocked (sale ya pagada).
-
-- [x] **9.D** (`44ed21b`) — KDS + remoción "Ya pagué" del web:
-  - `apps/kds/.../orders/lib/whatsapp.ts` — `openWhatsAppReady(sale)` solo para WEB_*. Audit fire-and-forget, no bloquea transición.
-  - `OrderCard.handleReady`: post `readyOrder()` llama `openWhatsAppReady(order)`. Click único del cocinero notifica al cliente.
-  - `apps/web/.../OrderStatusView`: removido botón "Ya pagué" + input referencia + estado claimed + llamada a `markOrderPaid`. Reemplazado por banner blue "¿Qué sigue? Te contactamos por WhatsApp para pedirte el comprobante".
-
-  **Decisiones tomadas en FASE 9 (no re-discutir):**
-  - WhatsApp se abre **acoplado** a transiciones de status (mismo click). Sin botón "Avisar cliente" separado. Si el cajero no quiere mandar mensaje, cierra la tab — no hay penalización.
-  - Cliente NO tiene botón "Ya pagué" — el flujo es cajero-driven via WA. Reduce confusión y elimina un estado intermedio (`customerPaidAt` ya no se setea desde web; queda en DB pero nadie lo escribe — eventualmente removible en hardening).
-  - `confirmed` tolera doble click sin error (cajero puede re-confirmar y reabrir wa.me con mensaje nuevo). `accepted` y `ready` validan estricto.
-  - Audit fire-and-forget desde UI: si falla, igual abre wa.me. La transición de status es lo que importa.
-  - `window.open(_blank, noopener,noreferrer)` desde click handler — popup blocker no debería bloquear; si bloquea, banner amber explica al cajero que permita popups.
-  - Endpoint `POST /web/orders/:id/mark-paid` queda colgado en el backend pero ya no se llama desde la UI. Mantener disponible (no breaking) pero documentado como deprecated.
-  - `customerPaidAt` field y evento WS `web-order.customer-paid` quedan funcionales pero sin escritor. Limpieza queda como TODO menor.
+**En v2:** ver sec 4.10 y sec 7.v2 para el flujo actual con OpenWA.
 
 ### FASE 13 — Reportes y Dashboard · ✅ COMPLETADA (5 sub-sprints)
 
@@ -1205,11 +1227,10 @@ cancelaciones (cajero matiza el mensaje manualmente).
   - `EscPosPrinterAdapter` + `EscPosCashDrawerAdapter` en `apps/api/src/adapters/`: POSTean al print-agent. Backup HTML del recibo persiste igual que LocalFs (sirve como fallback si agent caído).
   - Factory lazy en `PrinterModule` y `CashDrawerModule`: `PRINTER_PROVIDER=escpos` activa ambos. Default `local`.
 
-- [x] **15.D** (`b682f88`) — PWA en POS y KDS:
-  - `manifest.json` standalone landscape, theme color azul (POS) / rojo (KDS), íconos SVG inline.
+- [x] **15.D** (`b682f88`) — PWA en POS (y en el antiguo KDS Next.js):
+  - `manifest.json` standalone landscape, theme color azul (POS), íconos SVG inline.
   - Service worker minimalista: online-first con fallback `/offline.html`, stale-while-revalidate para `/_next/static/*`, no cachea `/api/*`, no toca POSTs.
-  - Layouts agregan `metadata.manifest` + `viewport.themeColor` + `<link rel="apple-touch-icon">` + `<Script>` registrando SW.
-  - Web pública y public-display NO necesitan PWA (la web es one-off del cliente, el display es kiosko fijo).
+  - **En v2:** el KDS Next.js fue eliminado; el KDS Flutter es nativo (no necesita PWA). Solo el POS mantiene la PWA.
 
 - [x] **15.E** (`8a51792`) — Deploy checklist `deploy.md`:
   - §1 Backend Railway: build/start con `prisma migrate deploy` embebido. Lista completa de env vars agrupadas por dominio.
@@ -1225,13 +1246,13 @@ cancelaciones (cajero matiza el mensaje manualmente).
   - Print Agent es app separada (Node nativo, sin Nest) — corre en hardware modesto (Raspberry Pi 4 2GB), arranque instantáneo, sin overhead.
   - PRINTER_DEVICE default null → modo "dump a disco" para dev sin hardware. Cuando llegue la impresora, el dueño edita systemd para apuntar a `/dev/usb/lp0`.
   - HTML backup del recibo se mantiene aún con ESC/POS — sirve como fallback "imprimir desde browser" si el agent está caído. Costo: doble disk I/O por print, irrelevante.
-  - Theme colors PWA: azul para POS (sigue admin), rojo para KDS (sigue topbar dark). Auto-mantenibles si cambia el tema.
+  - Theme colors PWA: azul para POS (sigue admin). KDS Flutter ya no tiene PWA (es nativa).
   - Refresh JWT en KDS WS deferido a post-launch — token TTL 15min, tab reload trae fresco. Aceptable para 1 turno por día. Si en operación se vuelve fricción, agregar al hardening post-v1.
   - Migrations pendientes (4) NO se aplican en sesión local (Docker estaba abajo). Se aplican en prod via `prisma migrate deploy` que está en el start command de Railway — automático.
 
-### Pendientes — FASE 10 (post-launch)
+### Pendientes — FASE 10 (DESCARTADA en v2)
 
-- **FASE 10** — Repartidor (DIFERIDA): `apps/repa`, asignación, GPS captura, transitions delivery. Cuando el dueño expanda a delivery propio (hoy es solo PICKUP/DELIVERY del cliente que viene a buscar).
+- **FASE 10** — Repartidor (DESCARTADA). `apps/repa` fue eliminado. El sistema solo soporta COUNTER y WEB_PICKUP. No hay planes de delivery propio para v1.
 
 ---
 
@@ -1255,7 +1276,7 @@ Project-scoped en `.claude/skills/`. Activan al reiniciar Claude Code.
 - Aplicar migraciones a Railway directamente sin revisar.
 - Agregar dependencias nuevas pesadas (>50KB minified) sin justificar.
 - Codear features completas sin partir en submódulos verificables.
-- Usar APIs externas reales en dev (Meta WhatsApp real, R2 real) — siempre por mock primero.
+- Usar APIs externas reales en dev (OpenWA real, R2 real) — siempre por mock primero.
 - Cambiar el modelo polimórfico stockables (`StockableType`).
 - Conflar `lastUnitCost` con `basePrice` en producto.
 - Saltar el banner amber de coste/venta en `InvoiceItemRow`.
@@ -1284,19 +1305,22 @@ docker compose up -d postgres
 # Aplicar migraciones (si arrancás cold)
 cd apps/api && pnpm prisma migrate deploy && cd ../..
 
-# Seed inicial (6 users, password dev12345)
+# Seed inicial (5 users, password dev12345)
 cd apps/api && pnpm prisma db seed && cd ../..
 
-# Dev de todas las apps en paralelo
+# Dev de todas las apps en paralelo (Next.js apps + API)
 pnpm dev
 
 # O solo API + Admin
 pnpm -F @pos-tercos/api dev   # localhost:3001
 pnpm -F @pos-tercos/admin dev # localhost:3004
 
+# KDS Flutter (requiere Flutter SDK + emulador Android o device físico)
+# cd apps/kds-flutter && flutter run
+
 # Validar antes de cada commit
-pnpm typecheck     # 12/12 packages
-pnpm lint
+pnpm typecheck     # todos los packages TypeScript
+pnpm lint          # eslint funcional (sin ignoreDuringBuilds)
 ```
 
 **Users seed:**
@@ -1304,8 +1328,13 @@ pnpm lint
 - `admin@dev.local` / `dev12345`
 - `cajero@dev.local` / `dev12345`
 - `cocinero@dev.local` / `dev12345`
-- `repartidor@dev.local` / `dev12345`
 - `atencion@dev.local` / `dev12345`
+
+> En v2 no existe usuario `repartidor@dev.local` (rol REPARTIDOR eliminado del enum).
+
+**OpenWA en dev:**
+- Sin las vars `OPENWA_*`, el backend usa `MockWhatsAppAdapter` — loggea los mensajes a consola, no envía nada. Las transiciones de negocio funcionan igual.
+- Para probar envío real: seguir `openwa-setup.md` y configurar `OPENWA_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID` en `apps/api/.env.local`.
 
 ---
 
@@ -1322,10 +1351,12 @@ pnpm lint
 6. Smoke test 8 pasos (`deploy.md §6`).
 7. Backup Postgres con GitHub Actions cron (`deploy.md §7`).
 
-**Variables env críticas** (referencia rápida):
-- API: `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `MAPBOX_TOKEN`, `RESTAURANT_LAT/LNG`, `STORAGE_PROVIDER=r2` + `R2_*`, `PRINTER_PROVIDER=escpos` + `PRINT_AGENT_URL/SECRET`, `OWNER_WHATSAPP_PHONE`, `BUSINESS_NAME`, `PAYMENT_INSTRUCTIONS_NEQUI/TRANSFER`.
-- Frontends: `JWT_ACCESS_SECRET` (POS/KDS edge middleware), `API_INTERNAL_URL`, `NEXT_PUBLIC_API_WS_URL`, `NEXT_PUBLIC_BUSINESS_NAME/ADDRESS_SHORT` (POS/KDS), `NEXT_PUBLIC_MAPBOX_TOKEN` (web).
+**Variables env críticas (v2):**
+- API: `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `STORAGE_PROVIDER=r2` + `R2_*`, `PRINTER_PROVIDER=escpos` + `PRINT_AGENT_URL/SECRET`, `OWNER_WHATSAPP_PHONE`, `BUSINESS_NAME`, `BUSINESS_ADDRESS_SHORT`, `PAYMENT_INSTRUCTIONS`, `OPENWA_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID`.
+- Frontends Next.js: `JWT_ACCESS_SECRET` (POS edge middleware), `API_INTERNAL_URL`, `NEXT_PUBLIC_API_WS_URL`.
+- KDS Flutter: `API_BASE_URL`, `WS_URL` en `app_config.dart` (compiladas en el build).
 - Print Agent (Pi): `PRINTER_DEVICE=/dev/usb/lp0`, `PRINT_AGENT_PORT=9100`, `PRINT_AGENT_SECRET` (matches API).
+- **Eliminadas en v2:** `MAPBOX_TOKEN`, `RESTAURANT_LAT/LNG`, `DELIVERY_RADIUS_KM`, `NEXT_PUBLIC_MAPBOX_TOKEN`, `NEXT_PUBLIC_BUSINESS_NAME/ADDRESS_SHORT` (ahora solo server-side sin `NEXT_PUBLIC_`).
 
 **Operación día a día (post-launch):**
 - Backup automático nocturno (GH Actions → R2).
@@ -1333,9 +1364,9 @@ pnpm lint
 - Audit log en `/audit` accesible solo para Dueño.
 - Dashboard `/` admin: revenue del día + WoW% + pedidos pendientes + stock crítico.
 - Sugerencias IA (`/purchase-suggestions`) — el cron horario detecta low-stock; el Dueño revisa, evalúa con IA si quiere y acepta/rechaza.
-- WhatsApp wa.me $0/mes — el cajero hace click "Aceptar y contactar" en cada pedido web.
+- WhatsApp automático vía OpenWA — el backend envía solo. El cajero solo hace `POST /sales/:id/accept`; las otras 2 notificaciones se disparan sin intervención.
 
-**Si después se necesita FASE 10** (repartidor propio): `apps/repa` PWA mobile con asignación, GPS captura cada N segundos, transitions ASIGNADO/EN_RUTA/ENTREGADO. Schema ya tiene `Sale.repartidorId` listo. Plan en `fase5e-y-pendientes.md` sec 3.4.
+**FASE 10 (repartidor): DESCARTADA.** No hay plans de delivery propio en v1.
 
 ---
 
@@ -1345,17 +1376,18 @@ Documento canónico actualizado: `pendientes-externos-y-deploy.md`. Resumen ejec
 
 | Item | Estado | Fase | Notas |
 |---|---|---|---|
-| `.env` local con secrets | ✅ | Hoy | `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `RESTAURANT_LAT/LNG` listos |
+| `.env` local con secrets | ✅ | Hoy | `JWT_*`, `WEB_ORDER_TOKEN_SECRET` listos |
 | PIN Admin Operativo dev (`654321`) | ✅ | Hoy | Dueño dev sigue en `123456`, cambiar opcional |
 | Cron diario backup Postgres → `~/backups/tercos/` | ✅ | Hoy | 2 AM, gzip; verificar Full Disk Access para `cron` en macOS |
 | OpenAI fallback (`OPENAI_API_KEY`) | ⏳ | FASE 4 (ya activa) | Recomendado cargar $5 USD para failover Anthropic |
-| Cuenta Mapbox + token público | ✅ | FASE 8 | Token verificado responde Medellín correcto. Variable `NEXT_PUBLIC_MAPBOX_TOKEN` y `MAPBOX_TOKEN` (mismo token, sin secret) |
-| WhatsApp Meta WABA | ❌ DESCARTADO | — | Reemplazado por wa.me semi-automático (sec 4.10). Costo $0/mes vs $470k WABA |
+| Cuenta Mapbox + token | ❌ ELIMINADO v2 | — | Delivery descartado; Mapbox ya no se usa |
+| WhatsApp Meta WABA | ❌ DESCARTADO | — | Reemplazado por OpenWA self-hosted (sec 4.10) |
+| OpenWA gateway self-hosted | ⏳ | v2 | Seguir `openwa-setup.md`. Requiere VPS o machine local + número WA separado |
 | Cloudflare R2 bucket `pos-tercos-prod` | ✅ | FASE 15 | Account ID `7f706ea0b23a5d402bab2ef03602ce15`, Account API Token creado, credenciales en password manager |
 | Railway backend | ⏸️ Pausado | FASE 15 | Crear servicios cuando arranque deploy. Eliminar los 5 servicios de prueba creados antes |
-| Vercel frontends (5 proyectos) | ⏸️ Pausado | FASE 15 | Crear cuando arranque deploy |
+| Vercel frontends (Next.js apps) | ⏸️ Pausado | FASE 15 | Admin, POS, web, public-display. KDS Flutter va en Play Store o APK directo. |
 | Dominio + DNS Cloudflare | ⏳ | FASE 15 | Recomendado: comprar `tercosburgers.co` en Cloudflare Registrar |
-| Hardware local (impresora, cajón, tablet, Pi) | ⏳ | FASE 15 | Comprar 2-3 sem antes de inaugurar. ~$2.5M COP versión económica |
+| Hardware local (impresora, cajón, tablet POS, tablet KDS Android, Pi) | ⏳ | FASE 15 | KDS ahora en tablet Android nativa (Flutter). ~$2.5M COP versión económica |
 | Print Agent en Raspberry Pi | ⏳ | FASE 15 | Deploy systemd service tras hardware |
 | DIAN factura electrónica | ❌ DESCARTADO v1 | — | No aplica hasta superar umbral DIAN o decisión de negocio |
 | Pasarela pagos online (Wompi, MP) | ❌ DESCARTADO v1 | — | Flujo Nequi/transfer manual con verificación cajero alcanza |

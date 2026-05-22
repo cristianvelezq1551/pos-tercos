@@ -126,3 +126,22 @@ sed -i '' 's/^OPENWA_/# OPENWA_/' apps/api/.env
 - El envío de WhatsApp **nunca bloquea la venta**: si OpenWA está caído, el pedido
   avanza igual y el fallo queda registrado en `whatsapp_messages` (status `failed`).
 - Idempotente: re-disparar la misma etapa no reenvía (flags `notified_*` en `sales`).
+
+## Tests automatizados (e2e)
+
+Tests de integración del flujo del dinero (sales / shifts / invoices) contra una
+DB de test separada (nunca tocan `pos_tercos_dev`):
+
+```bash
+# crear la DB de test (una vez)
+docker exec pos-tercos-postgres createdb -U pos pos_tercos_test
+# aplicar el schema a la test DB (PASS está en apps/api/.env → DATABASE_URL)
+cd apps/api
+DATABASE_URL="postgresql://pos:<PASS>@localhost:5432/pos_tercos_test?schema=public" pnpm prisma migrate deploy
+# correr (25 tests)
+DATABASE_URL="postgresql://pos:<PASS>@localhost:5432/pos_tercos_test?schema=public" pnpm test:e2e
+```
+
+Cada test trunca la test DB antes de correr (repetibles). Cubren: crear venta
+COUNTER + idempotencia + confirmar pago, cierre de turno con descuadre, y
+confirmar factura (movimientos PURCHASE + lastUnitCost).
