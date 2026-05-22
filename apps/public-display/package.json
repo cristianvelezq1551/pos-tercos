@@ -13,6 +13,8 @@
     "@pos-tercos/brand": "workspace:*",
     "@pos-tercos/types": "workspace:*",
     "@pos-tercos/ui": "workspace:*",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^1.14.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -2,43 +2,38 @@
 
 import type { PublicDisplayState } from '@pos-tercos/types';
 import { useDisplayStream } from '../hooks/useDisplayStream';
-import { useImagePrefetch } from '../hooks/useImagePrefetch';
+import { useAudioContext } from '../hooks/useAudioContext';
 import { useKioskGuards } from '../hooks/useKioskGuards';
 import { useStreamWatchdog } from '../hooks/useStreamWatchdog';
 import { useTurnChime } from '../hooks/useTurnChime';
-import { ConnectionIndicator } from './ConnectionIndicator';
-import { Header } from './Header';
-import { IdleView } from './IdleView';
-import { PreparingView } from './PreparingView';
-import { ReadyView } from './ReadyView';
-
-type DisplayMode = 'ready' | 'preparing' | 'idle';
-
-function pickMode(state: PublicDisplayState): DisplayMode {
-  if (state.current) return 'ready';
-  if (state.next.length > 0) return 'preparing';
-  return 'idle';
-}
+import { AudioDebugPanel } from './AudioDebugPanel';
+import { AudioPrimer } from './AudioPrimer';
+import { Brand } from './Brand';
+import { Carousel } from './Carousel';
+import { Clock } from './Clock';
+import { TurnBadgeCircular } from './TurnBadgeCircular';
+import { WhiteFlashOverlay } from './WhiteFlashOverlay';
 
 export function Display({ initial }: { initial: PublicDisplayState }) {
-  const { state, connection } = useDisplayStream(initial);
+  const { state } = useDisplayStream(initial);
+  useAudioContext();
   useKioskGuards();
   useStreamWatchdog();
-  useImagePrefetch(state);
   useTurnChime(state.currentTurn);
-  const mode = pickMode(state);
 
   return (
-    <div className="relative flex h-dvh w-dvw flex-col overflow-hidden bg-background text-foreground">
-      <Header turn={state.currentTurn} />
-      <main className="flex flex-1 flex-col px-[5vw] pb-[5vh] pt-[2vh]">
-        {mode === 'ready' && state.current ? (
-          <ReadyView current={state.current} next={state.next} />
-        ) : null}
-        {mode === 'preparing' ? <PreparingView next={state.next} /> : null}
-        {mode === 'idle' ? <IdleView /> : null}
-      </main>
-      <ConnectionIndicator connection={connection} />
+    <div className="relative h-dvh w-dvw overflow-hidden bg-bg-dark text-text-white">
+      {/* Carrusel ocupa el viewport entero (cover, recorta si aspect ratio != 16:9). */}
+      <Carousel currentTurn={state.currentTurn} />
+
+      {/* Chrome posicionado sobre el viewport real — siempre visible. */}
+      <Brand />
+      <Clock />
+      <TurnBadgeCircular value={state.currentTurn} />
+
+      <WhiteFlashOverlay value={state.currentTurn} />
+      <AudioPrimer />
+      <AudioDebugPanel />
     </div>
   );
 }
