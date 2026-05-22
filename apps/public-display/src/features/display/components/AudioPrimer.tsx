@@ -44,14 +44,15 @@ export function AudioPrimer() {
     window.addEventListener('keydown', dismiss, { once: true });
     window.addEventListener('touchstart', dismiss, { once: true });
 
-    // Auto-dismiss después de 8s aunque no haya gesture (TVs que sí permiten
-    // autoplay sin gesture) — el AudioContext puede estar running ya.
+    // Auto-dismiss SIEMPRE a los 8s, haya o no gesture. En un kiosko sin touch
+    // el chime puede quedar mudo, pero el overlay NUNCA debe tapar el turnero.
     const auto = setTimeout(() => {
       const ctx = getAudioContext();
-      if (ctx && ctx.state === 'running') {
-        sessionStorage.setItem('audio-primed', '1');
-        setVisible(false);
+      if (ctx && ctx.state === 'suspended') {
+        void ctx.resume().catch(() => undefined);
       }
+      sessionStorage.setItem('audio-primed', '1');
+      setVisible(false);
     }, 8000);
 
     return () => {

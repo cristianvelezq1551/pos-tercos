@@ -12,17 +12,19 @@ const API_PUBLIC_URL =
 const DEBOUNCE_MS = 200;
 const STALE_AFTER_MS = 60_000;
 const POLL_INTERVAL_MS = 30_000;
+const RECONNECT_BACKOFF_MS = 3_000;
 
 export type StreamConnection = 'connecting' | 'live' | 'reconnecting';
 
 /**
  * Conecta al SSE público y refresca el state.
- *  - Debounce 200 ms: si llegan varias updates seguidas, aplica solo la
- *    última al render. Evita re-renders innecesarios.
- *  - Fallback poll: si el state quedó stale >60 s (SSE caído sin que el
- *    browser reporte error todavía), refetchea `/public-display/state` cada
- *    30 s hasta volver a la frescura.
- *  - Reconnect del browser nativo via EventSource (backoff exponencial).
+ *  - `initial` (SSR) SOLO siembra el estado inicial; después manda el SSE.
+ *    No se re-sincroniza con `initial` para no revertir el turno en vivo.
+ *  - Debounce 200 ms + dedupe por `currentTurn`: la pantalla solo re-renderiza
+ *    cuando cambia el turno (evita parpadeo del carrusel ante notifies por venta).
+ *  - Fallback poll: si el state quedó stale >60 s, refetchea `/state` cada 30 s.
+ *  - Reconnect nativo del browser + recreación manual del EventSource si el
+ *    browser lo cierra de forma permanente (ej. 502 en un redeploy).
  */
 export function useDisplayStream(initial: PublicDisplayState) {
   const [state, setState] = useState<PublicDisplayState>(initial);
@@ -30,43 +32,61 @@ export function useDisplayStream(initial: PublicDisplayState) {
   const asOfRef = useRef(initial.asOf);
 
   useEffect(() => {
-    setState(initial);
-    asOfRef.current = initial.asOf;
-  }, [initial]);
-
-  useEffect(() => {
-    const url = `${API_PUBLIC_URL}/public-display/stream`;
-    const es = new EventSource(url);
+    let es: EventSource | null = null;
     let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
     let pendingState: PublicDisplayState | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
 
     const flush = () => {
       if (pendingState) {
         const next = pendingState;
         asOfRef.current = next.asOf;
-        setState(next);
+        // Solo re-render si cambió el turno visible.
+        setState((prev) =>
+          prev.currentTurn === next.currentTurn ? prev : next,
+        );
       }
       pendingTimeout = null;
       pendingState = null;
     };
 
-    es.onopen = () => setConnection('live');
-    es.onmessage = (ev: MessageEvent<string>) => {
-      try {
-        const parsed = PublicDisplayStateSchema.safeParse(JSON.parse(ev.data));
-        if (!parsed.success) return;
-        pendingState = parsed.data;
-        if (pendingTimeout !== null) clearTimeout(pendingTimeout);
-        pendingTimeout = setTimeout(flush, DEBOUNCE_MS);
-      } catch {
-        // ignore malformed
-      }
+    const connect = () => {
+      es = new EventSource(`${API_PUBLIC_URL}/public-display/stream`);
+      es.onopen = () => setConnection('live');
+      es.onmessage = (ev: MessageEvent<string>) => {
+        try {
+          const parsed = PublicDisplayStateSchema.safeParse(JSON.parse(ev.data));
+          if (!parsed.success) return;
+          pendingState = parsed.data;
+          if (pendingTimeout !== null) clearTimeout(pendingTimeout);
+          pendingTimeout = setTimeout(flush, DEBOUNCE_MS);
+        } catch {
+          // ignore malformed
+        }
+      };
+      es.onerror = () => {
+        setConnection('reconnecting');
+        // EventSource CLOSED = el browser no reintentará solo. Lo recreamos.
+        if (es && es.readyState === EventSource.CLOSED && !closed) {
+          es.close();
+          if (reconnectTimer === null) {
+            reconnectTimer = setTimeout(() => {
+              reconnectTimer = null;
+              connect();
+            }, RECONNECT_BACKOFF_MS);
+          }
+        }
+      };
     };
-    es.onerror = () => setConnection('reconnecting');
+
+    connect();
 
     return () => {
+      closed = true;
       if (pendingTimeout !== null) clearTimeout(pendingTimeout);
-      es.close();
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+      es?.close();
     };
   }, []);
 
@@ -85,7 +105,9 @@ export function useDisplayStream(initial: PublicDisplayState) {
         const parsed = PublicDisplayStateSchema.safeParse(json);
         if (parsed.success && !cancelled) {
           asOfRef.current = parsed.data.asOf;
-          setState(parsed.data);
+          setState((prev) =>
+            prev.currentTurn === parsed.data.currentTurn ? prev : parsed.data,
+          );
         }
       } catch {
         // ignore — el SSE seguirá intentando reconectar

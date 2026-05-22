@@ -1,35 +1,33 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import type { StreamConnection } from './useDisplayStream';
 
-const HEARTBEAT_MS = 5_000;
-const FREEZE_THRESHOLD_MS = 120_000;
-const CHECK_MS = 10_000;
+const UNHEALTHY_RELOAD_MS = 180_000; // 3 min sin conexión sana → recargar
+const CHECK_MS = 15_000;
 
 /**
- * Heartbeat de auto-recovery. Si los renders de React quedan freeze >120 s
- * (memory leak, exception loop, etc.), recarga la página. No detecta un
- * freeze duro del JS engine — eso lo maneja el browser con "Page Unresponsive".
+ * Auto-recovery por salud de conexión: si el SSE queda en estado distinto a
+ * `live` de forma continua por más de [UNHEALTHY_RELOAD_MS] (server caído,
+ * EventSource que no logra reconectar, proxy roto), recarga la página para
+ * forzar SSR fresco + EventSource nuevo. Un período idle normal (sin cambios
+ * de turno) NO dispara nada porque la conexión sigue `live`.
  */
-export function useStreamWatchdog() {
-  const [, setBeat] = useState(0);
-  const lastRenderRef = useRef(Date.now());
+export function useStreamWatchdog(connection: StreamConnection) {
+  const unhealthySinceRef = useRef<number | null>(null);
 
-  // Marca el momento de cada render real.
   useEffect(() => {
-    lastRenderRef.current = Date.now();
-  });
+    if (connection === 'live') {
+      unhealthySinceRef.current = null;
+    } else if (unhealthySinceRef.current === null) {
+      unhealthySinceRef.current = Date.now();
+    }
+  }, [connection]);
 
-  // Pulsa state cada 5 s para forzar re-render.
-  useEffect(() => {
-    const id = setInterval(() => setBeat((b) => (b + 1) % 1_000_000), HEARTBEAT_MS);
-    return () => clearInterval(id);
-  }, []);
-
-  // Watchdog independiente: si no hay renders en > FREEZE_THRESHOLD_MS, reload.
   useEffect(() => {
     const id = setInterval(() => {
-      if (Date.now() - lastRenderRef.current > FREEZE_THRESHOLD_MS) {
+      const since = unhealthySinceRef.current;
+      if (since !== null && Date.now() - since > UNHEALTHY_RELOAD_MS) {
         window.location.reload();
       }
     }, CHECK_MS);
