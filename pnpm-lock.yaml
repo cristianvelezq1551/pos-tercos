@@ -218,67 +218,6 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
-  apps/kds:
-    dependencies:
-      '@pos-tercos/brand':
-        specifier: workspace:*
-        version: link:../../packages/brand
-      '@pos-tercos/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@pos-tercos/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      '@pos-tercos/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
-      jose:
-        specifier: ^5.9.6
-        version: 5.10.0
-      next:
-        specifier: ^15.1.0
-        version: 15.5.15(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      react:
-        specifier: ^19.0.0
-        version: 19.2.5
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.2.5(react@19.2.5)
-      socket.io-client:
-        specifier: ^4.8.1
-        version: 4.8.3
-      zod:
-        specifier: ^3.24.1
-        version: 3.25.76
-    devDependencies:
-      '@tailwindcss/postcss':
-        specifier: ^4.0.0
-        version: 4.2.4
-      '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.17
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.0.0
-        version: 19.2.3(@types/react@19.2.14)
-      eslint:
-        specifier: ^9.0.0
-        version: 9.39.4(jiti@2.6.1)
-      eslint-config-next:
-        specifier: ^15.1.0
-        version: 15.5.15(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
-      postcss:
-        specifier: ^8.5.0
-        version: 8.5.12
-      tailwindcss:
-        specifier: ^4.0.0
-        version: 4.2.4
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
   apps/pos:
     dependencies:
       '@pos-tercos/brand':

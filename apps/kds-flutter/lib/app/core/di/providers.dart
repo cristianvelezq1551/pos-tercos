@@ -1,0 +1,50 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:kds/app/core/network/dio_http_provider.dart';
+import 'package:kds/app/data/repositories_impl/auth_repository_impl.dart';
+import 'package:kds/app/data/repositories_impl/kds_repository_impl.dart';
+import 'package:kds/app/data/use_cases/get_kitchen_orders_use_case.dart';
+import 'package:kds/app/data/use_cases/login_use_case.dart';
+import 'package:kds/app/data/use_cases/ready_order_use_case.dart';
+import 'package:kds/app/data/use_cases/start_order_use_case.dart';
+import 'package:kds/app/domain/repositories/auth_repository.dart';
+import 'package:kds/app/domain/repositories/kds_repository.dart';
+
+// ── Infrastructure ────────────────────────────────────────────────────────────
+
+final secureStorageProvider = Provider<FlutterSecureStorage>(
+  (ref) => const FlutterSecureStorage(),
+);
+
+final dioHttpProvider = Provider<DioHttpProvider>(
+  (ref) => DioHttpProvider(storage: ref.read(secureStorageProvider)),
+);
+
+// ── Repositories ──────────────────────────────────────────────────────────────
+
+final authRepositoryProvider = Provider<AuthRepository>(
+  (ref) => AuthRepositoryImpl(http: ref.read(dioHttpProvider)),
+);
+
+final kdsRepositoryProvider = Provider<KdsRepository>(
+  (ref) => KdsRepositoryImpl(http: ref.read(dioHttpProvider)),
+);
+
+// ── Use cases ─────────────────────────────────────────────────────────────────
+
+final loginUseCaseProvider = Provider<LoginUseCase>(
+  (ref) => LoginUseCase(repository: ref.read(authRepositoryProvider)),
+);
+
+final getKitchenOrdersUseCaseProvider = Provider<GetKitchenOrdersUseCase>(
+  (ref) =>
+      GetKitchenOrdersUseCase(repository: ref.read(kdsRepositoryProvider)),
+);
+
+final startOrderUseCaseProvider = Provider<StartOrderUseCase>(
+  (ref) => StartOrderUseCase(repository: ref.read(kdsRepositoryProvider)),
+);
+
+final readyOrderUseCaseProvider = Provider<ReadyOrderUseCase>(
+  (ref) => ReadyOrderUseCase(repository: ref.read(kdsRepositoryProvider)),
+);

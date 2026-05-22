@@ -48,7 +48,7 @@ export default tseslint.config(
   {
     // React surfaces: enforce hooks correctness
     files: [
-      'apps/{admin,pos,kds,web,public-display,repa}/**/*.{ts,tsx}',
+      'apps/{admin,pos,web,public-display}/**/*.{ts,tsx}',
       'packages/{ui,brand}/**/*.{ts,tsx}',
     ],
     plugins: { 'react-hooks': reactHooks },

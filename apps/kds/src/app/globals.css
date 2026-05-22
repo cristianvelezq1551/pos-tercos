@@ -1,6 +1,0 @@
-@import 'tailwindcss';
-@import '../../../../packages/ui/src/styles/tokens.css';
-@source '../../../../packages/ui/src/**/*.{ts,tsx}';
-@source '../../../../packages/brand/src/**/*.{ts,tsx}';
-
-/* KDS arranca en tema oscuro por default — ver layout.tsx (data-theme="dark") */
