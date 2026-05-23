@@ -109,6 +109,8 @@ export const SaleSchema = z.object({
   shiftId: z.string().uuid().nullable(),
 
   notes: z.string().nullable(),
+  /** Motivo de anulación (solo cuando status=VOID). */
+  voidReason: z.string().nullable().optional(),
   idempotencyKey: z.string().nullable(),
   createdAt: z.string().datetime(),
 

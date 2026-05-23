@@ -281,3 +281,16 @@ export const DashboardSummarySchema = z.object({
   pendingSuggestions: z.number().int().nonnegative(),
 });
 export type DashboardSummary = z.infer<typeof DashboardSummarySchema>;
+
+// ====================================================================
+// RESUMEN / ANÁLISIS CON IA (texto en lenguaje natural)
+// ====================================================================
+
+export const AiSummarySchema = z.object({
+  /** Texto generado por la IA (español). */
+  text: z.string(),
+  /** Modelo usado, ej. "anthropic:claude-haiku-4-5". */
+  modelUsed: z.string(),
+  generatedAt: z.string().datetime(),
+});
+export type AiSummary = z.infer<typeof AiSummarySchema>;

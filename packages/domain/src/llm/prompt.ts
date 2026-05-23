@@ -106,3 +106,92 @@ export function buildPurchaseSuggestionUserPrompt(input: {
 function formatNumber(n: number): string {
   return Math.round(n).toLocaleString('es-CO');
 }
+
+// ====================================================================
+// Asistente de cierre de caja (FASE IA — explica el descuadre)
+// ====================================================================
+
+export const SHIFT_CLOSE_SYSTEM = `Sos el asistente de caja de un restaurante de comida rápida en Colombia. Te dan el resumen del cierre de una caja y explicás, en español claro y directo, cómo quedó y por qué pudo darse la diferencia (sobrante/faltante).
+
+Reglas:
+- Máximo 3 frases cortas. Tono profesional, sin alarmar de más.
+- Si la diferencia es 0 o menor a $1.000, decí que la caja cuadró bien.
+- Si hay faltante, mencioná causas probables según los datos (vueltos mal dados, ventas en efectivo, salidas de efectivo sin registrar, anulaciones). Si hay sobrante, lo mismo al revés.
+- No inventes datos que no estén. No des cifras nuevas; referite a las que te dan.`;
+
+export interface ShiftCloseAnalysisInput {
+  openingCash: number;
+  cashSalesTotal: number;
+  cashIn: number;
+  cashOut: number;
+  expectedCash: number;
+  countedCash: number;
+  difference: number; // counted - expected
+  voidCount: number;
+  noSaleDrawerCount: number;
+}
+
+export function buildShiftCloseUserPrompt(i: ShiftCloseAnalysisInput): string {
+  const cop = (n: number) => `$${formatNumber(n)}`;
+  const signo = i.difference > 0 ? 'sobrante' : i.difference < 0 ? 'faltante' : 'exacto';
+  return [
+    'Cierre de caja:',
+    `- Apertura (efectivo inicial): ${cop(i.openingCash)}`,
+    `- Ventas en efectivo: ${cop(i.cashSalesTotal)}`,
+    `- Entradas de efectivo (movimientos): ${cop(i.cashIn)}`,
+    `- Salidas de efectivo (movimientos): ${cop(i.cashOut)}`,
+    `- Esperado en caja: ${cop(i.expectedCash)}`,
+    `- Contado físicamente: ${cop(i.countedCash)}`,
+    `- Diferencia: ${cop(i.difference)} (${signo})`,
+    `- Ventas anuladas en el turno: ${i.voidCount}`,
+    `- Aperturas de cajón sin venta: ${i.noSaleDrawerCount}`,
+    '',
+    'Explicá cómo quedó la caja y la causa probable de la diferencia.',
+  ].join('\n');
+}
+
+// ====================================================================
+// Resumen diario para el dueño (FASE IA — lenguaje natural)
+// ====================================================================
+
+export const DAILY_SUMMARY_SYSTEM = `Sos el analista de operación de un restaurante de comida rápida en Colombia. Te dan métricas del día y escribís un resumen ejecutivo para el dueño, en español, claro y accionable.
+
+Reglas:
+- Máximo 5 frases. Empezá por lo más importante (ventas del día).
+- Resaltá lo bueno y lo que requiere atención (descuadres, anulaciones, demoras de cocina, stock bajo).
+- Cerrá con UNA sugerencia concreta si los datos la justifican.
+- No inventes datos. Usá solo lo que te dan.`;
+
+export interface DailySummaryInput {
+  date: string; // YYYY-MM-DD
+  revenue: number;
+  orderCount: number;
+  avgTicket: number;
+  cashRevenue: number;
+  digitalRevenue: number;
+  voidCount: number;
+  cashDifference: number | null; // del cierre del día, si lo hubo
+  delayedKitchenCount: number;
+  lowStockCount: number;
+  topProducts: Array<{ name: string; qty: number }>;
+}
+
+export function buildDailySummaryUserPrompt(i: DailySummaryInput): string {
+  const cop = (n: number) => `$${formatNumber(n)}`;
+  const lines = [
+    `Día: ${i.date}`,
+    `- Ventas: ${cop(i.revenue)} en ${i.orderCount} pedidos (ticket promedio ${cop(i.avgTicket)})`,
+    `- Efectivo: ${cop(i.cashRevenue)} | Digital: ${cop(i.digitalRevenue)}`,
+    `- Anulaciones: ${i.voidCount}`,
+    `- Diferencia de caja al cierre: ${i.cashDifference === null ? 'sin cierre' : cop(i.cashDifference)}`,
+    `- Pedidos demorados en cocina (>10 min): ${i.delayedKitchenCount}`,
+    `- Insumos/productos con stock bajo: ${i.lowStockCount}`,
+  ];
+  if (i.topProducts.length > 0) {
+    lines.push(
+      `- Más vendidos: ${i.topProducts.map((p) => `${p.name} (${p.qty})`).join(', ')}`,
+    );
+  }
+  lines.push('', 'Escribí el resumen del día para el dueño.');
+  return lines.join('\n');
+}

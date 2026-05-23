@@ -123,6 +123,8 @@ export const ProductSchema = z.object({
   isCombo: z.boolean(),
   comboPrice: z.number().nullable(),
   isActive: z.boolean(),
+  /** "86" manual: agotado, no vendible (cajero + web) sin tocar el catálogo. */
+  soldOut: z.boolean(),
   // Direct-resale fields (FASE 4 refactor)
   directResale: z.boolean(),
   unitPurchase: z.string().nullable(),
@@ -261,6 +263,35 @@ export const SetComboComponentsSchema = z.object({
   components: z.array(ComboComponentInputSchema).min(1),
 });
 export type SetComboComponents = z.infer<typeof SetComboComponentsSchema>;
+
+// ====================================================================
+// DISPONIBILIDAD / STOCK EN TIEMPO REAL
+// ====================================================================
+
+/** Disponibilidad de un producto para vender (cajero + web). */
+export const ProductAvailabilitySchema = z.object({
+  productId: z.string().uuid(),
+  /**
+   * false = agotado (manual), reventa sin stock, o preparado/combo sin insumos
+   * suficientes para 1 unidad → invalidado en la UI.
+   */
+  available: z.boolean(),
+  /** Stock real solo para reventa directa (bebidas); null para preparados/combos. */
+  stock: z.number().nullable(),
+  /**
+   * Motivo de no-disponibilidad para UI interna (cajero/admin). Null si está
+   * disponible. Ej: "Sin Pan de hamburguesa", "Agotado (manual)", "Sin stock".
+   * No se expone al cliente final (web muestra solo "Agotado").
+   */
+  reason: z.string().nullable(),
+});
+export type ProductAvailability = z.infer<typeof ProductAvailabilitySchema>;
+
+export const ProductAvailabilityResponseSchema = z.array(ProductAvailabilitySchema);
+
+/** POST /products/:id/sold-out — marca/desmarca agotado (86). */
+export const SetSoldOutSchema = z.object({ soldOut: z.boolean() });
+export type SetSoldOut = z.infer<typeof SetSoldOutSchema>;
 
 // ====================================================================
 // RECIPES

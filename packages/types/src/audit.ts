@@ -38,7 +38,10 @@ export const AuditActionEnum = z.enum([
   'CASH_DRAWER_OPENED_NO_SALE',
   'SHIFT_OPENED',
   'SHIFT_CLOSED',
+  'SHIFT_REOPENED',
   'SHIFT_DISCREPANCY_DETECTED',
+  'CASH_MOVEMENT_IN',
+  'CASH_MOVEMENT_OUT',
 
   // Promotions (FASE 5+)
   'PROMOTION_CREATED',
@@ -82,6 +85,10 @@ export const AuditActionEnum = z.enum([
 
   // Persistencia reconciliación (FASE 14.D)
   'RECONCILIATION_IMPORTED',
+
+  // KDS (bitácora de cocina): tardanza de preparación. Login/logout de la
+  // cocina quedan en AUTH_LOGIN/AUTH_LOGOUT del usuario COCINERO.
+  'KDS_ORDER_DELAYED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 

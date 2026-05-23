@@ -28,10 +28,30 @@ export interface PurchaseSuggestionEvalResult {
   modelUsed: string;
 }
 
+// ====================================================================
+// Completado genérico (asistente de cierre, resumen diario, etc.)
+// ====================================================================
+
+export interface LLMCompletionRequest {
+  systemPrompt: string;
+  userPrompt: string;
+  /** Máx tokens de salida. Default razonable lo pone el adapter. */
+  maxTokens?: number;
+}
+
+export interface LLMCompletionResult {
+  /** Texto generado (español). */
+  text: string;
+  /** Identifier del modelo usado (anthropic:claude-haiku-4-5, etc). */
+  modelUsed: string;
+}
+
 export interface LLMProvider {
   readonly name: string;
   extractInvoice(req: LLMInvoiceExtractionRequest): Promise<LLMInvoiceExtractionResult>;
   evaluatePurchaseSuggestion(
     req: PurchaseSuggestionEvalRequest,
   ): Promise<PurchaseSuggestionEvalResult>;
+  /** Completado de texto genérico (system + user). */
+  complete(req: LLMCompletionRequest): Promise<LLMCompletionResult>;
 }

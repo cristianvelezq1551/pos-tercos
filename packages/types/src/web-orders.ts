@@ -45,6 +45,8 @@ export type CreateWebOrder = z.infer<typeof CreateWebOrderSchema>;
 export const PublicWebOrderSchema = z.object({
   id: z.string().uuid(),
   receiptNumber: z.number().int().positive(),
+  /** Turno mostrado al cliente. null hasta que el cajero confirme el pago. */
+  turnNumber: z.number().int().positive().nullable(),
   type: WebOrderTypeEnum,
   status: z.string(),
   customerName: z.string(),
