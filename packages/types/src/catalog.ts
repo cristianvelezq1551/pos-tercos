@@ -240,6 +240,29 @@ export const UpdateProductSchema = z
 export type UpdateProduct = z.infer<typeof UpdateProductSchema>;
 
 // ====================================================================
+// EDICIÓN DE OPCIONES (variantes + extras) Y COMBO — replace semantics
+// ====================================================================
+
+/** Variante en edición: `id` presente = existente (se actualiza); ausente = nueva. */
+export const ProductSizeEditSchema = ProductSizeInputSchema.extend({
+  id: z.string().uuid().optional(),
+});
+export type ProductSizeEdit = z.infer<typeof ProductSizeEditSchema>;
+
+/** PUT /products/:id/options — reemplaza variantes + extras del producto. */
+export const SetProductOptionsSchema = z.object({
+  sizes: z.array(ProductSizeEditSchema),
+  modifiers: z.array(ProductModifierInputSchema),
+});
+export type SetProductOptions = z.infer<typeof SetProductOptionsSchema>;
+
+/** PUT /products/:id/combo — reemplaza los componentes de un combo. */
+export const SetComboComponentsSchema = z.object({
+  components: z.array(ComboComponentInputSchema).min(1),
+});
+export type SetComboComponents = z.infer<typeof SetComboComponentsSchema>;
+
+// ====================================================================
 // RECIPES
 // ====================================================================
 
@@ -273,6 +296,8 @@ export const RecipeEdgeSchema = z.object({
   id: z.string().uuid(),
   parentProductId: z.string().uuid().nullable(),
   parentSubproductId: z.string().uuid().nullable(),
+  /** Receta por variante (proteína). Aditiva sobre la receta base del producto. */
+  parentSizeId: z.string().uuid().nullable(),
   childIngredientId: z.string().uuid().nullable(),
   childSubproductId: z.string().uuid().nullable(),
   quantityNeta: z.number(),
@@ -282,7 +307,7 @@ export const RecipeEdgeSchema = z.object({
 export type RecipeEdge = z.infer<typeof RecipeEdgeSchema>;
 
 export const RecipeResponseSchema = z.object({
-  parentType: z.enum(['product', 'subproduct']),
+  parentType: z.enum(['product', 'subproduct', 'size']),
   parentId: z.string().uuid(),
   edges: z.array(RecipeEdgeSchema),
 });
