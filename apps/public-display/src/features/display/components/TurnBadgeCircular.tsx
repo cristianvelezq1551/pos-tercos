@@ -80,21 +80,29 @@ function RingPulse({ active }: { active: boolean }) {
   );
 }
 
-export function TurnBadgeCircular({ value }: { value: number }) {
+export function TurnBadgeCircular({
+  value,
+  trigger,
+}: {
+  value: number | null;
+  trigger: number;
+}) {
   const [changed, setChanged] = useState(false);
   const prevRef = useRef<number | null>(null);
 
+  // Animar en cada llamado (trigger = callSeq) — incluido re-llamar el mismo
+  // número, donde `value` no cambia pero `trigger` sí.
   useEffect(() => {
     if (prevRef.current === null) {
-      prevRef.current = value;
+      prevRef.current = trigger;
       return;
     }
-    if (prevRef.current === value) return;
-    prevRef.current = value;
+    if (prevRef.current === trigger) return;
+    prevRef.current = trigger;
     setChanged(true);
     const id = setTimeout(() => setChanged(false), 1500);
     return () => clearTimeout(id);
-  }, [value]);
+  }, [trigger]);
 
   return (
     <motion.div
@@ -169,7 +177,7 @@ export function TurnBadgeCircular({ value }: { value: number }) {
         >
           <AnimatePresence mode="popLayout">
             <motion.div
-              key={value}
+              key={value ?? 'none'}
               variants={flipVariants}
               initial="enter"
               animate="center"
@@ -188,7 +196,7 @@ export function TurnBadgeCircular({ value }: { value: number }) {
               }}
               className="tabular"
             >
-              {value}
+              {value ?? '—'}
             </motion.div>
           </AnimatePresence>
         </div>

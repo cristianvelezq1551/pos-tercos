@@ -20,8 +20,9 @@ export type StreamConnection = 'connecting' | 'live' | 'reconnecting';
  * Conecta al SSE público y refresca el state.
  *  - `initial` (SSR) SOLO siembra el estado inicial; después manda el SSE.
  *    No se re-sincroniza con `initial` para no revertir el turno en vivo.
- *  - Debounce 200 ms + dedupe por `currentTurn`: la pantalla solo re-renderiza
- *    cuando cambia el turno (evita parpadeo del carrusel ante notifies por venta).
+ *  - Debounce 200 ms + dedupe por `callSeq`: la pantalla solo re-renderiza
+ *    cuando hay un llamado nuevo (incluido re-llamar el mismo número). Evita
+ *    parpadeo del carrusel ante notifies de la cola que no son llamados.
  *  - Fallback poll: si el state quedó stale >60 s, refetchea `/state` cada 30 s.
  *  - Reconnect nativo del browser + recreación manual del EventSource si el
  *    browser lo cierra de forma permanente (ej. 502 en un redeploy).
@@ -42,10 +43,8 @@ export function useDisplayStream(initial: PublicDisplayState) {
       if (pendingState) {
         const next = pendingState;
         asOfRef.current = next.asOf;
-        // Solo re-render si cambió el turno visible.
-        setState((prev) =>
-          prev.currentTurn === next.currentTurn ? prev : next,
-        );
+        // Solo re-render si hubo un llamado nuevo (callSeq cambió).
+        setState((prev) => (prev.callSeq === next.callSeq ? prev : next));
       }
       pendingTimeout = null;
       pendingState = null;
@@ -106,7 +105,7 @@ export function useDisplayStream(initial: PublicDisplayState) {
         if (parsed.success && !cancelled) {
           asOfRef.current = parsed.data.asOf;
           setState((prev) =>
-            prev.currentTurn === parsed.data.currentTurn ? prev : parsed.data,
+            prev.callSeq === parsed.data.callSeq ? prev : parsed.data,
           );
         }
       } catch {

@@ -6,10 +6,9 @@ import {
 const API_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
 const EMPTY_STATE: PublicDisplayState = {
-  current: null,
-  next: [],
+  currentTurn: null,
+  callSeq: 0,
   asOf: new Date(0).toISOString(),
-  currentTurn: 1,
 };
 
 export async function getInitialDisplayState(): Promise<PublicDisplayState> {

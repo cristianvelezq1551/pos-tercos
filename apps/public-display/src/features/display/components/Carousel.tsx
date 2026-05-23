@@ -47,21 +47,21 @@ const slideVariants = {
   },
 };
 
-export function Carousel({ currentTurn }: { currentTurn: number }) {
+export function Carousel({ trigger }: { trigger: number }) {
   const [index, setIndex] = useState(moduleIndex);
   const turnRef = useRef<number | null>(null);
 
-  // Cambio de turno → marca pausa hasta now + 5 s. NO toca el contador
-  // del slide actual.
+  // Llamado de turno (trigger = callSeq) → marca pausa hasta now + 5 s. NO
+  // toca el contador del slide actual.
   useEffect(() => {
     if (turnRef.current === null) {
-      turnRef.current = currentTurn;
+      turnRef.current = trigger;
       return;
     }
-    if (turnRef.current === currentTurn) return;
-    turnRef.current = currentTurn;
+    if (turnRef.current === trigger) return;
+    turnRef.current = trigger;
     modulePausedUntil = Date.now() + TURN_PAUSE_MS;
-  }, [currentTurn]);
+  }, [trigger]);
 
   // Tick cada 500 ms — condicional. Solo avanza si:
   //  1) Pasaron ≥ 10 s desde el último avance (moduleLastAdvance es módulo,

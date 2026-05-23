@@ -21,19 +21,19 @@ export function Display({ initial }: { initial: PublicDisplayState }) {
   useKioskGuards();
   useWakeLock();
   useStreamWatchdog(connection);
-  useTurnChime(state.currentTurn);
+  useTurnChime(state.callSeq);
 
   return (
     <div className="relative h-dvh w-dvw overflow-hidden bg-bg-dark text-text-white">
       {/* Carrusel ocupa el viewport entero (cover, recorta si aspect ratio != 16:9). */}
-      <Carousel currentTurn={state.currentTurn} />
+      <Carousel trigger={state.callSeq} />
 
       {/* Chrome posicionado sobre el viewport real — siempre visible. */}
       <Brand />
       <Clock />
-      <TurnBadgeCircular value={state.currentTurn} />
+      <TurnBadgeCircular value={state.currentTurn} trigger={state.callSeq} />
 
-      <WhiteFlashOverlay value={state.currentTurn} />
+      <WhiteFlashOverlay trigger={state.callSeq} />
       <AudioPrimer />
       <AudioDebugPanel />
 

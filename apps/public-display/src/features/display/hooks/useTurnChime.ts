@@ -69,25 +69,26 @@ async function announce(): Promise<void> {
 }
 
 /**
- * Anuncia el cambio de turno. Ignora el primer mount.
+ * Anuncia cada llamado (`trigger` = callSeq, monotónico). Suena también al
+ * re-llamar el mismo número. Ignora el primer mount.
  * Throttle 800 ms para evitar doble play en doble click del cajero.
  */
-export function useTurnChime(currentTurn: number) {
+export function useTurnChime(trigger: number) {
   const previousRef = useRef<number | null>(null);
   const lastPlayedRef = useRef<number>(0);
 
   useEffect(() => {
     if (previousRef.current === null) {
-      previousRef.current = currentTurn;
+      previousRef.current = trigger;
       return;
     }
-    if (previousRef.current === currentTurn) return;
-    previousRef.current = currentTurn;
+    if (previousRef.current === trigger) return;
+    previousRef.current = trigger;
 
     const now = Date.now();
     if (now - lastPlayedRef.current < THROTTLE_MS) return;
     lastPlayedRef.current = now;
 
     void announce();
-  }, [currentTurn]);
+  }, [trigger]);
 }
