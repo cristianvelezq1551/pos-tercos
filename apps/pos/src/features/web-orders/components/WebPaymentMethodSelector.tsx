@@ -3,8 +3,8 @@
 import type { PaymentMethod } from '@pos-tercos/types';
 import { cn } from '@pos-tercos/ui';
 
+// Los pedidos web siempre se pagan por transferencia (no hay efectivo online).
 const METHODS: { method: PaymentMethod; label: string }[] = [
-  { method: 'CASH', label: 'Efectivo' },
   { method: 'TRANSFER', label: 'Transferencia' },
 ];
 

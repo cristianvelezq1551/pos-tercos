@@ -1,41 +1,37 @@
 import { redirect } from 'next/navigation';
+import { OpsSidebar } from '../../components/OpsSidebar';
 import { CatalogGrid } from '../../features/catalog';
 import { getActiveProductsServer } from '../../features/catalog/server';
-import { CartPanel, DayHistoryPanel } from '../../features/sales';
-import { getCurrentShiftServer } from '../../features/shifts/server';
-import { TurnPanel } from '../../features/turn';
+import { CartPanel } from '../../features/sales';
+import { StaleShiftGate } from '../../features/shifts';
+import { getCurrentShiftStatusServer } from '../../features/shifts/server';
 
 export default async function PosHomePage() {
-  const shift = await getCurrentShiftServer();
+  const { shift, stalePreviousDay } = await getCurrentShiftStatusServer();
   if (!shift) {
     redirect('/shift/open');
   }
+  // Caja que quedó abierta de un día anterior: bloquear venta hasta cerrarla.
+  if (stalePreviousDay) {
+    return <StaleShiftGate shift={shift} />;
+  }
   const products = await getActiveProductsServer();
   return (
-    <div className="grid h-full grid-cols-1 lg:grid-cols-[minmax(0,360px)_1fr_360px]">
-      {/* Columna izquierda: gestor de turnos (arriba) + historial (abajo). */}
-      <aside className="flex h-full min-h-0 flex-col gap-3 overflow-hidden border-r border-border bg-muted/20 p-3">
-        <section className="shrink-0 rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="caps mb-2.5 text-xs font-semibold tracking-[0.2em] text-muted-foreground">
-            Turnos
-          </h2>
-          <TurnPanel />
-        </section>
-        <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-card p-3 shadow-sm">
-          <h2 className="caps mb-2.5 shrink-0 text-xs font-semibold tracking-[0.2em] text-muted-foreground">
-            Historial del día
-          </h2>
-          <DayHistoryPanel />
-        </section>
-      </aside>
+    <div className="flex h-full min-h-0">
+      {/*
+        Barra de operación (Turnos / Historial en pestañas) — visible desde lg.
+        En pantallas chicas se accede por los botones del topbar (mismo
+        contenido en modal), así no se pierde funcionalidad.
+      */}
+      <OpsSidebar />
 
-      {/* Centro: catálogo de productos (como estaba). */}
-      <section className="flex flex-col overflow-hidden border-r border-border">
-        <CatalogGrid products={products} />
+      {/* Núcleo: catálogo + carrito — siempre visible, ocupa el resto. */}
+      <section className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <CatalogGrid products={products} />
+        </div>
+        <CartPanel />
       </section>
-
-      {/* Derecha: carrito (como estaba). */}
-      <CartPanel />
     </div>
   );
 }

@@ -5,7 +5,13 @@ import { Badge, Button } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { VoidModal } from './VoidModal';
 
-export function VoidSaleAction({ shiftId }: { shiftId: string | null }) {
+export function VoidSaleAction({
+  shiftId,
+  className,
+}: {
+  shiftId: string | null;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [lastVoided, setLastVoided] = useState<Sale | null>(null);
 
@@ -23,8 +29,9 @@ export function VoidSaleAction({ shiftId }: { shiftId: string | null }) {
         onClick={() => setOpen(true)}
         disabled={!shiftId}
         title={shiftId ? 'Anular una venta del turno actual' : 'Abre un turno primero'}
+        className={className}
       >
-        Anular
+        Anular venta
       </Button>
       <VoidModal
         open={open}

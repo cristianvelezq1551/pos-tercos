@@ -56,6 +56,7 @@ export function CartPanel() {
     setLastSale({
       id: s.saleId,
       receiptNumber: s.receiptNumber,
+      turnNumber: s.turnNumber,
       total: s.total,
       paymentMethod: s.paymentMethod,
       changeDue: s.changeDue,
@@ -68,7 +69,7 @@ export function CartPanel() {
   };
 
   return (
-    <aside className="flex h-full flex-col border-l border-border bg-card">
+    <aside className="flex h-full w-[clamp(260px,28vw,340px)] shrink-0 flex-col border-l border-border bg-card">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="font-display text-lg font-bold tracking-tight text-foreground">
           Carrito

@@ -1,19 +1,24 @@
 'use client';
 
-import type { Shift } from '@pos-tercos/types';
+import type { CashMovement, Shift } from '@pos-tercos/types';
 import {
   Button,
+  Checkbox,
   Dialog,
   FormField,
   Input,
   LoadingSkeleton,
   NumberInput,
+  cn,
   formatDate,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { listSales } from '../../sales';
 import { closeShift } from '../api/close';
+import { listCashMovements } from '../api';
+import { cashMovementsNet, sumBreakdown, toBreakdownLines } from '../lib/denominations';
 import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
+import { DenominationCounter } from './DenominationCounter';
 import { DifferenceWidget } from './DifferenceWidget';
 import { ShiftZReport } from './ShiftZReport';
 
@@ -29,8 +34,15 @@ export function CloseShiftModal({
   onClosed: (shift: Shift) => void;
 }) {
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
+  const [movements, setMovements] = useState<CashMovement[]>([]);
   const [loading, setLoading] = useState(false);
-  const [counted, setCounted] = useState<number | null>(null);
+  // Arqueo por denominación (default) o monto directo.
+  const [arqueo, setArqueo] = useState(true);
+  const [counts, setCounts] = useState<Record<number, number>>({});
+  const [manual, setManual] = useState<number | null>(null);
+  // Conteo ciego: no mostrar el esperado hasta revelar (anti-sesgo).
+  const [blind, setBlind] = useState(true);
+  const [revealed, setRevealed] = useState(false);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -38,27 +50,41 @@ export function CloseShiftModal({
   useEffect(() => {
     if (!open || !shift) return;
     setSummary(null);
-    setCounted(null);
+    setMovements([]);
+    setArqueo(true);
+    setCounts({});
+    setManual(null);
+    setBlind(true);
+    setRevealed(false);
     setNotes('');
     setError(null);
     setPending(false);
     setLoading(true);
-    listSales({ shiftId: shift.id, limit: 200 })
-      .then((sales) => setSummary(computeShiftSummary(sales)))
+    Promise.all([
+      listSales({ shiftId: shift.id, limit: 200 }),
+      listCashMovements(shift.id),
+    ])
+      .then(([sales, movs]) => {
+        setSummary(computeShiftSummary(sales));
+        setMovements(movs);
+      })
       .catch((err) =>
-        setError(err instanceof Error ? err.message : 'Error cargando ventas'),
+        setError(err instanceof Error ? err.message : 'Error cargando el cierre'),
       )
       .finally(() => setLoading(false));
   }, [open, shift?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const net = useMemo(() => cashMovementsNet(movements), [movements]);
   const expectedCash = useMemo(() => {
     if (!shift || !summary) return null;
-    return shift.openingCash + summary.cashSalesTotal;
-  }, [shift, summary]);
+    return shift.openingCash + summary.cashSalesTotal + net.net;
+  }, [shift, summary, net]);
 
-  const countedNum = counted ?? 0;
+  const countedNum = arqueo ? sumBreakdown(counts) : (manual ?? 0);
+  const hasCount = arqueo ? Object.values(counts).some((n) => n > 0) : manual !== null;
+  const showResult = !blind || revealed;
   const difference = expectedCash !== null ? countedNum - expectedCash : 0;
-  const canConfirm = summary !== null && counted !== null && countedNum >= 0 && !pending;
+  const canConfirm = summary !== null && hasCount && countedNum >= 0 && !pending;
 
   const handleConfirm = async () => {
     if (!shift || !canConfirm) return;
@@ -67,6 +93,7 @@ export function CloseShiftModal({
     try {
       const closed = await closeShift(shift.id, {
         countedCash: countedNum,
+        breakdown: arqueo ? toBreakdownLines(counts) : undefined,
         notes: notes.trim() || undefined,
       });
       onClosed(closed);
@@ -99,29 +126,74 @@ export function CloseShiftModal({
       <div className="space-y-5">
         {loading ? (
           <LoadingSkeleton shape="text" count={5} />
-        ) : summary ? (
+        ) : null}
+
+        {/* Reporte de cierre: oculto en conteo ciego hasta revelar. */}
+        {!loading && summary && showResult ? (
           <ShiftZReport
             shift={shift}
             summary={summary}
             expectedCash={expectedCash ?? 0}
+            cashIn={net.cashIn}
+            cashOut={net.cashOut}
           />
         ) : null}
 
-        <FormField label="Efectivo contado físicamente (COP)" required>
-          <NumberInput
-            value={counted}
-            onChange={setCounted}
-            prefix="$"
-            min={0}
-            placeholder={expectedCash !== null ? String(expectedCash) : '0'}
-            disabled={loading || pending}
-            autoFocus
-            required
-          />
-        </FormField>
+        {/* Controles de arqueo / conteo ciego. */}
+        {!loading && summary ? (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Checkbox
+              checked={arqueo}
+              onChange={(e) => setArqueo(e.target.checked)}
+              label="Arqueo por denominación"
+              disabled={pending}
+            />
+            <Checkbox
+              checked={blind}
+              onChange={(e) => {
+                setBlind(e.target.checked);
+                if (e.target.checked) setRevealed(false);
+              }}
+              label="Conteo ciego (no ver el esperado)"
+              disabled={pending}
+            />
+          </div>
+        ) : null}
 
-        {expectedCash !== null && counted !== null ? (
-          <DifferenceWidget difference={difference} />
+        {!loading && summary ? (
+          arqueo ? (
+            <DenominationCounter counts={counts} onChange={setCounts} disabled={pending} />
+          ) : (
+            <FormField label="Efectivo contado físicamente (COP)" required>
+              <NumberInput
+                value={manual}
+                onChange={setManual}
+                prefix="$"
+                min={0}
+                placeholder={showResult && expectedCash !== null ? String(expectedCash) : '0'}
+                disabled={pending}
+                autoFocus
+                required
+              />
+            </FormField>
+          )
+        ) : null}
+
+        {/* Diferencia: visible solo si no es ciego o ya se reveló. */}
+        {!loading && summary && hasCount ? (
+          showResult ? (
+            <DifferenceWidget difference={difference} />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setRevealed(true)}
+              className={cn(
+                'w-full rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50',
+              )}
+            >
+              Conteo ciego activo · tocá para revelar el esperado y la diferencia
+            </button>
+          )
         ) : null}
 
         <FormField label="Notas (opcional)">

@@ -22,9 +22,14 @@ export function LastSaleBanner({
         <Check className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
         <div className="flex-1 leading-tight">
           <p className="text-sm font-semibold text-foreground">
-            Venta #{sale.receiptNumber} pagada
+            {sale.turnNumber !== null ? (
+              <>Turno #{sale.turnNumber} · pagado</>
+            ) : (
+              <>Venta pagada</>
+            )}
           </p>
           <p className="mt-0.5 text-muted-foreground">
+            Recibo #{sale.receiptNumber} ·{' '}
             <Money amount={sale.total} size="xs" weight="medium" className="text-current" /> ·{' '}
             {sale.paymentMethod}
             {sale.changeDue > 0 ? (

@@ -22,6 +22,7 @@ const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 export interface CheckoutSuccess {
   saleId: string;
   receiptNumber: number;
+  turnNumber: number | null;
   total: number;
   paymentMethod: PaymentMethod;
   changeDue: number;
@@ -103,6 +104,7 @@ export function CheckoutModal({
       onSuccess({
         saleId: paid.id,
         receiptNumber: paid.receiptNumber,
+        turnNumber: paid.turnNumber,
         total: paid.total,
         paymentMethod: method,
         changeDue,

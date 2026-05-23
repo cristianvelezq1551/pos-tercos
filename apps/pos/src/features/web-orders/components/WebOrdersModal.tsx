@@ -12,9 +12,10 @@ import {
   cn,
   formatDate,
 } from '@pos-tercos/ui';
-import { useCallback, useEffect, useState } from 'react';
-import { ACTIVE_SALE_STATUSES, SALE_STATUS_MAPPING, listSales } from '../../sales';
-import { cancelWebOrder, markWebOrderReady, startWebOrder } from '../api';
+import type { SaleStatus } from '@pos-tercos/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SALE_STATUS_MAPPING, listSales } from '../../sales';
+import { cancelWebOrder, markWebOrderReady } from '../api';
 import { useKdsLiveRefresh } from '../hooks/useKdsLiveRefresh';
 import { saleToPublicWebOrder } from '../lib/project';
 import { ConfirmWebPaymentModal } from './ConfirmWebPaymentModal';
@@ -26,6 +27,26 @@ const STALE_MIN = 15;
 function minutesSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
 }
+
+function startOfTodayIso(): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+interface WebFilter {
+  key: string;
+  label: string;
+  match: (s: SaleStatus) => boolean;
+}
+
+const FILTERS: WebFilter[] = [
+  { key: 'pago', label: 'Pend. pago', match: (s) => s === 'PENDIENTE_PAGO' },
+  { key: 'cocina', label: 'En cocina', match: (s) => s === 'PAGADO' || s === 'EN_PREPARACION' },
+  { key: 'listos', label: 'Listos', match: (s) => s === 'LISTO_DESPACHO' },
+  { key: 'entregados', label: 'Entregados', match: (s) => s === 'ENTREGADO' },
+  { key: 'todos', label: 'Todos', match: () => true },
+];
 
 /** Color del tiempo: verde <7 min, ámbar 7-10, rojo >10 (igual que el KDS). */
 function elapsedTone(sale: Sale): string {
@@ -55,22 +76,35 @@ export function WebOrdersModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<PublicWebOrder | null>(null);
+  const [filterKey, setFilterKey] = useState('pago');
 
   const refresh = useCallback(async () => {
     try {
-      const all = await listSales({ type: 'WEB_PICKUP', limit: 100 });
-      const active = all
-        .filter((s) => ACTIVE_SALE_STATUSES.includes(s.status))
-        .sort(
-          (a, b) =>
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        );
-      setOrders(active);
+      // Todos los pedidos web de hoy → permite el selector por estado con conteos.
+      const all = await listSales({
+        type: 'WEB_PICKUP',
+        from: startOfTodayIso(),
+        limit: 200,
+      });
+      all.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setOrders(all);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error cargando pedidos web');
     }
   }, []);
+
+  const filter = FILTERS.find((f) => f.key === filterKey) ?? FILTERS[0]!;
+  const visible = useMemo(
+    () => orders.filter((o) => filter.match(o.status)),
+    [orders, filter],
+  );
+  const pendingCount = useMemo(
+    () => orders.filter((o) => o.status === 'PENDIENTE_PAGO').length,
+    [orders],
+  );
 
   // Tiempo real: mismo estado que el KDS (cuando cocina inicia/marca listo).
   useKdsLiveRefresh(wsToken, open, refresh);
@@ -89,7 +123,7 @@ export function WebOrdersModal({
         open={open}
         onClose={onClose}
         title="Pedidos web"
-        description={`${orders.length} activo${orders.length === 1 ? '' : 's'}`}
+        description={`${pendingCount} pendiente${pendingCount === 1 ? '' : 's'} por confirmar pago`}
         maxWidth="max-w-xl"
         footer={
           <Button variant="ghost" onClick={onClose}>
@@ -98,6 +132,28 @@ export function WebOrdersModal({
         }
       >
         <div className="space-y-4">
+          {/* Selector por estado con conteos */}
+          <div className="flex flex-wrap gap-1.5">
+            {FILTERS.map((f) => {
+              const count = orders.filter((o) => f.match(o.status)).length;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setFilterKey(f.key)}
+                  className={cn(
+                    'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                    filterKey === f.key
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:bg-muted/40',
+                  )}
+                >
+                  {f.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
           {loading && orders.length === 0 ? (
             <LoadingSkeleton shape="table-row" count={3} />
           ) : error ? (
@@ -107,15 +163,15 @@ export function WebOrdersModal({
             >
               {error}
             </p>
-          ) : orders.length === 0 ? (
+          ) : visible.length === 0 ? (
             <EmptyState
-              title="Sin pedidos web activos"
+              title="Sin pedidos en este filtro"
               description="Cuando entre un pedido aparece acá."
               size="sm"
             />
           ) : (
             <ul className="divide-y divide-border">
-              {orders.map((o) => (
+              {visible.map((o) => (
                 <li key={o.id} className="py-4 first:pt-0 last:pb-0">
                   <WebOrderRow
                     sale={o}
@@ -229,7 +285,14 @@ function WebOrderRow({
               </Button>
             )}
           </div>
-        ) : (
+        ) : sale.status === 'PAGADO' ? (
+          // Pagado, en cola de cocina. El cajero NO inicia pedidos (eso es del
+          // KDS); solo espera a que la cocina lo tome.
+          <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
+            En cola de cocina — la cocina lo inicia
+          </p>
+        ) : sale.status === 'EN_PREPARACION' ? (
+          // Solo se marca listo cuando ya está iniciado en cocina.
           <div className="space-y-2">
             {stale ? (
               <div className="rounded-lg border border-warning-border bg-warning-bg/40 px-3 py-2">
@@ -246,19 +309,12 @@ function WebOrderRow({
               size="sm"
               className="w-full"
               disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  // El cajero solo marca listo. Si aún no inició en cocina,
-                  // lo arranca y lo marca listo de una.
-                  if (sale.status === 'PAGADO') await startWebOrder(sale.id);
-                  await markWebOrderReady(sale.id, stale && silent);
-                })
-              }
+              onClick={() => run(() => markWebOrderReady(sale.id, stale && silent))}
             >
               {busy ? 'Marcando…' : 'Marcar listo'}
             </Button>
           </div>
-        )}
+        ) : null}
       </div>
       {err ? (
         <p className="mt-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[0.6875rem] text-destructive">

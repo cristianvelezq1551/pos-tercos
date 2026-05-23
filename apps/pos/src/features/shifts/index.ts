@@ -3,5 +3,6 @@ export { CloseShiftModal } from './components/CloseShiftModal';
 export { CloseShiftAction } from './components/CloseShiftAction';
 export { CajaAction } from './components/CajaAction';
 export { ShiftCashBadge } from './components/ShiftCashBadge';
+export { StaleShiftGate } from './components/StaleShiftGate';
 export { getCurrentShift, openShift, closeShift } from './api';
-export { getCurrentShiftServer } from './server';
+export { getCurrentShiftServer, getCurrentShiftStatusServer } from './server';

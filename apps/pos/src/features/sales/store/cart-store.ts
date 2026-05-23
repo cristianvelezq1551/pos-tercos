@@ -16,6 +16,7 @@ interface AddInput {
 export interface LastSaleSummary {
   id: string;
   receiptNumber: number;
+  turnNumber: number | null;
   total: number;
   paymentMethod: string;
   changeDue: number;

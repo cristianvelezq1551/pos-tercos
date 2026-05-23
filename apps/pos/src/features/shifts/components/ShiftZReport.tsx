@@ -46,10 +46,15 @@ export function ShiftZReport({
   shift,
   summary,
   expectedCash,
+  cashIn = 0,
+  cashOut = 0,
 }: {
   shift: Shift;
   summary: ShiftSummary;
   expectedCash: number;
+  /** Entradas/salidas de efectivo del turno (movimientos de caja). */
+  cashIn?: number;
+  cashOut?: number;
 }) {
   return (
     <section className="rounded-xl bg-muted/40 p-4">
@@ -71,6 +76,12 @@ export function ShiftZReport({
               value={v.total}
             />
           ))}
+        {cashIn > 0 ? (
+          <Row label="Entradas de efectivo" value={cashIn} positive />
+        ) : null}
+        {cashOut > 0 ? (
+          <Row label="Salidas de efectivo" value={-cashOut} />
+        ) : null}
         <div className="border-t border-border pt-2">
           <Row label="Esperado en caja" value={expectedCash} bold />
         </div>

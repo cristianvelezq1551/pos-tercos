@@ -2,8 +2,9 @@
 
 import type { PublicWebOrder } from '@pos-tercos/types';
 import { Button, cn } from '@pos-tercos/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWebOrdersSocket } from '../hooks/useWebOrdersSocket';
+import { playWebOrderChime } from '../lib/order-chime';
 import { WebOrdersModal } from './WebOrdersModal';
 
 /**
@@ -23,12 +24,19 @@ export function WebOrdersAction({
   // El contenido del modal lo maneja el propio modal vía REST (más resiliente).
   const { orders } = useWebOrdersSocket(initial, wsToken);
   const [pulse, setPulse] = useState(false);
+  const prevCount = useRef(initial.length);
 
+  // Solo al ENTRAR un pedido nuevo (el contador sube): suena + pulsa. No al
+  // bajar (cuando el cajero confirma/rechaza) ni al montar.
   useEffect(() => {
-    if (orders.length === 0) return;
-    setPulse(true);
-    const id = setTimeout(() => setPulse(false), 1500);
-    return () => clearTimeout(id);
+    if (orders.length > prevCount.current) {
+      playWebOrderChime();
+      setPulse(true);
+      const id = setTimeout(() => setPulse(false), 4000);
+      prevCount.current = orders.length;
+      return () => clearTimeout(id);
+    }
+    prevCount.current = orders.length;
   }, [orders.length]);
 
   const total = orders.length;
@@ -36,15 +44,20 @@ export function WebOrdersAction({
   return (
     <>
       <Button
-        variant="outline"
+        variant={pulse ? 'default' : 'outline'}
         size="sm"
         onClick={() => setOpen(true)}
-        className={cn('relative', pulse && 'motion-safe:animate-pulse')}
+        className={cn(
+          'relative transition-all',
+          pulse &&
+            'scale-105 ring-2 ring-warning ring-offset-2 ring-offset-background motion-safe:animate-pulse',
+        )}
       >
-        Pedidos web
+        {pulse ? '🔔 ¡Nuevo pedido!' : 'Pedidos web'}
         {total > 0 ? (
           <span
-            aria-label={`${total} pedidos en espera`}
+            aria-label={`${total} pedidos pendientes por confirmar pago`}
+            title="Pendientes por confirmar pago"
             className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[0.625rem] font-bold text-warning-foreground"
           >
             {total}

@@ -96,7 +96,23 @@ export function useWebOrdersSocket(
     socket.on('web-order.created', apply);
     socket.on('web-order.cancelled', apply);
 
+    // Red de seguridad: el badge cuenta PENDIENTE_PAGO. Cuando el cajero
+    // confirma/rechaza un pedido NO llega evento web-order, así que sin esto
+    // el contador quedaba stale (seguía contando pedidos ya cobrados/entregados).
+    // Re-sincroniza cada 12s contra REST (fuente de verdad).
+    const resync = () =>
+      void fetchPendingWebOrders()
+        .then((sales) => {
+          const projected = sales
+            .map(saleToPublicWebOrder)
+            .filter((o): o is PublicWebOrder => o !== null);
+          setOrders(projected);
+        })
+        .catch(() => undefined);
+    const pollId = setInterval(resync, 12_000);
+
     return () => {
+      clearInterval(pollId);
       socket.disconnect();
       socketRef.current = null;
     };

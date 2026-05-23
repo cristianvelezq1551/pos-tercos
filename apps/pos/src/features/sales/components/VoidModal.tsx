@@ -1,6 +1,6 @@
 'use client';
 
-import type { Sale } from '@pos-tercos/types';
+import type { Sale, SaleStatus } from '@pos-tercos/types';
 import {
   Button,
   Dialog,
@@ -9,14 +9,18 @@ import {
   Input,
   LoadingSkeleton,
   Money,
+  StatusBadge,
   cn,
   formatDate,
 } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { listSales } from '../api/list';
 import { voidSale } from '../api/void';
+import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
 
-const VOIDABLE_LIMIT = 20;
+const VOIDABLE_LIMIT = 50;
+/** Solo se anula un pedido PAGADO que la cocina aún NO inició. */
+const VOIDABLE: SaleStatus[] = ['PAGADO'];
 
 export function VoidModal({
   open,
@@ -45,8 +49,17 @@ export function VoidModal({
     setError(null);
     setPending(false);
     setLoading(true);
-    listSales({ shiftId: shiftId ?? undefined, status: 'PAGADO', limit: VOIDABLE_LIMIT })
-      .then(setSales)
+    listSales({ shiftId: shiftId ?? undefined, limit: VOIDABLE_LIMIT })
+      .then((all) =>
+        setSales(
+          all
+            .filter((s) => VOIDABLE.includes(s.status))
+            .sort(
+              (a, b) =>
+                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+            ),
+        ),
+      )
       .catch((err) => setError(err instanceof Error ? err.message : 'Error cargando ventas'))
       .finally(() => setLoading(false));
   }, [open, shiftId]);
@@ -89,16 +102,16 @@ export function VoidModal({
     >
       <div className="space-y-5">
         <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs leading-relaxed text-warning">
-          Al anular: la venta pasa a <strong>ANULADA</strong>, se{' '}
-          <strong>revierte el stock</strong> y queda registrada en auditoría. Solo
-          se permite si la cocina <strong>aún no inició</strong> la preparación
-          (PENDIENTE_PAGO o PAGADO sin iniciar). Requiere PIN de Admin/Dueño.
+          Solo se anula un pedido <strong>pagado que la cocina aún no inició</strong>.
+          Al anular: pasa a <strong>ANULADA</strong>, se{' '}
+          <strong>revierte el stock</strong>, <strong>sale de la caja</strong> y
+          queda en auditoría. Requiere PIN de Admin/Dueño.
         </div>
-        <FormField label={`Ventas pagadas del turno actual (${sales.length})`}>
+        <FormField label={`Ventas anulables del turno (${sales.length})`}>
           {loading ? (
             <LoadingSkeleton shape="table-row" count={3} />
           ) : sales.length === 0 ? (
-            <EmptyState title="No hay ventas pagadas para anular." size="sm" />
+            <EmptyState title="No hay ventas anulables." size="sm" />
           ) : (
             <div className="max-h-56 overflow-y-auto rounded-lg border border-border">
               <ul className="divide-y divide-border">
@@ -121,14 +134,20 @@ export function VoidModal({
                           className="h-4 w-4 accent-primary"
                         />
                         <span>
-                          <span className="font-semibold">#{s.receiptNumber}</span>
+                          <span className="font-semibold">
+                            {s.turnNumber !== null ? `Turno ${s.turnNumber}` : `Recibo #${s.receiptNumber}`}
+                          </span>
                           <span className="ml-2 text-xs text-muted-foreground">
-                            {s.paidAt ? formatDate(s.paidAt, 'time-short') : '—'}{' '}
-                            · {s.paymentMethod}
+                            Recibo #{s.receiptNumber} ·{' '}
+                            {formatDate(s.paidAt ?? s.createdAt, 'time-short')}
+                            {s.paymentMethod ? ` · ${s.paymentMethod}` : ''}
                           </span>
                         </span>
                       </span>
-                      <Money amount={s.total} weight="semibold" />
+                      <span className="flex items-center gap-2">
+                        <StatusBadge status={s.status} mapping={SALE_STATUS_MAPPING} />
+                        <Money amount={s.total} weight="semibold" />
+                      </span>
                     </label>
                   </li>
                 ))}
