@@ -1,4 +1,5 @@
 import type { Shift } from '@pos-tercos/types';
+import Link from 'next/link';
 import { formatCop, formatDate } from '../../../lib/format';
 
 interface Props {
@@ -48,9 +49,12 @@ export function ShiftsTable({ shifts }: Props) {
           {shifts.map((s) => (
             <tr key={s.id} className="transition-colors hover:bg-muted/40">
               <Td>
-                <span className="font-medium text-foreground">
-                  {s.cashierName ?? '—'}
-                </span>
+                <Link
+                  href={`/shifts/${s.id}`}
+                  className="font-medium text-primary hover:underline"
+                >
+                  {s.cashierName ?? 'Ver sesión'}
+                </Link>
               </Td>
               <Td>{formatDate(s.openedAt, 'datetime')}</Td>
               <Td>

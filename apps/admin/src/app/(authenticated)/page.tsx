@@ -21,6 +21,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ApiError, serverFetchJson } from '../../lib/api-server';
+import { DailyAiSummaryCard } from '../../features/ai-insights';
 import type { DashboardSummary } from '@pos-tercos/types';
 
 async function loadDashboard(): Promise<DashboardSummary | null> {
@@ -51,6 +52,7 @@ export default async function InicioPage() {
 
       <Container size="7xl" padY="md">
         <div className="space-y-10">
+          <DailyAiSummaryCard />
           {summary ? (
             <>
               <Section

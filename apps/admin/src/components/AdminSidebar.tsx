@@ -8,6 +8,7 @@ import {
   BarChart3,
   Box,
   CalendarRange,
+  ClipboardList,
   Clock,
   Coins,
   History,
@@ -60,7 +61,8 @@ const NAV_ITEMS: NavItem[] = [
     href: '/reports/reconciliation',
     icon: ArrowLeftRight,
   },
-  { section: 'Auditoría', label: 'Bitácora', href: '/audit', icon: History },
+  { section: 'Auditoría', label: 'Bitácora', href: '/bitacora', icon: ClipboardList },
+  { section: 'Auditoría', label: 'Auditoría completa', href: '/audit', icon: History },
 ];
 
 export function AdminSidebar() {
