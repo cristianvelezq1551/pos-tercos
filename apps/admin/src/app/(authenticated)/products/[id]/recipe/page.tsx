@@ -1,10 +1,11 @@
 import { notFound } from 'next/navigation';
 import { Container, PageHeader } from '@pos-tercos/ui';
-import { RecipeEditor } from '../../../../../features/recipes';
+import { ProductRecipeTabs, RecipeEditor } from '../../../../../features/recipes';
 import { ApiError, serverFetchJson } from '../../../../../lib/api-server';
 import type {
   Ingredient,
   Product,
+  ProductSize,
   RecipeResponse,
   Subproduct,
 } from '@pos-tercos/types';
@@ -33,6 +34,19 @@ export default async function ProductRecipePage({ params }: PageProps) {
     throw err;
   }
 
+  // Si el producto tiene variantes, cargamos la receta de cada una para las pestañas.
+  const sizes: ProductSize[] = (product.sizes ?? [])
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const variants = await Promise.all(
+    sizes.map(async (size) => ({
+      size,
+      recipe: await serverFetchJson<RecipeResponse>(
+        `/products/${id}/sizes/${size.id}/recipe`,
+      ),
+    })),
+  );
+
   return (
     <>
       <PageHeader
@@ -46,15 +60,26 @@ export default async function ProductRecipePage({ params }: PageProps) {
         ]}
       />
       <Container size="6xl" padY="md">
-        <RecipeEditor
-          parentType="product"
-          parentId={id}
-          parentName={product.name}
-          initialRecipe={recipe}
-          ingredients={ingredients}
-          subproducts={subproducts}
-          showExpandedCost
-        />
+        {variants.length > 0 ? (
+          <ProductRecipeTabs
+            productId={id}
+            productName={product.name}
+            ingredients={ingredients}
+            subproducts={subproducts}
+            baseRecipe={recipe}
+            variants={variants}
+          />
+        ) : (
+          <RecipeEditor
+            parentType="product"
+            parentId={id}
+            parentName={product.name}
+            initialRecipe={recipe}
+            ingredients={ingredients}
+            subproducts={subproducts}
+            showExpandedCost
+          />
+        )}
       </Container>
     </>
   );

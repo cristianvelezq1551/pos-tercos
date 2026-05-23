@@ -13,6 +13,7 @@ import type {
 import {
   getExpandedCost,
   setProductRecipe,
+  setSizeRecipe,
   setSubproductRecipe,
 } from '../api/client';
 import { RecipeDraftTable, type DraftEdge } from './RecipeDraftTable';
@@ -27,6 +28,10 @@ interface RecipeEditorProps {
   ingredients: Ingredient[];
   subproducts: Subproduct[];
   showExpandedCost?: boolean;
+  /** Si está, se edita la receta de esa variante (aditiva sobre la base). */
+  sizeId?: string;
+  /** Oculta el header interno (cuando lo provee un contenedor con tabs). */
+  hideHeader?: boolean;
 }
 
 function recipeToDraft(recipe: RecipeResponse): DraftEdge[] {
@@ -55,6 +60,8 @@ export function RecipeEditor({
   ingredients,
   subproducts,
   showExpandedCost = false,
+  sizeId,
+  hideHeader = false,
 }: RecipeEditorProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -142,8 +149,9 @@ export function RecipeEditor({
         : { childType: 'subproduct', childId: d.childId, quantityNeta: d.quantityNeta, mermaPct: d.mermaPct },
     );
     try {
-      const updated =
-        parentType === 'product'
+      const updated = sizeId
+        ? await setSizeRecipe(parentId, sizeId, edges)
+        : parentType === 'product'
           ? await setProductRecipe(parentId, edges)
           : await setSubproductRecipe(parentId, edges);
       const next = recipeToDraft(updated);
@@ -159,17 +167,19 @@ export function RecipeEditor({
 
   return (
     <div className="space-y-6">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-          Receta · {parentType === 'product' ? 'Producto' : 'Subproducto'}
-        </p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">{parentName}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Define qué insumos o subproductos consume {parentType === 'product' ? 'el producto' : 'el subproducto'}.
-          La merma se aplica como pérdida proporcional: la cantidad bruta descontada del stock es
-          <code className="mx-1 rounded bg-muted px-1 py-0.5 font-mono text-xs">cant_neta / (1 - merma)</code>.
-        </p>
-      </header>
+      {!hideHeader && (
+        <header>
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+            Receta · {parentType === 'product' ? 'Producto' : 'Subproducto'}
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">{parentName}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Define qué insumos o subproductos consume {parentType === 'product' ? 'el producto' : 'el subproducto'}.
+            La merma se aplica como pérdida proporcional: la cantidad bruta descontada del stock es
+            <code className="mx-1 rounded bg-muted px-1 py-0.5 font-mono text-xs">cant_neta / (1 - merma)</code>.
+          </p>
+        </header>
+      )}
 
       <RecipeDraftTable
         draft={draft}

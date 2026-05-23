@@ -58,6 +58,26 @@ export function setSubproductRecipe(
   );
 }
 
+export function getSizeRecipe(productId: string, sizeId: string): Promise<RecipeResponse> {
+  return request(
+    `/products/${productId}/sizes/${sizeId}/recipe`,
+    { method: 'GET' },
+    RecipeResponseSchema,
+  );
+}
+
+export function setSizeRecipe(
+  productId: string,
+  sizeId: string,
+  edges: RecipeEdgeInput[],
+): Promise<RecipeResponse> {
+  return request(
+    `/products/${productId}/sizes/${sizeId}/recipe`,
+    { method: 'PUT', body: JSON.stringify({ edges }) },
+    RecipeResponseSchema,
+  );
+}
+
 export function getExpandedCost(id: string): Promise<ExpandedCostResponse> {
   return request(`/products/${id}/expanded-cost`, { method: 'GET' }, ExpandedCostResponseSchema);
 }
