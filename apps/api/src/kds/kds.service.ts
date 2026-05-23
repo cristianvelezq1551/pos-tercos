@@ -3,6 +3,7 @@ import type { Sale, SaleStatus } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PublicDisplayService } from '../public-display/public-display.service';
 import { SalesService } from '../sales/sales.service';
 import { KdsGateway } from './kds.gateway';
 
@@ -16,6 +17,7 @@ export class KdsService {
     private readonly audit: AuditService,
     private readonly gateway: KdsGateway,
     private readonly notifications: NotificationService,
+    private readonly publicDisplay: PublicDisplayService,
   ) {}
 
   /**
@@ -71,7 +73,9 @@ export class KdsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.sale.update({
         where: { id: saleId },
-        data: { status: to },
+        // readyAt sella el momento en que entra a la cola del cajero (ordena
+        // la cola "listos por llamar").
+        data: { status: to, ...(to === 'LISTO_DESPACHO' ? { readyAt: new Date() } : {}) },
       });
       await tx.saleStatusLog.create({
         data: { saleId, statusFrom: from, statusTo: to, userId },
@@ -90,6 +94,8 @@ export class KdsService {
     // Emit centralizado acá (no en el controller): cualquier caller de
     // start/ready dispara la actualización del board del KDS.
     this.gateway.emit('order.status.changed', sale);
+    // Al quedar listo, refresca la cola "listos por llamar" del cajero.
+    if (to === 'LISTO_DESPACHO') this.publicDisplay.notify();
     return sale;
   }
 

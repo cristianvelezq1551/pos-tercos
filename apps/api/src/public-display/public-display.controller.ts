@@ -1,12 +1,15 @@
-import { Body, Controller, Get, Post, Sse } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Sse } from '@nestjs/common';
 import {
-  SetTurnSchema,
+  CallManualSchema,
+  type CallManual,
+  type JwtAccessPayload,
   type PublicDisplayState,
-  type SetTurn,
+  type ReadyToCallResponse,
   type TurnResponse,
 } from '@pos-tercos/types';
 import { type Observable } from 'rxjs';
 import { CashierAccess } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PublicDisplayService } from './public-display.service';
@@ -27,23 +30,44 @@ export class PublicDisplayController {
     return this.svc.stream();
   }
 
-  @Post('turn/advance')
+  /** Cola "listos por llamar" del cajero. */
+  @Get('ready-to-call')
   @CashierAccess()
-  advanceTurn(): TurnResponse {
-    return { currentTurn: this.svc.advanceTurn() };
+  readyToCall(): Promise<ReadyToCallResponse> {
+    return this.svc.getReadyToCall();
   }
 
-  @Post('turn')
+  /** Llama un turno desde una venta lista (lo pone en la pantalla pública). */
+  @Post('call/:saleId')
   @CashierAccess()
-  setTurn(
-    @Body(new ZodValidationPipe(SetTurnSchema)) body: SetTurn,
+  call(@Param('saleId', ParseUUIDPipe) saleId: string): Promise<TurnResponse> {
+    return this.svc.callSale(saleId);
+  }
+
+  /** Llamado manual de un número arbitrario (corrección de desfase). */
+  @Post('call-manual')
+  @CashierAccess()
+  callManual(
+    @Body(new ZodValidationPipe(CallManualSchema)) body: CallManual,
   ): TurnResponse {
-    return { currentTurn: this.svc.setTurn(body.value) };
+    return this.svc.callManual(body.turn);
   }
 
+  /** Marca el pedido entregado → sale de la cola del cajero. */
+  @Post('deliver/:saleId')
+  @CashierAccess()
+  async deliver(
+    @Param('saleId', ParseUUIDPipe) saleId: string,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<{ ok: true }> {
+    await this.svc.markDelivered(saleId, user.sub);
+    return { ok: true };
+  }
+
+  /** Limpia la pantalla. */
   @Post('turn/reset')
   @CashierAccess()
   resetTurn(): TurnResponse {
-    return { currentTurn: this.svc.resetTurn() };
+    return this.svc.reset();
   }
 }

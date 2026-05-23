@@ -161,18 +161,9 @@ export class SalesService {
     );
     const total = roundMoney(subtotal - discountTotal);
 
-    // turn_number: para COUNTER cuenta ventas del cajero en el día;
-    // para WEB_* cuenta ventas web del día. Se usa solo para display
-    // en el recibo, no es identificador único.
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const todayCount = await this.prisma.sale.count({
-      where:
-        input.type === 'COUNTER'
-          ? { cashierId, createdAt: { gte: startOfDay } }
-          : { type: input.type, createdAt: { gte: startOfDay } },
-    });
-    const turnNumber = todayCount + 1;
+    // turn_number NO se asigna al crear: se asigna al PAGAR (confirmPayment),
+    // como secuencia diaria única compartida COUNTER + WEB_PICKUP. Así los
+    // pedidos web abandonados sin pagar no consumen número (secuencia sin huecos).
 
     // Prisma no soporta default a nivel cliente para nextval con sequence
     // custom (ver schema.prisma comentario sobre receipt_number). Pedimos
@@ -188,7 +179,7 @@ export class SalesService {
           receiptNumber,
           type: input.type,
           status: 'PENDIENTE_PAGO',
-          turnNumber,
+          turnNumber: null,
           customerName: input.customerName ?? null,
           customerPhone: input.customerPhone ?? null,
           customerNit: input.customerNit ?? null,
@@ -386,6 +377,17 @@ export class SalesService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Turno: secuencia diaria única compartida COUNTER + WEB_PICKUP. Se
+      // asigna acá (al pagar). Cuenta ventas ya con turno hoy + 1. Esta venta
+      // todavía tiene turnNumber null (se excluye sola). Para 1 cajero el riesgo
+      // de carrera es nulo; el guard transaccional de abajo cierra el doble-cobro.
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const assignedToday = await tx.sale.count({
+        where: { turnNumber: { not: null }, paidAt: { gte: startOfDay } },
+      });
+      const turnNumber = assignedToday + 1;
+
       // Guard transaccional contra doble-cobro (doble-click / retry de red):
       // el status se condiciona DENTRO del UPDATE. Si otra request ya cobró,
       // count===0 y abortamos sin descontar stock dos veces.
@@ -396,6 +398,7 @@ export class SalesService {
           paymentMethod: input.method as PaymentMethod,
           paidAt: new Date(),
           paidByUserId: userId,
+          turnNumber,
           shiftId,
           cashierId,
         },
@@ -978,6 +981,7 @@ function includeFull() {
 function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
   return {
     receiptNumber: sale.receiptNumber,
+    turnNumber: sale.turnNumber,
     createdAt: sale.createdAt,
     cashierName: sale.cashierName ?? null,
     customerName: sale.customerName,

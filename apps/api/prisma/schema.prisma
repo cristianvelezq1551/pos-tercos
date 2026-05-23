@@ -339,7 +339,9 @@ model Sale {
   receiptNumber                 BigInt          @unique @default(autoincrement()) @map("receipt_number")
   type                          SaleType
   status                        SaleStatus      @default(PENDIENTE_PAGO)
-  turnNumber                    Int             @map("turn_number")
+  /// Turno mostrado al cliente. Se asigna al PAGAR (no al crear): secuencia
+  /// diaria única compartida entre COUNTER y WEB_PICKUP. Null hasta el pago.
+  turnNumber                    Int?            @map("turn_number")
   customerName                  String?         @map("customer_name")
   customerPhone                 String?         @map("customer_phone")
   customerNit                   String?         @map("customer_nit")
@@ -348,6 +350,12 @@ model Sale {
   total                         Decimal         @db.Decimal(14, 2)
   paymentMethod                 PaymentMethod?  @map("payment_method")
   paidAt                        DateTime?       @map("paid_at")
+  /// Momento en que la cocina marcó LISTO_DESPACHO. Ordena la cola de
+  /// "listos por llamar" del cajero. Null hasta que esté listo.
+  readyAt                       DateTime?       @map("ready_at")
+  /// Momento en que el cajero llamó este turno a la pantalla pública. Null
+  /// mientras está listo pero aún sin llamar. Permite "ya llamado" + re-llamar.
+  calledAt                      DateTime?       @map("called_at")
   paidByUserId                  String?         @map("paid_by_user_id")
   cashierId                     String?         @map("cashier_id")
   shiftId                       String?         @map("shift_id")
@@ -370,6 +378,7 @@ model Sale {
   @@index([cashierId, createdAt(sort: Desc)])
   @@index([type, status, createdAt(sort: Desc)])
   @@index([shiftId])
+  @@index([status, readyAt])
   @@map("sales")
 }
 
