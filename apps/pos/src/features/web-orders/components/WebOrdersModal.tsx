@@ -20,6 +20,8 @@ import { saleToPublicWebOrder } from '../lib/project';
 import { ConfirmWebPaymentModal } from './ConfirmWebPaymentModal';
 
 const POLL_MS = 12_000;
+/** Solo a partir de este tiempo ofrecemos "no avisar" (actualización retroactiva). */
+const STALE_MIN = 15;
 
 function minutesSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -36,7 +38,8 @@ function elapsedTone(sale: Sale): string {
 /**
  * Pedidos web activos (pendientes de pago + pagados + en cocina). El cajero
  * confirma pagos, rechaza, y puede avanzar a "listo" cuando el cocinero está
- * ocupado. "Modo registro" actualiza sin avisar al cliente (offline retroactivo).
+ * ocupado. El "modo registro: no avisar" NO está siempre visible: aparece solo
+ * al confirmar/marcar listo un pedido viejo (≥15 min), para no hacer ruido.
  * Polling REST: resiliente a caídas de conexión (se recupera al volver).
  */
 export function WebOrdersModal({
@@ -51,7 +54,6 @@ export function WebOrdersModal({
   const [orders, setOrders] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [silent, setSilent] = useState(false);
   const [confirming, setConfirming] = useState<PublicWebOrder | null>(null);
 
   const refresh = useCallback(async () => {
@@ -96,15 +98,6 @@ export function WebOrdersModal({
         }
       >
         <div className="space-y-4">
-          <div className="rounded-lg border border-warning-border bg-warning-bg/40 px-3 py-2.5">
-            <Checkbox
-              checked={silent}
-              onChange={(e) => setSilent(e.target.checked)}
-              label="Modo registro: no avisar al cliente"
-              description="Para actualizar pedidos viejos (ej. tras estar sin internet) sin mandarles WhatsApp."
-            />
-          </div>
-
           {loading && orders.length === 0 ? (
             <LoadingSkeleton shape="table-row" count={3} />
           ) : error ? (
@@ -126,7 +119,6 @@ export function WebOrdersModal({
                 <li key={o.id} className="py-4 first:pt-0 last:pb-0">
                   <WebOrderRow
                     sale={o}
-                    silent={silent}
                     onConfirm={() => {
                       const projected = saleToPublicWebOrder(o);
                       if (projected) setConfirming(projected);
@@ -143,7 +135,6 @@ export function WebOrdersModal({
       <ConfirmWebPaymentModal
         order={confirming}
         open={confirming !== null}
-        silent={silent}
         onClose={() => setConfirming(null)}
         onConfirmed={() => {
           setConfirming(null);
@@ -156,18 +147,20 @@ export function WebOrdersModal({
 
 function WebOrderRow({
   sale,
-  silent,
   onConfirm,
   onChanged,
 }: {
   sale: Sale;
-  silent: boolean;
   onConfirm: () => void;
   onChanged: () => Promise<void> | void;
 }) {
   const [busy, setBusy] = useState(false);
   const [confirmReject, setConfirmReject] = useState(false);
+  const [silent, setSilent] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // "No avisar" solo para pedidos viejos (≥15 min en su estado actual).
+  const stale = minutesSince(sale.paidAt ?? sale.createdAt) >= STALE_MIN;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -237,22 +230,34 @@ function WebOrderRow({
             )}
           </div>
         ) : (
-          <Button
-            variant="success"
-            size="sm"
-            className="w-full"
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                // El cajero solo marca listo. Si aún no inició en cocina,
-                // lo arranca y lo marca listo de una.
-                if (sale.status === 'PAGADO') await startWebOrder(sale.id);
-                await markWebOrderReady(sale.id, silent);
-              })
-            }
-          >
-            {busy ? 'Marcando…' : 'Marcar listo'}
-          </Button>
+          <div className="space-y-2">
+            {stale ? (
+              <div className="rounded-lg border border-warning-border bg-warning-bg/40 px-3 py-2">
+                <Checkbox
+                  checked={silent}
+                  onChange={(e) => setSilent(e.target.checked)}
+                  label="No avisar al cliente"
+                  description="Pedido viejo (+15 min) — actualización retroactiva sin WhatsApp."
+                />
+              </div>
+            ) : null}
+            <Button
+              variant="success"
+              size="sm"
+              className="w-full"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  // El cajero solo marca listo. Si aún no inició en cocina,
+                  // lo arranca y lo marca listo de una.
+                  if (sale.status === 'PAGADO') await startWebOrder(sale.id);
+                  await markWebOrderReady(sale.id, stale && silent);
+                })
+              }
+            >
+              {busy ? 'Marcando…' : 'Marcar listo'}
+            </Button>
+          </div>
         )}
       </div>
       {err ? (

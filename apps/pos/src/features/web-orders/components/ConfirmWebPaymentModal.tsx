@@ -6,7 +6,7 @@ import {
   type PublicWebOrder,
   type Sale,
 } from '@pos-tercos/types';
-import { Button, Dialog, FormField, Money } from '@pos-tercos/ui';
+import { Button, Checkbox, Dialog, FormField, Money } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { confirmPayment, TransferSection } from '../../sales';
 import { fetchSaleById } from '../api/get-sale';
@@ -14,18 +14,21 @@ import { OrderItemsList } from './OrderItemsList';
 import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
+/** Solo a partir de este tiempo sin cobrarse ofrecemos "no avisar". */
+const STALE_MIN = 15;
+
+function minutesSince(iso: string): number {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+}
 
 export function ConfirmWebPaymentModal({
   order,
   open,
-  silent = false,
   onClose,
   onConfirmed,
 }: {
   order: PublicWebOrder | null;
   open: boolean;
-  /** true = no avisar al cliente (cobro retroactivo offline). */
-  silent?: boolean;
   onClose: () => void;
   onConfirmed: (sale: Sale) => void;
 }) {
@@ -33,6 +36,7 @@ export function ConfirmWebPaymentModal({
   const [loadingSale, setLoadingSale] = useState(false);
   const [method, setMethod] = useState<PaymentMethod | null>('TRANSFER');
   const [doubleVerified, setDoubleVerified] = useState(false);
+  const [silent, setSilent] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +44,7 @@ export function ConfirmWebPaymentModal({
     if (!open || !order) return;
     setMethod('TRANSFER');
     setDoubleVerified(false);
+    setSilent(false);
     setError(null);
     setPending(false);
     setLoadingSale(true);
@@ -53,6 +58,9 @@ export function ConfirmWebPaymentModal({
 
   const isDigital = method !== null && DIGITAL_SET.has(method);
   const total = order?.total ?? 0;
+  // El toggle "no avisar" solo aparece para pedidos viejos (≥15 min sin cobrarse)
+  // — cobros retroactivos. Para uno fresco, siempre se avisa (sin ruido en UI).
+  const stale = order ? minutesSince(order.createdAt) >= STALE_MIN : false;
 
   const validation = useMemo(() => {
     if (!order || !method) return { ok: false, reason: 'Elegí un método' };
@@ -74,7 +82,7 @@ export function ConfirmWebPaymentModal({
         method,
         amountReceived: total,
         digitalDoubleVerified: isDigital ? true : undefined,
-        silent: silent || undefined,
+        silent: stale && silent ? true : undefined,
       });
       onConfirmed(paid);
     } catch (err) {
@@ -124,6 +132,17 @@ export function ConfirmWebPaymentModal({
             verified={doubleVerified}
             onVerified={setDoubleVerified}
           />
+        ) : null}
+
+        {stale ? (
+          <div className="rounded-lg border border-warning-border bg-warning-bg/40 px-3 py-2.5">
+            <Checkbox
+              checked={silent}
+              onChange={(e) => setSilent(e.target.checked)}
+              label="Modo registro: no avisar al cliente"
+              description="Pedido viejo (+15 min). Para cobrarlo retroactivamente sin mandarle WhatsApp."
+            />
+          </div>
         ) : null}
 
         {!validation.ok && method ? (

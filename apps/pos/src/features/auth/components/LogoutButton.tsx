@@ -28,7 +28,6 @@ export function LogoutButton() {
       title="Cerrar sesión"
     >
       <Power className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-      <span className="ml-1.5">{pending ? 'Saliendo…' : 'Salir'}</span>
     </Button>
   );
 }
