@@ -8,9 +8,8 @@ import { CategoryMosaic } from '../components/CategoryMosaic';
 import { MobileTabBar } from '../components/MobileTabBar';
 import { ActiveOrderBanner } from '../features/checkout';
 
-// ISR: el menú se regenera a lo sumo cada 60s (HTML cacheado en edge). El
-// banner de orden activa y el carrito son client components → no afecta.
-export const revalidate = 60;
+// Siempre fresco: el menú refleja al instante los cambios del admin.
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const menu = await getMenuServer();

@@ -39,10 +39,21 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
         if (!cancelled) setConn('reconnecting');
       }
     };
+    // Fetch inmediato (sin esperar el primer tick de 5s) + cada vez que la
+    // pestaña vuelve a estar visible/enfocada — los browsers congelan los
+    // timers en background, por eso antes solo se actualizaba "al dar tap".
+    void tick();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
     const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [initial.id, token, order.status]);
 

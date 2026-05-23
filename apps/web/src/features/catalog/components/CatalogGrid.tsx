@@ -5,6 +5,7 @@ import { cn } from '@pos-tercos/ui';
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useCartStore } from '../../cart/store/cart-store';
+import { useAvailability } from '../hooks/useAvailability';
 import { ProductCard } from './ProductCard';
 import { ProductPickerModal, type PickerSelection } from './ProductPickerModal';
 
@@ -18,6 +19,7 @@ export function CatalogGrid({
   categories: string[];
 }) {
   const addItem = useCartStore((s) => s.addItem);
+  const availability = useAvailability();
   const [selected, setSelected] = useState<PublicMenuProduct | null>(null);
   const [open, setOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>(ALL);
@@ -102,16 +104,22 @@ export function CatalogGrid({
         </div>
       ) : (
         <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
-          {visible.map((p) => (
-            <ProductCard
-              key={p.id}
-              product={p}
-              onClick={() => {
-                setSelected(p);
-                setOpen(true);
-              }}
-            />
-          ))}
+          {visible.map((p) => {
+            const avail = availability.get(p.id);
+            const unavailable = avail ? !avail.available : false;
+            return (
+              <ProductCard
+                key={p.id}
+                product={p}
+                unavailable={unavailable}
+                onClick={() => {
+                  if (unavailable) return;
+                  setSelected(p);
+                  setOpen(true);
+                }}
+              />
+            );
+          })}
         </div>
       )}
 

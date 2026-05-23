@@ -11,10 +11,10 @@ const EMPTY: PublicMenuResponse = {
 };
 
 export async function getMenuServer(): Promise<PublicMenuResponse> {
-  // Menú público: cambia poco. ISR 60s — HTML cacheado, refresca en background.
-  const json = await publicFetch<unknown>('/web/menu', {
-    next: { revalidate: 60 },
-  });
+  // Siempre fresco (no-store): los cambios de menú del admin se reflejan al
+  // instante. El menú es una query barata; no vale la pena cachear y arriesgar
+  // que el cliente vea un menú viejo.
+  const json = await publicFetch<unknown>('/web/menu');
   if (json === null) return EMPTY;
   const parsed = PublicMenuResponseSchema.safeParse(json);
   return parsed.success ? parsed.data : EMPTY;
