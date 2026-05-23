@@ -288,9 +288,11 @@ apps/api/src/notifications/
 
 ---
 
-## 5. Schema DB (29 tablas + 11 enums + 1 sequence)
+## 5. Schema DB (30 tablas + 12 enums + 1 sequence)
 
 > Actualizado en reorientación v2 (2026-05-22). Eliminados: `RepartidorAvailability`, `WEB_DELIVERY` de `SaleType`, 5 estados de delivery de `SaleStatus`. Agregada: tabla `whatsapp_messages`.
+>
+> **Cajero v2.1 (2026-05-23) — ver §7.v3.** Nuevas: tabla `cash_movements`, enum `CashMovementType`. Columnas nuevas: `products.sold_out`, `sales.void_reason`, `shifts.cash_count_breakdown`. Migraciones `20260522190000_product_sold_out`, `20260523120000_sale_void_reason`, `20260523150000_cash_movements_and_arqueo`.
 
 ### Enums Prisma
 - `UserRole` — CAJERO, COCINERO, ADMIN_OPERATIVO, DUENO, TRABAJADOR (sin REPARTIDOR)
@@ -300,6 +302,7 @@ apps/api/src/notifications/
 - `SaleType` — COUNTER, WEB_PICKUP (sin WEB_DELIVERY)
 - `SaleStatus` — PENDIENTE_PAGO, PAGADO, EN_PREPARACION, LISTO_DESPACHO, ENTREGADO, CANCELADO_NO_PAGO, CANCELADO_SIN_REEMBOLSO, VOID (sin ASIGNADO, EN_RUTA, INTENTO_FALLIDO, DEVUELTO, EN_DISPUTA)
 - `PaymentMethod` — CASH, NEQUI, DAVIPLATA, QR_BANCOLOMBIA, TRANSFER
+- `CashMovementType` — IN, OUT (movimientos de efectivo del turno, v2.1)
 - `ShiftStatus` — OPEN, CLOSED, RECONCILED
 - `PromotionType` — PERCENT_OFF, BOGO, FIXED_OFF, COMBO_OFF (4 tipos implementados)
 - `PurchaseSuggestionStatus` — PENDING, EVALUATED, ACCEPTED, REJECTED, STALE
@@ -770,6 +773,44 @@ aea24b8 feat(public-display): completa rediseño turnero kiosko + limpieza
 - `apps/web` — mínimos cambios (removido toggle delivery y `mark-paid`).
 - `apps/public-display` — rediseño visual (turnero), sin cambios de backend.
 - FASES 0-15 del historial `main` — siguen siendo válidas como referencia del trabajo previo.
+
+---
+
+## 7.v3 Cajero v2.1 — caja, anulación, turnos, bitácora, IA, KDS (2026-05-23)
+
+Cambios sobre `refactor/v2-reorientacion`. **Superseden** los supuestos de §5/§6 sobre caja-por-cajero y turno diario. Verificado: typecheck 12/12, e2e 37/37, lint limpio, `flutter analyze` limpio.
+
+### Caja (turno)
+- **Caja ÚNICA por negocio** (no por cajero): `open()` rechaza si hay CUALQUIER caja OPEN (dueño o cajero). `getCurrent`/`getActiveTodayShift`/`getCurrentStatus` devuelven la caja abierta global. La cierra quien la abrió o un admin (`close(...,isAdmin)`). Una por día calendario; admin la reabre con `reopen`.
+- **Caja del día anterior sin cerrar (stale)**: si quedó OPEN de un día previo, se bloquean ventas/movimientos (409) hasta cerrarla. POS: `StaleShiftGate` + `GET /shifts/current-status` (`{shift, stalePreviousDay}`). El cierre solo es por "Cerrar turno" (con efectivo contado), nunca por logout. Se registra `closedAt` (tracking de eficiencia; el admin ve duración).
+- **Movimientos de efectivo** (tabla `cash_movements`, enum `CashMovementType IN|OUT`): entradas/salidas del cajón aparte de ventas. `expectedCash = apertura + ventas efectivo + entradas − salidas`. Endpoints `POST/GET /shifts/:id/cash-movements`. POS: sección en CajaModal.
+- **Arqueo por denominación** + **conteo ciego**: `CloseShift.breakdown` (líneas {denomination, count}) → `shifts.cash_count_breakdown`. POS `DenominationCounter` calcula el contado; "conteo ciego" oculta el esperado hasta revelar.
+
+### Numeración de turnos
+- `turnNumber` **resetea por caja** (cada caja nueva empieza en #1). `confirmPayment` cuenta los turnos ya asignados en ESE shift + 1.
+- **Consistente en todas las apps**: POS (historial/banner/anular), web, recibo y KDS muestran el **turno** (con recibo como referencia contable). `receiptNumber` = id de caja/contable.
+
+### Anulación
+- **Solo pedidos `PAGADO` no iniciados** (backend rechaza EN_PREPARACION/LISTO). Columna `sales.void_reason` → se muestra en historial. Revierte stock y NO afecta caja (close + Z-report ya excluyen VOID). VoidModal lista solo PAGADO.
+- **Cajero NO inicia pedidos** (solo el KDS): quitado "Iniciar" del cajero (historial + WebOrdersModal); el cajero solo marca "Listo". Quitado "Cambiar PIN" del topbar.
+
+### POS layout
+- `OpsSidebar`: Turnos + Historial apilados siempre visibles (≥lg) + campana `playReadyChime` al entrar un pedido nuevo a "Por llamar". Catálogo con grilla `auto-fill`, cards de altura uniforme, "Agotado" overlay; carrito ancho fluido.
+
+### Disponibilidad / stock en vivo
+- `GET /products/availability` (`@Public`) + `POST /products/:id/sold-out`. Reventa directa se invalida en stock 0; **preparados se invalidan si falta stock de un insumo** (`expandRecipe` sobre grafo global, `RecipesService.loadFullGraph`); combos por componentes. Campo `products.sold_out` ("86" manual). UI cajero (toggle + motivo "Sin Pan") y web ("Agotado").
+
+### Bitácora admin
+- `/bitacora` (Dueño): vista legible filtrable (Caja/Anulaciones/Cajón/Aprobaciones/Sesiones/Cocina) sobre `audit_log`. `GET /audit?action=` acepta CSV. `/audit` queda como "Auditoría completa".
+- Nueva acción `KDS_ORDER_DELAYED` (log al marcar listo si la prep > 10 min). Login/logout de cocina vía `AUTH_LOGIN/LOGOUT`.
+
+### IA (Anthropic Haiku primario + OpenAI fallback, on-demand)
+- `LLMProvider.complete(system, user)` genérico + prompts puros en `@pos-tercos/domain`.
+- `GET /shifts/:id/close-analysis` — explica el descuadre de una caja cerrada. `GET /reports/daily-ai-summary?date=` — resumen diario para el dueño. Admin: botón en detalle de caja + tarjeta en dashboard.
+
+### KDS (Flutter)
+- Modelo `KitchenOrderModel.turnNumber`; la card muestra **TURNO N** + badge de urgencia ("SIN INICIAR"/"DEMORADO").
+- Re-alerta: PAGADO >3 min "no iniciado" y **EN_PREPARACION >10 min "aún no se ha finalizado"** (campana + voz TTS), re-recuerda cada 2 min.
 
 ---
 
