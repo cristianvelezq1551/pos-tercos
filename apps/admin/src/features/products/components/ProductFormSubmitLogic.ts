@@ -8,41 +8,94 @@ type DrFields = {
   thresholdMin: number;
 };
 
-/** Result of validating and parsing the form before an API call. */
+type ParsedSize = { id?: string; name: string; priceModifier: number };
+type ParsedExtra = { name: string; priceDelta: number };
+type ParsedComponent = { productId: string; quantity: number };
+
 export type ParsedFormResult =
   | { ok: false; error: string }
-  | { ok: true; basePrice: number; comboPriceParsed: number | null; drFields: DrFields | null };
+  | {
+      ok: true;
+      basePrice: number;
+      comboPriceParsed: number | null;
+      drFields: DrFields | null;
+      sizes: ParsedSize[];
+      modifiers: ParsedExtra[];
+      comboComponents: ParsedComponent[];
+    };
 
-/** Validates form values and parses them into typed values.
- *  Returns an error string if invalid, or the parsed fields if valid. */
 export function parseFormValues(form: FormState): ParsedFormResult {
   const basePrice = Number(form.basePrice);
   if (!Number.isFinite(basePrice) || basePrice < 0) {
     return { ok: false, error: 'El precio base debe ser un número ≥ 0.' };
   }
 
-  if (form.directResale && form.isCombo) {
-    return { ok: false, error: 'Un producto no puede ser direct-resale Y combo a la vez.' };
+  // ---- Variantes (proteína / tamaño) ----
+  const sizes: ParsedSize[] = [];
+  if (form.kind === 'variants') {
+    if (form.sizes.length === 0) {
+      return { ok: false, error: 'Un producto con variantes necesita al menos una variante.' };
+    }
+    for (const s of form.sizes) {
+      if (!s.name.trim()) return { ok: false, error: 'Cada variante necesita un nombre.' };
+      const abs = Number(s.price);
+      if (!Number.isFinite(abs) || abs < 0) {
+        return { ok: false, error: `Precio inválido en la variante "${s.name}".` };
+      }
+      // priceModifier = precio absoluto de la variante − precio base.
+      sizes.push({
+        ...(s.id ? { id: s.id } : {}),
+        name: s.name.trim(),
+        priceModifier: abs - basePrice,
+      });
+    }
   }
 
+  // ---- Extras (modificadores) — simple o con variantes ----
+  const modifiers: ParsedExtra[] = [];
+  if (form.kind === 'simple' || form.kind === 'variants') {
+    for (const m of form.modifiers) {
+      if (!m.name.trim()) continue; // filas vacías se ignoran
+      const pd = Number(m.priceDelta || 0);
+      if (!Number.isFinite(pd)) {
+        return { ok: false, error: `Precio inválido en el extra "${m.name}".` };
+      }
+      modifiers.push({ name: m.name.trim(), priceDelta: pd });
+    }
+  }
+
+  // ---- Combo ----
   let comboPriceParsed: number | null = null;
-  if (form.isCombo) {
+  const comboComponents: ParsedComponent[] = [];
+  if (form.kind === 'combo') {
     const v = Number(form.comboPrice);
     if (!Number.isFinite(v) || v < 0) {
-      return { ok: false, error: 'Cuando es combo, el precio del combo debe ser un número ≥ 0.' };
+      return { ok: false, error: 'El precio del combo debe ser un número ≥ 0.' };
     }
     comboPriceParsed = v;
+    const rows = form.comboComponents.filter((c) => c.productId);
+    if (rows.length === 0) {
+      return { ok: false, error: 'Un combo necesita al menos un producto componente.' };
+    }
+    for (const c of rows) {
+      const q = Number(c.quantity || 1);
+      if (!Number.isInteger(q) || q < 1) {
+        return { ok: false, error: 'La cantidad de cada componente debe ser un entero ≥ 1.' };
+      }
+      comboComponents.push({ productId: c.productId, quantity: q });
+    }
   }
 
+  // ---- Bebida / reventa directa ----
   let drFields: DrFields | null = null;
-  if (form.directResale) {
+  if (form.kind === 'drink') {
     const factor = Number(form.conversionFactor);
     const threshold = Number(form.thresholdMin);
     if (!form.unitPurchase.trim()) {
-      return { ok: false, error: 'Cuando es reventa directa, "Unidad de compra" es requerido.' };
+      return { ok: false, error: 'En reventa, "Unidad de compra" es requerido.' };
     }
     if (!form.unitStock.trim()) {
-      return { ok: false, error: 'Cuando es reventa directa, "Unidad de stock" es requerido.' };
+      return { ok: false, error: 'En reventa, "Unidad de stock" es requerido.' };
     }
     if (!Number.isFinite(factor) || factor <= 0) {
       return { ok: false, error: 'Factor de conversión debe ser un número > 0.' };
@@ -58,65 +111,67 @@ export function parseFormValues(form: FormState): ParsedFormResult {
     };
   }
 
-  return { ok: true, basePrice, comboPriceParsed, drFields };
+  return { ok: true, basePrice, comboPriceParsed, drFields, sizes, modifiers, comboComponents };
 }
 
-/** Builds the UpdateProduct payload from validated form values. */
-export function buildUpdatePayload(
+export function buildCreatePayload(
   form: FormState,
-  basePrice: number,
-  comboPriceParsed: number | null,
-  drFields: DrFields | null,
-  directResaleLocked: boolean,
-): UpdateProduct {
+  parsed: Extract<ParsedFormResult, { ok: true }>,
+): CreateProduct {
+  const isCombo = form.kind === 'combo';
   return {
     name: form.name,
     description: form.description || null,
-    basePrice,
+    basePrice: parsed.basePrice,
     category: form.category || null,
     imageUrl: form.imageUrl || null,
-    modifiersEnabled: form.modifiersEnabled,
-    isCombo: form.isCombo,
-    comboPrice: comboPriceParsed,
-    isActive: form.isActive,
-    ...(directResaleLocked
-      ? { thresholdMin: drFields?.thresholdMin ?? 0 }
-      : drFields
-        ? {
-            directResale: true,
-            unitPurchase: drFields.unitPurchase,
-            unitStock: drFields.unitStock,
-            conversionFactor: drFields.conversionFactor,
-            thresholdMin: drFields.thresholdMin,
-          }
-        : { directResale: false }),
+    modifiersEnabled: parsed.modifiers.length > 0,
+    isCombo,
+    comboPrice: isCombo ? parsed.comboPriceParsed : null,
+    ...(parsed.sizes.length > 0
+      ? { sizes: parsed.sizes.map((s) => ({ name: s.name, priceModifier: s.priceModifier })) }
+      : {}),
+    ...(parsed.modifiers.length > 0 ? { modifiers: parsed.modifiers } : {}),
+    ...(isCombo ? { comboComponents: parsed.comboComponents } : {}),
+    ...(parsed.drFields
+      ? {
+          directResale: true,
+          unitPurchase: parsed.drFields.unitPurchase,
+          unitStock: parsed.drFields.unitStock,
+          conversionFactor: parsed.drFields.conversionFactor,
+          thresholdMin: parsed.drFields.thresholdMin,
+        }
+      : {}),
   };
 }
 
-/** Builds the CreateProduct payload from validated form values. */
-export function buildCreatePayload(
+/** Solo escalares — variantes/extras/combo se editan vía PUT options/combo. */
+export function buildUpdatePayload(
   form: FormState,
-  basePrice: number,
-  comboPriceParsed: number | null,
-  drFields: DrFields | null,
-): CreateProduct {
+  parsed: Extract<ParsedFormResult, { ok: true }>,
+  directResaleLocked: boolean,
+): UpdateProduct {
+  const isCombo = form.kind === 'combo';
   return {
     name: form.name,
     description: form.description || null,
-    basePrice,
+    basePrice: parsed.basePrice,
     category: form.category || null,
     imageUrl: form.imageUrl || null,
-    modifiersEnabled: form.modifiersEnabled,
-    isCombo: form.isCombo,
-    comboPrice: comboPriceParsed,
-    ...(drFields
-      ? {
-          directResale: true,
-          unitPurchase: drFields.unitPurchase,
-          unitStock: drFields.unitStock,
-          conversionFactor: drFields.conversionFactor,
-          thresholdMin: drFields.thresholdMin,
-        }
-      : {}),
+    modifiersEnabled: parsed.modifiers.length > 0,
+    isCombo,
+    comboPrice: isCombo ? parsed.comboPriceParsed : null,
+    isActive: form.isActive,
+    ...(directResaleLocked
+      ? { thresholdMin: parsed.drFields?.thresholdMin ?? 0 }
+      : parsed.drFields
+        ? {
+            directResale: true,
+            unitPurchase: parsed.drFields.unitPurchase,
+            unitStock: parsed.drFields.unitStock,
+            conversionFactor: parsed.drFields.conversionFactor,
+            thresholdMin: parsed.drFields.thresholdMin,
+          }
+        : { directResale: false }),
   };
 }

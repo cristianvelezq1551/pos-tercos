@@ -4,6 +4,8 @@ import {
   UpdateProductSchema,
   type CreateProduct,
   type Product,
+  type SetComboComponents,
+  type SetProductOptions,
   type UpdateProduct,
 } from '@pos-tercos/types';
 import { z } from 'zod';
@@ -55,6 +57,24 @@ export function updateProduct(id: string, input: UpdateProduct): Promise<Product
 
 export function deactivateProduct(id: string): Promise<Product> {
   return request(`/products/${id}`, { method: 'DELETE' }, ProductSchema);
+}
+
+/** Reemplaza variantes + extras de un producto existente. */
+export function setProductOptions(id: string, input: SetProductOptions): Promise<Product> {
+  return request(
+    `/products/${id}/options`,
+    { method: 'PUT', body: JSON.stringify(input) },
+    ProductSchema,
+  );
+}
+
+/** Reemplaza los componentes de un combo existente. */
+export function setComboComponents(id: string, input: SetComboComponents): Promise<Product> {
+  return request(
+    `/products/${id}/combo`,
+    { method: 'PUT', body: JSON.stringify(input) },
+    ProductSchema,
+  );
 }
 
 const UploadImageResponseSchema = z.object({

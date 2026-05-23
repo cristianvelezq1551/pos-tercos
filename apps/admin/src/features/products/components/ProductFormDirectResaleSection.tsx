@@ -8,6 +8,8 @@ interface ProductFormDirectResaleSectionProps {
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   pending: boolean;
   directResaleLocked: boolean;
+  /** El tipo lo elige el selector → ocultamos el checkbox redundante. */
+  hideToggle?: boolean;
 }
 
 export function ProductFormDirectResaleSection({
@@ -15,6 +17,7 @@ export function ProductFormDirectResaleSection({
   setForm,
   pending,
   directResaleLocked,
+  hideToggle,
 }: ProductFormDirectResaleSectionProps) {
   return (
     <fieldset className="space-y-3 rounded-md border border-border p-4">
@@ -22,6 +25,7 @@ export function ProductFormDirectResaleSection({
         Reventa directa
       </legend>
 
+      {!hideToggle && (
       <div className="flex items-start gap-2">
         <input
           id="directResale"
@@ -53,6 +57,7 @@ export function ProductFormDirectResaleSection({
           ) : null}
         </div>
       </div>
+      )}
 
       {form.directResale && (
         <div className="space-y-3 pl-6 pt-2">

@@ -19,6 +19,14 @@ export default async function EditProductPage({ params }: PageProps) {
     throw err;
   }
 
+  // Candidatos para componentes de combo (activos; el form excluye combos + el propio).
+  let candidates: Product[] = [];
+  try {
+    candidates = await serverFetchJson<Product[]>('/products?only_active=true');
+  } catch {
+    candidates = [];
+  }
+
   return (
     <>
       <PageHeader
@@ -31,7 +39,7 @@ export default async function EditProductPage({ params }: PageProps) {
         ]}
       />
       <Container size="4xl" padY="md">
-        <ProductForm initial={product} />
+        <ProductForm initial={product} comboCandidates={candidates} />
       </Container>
     </>
   );
