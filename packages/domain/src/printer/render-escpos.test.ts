@@ -14,6 +14,7 @@ import type { ReceiptData } from './types';
 
 const RECEIPT_BASE: ReceiptData = {
   receiptNumber: 42,
+  turnNumber: 7,
   createdAt: '2026-05-04T15:30:00.000Z',
   cashierName: 'Juan',
   customerName: null,
@@ -61,6 +62,19 @@ describe('renderReceiptEscPos', () => {
     expect(text).toContain('Burger Nashville');
     expect(text).toContain('TOTAL');
     expect(text).toContain('$36.000');
+  });
+
+  it('imprime "TU TURNO" + el número cuando turnNumber está set', () => {
+    const out = renderReceiptEscPos({ ...RECEIPT_BASE, turnNumber: 7 });
+    const text = out.toString('latin1');
+    expect(text).toContain('TU TURNO');
+    expect(text).toContain('7');
+  });
+
+  it('omite el bloque de turno cuando turnNumber es null', () => {
+    const out = renderReceiptEscPos({ ...RECEIPT_BASE, turnNumber: null });
+    const text = out.toString('latin1');
+    expect(text).not.toContain('TU TURNO');
   });
 
   it('imprime DUPLICADO label cuando reprintLabel está set', () => {

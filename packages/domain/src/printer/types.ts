@@ -5,6 +5,9 @@
  */
 export interface ReceiptData {
   receiptNumber: number;
+  /** Turno mostrado al cliente (coincide con el turnero). null si aún no se
+   *  asignó (no debería pasar en una venta pagada). */
+  turnNumber: number | null;
   /** ISO datetime. */
   createdAt: string;
   cashierName: string | null;

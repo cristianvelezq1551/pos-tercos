@@ -44,6 +44,20 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   }
   out.push(LF);
 
+  // Turno (grande, centrado) — coincide con el turnero público.
+  if (receipt.turnNumber !== null) {
+    out.push(ALIGN_CENTER);
+    out.push(latin1('TU TURNO'));
+    out.push(LF);
+    out.push(BOLD_ON);
+    out.push(SIZE_2H_2W);
+    out.push(latin1(String(receipt.turnNumber)));
+    out.push(SIZE_NORMAL);
+    out.push(BOLD_OFF);
+    out.push(LF);
+    out.push(LF);
+  }
+
   // Receipt # + datetime + cashier
   out.push(ALIGN_LEFT);
   out.push(BOLD_ON);

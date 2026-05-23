@@ -86,7 +86,9 @@ export const SaleSchema = z.object({
   receiptNumber: z.number().int().positive(),
   type: SaleTypeEnum,
   status: SaleStatusEnum,
-  turnNumber: z.number().int(),
+  // null hasta el pago: el turno se asigna en confirmPayment (secuencia diaria
+  // única compartida COUNTER + WEB_PICKUP).
+  turnNumber: z.number().int().nullable(),
 
   customerName: z.string().nullable(),
   customerPhone: z.string().nullable(),

@@ -58,6 +58,9 @@ export function renderReceiptHtml(r: ReceiptData): string {
   .biz .name { font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
   .biz .meta { font-size: 10px; }
   .reprint { text-align: center; font-weight: 700; padding: 4px 0; border: 1px dashed #000; margin: 6px 0; font-size: 12px; letter-spacing: 1px; }
+  .turno { text-align: center; border: 2px solid #000; border-radius: 4px; padding: 6px 0; margin: 8px 0; }
+  .turno .label { font-size: 10px; letter-spacing: 2px; }
+  .turno .value { font-size: 30px; font-weight: 700; line-height: 1.1; }
   .meta-row { display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; }
   hr { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
   table.items { width: 100%; border-collapse: collapse; }
@@ -82,6 +85,8 @@ export function renderReceiptHtml(r: ReceiptData): string {
   </div>
 
   ${reprintBanner}
+
+  ${r.turnNumber !== null ? `<div class="turno"><div class="label">TU TURNO</div><div class="value">${r.turnNumber}</div></div>` : ''}
 
   <hr />
 
