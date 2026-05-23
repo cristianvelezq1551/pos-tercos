@@ -324,7 +324,7 @@ apps/api/src/notifications/
 13. `supplier_products` — polimórfico, last_unit_price + currency + last_seen
 14. `invoices` — supplier_name, invoice_number, total, iva, status, image_url, ai_model_used, raw_extraction (JSON), uploaded_by, confirmed_by
 15. `invoice_items` — polimórfico, description_raw + matched entity
-16. `sales` — receipt_number (autoincrement), type (COUNTER|WEB_PICKUP), status, turn_number, customer_name, customer_phone, customer_nit, totals, payment, cashier, shift, idempotency_key UNIQUE. Flags idempotencia WhatsApp: `notified_payment_instructions`, `notified_payment_received`, `notified_ready_for_pickup`, `notified_canceled`. Sin campos de delivery.
+16. `sales` — receipt_number (autoincrement), type (COUNTER|WEB_PICKUP), status, `turn_number` (**nullable** — se asigna al pagar; secuencia diaria única compartida, ver turnos v2), `ready_at` (cocina marca LISTO_DESPACHO; ordena la cola del cajero), `called_at` (cajero llama el turno a pantalla), customer_name, customer_phone, customer_nit, totals, payment, cashier, shift, idempotency_key UNIQUE. Flags idempotencia WhatsApp: `notified_payment_instructions`, `notified_payment_received`, `notified_ready_for_pickup`, `notified_canceled`. Sin campos de delivery.
 17. `sale_items` — product_id (no polimórfico), size_id NULL, modifiers_json snapshot, applied_promotion_id, line_subtotal/discount/total con CHECK
 18. `sale_status_log` — insert-only via trigger; trazabilidad de cambios de status
 19. `shifts` — apertura + cierre completos
@@ -378,8 +378,15 @@ _(ninguno — FASE 4 cerrada)_
 - `POST /kds/orders/:id/start [cocinero]` — PAGADO → EN_PREPARACION
 - `POST /kds/orders/:id/ready [cocinero]` — EN_PREPARACION → LISTO_DESPACHO
 - `WS /ws/kds` (socket.io, namespace `/ws/kds`, room `kitchen.queue`) — auth handshake (auth.token | Authorization: Bearer | cookie pos_access). Eventos: `order.created`, `order.status.changed` con payload `KdsEvent { event, sale, emittedAt }`
-- `GET /public-display/state` — `@Public()`, snapshot `{ current, next[≤3], asOf }`. Filtra `type=COUNTER` + ventana 30 min
+- `GET /public-display/state` — `@Public()`, snapshot `{ currentTurn, callSeq, asOf }` del turnero (turnos v2, ver más abajo). `currentTurn` nullable; `callSeq` monotónico para re-flash.
 - `GET /public-display/stream` — `@Public()`, SSE con NestJS `@Sse()`. Reconnect automático nativo del browser (`EventSource`)
+- `GET /public-display/ready-to-call [cajero]` — cola "listos por llamar" (LISTO_DESPACHO del día, COUNTER+WEB_PICKUP, FIFO por `ready_at`).
+- `POST /public-display/call/:saleId [cajero]` — llama/re-llama ese turno a la pantalla (set `called_at` + `currentTurn`).
+- `POST /public-display/call-manual [cajero]` — body `{turn}` — llamado de número arbitrario (corrección de desfase).
+- `POST /public-display/deliver/:saleId [cajero]` — marca ENTREGADO → sale de la cola.
+- `POST /public-display/turn/reset [cajero]` — limpia la pantalla.
+
+> **Turnos v2 (2026-05-22) — supersede §FASE 6.B.** El turnero ya NO usa `current/next` ni un contador manual `+1`. Modelo actual: el `turn_number` se asigna **al pagar** (`confirmPayment`), como **secuencia diaria única compartida** COUNTER+WEB_PICKUP (nullable hasta el pago; los web abandonados no gastan número). El recibo imprime "TU TURNO: N". La pantalla pública muestra **un solo número** con avance **manual** del cajero, alimentado por la **cola de listos** (la cocina marca LISTO_DESPACHO → `ready_at` + `notify`). El cajero llama desde el POS (`features/turn` → `TurnAction`). Flash+campana se disparan por `callSeq` (re-llamar el mismo número también avisa). Migración `20260522170000_turn_numbering_and_call_queue` (turn_number nullable + `ready_at` + `called_at`). **Nota deploy:** el reset diario usa hora local del server → setear `TZ=America/Bogota` en Railway.
 
 ### Web pública pedidos (FASE 7 — solo WEB_PICKUP)
 - `GET /web/menu` — `@Public()`, Throttle 60/60s. `PublicMenuResponse {products, categories, asOf}`. Subset SAFE del producto (sin `lastUnitCost`/`thresholdMin`/`directResale`)
@@ -701,23 +708,23 @@ apps/web/src/
 ```
 apps/public-display/src/
 ├── app/
-│   ├── globals.css                       # cursor:none, bg-gray-950, hide scrollbars
+│   ├── globals.css                       # cursor:none, hide scrollbars
 │   ├── layout.tsx                        # viewport maximumScale=1, userScalable=false
 │   └── page.tsx                          # dynamic='force-dynamic' + SSR fetch initial
 └── features/display/
-    ├── server.ts                         # getInitialDisplayState (sin auth, fallback EMPTY_STATE)
-    ├── hooks/useDisplayStream.ts         # EventSource → reconnect nativo + backoff browser-managed
-    └── components/Display.tsx            # current section gigante + next section abajo + ConnectionDot
+    ├── server.ts                         # getInitialDisplayState (sin auth, fallback EMPTY_STATE = {currentTurn:null, callSeq:0})
+    ├── hooks/useDisplayStream.ts         # EventSource → dedupe por callSeq + reconnect nativo
+    └── components/                       # Display + Carousel (B-roll) + TurnBadgeCircular + WhiteFlashOverlay + useTurnChime
 ```
 
-### Decisiones de UX aplicadas
+### Decisiones de UX aplicadas (turnos v2 + rediseño kiosko)
 
-- **Modo kiosko**: `cursor: none`, `overflow: hidden`, viewport sin user-scalable. Pensado para Chrome/Edge en modo kiosko en tablet Android (FASE 14).
-- **EventSource > socket.io**: SSE es uno-a-muchos read-only. Reconnect nativo del browser, no requiere lib cliente, sin handshake.
-- Bg `gray-950` (casi negro) para alto contraste.
-- Empty state amigable: "Estamos preparando tu pedido…" cuando `current === null`.
-- ConnectionDot top-right pequeño (debugging visual, no UX): emerald/amber/red.
-- Render gigante: `text-9xl md:text-[14rem]` para que se lea desde la entrada del local.
+- **Modo kiosko**: `cursor: none`, `overflow: hidden`, viewport sin user-scalable. Chrome/Edge kiosko en tablet Android.
+- **EventSource > socket.io**: SSE uno-a-muchos read-only, reconnect nativo del browser.
+- **Un solo número grande** (`TurnBadgeCircular`) — el turno que el cajero llama. "—" cuando no hay turno llamado.
+- **Disparo por `callSeq`** (no por el valor): flash blanco + campana + pausa del carrusel se disparan en cada llamado, incluido re-llamar el mismo número.
+- B-roll (`Carousel`) ocupa el viewport; se pausa 5s al llamar un turno.
+- Indicador "Reconectando…" discreto cuando la conexión SSE no está sana.
 
 ---
 
@@ -963,7 +970,7 @@ Particionada en 5 sub-sprints (5.A → 5.E). Plan completo en `fase5e-y-pendient
 Particionada en 5 sub-sprints. Plan completo en `fase5e-y-pendientes.md` sec 3.1.
 
 - [x] **6.A backend KDS** (`1b06ffd`): deps `@nestjs/websockets` + `@nestjs/platform-socket.io` + `socket.io`. `packages/types/kds`: `KitchenStatusEnum`, `KitchenOrderSchema` (alias Sale), `KdsEventSchema`, constantes `KDS_NAMESPACE='/ws/kds'` + `KDS_QUEUE_ROOM='kitchen.queue'`. Decorator `KitchenAccess()`. `KdsModule` (forwardRef SalesModule) con: `KdsGateway` (auth tri-modal: handshake.auth.token | Authorization Bearer | cookie pos_access; verify JWT con JwtService; role gate; join room; emit), `KdsService` con `getQueue` (PAGADO + EN_PREPARACION FIFO) + `start`/`ready` (transitions con sale_status_log + audit `SALE_STATUS_CHANGED`), `KdsController` con `GET /kds/orders` + `POST /:id/start` + `POST /:id/ready`. Hook `SalesService.confirmPayment` → `kdsGateway.emit('order.created')`.
-- [x] **6.B SSE pantalla pública** (`67dd921`): `packages/types/public-display`: `PublicDisplayOrder` (saleId/receiptNumber/customerName/at — minimal seguro) + `PublicDisplayState` ({current, next[≤3], asOf}). `PublicDisplayModule` `@Global()` sin auth deps. `PublicDisplayService.getState` (current = última transición LISTO_DESPACHO de COUNTER en últimos 30 min vía sale_status_log; next = top 2 PAGADO/EN_PREPARACION FIFO). `notify()` → RxJS Subject; `stream()` con `concat(initial, updates)` emite snapshot completo. `PublicDisplayController` `@Public()` con `GET /state` + `@Sse('/stream')`. Hooks: `confirmPayment` y `KdsService.transition` llaman `publicDisplay.notify()` cuando type=COUNTER.
+- [x] **6.B SSE pantalla pública** (`67dd921`): SSE base con `PublicDisplayModule` `@Global()`, `notify()` → RxJS Subject, `stream()` con `concat(initial, updates)`, `GET /state` + `@Sse('/stream')` `@Public()`. **⚠️ El modelo de datos de 6.B (current/next + currentTurn manual) fue SUPERSEDIDO por turnos v2 (2026-05-22)** — ver §6 "Turnos v2" y memoria `project-turnos-v2`. Ahora: turno asignado al pagar (secuencia única), cola de listos por `ready_at`, llamado manual del cajero, `state = {currentTurn, callSeq, asOf}`.
 - [x] **6.C apps/kds UI** (`83c186e`): implementó `apps/kds` Next.js — **eliminado en v2 (commit `99cb6a1`)**. Reemplazado por `apps/kds-flutter` (ver sec 7.ter).
 - [x] **6.D apps/public-display UI** (`2434523`): kiosko CSS (cursor:none, overflow:hidden, bg-gray-950). Layout viewport sin user-scalable. `useDisplayStream` con `EventSource` (reconnect nativo + backoff browser-managed). `Display` full-screen split: current section gigante (#N text-9xl + customerName) | next section abajo. ConnectionDot top-right debug. Empty state amigable.
 
