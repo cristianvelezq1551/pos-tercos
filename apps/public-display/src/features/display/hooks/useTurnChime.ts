@@ -69,26 +69,25 @@ async function announce(): Promise<void> {
 }
 
 /**
- * Anuncia cada llamado (`trigger` = callSeq, monotónico). Suena también al
- * re-llamar el mismo número. Ignora el primer mount.
- * Throttle 800 ms para evitar doble play en doble click del cajero.
+ * Anuncia un llamado real. Suena SOLO cuando `trigger` (callSeq) SUBE y hay un
+ * turno (`hasTurn`). Así no suena en `reset` (turno nulo) ni al reiniciar el
+ * server / reconectar el SSE (donde callSeq vuelve a 0 y antes sonaba sin
+ * sentido). Ignora el primer mount. Throttle 800 ms contra doble play.
  */
-export function useTurnChime(trigger: number) {
+export function useTurnChime(trigger: number, hasTurn: boolean) {
   const previousRef = useRef<number | null>(null);
   const lastPlayedRef = useRef<number>(0);
 
   useEffect(() => {
-    if (previousRef.current === null) {
-      previousRef.current = trigger;
-      return;
-    }
-    if (previousRef.current === trigger) return;
-    previousRef.current = trigger;
+    const prev = previousRef.current;
+    previousRef.current = trigger; // siempre actualiza (incl. al bajar por reinicio)
+    if (prev === null) return; // primer mount
+    if (trigger <= prev || !hasTurn) return;
 
     const now = Date.now();
     if (now - lastPlayedRef.current < THROTTLE_MS) return;
     lastPlayedRef.current = now;
 
     void announce();
-  }, [trigger]);
+  }, [trigger]); // eslint-disable-line react-hooks/exhaustive-deps
 }

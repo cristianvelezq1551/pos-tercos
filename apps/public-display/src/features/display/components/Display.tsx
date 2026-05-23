@@ -12,6 +12,7 @@ import { AudioPrimer } from './AudioPrimer';
 import { Brand } from './Brand';
 import { Carousel } from './Carousel';
 import { Clock } from './Clock';
+import { SoundActivationPill } from './SoundActivationPill';
 import { TurnBadgeCircular } from './TurnBadgeCircular';
 import { WhiteFlashOverlay } from './WhiteFlashOverlay';
 
@@ -21,20 +22,22 @@ export function Display({ initial }: { initial: PublicDisplayState }) {
   useKioskGuards();
   useWakeLock();
   useStreamWatchdog(connection);
-  useTurnChime(state.callSeq);
+  const hasTurn = state.currentTurn !== null;
+  useTurnChime(state.callSeq, hasTurn);
 
   return (
     <div className="relative h-dvh w-dvw overflow-hidden bg-bg-dark text-text-white">
       {/* Carrusel ocupa el viewport entero (cover, recorta si aspect ratio != 16:9). */}
-      <Carousel trigger={state.callSeq} />
+      <Carousel trigger={state.callSeq} hasTurn={hasTurn} />
 
       {/* Chrome posicionado sobre el viewport real — siempre visible. */}
       <Brand />
       <Clock />
-      <TurnBadgeCircular value={state.currentTurn} trigger={state.callSeq} />
+      <TurnBadgeCircular value={state.currentTurn} trigger={state.callSeq} hasTurn={hasTurn} />
 
-      <WhiteFlashOverlay trigger={state.callSeq} />
+      <WhiteFlashOverlay trigger={state.callSeq} hasTurn={hasTurn} />
       <AudioPrimer />
+      <SoundActivationPill />
       <AudioDebugPanel />
 
       {/* Indicador discreto: solo aparece si la conexión no está sana. */}

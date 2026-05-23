@@ -83,26 +83,26 @@ function RingPulse({ active }: { active: boolean }) {
 export function TurnBadgeCircular({
   value,
   trigger,
+  hasTurn,
 }: {
   value: number | null;
   trigger: number;
+  hasTurn: boolean;
 }) {
   const [changed, setChanged] = useState(false);
   const prevRef = useRef<number | null>(null);
 
-  // Animar en cada llamado (trigger = callSeq) — incluido re-llamar el mismo
-  // número, donde `value` no cambia pero `trigger` sí.
+  // Anima solo ante un llamado real (callSeq sube + hay turno) — incluye
+  // re-llamar el mismo número. No anima en reset ni al reiniciar el server.
   useEffect(() => {
-    if (prevRef.current === null) {
-      prevRef.current = trigger;
-      return;
-    }
-    if (prevRef.current === trigger) return;
+    const prev = prevRef.current;
     prevRef.current = trigger;
+    if (prev === null) return;
+    if (trigger <= prev || !hasTurn) return;
     setChanged(true);
     const id = setTimeout(() => setChanged(false), 1500);
     return () => clearTimeout(id);
-  }, [trigger]);
+  }, [trigger, hasTurn]);
 
   return (
     <motion.div

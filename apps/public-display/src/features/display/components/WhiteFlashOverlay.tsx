@@ -9,22 +9,26 @@ import { useEffect, useRef } from 'react';
  * Spec del .pen webTurno (sección 1d): opacity 0 → 0.04 → 0 en 200 ms.
  * Apenas perceptible — solo da un sutil "click visual" al cambio.
  */
-export function WhiteFlashOverlay({ trigger }: { trigger: number }) {
+export function WhiteFlashOverlay({
+  trigger,
+  hasTurn,
+}: {
+  trigger: number;
+  hasTurn: boolean;
+}) {
   const controls = useAnimation();
   const prevRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (prevRef.current === null) {
-      prevRef.current = trigger;
-      return;
-    }
-    if (prevRef.current === trigger) return;
+    const prev = prevRef.current;
     prevRef.current = trigger;
+    if (prev === null) return;
+    if (trigger <= prev || !hasTurn) return; // solo en llamado real (sube + hay turno)
     void controls.start({
       opacity: [0, 0.04, 0],
       transition: { duration: 0.2, times: [0, 0.3, 1], ease: 'easeOut' },
     });
-  }, [trigger, controls]);
+  }, [trigger, controls]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <motion.div
