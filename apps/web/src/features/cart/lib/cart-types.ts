@@ -20,4 +20,6 @@ export interface CartLine {
   modifiers: CartLineModifier[];
   quantity: number;
   unitPrice: number;
+  /** Nota libre del cliente para este ítem (ej. "sin cebolla"). */
+  notes?: string;
 }

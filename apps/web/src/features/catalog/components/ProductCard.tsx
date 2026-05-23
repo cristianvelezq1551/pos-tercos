@@ -73,7 +73,7 @@ export function ProductCard({
 function ImageFallback({ label }: { label: string }) {
   const initial = label.trim().charAt(0).toUpperCase() || 'T';
   return (
-    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-ink-800 to-ink-950">
+    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-background">
       <span className="font-display text-5xl font-extrabold uppercase tracking-[0.04em] text-white/10 sm:text-7xl">
         {initial}
       </span>

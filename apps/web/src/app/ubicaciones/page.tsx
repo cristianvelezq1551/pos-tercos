@@ -74,7 +74,7 @@ function LocationCard({ location, index }: { location: Location; index: number }
       style={{ animationDelay: `${100 + index * 140}ms` }}
       className="reveal-up card-lift overflow-hidden rounded-2xl border border-border bg-card"
     >
-      <div className="relative flex h-60 w-full items-center justify-center overflow-hidden bg-gradient-to-br from-ink-800 via-ink-900 to-ink-950">
+      <div className="relative flex h-60 w-full items-center justify-center overflow-hidden bg-gradient-to-br from-muted via-card to-background">
         <div
           aria-hidden
           className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(220,38,38,0.18),transparent_55%)]"

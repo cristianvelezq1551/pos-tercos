@@ -11,7 +11,10 @@ const EMPTY: PublicMenuResponse = {
 };
 
 export async function getMenuServer(): Promise<PublicMenuResponse> {
-  const json = await publicFetch<unknown>('/web/menu');
+  // Menú público: cambia poco. ISR 60s — HTML cacheado, refresca en background.
+  const json = await publicFetch<unknown>('/web/menu', {
+    next: { revalidate: 60 },
+  });
   if (json === null) return EMPTY;
   const parsed = PublicMenuResponseSchema.safeParse(json);
   return parsed.success ? parsed.data : EMPTY;

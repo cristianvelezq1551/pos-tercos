@@ -30,7 +30,7 @@ function HeroAbout() {
     <section className="grid grid-cols-1 lg:grid-cols-[3fr_2fr]" style={{ minHeight: 500 }}>
       <div
         aria-hidden
-        className="relative overflow-hidden bg-gradient-to-br from-ink-800 via-ink-900 to-ink-950 lg:min-h-[500px]"
+        className="relative overflow-hidden bg-gradient-to-br from-muted via-card to-background lg:min-h-[500px]"
         style={{ minHeight: 320 }}
       >
         <div
@@ -160,7 +160,7 @@ function TeamCard({
       style={{ animationDelay: `${100 + index * 120}ms` }}
       className="reveal-up card-lift overflow-hidden rounded-2xl bg-card"
     >
-      <div className="relative flex aspect-[4/5] w-full items-center justify-center overflow-hidden bg-gradient-to-br from-ink-800 via-ink-900 to-ink-950">
+      <div className="relative flex aspect-[4/5] w-full items-center justify-center overflow-hidden bg-gradient-to-br from-muted via-card to-background">
         <div
           aria-hidden
           className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(220,38,38,0.12),transparent_55%)]"

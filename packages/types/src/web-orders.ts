@@ -53,6 +53,14 @@ export const PublicWebOrderSchema = z.object({
   discountTotal: z.number().nonnegative(),
   total: z.number().nonnegative(),
   createdAt: z.string().datetime(),
+  /**
+   * Instrucciones de pago canónicas (Nequi/transferencia). El backend es la
+   * única fuente: las emite el endpoint GET para que el cliente vea siempre el
+   * mismo texto en reload / device distinto / share del URL, sin depender de
+   * env vars del web app. Ausente en WS events y en el `order` del create
+   * response (ahí van top-level en CreateWebOrderResponse).
+   */
+  paymentInstructions: z.string().optional(),
 });
 export type PublicWebOrder = z.infer<typeof PublicWebOrderSchema>;
 

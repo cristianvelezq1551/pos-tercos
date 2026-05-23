@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Big_Shoulders, Inter } from 'next/font/google';
 import './globals.css';
 
@@ -20,6 +20,12 @@ const fontDisplay = Big_Shoulders({
 export const metadata: Metadata = {
   title: 'POS Tercos — Web Pública',
   description: 'Pedidos online — recoger en tienda',
+};
+
+export const viewport: Viewport = {
+  themeColor: '#141414',
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({

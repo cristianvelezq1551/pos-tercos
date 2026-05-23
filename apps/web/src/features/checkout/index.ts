@@ -6,7 +6,7 @@ export {
   type OrderConnState,
 } from './components/OrderStatusPoller';
 export { createWebOrder, getWebOrder } from './api';
-export { getWebOrderServer, buildPaymentInstructions } from './server';
+export { getWebOrderServer } from './server';
 export { useActiveOrder, isTerminalStatus } from './store/active-order-store';
 export type { ActiveOrder } from './store/active-order-store';
 export { ActiveOrderBanner } from './components/ActiveOrderBanner';

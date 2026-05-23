@@ -18,7 +18,10 @@ export interface PickerSelection {
   modifiers: ProductModifier[];
   quantity: number;
   unitPrice: number;
+  notes?: string;
 }
+
+const MAX_NOTE_LENGTH = 140;
 
 export function ProductPickerModal({
   product,
@@ -39,6 +42,7 @@ export function ProductPickerModal({
   const [sizeId, setSizeId] = useState<string | null>(null);
   const [modifierIds, setModifierIds] = useState<Set<string>>(new Set());
   const [quantity, setQuantity] = useState(1);
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (open && product) {
@@ -46,6 +50,7 @@ export function ProductPickerModal({
       setSizeId(sortedSizes[0]?.id ?? null);
       setModifierIds(new Set());
       setQuantity(1);
+      setNotes('');
     }
   }, [open, product?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -104,6 +109,7 @@ export function ProductPickerModal({
       modifiers: selectedModifiers,
       quantity,
       unitPrice,
+      notes: notes.trim() || undefined,
     });
     onClose();
   };
@@ -129,7 +135,7 @@ export function ProductPickerModal({
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-ink-800 to-ink-950">
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-background">
               <span className="font-display text-8xl font-extrabold uppercase tracking-[0.04em] text-white/10">
                 {product.name.charAt(0).toUpperCase()}
               </span>
@@ -273,6 +279,28 @@ export function ProductPickerModal({
               </div>
             </>
           ) : null}
+
+          <div className="h-px w-full bg-border" />
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="picker-notes"
+              className="text-sm font-semibold text-foreground"
+            >
+              Nota para la cocina{' '}
+              <span className="font-normal text-muted-foreground">(opcional)</span>
+            </label>
+            <textarea
+              id="picker-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value.slice(0, MAX_NOTE_LENGTH))}
+              rows={2}
+              placeholder="Ej. sin cebolla, término medio…"
+              className="w-full resize-none rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="self-end text-[11px] tabular-nums text-muted-foreground">
+              {notes.length}/{MAX_NOTE_LENGTH}
+            </span>
+          </div>
         </div>
 
         <footer className="sticky bottom-0 border-t border-border bg-card p-4 pb-[max(env(safe-area-inset-bottom),1rem)] sm:static sm:border-t-0 sm:p-6 sm:pt-0">

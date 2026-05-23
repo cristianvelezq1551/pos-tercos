@@ -12,6 +12,7 @@ interface AddInput {
   modifiers: CartLine['modifiers'];
   quantity: number;
   unitPrice: number;
+  notes?: string;
 }
 
 interface CartState {
@@ -27,7 +28,7 @@ interface CartState {
 function lineSignature(item: AddInput | CartLine): string {
   const sizeId = item.size?.id ?? '';
   const modIds = [...item.modifiers].map((m) => m.id).sort().join('|');
-  return `${item.productId}::${sizeId}::${modIds}`;
+  return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}`;
 }
 
 let lineCounter = 0;
@@ -60,6 +61,7 @@ export const useCartStore = create<CartState>()(
                 modifiers: input.modifiers,
                 quantity: input.quantity,
                 unitPrice: input.unitPrice,
+                notes: input.notes?.trim() || undefined,
               },
             ],
           };
@@ -92,6 +94,7 @@ export function cartLinesToCreateItems(items: readonly CartLine[]) {
     sizeId: it.size?.id,
     quantity: it.quantity,
     modifiers: it.modifiers.map((m) => ({ modifierId: m.id })),
+    notes: it.notes?.trim() || undefined,
   }));
 }
 

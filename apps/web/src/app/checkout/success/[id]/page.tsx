@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import {
-  buildPaymentInstructions,
   getWebOrderServer,
   OrderStatusView,
 } from '../../../../features/checkout';
@@ -49,7 +48,10 @@ export default async function CheckoutSuccessPage({
   const order = await getWebOrderServer(id, token);
   if (!order) notFound();
 
-  const instructions = buildPaymentInstructions(order);
+  // El backend (GET /web/orders/:id) es la única fuente de las instrucciones
+  // de pago. Sobrevive a reload / device distinto / share del URL sin que el
+  // web app necesite las env vars de pago.
+  const instructions = order.paymentInstructions ?? '';
 
   return (
     <div className="min-h-dvh bg-background text-foreground">

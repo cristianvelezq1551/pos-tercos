@@ -14,7 +14,7 @@ const LINKS = [
   {
     href: '/ubicaciones',
     label: 'Ubicaciones',
-    description: 'Encontranos en Bogotá y Medellín',
+    description: 'Encuéntranos en Envigado',
     icon: MapPin,
   },
 ] as const;

@@ -69,7 +69,8 @@ export class WebOrdersController {
   ): Promise<PublicWebOrder> {
     if (!token) throw new BadRequestException('token query param required');
     this.tokens.verify(token, id);
-    return this.orders.getPublic(id);
+    const order = await this.orders.getPublic(id);
+    return { ...order, paymentInstructions: buildPaymentInstructions(order) };
   }
 
   // Flujo cajero-driven: el cliente nunca afirma pago. El cajero acepta

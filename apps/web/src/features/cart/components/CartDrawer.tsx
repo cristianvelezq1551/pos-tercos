@@ -182,7 +182,7 @@ function CartLineRow({
 
   return (
     <li className="flex gap-3 border-b border-border px-5 py-4 sm:px-6">
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-ink-800 to-ink-950">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-muted to-background">
         {line.imageUrl ? (
           <img
             src={line.imageUrl}
@@ -213,6 +213,9 @@ function CartLineRow({
         </div>
         {description ? (
           <p className="truncate text-xs text-muted-foreground">{description}</p>
+        ) : null}
+        {line.notes ? (
+          <p className="text-xs italic text-muted-foreground">“{line.notes}”</p>
         ) : null}
 
         <div className="mt-1 flex items-center justify-between gap-3">

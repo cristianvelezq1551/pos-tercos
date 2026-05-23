@@ -48,6 +48,7 @@ export function CatalogGrid({
       })),
       quantity: sel.quantity,
       unitPrice: sel.unitPrice,
+      notes: sel.notes,
     });
   };
 
@@ -63,7 +64,7 @@ export function CatalogGrid({
           Menú
         </h2>
 
-        <label className="relative block sm:hidden">
+        <label className="relative block sm:max-w-sm">
           <span className="sr-only">Buscar en el menú</span>
           <Search
             className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"

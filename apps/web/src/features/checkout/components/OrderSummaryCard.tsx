@@ -45,7 +45,7 @@ function OrderLineRow({ line, isLast }: { line: CartLine; isLast: boolean }) {
         isLast ? '' : 'border-b border-border'
       }`}
     >
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-ink-800 to-ink-950">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-muted to-background">
         {line.imageUrl ? (
           <img
             src={line.imageUrl}
@@ -65,6 +65,9 @@ function OrderLineRow({ line, isLast }: { line: CartLine; isLast: boolean }) {
         </p>
         {meta ? (
           <p className="truncate text-xs text-muted-foreground">{meta}</p>
+        ) : null}
+        {line.notes ? (
+          <p className="truncate text-xs italic text-muted-foreground">“{line.notes}”</p>
         ) : null}
       </div>
       <span className="shrink-0 text-sm font-bold tabular-nums text-foreground">

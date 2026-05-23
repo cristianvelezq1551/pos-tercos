@@ -35,7 +35,7 @@ interface StatusMeta {
 const STATUS_MAP: Record<string, StatusMeta> = {
   PENDIENTE_PAGO: {
     icon: Clock,
-    iconBg: 'bgç-[#C00101]',
+    iconBg: 'bg-[#C00101]',
     title: 'Esperando tu pago',
     subtitle: (o) =>
       `Pedido #${o.receiptNumber} · Te contactaremos por WhatsApp para coordinar la transferencia`,
@@ -156,7 +156,7 @@ export function OrderStatusView({
         </h1>
         <p className="reveal-up stagger-2 text-sm text-muted-foreground sm:text-base">{meta.subtitle(order)}</p>
         {conn === 'reconnecting' ? (
-          <p className="text-xs text-warning-foreground">⚠ Reconectando…</p>
+          <p className="text-xs font-medium text-warning">⚠ Reconectando…</p>
         ) : null}
       </div>
 
