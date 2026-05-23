@@ -27,6 +27,7 @@ import type {
   SaleItem,
   SaleStatus,
   SaleStatusLogEntry,
+  Shift,
   VoidSale,
 } from '@pos-tercos/types';
 import type { Prisma, SaleStatus as DbSaleStatus } from '@prisma/client';
@@ -120,15 +121,13 @@ export class SalesService {
       }
     }
 
-    // COUNTER requiere turno abierto del cajero. WEB_* no exige turno
-    // (el cajero asignará shift al confirmar el pago vía POS, fuera de
-    // este endpoint).
-    let shift: Awaited<ReturnType<typeof this.prisma.shift.findFirst>> = null;
+    // COUNTER requiere la caja del día abierta. Si quedó una caja OPEN de un
+    // día anterior, getActiveTodayShift lanza Conflict → el cajero debe cerrarla
+    // (Cerrar turno) antes de vender. WEB_* no exige turno (el cajero asigna
+    // shift al confirmar el pago vía POS).
+    let shift: Shift | null = null;
     if (input.type === 'COUNTER') {
-      shift = await this.prisma.shift.findFirst({
-        where: { cashierId, status: 'OPEN' },
-        orderBy: { openedAt: 'desc' },
-      });
+      shift = await this.shifts.getActiveTodayShift(cashierId);
       if (!shift) {
         throw new BadRequestException(
           'No tenés un turno abierto. Abrí turno antes de vender (POST /shifts/open).',
@@ -300,7 +299,9 @@ export class SalesService {
     let shiftId = existing.shiftId;
     let cashierId = existing.cashierId;
     if (existing.type === 'WEB_PICKUP' && shiftId === null) {
-      const shift = await this.shifts.getCurrent(userId);
+      // getActiveTodayShift lanza Conflict si la caja quedó abierta de ayer →
+      // el cajero debe cerrarla antes de confirmar pagos.
+      const shift = await this.shifts.getActiveTodayShift(userId);
       if (shift) {
         shiftId = shift.id;
         cashierId = userId;
@@ -415,16 +416,23 @@ export class SalesService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Turno: secuencia diaria única compartida COUNTER + WEB_PICKUP. Se
-      // asigna acá (al pagar). Cuenta ventas ya con turno hoy + 1. Esta venta
-      // todavía tiene turnNumber null (se excluye sola). Para 1 cajero el riesgo
-      // de carrera es nulo; el guard transaccional de abajo cierra el doble-cobro.
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const assignedToday = await tx.sale.count({
-        where: { turnNumber: { not: null }, paidAt: { gte: startOfDay } },
-      });
-      const turnNumber = assignedToday + 1;
+      // Turno: secuencia ÚNICA por CAJA (no global). Resetea cada vez que se
+      // abre una caja nueva → cada día empieza en #1, sin importar cuántos
+      // pedidos hubo ayer. Cuenta los que ya tienen turno en ESTA caja + 1.
+      // (Fallback a "hoy" si por algún motivo no hay caja asociada.)
+      let assigned: number;
+      if (shiftId) {
+        assigned = await tx.sale.count({
+          where: { shiftId, turnNumber: { not: null } },
+        });
+      } else {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        assigned = await tx.sale.count({
+          where: { turnNumber: { not: null }, paidAt: { gte: startOfDay } },
+        });
+      }
+      const turnNumber = assigned + 1;
 
       // Guard transaccional contra doble-cobro (doble-click / retry de red):
       // el status se condiciona DENTRO del UPDATE. Si otra request ya cobró,
@@ -520,26 +528,22 @@ export class SalesService {
       include: { items: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
-    // Solo se anula ANTES de que cocina empiece a prepararla: PENDIENTE_PAGO o
-    // PAGADO (aún sin iniciar). Una vez EN_PREPARACION/LISTO/ENTREGADO la comida
-    // ya se hizo y no se revierte por anulación.
-    if (existing.status !== 'PENDIENTE_PAGO' && existing.status !== 'PAGADO') {
+    // Solo se anula un pedido PAGADO que la cocina AÚN NO inició. Una vez en
+    // EN_PREPARACION (o posterior) ya hay comida en juego → no se anula. Los web
+    // PENDIENTE_PAGO se rechazan con cancelWebOrder (nunca se cobraron).
+    if (existing.status !== 'PAGADO') {
       throw new BadRequestException(
-        `No se puede anular en estado ${existing.status}: la cocina ya inició la preparación. ` +
-          'Solo se anula cuando está PENDIENTE_PAGO o PAGADO sin iniciar.',
+        existing.status === 'EN_PREPARACION' || existing.status === 'LISTO_DESPACHO'
+          ? 'No se puede anular: la cocina ya inició este pedido.'
+          : `No se puede anular en estado ${existing.status}.`,
       );
     }
 
     const oldStatus = existing.status;
-    // Solo PAGADO descontó stock (PENDIENTE_PAGO nunca lo hizo). Son los únicos
-    // dos estados anulables tras el guard de arriba.
-    const wasStockDecremented = oldStatus === 'PAGADO';
-
-    // Revertir movements: el sourceId es la sale → buscar todos los SALE
-    // movements con ese sourceId y crear movements compensatorios con
-    // delta opuesto. NO se hace UPDATE/DELETE (insert-only).
+    // El pedido estaba PAGADO → descontó stock al cobrarse. Se revierte con
+    // movements compensatorios (insert-only, delta opuesto, type=SALE).
     const reverseMovements: Prisma.InventoryMovementCreateManyInput[] = [];
-    if (wasStockDecremented) {
+    {
       const originals = await this.prisma.inventoryMovement.findMany({
         where: { sourceType: 'sale', sourceId: saleId, type: 'SALE' },
       });
@@ -561,7 +565,7 @@ export class SalesService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const sale = await tx.sale.update({
         where: { id: saleId },
-        data: { status: 'VOID' },
+        data: { status: 'VOID', voidReason: input.reason },
         include: includeFull(),
       });
       await tx.saleStatusLog.create({
@@ -600,11 +604,8 @@ export class SalesService {
     });
 
     const dto = toSaleDto(updated);
-    // Si estaba PAGADO ya estaba en la cola de cocina → avisar al KDS para que
-    // la saque del board. (EN_PREPARACION ya no es anulable.)
-    if (oldStatus === 'PAGADO') {
-      this.kdsGateway.emit('order.status.changed', dto);
-    }
+    // Estaba PAGADO → en la cola de cocina. Avisar al KDS para sacarlo del board.
+    this.kdsGateway.emit('order.status.changed', dto);
     return dto;
   }
 
@@ -1090,6 +1091,7 @@ function toSaleDto(row: DbSaleWithDetail): Sale {
     cashierName: row.cashier?.fullName ?? null,
     shiftId: row.shiftId,
     notes: row.notes,
+    voidReason: row.voidReason,
     idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
     items,

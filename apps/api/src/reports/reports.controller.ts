@@ -13,6 +13,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ReconciliationSourceEnum,
   SalesGranularityEnum,
+  type AiSummary,
   type CashierAnomalies,
   type DashboardSummary,
   type HourHeatmapReport,
@@ -52,6 +53,14 @@ export class ReportsController {
   @Get('dashboard')
   getDashboard(): Promise<DashboardSummary> {
     return this.salesReports.getDashboardSummary();
+  }
+
+  /** Resumen diario en lenguaje natural (IA). On-demand. Admin/Dueño. */
+  @AdminAccess()
+  @Get('daily-ai-summary')
+  getDailyAiSummary(@Query('date') date?: string): Promise<AiSummary> {
+    const day = date ? new Date(`${date}T12:00:00`) : new Date();
+    return this.salesReports.getDailyAiSummary(day);
   }
 
   /** Series temporales + breakdowns. Default: últimos 7 días. Admin/Dueño. */

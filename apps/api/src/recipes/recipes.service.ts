@@ -206,6 +206,46 @@ export class RecipesService {
     return { graph, root: { kind: 'product', id: productId } };
   }
 
+  /**
+   * Carga el grafo de recetas COMPLETO en una sola pasada (todos los productos,
+   * subproductos, insumos y aristas base). Pensado para evaluar disponibilidad
+   * de muchos productos sin N+1: el llamador construye `root` por producto y
+   * llama `expandRecipe`. Excluye aristas de variante (parentSizeId) — la
+   * disponibilidad se evalúa sobre la receta base.
+   */
+  async loadFullGraph(): Promise<RecipeGraph> {
+    const [products, subproducts, ingredients, edges] = await Promise.all([
+      this.prisma.product.findMany({ select: { id: true, name: true } }),
+      this.prisma.subproduct.findMany(),
+      this.prisma.ingredient.findMany(),
+      this.prisma.recipeEdge.findMany({
+        where: {
+          OR: [
+            { parentProductId: { not: null } },
+            { parentSubproductId: { not: null } },
+          ],
+        },
+      }),
+    ]);
+
+    return {
+      products: new Map(products.map((p) => [p.id, { id: p.id, name: p.name }])),
+      subproducts: new Map(
+        subproducts.map((s) => [
+          s.id,
+          { id: s.id, name: s.name, yield: Number(s.yield) },
+        ]),
+      ),
+      ingredients: new Map(
+        ingredients.map((i) => [
+          i.id,
+          { id: i.id, name: i.name, unitRecipe: i.unitRecipe },
+        ]),
+      ),
+      edgesByParent: groupEdgesByParent(edges),
+    };
+  }
+
   async expandedCost(productId: string): Promise<ExpandedCostResponse> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },

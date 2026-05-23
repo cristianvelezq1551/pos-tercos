@@ -9,6 +9,9 @@ import { KdsGateway } from './kds.gateway';
 
 const KITCHEN_QUEUE_STATUSES = ['PAGADO', 'EN_PREPARACION'] as const satisfies readonly SaleStatus[];
 
+/** Si la preparación supera estos minutos, queda registrada como tardanza. */
+const DELAYED_PREP_MIN = 10;
+
 @Injectable()
 export class KdsService {
   constructor(
@@ -50,6 +53,24 @@ export class KdsService {
   async ready(saleId: string, userId: string, silent = false): Promise<Sale> {
     const sale = await this.transition(saleId, 'EN_PREPARACION', 'LISTO_DESPACHO', userId);
     if (!silent) void this.notifications.notify(saleId, 'pickup_ready');
+    // Tardanza: si la preparación tardó más del umbral, queda en la bitácora
+    // de admin para seguimiento de eficiencia de cocina.
+    const baseline = sale.paidAt ?? sale.createdAt;
+    const elapsedMin = Math.floor((Date.now() - new Date(baseline).getTime()) / 60000);
+    if (elapsedMin >= DELAYED_PREP_MIN) {
+      void this.audit.log({
+        userId,
+        action: 'KDS_ORDER_DELAYED',
+        entityType: 'sale',
+        entityId: saleId,
+        metadata: {
+          elapsedMin,
+          thresholdMin: DELAYED_PREP_MIN,
+          turnNumber: sale.turnNumber,
+          receiptNumber: sale.receiptNumber,
+        },
+      });
+    }
     return sale;
   }
 

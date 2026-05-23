@@ -1,19 +1,35 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   ComboComponent,
   CreateProduct,
   Product,
+  ProductAvailability,
   ProductModifier,
   ProductSize,
   SetComboComponents,
   SetProductOptions,
   UpdateProduct,
 } from '@pos-tercos/types';
-import type { StorageProvider } from '@pos-tercos/domain';
+import {
+  expandRecipe,
+  type ParentRef,
+  type RecipeGraph,
+  type StorageProvider,
+} from '@pos-tercos/domain';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RecipesService } from '../recipes/recipes.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { mimeForExtension } from '../common/image-mime';
+
+/** Tolerancia de punto flotante al comparar stock vs receta (en unitRecipe). */
+const STOCK_EPSILON = 1e-6;
 
 type ProductWithChildren = Prisma.ProductGetPayload<{
   include: {
@@ -25,8 +41,11 @@ type ProductWithChildren = Prisma.ProductGetPayload<{
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
+    private readonly recipes: RecipesService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -285,6 +304,208 @@ export class ProductsService {
     return this.getById(productId);
   }
 
+  /**
+   * Disponibilidad en vivo para vender (cajero + web): reventa directa se
+   * invalida a 0 stock; los preparados/combos solo por "agotado" manual
+   * (no dependen del stock de insumos, que puede no estar cargado).
+   */
+  /**
+   * Disponibilidad en vivo de todo el catálogo, robusta por tipo de producto:
+   *  - reventa directa → stock propio del producto > 0
+   *  - preparado       → insumos de su receta base alcanzan para ≥1 unidad
+   *  - combo           → todos sus componentes alcanzan para ≥1 combo
+   *  - "86" manual (soldOut) invalida cualquier producto
+   *
+   * Hace ~3 queries + 1 grafo (sin N+1): stock de productos, stock de insumos
+   * y el grafo completo de recetas; la expansión por producto es en memoria.
+   */
+  async getAvailability(): Promise<ProductAvailability[]> {
+    const [allProducts, prodStockRows, ingStockRows, graph] = await Promise.all([
+      this.prisma.product.findMany({
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          directResale: true,
+          isCombo: true,
+          soldOut: true,
+          comboComponents: { select: { productId: true, quantity: true } },
+        },
+      }),
+      this.prisma.inventoryMovement.groupBy({
+        by: ['productId'],
+        where: { entityType: 'PRODUCT' },
+        _sum: { delta: true },
+      }),
+      this.prisma.inventoryMovement.groupBy({
+        by: ['ingredientId'],
+        where: { entityType: 'INGREDIENT' },
+        _sum: { delta: true },
+      }),
+      this.recipes.loadFullGraph(),
+    ]);
+
+    const prodStock = new Map<string, number>();
+    for (const r of prodStockRows) {
+      if (r.productId) prodStock.set(r.productId, Number(r._sum.delta ?? 0));
+    }
+    const ingStock = new Map<string, number>();
+    for (const r of ingStockRows) {
+      if (r.ingredientId) ingStock.set(r.ingredientId, Number(r._sum.delta ?? 0));
+    }
+    const productById = new Map(allProducts.map((p) => [p.id, p]));
+
+    return allProducts
+      .filter((p) => p.isActive)
+      .map((p) => {
+        // 1) "86" manual gana sobre todo.
+        if (p.soldOut) {
+          return {
+            productId: p.id,
+            available: false,
+            stock: p.directResale ? (prodStock.get(p.id) ?? 0) : null,
+            reason: 'Agotado (manual)',
+          };
+        }
+
+        // 2) Reventa directa: stock propio.
+        if (p.directResale) {
+          const stock = prodStock.get(p.id) ?? 0;
+          return {
+            productId: p.id,
+            available: stock > 0,
+            stock,
+            reason: stock > 0 ? null : 'Sin stock',
+          };
+        }
+
+        // 3) Combo: que alcance para armar al menos 1.
+        if (p.isCombo) {
+          const reason = this.evalComboShortages(
+            p.comboComponents,
+            graph,
+            productById,
+            ingStock,
+            prodStock,
+          );
+          return { productId: p.id, available: reason === null, stock: null, reason };
+        }
+
+        // 4) Preparado: insumos de la receta base.
+        const reason = this.evalRecipeShortages(p.id, p.name, graph, ingStock);
+        return { productId: p.id, available: reason === null, stock: null, reason };
+      });
+  }
+
+  /**
+   * Expande la receta base de un preparado y verifica que cada insumo alcance
+   * para ≥1 unidad. Devuelve el motivo ("Sin Pan, Papas") o null si disponible.
+   * Sin receta definida → null (no se invalida; queda el "86" manual).
+   */
+  private evalRecipeShortages(
+    productId: string,
+    productName: string,
+    graph: RecipeGraph,
+    ingStock: Map<string, number>,
+  ): string | null {
+    const root: ParentRef = { kind: 'product', id: productId };
+    let needs: ReturnType<typeof expandRecipe>;
+    try {
+      needs = expandRecipe(graph, root, 1);
+    } catch (err) {
+      // Receta rota (ciclo / nodo faltante): no bloqueamos la venta por eso.
+      this.logger.warn(
+        `Disponibilidad: receta inválida en "${productName}" (${productId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
+    if (needs.size === 0) return null;
+    const missing: string[] = [];
+    for (const ing of needs.values()) {
+      const have = ingStock.get(ing.ingredientId) ?? 0;
+      if (have + STOCK_EPSILON < ing.totalQuantity) missing.push(ing.name);
+    }
+    return missing.length > 0 ? `Sin ${missing.join(', ')}` : null;
+  }
+
+  /**
+   * Verifica que un combo pueda armarse: agrega los insumos de los componentes
+   * preparados y el stock de los componentes de reventa directa, todo escalado
+   * por la cantidad de cada componente. Devuelve el motivo o null.
+   */
+  private evalComboShortages(
+    components: { productId: string; quantity: number }[],
+    graph: RecipeGraph,
+    productById: Map<string, { name: string; directResale: boolean; soldOut: boolean }>,
+    ingStock: Map<string, number>,
+    prodStock: Map<string, number>,
+  ): string | null {
+    const aggIngredientNeeds = new Map<string, number>();
+    const ingredientName = new Map<string, string>();
+    const drNeeds = new Map<string, number>();
+
+    for (const comp of components) {
+      const cp = productById.get(comp.productId);
+      if (!cp) return 'Combo mal configurado';
+      if (cp.soldOut) return `Sin ${cp.name}`;
+      if (cp.directResale) {
+        drNeeds.set(comp.productId, (drNeeds.get(comp.productId) ?? 0) + comp.quantity);
+        continue;
+      }
+      try {
+        const needs = expandRecipe(
+          graph,
+          { kind: 'product', id: comp.productId },
+          comp.quantity,
+        );
+        for (const ing of needs.values()) {
+          aggIngredientNeeds.set(
+            ing.ingredientId,
+            (aggIngredientNeeds.get(ing.ingredientId) ?? 0) + ing.totalQuantity,
+          );
+          ingredientName.set(ing.ingredientId, ing.name);
+        }
+      } catch (err) {
+        // Receta rota de un componente: no bloqueamos por eso.
+        this.logger.warn(
+          `Disponibilidad: receta inválida en componente "${cp.name}": ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    const missing: string[] = [];
+    for (const [pid, qty] of drNeeds) {
+      if ((prodStock.get(pid) ?? 0) + STOCK_EPSILON < qty) {
+        missing.push(productById.get(pid)?.name ?? 'producto');
+      }
+    }
+    for (const [ingId, qty] of aggIngredientNeeds) {
+      if ((ingStock.get(ingId) ?? 0) + STOCK_EPSILON < qty) {
+        missing.push(ingredientName.get(ingId) ?? 'insumo');
+      }
+    }
+    return missing.length > 0 ? `Sin ${[...new Set(missing)].join(', ')}` : null;
+  }
+
+  /** Marca/desmarca un producto como agotado (86 manual). */
+  async setSoldOut(id: string, soldOut: boolean): Promise<Product> {
+    const exists = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException(`Product ${id} not found`);
+    const row = await this.prisma.product.update({
+      where: { id },
+      data: { soldOut },
+      include: { sizes: true, modifiers: true, comboComponents: true },
+    });
+    return toProductDto(row);
+  }
+
   async deactivate(id: string): Promise<Product> {
     const exists = await this.prisma.product.findUnique({ where: { id }, select: { id: true } });
     if (!exists) {
@@ -330,6 +551,7 @@ function toProductDto(row: ProductWithChildren): Product {
     isCombo: row.isCombo,
     comboPrice: row.comboPrice !== null ? Number(row.comboPrice) : null,
     isActive: row.isActive,
+    soldOut: row.soldOut,
     directResale: row.directResale,
     unitPurchase: row.unitPurchase,
     unitStock: row.unitStock,

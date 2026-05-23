@@ -3,6 +3,8 @@ import {
   INVOICE_EXTRACTION_SYSTEM,
   INVOICE_EXTRACTION_USER,
   PURCHASE_SUGGESTION_SYSTEM,
+  type LLMCompletionRequest,
+  type LLMCompletionResult,
   type LLMInvoiceExtractionRequest,
   type LLMInvoiceExtractionResult,
   type LLMProvider,
@@ -99,5 +101,22 @@ export class OpenAILLMAdapter implements LLMProvider {
       throw new Error('LLM returned empty rationale');
     }
     return { rationale: text, modelUsed: `openai:${this.model}` };
+  }
+
+  async complete(req: LLMCompletionRequest): Promise<LLMCompletionResult> {
+    const client = this.getClient();
+    const response = await client.chat.completions.create({
+      model: this.model,
+      max_tokens: req.maxTokens ?? 400,
+      messages: [
+        { role: 'system', content: req.systemPrompt },
+        { role: 'user', content: req.userPrompt },
+      ],
+    });
+    const text = (response.choices[0]?.message?.content ?? '').trim();
+    if (text.length === 0) {
+      throw new Error('LLM returned empty completion');
+    }
+    return { text, modelUsed: `openai:${this.model}` };
   }
 }

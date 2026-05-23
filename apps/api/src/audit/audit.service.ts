@@ -16,6 +16,8 @@ interface LogInput {
 interface ListFilter {
   userId?: string;
   action?: AuditAction;
+  /** Filtra por un conjunto de acciones (bitácora). Si está, ignora `action`. */
+  actions?: AuditAction[];
   entityType?: string;
   entityId?: string;
   from?: Date;
@@ -56,7 +58,11 @@ export class AuditService {
   async list(filter: ListFilter = {}): Promise<AuditLogEntry[]> {
     const where: Prisma.AuditLogWhereInput = {};
     if (filter.userId) where.userId = filter.userId;
-    if (filter.action) where.action = filter.action;
+    if (filter.actions && filter.actions.length > 0) {
+      where.action = { in: filter.actions };
+    } else if (filter.action) {
+      where.action = filter.action;
+    }
     if (filter.entityType) where.entityType = filter.entityType;
     if (filter.entityId) where.entityId = filter.entityId;
     if (filter.from || filter.to) {

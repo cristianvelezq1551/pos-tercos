@@ -19,6 +19,7 @@ model User {
   createdAt          DateTime                @default(now()) @map("created_at")
   approvalPin        ApprovalPin?
   auditLogs          AuditLog[]
+  cashMovements      CashMovement[]
   idempotencyKeys    IdempotencyKey[]
   inventoryMovements InventoryMovement[]
   invoicesConfirmed  Invoice[]               @relation("InvoiceConfirmedBy")
@@ -62,6 +63,9 @@ model Product {
   isCombo               Boolean             @default(false) @map("is_combo")
   comboPrice            Decimal?            @map("combo_price") @db.Decimal(12, 2)
   isActive              Boolean             @default(true) @map("is_active")
+  /// "86" manual: el cajero/admin lo marca agotado y desaparece como vendible
+  /// (cajero + web) sin tocar el catálogo. Independiente del stock de insumos.
+  soldOut               Boolean             @default(false) @map("sold_out")
   createdAt             DateTime            @default(now()) @map("created_at")
   updatedAt             DateTime            @updatedAt @map("updated_at")
   conversionFactor      Decimal?            @map("conversion_factor") @db.Decimal(14, 6)
@@ -366,6 +370,8 @@ model Sale {
   cashierId                     String?         @map("cashier_id")
   shiftId                       String?         @map("shift_id")
   notes                         String?
+  /// Motivo de anulación (solo cuando status=VOID). Se muestra en el historial.
+  voidReason                    String?         @map("void_reason")
   idempotencyKey                String?         @unique @map("idempotency_key")
   createdAt                     DateTime        @default(now()) @map("created_at")
   public_token                  String?         @unique
@@ -450,13 +456,34 @@ model Shift {
   countedCash  Decimal?    @map("counted_cash") @db.Decimal(14, 2)
   difference   Decimal?    @db.Decimal(14, 2)
   notes        String?
+  /// Arqueo por denominación al cerrar (JSON [{denomination, count}]). Opcional.
+  cashCountBreakdown Json?  @map("cash_count_breakdown")
   status       ShiftStatus @default(OPEN)
   sales        Sale[]
+  cashMovements CashMovement[]
   cashier      User        @relation(fields: [cashierId], references: [id])
 
   @@index([cashierId, status])
   @@index([status, openedAt(sort: Desc)])
   @@map("shifts")
+}
+
+/// Entradas/salidas de efectivo del cajón durante el turno, aparte de ventas
+/// (ej. fondo de cambio, pago a proveedor en efectivo, retiro). Ajustan el
+/// efectivo esperado al cierre. Insert-only (no se editan; se compensan).
+model CashMovement {
+  id        String           @id @default(uuid())
+  shiftId   String           @map("shift_id")
+  type      CashMovementType
+  amount    Decimal          @db.Decimal(14, 2)
+  reason    String
+  userId    String           @map("user_id")
+  createdAt DateTime         @default(now()) @map("created_at")
+  shift     Shift            @relation(fields: [shiftId], references: [id])
+  user      User             @relation(fields: [userId], references: [id])
+
+  @@index([shiftId, createdAt])
+  @@map("cash_movements")
 }
 
 /// Promociones automáticas aplicadas en cobro. 4 tipos (FASE 12):
@@ -748,6 +775,11 @@ enum ShiftStatus {
   OPEN
   CLOSED
   RECONCILED
+}
+
+enum CashMovementType {
+  IN
+  OUT
 }
 
 /// v1 solo usa PERCENT_OFF. El enum incluye los demás para no migrar

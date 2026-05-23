@@ -1,5 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import type {
+  LLMCompletionRequest,
+  LLMCompletionResult,
   LLMInvoiceExtractionRequest,
   LLMInvoiceExtractionResult,
   LLMProvider,
@@ -84,6 +86,29 @@ export class LLMService {
     throw lastError instanceof Error
       ? lastError
       : new Error('All LLM providers failed');
+  }
+
+  async complete(req: LLMCompletionRequest): Promise<LLMCompletionResult> {
+    const chain = this.buildChain();
+    if (chain.length === 0) {
+      throw new ServiceUnavailableException(
+        'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.',
+      );
+    }
+    let lastError: unknown;
+    for (const provider of chain) {
+      try {
+        return await provider.complete(req);
+      } catch (err) {
+        lastError = err;
+        this.logger.warn(
+          `${provider.name} completion failed; trying next. Error: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('All LLM providers failed');
   }
 
   private buildChain(): LLMProvider[] {

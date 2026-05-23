@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import type { AuditLogEntry } from '@pos-tercos/types';
+import type { AuditAction, AuditLogEntry } from '@pos-tercos/types';
 import { AuditActionEnum } from '@pos-tercos/types';
 import { OnlyDueno } from '../auth/decorators/roles.decorator';
 import { AuditService } from './audit.service';
@@ -19,10 +19,18 @@ export class AuditController {
     @Query('to') to?: string,
     @Query('limit') limit?: string,
   ): Promise<AuditLogEntry[]> {
-    const parsedAction = action ? AuditActionEnum.safeParse(action) : null;
+    // `action` acepta una o varias acciones separadas por coma (bitácora).
+    const actions: AuditAction[] = [];
+    if (action) {
+      for (const a of action.split(',')) {
+        const parsed = AuditActionEnum.safeParse(a.trim());
+        if (parsed.success) actions.push(parsed.data);
+      }
+    }
     return this.audit.list({
       userId,
-      action: parsedAction?.success ? parsedAction.data : undefined,
+      action: actions.length === 1 ? actions[0] : undefined,
+      actions: actions.length > 1 ? actions : undefined,
       entityType,
       entityId,
       from: from ? new Date(from) : undefined,

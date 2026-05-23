@@ -1,9 +1,24 @@
+import { createHash } from 'crypto';
 import { PrismaClient, type UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 const DEV_PASSWORD = 'dev12345';
+
+/**
+ * UUID determinista derivado de un slug. Los schemas Zod exigen `id` UUID, así
+ * que no podemos usar slugs crudos como id; pero queremos que el seed sea
+ * idempotente y que los combos referencien a sus componentes. Mismo slug →
+ * mismo UUID (v5-like, formato 8-4-4-4-12).
+ */
+function slugUuid(slug: string): string {
+  const h = createHash('sha1').update(`pos-tercos:${slug}`).digest('hex');
+  const variant = ((parseInt(h.slice(16, 18), 16) & 0x3f) | 0x80)
+    .toString(16)
+    .padStart(2, '0');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(18, 20)}-${h.slice(20, 32)}`;
+}
 
 const SEED_USERS: Array<{ email: string; fullName: string; role: UserRole }> = [
   { email: 'dueno@dev.local', fullName: 'Dueño Dev', role: 'DUENO' },
@@ -187,16 +202,17 @@ async function seedMenu(): Promise<void> {
         ? { unitPurchase: 'unidad', unitStock: 'unidad', conversionFactor: 1, thresholdMin: 12 }
         : {}),
     };
+    const pid = slugUuid(p.id);
     await prisma.product.upsert({
-      where: { id: p.id },
+      where: { id: pid },
       update: scalar,
-      create: { id: p.id, ...scalar },
+      create: { id: pid, ...scalar },
     });
-    await prisma.productSize.deleteMany({ where: { productId: p.id } });
+    await prisma.productSize.deleteMany({ where: { productId: pid } });
     if (p.sizes?.length) {
       await prisma.productSize.createMany({
         data: p.sizes.map((s, i) => ({
-          productId: p.id,
+          productId: pid,
           name: s.name,
           priceModifier: s.priceModifier,
           sortOrder: i,
@@ -218,16 +234,17 @@ async function seedMenu(): Promise<void> {
       comboPrice: p.basePrice,
       directResale: false,
     };
+    const pid = slugUuid(p.id);
     await prisma.product.upsert({
-      where: { id: p.id },
+      where: { id: pid },
       update: scalar,
-      create: { id: p.id, ...scalar },
+      create: { id: pid, ...scalar },
     });
-    await prisma.comboComponent.deleteMany({ where: { comboId: p.id } });
+    await prisma.comboComponent.deleteMany({ where: { comboId: pid } });
     await prisma.comboComponent.createMany({
       data: p.combo!.map((c) => ({
-        comboId: p.id,
-        productId: c.productId,
+        comboId: pid,
+        productId: slugUuid(c.productId),
         quantity: c.quantity,
       })),
     });

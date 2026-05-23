@@ -122,29 +122,33 @@ describe('Sales E2E', () => {
       expect(sale.shiftId).toBe(shiftId);
     });
 
-    it('rechaza COUNTER sin turno abierto', async () => {
-      // Crear usuario sin turno
+    it('caja ÚNICA del negocio: otro cajero vende sobre la caja abierta', async () => {
+      // Con una sola caja por negocio, cualquier cajero opera la caja abierta
+      // aunque no la haya abierto él (no hay "turno por cajero").
       const hash = await bcrypt.hash('dev12345', 10);
       await prisma.user.create({
         data: {
-          email: 'cajero-noshift@test.local',
-          fullName: 'Cajero Sin Turno',
+          email: 'cajero-otro@test.local',
+          fullName: 'Cajero Otro',
           role: 'CAJERO',
           passwordHash: hash,
           mustChangePwd: false,
           active: true,
         },
       });
-      const token = await loginAs(request, 'cajero-noshift@test.local');
+      const token = await loginAs(request, 'cajero-otro@test.local');
 
-      await request
+      const res = await request
         .post('/sales')
         .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', randomUUID())
         .send({
           type: 'COUNTER',
           items: [{ productId, quantity: 1 }],
         })
-        .expect(400);
+        .expect(201);
+      // La venta se adjunta a la caja única del negocio.
+      expect(res.body.shiftId).toBe(shiftId);
     });
 
     it('rechaza body vacío (sin items)', async () => {

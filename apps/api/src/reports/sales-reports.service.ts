@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  DAILY_SUMMARY_SYSTEM,
+  buildDailySummaryUserPrompt,
+  type DailySummaryInput,
+} from '@pos-tercos/domain';
 import type {
+  AiSummary,
   DashboardSummary,
   HourHeatmapReport,
   SalesGranularity,
@@ -9,6 +15,7 @@ import type {
   WhatsAppMetrics,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { LLMService } from '../adapters/llm/llm.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -32,7 +39,55 @@ export class SalesReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
+    private readonly llm: LLMService,
   ) {}
+
+  // ==================================================================
+  // RESUMEN DIARIO CON IA (lenguaje natural para el dueño)
+  // ==================================================================
+
+  async getDailyAiSummary(date: Date): Promise<AiSummary> {
+    const dayStart = startOfDay(date);
+    const dayEnd = endOfDay(date);
+    const [summary, top, shift, delayed, lowStock] = await Promise.all([
+      this.getSalesSummary(dayStart, dayEnd, 'daily'),
+      this.getTopProducts(dayStart, dayEnd, 3),
+      this.prisma.shift.findFirst({
+        where: {
+          closedAt: { gte: dayStart, lte: dayEnd },
+          status: { in: ['CLOSED', 'RECONCILED'] },
+        },
+        orderBy: { closedAt: 'desc' },
+        select: { difference: true },
+      }),
+      this.prisma.auditLog.count({
+        where: { action: 'KDS_ORDER_DELAYED', createdAt: { gte: dayStart, lte: dayEnd } },
+      }),
+      this.computeLowStockCount(),
+    ]);
+
+    const cashRevenue = summary.byMethod.find((m) => m.method === 'CASH')?.revenue ?? 0;
+    const metrics: DailySummaryInput = {
+      date: toDayBucket(dayStart),
+      revenue: summary.totals.revenue,
+      orderCount: summary.totals.count,
+      avgTicket: summary.totals.avgTicket,
+      cashRevenue,
+      digitalRevenue: round(summary.totals.revenue - cashRevenue),
+      voidCount: summary.totals.voidCount,
+      cashDifference: shift?.difference != null ? Number(shift.difference) : null,
+      delayedKitchenCount: delayed,
+      lowStockCount: lowStock,
+      topProducts: top.products.map((p) => ({ name: p.productName, qty: p.quantity })),
+    };
+
+    const result = await this.llm.complete({
+      systemPrompt: DAILY_SUMMARY_SYSTEM,
+      userPrompt: buildDailySummaryUserPrompt(metrics),
+      maxTokens: 350,
+    });
+    return { text: result.text, modelUsed: result.modelUsed, generatedAt: new Date().toISOString() };
+  }
 
   // ==================================================================
   // SALES SUMMARY — series + breakdowns

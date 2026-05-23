@@ -22,14 +22,17 @@ import {
   CreateProductSchema,
   SetComboComponentsSchema,
   SetProductOptionsSchema,
+  SetSoldOutSchema,
   UpdateProductSchema,
   type CreateProduct,
   type Product,
+  type ProductAvailability,
   type SetComboComponents,
   type SetProductOptions,
+  type SetSoldOut,
   type UpdateProduct,
 } from '@pos-tercos/types';
-import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { AdminAccess, CashierAccess } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { detectImageMimeLoose } from '../common/image-mime';
@@ -49,9 +52,26 @@ export class ProductsController {
     return this.products.list({ onlyActive: onlyActive === 'true', category });
   }
 
+  /** Disponibilidad en vivo (cajero + web la consultan en intervalos). Pública. */
+  @Public()
+  @Get('availability')
+  availability(): Promise<ProductAvailability[]> {
+    return this.products.getAvailability();
+  }
+
   @Get(':id')
   getById(@Param('id', ParseUUIDPipe) id: string): Promise<Product> {
     return this.products.getById(id);
+  }
+
+  /** Marca/desmarca agotado (86). Cajero o admin. */
+  @CashierAccess()
+  @Post(':id/sold-out')
+  setSoldOut(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetSoldOutSchema)) body: SetSoldOut,
+  ): Promise<Product> {
+    return this.products.setSoldOut(id, body.soldOut);
   }
 
   @AdminAccess()
