@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@pos-tercos/ui';
+import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Product } from '@pos-tercos/types';
@@ -21,6 +21,7 @@ export function ProductForm({ initial }: ProductFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [form, setForm] = useState<FormState>(() => ({
     name: initial?.name ?? '',
     description: initial?.description ?? '',
@@ -82,7 +83,6 @@ export function ProductForm({ initial }: ProductFormProps) {
 
   const handleDeactivate = async () => {
     if (!initial) return;
-    if (!window.confirm(`¿Desactivar el producto "${initial.name}"?`)) return;
     setError(null);
     try {
       await deactivateProduct(initial.id);
@@ -96,6 +96,7 @@ export function ProductForm({ initial }: ProductFormProps) {
   };
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-border bg-card p-6">
       <ProductFormBasicFields form={form} setForm={setForm} pending={pending} />
 
@@ -124,7 +125,7 @@ export function ProductForm({ initial }: ProductFormProps) {
       />
 
       {!isEdit && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-primary">
+        <p className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
           Las variantes (tamaños), modificadores específicos y componentes del combo se gestionan en
           una pantalla dedicada (próximamente). La receta se asigna después de crear el producto.
         </p>
@@ -145,7 +146,7 @@ export function ProductForm({ initial }: ProductFormProps) {
             type="button"
             variant="destructive"
             size="sm"
-            onClick={handleDeactivate}
+            onClick={() => setConfirmDeactivate(true)}
             disabled={pending}
           >
             Desactivar
@@ -169,5 +170,20 @@ export function ProductForm({ initial }: ProductFormProps) {
         </div>
       </div>
     </form>
+
+      <ConfirmDialog
+        open={confirmDeactivate}
+        onCancel={() => setConfirmDeactivate(false)}
+        onConfirm={async () => {
+          setConfirmDeactivate(false);
+          await handleDeactivate();
+        }}
+        title="¿Desactivar producto?"
+        description={`Vas a desactivar "${initial?.name ?? ''}". No se borra del histórico.`}
+        confirmLabel="Sí, desactivar"
+        destructive
+        pending={pending}
+      />
+    </>
   );
 }

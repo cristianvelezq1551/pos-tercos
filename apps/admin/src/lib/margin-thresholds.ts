@@ -21,9 +21,12 @@ export function marginTone(value: number): MarginTone {
   return 'bad';
 }
 
+// Tonos pensados para el tema oscuro del admin: shades brillantes (los -700
+// quedaban ilegibles sobre el fondo #131822). good/warn/bad usan los tokens
+// semánticos; poor mantiene naranja (sin token propio).
 export const MARGIN_TONE_CLASS: Record<MarginTone, string> = {
-  good: 'text-green-700',
-  warn: 'text-amber-700',
-  poor: 'text-orange-700',
-  bad: 'text-red-700',
+  good: 'text-success',
+  warn: 'text-warning',
+  poor: 'text-orange-400',
+  bad: 'text-destructive',
 };

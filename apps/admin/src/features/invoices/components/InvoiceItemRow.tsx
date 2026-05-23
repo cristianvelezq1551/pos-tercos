@@ -73,7 +73,7 @@ export function InvoiceItemRow({
             </div>
             <div className="flex items-end gap-2">
               {isMatched ? (
-                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+                <span className="inline-flex items-center rounded-full bg-success-bg px-2 py-1 text-xs font-medium text-success">
                   ✓ Asociado
                 </span>
               ) : (

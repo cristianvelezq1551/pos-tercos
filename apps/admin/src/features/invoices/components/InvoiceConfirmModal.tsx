@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Dialog } from '@pos-tercos/ui';
+import { Button, ConfirmDialog, Dialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { InvoiceDraftResponse, Stockable, Supplier } from '@pos-tercos/types';
@@ -33,6 +33,7 @@ export function InvoiceConfirmModal({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [submitting, setSubmitting] = useState(false);
+  const [confirmReject, setConfirmReject] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const matchedSupplier = useMemo(() => {
@@ -76,7 +77,7 @@ export function InvoiceConfirmModal({
   };
 
   const handleReject = async (): Promise<void> => {
-    if (!window.confirm('¿Rechazar esta factura? El draft queda marcado como REJECTED.')) return;
+    setConfirmReject(false);
     setError(null);
     setSubmitting(true);
     try {
@@ -94,6 +95,7 @@ export function InvoiceConfirmModal({
   const aiModel = draft.invoice.aiModelUsed;
 
   return (
+    <>
     <Dialog
       open
       onClose={submitting ? () => {} : onClose}
@@ -103,7 +105,7 @@ export function InvoiceConfirmModal({
       footer={
         <>
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>Cancelar</Button>
-          <Button variant="destructive" size="sm" onClick={handleReject} disabled={submitting}>Rechazar</Button>
+          <Button variant="destructive" size="sm" onClick={() => setConfirmReject(true)} disabled={submitting}>Rechazar</Button>
           <Button size="sm" onClick={handleConfirm} disabled={submitting || pending}>
             {submitting ? 'Confirmando…' : 'Confirmar y descargar de stock'}
           </Button>
@@ -162,5 +164,17 @@ export function InvoiceConfirmModal({
         )}
       </div>
     </Dialog>
+
+      <ConfirmDialog
+        open={confirmReject}
+        onCancel={() => setConfirmReject(false)}
+        onConfirm={handleReject}
+        title="¿Rechazar esta factura?"
+        description="El borrador queda marcado como REJECTED. No se descuenta stock."
+        confirmLabel="Sí, rechazar"
+        destructive
+        pending={submitting}
+      />
+    </>
   );
 }

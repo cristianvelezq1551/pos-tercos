@@ -122,14 +122,14 @@ function Demos() {
           />
         </FormField>
 
-        <FormField label="Tipo de entrega">
+        <FormField label="Tipo de pedido">
           <RadioGroup
             name="entrega"
             value={radio}
             onChange={setRadio}
             options={[
-              { value: 'pickup', label: 'Recoger en tienda', description: 'Sin costo de envío' },
-              { value: 'delivery', label: 'Domicilio', description: 'Hasta 3 km · $4.000' },
+              { value: 'counter', label: 'Mostrador', description: 'Venta en caja' },
+              { value: 'pickup', label: 'Recoger en tienda', description: 'Pedido web WEB_PICKUP' },
             ]}
           />
         </FormField>

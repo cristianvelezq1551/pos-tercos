@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@pos-tercos/ui';
+import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import type { Product, Promotion } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
 import { deactivatePromotion } from '../api';
@@ -15,6 +15,7 @@ interface PromotionDetailProps {
 export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
   const router = useRouter();
   const [deactivating, setDeactivating] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const productMap = new Map(products.map((p) => [p.id, p]));
@@ -23,7 +24,7 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
     .filter((p): p is Product => p !== undefined);
 
   async function handleDeactivate() {
-    if (!confirm('¿Desactivar esta promoción? No se puede revertir vía UI.')) return;
+    setConfirmDeactivate(false);
     setDeactivating(true);
     setError(null);
     try {
@@ -101,11 +102,26 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
           Volver al listado
         </Button>
         {promotion.isActive && (
-          <Button variant="destructive" onClick={handleDeactivate} disabled={deactivating}>
+          <Button
+            variant="destructive"
+            onClick={() => setConfirmDeactivate(true)}
+            disabled={deactivating}
+          >
             {deactivating ? 'Desactivando…' : 'Desactivar promoción'}
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmDeactivate}
+        onCancel={() => setConfirmDeactivate(false)}
+        onConfirm={handleDeactivate}
+        title="¿Desactivar promoción?"
+        description="No se puede revertir vía UI. Para cambiarla, creá una nueva."
+        confirmLabel="Sí, desactivar"
+        destructive
+        pending={deactivating}
+      />
       <p className="text-xs text-muted-foreground">
         Editar campos por-tipo (ej. cambiar % o monto fijo) no está soportado: para
         modificar el descuento, desactivá esta promo y crea una nueva.

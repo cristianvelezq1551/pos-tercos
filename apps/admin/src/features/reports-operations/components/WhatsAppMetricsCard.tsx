@@ -8,9 +8,9 @@ const STAGE_LABEL: Record<string, string> = {
 };
 
 const STAGE_DESC: Record<string, string> = {
-  accepted: 'Cajero acepta + abre WhatsApp para pedir comprobante.',
-  confirmed: 'Post confirmar pago abre WhatsApp con "ya está en cocina".',
-  ready: 'Cocinero marca listo + abre WhatsApp con "listo para retirar".',
+  accepted: 'Cajero acepta el pedido → se envía WhatsApp con instrucciones de pago.',
+  confirmed: 'Al confirmar el pago → WhatsApp "ya está en cocina".',
+  ready: 'Cocinero marca listo → WhatsApp "listo para retirar".',
 };
 
 export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
@@ -22,8 +22,8 @@ export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           {metrics.totalWebSales} pedido{metrics.totalWebSales === 1 ? '' : 's'} web en
-          el período. Cobertura = sales únicas con click registrado /
-          sales elegibles para ese stage.
+          el período. Cobertura = pedidos con WhatsApp enviado /
+          pedidos elegibles para ese stage.
         </p>
       </div>
       <div className="space-y-4">
@@ -32,10 +32,10 @@ export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
           const tone = pct === null
             ? 'bg-ink-700'
             : pct >= 80
-              ? 'bg-success-bg/300'
+              ? 'bg-success'
               : pct >= 50
-                ? 'bg-warning-bg/300'
-                : 'bg-destructive/100';
+                ? 'bg-warning'
+                : 'bg-destructive';
           return (
             <div key={s.stage}>
               <div className="flex items-baseline justify-between">
