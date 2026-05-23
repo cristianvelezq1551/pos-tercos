@@ -309,20 +309,85 @@ export class SalesService {
 
     // Cargar productos con flags relevantes para descuento de stock
     const productIds = Array.from(new Set(existing.items.map((it) => it.productId)));
-    const products = await this.prisma.product.findMany({
+    // Cargar productos del sale con sus componentes de combo (1 nivel — no hay
+    // combos anidados, enforced al crear). Un combo se descompone en sus
+    // componentes y descuenta stock de cada uno (reventa directa o receta).
+    const saleProducts = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, name: true, directResale: true, isCombo: true },
+      select: {
+        id: true,
+        name: true,
+        directResale: true,
+        isCombo: true,
+        comboComponents: { select: { productId: true, quantity: true } },
+      },
     });
-    const productMap = new Map(products.map((p) => [p.id, p]));
+    const saleProductMap = new Map(saleProducts.map((p) => [p.id, p]));
 
-    // Pre-cargar grafos de receta para productos NO direct-resale (uno por uno
-    // para reusar el helper existente; FASE 13 puede optimizar a un load
-    // batched). Combos se descomponen vía combo_components — fuera de scope
-    // FASE 5.B: si un combo aparece, error explícito.
+    // Productos que son componentes de los combos presentes — para conocer su
+    // flag (reventa) y poder expandir su receta.
+    const componentIds = new Set<string>();
+    for (const p of saleProducts) {
+      if (p.isCombo) for (const c of p.comboComponents) componentIds.add(c.productId);
+    }
+    const componentProducts = componentIds.size
+      ? await this.prisma.product.findMany({
+          where: { id: { in: [...componentIds] } },
+          select: { id: true, name: true, directResale: true, isCombo: true },
+        })
+      : [];
+    const componentMap = new Map(componentProducts.map((p) => [p.id, p]));
+
     const stockMovementsToCreate: Prisma.InventoryMovementCreateManyInput[] = [];
 
+    const consume = async (
+      p: { id: string; name: string; directResale: boolean },
+      qty: number,
+      sizeId?: string | null,
+    ): Promise<void> => {
+      if (p.directResale) {
+        stockMovementsToCreate.push({
+          entityType: 'PRODUCT',
+          productId: p.id,
+          delta: -qty,
+          type: 'SALE',
+          sourceType: 'sale',
+          sourceId: saleId,
+          userId,
+          notes: `Sale ${existing.id.slice(0, 8)} item ${p.name}`,
+        });
+        return;
+      }
+      // sizeId → suma la receta de la variante (proteína) a la base.
+      const { graph, root } = await this.recipes.loadGraphForProduct(
+        p.id,
+        sizeId ?? undefined,
+      );
+      let expanded;
+      try {
+        expanded = expandRecipe(graph, root, qty);
+      } catch (err) {
+        throw new BadRequestException({
+          message: `Falla al expandir receta de "${p.name}"`,
+          cause: err instanceof Error ? err.message : String(err),
+        });
+      }
+      for (const ing of expanded.values()) {
+        stockMovementsToCreate.push({
+          entityType: 'INGREDIENT',
+          ingredientId: ing.ingredientId,
+          delta: -ing.totalQuantity,
+          type: 'SALE',
+          sourceType: 'sale',
+          sourceId: saleId,
+          userId,
+          notes: `Sale ${existing.id.slice(0, 8)} via "${p.name}"`,
+        });
+      }
+    };
+
     for (const item of existing.items) {
-      const product = productMap.get(item.productId);
+      const product = saleProductMap.get(item.productId);
       if (!product) {
         throw new BadRequestException(
           `Sale tiene un item para product ${item.productId} que ya no existe.`,
@@ -330,49 +395,22 @@ export class SalesService {
       }
 
       if (product.isCombo) {
-        throw new BadRequestException(
-          `Combos no soportados en FASE 5.B (sale tiene combo "${product.name}"). Llega en 5.E o FASE 13 vía combo_components × expandRecipe por componente.`,
-        );
-      }
-
-      const qty = item.quantity;
-
-      if (product.directResale) {
-        // descuento directo: 1 movement por línea
-        stockMovementsToCreate.push({
-          entityType: 'PRODUCT',
-          productId: product.id,
-          delta: -qty,
-          type: 'SALE',
-          sourceType: 'sale',
-          sourceId: saleId,
-          userId,
-          notes: `Sale ${existing.id.slice(0, 8)} item ${product.name}`,
-        });
+        for (const comp of product.comboComponents) {
+          const cp = componentMap.get(comp.productId);
+          if (!cp) {
+            throw new BadRequestException(
+              `Combo "${product.name}" referencia un producto inexistente (${comp.productId}).`,
+            );
+          }
+          if (cp.isCombo) {
+            throw new BadRequestException(
+              `Combo anidado no soportado en "${product.name}".`,
+            );
+          }
+          await consume(cp, item.quantity * comp.quantity);
+        }
       } else {
-        // expandRecipe → 1 movement por insumo final
-        const { graph, root } = await this.recipes.loadGraphForProduct(product.id);
-        let expanded;
-        try {
-          expanded = expandRecipe(graph, root, qty);
-        } catch (err) {
-          throw new BadRequestException({
-            message: `Falla al expandir receta de "${product.name}"`,
-            cause: err instanceof Error ? err.message : String(err),
-          });
-        }
-        for (const ing of expanded.values()) {
-          stockMovementsToCreate.push({
-            entityType: 'INGREDIENT',
-            ingredientId: ing.ingredientId,
-            delta: -ing.totalQuantity,
-            type: 'SALE',
-            sourceType: 'sale',
-            sourceId: saleId,
-            userId,
-            notes: `Sale ${existing.id.slice(0, 8)} via "${product.name}"`,
-          });
-        }
+        await consume(product, item.quantity, item.sizeId);
       }
     }
 

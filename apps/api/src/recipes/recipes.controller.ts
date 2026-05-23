@@ -41,6 +41,24 @@ export class RecipesController {
     return this.recipes.setRecipe('subproduct', id, body.edges);
   }
 
+  @Get('products/:id/sizes/:sizeId/recipe')
+  getSizeRecipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('sizeId', ParseUUIDPipe) sizeId: string,
+  ): Promise<RecipeResponse> {
+    return this.recipes.getSizeRecipe(id, sizeId);
+  }
+
+  @AdminAccess()
+  @Put('products/:id/sizes/:sizeId/recipe')
+  setSizeRecipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('sizeId', ParseUUIDPipe) sizeId: string,
+    @Body(new ZodValidationPipe(SetRecipeRequestSchema)) body: SetRecipeRequest,
+  ): Promise<RecipeResponse> {
+    return this.recipes.setSizeRecipe(id, sizeId, body.edges);
+  }
+
   @Get('products/:id/expanded-cost')
   expandedCost(@Param('id', ParseUUIDPipe) id: string): Promise<ExpandedCostResponse> {
     return this.recipes.expandedCost(id);

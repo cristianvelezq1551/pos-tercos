@@ -5,6 +5,8 @@ import type {
   Product,
   ProductModifier,
   ProductSize,
+  SetComboComponents,
+  SetProductOptions,
   UpdateProduct,
 } from '@pos-tercos/types';
 import type { StorageProvider } from '@pos-tercos/domain';
@@ -170,6 +172,117 @@ export class ProductsService {
       include: { sizes: true, modifiers: true, comboComponents: true },
     });
     return toProductDto(row);
+  }
+
+  /**
+   * Reemplaza variantes (sizes) + extras (modifiers) de un producto.
+   * - Variantes: upsert por id; las quitadas se borran SOLO si no tienen ventas
+   *   (el histórico es inmutable). Borrar una variante arrastra su receta.
+   * - Extras: snapshot en sale_items (sin FK) → reemplazo simple. `modifiersEnabled`
+   *   se deriva de si hay extras.
+   */
+  async setOptions(productId: string, input: SetProductOptions): Promise<Product> {
+    const existing = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { sizes: { select: { id: true, name: true } } },
+    });
+    if (!existing) throw new NotFoundException(`Product ${productId} not found`);
+
+    const existingIds = new Set(existing.sizes.map((s) => s.id));
+    const incomingIds = new Set<string>();
+    for (const s of input.sizes) {
+      if (s.id) {
+        if (!existingIds.has(s.id)) {
+          throw new BadRequestException(`La variante ${s.id} no pertenece a este producto`);
+        }
+        incomingIds.add(s.id);
+      }
+    }
+    const toDelete = existing.sizes.filter((s) => !incomingIds.has(s.id)).map((s) => s.id);
+
+    if (toDelete.length > 0) {
+      const sold = await this.prisma.saleItem.findMany({
+        where: { sizeId: { in: toDelete } },
+        select: { sizeId: true },
+        distinct: ['sizeId'],
+      });
+      if (sold.length > 0) {
+        const names = existing.sizes
+          .filter((s) => sold.some((r) => r.sizeId === s.id))
+          .map((s) => s.name)
+          .join(', ');
+        throw new BadRequestException(
+          `No se puede eliminar una variante con ventas registradas: ${names}. Crea una nueva en su lugar.`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (toDelete.length > 0) {
+        await tx.recipeEdge.deleteMany({ where: { parentSizeId: { in: toDelete } } });
+        await tx.productSize.deleteMany({ where: { id: { in: toDelete } } });
+      }
+      for (const s of input.sizes) {
+        if (s.id) {
+          await tx.productSize.update({
+            where: { id: s.id },
+            data: { name: s.name, priceModifier: s.priceModifier, sortOrder: s.sortOrder ?? 0 },
+          });
+        } else {
+          await tx.productSize.create({
+            data: {
+              productId,
+              name: s.name,
+              priceModifier: s.priceModifier,
+              sortOrder: s.sortOrder ?? 0,
+            },
+          });
+        }
+      }
+      await tx.productModifier.deleteMany({ where: { productId } });
+      if (input.modifiers.length > 0) {
+        await tx.productModifier.createMany({
+          data: input.modifiers.map((m) => ({
+            productId,
+            name: m.name,
+            priceDelta: m.priceDelta,
+            recipeDelta: (m.recipeDelta as Prisma.InputJsonValue | undefined) ?? {},
+          })),
+        });
+      }
+      await tx.product.update({
+        where: { id: productId },
+        data: { modifiersEnabled: input.modifiers.length > 0 },
+      });
+    });
+
+    return this.getById(productId);
+  }
+
+  /** Reemplaza los componentes de un combo. */
+  async setCombo(productId: string, input: SetComboComponents): Promise<Product> {
+    const existing = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, isCombo: true },
+    });
+    if (!existing) throw new NotFoundException(`Product ${productId} not found`);
+    if (!existing.isCombo) {
+      throw new BadRequestException('El producto no es un combo.');
+    }
+    await this.assertComboComponentsAreNonComboProducts(input.components);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.comboComponent.deleteMany({ where: { comboId: productId } });
+      await tx.comboComponent.createMany({
+        data: input.components.map((c) => ({
+          comboId: productId,
+          productId: c.productId,
+          quantity: c.quantity,
+        })),
+      });
+    });
+
+    return this.getById(productId);
   }
 
   async deactivate(id: string): Promise<Product> {

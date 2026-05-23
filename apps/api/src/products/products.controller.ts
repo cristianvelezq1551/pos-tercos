@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -19,9 +20,13 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   CreateProductSchema,
+  SetComboComponentsSchema,
+  SetProductOptionsSchema,
   UpdateProductSchema,
   type CreateProduct,
   type Product,
+  type SetComboComponents,
+  type SetProductOptions,
   type UpdateProduct,
 } from '@pos-tercos/types';
 import { AdminAccess } from '../auth/decorators/roles.decorator';
@@ -63,6 +68,24 @@ export class ProductsController {
     @Body(new ZodValidationPipe(UpdateProductSchema)) body: UpdateProduct,
   ): Promise<Product> {
     return this.products.update(id, body);
+  }
+
+  @AdminAccess()
+  @Put(':id/options')
+  setOptions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetProductOptionsSchema)) body: SetProductOptions,
+  ): Promise<Product> {
+    return this.products.setOptions(id, body);
+  }
+
+  @AdminAccess()
+  @Put(':id/combo')
+  setCombo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetComboComponentsSchema)) body: SetComboComponents,
+  ): Promise<Product> {
+    return this.products.setCombo(id, body);
   }
 
   @AdminAccess()

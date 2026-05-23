@@ -90,13 +90,16 @@ model Product {
 }
 
 model ProductSize {
-  id            String     @id @default(uuid())
-  productId     String     @map("product_id")
+  id            String       @id @default(uuid())
+  productId     String       @map("product_id")
   name          String
-  priceModifier Decimal    @default(0) @map("price_modifier") @db.Decimal(12, 2)
-  sortOrder     Int        @default(0) @map("sort_order")
-  product       Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceModifier Decimal      @default(0) @map("price_modifier") @db.Decimal(12, 2)
+  sortOrder     Int          @default(0) @map("sort_order")
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
   saleItems     SaleItem[]
+  /// Receta propia de la variante (aditiva sobre la receta base del producto).
+  /// Ej. la proteína: "Carne" descuenta carne, "Pollo" descuenta pollo.
+  recipeEdges   RecipeEdge[] @relation("SizeRecipe")
 
   @@index([productId])
   @@map("product_sizes")
@@ -166,21 +169,24 @@ model Ingredient {
 }
 
 model RecipeEdge {
-  id                 String      @id @default(uuid())
-  parentProductId    String?     @map("parent_product_id")
-  parentSubproductId String?     @map("parent_subproduct_id")
-  childIngredientId  String?     @map("child_ingredient_id")
-  childSubproductId  String?     @map("child_subproduct_id")
-  quantityNeta       Decimal     @map("quantity_neta") @db.Decimal(14, 4)
-  mermaPct           Decimal     @default(0) @map("merma_pct") @db.Decimal(5, 4)
-  createdAt          DateTime    @default(now()) @map("created_at")
-  childIngredient    Ingredient? @relation("IngredientChild", fields: [childIngredientId], references: [id], onDelete: Restrict)
-  childSubproduct    Subproduct? @relation("SubproductChild", fields: [childSubproductId], references: [id], onDelete: Restrict)
-  parentProduct      Product?    @relation("ProductRecipe", fields: [parentProductId], references: [id], onDelete: Cascade)
-  parentSubproduct   Subproduct? @relation("SubproductRecipe", fields: [parentSubproductId], references: [id], onDelete: Cascade)
+  id                 String       @id @default(uuid())
+  parentProductId    String?      @map("parent_product_id")
+  parentSubproductId String?      @map("parent_subproduct_id")
+  parentSizeId       String?      @map("parent_size_id")
+  childIngredientId  String?      @map("child_ingredient_id")
+  childSubproductId  String?      @map("child_subproduct_id")
+  quantityNeta       Decimal      @map("quantity_neta") @db.Decimal(14, 4)
+  mermaPct           Decimal      @default(0) @map("merma_pct") @db.Decimal(5, 4)
+  createdAt          DateTime     @default(now()) @map("created_at")
+  childIngredient    Ingredient?  @relation("IngredientChild", fields: [childIngredientId], references: [id], onDelete: Restrict)
+  childSubproduct    Subproduct?  @relation("SubproductChild", fields: [childSubproductId], references: [id], onDelete: Restrict)
+  parentProduct      Product?     @relation("ProductRecipe", fields: [parentProductId], references: [id], onDelete: Cascade)
+  parentSubproduct   Subproduct?  @relation("SubproductRecipe", fields: [parentSubproductId], references: [id], onDelete: Cascade)
+  parentSize         ProductSize? @relation("SizeRecipe", fields: [parentSizeId], references: [id], onDelete: Cascade)
 
   @@index([parentProductId])
   @@index([parentSubproductId])
+  @@index([parentSizeId])
   @@index([childIngredientId])
   @@index([childSubproductId])
   @@map("recipe_edges")

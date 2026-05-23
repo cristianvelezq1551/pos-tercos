@@ -91,12 +91,68 @@ export class RecipesService {
     };
   }
 
+  /** Receta de una variante (proteína). Aditiva sobre la receta base. */
+  async getSizeRecipe(productId: string, sizeId: string): Promise<RecipeResponse> {
+    await this.assertSizeBelongsToProduct(productId, sizeId);
+    const edges = await this.prisma.recipeEdge.findMany({
+      where: { parentSizeId: sizeId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return { parentType: 'size', parentId: sizeId, edges: edges.map(toRecipeEdgeDto) };
+  }
+
+  async setSizeRecipe(
+    productId: string,
+    sizeId: string,
+    edges: RecipeEdgeInput[],
+  ): Promise<RecipeResponse> {
+    await this.assertSizeBelongsToProduct(productId, sizeId);
+    await this.assertChildrenExist(edges);
+    // Una variante nunca es nodo del grafo (nada la referencia como hijo): el
+    // único riesgo de ciclo está entre subproductos, que esta verificación cubre
+    // tratando los edges de la variante como hijos directos del producto.
+    await this.assertNoTransitiveCycle('product', productId, edges);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.recipeEdge.deleteMany({ where: { parentSizeId: sizeId } });
+      return Promise.all(
+        edges.map((e) =>
+          tx.recipeEdge.create({
+            data: {
+              parentSizeId: sizeId,
+              childIngredientId: e.childType === 'ingredient' ? e.childId : null,
+              childSubproductId: e.childType === 'subproduct' ? e.childId : null,
+              quantityNeta: e.quantityNeta,
+              mermaPct: e.mermaPct ?? 0,
+            },
+          }),
+        ),
+      );
+    });
+
+    return { parentType: 'size', parentId: sizeId, edges: result.map(toRecipeEdgeDto) };
+  }
+
+  private async assertSizeBelongsToProduct(productId: string, sizeId: string): Promise<void> {
+    const size = await this.prisma.productSize.findUnique({
+      where: { id: sizeId },
+      select: { productId: true },
+    });
+    if (!size) throw new NotFoundException(`Variante ${sizeId} no existe`);
+    if (size.productId !== productId) {
+      throw new BadRequestException(`La variante ${sizeId} no pertenece al producto ${productId}`);
+    }
+  }
+
   /**
    * Carga el grafo completo necesario para expandir recursivamente la receta
    * de un producto raíz, hasta sus insumos. Usado por el endpoint
    * `/products/:id/expanded-cost`.
    */
-  async loadGraphForProduct(productId: string): Promise<{ graph: RecipeGraph; root: ParentRef }> {
+  async loadGraphForProduct(
+    productId: string,
+    sizeId?: string,
+  ): Promise<{ graph: RecipeGraph; root: ParentRef }> {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) {
       throw new NotFoundException(`Product ${productId} not found`);
@@ -105,6 +161,23 @@ export class RecipesService {
     const productEdges = await this.prisma.recipeEdge.findMany({
       where: { parentProductId: productId },
     });
+
+    // Receta de la variante (aditiva): sus edges se inyectan como hijos directos
+    // del producto en el grafo, así expandRecipe los suma a la receta base sin
+    // que el dominio (ParentRef product|subproduct) tenga que conocer "size".
+    const sizeNodes: RecipeEdgeNode[] = sizeId
+      ? (
+          await this.prisma.recipeEdge.findMany({ where: { parentSizeId: sizeId } })
+        ).map((e) => ({
+          parent: { kind: 'product', id: productId },
+          child:
+            e.childIngredientId !== null
+              ? { kind: 'ingredient', id: e.childIngredientId }
+              : { kind: 'subproduct', id: e.childSubproductId as string },
+          quantityNeta: Number(e.quantityNeta),
+          mermaPct: Number(e.mermaPct),
+        }))
+      : [];
 
     const subproducts = await this.prisma.subproduct.findMany();
     const subproductEdges = await this.prisma.recipeEdge.findMany({
@@ -123,7 +196,11 @@ export class RecipesService {
           { id: i.id, name: i.name, unitRecipe: i.unitRecipe },
         ]),
       ),
-      edgesByParent: groupEdgesByParent([...productEdges, ...subproductEdges]),
+      edgesByParent: groupEdgesByParent([
+        ...productEdges,
+        ...sizeNodes,
+        ...subproductEdges,
+      ]),
     };
 
     return { graph, root: { kind: 'product', id: productId } };
@@ -440,6 +517,7 @@ function toRecipeEdgeDto(row: DbRecipeEdge): RecipeEdge {
     id: row.id,
     parentProductId: row.parentProductId,
     parentSubproductId: row.parentSubproductId,
+    parentSizeId: row.parentSizeId,
     childIngredientId: row.childIngredientId,
     childSubproductId: row.childSubproductId,
     quantityNeta: Number(row.quantityNeta),
