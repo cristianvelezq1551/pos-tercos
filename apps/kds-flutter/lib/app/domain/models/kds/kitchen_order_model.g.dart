@@ -10,6 +10,7 @@ _KitchenOrderModel _$KitchenOrderModelFromJson(Map<String, dynamic> json) =>
     _KitchenOrderModel(
       id: json['id'] as String,
       receiptNumber: (json['receiptNumber'] as num).toInt(),
+      turnNumber: (json['turnNumber'] as num?)?.toInt(),
       type: $enumDecode(_$OrderTypeEnumMap, json['type']),
       status: $enumDecode(_$KitchenStatusEnumMap, json['status']),
       customerName: json['customerName'] as String?,
@@ -32,6 +33,7 @@ Map<String, dynamic> _$KitchenOrderModelToJson(_KitchenOrderModel instance) =>
     <String, dynamic>{
       'id': instance.id,
       'receiptNumber': instance.receiptNumber,
+      'turnNumber': instance.turnNumber,
       'type': _$OrderTypeEnumMap[instance.type]!,
       'status': _$KitchenStatusEnumMap[instance.status]!,
       'customerName': instance.customerName,

@@ -44,6 +44,8 @@ abstract class KitchenOrderModel with _$KitchenOrderModel {
   const factory KitchenOrderModel({
     required String id,
     required int receiptNumber,
+    /// Número de turno (lo que se llama al cliente). Null hasta que se paga.
+    int? turnNumber,
     required OrderType type,
     required KitchenStatus status,
     String? customerName,
@@ -57,6 +59,7 @@ abstract class KitchenOrderModel with _$KitchenOrderModel {
       KitchenOrderModel(
         id: json['id'] as String,
         receiptNumber: json['receiptNumber'] as int,
+        turnNumber: json['turnNumber'] as int?,
         type: OrderTypeX.fromString(json['type'] as String? ?? 'COUNTER'),
         status: KitchenStatusX.fromString(json['status'] as String? ?? 'PAGADO'),
         customerName: json['customerName'] as String?,

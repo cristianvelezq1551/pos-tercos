@@ -52,6 +52,13 @@ class BoardController extends Notifier<BoardState> {
   /// Un pedido PAGADO que lleva más de esto sin iniciar dispara el recordatorio.
   static const _unstartedReminderAfter = Duration(minutes: 3);
 
+  /// Un pedido EN_PREPARACION que lleva más de esto sin finalizar dispara
+  /// el recordatorio de "aún no se ha finalizado".
+  static const _unfinishedReminderAfter = Duration(minutes: 10);
+
+  /// Cada cuánto se re-recuerda mientras siga pendiente.
+  static const _reminderRepeat = Duration(minutes: 2);
+
   @override
   BoardState build() {
     final socket = ref.read(kdsSocketProvider);
@@ -152,27 +159,50 @@ class BoardController extends Notifier<BoardState> {
         Timer.periodic(const Duration(seconds: 30), (_) => _checkReminders());
   }
 
-  /// Recordatorio sonoro + voz para pedidos PAGADO que llevan > 3 min sin
-  /// iniciarse. Re-recuerda cada 2 min mientras sigan sin iniciar.
-  void _checkReminders() {
+  /// Recordatorios sonoros + voz:
+  ///  - PAGADO > 3 min sin iniciar → "no ha sido iniciado".
+  ///  - EN_PREPARACION > 10 min sin finalizar → "aún no se ha finalizado".
+  /// Re-recuerda cada 2 min mientras siga pendiente. Usa el número de TURNO
+  /// (el que se le canta al cliente), con fallback al recibo.
+  Future<void> _checkReminders() async {
     final s = state;
     if (s is! BoardData) return;
     final now = DateTime.now();
     final sound = ref.read(soundServiceProvider);
+
+    final due = <String>[];
     for (final o in s.orders) {
-      if (o.status != KitchenStatus.pagado) continue;
       final since = o.paidAt ?? o.createdAt;
-      if (now.difference(since) < _unstartedReminderAfter) continue;
-      final last = _lastReminded[o.id];
-      if (last != null && now.difference(last) < const Duration(minutes: 2)) {
-        continue;
+      final elapsed = now.difference(since);
+      final turno = o.turnNumber ?? o.receiptNumber;
+
+      String? key;
+      String? message;
+      if (o.status == KitchenStatus.pagado && elapsed >= _unstartedReminderAfter) {
+        key = 'unstarted:${o.id}';
+        message = 'Pedido número $turno no ha sido iniciado';
+      } else if (o.status == KitchenStatus.enPreparacion &&
+          elapsed >= _unfinishedReminderAfter) {
+        key = 'unfinished:${o.id}';
+        message = 'Pedido número $turno aún no se ha finalizado';
       }
-      _lastReminded[o.id] = now;
-      sound.playBell();
-      sound.speak('Pedido número ${o.receiptNumber} no ha sido iniciado');
+      if (key == null || message == null) continue;
+
+      final last = _lastReminded[key];
+      if (last != null && now.difference(last) < _reminderRepeat) continue;
+      _lastReminded[key] = now;
+      due.add(message);
     }
+
+    // Secuencial: campana → voz → siguiente. Nunca se superponen.
+    for (final message in due) {
+      await sound.playBellThenSpeak(message);
+    }
+
     // Limpia recordatorios de pedidos que ya no están en la cola.
-    _lastReminded.removeWhere((id, _) => !s.orders.any((o) => o.id == id));
+    _lastReminded.removeWhere(
+      (key, _) => !s.orders.any((o) => key.endsWith(o.id)),
+    );
   }
 
   int _statusRank(KitchenStatus s) => switch (s) {

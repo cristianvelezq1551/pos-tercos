@@ -39,6 +39,21 @@ class SoundService {
     }
   }
 
+  /// Campana y LUEGO voz: espera a que termine la campana antes de hablar, así
+  /// no se superponen (la voz se entiende). Usado en el recordatorio.
+  Future<void> playBellThenSpeak(String text) async {
+    try {
+      await _player.stop();
+      await _player.play(AssetSource('sounds/bell.wav'), volume: 1.0);
+      // Espera el fin de la campana (con tope por si el evento no llega).
+      await _player.onPlayerComplete.first
+          .timeout(const Duration(seconds: 5), onTimeout: () {});
+    } catch (_) {
+      // ignore
+    }
+    await speak(text);
+  }
+
   void dispose() {
     _player.dispose();
     _tts.stop();

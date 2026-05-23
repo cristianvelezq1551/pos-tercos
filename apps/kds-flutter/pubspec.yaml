@@ -74,12 +74,14 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/images/logoTercos.png"
 
 # Splash (fondo negro + logo). Generar con: dart run flutter_native_splash:create
+# splash_logo.png = logo centrado en lienzo 1152px para que entre en la máscara
+# circular del splash nativo de Android 12+ (no se recorta la ilustración).
 flutter_native_splash:
-  color: "#0A0E16"
-  image: "assets/images/logoTercos.png"
+  color: "#000000"
+  image: "assets/images/splash_logo.png"
   android_12:
-    color: "#0A0E16"
-    image: "assets/images/logoTercos.png"
+    color: "#000000"
+    image: "assets/images/splash_logo.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -127,6 +127,16 @@ class _OrderCardState extends ConsumerState<OrderCard>
     final toneColor = _toneColor(tone);
     final isPagado = order.status == KitchenStatus.pagado;
     final isEnPrep = order.status == KitchenStatus.enPreparacion;
+    // Número de TURNO (lo que se le canta al cliente); fallback al recibo.
+    final turno = order.turnNumber ?? order.receiptNumber;
+    // Etiqueta de urgencia cuando el pedido está atrasado.
+    final lateLabel = tone != _Tone.late
+        ? null
+        : isPagado
+            ? 'SIN INICIAR'
+            : isEnPrep
+                ? 'DEMORADO'
+                : null;
 
     // Pulso solo cuando hay alerta (warn/late). En verde, estático.
     if (tone == _Tone.ok) {
@@ -170,14 +180,31 @@ class _OrderCardState extends ConsumerState<OrderCard>
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '#${order.receiptNumber}',
-                  style: TextStyle(
-                    fontSize: 44,
-                    fontWeight: FontWeight.w800,
-                    color: tone == _Tone.ok ? AppTheme.textPrimary : toneColor,
-                    height: 1,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'TURNO',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                        color: (tone == _Tone.ok
+                                ? AppTheme.textMuted
+                                : toneColor)
+                            .withValues(alpha: 0.9),
+                      ),
+                    ),
+                    Text(
+                      '$turno',
+                      style: TextStyle(
+                        fontSize: 44,
+                        fontWeight: FontWeight.w800,
+                        color: tone == _Tone.ok ? AppTheme.textPrimary : toneColor,
+                        height: 1,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -185,6 +212,10 @@ class _OrderCardState extends ConsumerState<OrderCard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _TypeBadge(type: order.type),
+                      if (lateLabel != null) ...[
+                        const SizedBox(height: 4),
+                        _UrgencyBadge(label: lateLabel, color: toneColor),
+                      ],
                       if (order.customerName != null) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -309,6 +340,40 @@ class _TypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w700,
           color: isWeb ? AppTheme.warning : AppTheme.textSecondary,
         ),
+      ),
+    );
+  }
+}
+
+/// Etiqueta de urgencia ("SIN INICIAR" / "DEMORADO") para pedidos atrasados.
+class _UrgencyBadge extends StatelessWidget {
+  const _UrgencyBadge({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
       ),
     );
   }
