@@ -182,6 +182,20 @@ export class SalesController {
   }
 
   /**
+   * Devuelve el recibo en bytes ESC/POS (base64) para que el NAVEGADOR del
+   * mostrador lo mande al print-agent LOCAL. Así la impresora no queda detrás
+   * del backend (funciona aunque la API esté remota). Audita la impresión.
+   */
+  @CashierAccess()
+  @Get(':id/escpos')
+  getEscPos(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
+    return this.sales.getReceiptEscPos(id, user.sub);
+  }
+
+  /**
    * Abre el cajón monedero asociado a una sale PAGADO. No requiere PIN
    * (el cajero puede abrir cuando hay venta confirmada).
    */

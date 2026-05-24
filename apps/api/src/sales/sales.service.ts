@@ -9,6 +9,7 @@ import {
 import {
   applyPromotion,
   expandRecipe,
+  renderReceiptEscPos,
   type CashDrawerProvider,
   type DrawerOpenResult,
   type PrinterProvider,
@@ -705,6 +706,61 @@ export class SalesService {
   // ==================================================================
   // PRINT RECEIPT
   // ==================================================================
+
+  /**
+   * Devuelve el recibo renderizado a bytes ESC/POS (base64) para que el
+   * NAVEGADOR del mostrador lo mande al print-agent LOCAL (impresión sin que
+   * el backend tenga que alcanzar la impresora). Audita igual que printReceipt.
+   */
+  async getReceiptEscPos(
+    saleId: string,
+    userId: string,
+  ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      include: includeFull(),
+    });
+    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (
+      sale.status !== 'PAGADO' &&
+      sale.status !== 'EN_PREPARACION' &&
+      sale.status !== 'LISTO_DESPACHO' &&
+      sale.status !== 'ENTREGADO'
+    ) {
+      throw new BadRequestException(
+        `Sale en status ${sale.status} no se puede imprimir (solo desde PAGADO en adelante).`,
+      );
+    }
+
+    const previousPrints = await this.prisma.auditLog.count({
+      where: {
+        action: { in: ['RECEIPT_PRINTED', 'RECEIPT_REPRINTED'] },
+        entityType: 'sale',
+        entityId: saleId,
+      },
+    });
+    const isReprint = previousPrints > 0;
+    const receipt = buildReceiptData(toSaleDto(sale), isReprint);
+    const bytes = renderReceiptEscPos(receipt);
+
+    await this.audit.log({
+      userId,
+      action: isReprint ? 'RECEIPT_REPRINTED' : 'RECEIPT_PRINTED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: {
+        receiptNumber: Number(sale.receiptNumber),
+        via: 'browser-agent',
+        previousPrintCount: previousPrints,
+      },
+    });
+
+    return {
+      escposBase64: bytes.toString('base64'),
+      receiptNumber: Number(sale.receiptNumber),
+      reprint: isReprint,
+    };
+  }
 
   /**
    * Imprime/reimprime el recibo de la sale. La 1ra vez audita
