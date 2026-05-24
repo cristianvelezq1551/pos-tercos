@@ -5,20 +5,22 @@
   "main": "./dist/main.js",
   "scripts": {
     "dev": "tsx watch src/main.ts",
+    "list-usb": "tsx src/list-usb.ts",
+    "test-print": "tsx src/test-print.ts",
     "build": "tsc",
+    "bundle": "node build.mjs",
+    "package:win": "node build.mjs && npx -y @yao-pkg/pkg@latest dist/agent.cjs --targets node20-win-x64 --output dist/tercos-print-agent.exe",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@pos-tercos/domain": "workspace:*",
-    "@pos-tercos/types": "workspace:*",
-    "escpos": "3.0.0-alpha.6",
-    "escpos-usb": "3.0.0-alpha.4",
+    "usb": "2.17.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "esbuild": "^0.25.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

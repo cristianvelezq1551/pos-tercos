@@ -1,106 +1,212 @@
-import { DRAWER_KICK } from '@pos-tercos/domain';
-import { mkdir, writeFile } from 'fs/promises';
+import { execFile } from 'child_process';
+import { mkdir, writeFile, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
 /**
- * Driver de impresora térmica ESC/POS.
+ * Driver de impresora térmica ESC/POS. Recibe bytes ya renderizados y los
+ * manda a la impresora según el entorno:
  *
- * 3 modos según env:
+ * 1) Windows — `PRINTER_NAME` (nombre de la impresora instalada en Windows):
+ *    imprime RAW por el spooler vía Win32 (PowerShell + winspool). Sin Zadig,
+ *    sin módulos nativos. Es el modo recomendado en la PC del mostrador.
  *
- * 1) `PRINTER_USB_VENDOR_ID` + `PRINTER_USB_PRODUCT_ID` (recomendado en
- *    macOS): abre la impresora USB directamente con libusb (escpos-usb)
- *    sin pasar por CUPS. Bypassea cualquier driver. Es la única forma
- *    confiable para térmicas como STMicroelectronics POS58 que no
- *    exponen device serial en macOS.
+ * 2) USB libusb — `PRINTER_USB_VENDOR_ID` + `PRINTER_USB_PRODUCT_ID`
+ *    (macOS/Linux): abre la impresora USB directo con `usb` (carga perezosa,
+ *    así el .exe de Windows no necesita el binario nativo).
  *
- * 2) `PRINTER_DEVICE` (Linux/Raspberry Pi): escribe directo al device
- *    `/dev/usb/lp0` o similar. Más simple pero requiere kernel module
- *    `usblp` (estándar en Linux, no existe en macOS).
+ * 3) `PRINTER_DEVICE` (Linux/Pi): escribe al device `/dev/usb/lp0`.
  *
- * 3) Sin ninguno (dev): dump a `./tmp/print-out/{ts}.bin` para
- *    inspección manual.
+ * 4) Sin nada (dev): dump a `./tmp/print-out/{ts}.bin`.
  *
- * El contrato `sendBytes(bytes)` y `kickDrawer()` no cambia entre
- * modos — el HTTP server (main.ts) no necesita saber cuál se usa.
+ * Sin dependencias del monorepo (DRAWER_KICK inline) → empaquetable como exe.
  */
 
-const VENDOR_ID = process.env.PRINTER_USB_VENDOR_ID
-  ? parseHexOrDec(process.env.PRINTER_USB_VENDOR_ID)
-  : null;
-const PRODUCT_ID = process.env.PRINTER_USB_PRODUCT_ID
-  ? parseHexOrDec(process.env.PRINTER_USB_PRODUCT_ID)
-  : null;
-const PRINTER_DEVICE = process.env.PRINTER_DEVICE ?? null;
-const FALLBACK_DIR = resolve(
-  process.cwd(),
-  process.env.PRINT_AGENT_LOG_DIR ?? './tmp/print-out',
-);
+/** ESC p 0 50 50 — pulso de apertura del cajón monedero. */
+const DRAWER_KICK = Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32]);
 
-/** Adapter shape compatible con `escpos-usb`. */
-type UsbAdapter = {
-  open(cb: (err: Error | null) => void): void;
-  write(data: Buffer, cb?: (err: Error | null) => void): void;
-  close(): void;
-};
-
-async function openUsbDevice(): Promise<UsbAdapter | null> {
-  if (VENDOR_ID === null || PRODUCT_ID === null) return null;
-  // Import dinámico para que el agent siga arrancando aunque libusb
-  // no esté disponible en este entorno (CI, dev sin permisos, etc.).
-  const mod = await import('escpos-usb');
-  // escpos-usb exporta `default` (CJS) o named (ESM) según versión.
-  const UsbClass = (mod as unknown as { default?: unknown }).default ?? mod;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const Ctor = UsbClass as any;
-  return new Ctor(VENDOR_ID, PRODUCT_ID) as UsbAdapter;
+/** Lee la config del entorno EN CADA LLAMADA (el agent carga su .env tarde). */
+function readConfig() {
+  return {
+    printerName: process.env.PRINTER_NAME ?? null,
+    vendorId: process.env.PRINTER_USB_VENDOR_ID
+      ? parseHexOrDec(process.env.PRINTER_USB_VENDOR_ID)
+      : null,
+    productId: process.env.PRINTER_USB_PRODUCT_ID
+      ? parseHexOrDec(process.env.PRINTER_USB_PRODUCT_ID)
+      : null,
+    device: process.env.PRINTER_DEVICE ?? null,
+    fallbackDir: resolve(
+      process.cwd(),
+      process.env.PRINT_AGENT_LOG_DIR ?? './tmp/print-out',
+    ),
+  };
 }
 
 export async function sendBytes(bytes: Buffer): Promise<void> {
-  // Modo 1: USB directo via libusb (siempre abre/cierra fresco — la POS58
-  // no soporta múltiples writes por handle sin reset en macOS).
-  if (VENDOR_ID !== null && PRODUCT_ID !== null) {
-    const device = await openUsbDevice();
-    if (!device) {
-      throw new Error('escpos-usb device init returned null');
-    }
-    await new Promise<void>((resolveFn, rejectFn) => {
-      device.open((openErr) => {
-        if (openErr) {
-          rejectFn(openErr);
-          return;
-        }
-        device.write(bytes, (writeErr) => {
-          try {
-            device.close();
-          } catch {
-            // ignore close errors
-          }
-          if (writeErr) rejectFn(writeErr);
-          else resolveFn();
-        });
-      });
-    });
+  const cfg = readConfig();
+
+  // Modo 1: Windows spooler RAW (recomendado en el mostrador).
+  if (process.platform === 'win32' && cfg.printerName) {
+    await writeWindowsRaw(cfg.printerName, bytes);
     return;
   }
 
-  // Modo 2: device file (Linux)
-  if (PRINTER_DEVICE) {
-    await writeFile(PRINTER_DEVICE, bytes);
+  // Modo 2: USB directo (macOS/Linux) via libusb.
+  if (cfg.vendorId !== null && cfg.productId !== null) {
+    await writeUsb(cfg.vendorId, cfg.productId, bytes);
     return;
   }
 
-  // Modo 3: dump a disco (dev sin hardware)
-  await mkdir(FALLBACK_DIR, { recursive: true });
+  // Modo 3: device file (Linux).
+  if (cfg.device) {
+    await writeFile(cfg.device, bytes);
+    return;
+  }
+
+  // En Windows, sin PRINTER_NAME no hay forma de imprimir → error claro
+  // (en vez de "guardar a disco" silencioso que parece que no hace nada).
+  if (process.platform === 'win32') {
+    throw new Error(
+      'Falta PRINTER_NAME en el .env (junto al .exe). Ponelo igual al nombre de Get-Printer | Select Name. ' +
+        'Ojo: el archivo debe llamarse .env (no .env.txt).',
+    );
+  }
+
+  // Modo 4: dump a disco (dev sin hardware).
+  await mkdir(cfg.fallbackDir, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const path = join(FALLBACK_DIR, `${ts}.bin`);
+  const path = join(cfg.fallbackDir, `${ts}.bin`);
   await writeFile(path, bytes);
   console.log(
-    `[print-agent] no PRINTER_USB_* ni PRINTER_DEVICE — wrote ${bytes.length}B to ${path}`,
+    `[print-agent] sin PRINTER_NAME/PRINTER_USB_*/PRINTER_DEVICE — ${bytes.length}B a ${path}`,
   );
 }
 
 export async function kickDrawer(): Promise<void> {
   await sendBytes(DRAWER_KICK);
+}
+
+// ====================================================================
+// Windows: impresión RAW por el spooler (Win32 winspool vía PowerShell)
+// ====================================================================
+
+const PS_RAW_SCRIPT = String.raw`
+param([Parameter(Mandatory=$true)][string]$Printer,[Parameter(Mandatory=$true)][string]$DataFile)
+$ErrorActionPreference = 'Stop'
+$bytes = [System.IO.File]::ReadAllBytes($DataFile)
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class TercosRawPrinter {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public struct DOCINFO { [MarshalAs(UnmanagedType.LPWStr)] public string pDocName; [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile; [MarshalAs(UnmanagedType.LPWStr)] public string pDataType; }
+  [DllImport("winspool.Drv", EntryPoint="OpenPrinterW", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool OpenPrinter(string src, out IntPtr h, IntPtr pd);
+  [DllImport("winspool.Drv", EntryPoint="ClosePrinter")] public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartDocPrinterW", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool StartDocPrinter(IntPtr h, int level, ref DOCINFO di);
+  [DllImport("winspool.Drv", EntryPoint="EndDocPrinter")] public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartPagePrinter")] public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="EndPagePrinter")] public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="WritePrinter")] public static extern bool WritePrinter(IntPtr h, IntPtr buf, int count, out int written);
+  public static void Send(string printer, byte[] data) {
+    IntPtr h;
+    if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("No se pudo abrir la impresora '" + printer + "'. Revisa el nombre exacto en Dispositivos e impresoras.");
+    DOCINFO di = new DOCINFO(); di.pDocName = "Tercos Recibo"; di.pDataType = "RAW";
+    try {
+      if (!StartDocPrinter(h, 1, ref di)) throw new Exception("StartDocPrinter fallo");
+      StartPagePrinter(h);
+      IntPtr p = Marshal.AllocCoTaskMem(data.Length);
+      try { Marshal.Copy(data, 0, p, data.Length); int w; if (!WritePrinter(h, p, data.Length, out w)) throw new Exception("WritePrinter fallo"); }
+      finally { Marshal.FreeCoTaskMem(p); }
+      EndPagePrinter(h); EndDocPrinter(h);
+    } finally { ClosePrinter(h); }
+  }
+}
+"@
+[TercosRawPrinter]::Send($Printer, $bytes)
+`;
+
+async function writeWindowsRaw(printerName: string, bytes: Buffer): Promise<void> {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const dataFile = join(tmpdir(), `tercos-print-${stamp}.bin`);
+  const scriptFile = join(tmpdir(), `tercos-rawprint-${stamp}.ps1`);
+  await writeFile(dataFile, bytes);
+  await writeFile(scriptFile, PS_RAW_SCRIPT, 'utf8');
+  try {
+    await new Promise<void>((res, rej) => {
+      execFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          scriptFile,
+          '-Printer',
+          printerName,
+          '-DataFile',
+          dataFile,
+        ],
+        { windowsHide: true, timeout: 15000 },
+        (err, _stdout, stderr) => {
+          if (err) rej(new Error(stderr?.trim() || err.message));
+          else res();
+        },
+      );
+    });
+  } finally {
+    await rm(dataFile, { force: true }).catch(() => undefined);
+    await rm(scriptFile, { force: true }).catch(() => undefined);
+  }
+}
+
+// ====================================================================
+// USB libusb (macOS / Linux) — carga perezosa de `usb`
+// ====================================================================
+
+async function writeUsb(
+  vendorId: number,
+  productId: number,
+  bytes: Buffer,
+): Promise<void> {
+  const hex = `0x${vendorId.toString(16)}:0x${productId.toString(16)}`;
+  // Carga perezosa: el .exe de Windows no necesita el binario nativo de `usb`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { findByIds } = (await import('usb')) as any;
+  const device = findByIds(vendorId, productId);
+  if (!device) {
+    throw new Error(`No se encontró la impresora USB ${hex}. ¿Conectada/encendida?`);
+  }
+  device.open();
+  const iface = device.interface(0);
+  try {
+    if (typeof iface.isKernelDriverActive === 'function' && iface.isKernelDriverActive()) {
+      iface.detachKernelDriver();
+    }
+  } catch {
+    // macOS / sin permiso de detach — claim suele bastar.
+  }
+  iface.claim();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out = iface.endpoints.find((e: any) => e.direction === 'out');
+  if (!out) {
+    iface.release(true, () => undefined);
+    device.close();
+    throw new Error(`La impresora ${hex} no expone endpoint de salida.`);
+  }
+  try {
+    await new Promise<void>((res, rej) =>
+      out.transfer(bytes, (err: Error | undefined) => (err ? rej(err) : res())),
+    );
+  } finally {
+    await new Promise<void>((res) => iface.release(true, () => res()));
+    try {
+      device.close();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function parseHexOrDec(s: string): number {
