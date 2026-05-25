@@ -13,6 +13,7 @@ import {
   formatDate,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
+import { useOffline } from '../../offline';
 import { listSales } from '../../sales';
 import { closeShift } from '../api/close';
 import { listCashMovements } from '../api';
@@ -46,6 +47,17 @@ export function CloseShiftModal({
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  // El cierre necesita el backend (Z-report + efectivo esperado) y que NO queden
+  // ventas offline en cola: si no, el esperado quedaría mal y daría descuadre
+  // falso. El bloqueo se libera solo cuando termina de sincronizar.
+  const { status, pending: offlinePending } = useOffline();
+  const blockedReason =
+    status === 'offline'
+      ? 'Sin conexión. El cierre necesita el backend (Z-report y efectivo esperado). Reconectá para cerrar el turno.'
+      : offlinePending > 0
+        ? `Hay ${offlinePending} venta(s) offline sin sincronizar. Esperá a que terminen de sincronizar antes de cerrar — si no, el efectivo esperado quedaría mal.`
+        : null;
 
   useEffect(() => {
     if (!open || !shift) return;
@@ -84,7 +96,8 @@ export function CloseShiftModal({
   const hasCount = arqueo ? Object.values(counts).some((n) => n > 0) : manual !== null;
   const showResult = !blind || revealed;
   const difference = expectedCash !== null ? countedNum - expectedCash : 0;
-  const canConfirm = summary !== null && hasCount && countedNum >= 0 && !pending;
+  const canConfirm =
+    summary !== null && hasCount && countedNum >= 0 && !pending && !blockedReason;
 
   const handleConfirm = async () => {
     if (!shift || !canConfirm) return;
@@ -124,6 +137,15 @@ export function CloseShiftModal({
       }
     >
       <div className="space-y-5">
+        {blockedReason ? (
+          <p
+            role="alert"
+            className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm font-semibold text-warning"
+          >
+            {blockedReason}
+          </p>
+        ) : null}
+
         {loading ? (
           <LoadingSkeleton shape="text" count={5} />
         ) : null}
