@@ -1,5 +1,6 @@
 import type { PaymentMethod } from '@pos-tercos/types';
 import { offlineDb } from './db';
+import { applyConsumptionForSale } from './offline-availability';
 import type { OfflineSale, OfflineSalePayload } from './types';
 
 function pad(n: number): string {
@@ -42,6 +43,9 @@ export async function enqueueOfflineSale(input: {
     status: 'queued',
   };
   await offlineDb.putSale(sale);
+  // Descuenta el consumo del ledger local → la disponibilidad offline se
+  // actualiza para las próximas ventas (un preparado se agota offline).
+  await applyConsumptionForSale(input.payload);
   return sale;
 }
 

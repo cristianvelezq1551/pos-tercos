@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useConnectivity } from '../hooks/useConnectivity';
-import { cacheCatalog, cacheSession } from '../lib/cache';
+import { cacheCatalog, cacheSession, cacheStockSnapshot } from '../lib/cache';
 import { offlineDb, requestPersistentStorage } from '../lib/db';
 import { drainOfflineQueue } from '../lib/sync-engine';
 import type { ConnectivityStatus } from '../lib/types';
@@ -79,7 +79,12 @@ export function OfflineProvider({
   useEffect(() => {
     if (status === 'online') {
       void cacheCatalog().catch(() => undefined);
-      void drainOfflineQueue(refreshPending).catch(() => undefined);
+      // Drenar la cola y, recién después, refrescar el snapshot de stock (con la
+      // cola vacía el stock del backend ya refleja las ventas offline → el ledger
+      // local arranca limpio para el próximo corte).
+      void drainOfflineQueue(refreshPending)
+        .catch(() => undefined)
+        .then(() => cacheStockSnapshot().catch(() => undefined));
     }
   }, [status]);
 

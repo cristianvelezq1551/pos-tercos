@@ -2,6 +2,7 @@
 
 import type { ProductAvailability } from '@pos-tercos/types';
 import { useCallback, useEffect, useState } from 'react';
+import { computeOfflineAvailability } from '../../offline';
 import { fetchAvailability } from '../api';
 
 const POLL_MS = 20_000;
@@ -21,7 +22,14 @@ export function useAvailability(): AvailabilityMap {
       const rows = await fetchAvailability();
       setById(new Map(rows.map((r) => [r.productId, r])));
     } catch {
-      // Silencioso: si el poll falla, mantenemos el último estado conocido.
+      // Sin conexión: calcular desde el snapshot cacheado + ledger local (B.2.2)
+      // → un preparado se marca agotado offline igual que online.
+      try {
+        const rows = await computeOfflineAvailability();
+        if (rows.length > 0) setById(new Map(rows.map((r) => [r.productId, r])));
+      } catch {
+        // Sin snapshot cacheado: mantener el último estado conocido.
+      }
     }
   }, []);
 

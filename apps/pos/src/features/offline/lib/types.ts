@@ -1,3 +1,4 @@
+import type { OfflineAvailabilitySnapshot } from '@pos-tercos/domain';
 import type {
   PaymentMethod,
   Product,
@@ -30,17 +31,16 @@ export interface CatalogCache {
 }
 
 /**
- * Snapshot del grafo de recetas + stock para el ledger local (B.2). Se llena
- * desde GET /products/offline-snapshot cuando exista ese endpoint; por ahora
- * el tipo queda definido para fijar el schema de la DB.
+ * Snapshot del grafo de recetas + stock para el ledger local (B.2.2). Se llena
+ * desde `GET /products/offline-snapshot`. `*Consumed` acumula lo descontado por
+ * las ventas offline → la disponibilidad offline = stock − consumido.
  */
 export interface StockLedgerSnapshot {
-  /** Stock por entidad (insumo/producto), clave `${type}:${id}`. */
-  stock: Record<string, number>;
-  /** Descuentos locales acumulados por ventas offline (misma clave). */
-  consumed: Record<string, number>;
-  /** Grafo de recetas serializado (forma exacta se fija en B.2). */
-  graph: unknown;
+  snapshot: OfflineAvailabilitySnapshot;
+  /** Consumo local de productos de reventa directa (productId → qty). */
+  productConsumed: Record<string, number>;
+  /** Consumo local de insumos (ingredientId → cantidad en unitRecipe). */
+  ingredientConsumed: Record<string, number>;
   cachedAt: string;
 }
 

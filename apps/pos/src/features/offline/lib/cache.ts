@@ -1,3 +1,4 @@
+import type { OfflineAvailabilitySnapshot } from '@pos-tercos/domain';
 import {
   ProductAvailabilityResponseSchema,
   ProductSchema,
@@ -39,6 +40,21 @@ export async function cacheCatalog(): Promise<void> {
     products: ProductsSchema.parse(productsRaw),
     promotions: PromotionsSchema.parse(promotionsRaw),
     availability: ProductAvailabilityResponseSchema.parse(availabilityRaw),
+    cachedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Refresca el snapshot de stock/recetas para el ledger offline (B.2.2) y
+ * REINICIA el consumo local (el stock fresco del backend ya es la verdad). El
+ * provider lo llama tras drenar la cola al volver online.
+ */
+export async function cacheStockSnapshot(): Promise<void> {
+  const raw = (await getJson('/api/products/offline-snapshot')) as OfflineAvailabilitySnapshot;
+  await offlineDb.setLedger({
+    snapshot: raw,
+    productConsumed: {},
+    ingredientConsumed: {},
     cachedAt: new Date().toISOString(),
   });
 }
