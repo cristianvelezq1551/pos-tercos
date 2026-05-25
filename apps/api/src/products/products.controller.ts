@@ -17,6 +17,7 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { OfflineAvailabilitySnapshot } from '@pos-tercos/domain';
 import type { Response } from 'express';
 import {
   CreateProductSchema,
@@ -57,6 +58,13 @@ export class ProductsController {
   @Get('availability')
   availability(): Promise<ProductAvailability[]> {
     return this.products.getAvailability();
+  }
+
+  /** Snapshot (grafo + stock) para calcular disponibilidad OFFLINE en el POS. */
+  @CashierAccess()
+  @Get('offline-snapshot')
+  offlineSnapshot(): Promise<OfflineAvailabilitySnapshot> {
+    return this.products.getOfflineSnapshot();
   }
 
   @Get(':id')

@@ -17,8 +17,10 @@ import type {
   UpdateProduct,
 } from '@pos-tercos/types';
 import {
-  expandRecipe,
-  type ParentRef,
+  evaluateAvailability,
+  serializeRecipeGraph,
+  type AvailabilityProduct,
+  type OfflineAvailabilitySnapshot,
   type RecipeGraph,
   type StorageProvider,
 } from '@pos-tercos/domain';
@@ -27,9 +29,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { mimeForExtension } from '../common/image-mime';
-
-/** Tolerancia de punto flotante al comparar stock vs receta (en unitRecipe). */
-const STOCK_EPSILON = 1e-6;
 
 type ProductWithChildren = Prisma.ProductGetPayload<{
   include: {
@@ -320,6 +319,16 @@ export class ProductsService {
    * y el grafo completo de recetas; la expansión por producto es en memoria.
    */
   async getAvailability(): Promise<ProductAvailability[]> {
+    return evaluateAvailability(await this.loadAvailabilityData());
+  }
+
+  /** Productos + stock (productos/insumos) + grafo de recetas (sin N+1). */
+  private async loadAvailabilityData(): Promise<{
+    products: AvailabilityProduct[];
+    graph: RecipeGraph;
+    productStock: Map<string, number>;
+    ingredientStock: Map<string, number>;
+  }> {
     const [allProducts, prodStockRows, ingStockRows, graph] = await Promise.all([
       this.prisma.product.findMany({
         select: {
@@ -345,150 +354,28 @@ export class ProductsService {
       this.recipes.loadFullGraph(),
     ]);
 
-    const prodStock = new Map<string, number>();
+    const productStock = new Map<string, number>();
     for (const r of prodStockRows) {
-      if (r.productId) prodStock.set(r.productId, Number(r._sum.delta ?? 0));
+      if (r.productId) productStock.set(r.productId, Number(r._sum.delta ?? 0));
     }
-    const ingStock = new Map<string, number>();
+    const ingredientStock = new Map<string, number>();
     for (const r of ingStockRows) {
-      if (r.ingredientId) ingStock.set(r.ingredientId, Number(r._sum.delta ?? 0));
+      if (r.ingredientId) ingredientStock.set(r.ingredientId, Number(r._sum.delta ?? 0));
     }
-    const productById = new Map(allProducts.map((p) => [p.id, p]));
-
-    return allProducts
-      .filter((p) => p.isActive)
-      .map((p) => {
-        // 1) "86" manual gana sobre todo.
-        if (p.soldOut) {
-          return {
-            productId: p.id,
-            available: false,
-            stock: p.directResale ? (prodStock.get(p.id) ?? 0) : null,
-            reason: 'Agotado (manual)',
-          };
-        }
-
-        // 2) Reventa directa: stock propio.
-        if (p.directResale) {
-          const stock = prodStock.get(p.id) ?? 0;
-          return {
-            productId: p.id,
-            available: stock > 0,
-            stock,
-            reason: stock > 0 ? null : 'Sin stock',
-          };
-        }
-
-        // 3) Combo: que alcance para armar al menos 1.
-        if (p.isCombo) {
-          const reason = this.evalComboShortages(
-            p.comboComponents,
-            graph,
-            productById,
-            ingStock,
-            prodStock,
-          );
-          return { productId: p.id, available: reason === null, stock: null, reason };
-        }
-
-        // 4) Preparado: insumos de la receta base.
-        const reason = this.evalRecipeShortages(p.id, p.name, graph, ingStock);
-        return { productId: p.id, available: reason === null, stock: null, reason };
-      });
+    return { products: allProducts, graph, productStock, ingredientStock };
   }
 
-  /**
-   * Expande la receta base de un preparado y verifica que cada insumo alcance
-   * para ≥1 unidad. Devuelve el motivo ("Sin Pan, Papas") o null si disponible.
-   * Sin receta definida → null (no se invalida; queda el "86" manual).
-   */
-  private evalRecipeShortages(
-    productId: string,
-    productName: string,
-    graph: RecipeGraph,
-    ingStock: Map<string, number>,
-  ): string | null {
-    const root: ParentRef = { kind: 'product', id: productId };
-    let needs: ReturnType<typeof expandRecipe>;
-    try {
-      needs = expandRecipe(graph, root, 1);
-    } catch (err) {
-      // Receta rota (ciclo / nodo faltante): no bloqueamos la venta por eso.
-      this.logger.warn(
-        `Disponibilidad: receta inválida en "${productName}" (${productId}): ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      return null;
-    }
-    if (needs.size === 0) return null;
-    const missing: string[] = [];
-    for (const ing of needs.values()) {
-      const have = ingStock.get(ing.ingredientId) ?? 0;
-      if (have + STOCK_EPSILON < ing.totalQuantity) missing.push(ing.name);
-    }
-    return missing.length > 0 ? `Sin ${missing.join(', ')}` : null;
-  }
-
-  /**
-   * Verifica que un combo pueda armarse: agrega los insumos de los componentes
-   * preparados y el stock de los componentes de reventa directa, todo escalado
-   * por la cantidad de cada componente. Devuelve el motivo o null.
-   */
-  private evalComboShortages(
-    components: { productId: string; quantity: number }[],
-    graph: RecipeGraph,
-    productById: Map<string, { name: string; directResale: boolean; soldOut: boolean }>,
-    ingStock: Map<string, number>,
-    prodStock: Map<string, number>,
-  ): string | null {
-    const aggIngredientNeeds = new Map<string, number>();
-    const ingredientName = new Map<string, string>();
-    const drNeeds = new Map<string, number>();
-
-    for (const comp of components) {
-      const cp = productById.get(comp.productId);
-      if (!cp) return 'Combo mal configurado';
-      if (cp.soldOut) return `Sin ${cp.name}`;
-      if (cp.directResale) {
-        drNeeds.set(comp.productId, (drNeeds.get(comp.productId) ?? 0) + comp.quantity);
-        continue;
-      }
-      try {
-        const needs = expandRecipe(
-          graph,
-          { kind: 'product', id: comp.productId },
-          comp.quantity,
-        );
-        for (const ing of needs.values()) {
-          aggIngredientNeeds.set(
-            ing.ingredientId,
-            (aggIngredientNeeds.get(ing.ingredientId) ?? 0) + ing.totalQuantity,
-          );
-          ingredientName.set(ing.ingredientId, ing.name);
-        }
-      } catch (err) {
-        // Receta rota de un componente: no bloqueamos por eso.
-        this.logger.warn(
-          `Disponibilidad: receta inválida en componente "${cp.name}": ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
-    }
-
-    const missing: string[] = [];
-    for (const [pid, qty] of drNeeds) {
-      if ((prodStock.get(pid) ?? 0) + STOCK_EPSILON < qty) {
-        missing.push(productById.get(pid)?.name ?? 'producto');
-      }
-    }
-    for (const [ingId, qty] of aggIngredientNeeds) {
-      if ((ingStock.get(ingId) ?? 0) + STOCK_EPSILON < qty) {
-        missing.push(ingredientName.get(ingId) ?? 'insumo');
-      }
-    }
-    return missing.length > 0 ? `Sin ${[...new Set(missing)].join(', ')}` : null;
+  /** Snapshot serializable para calcular disponibilidad OFFLINE (B.2.2). */
+  async getOfflineSnapshot(): Promise<OfflineAvailabilitySnapshot> {
+    const { products, graph, productStock, ingredientStock } =
+      await this.loadAvailabilityData();
+    return {
+      products,
+      graph: serializeRecipeGraph(graph),
+      productStock: Object.fromEntries(productStock),
+      ingredientStock: Object.fromEntries(ingredientStock),
+      asOf: new Date().toISOString(),
+    };
   }
 
   /** Marca/desmarca un producto como agotado (86 manual). */

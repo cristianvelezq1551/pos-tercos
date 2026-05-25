@@ -1,4 +1,5 @@
 export * from './recipe';
+export * from './availability';
 export * from './llm';
 export * from './storage';
 export * from './matching';
