@@ -292,6 +292,73 @@ describe('Sales E2E', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Caso 3.5: POST /sales/sync-offline (Fase B.3)
+  // ---------------------------------------------------------------------------
+  describe('POST /sales/sync-offline', () => {
+    const buildBody = (localId: string) => ({
+      localId,
+      provisionalNumber: 'OFF-1',
+      soldOfflineAt: new Date('2026-05-24T14:00:00.000Z').toISOString(),
+      payment: { method: 'CASH', amountReceived: 15000, offlineVerified: false },
+      payload: {
+        type: 'COUNTER',
+        customerName: null,
+        lines: [
+          {
+            productId,
+            sizeId: null,
+            quantity: 1,
+            unitPrice: 15000,
+            modifiers: [],
+            notes: null,
+            lineSubtotal: 15000,
+            lineDiscount: 0,
+            lineTotal: 15000,
+            appliedPromotionId: null,
+          },
+        ],
+        subtotal: 15000,
+        discount: 0,
+        total: 15000,
+      },
+    });
+
+    it('registra la venta offline ENTREGADO con recibo y turno reales + paidAt backdateado', async () => {
+      const res = await request
+        .post('/sales/sync-offline')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send(buildBody(randomUUID()))
+        .expect(201);
+
+      const sale = res.body;
+      expect(sale.status).toBe('ENTREGADO');
+      expect(typeof sale.receiptNumber).toBe('number');
+      expect(sale.receiptNumber).toBeGreaterThan(0);
+      expect(sale.turnNumber).toBeGreaterThan(0);
+      expect(sale.total).toBe(15000);
+      expect(sale.paymentMethod).toBe('CASH');
+      // paidAt backdateado al momento real de la venta offline.
+      expect(new Date(sale.paidAt).toISOString()).toBe('2026-05-24T14:00:00.000Z');
+    });
+
+    it('es idempotente por localId (reintento devuelve la misma venta)', async () => {
+      const localId = randomUUID();
+      const first = await request
+        .post('/sales/sync-offline')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send(buildBody(localId))
+        .expect(201);
+      const second = await request
+        .post('/sales/sync-offline')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send(buildBody(localId))
+        .expect(201);
+      expect(second.body.id).toBe(first.body.id);
+      expect(second.body.receiptNumber).toBe(first.body.receiptNumber);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Caso 4: GET /sales/:id y GET /sales
   // ---------------------------------------------------------------------------
   describe('GET /sales', () => {

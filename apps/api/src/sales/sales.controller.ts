@@ -20,6 +20,7 @@ import {
   IdempotencyKeySchema,
   OpenDrawerSchema,
   SaleStatusEnum,
+  SyncOfflineSaleSchema,
   VoidSaleSchema,
   type ConfirmPayment,
   type CreateSale,
@@ -28,6 +29,7 @@ import {
   type Sale,
   type SaleStatus,
   type SaleStatusLogEntry,
+  type SyncOfflineSale,
   type VoidSale,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -79,6 +81,19 @@ export class SalesController {
       idempotencyKey = parsed.data;
     }
     return this.sales.create(body, user.sub, idempotencyKey);
+  }
+
+  /**
+   * Sincroniza una venta cobrada OFFLINE (Fase B.3). Idempotente por localId.
+   * Ruta de UN segmento ('sync-offline') → no choca con las rutas `:id/...`.
+   */
+  @CashierAccess()
+  @Post('sync-offline')
+  syncOffline(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(SyncOfflineSaleSchema)) body: SyncOfflineSale,
+  ): Promise<Sale> {
+    return this.sales.syncOffline(body, user.sub);
   }
 
   @CashierAccess()

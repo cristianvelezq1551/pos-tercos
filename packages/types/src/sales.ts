@@ -215,6 +215,52 @@ export const ConfirmPaymentSchema = z
 export type ConfirmPayment = z.infer<typeof ConfirmPaymentSchema>;
 
 // ====================================================================
+// SYNC OFFLINE — POST /sales/sync-offline (Fase B.3)
+// ====================================================================
+// Venta cobrada OFFLINE (COUNTER) que el POS sincroniza al recuperar conexión.
+// El backend la registra TAL CUAL se cobró (totales VERBATIM, sin recomputar
+// promos ni validar soldOut → "gana lo cobrado offline"), le asigna el recibo y
+// turno reales, descuenta stock y la deja ENTREGADO (ya fue entrega directa).
+// Idempotente por `localId` (= idempotency key) → cero doble-cobro en reintentos.
+
+export const SyncOfflineLineSchema = z.object({
+  productId: z.string().uuid(),
+  sizeId: z.string().uuid().nullable(),
+  quantity: z.number().int().positive(),
+  unitPrice: z.number().nonnegative(),
+  modifiers: z.array(AppliedModifierSchema).default([]),
+  notes: z.string().nullable().optional(),
+  lineSubtotal: z.number().nonnegative(),
+  lineDiscount: z.number().nonnegative(),
+  lineTotal: z.number().nonnegative(),
+  appliedPromotionId: z.string().uuid().nullable(),
+});
+
+export const SyncOfflineSaleSchema = z.object({
+  /** UUID local generado offline. Se usa como idempotency key. */
+  localId: z.string().uuid(),
+  /** Número provisional mostrado en el recibo offline (ej. "OFF-7"). */
+  provisionalNumber: z.string().min(1).max(32),
+  /** Momento real de la venta offline (el backend backdatea paidAt acá). */
+  soldOfflineAt: z.string().datetime(),
+  payment: z.object({
+    method: PaymentMethodEnum,
+    amountReceived: z.number().nonnegative(),
+    /** El cajero verificó el comprobante en el celular del cliente (sin doble-check de app). */
+    offlineVerified: z.boolean(),
+  }),
+  payload: z.object({
+    type: z.literal('COUNTER'),
+    customerName: z.string().nullable(),
+    lines: z.array(SyncOfflineLineSchema).min(1),
+    subtotal: z.number().nonnegative(),
+    discount: z.number().nonnegative(),
+    total: z.number().nonnegative(),
+  }),
+});
+export type SyncOfflineSale = z.infer<typeof SyncOfflineSaleSchema>;
+
+// ====================================================================
 // VOID SALE — POST /sales/:id/void (X-Approval-Pin obligatorio)
 // ====================================================================
 

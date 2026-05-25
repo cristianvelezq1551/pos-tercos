@@ -50,7 +50,8 @@ export interface OfflineSaleLine {
   sizeId: string | null;
   quantity: number;
   unitPrice: number;
-  modifiers: Array<{ modifierId: string }>;
+  /** Snapshot de modificadores (precio CONGELADO offline → se sincroniza verbatim). */
+  modifiers: Array<{ modifierId: string; name: string; priceDelta: number }>;
   notes: string | null;
   lineSubtotal: number;
   lineDiscount: number;

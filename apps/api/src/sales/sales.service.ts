@@ -29,6 +29,7 @@ import type {
   SaleStatus,
   SaleStatusLogEntry,
   Shift,
+  SyncOfflineSale,
   VoidSale,
 } from '@pos-tercos/types';
 import type { Prisma, SaleStatus as DbSaleStatus } from '@prisma/client';
@@ -496,6 +497,261 @@ export class SalesService {
       void this.notifications.notify(saleId, 'payment_received');
     }
     return dto;
+  }
+
+  // ==================================================================
+  // SYNC OFFLINE (Fase B.3)
+  // ==================================================================
+
+  /**
+   * Registra una venta cobrada OFFLINE (COUNTER) que el POS sincroniza al
+   * recuperar conexión. La graba TAL CUAL se cobró:
+   *  - Totales VERBATIM (no recomputa promos ni valida soldOut → "gana lo
+   *    cobrado offline"; cualquier diferencia se ve en el stock/auditoría).
+   *  - `paidAt = soldOfflineAt` (backdateado → el revenue cae en la hora real).
+   *  - Status ENTREGADO: la venta ya fue entrega directa offline (NO entra al
+   *    KDS ni al turnero, ni dispara notificaciones).
+   *  - Idempotente por `localId` (= idempotency key) → cero doble-cobro.
+   */
+  async syncOffline(input: SyncOfflineSale, userId: string): Promise<Sale> {
+    const dup = await this.prisma.sale.findUnique({
+      where: { idempotencyKey: input.localId },
+      include: includeFull(),
+    });
+    if (dup) {
+      await this.audit.log({
+        userId,
+        action: 'IDEMPOTENCY_HIT',
+        entityType: 'sale',
+        entityId: dup.id,
+        metadata: { endpoint: 'POST /sales/sync-offline', key: input.localId },
+      });
+      return toSaleDto(dup);
+    }
+
+    // Caja del día abierta (la que estaba abierta antes del corte). Si quedó una
+    // de un día previo, getActiveTodayShift lanza Conflict → falla → el cajero
+    // cierra la caja vieja y reintenta (bandeja de revisión, B.5).
+    const shift = await this.shifts.getActiveTodayShift(userId);
+    if (!shift) {
+      throw new BadRequestException(
+        'No hay caja abierta para asociar la venta offline. Abrí/cerrá caja y reintentá.',
+      );
+    }
+
+    // Validar productos + computar consumo ANTES de la tx: un fallo acá manda la
+    // venta a la bandeja de revisión sin quemar número de recibo.
+    const specs = await this.computeOfflineConsumption(input.payload.lines);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const [{ next }] = await tx.$queryRaw<{ next: bigint }[]>`
+        SELECT nextval('receipt_seq') AS next
+      `;
+      const receiptNumber = next;
+      // Turno: secuencia por caja (igual que confirmPayment).
+      const assigned = await tx.sale.count({
+        where: { shiftId: shift.id, turnNumber: { not: null } },
+      });
+      const turnNumber = assigned + 1;
+
+      const sale = await tx.sale.create({
+        data: {
+          receiptNumber,
+          type: 'COUNTER',
+          status: 'ENTREGADO',
+          turnNumber,
+          customerName: input.payload.customerName,
+          subtotal: input.payload.subtotal,
+          discountTotal: input.payload.discount,
+          total: input.payload.total,
+          paymentMethod: input.payment.method as PaymentMethod,
+          paidAt: new Date(input.soldOfflineAt),
+          paidByUserId: userId,
+          cashierId: userId,
+          shiftId: shift.id,
+          idempotencyKey: input.localId,
+          items: {
+            create: input.payload.lines.map((l) => ({
+              productId: l.productId,
+              sizeId: l.sizeId,
+              quantity: l.quantity,
+              unitPrice: l.unitPrice,
+              modifiersJson: l.modifiers as unknown as Prisma.InputJsonValue,
+              notes: l.notes ?? null,
+              appliedPromotionId: l.appliedPromotionId,
+              lineSubtotal: l.lineSubtotal,
+              lineDiscount: l.lineDiscount,
+              lineTotal: l.lineTotal,
+            })),
+          },
+          statusLog: {
+            create: {
+              statusFrom: null,
+              statusTo: 'ENTREGADO',
+              userId,
+              notes: `Venta offline ${input.provisionalNumber} sincronizada`,
+            },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (specs.length > 0) {
+        await tx.inventoryMovement.createMany({
+          data: specs.map((s) => ({
+            entityType: s.entityType,
+            ingredientId: s.ingredientId ?? null,
+            productId: s.productId ?? null,
+            delta: s.delta,
+            type: 'SALE' as const,
+            sourceType: 'sale',
+            sourceId: sale.id,
+            userId,
+            notes: s.note,
+          })),
+        });
+      }
+
+      return tx.sale.findUniqueOrThrow({
+        where: { id: sale.id },
+        include: includeFull(),
+      });
+    });
+
+    const dto = toSaleDto(updated);
+    await this.audit.log({
+      userId,
+      action: 'SALE_SYNCED_OFFLINE',
+      entityType: 'sale',
+      entityId: dto.id,
+      metadata: {
+        provisionalNumber: input.provisionalNumber,
+        receiptNumber: dto.receiptNumber,
+        turnNumber: dto.turnNumber,
+        method: input.payment.method,
+        offlineVerified: input.payment.offlineVerified,
+        soldOfflineAt: input.soldOfflineAt,
+        movementsCreated: specs.length,
+      },
+    });
+    // Sin KDS ni notificaciones: la venta offline ya se entregó (entrega directa).
+    return dto;
+  }
+
+  /**
+   * Consumo de stock de una venta offline. Mismo criterio que confirmPayment
+   * (reventa directa / receta vía expandRecipe / combos por componentes) pero
+   * devuelve SPECS sin saleId (se inyecta al crear la venta en la tx).
+   */
+  private async computeOfflineConsumption(
+    lines: ReadonlyArray<{ productId: string; quantity: number; sizeId: string | null }>,
+  ): Promise<
+    Array<{
+      entityType: 'PRODUCT' | 'INGREDIENT';
+      ingredientId?: string;
+      productId?: string;
+      delta: number;
+      note: string;
+    }>
+  > {
+    const specs: Array<{
+      entityType: 'PRODUCT' | 'INGREDIENT';
+      ingredientId?: string;
+      productId?: string;
+      delta: number;
+      note: string;
+    }> = [];
+
+    const productIds = Array.from(new Set(lines.map((l) => l.productId)));
+    const saleProducts = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: {
+        id: true,
+        name: true,
+        directResale: true,
+        isCombo: true,
+        comboComponents: { select: { productId: true, quantity: true } },
+      },
+    });
+    const saleProductMap = new Map(saleProducts.map((p) => [p.id, p]));
+
+    const componentIds = new Set<string>();
+    for (const p of saleProducts) {
+      if (p.isCombo) for (const c of p.comboComponents) componentIds.add(c.productId);
+    }
+    const componentProducts = componentIds.size
+      ? await this.prisma.product.findMany({
+          where: { id: { in: [...componentIds] } },
+          select: { id: true, name: true, directResale: true, isCombo: true },
+        })
+      : [];
+    const componentMap = new Map(componentProducts.map((p) => [p.id, p]));
+
+    const consume = async (
+      p: { id: string; name: string; directResale: boolean },
+      qty: number,
+      sizeId?: string | null,
+    ): Promise<void> => {
+      if (p.directResale) {
+        specs.push({
+          entityType: 'PRODUCT',
+          productId: p.id,
+          delta: -qty,
+          note: `Offline venta item ${p.name}`,
+        });
+        return;
+      }
+      const { graph, root } = await this.recipes.loadGraphForProduct(
+        p.id,
+        sizeId ?? undefined,
+      );
+      let expanded;
+      try {
+        expanded = expandRecipe(graph, root, qty);
+      } catch (err) {
+        throw new BadRequestException({
+          message: `Falla al expandir receta de "${p.name}" (venta offline)`,
+          cause: err instanceof Error ? err.message : String(err),
+        });
+      }
+      for (const ing of expanded.values()) {
+        specs.push({
+          entityType: 'INGREDIENT',
+          ingredientId: ing.ingredientId,
+          delta: -ing.totalQuantity,
+          note: `Offline via "${p.name}"`,
+        });
+      }
+    };
+
+    for (const line of lines) {
+      const product = saleProductMap.get(line.productId);
+      if (!product) {
+        throw new BadRequestException(
+          `Producto ${line.productId} ya no existe (venta offline).`,
+        );
+      }
+      if (product.isCombo) {
+        for (const comp of product.comboComponents) {
+          const cp = componentMap.get(comp.productId);
+          if (!cp) {
+            throw new BadRequestException(
+              `Combo "${product.name}" referencia un producto inexistente.`,
+            );
+          }
+          if (cp.isCombo) {
+            throw new BadRequestException(
+              `Combo anidado no soportado en "${product.name}".`,
+            );
+          }
+          await consume(cp, line.quantity * comp.quantity);
+        }
+      } else {
+        await consume(product, line.quantity, line.sizeId);
+      }
+    }
+
+    return specs;
   }
 
   // ==================================================================

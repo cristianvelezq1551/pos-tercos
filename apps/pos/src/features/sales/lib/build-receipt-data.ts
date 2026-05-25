@@ -66,7 +66,11 @@ export function buildOfflinePayload(
         sizeId: line.size?.id ?? null,
         quantity: line.quantity,
         unitPrice: line.unitPrice,
-        modifiers: line.modifiers.map((m) => ({ modifierId: m.id })),
+        modifiers: line.modifiers.map((m) => ({
+          modifierId: m.id,
+          name: m.name,
+          priceDelta: m.priceDelta,
+        })),
         notes: line.notes ?? null,
         lineSubtotal: t?.lineSubtotal ?? line.unitPrice * line.quantity,
         lineDiscount: t?.lineDiscount ?? 0,

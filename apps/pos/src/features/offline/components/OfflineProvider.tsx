@@ -11,6 +11,7 @@ import {
 import { useConnectivity } from '../hooks/useConnectivity';
 import { cacheCatalog, cacheSession } from '../lib/cache';
 import { offlineDb, requestPersistentStorage } from '../lib/db';
+import { drainOfflineQueue } from '../lib/sync-engine';
 import type { ConnectivityStatus } from '../lib/types';
 import { OfflineBanner } from './OfflineBanner';
 
@@ -68,10 +69,12 @@ export function OfflineProvider({
     if (user) void cacheSession(user, shift).catch(() => undefined);
   }, [user, shift]);
 
-  // Refrescar el catálogo cacheado al estar online (y al recuperar conexión).
+  // Al estar online (y al recuperar conexión): refrescar el catálogo cacheado y
+  // VACIAR la cola de ventas offline contra el backend.
   useEffect(() => {
     if (status === 'online') {
       void cacheCatalog().catch(() => undefined);
+      void drainOfflineQueue(refreshPending).catch(() => undefined);
     }
   }, [status]);
 
