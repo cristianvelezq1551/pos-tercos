@@ -1,35 +1,81 @@
 /**
- * Impresión del recibo desde el NAVEGADOR del mostrador:
- *  1) pide los bytes ESC/POS al backend (GET /sales/:id/escpos),
- *  2) los manda al print-agent LOCAL (misma PC que la impresora).
+ * Impresión del recibo desde el NAVEGADOR del mostrador, online-first con
+ * respaldo offline:
+ *  1) intenta los bytes ESC/POS del backend (GET /sales/:id/escpos) — camino
+ *     online de siempre (con su audit y banner DUPLICADO server-side),
+ *  2) si el backend está INALCANZABLE (sin conexión / 5xx) y tenemos los datos
+ *     de la venta, arma el recibo y deja que el print-agent lo renderice
+ *     ({receipt}) → imprime SIN depender del backend.
  *
- * Así la impresora NO queda detrás del backend: imprime aunque la API esté
- * remota. NO usa el diálogo de impresión del navegador (eso causaba papel
- * infinito en la térmica) — manda bytes crudos que ya incluyen el corte.
+ * En ambos casos los bytes salen del print-agent LOCAL (misma PC que la
+ * impresora). NO usa el diálogo del navegador (eso causaba papel infinito).
  */
+import type { Sale } from '@pos-tercos/types';
+import { buildReceiptDataInput, type ReceiptDataInput } from '../lib/build-receipt-data';
+
 const AGENT_URL =
   process.env.NEXT_PUBLIC_PRINT_AGENT_URL ?? 'http://localhost:9120';
 
-export async function printReceipt(saleId: string): Promise<void> {
-  // 1) Bytes ESC/POS desde el backend (online).
-  const res = await fetch(`/api/sales/${saleId}/escpos`, {
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
+export interface PrintOptions {
+  /** Datos de la venta para imprimir offline si el backend no responde. */
+  fallback?: Sale;
+  /** Marca "DUPLICADO" en el recibo offline (reimpresiones desde el historial). */
+  reprint?: boolean;
+}
+
+export async function printReceipt(
+  saleId: string,
+  opts: PrintOptions = {},
+): Promise<void> {
+  const escposBase64 = await tryBackendBytes(saleId);
+  if (escposBase64) {
+    await sendToAgent({ escposBase64 });
+    return;
+  }
+  // Backend inalcanzable → respaldo offline con los datos que tenemos.
+  if (!opts.fallback) {
     throw new Error(
-      `No se pudo generar el recibo (${res.status})${text ? `: ${text.slice(0, 150)}` : ''}`,
+      'No se pudo generar el recibo (sin conexión) y no hay datos para imprimirlo offline.',
     );
   }
-  const { escposBase64 } = (await res.json()) as { escposBase64: string };
+  const receipt = buildReceiptDataInput(opts.fallback, { reprint: opts.reprint });
+  await sendToAgent({ receipt });
+}
 
-  // 2) Bytes → print-agent local (en la PC del cajero).
+/**
+ * Pide los bytes al backend. Devuelve null SOLO si el backend está inalcanzable
+ * (fetch falla o 5xx) → ahí entra el respaldo offline. Un 4xx (backend que
+ * RECHAZA, ej. status inválido) se propaga como error: no lo enmascaramos.
+ */
+async function tryBackendBytes(saleId: string): Promise<string | null> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/sales/${saleId}/escpos`, { credentials: 'include' });
+  } catch {
+    return null; // sin conexión
+  }
+  if (res.ok) {
+    const { escposBase64 } = (await res.json()) as { escposBase64: string };
+    return escposBase64;
+  }
+  if (res.status >= 500) {
+    return null; // backend caído / gateway → respaldo offline
+  }
+  const text = await res.text().catch(() => '');
+  throw new Error(
+    `No se pudo generar el recibo (${res.status})${text ? `: ${text.slice(0, 150)}` : ''}`,
+  );
+}
+
+async function sendToAgent(
+  body: { escposBase64: string } | { receipt: ReceiptDataInput },
+): Promise<void> {
   let agentRes: Response;
   try {
     agentRes = await fetch(`${AGENT_URL}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ escposBase64 }),
+      body: JSON.stringify(body),
     });
   } catch {
     throw new Error(

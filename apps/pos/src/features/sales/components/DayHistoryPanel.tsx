@@ -206,7 +206,7 @@ function HistoryRow({
   const handleReprint = async () => {
     setReprint('pending');
     try {
-      await printReceipt(sale.id);
+      await printReceipt(sale.id, { fallback: sale, reprint: true });
       setReprint('ok');
       setTimeout(() => setReprint('idle'), 2500);
     } catch {

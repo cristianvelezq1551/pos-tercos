@@ -41,6 +41,7 @@ function loadEnv(): void {
 }
 loadEnv();
 
+import { renderReceiptEscPos, type ReceiptData } from '@pos-tercos/domain';
 import { sendBytes, kickDrawer } from './printer-driver';
 
 /**
@@ -64,9 +65,61 @@ import { sendBytes, kickDrawer } from './printer-driver';
 const PORT = Number(process.env.PRINT_AGENT_PORT ?? 9120);
 const SHARED_SECRET = process.env.PRINT_AGENT_SECRET ?? null;
 
-const PrintBodySchema = z.object({
-  escposBase64: z.string().min(1),
+/**
+ * Recibo en datos (sin `business`): el POS lo manda así cuando imprime
+ * SIN backend (offline). El agent rinde los bytes ESC/POS con
+ * `renderReceiptEscPos` y rellena el negocio desde su propio `.env`
+ * (BUSINESS_*). Espeja `ReceiptData` de @pos-tercos/domain salvo `business`.
+ */
+const ModifierSchema = z.object({
+  name: z.string(),
+  priceDelta: z.number(),
 });
+const ReceiptItemSchema = z.object({
+  productName: z.string(),
+  sizeName: z.string().nullable(),
+  quantity: z.number(),
+  unitPrice: z.number(),
+  lineSubtotal: z.number(),
+  lineDiscount: z.number(),
+  lineTotal: z.number(),
+  appliedPromotionName: z.string().nullable(),
+  modifiers: z.array(ModifierSchema),
+});
+const ReceiptInputSchema = z.object({
+  receiptNumber: z.number(),
+  turnNumber: z.number().nullable(),
+  createdAt: z.string(),
+  cashierName: z.string().nullable(),
+  customerName: z.string().nullable(),
+  items: z.array(ReceiptItemSchema),
+  subtotal: z.number(),
+  discountTotal: z.number(),
+  total: z.number(),
+  reprintLabel: z.string().nullable(),
+  openDrawer: z.boolean().optional(),
+});
+
+// El /print acepta DOS formas: bytes ya renderizados (online, vienen del
+// backend) o el recibo en datos (offline, lo rinde el agent). Al menos una.
+const PrintBodySchema = z
+  .object({
+    escposBase64: z.string().min(1).optional(),
+    receipt: ReceiptInputSchema.optional(),
+  })
+  .refine((b) => Boolean(b.escposBase64) || Boolean(b.receipt), {
+    message: 'Falta escposBase64 o receipt',
+  });
+
+/** Datos del negocio para el recibo offline — del .env del agent (misma PC). */
+function businessFromEnv(): ReceiptData['business'] {
+  return {
+    name: process.env.BUSINESS_NAME ?? 'POS Tercos',
+    address: process.env.BUSINESS_ADDRESS ?? 'Dirección por configurar',
+    nit: process.env.BUSINESS_NIT ?? '900.000.000-0',
+    phone: process.env.BUSINESS_PHONE ?? null,
+  };
+}
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -122,9 +175,17 @@ const server = createServer(async (req, res) => {
         json(res, 400, { error: parsed.error.flatten() });
         return;
       }
-      const bytes = Buffer.from(parsed.data.escposBase64, 'base64');
+      // Online: bytes ya renderizados por el backend. Offline: el recibo en
+      // datos → el agent lo rinde acá (rellena el negocio desde su .env).
+      const bytes = parsed.data.escposBase64
+        ? Buffer.from(parsed.data.escposBase64, 'base64')
+        : renderReceiptEscPos({
+            ...parsed.data.receipt!,
+            business: businessFromEnv(),
+          });
       await sendBytes(bytes);
-      console.log(`[print-agent] ✓ impreso (${bytes.length} bytes)`);
+      const mode = parsed.data.escposBase64 ? 'bytes' : 'receipt';
+      console.log(`[print-agent] ✓ impreso (${bytes.length} bytes, modo ${mode})`);
       json(res, 200, { ok: true, bytesSent: bytes.length });
       return;
     }

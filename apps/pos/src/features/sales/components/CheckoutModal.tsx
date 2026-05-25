@@ -1,6 +1,6 @@
 'use client';
 
-import { DIGITAL_PAYMENT_METHODS, type PaymentMethod } from '@pos-tercos/types';
+import { DIGITAL_PAYMENT_METHODS, type PaymentMethod, type Sale } from '@pos-tercos/types';
 import {
   Button,
   Dialog,
@@ -26,6 +26,8 @@ export interface CheckoutSuccess {
   total: number;
   paymentMethod: PaymentMethod;
   changeDue: number;
+  /** Venta completa — para imprimir el recibo offline si el backend cae. */
+  sale: Sale;
 }
 
 export function CheckoutModal({
@@ -108,6 +110,7 @@ export function CheckoutModal({
         total: paid.total,
         paymentMethod: method,
         changeDue,
+        sale: paid,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');

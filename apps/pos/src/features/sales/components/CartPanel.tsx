@@ -63,9 +63,10 @@ export function CartPanel() {
     });
     clear();
     setCheckoutOpen(false);
-    // Auto-imprime: dispara el print del backend (ESC/POS → agente → térmica).
-    // Sin botón ni ventana de navegador.
-    void printReceipt(s.saleId).catch(() => undefined);
+    // Auto-imprime: bytes del backend (online) o, si el backend está caído,
+    // el agent rinde el recibo con los datos de la venta (offline). Sin botón
+    // ni ventana de navegador.
+    void printReceipt(s.saleId, { fallback: s.sale }).catch(() => undefined);
   };
 
   return (

@@ -63,7 +63,11 @@ PRINTER_USB_PRODUCT_ID=0x5011
 - Con `pnpm dev` (raíz) el agent ya levanta en `:9120`.
 
 ## Endpoints
-- `GET /health` · `POST /print` (`{escposBase64}`) · `POST /drawer-open`
+- `GET /health` · `POST /drawer-open`
+- `POST /print` — acepta **`{escposBase64}`** (bytes ya renderizados, camino
+  online del backend) **o `{receipt}`** (el recibo en datos: el agent lo rinde con
+  `renderReceiptEscPos` y rellena el negocio desde su `.env` → impresión **sin
+  backend**, offline).
 
 ## POS
 El navegador apunta a `http://localhost:9120` por defecto. Para cambiarlo,
