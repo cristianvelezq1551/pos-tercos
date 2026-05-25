@@ -89,6 +89,7 @@ const ReceiptItemSchema = z.object({
 const ReceiptInputSchema = z.object({
   receiptNumber: z.number(),
   turnNumber: z.number().nullable(),
+  provisionalNumber: z.string().nullable().optional(),
   createdAt: z.string(),
   cashierName: z.string().nullable(),
   customerName: z.string().nullable(),

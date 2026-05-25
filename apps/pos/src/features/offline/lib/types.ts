@@ -44,11 +44,35 @@ export interface StockLedgerSnapshot {
   cachedAt: string;
 }
 
-/** Estado de una venta offline en la cola (se usa de lleno en B.2/B.3). */
+/** Línea de una venta offline (snapshot verbatim para imprimir y sincronizar). */
+export interface OfflineSaleLine {
+  productId: string;
+  sizeId: string | null;
+  quantity: number;
+  unitPrice: number;
+  modifiers: Array<{ modifierId: string }>;
+  notes: string | null;
+  lineSubtotal: number;
+  lineDiscount: number;
+  lineTotal: number;
+  appliedPromotionId: string | null;
+}
+
+/** Payload de la venta offline — totales VERBATIM (gana lo cobrado offline). */
+export interface OfflineSalePayload {
+  type: 'COUNTER';
+  customerName: string | null;
+  lines: OfflineSaleLine[];
+  subtotal: number;
+  discount: number;
+  total: number;
+}
+
+/** Venta offline en la cola. */
 export interface OfflineSale {
   localId: string;
   provisionalNumber: string; // OFF-N
-  payload: unknown; // CreateSale + totales verbatim
+  payload: OfflineSalePayload;
   payment: {
     method: PaymentMethod;
     amountReceived: number;

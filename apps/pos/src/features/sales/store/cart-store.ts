@@ -14,8 +14,12 @@ interface AddInput {
 }
 
 export interface LastSaleSummary {
-  id: string;
-  receiptNumber: number;
+  /** null en venta offline (aún no hay venta en el backend). */
+  id: string | null;
+  /** null en venta offline (el recibo real lo asigna el backend al sincronizar). */
+  receiptNumber: number | null;
+  /** Número provisional OFF-N (solo en venta offline). */
+  provisionalNumber?: string | null;
   turnNumber: number | null;
   total: number;
   paymentMethod: string;

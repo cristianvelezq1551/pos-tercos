@@ -43,6 +43,15 @@ export async function printReceipt(
 }
 
 /**
+ * Imprime un recibo OFFLINE directo desde los datos (no hay venta en el backend).
+ * El agent lo renderiza y rellena el negocio desde su .env. Lo usa la venta
+ * offline (B.2): el recibo lleva el número provisional OFF-N.
+ */
+export async function printReceiptData(receipt: ReceiptDataInput): Promise<void> {
+  await sendToAgent({ receipt });
+}
+
+/**
  * Pide los bytes al backend. Devuelve null SOLO si el backend está inalcanzable
  * (fetch falla o 5xx) → ahí entra el respaldo offline. Un 4xx (backend que
  * RECHAZA, ej. status inválido) se propaga como error: no lo enmascaramos.

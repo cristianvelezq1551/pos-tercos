@@ -5,7 +5,7 @@ import { LineArtIllustration } from '@pos-tercos/brand';
 import type { Promotion } from '@pos-tercos/types';
 import { useEffect, useMemo, useState } from 'react';
 import { fetchActivePromotions } from '../api';
-import { printReceipt } from '../api/print';
+import { printReceipt, printReceiptData } from '../api/print';
 import { computeCartTotals } from '../lib/totals';
 import { useCartStore } from '../store/cart-store';
 import { CartLineRow } from './CartLineRow';
@@ -54,8 +54,9 @@ export function CartPanel() {
 
   const handleCheckoutSuccess = (s: CheckoutSuccess) => {
     setLastSale({
-      id: s.saleId,
-      receiptNumber: s.receiptNumber,
+      id: s.saleId ?? null,
+      receiptNumber: s.receiptNumber ?? null,
+      provisionalNumber: s.provisionalNumber ?? null,
       turnNumber: s.turnNumber,
       total: s.total,
       paymentMethod: s.paymentMethod,
@@ -63,10 +64,14 @@ export function CartPanel() {
     });
     clear();
     setCheckoutOpen(false);
-    // Auto-imprime: bytes del backend (online) o, si el backend está caído,
-    // el agent rinde el recibo con los datos de la venta (offline). Sin botón
-    // ni ventana de navegador.
-    void printReceipt(s.saleId, { fallback: s.sale }).catch(() => undefined);
+    // Auto-imprime sin botón ni ventana de navegador.
+    if (s.provisionalNumber && s.receipt) {
+      // Offline: el recibo ya viene armado (número provisional OFF-N).
+      void printReceiptData(s.receipt).catch(() => undefined);
+    } else if (s.saleId) {
+      // Online: bytes del backend; si el backend cae, cae al recibo de la venta.
+      void printReceipt(s.saleId, { fallback: s.sale }).catch(() => undefined);
+    }
   };
 
   return (
@@ -159,6 +164,8 @@ export function CartPanel() {
         open={checkoutOpen}
         total={totals.total}
         items={items}
+        totals={totals}
+        promos={promos}
         onClose={() => setCheckoutOpen(false)}
         onSuccess={handleCheckoutSuccess}
       />

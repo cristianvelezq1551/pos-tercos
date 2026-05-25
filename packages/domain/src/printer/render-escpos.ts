@@ -44,14 +44,18 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   }
   out.push(LF);
 
-  // Turno (grande, centrado) — coincide con el turnero público.
-  if (receipt.turnNumber !== null) {
+  // Turno (grande, centrado) — coincide con el turnero público. Offline muestra
+  // el número provisional (OFF-N) en lugar del turno real (aún no asignado).
+  const bigTurn =
+    receipt.provisionalNumber ??
+    (receipt.turnNumber !== null ? String(receipt.turnNumber) : null);
+  if (bigTurn !== null) {
     out.push(ALIGN_CENTER);
     out.push(latin1('TU TURNO'));
     out.push(LF);
     out.push(BOLD_ON);
     out.push(SIZE_2H_2W);
-    out.push(latin1(String(receipt.turnNumber)));
+    out.push(latin1(bigTurn));
     out.push(SIZE_NORMAL);
     out.push(BOLD_OFF);
     out.push(LF);
@@ -61,8 +65,14 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   // Receipt # + datetime + cashier
   out.push(ALIGN_LEFT);
   out.push(BOLD_ON);
-  out.push(latin1(`RECIBO #${receipt.receiptNumber}`));
+  out.push(latin1(receipt.provisionalNumber ? 'RECIBO PROVISIONAL' : `RECIBO #${receipt.receiptNumber}`));
   out.push(BOLD_OFF);
+  if (receipt.provisionalNumber) {
+    out.push(LF);
+    out.push(BOLD_ON);
+    out.push(latin1('PENDIENTE DE SINCRONIZAR'));
+    out.push(BOLD_OFF);
+  }
   if (receipt.reprintLabel) {
     out.push(LF);
     out.push(BOLD_ON);

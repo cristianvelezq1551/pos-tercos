@@ -1,6 +1,11 @@
 'use client';
 
-import { DIGITAL_PAYMENT_METHODS, type PaymentMethod, type Sale } from '@pos-tercos/types';
+import {
+  DIGITAL_PAYMENT_METHODS,
+  type PaymentMethod,
+  type Promotion,
+  type Sale,
+} from '@pos-tercos/types';
 import {
   Button,
   Dialog,
@@ -9,9 +14,17 @@ import {
   formatCop,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
+import {
+  enqueueOfflineSale,
+  getCachedCashierName,
+  useOffline,
+} from '../../offline';
+import type { ReceiptDataInput } from '../lib/build-receipt-data';
+import { buildOfflinePayload, buildOfflineReceiptInput } from '../lib/build-receipt-data';
 import { confirmPayment } from '../api/confirm-payment';
 import { createSale } from '../api/create';
 import type { CartLine } from '../lib/cart-types';
+import type { CartTotalsResult } from '../lib/totals';
 import { cartLinesToCreateItems } from '../store/cart-store';
 import { CashSection } from './CashSection';
 import { PaymentMethodSelector } from './PaymentMethodSelector';
@@ -20,29 +33,40 @@ import { TransferSection } from './TransferSection';
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
 export interface CheckoutSuccess {
-  saleId: string;
-  receiptNumber: number;
   turnNumber: number | null;
   total: number;
   paymentMethod: PaymentMethod;
   changeDue: number;
+  // ── Venta ONLINE ──
+  saleId?: string;
+  receiptNumber?: number;
   /** Venta completa — para imprimir el recibo offline si el backend cae. */
-  sale: Sale;
+  sale?: Sale;
+  // ── Venta OFFLINE (encolada) ──
+  provisionalNumber?: string;
+  /** Recibo provisional ya armado — CartPanel lo manda al print-agent. */
+  receipt?: ReceiptDataInput;
 }
 
 export function CheckoutModal({
   open,
   total,
   items,
+  totals,
+  promos,
   onClose,
   onSuccess,
 }: {
   open: boolean;
   total: number;
   items: readonly CartLine[];
+  totals: CartTotalsResult;
+  promos: readonly Promotion[];
   onClose: () => void;
   onSuccess: (s: CheckoutSuccess) => void;
 }) {
+  const { status, refreshPending } = useOffline();
+  const offline = status === 'offline';
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [cashReceived, setCashReceived] = useState<number | null>(null);
   const [doubleVerified, setDoubleVerified] = useState(false);
@@ -93,11 +117,37 @@ export function CheckoutModal({
     setError(null);
     setPending(true);
     try {
+      const amountReceived = method === 'CASH' ? cashNum : total;
+
+      // OFFLINE: encolar la venta + imprimir recibo provisional (sin backend).
+      if (offline) {
+        const enqueued = await enqueueOfflineSale({
+          payload: buildOfflinePayload(items, totals),
+          payment: { method, amountReceived, offlineVerified: isDigital },
+        });
+        const cashierName = await getCachedCashierName();
+        const receipt = buildOfflineReceiptInput(items, totals, promos, {
+          provisionalNumber: enqueued.provisionalNumber,
+          cashierName,
+          paymentMethod: method,
+        });
+        refreshPending();
+        onSuccess({
+          turnNumber: null,
+          total,
+          paymentMethod: method,
+          changeDue,
+          provisionalNumber: enqueued.provisionalNumber,
+          receipt,
+        });
+        return;
+      }
+
+      // ONLINE: crear + confirmar contra el backend (camino de siempre).
       const sale = await createSale(
         { type: 'COUNTER', items: cartLinesToCreateItems(items) },
         idempotencyKey,
       );
-      const amountReceived = method === 'CASH' ? cashNum : total;
       const paid = await confirmPayment(sale.id, {
         method,
         amountReceived,
@@ -133,12 +183,25 @@ export function CheckoutModal({
             Cancelar
           </Button>
           <Button size="lg" onClick={handleConfirm} disabled={!validation.ok || pending}>
-            {pending ? 'Cobrando…' : <>Confirmar <Money amount={total} weight="bold" className="ml-1 text-current" /></>}
+            {pending ? (
+              'Cobrando…'
+            ) : (
+              <>
+                {offline ? 'Cobrar offline' : 'Confirmar'}{' '}
+                <Money amount={total} weight="bold" className="ml-1 text-current" />
+              </>
+            )}
           </Button>
         </>
       }
     >
       <div className="space-y-5">
+        {offline ? (
+          <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm font-semibold text-warning">
+            Sin conexión — esta venta se cobra <strong>offline</strong> y se sincroniza
+            sola al volver la red. El recibo sale con número provisional (OFF-N).
+          </p>
+        ) : null}
         <p className="rounded-md border border-border bg-muted/60 px-3 py-2 text-sm font-medium text-foreground">
           📋 Repasá el pedido en voz alta con el cliente antes de cobrar.
         </p>
