@@ -14,12 +14,15 @@ import { offlineDb, requestPersistentStorage } from '../lib/db';
 import { drainOfflineQueue } from '../lib/sync-engine';
 import type { ConnectivityStatus } from '../lib/types';
 import { OfflineBanner } from './OfflineBanner';
+import { OfflineReviewTray } from './OfflineReviewTray';
 
 interface OfflineContextValue {
   status: ConnectivityStatus;
-  /** Ventas offline en cola (queued + syncing + failed). */
+  /** Ventas offline en cola (queued + syncing + failed) — bloquean el cierre. */
   pending: number;
-  /** Relee el contador de cola desde IndexedDB. */
+  /** Ventas que fallaron al sincronizar (subconjunto de pending) — a revisar. */
+  failed: number;
+  /** Relee los contadores de cola desde IndexedDB. */
   refreshPending: () => void;
 }
 
@@ -51,9 +54,11 @@ export function OfflineProvider({
 }) {
   const status = useConnectivity();
   const [pending, setPending] = useState(0);
+  const [failed, setFailed] = useState(0);
 
   const refreshPending = (): void => {
     void offlineDb.countPending().then(setPending);
+    void offlineDb.countFailed().then(setFailed);
   };
 
   // Persistencia + 1er poll de cola (una vez).
@@ -79,15 +84,30 @@ export function OfflineProvider({
   }, [status]);
 
   return (
-    <OfflineContext.Provider value={{ status, pending, refreshPending }}>
+    <OfflineContext.Provider value={{ status, pending, failed, refreshPending }}>
       {children}
     </OfflineContext.Provider>
   );
 }
 
-/** Banda de estado offline/sincronización. Colocala donde quieras dentro del
- *  <OfflineProvider> (ej. arriba de la columna del layout). */
+/** Banda de estado offline/sincronización + acceso a la bandeja de revisión.
+ *  Colocala dentro del <OfflineProvider> (ej. arriba de la columna del layout). */
 export function OfflineStatusBar() {
-  const { status, pending } = useOffline();
-  return <OfflineBanner status={status} pending={pending} />;
+  const { status, pending, failed, refreshPending } = useOffline();
+  const [trayOpen, setTrayOpen] = useState(false);
+  return (
+    <>
+      <OfflineBanner
+        status={status}
+        pending={pending}
+        failed={failed}
+        onReview={() => setTrayOpen(true)}
+      />
+      <OfflineReviewTray
+        open={trayOpen}
+        onClose={() => setTrayOpen(false)}
+        onChanged={refreshPending}
+      />
+    </>
+  );
 }

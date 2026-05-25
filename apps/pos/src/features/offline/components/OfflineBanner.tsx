@@ -1,19 +1,25 @@
 'use client';
 
-import { CloudOff, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CloudOff, RefreshCw } from 'lucide-react';
 import type { ConnectivityStatus } from '../lib/types';
 
 /**
- * Banda de estado offline. Ámbar cuando no hay conexión (se está vendiendo
- * offline); azul cuando volvió la red y aún quedan ventas por sincronizar.
- * No se muestra en operación normal (online, sin cola).
+ * Banda de estado offline. Cuatro estados:
+ *  - offline → ámbar "vendiendo offline (N en cola)".
+ *  - online + fallidas → rojo "N sin sincronizar — Revisar" (abre la bandeja).
+ *  - online + sincronizando → neutro "Sincronizando N…".
+ *  - online sin cola → nada (operación normal).
  */
 export function OfflineBanner({
   status,
   pending,
+  failed,
+  onReview,
 }: {
   status: ConnectivityStatus;
   pending: number;
+  failed: number;
+  onReview: () => void;
 }) {
   if (status === 'offline') {
     return (
@@ -28,7 +34,22 @@ export function OfflineBanner({
     );
   }
 
-  if (status === 'online' && pending > 0) {
+  // Online: si quedaron fallidas tras sincronizar, avisar y ofrecer revisar.
+  if (failed > 0) {
+    return (
+      <button
+        type="button"
+        onClick={onReview}
+        className="flex w-full items-center justify-center gap-2 bg-destructive/15 px-3 py-1.5 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/25"
+      >
+        <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+        {failed} venta{failed === 1 ? '' : 's'} sin sincronizar — Revisar
+      </button>
+    );
+  }
+
+  // Online: sincronizando (cola activa sin fallidas).
+  if (pending > 0) {
     return (
       <div
         role="status"

@@ -106,6 +106,20 @@ export const offlineDb = {
       return 0;
     }
   },
+  async countFailed(): Promise<number> {
+    try {
+      return await (await getDb()).countFromIndex('offlineSales', 'by-status', 'failed');
+    } catch {
+      return 0;
+    }
+  },
+  /** Ventas que aún no llegaron al backend (cola + en proceso + fallidas). */
+  async listUnsynced(): Promise<OfflineSale[]> {
+    const all = await this.listSales();
+    return all
+      .filter((s) => s.status !== 'synced')
+      .sort((a, b) => a.soldOfflineAt.localeCompare(b.soldOfflineAt));
+  },
   async deleteSale(localId: string): Promise<void> {
     await (await getDb()).delete('offlineSales', localId);
   },
