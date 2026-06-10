@@ -77,7 +77,8 @@ export class SalesService {
    * retorna la respuesta original. Cualquier reintento con la misma key
    * NO crea una segunda venta.
    *
-   * Promociones: en FASE 5.B usa stub que retorna 0. Engine real en 5.C.
+   * Promociones: aplica el motor puro de @pos-tercos/domain por línea
+   * (computeLine → applyPromotion) con las promos activas al momento.
    */
   async create(
     input: CreateSale,
