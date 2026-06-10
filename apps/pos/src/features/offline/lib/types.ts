@@ -84,6 +84,9 @@ export interface OfflineSale {
   soldOfflineAt: string;
   status: 'queued' | 'syncing' | 'synced' | 'failed';
   failReason?: string;
+  /** Intentos de sync acumulados. Tras MAX_AUTO_SYNC_ATTEMPTS los drains
+   *  automáticos la saltan — solo se reintenta manual desde la bandeja. */
+  attempts?: number;
   realReceiptNumber?: number;
   realTurnNumber?: number;
 }

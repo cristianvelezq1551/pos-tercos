@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { assertRequiredEnv } from './common/assert-env';
 
 async function bootstrap() {
+  assertRequiredEnv();
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());

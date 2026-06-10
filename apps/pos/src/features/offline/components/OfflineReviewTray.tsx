@@ -46,7 +46,9 @@ export function OfflineReviewTray({
   const retry = async (): Promise<void> => {
     setBusy(true);
     try {
-      await drainOfflineQueue(onChanged);
+      // Reintento manual: incluye también las ventas que agotaron los
+      // reintentos automáticos.
+      await drainOfflineQueue(onChanged, { includeExhausted: true });
     } finally {
       setBusy(false);
       reload();

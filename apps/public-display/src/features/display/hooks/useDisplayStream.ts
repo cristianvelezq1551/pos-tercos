@@ -12,7 +12,11 @@ const API_PUBLIC_URL =
 const DEBOUNCE_MS = 200;
 const STALE_AFTER_MS = 60_000;
 const POLL_INTERVAL_MS = 30_000;
+// Backoff exponencial 3s → 60s. NUNCA deja de reintentar: es un kiosko sin
+// operador — la pantalla debe auto-recuperarse cuando vuelva el backend. El
+// techo evita martillar al server durante una caída larga.
 const RECONNECT_BACKOFF_MS = 3_000;
+const RECONNECT_BACKOFF_MAX_MS = 60_000;
 
 export type StreamConnection = 'connecting' | 'live' | 'reconnecting';
 
@@ -50,9 +54,14 @@ export function useDisplayStream(initial: PublicDisplayState) {
       pendingState = null;
     };
 
+    let backoffMs = RECONNECT_BACKOFF_MS;
+
     const connect = () => {
       es = new EventSource(`${API_PUBLIC_URL}/public-display/stream`);
-      es.onopen = () => setConnection('live');
+      es.onopen = () => {
+        backoffMs = RECONNECT_BACKOFF_MS;
+        setConnection('live');
+      };
       es.onmessage = (ev: MessageEvent<string>) => {
         try {
           const parsed = PublicDisplayStateSchema.safeParse(JSON.parse(ev.data));
@@ -73,7 +82,8 @@ export function useDisplayStream(initial: PublicDisplayState) {
             reconnectTimer = setTimeout(() => {
               reconnectTimer = null;
               connect();
-            }, RECONNECT_BACKOFF_MS);
+            }, backoffMs);
+            backoffMs = Math.min(backoffMs * 2, RECONNECT_BACKOFF_MAX_MS);
           }
         }
       };
