@@ -12,7 +12,7 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 1. `CLAUDE.md` (este archivo) — estado vigente, decisiones, módulos vivos. **Único doc canónico de arquitectura del POS.**
 2. `pos-spec.v1.md` — alcance v1 cerrado (qué entra, qué no)
-3. `ARCHITECTURE.md` — plantilla Flutter (CrediClub) usada como referencia para `apps/kds-flutter`. **NO describe el POS backend/frontend.**
+3. `ARCHITECTURE.md` — arquitectura REAL del monorepo POS (reescrito 2026-06-10). La plantilla Flutter vieja vive en `apps/kds-flutter/ARCHITECTURE-flutter-template.md`.
 4. `implementation-plan.md` — fases de implementación local-first (15 fases; algunas obsoletas por reorientación v2)
 5. `kickoff-plan.md` — pendientes externos (hardware, contador, etc.)
 6. `testing-guide.md` — checklist e2e ~50 tests sec 1-11 (FASES 0-3)
@@ -756,7 +756,7 @@ aea24b8 feat(public-display): completa rediseño turnero kiosko + limpieza
 | Delivery | WEB_DELIVERY, Mapbox, 3km, `apps/repa` | **ELIMINADO**. Solo COUNTER + WEB_PICKUP |
 | WhatsApp | wa.me manual (click en frontend) | OpenWA automático desde backend (sec 4.10) |
 | KDS | `apps/kds` Next.js PWA | `apps/kds-flutter` Flutter nativo (tablet Android) |
-| `ARCHITECTURE.md` | Doc del POS | Plantilla Flutter (CrediClub) — guía para kds-flutter |
+| `ARCHITECTURE.md` | Plantilla Flutter (hasta 2026-06-10) | Arquitectura real del monorepo; plantilla movida a apps/kds-flutter/ |
 | `packages/brand` | No existía | Nuevo — identidad visual compartida |
 | `packages/config` | Existía (vacío) | **Eliminado** |
 | Lint | `ignoreDuringBuilds: true` en varios frontends | Funcional. `eslint-plugin-react-hooks` registrado |

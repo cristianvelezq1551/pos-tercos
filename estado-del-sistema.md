@@ -53,11 +53,11 @@ Detalles de pulido detectados (menores, no bloqueantes):
 | **turn** | Panel de llamado: cola de listos, re-llamar, llamado manual, entrega, campana | ✅ |
 | **offline** | IndexedDB (sesión+catálogo+ledger+cola), venta encolada con recibo provisional OFF-N, disponibilidad offline con la misma función pura del backend, sync FIFO idempotente con máx. 3 reintentos automáticos, bandeja de revisión (reintentar/descartar), bloqueo de cierre con cola pendiente | ✅ (excepto **B.4b**: abrir caja offline — diferida a propósito) |
 
-## 4. apps/web — Menú público + checkout (puerto 3005)
+## 4. apps/web — Menú público + checkout (puerto 3000)
 
 Catálogo público con imágenes y disponibilidad, carrito persistido en localStorage, checkout WEB_PICKUP de 1 página (teléfono +57 estricto, idempotency key), tracking por token HMAC en URL con poller y timeline de 4 pasos. ✅ Completa.
 
-## 5. apps/public-display — Turnero kiosko (puerto 3003)
+## 5. apps/public-display — Turnero kiosko (puerto 3005)
 
 SSE con debounce + dedupe por `callSeq`, backoff exponencial 3s→60s (nunca deja de reintentar), fallback a poll si el stream queda stale, carrusel de promos, turno gigante con flash + campana, wake lock, guards de kiosko. ✅ Completa.
 
