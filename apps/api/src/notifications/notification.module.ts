@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { NotificationService } from './notification.service';
+import { OwnerNotificationService } from './owner-notification.service';
 
 /**
  * @Global para que SalesService/KdsService inyecten NotificationService
@@ -8,7 +9,7 @@ import { NotificationService } from './notification.service';
  */
 @Global()
 @Module({
-  providers: [NotificationService],
-  exports: [NotificationService],
+  providers: [NotificationService, OwnerNotificationService],
+  exports: [NotificationService, OwnerNotificationService],
 })
 export class NotificationModule {}

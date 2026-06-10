@@ -6,7 +6,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { applyPromotion, roundMoney, type PromotionDef } from '@pos-tercos/domain';
+import {
+  applyPromotion,
+  buildVoidAlertMessage,
+  roundMoney,
+  type PromotionDef,
+} from '@pos-tercos/domain';
 import { DIGITAL_PAYMENT_METHODS } from '@pos-tercos/types';
 import type {
   AppliedModifier,
@@ -26,6 +31,7 @@ import { AuditService } from '../audit/audit.service';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { KdsGateway } from '../kds/kds.gateway';
 import { NotificationService } from '../notifications/notification.service';
+import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { ShiftsService } from '../shifts/shifts.service';
@@ -55,6 +61,7 @@ export class SalesService {
     private readonly consumption: SalesConsumptionService,
     @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
     private readonly notifications: NotificationService,
+    private readonly ownerNotifications: OwnerNotificationService,
     private readonly shifts: ShiftsService,
   ) {}
 
@@ -507,6 +514,19 @@ export class SalesService {
     });
 
     const dto = toSaleDto(updated);
+    // Antifraude: el dueño se entera de CADA anulación al instante.
+    void this.ownerNotifications.alert(
+      'sale_voided',
+      buildVoidAlertMessage({
+        businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+        cashierName: dto.cashierName ?? null,
+        receiptNumber: dto.receiptNumber,
+        turnNumber: dto.turnNumber,
+        total: dto.total,
+        reason: input.reason,
+      }),
+      { saleId, receiptNumber: dto.receiptNumber },
+    );
     // Estaba PAGADO → en la cola de cocina. Avisar al KDS para sacarlo del board.
     this.kdsGateway.emit('order.status.changed', dto);
     return dto;

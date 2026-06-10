@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { LLMInvoiceExtractionResult, StorageProvider } from '@pos-tercos/domain';
+import { buildCostIncreaseAlertMessage, type CostIncreaseItem } from '@pos-tercos/domain';
 import {
   ExtractedInvoiceSchema,
   type ConfirmInvoice,
@@ -16,7 +17,11 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { extensionForMime, mimeForExtension, type SupportedImageMime } from '../common/image-mime';
 import { InventoryService } from '../inventory/inventory.service';
+import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+/** Suba de costo (vs último conocido) que dispara alerta WhatsApp al dueño. */
+const COST_INCREASE_ALERT_PCT = 0.15;
 import { SuppliersService } from '../suppliers/suppliers.service';
 
 type DbInvoiceWithDetail = Prisma.InvoiceGetPayload<{
@@ -76,6 +81,7 @@ export class InvoicesService {
     private readonly audit: AuditService,
     private readonly approvals: ApprovalsService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly ownerNotifications: OwnerNotificationService,
   ) {}
 
   /**
@@ -271,13 +277,13 @@ export class InvoicesService {
       ingredientIds.length > 0
         ? this.prisma.ingredient.findMany({
             where: { id: { in: ingredientIds } },
-            select: { id: true, isActive: true, name: true, unitPurchase: true, unitRecipe: true, conversionFactor: true },
+            select: { id: true, isActive: true, name: true, unitPurchase: true, unitRecipe: true, conversionFactor: true, lastUnitCost: true },
           })
         : Promise.resolve([]),
       productIds.length > 0
         ? this.prisma.product.findMany({
             where: { id: { in: productIds } },
-            select: { id: true, isActive: true, name: true, directResale: true, unitPurchase: true, unitStock: true, conversionFactor: true },
+            select: { id: true, isActive: true, name: true, directResale: true, unitPurchase: true, unitStock: true, conversionFactor: true, lastUnitCost: true },
           })
         : Promise.resolve([]),
     ]);
@@ -504,6 +510,34 @@ export class InvoicesService {
         total: input.total,
       },
     });
+
+    // Alerta de costos: si algún item subió >= COST_INCREASE_ALERT_PCT vs el
+    // último costo conocido, el dueño se entera al instante (fire-and-forget).
+    const increases: CostIncreaseItem[] = [];
+    for (const item of input.items) {
+      const prev =
+        item.entityType === 'INGREDIENT'
+          ? ingredients.find((i) => i.id === item.ingredientId)
+          : products.find((p) => p.id === item.productId);
+      const oldCost = prev?.lastUnitCost !== null && prev?.lastUnitCost !== undefined
+        ? Number(prev.lastUnitCost)
+        : null;
+      if (oldCost === null || oldCost <= 0) continue;
+      if (item.unitPrice >= oldCost * (1 + COST_INCREASE_ALERT_PCT)) {
+        increases.push({ name: prev!.name, oldUnitCost: oldCost, newUnitCost: item.unitPrice });
+      }
+    }
+    if (increases.length > 0) {
+      void this.ownerNotifications.alert(
+        'cost_increase',
+        buildCostIncreaseAlertMessage({
+          businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+          supplierName: supplier.name,
+          items: increases,
+        }),
+        { invoiceId: id, items: increases.length },
+      );
+    }
 
     void this.inventory; // (kept for future cross-domain calls)
 

@@ -24,6 +24,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
+import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -47,6 +48,7 @@ export class ShiftsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly llm: LLMService,
+    private readonly ownerNotifications: OwnerNotificationService,
   ) {}
 
   /**
@@ -465,9 +467,8 @@ export class ShiftsService {
     });
 
     if (Math.abs(difference) >= DISCREPANCY_THRESHOLD_COP) {
-      // FASE 15.A: pre-construimos el link wa.me al Dueño para que
-      // pueda abrirlo desde el log de auditoría con un solo click. El
-      // backend NO envía nada — solo deja la URL lista en metadata.
+      // FASE 15.A: link wa.me en metadata para abrir desde /audit. Desde
+      // 2026-06-10 además se ENVÍA directo al dueño vía OpenWA (abajo).
       const alertLink = buildDiscrepancyAlertLink({
         ownerPhone: process.env.OWNER_WHATSAPP_PHONE ?? null,
         cashierName: closed.cashier.fullName,
@@ -488,6 +489,14 @@ export class ShiftsService {
           whatsappAlertMessage: alertLink?.messagePlain ?? null,
         },
       });
+
+      if (alertLink) {
+        // Fire-and-forget: el cierre de caja no depende de WhatsApp.
+        void this.ownerNotifications.alert('shift_discrepancy', alertLink.messagePlain, {
+          shiftId,
+          difference,
+        });
+      }
     }
 
     return toShiftDto(closed);

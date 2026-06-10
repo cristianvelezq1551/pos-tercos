@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  buildNoSaleDrawerAlertMessage,
   renderReceiptEscPos,
   type CashDrawerProvider,
   type DrawerOpenResult,
@@ -16,6 +17,7 @@ import { CASH_DRAWER_PROVIDER } from '../adapters/cash-drawer/cash-drawer.module
 import { PRINTER_PROVIDER } from '../adapters/printer/printer.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
+import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildReceiptData, includeFull, toSaleDto } from './sales.mappers';
 
@@ -34,6 +36,7 @@ export class SalesReceiptService {
     private readonly approvals: ApprovalsService,
     @Inject(PRINTER_PROVIDER) private readonly printer: PrinterProvider,
     @Inject(CASH_DRAWER_PROVIDER) private readonly drawer: CashDrawerProvider,
+    private readonly ownerNotifications: OwnerNotificationService,
   ) {}
 
   /**
@@ -155,6 +158,21 @@ export class SalesReceiptService {
         entityType: 'cash_drawer',
         metadata: { context: 'open-no-sale', cashierId: input.cashierId },
       });
+
+      // Antifraude: abrir el cajón sin venta siempre le llega al dueño.
+      const cashier = await this.prisma.user.findUnique({
+        where: { id: input.cashierId },
+        select: { fullName: true },
+      });
+      void this.ownerNotifications.alert(
+        'drawer_no_sale',
+        buildNoSaleDrawerAlertMessage({
+          businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+          cashierName: cashier?.fullName ?? null,
+          reason: input.reason,
+        }),
+        { cashierId: input.cashierId },
+      );
 
       return result;
     }
