@@ -1,3 +1,4 @@
+import { roundCost } from '../common/money';
 import { expandRecipe } from './expand-recipe';
 import type { ExpandedRecipe, ParentRef, RecipeGraph } from './types';
 
@@ -72,7 +73,7 @@ export function computeProductCost(input: {
         ],
       };
     }
-    const totalCost = round(product.lastUnitCost / product.conversionFactor);
+    const totalCost = roundCost(product.lastUnitCost / product.conversionFactor);
     return { totalCost, ingredientBreakdown: [], missingReasons: [] };
   }
 
@@ -95,7 +96,7 @@ export function computeProductCost(input: {
 
   for (const ing of expanded.values()) {
     const unitCost = ingredientCosts.get(ing.ingredientId) ?? null;
-    const contribution = unitCost !== null ? round(ing.totalQuantity * unitCost) : null;
+    const contribution = unitCost !== null ? roundCost(ing.totalQuantity * unitCost) : null;
     if (unitCost === null) {
       allKnown = false;
       missing.push(`Ingrediente "${ing.name}" sin costo (lastUnitCost null)`);
@@ -113,7 +114,7 @@ export function computeProductCost(input: {
   }
 
   return {
-    totalCost: allKnown ? round(total) : null,
+    totalCost: allKnown ? roundCost(total) : null,
     ingredientBreakdown: breakdown,
     missingReasons: missing,
   };
@@ -149,7 +150,7 @@ export function computeComboCost(input: {
   let allKnown = true;
   const missing: string[] = [];
   const enriched = input.components.map((c) => {
-    const contribution = c.unitCost !== null ? round(c.quantity * c.unitCost) : null;
+    const contribution = c.unitCost !== null ? roundCost(c.quantity * c.unitCost) : null;
     if (c.unitCost === null) {
       allKnown = false;
       if (c.missingReason) missing.push(c.missingReason);
@@ -166,12 +167,9 @@ export function computeComboCost(input: {
     };
   });
   return {
-    totalCost: allKnown ? round(total) : null,
+    totalCost: allKnown ? roundCost(total) : null,
     components: enriched,
     missingReasons: missing,
   };
 }
 
-function round(n: number): number {
-  return Math.round(n * 10000) / 10000;
-}

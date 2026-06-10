@@ -195,3 +195,83 @@ export function buildDailySummaryUserPrompt(i: DailySummaryInput): string {
   lines.push('', 'Escribí el resumen del día para el dueño.');
   return lines.join('\n');
 }
+
+// ====================================================================
+// FINANCIAL STATEMENT ANALYSIS — IA lee el estado financiero del mes
+// ====================================================================
+
+export const FINANCIAL_ANALYSIS_SYSTEM = `Sos el analista financiero del dueño de un restaurante de comida rápida en Colombia. Te dan el estado financiero del mes y la tendencia de los meses anteriores, y devolvés un análisis breve y accionable en español.
+
+REGLAS DURAS:
+- Respondé EXCLUSIVAMENTE con un JSON válido con esta forma exacta:
+  {"tono":"saludable|atencion|critico","titular":"...","bullets":[{"tipo":"positivo|vigilar|accion","texto":"..."}],"siguiente_paso":"..."}
+- "tono": "saludable" si el neto es positivo y la cobertura del break-even >= 100%. "atencion" si está entre 80% y 99%. "critico" si está debajo de 80% o el neto es negativo.
+- "titular": UNA frase. Empezá con el resultado: cuánto ganó/perdió, contra el break-even. Incluí cifra concreta en pesos.
+- "bullets": 3 a 5 puntos. Mix de positivos (qué va bien), vigilar (riesgos numéricos) y acción (qué hacer concreto). Cada bullet UNA frase, con número o porcentaje cuando aplique.
+- "siguiente_paso": UNA acción concreta para el próximo mes, basada solo en los datos. No moralizá ni filosofés.
+- NO inventes datos. NO menciones cifras que no estén en el input.
+- Español neutro (no voseo). Tono directo, sin jerga financiera complicada.`;
+
+export interface FinancialAnalysisInput {
+  year: number;
+  month: number; // 1-12
+  monthLabel: string; // "mayo 2026"
+  revenue: number;
+  cogs: number;
+  grossMargin: number;
+  grossMarginPct: number; // 0..1
+  totalFixed: number;
+  fixedCosts: ReadonlyArray<{
+    name: string;
+    category: string;
+    monthlyAmount: number;
+    isPayroll: boolean;
+  }>;
+  netResult: number;
+  breakEven: number | null;
+  breakEvenCoverage: number | null; // 0..1+
+  /** Últimos meses (incluido el actual al final), 3-6 puntos. */
+  trend: ReadonlyArray<{
+    monthLabel: string;
+    revenue: number;
+    cogs: number;
+    totalFixed: number;
+    netResult: number;
+  }>;
+}
+
+export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): string {
+  const cop = (n: number) => `$${formatNumber(n)}`;
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const lines: string[] = [
+    `Estado financiero del mes (${i.monthLabel}):`,
+    `- Ingresos: ${cop(i.revenue)}`,
+    `- COGS (costo real FIFO de lo vendido): ${cop(i.cogs)}`,
+    `- Margen bruto: ${cop(i.grossMargin)} (${pct(i.grossMarginPct)})`,
+    `- Costos fijos totales: ${cop(i.totalFixed)}`,
+  ];
+  if (i.fixedCosts.length > 0) {
+    lines.push('  Desglose de costos fijos:');
+    for (const c of i.fixedCosts) {
+      const tag = c.isPayroll ? ' [auto desde Nómina]' : '';
+      lines.push(`    · ${c.name} (${c.category}): ${cop(c.monthlyAmount)}${tag}`);
+    }
+  }
+  lines.push(`- Resultado neto: ${cop(i.netResult)}`);
+  if (i.breakEven !== null) {
+    lines.push(`- Punto de equilibrio (break-even): ${cop(i.breakEven)}`);
+  }
+  if (i.breakEvenCoverage !== null) {
+    lines.push(`- Cobertura del break-even: ${pct(Math.min(i.breakEvenCoverage, 2))}`);
+  }
+  if (i.trend.length > 1) {
+    lines.push('', 'Tendencia de los últimos meses (más viejo → más nuevo):');
+    for (const t of i.trend) {
+      lines.push(
+        `- ${t.monthLabel}: ingresos ${cop(t.revenue)} · cogs ${cop(t.cogs)} · fijos ${cop(t.totalFixed)} · neto ${cop(t.netResult)}`,
+      );
+    }
+  }
+  lines.push('', 'Devolvé el análisis en JSON según las reglas.');
+  return lines.join('\n');
+}

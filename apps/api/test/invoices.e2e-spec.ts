@@ -13,7 +13,7 @@
 
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
-import supertest = require('supertest');
+import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
@@ -27,14 +27,13 @@ describe('Invoices E2E', () => {
   let adminToken: string;
   let duenoUserId: string;
   let ingredientId: string;
-  let supplierId: string;
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
 
     const hash = await bcrypt.hash('dev12345', 10);
 
-    const [dueno, admin] = await Promise.all([
+    const [dueno] = await Promise.all([
       prisma.user.create({
         data: {
           email: 'dueno-inv@test.local',
@@ -74,7 +73,7 @@ describe('Invoices E2E', () => {
       })
       .expect(201);
 
-    supplierId = supplierRes.body.id as string;
+    expect(supplierRes.body.id).toBeDefined();
 
     // Crear insumo vía API
     const ingRes = await request

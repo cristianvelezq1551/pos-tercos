@@ -1,7 +1,7 @@
-import { expandRecipe } from '../recipe/expand-recipe';
-import type { ParentRef, RecipeGraph } from '../recipe/types';
+import { expandRecipeOneLevel } from '../recipe/expand-recipe-one-level';
+import type { RecipeGraph } from '../recipe/types';
 
-/** Tolerancia de punto flotante al comparar stock vs receta (en unitRecipe). */
+/** Tolerancia de punto flotante al comparar stock vs receta. */
 const STOCK_EPSILON = 1e-6;
 
 export interface AvailabilityProduct {
@@ -26,25 +26,30 @@ export interface AvailabilityInput {
   graph: RecipeGraph;
   productStock: Map<string, number>;
   ingredientStock: Map<string, number>;
+  /** Inventario de producción: stock actual por subproducto. */
+  subproductStock: Map<string, number>;
 }
 
 /**
- * Disponibilidad del catálogo, robusta por tipo de producto. Función PURA:
- * el backend (online) y el POS (offline, con un ledger local de consumo) la
- * comparten para que el cálculo sea idéntico.
- *  - reventa directa → stock propio > 0
- *  - preparado       → insumos de su receta base alcanzan para ≥1 unidad
- *  - combo           → todos sus componentes alcanzan para ≥1 combo
+ * Disponibilidad del catálogo, robusta por tipo. Función PURA usada por
+ * backend (online) y POS (offline). Modelo de inventario de producción:
+ *
+ *  - reventa directa  → stock propio > 0
+ *  - preparado        → subproductos directos + insumos directos alcanzan
+ *                        para ≥1 unidad (NO se expanden recetas anidadas)
+ *  - combo            → todos sus componentes alcanzan para ≥1 combo
  *  - "86" manual (soldOut) invalida cualquier producto
+ *
+ * Si falta un subproducto, el mensaje dice el nombre del subproducto
+ * ("Sin Pollo Apanado") en vez de los insumos profundos ("Sin pollo crudo").
  */
 export function evaluateAvailability(input: AvailabilityInput): AvailabilityResult[] {
-  const { products, graph, productStock, ingredientStock } = input;
+  const { products, graph, productStock, ingredientStock, subproductStock } = input;
   const productById = new Map(products.map((p) => [p.id, p]));
 
   return products
     .filter((p) => p.isActive)
     .map((p) => {
-      // 1) "86" manual gana sobre todo.
       if (p.soldOut) {
         return {
           productId: p.id,
@@ -54,7 +59,6 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
         };
       }
 
-      // 2) Reventa directa: stock propio.
       if (p.directResale) {
         const stock = productStock.get(p.id) ?? 0;
         return {
@@ -65,64 +69,71 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
         };
       }
 
-      // 3) Combo: que alcance para armar al menos 1.
       if (p.isCombo) {
         const reason = evalComboShortages(
           p.comboComponents,
           graph,
           productById,
           ingredientStock,
+          subproductStock,
           productStock,
         );
         return { productId: p.id, available: reason === null, stock: null, reason };
       }
 
-      // 4) Preparado: insumos de la receta base.
-      const reason = evalRecipeShortages(p.id, graph, ingredientStock);
+      // Preparado: chequear primer nivel de su receta.
+      const reason = evalRecipeShortages(p.id, graph, ingredientStock, subproductStock);
       return { productId: p.id, available: reason === null, stock: null, reason };
     });
 }
 
 /**
- * Expande la receta base de un preparado y verifica que cada insumo alcance
- * para ≥1 unidad. Devuelve el motivo ("Sin Pan, Papas") o null si disponible.
- * Sin receta / receta rota → null (no se invalida; queda el "86" manual).
+ * Expande SOLO el primer nivel de la receta del producto preparado y verifica
+ * que cada subproducto e insumo DIRECTO alcance para ≥1 unidad.
+ *
+ * Receta rota / vacía → null (queda el "86" manual como red de seguridad).
  */
 function evalRecipeShortages(
   productId: string,
   graph: RecipeGraph,
   ingStock: Map<string, number>,
+  subStock: Map<string, number>,
 ): string | null {
-  const root: ParentRef = { kind: 'product', id: productId };
-  let needs: ReturnType<typeof expandRecipe>;
+  let needs;
   try {
-    needs = expandRecipe(graph, root, 1);
+    needs = expandRecipeOneLevel(graph, { kind: 'product', id: productId }, 1);
   } catch {
     return null;
   }
-  if (needs.size === 0) return null;
   const missing: string[] = [];
-  for (const ing of needs.values()) {
+  for (const ing of needs.ingredients.values()) {
     const have = ingStock.get(ing.ingredientId) ?? 0;
     if (have + STOCK_EPSILON < ing.totalQuantity) missing.push(ing.name);
   }
-  return missing.length > 0 ? `Sin ${missing.join(', ')}` : null;
+  for (const sub of needs.subproducts.values()) {
+    const have = subStock.get(sub.subproductId) ?? 0;
+    if (have + STOCK_EPSILON < sub.totalQuantity) missing.push(sub.name);
+  }
+  return missing.length > 0 ? `Sin ${[...new Set(missing)].join(', ')}` : null;
 }
 
 /**
- * Verifica que un combo pueda armarse: agrega los insumos de los componentes
- * preparados y el stock de los componentes de reventa directa, escalado por la
- * cantidad de cada componente. Devuelve el motivo o null.
+ * Verifica que un combo pueda armarse: agrega los requerimientos de los
+ * componentes (insumos directos + subproductos directos + stock de reventa)
+ * escalados por cantidad. Devuelve el motivo o null.
  */
 function evalComboShortages(
   components: ReadonlyArray<{ productId: string; quantity: number }>,
   graph: RecipeGraph,
   productById: Map<string, AvailabilityProduct>,
   ingStock: Map<string, number>,
+  subStock: Map<string, number>,
   prodStock: Map<string, number>,
 ): string | null {
-  const aggIngredientNeeds = new Map<string, number>();
-  const ingredientName = new Map<string, string>();
+  const aggIng = new Map<string, number>();
+  const ingName = new Map<string, string>();
+  const aggSub = new Map<string, number>();
+  const subName = new Map<string, string>();
   const drNeeds = new Map<string, number>();
 
   for (const comp of components) {
@@ -134,16 +145,21 @@ function evalComboShortages(
       continue;
     }
     try {
-      const needs = expandRecipe(graph, { kind: 'product', id: comp.productId }, comp.quantity);
-      for (const ing of needs.values()) {
-        aggIngredientNeeds.set(
-          ing.ingredientId,
-          (aggIngredientNeeds.get(ing.ingredientId) ?? 0) + ing.totalQuantity,
-        );
-        ingredientName.set(ing.ingredientId, ing.name);
+      const needs = expandRecipeOneLevel(
+        graph,
+        { kind: 'product', id: comp.productId },
+        comp.quantity,
+      );
+      for (const ing of needs.ingredients.values()) {
+        aggIng.set(ing.ingredientId, (aggIng.get(ing.ingredientId) ?? 0) + ing.totalQuantity);
+        ingName.set(ing.ingredientId, ing.name);
+      }
+      for (const sub of needs.subproducts.values()) {
+        aggSub.set(sub.subproductId, (aggSub.get(sub.subproductId) ?? 0) + sub.totalQuantity);
+        subName.set(sub.subproductId, sub.name);
       }
     } catch {
-      // Receta rota de un componente: no bloqueamos por eso.
+      // Receta rota del componente: no bloqueamos por eso (el catálogo se ve igual).
     }
   }
 
@@ -153,9 +169,14 @@ function evalComboShortages(
       missing.push(productById.get(pid)?.name ?? 'producto');
     }
   }
-  for (const [ingId, qty] of aggIngredientNeeds) {
+  for (const [ingId, qty] of aggIng) {
     if ((ingStock.get(ingId) ?? 0) + STOCK_EPSILON < qty) {
-      missing.push(ingredientName.get(ingId) ?? 'insumo');
+      missing.push(ingName.get(ingId) ?? 'insumo');
+    }
+  }
+  for (const [subId, qty] of aggSub) {
+    if ((subStock.get(subId) ?? 0) + STOCK_EPSILON < qty) {
+      missing.push(subName.get(subId) ?? 'subproducto');
     }
   }
   return missing.length > 0 ? `Sin ${[...new Set(missing)].join(', ')}` : null;

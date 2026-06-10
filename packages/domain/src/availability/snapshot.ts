@@ -25,6 +25,8 @@ export interface OfflineAvailabilitySnapshot {
   graph: SerializedRecipeGraph;
   productStock: Record<string, number>;
   ingredientStock: Record<string, number>;
+  /** Stock de subproductos (inventario de producción). */
+  subproductStock: Record<string, number>;
   asOf: string;
 }
 

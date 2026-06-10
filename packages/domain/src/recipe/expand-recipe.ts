@@ -29,6 +29,25 @@ export class RecipeMaxDepthError extends Error {
   }
 }
 
+export class RecipeInvalidMermaError extends Error {
+  constructor(public readonly mermaPct: number) {
+    super(`Recipe edge has invalid mermaPct ${mermaPct} (must satisfy 0 <= merma < 1)`);
+    this.name = 'RecipeInvalidMermaError';
+  }
+}
+
+/**
+ * Cantidad bruta a consumir aplicando merma: `neta / (1 - mermaPct)`.
+ * Guarda defensiva: el schema Zod ya valida `0 <= merma < 1` en la entrada,
+ * pero la columna DB no tiene CHECK — un dato corrupto produciría Infinity.
+ */
+export function grossQuantity(quantityNeta: number, mermaPct: number): number {
+  if (!Number.isFinite(mermaPct) || mermaPct < 0 || mermaPct >= 1) {
+    throw new RecipeInvalidMermaError(mermaPct);
+  }
+  return quantityNeta / (1 - mermaPct);
+}
+
 /**
  * Expande recursivamente la receta del producto raíz hasta sus insumos.
  *
@@ -86,7 +105,7 @@ function walk(
   const nextVisiting = [...visiting, parent];
 
   for (const edge of edges) {
-    const grossQty = edge.quantityNeta / (1 - edge.mermaPct);
+    const grossQty = grossQuantity(edge.quantityNeta, edge.mermaPct);
     const childFactor = factor * grossQty;
     distributeChild(graph, edge.child, childFactor, nextVisiting, acc, depth + 1);
   }

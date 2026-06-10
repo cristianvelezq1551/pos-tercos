@@ -1,3 +1,4 @@
+import { roundMoney } from '../common/money';
 import {
   DAY_BIT,
   type ApplyPromotionInput,
@@ -205,6 +206,3 @@ function startOfDay(d: Date): Date {
   return x;
 }
 
-function roundMoney(n: number): number {
-  return Math.round(n * 100) / 100;
-}

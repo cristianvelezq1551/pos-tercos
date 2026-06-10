@@ -5,6 +5,12 @@ export {
   RecipeMaxDepthError,
 } from './expand-recipe';
 export {
+  expandRecipeOneLevel,
+  type ExpandedRecipeOneLevel,
+  type ExpandedIngredientOneLevel,
+  type ExpandedSubproductOneLevel,
+} from './expand-recipe-one-level';
+export {
   computeProductCost,
   computeComboCost,
   type CostResult,

@@ -10,12 +10,10 @@
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import type { INestApplication } from '@nestjs/common';
-import supertest = require('supertest');
+import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
-
-const TEST_DB_URL = process.env.DATABASE_URL;
 
 describe('Sales E2E', () => {
   let app: INestApplication;

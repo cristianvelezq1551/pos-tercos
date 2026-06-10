@@ -16,6 +16,9 @@ export default tseslint.config(
       '.claude/**',
       '_legacy/**',
       'apps/api/prisma/generated/**',
+      // Artefactos de build de Flutter (JS generado por plugins, no es código nuestro)
+      'apps/kds-flutter/build/**',
+      'apps/kds-flutter/.dart_tool/**',
     ],
   },
   js.configs.recommended,

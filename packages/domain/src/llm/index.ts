@@ -7,8 +7,14 @@ export {
   buildShiftCloseUserPrompt,
   DAILY_SUMMARY_SYSTEM,
   buildDailySummaryUserPrompt,
+  FINANCIAL_ANALYSIS_SYSTEM,
+  buildFinancialAnalysisUserPrompt,
 } from './prompt';
-export type { ShiftCloseAnalysisInput, DailySummaryInput } from './prompt';
+export type {
+  ShiftCloseAnalysisInput,
+  DailySummaryInput,
+  FinancialAnalysisInput,
+} from './prompt';
 export type {
   LLMCompletionRequest,
   LLMCompletionResult,
