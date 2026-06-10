@@ -4,7 +4,10 @@ import { PromotionsModule } from '../promotions/promotions.module';
 import { RecipesModule } from '../recipes/recipes.module';
 import { ShiftsModule } from '../shifts/shifts.module';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
+import { SalesConsumptionService } from './sales-consumption.service';
 import { SalesController } from './sales.controller';
+import { SalesOfflineService } from './sales-offline.service';
+import { SalesReceiptService } from './sales-receipt.service';
 import { SalesService } from './sales.service';
 
 @Module({
@@ -15,7 +18,13 @@ import { SalesService } from './sales.service';
     forwardRef(() => KdsModule),
   ],
   controllers: [SalesController],
-  providers: [SalesService, ReceiptIntegrityService],
+  providers: [
+    SalesService,
+    SalesConsumptionService,
+    SalesOfflineService,
+    SalesReceiptService,
+    ReceiptIntegrityService,
+  ],
   exports: [SalesService, ReceiptIntegrityService],
 })
 export class SalesModule {}

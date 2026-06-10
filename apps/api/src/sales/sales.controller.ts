@@ -39,12 +39,16 @@ import {
 } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
+import { SalesOfflineService } from './sales-offline.service';
+import { SalesReceiptService } from './sales-receipt.service';
 import { SalesService } from './sales.service';
 
 @Controller('sales')
 export class SalesController {
   constructor(
     private readonly sales: SalesService,
+    private readonly offline: SalesOfflineService,
+    private readonly receipts: SalesReceiptService,
     private readonly receiptIntegrity: ReceiptIntegrityService,
   ) {}
 
@@ -93,7 +97,7 @@ export class SalesController {
     @CurrentUser() user: JwtAccessPayload,
     @Body(new ZodValidationPipe(SyncOfflineSaleSchema)) body: SyncOfflineSale,
   ): Promise<Sale> {
-    return this.sales.syncOffline(body, user.sub);
+    return this.offline.syncOffline(body, user.sub);
   }
 
   @CashierAccess()
@@ -192,7 +196,7 @@ export class SalesController {
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<{ ok: true; key: string }> {
-    const result = await this.sales.printReceipt(id, user.sub);
+    const result = await this.receipts.printReceipt(id, user.sub);
     return { ok: true, key: result.key };
   }
 
@@ -207,7 +211,7 @@ export class SalesController {
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
-    return this.sales.getReceiptEscPos(id, user.sub);
+    return this.receipts.getReceiptEscPos(id, user.sub);
   }
 
   /**
@@ -220,7 +224,7 @@ export class SalesController {
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DrawerOpenResult> {
-    return this.sales.openDrawer({
+    return this.receipts.openDrawer({
       saleId: id,
       reason: null,
       cashierId: user.sub,
@@ -243,7 +247,7 @@ export class SalesController {
         `Header ${APPROVAL_PIN_HEADER} requerido para abrir cajón sin venta.`,
       );
     }
-    return this.sales.openDrawer({
+    return this.receipts.openDrawer({
       saleId: null,
       reason: body.reason ?? null,
       cashierId: user.sub,

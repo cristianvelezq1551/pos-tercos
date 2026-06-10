@@ -6,17 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  applyPromotion,
-  expandRecipe,
-  renderReceiptEscPos,
-  type CashDrawerProvider,
-  type DrawerOpenResult,
-  type PrinterProvider,
-  type PrintResult,
-  type PromotionDef,
-  type ReceiptData,
-} from '@pos-tercos/domain';
+import { applyPromotion, roundMoney, type PromotionDef } from '@pos-tercos/domain';
 import { DIGITAL_PAYMENT_METHODS } from '@pos-tercos/types';
 import type {
   AppliedModifier,
@@ -25,41 +15,24 @@ import type {
   CreateSaleItem,
   PaymentMethod,
   Sale,
-  SaleItem,
   SaleStatus,
   SaleStatusLogEntry,
   Shift,
-  SyncOfflineSale,
   VoidSale,
 } from '@pos-tercos/types';
 import type { Prisma, SaleStatus as DbSaleStatus } from '@prisma/client';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
-import { CASH_DRAWER_PROVIDER } from '../adapters/cash-drawer/cash-drawer.module';
-import { PRINTER_PROVIDER } from '../adapters/printer/printer.module';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { KdsGateway } from '../kds/kds.gateway';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
-import { RecipesService } from '../recipes/recipes.service';
 import { ShiftsService } from '../shifts/shifts.service';
+import { SalesConsumptionService } from './sales-consumption.service';
+import { includeFull, toSaleDto } from './sales.mappers';
 
 const SALES_CREATE_ENDPOINT = 'POST /sales';
-
-type DbSaleWithDetail = Prisma.SaleGetPayload<{
-  include: {
-    cashier: { select: { fullName: true } };
-    paidBy: { select: { fullName: true } };
-    items: {
-      include: {
-        product: { select: { name: true } };
-        size: { select: { name: true } };
-        appliedPromotion: { select: { name: true } };
-      };
-    };
-  };
-}>;
 
 interface ListSalesFilter {
   status?: SaleStatus;
@@ -78,10 +51,8 @@ export class SalesService {
     private readonly idempotency: IdempotencyService,
     private readonly approvals: ApprovalsService,
     private readonly audit: AuditService,
-    private readonly recipes: RecipesService,
     private readonly promotions: PromotionsService,
-    @Inject(PRINTER_PROVIDER) private readonly printer: PrinterProvider,
-    @Inject(CASH_DRAWER_PROVIDER) private readonly drawer: CashDrawerProvider,
+    private readonly consumption: SalesConsumptionService,
     @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
     private readonly notifications: NotificationService,
     private readonly shifts: ShiftsService,
@@ -304,118 +275,41 @@ export class SalesService {
       // getActiveTodayShift lanza Conflict si la caja quedó abierta de ayer →
       // el cajero debe cerrarla antes de confirmar pagos.
       const shift = await this.shifts.getActiveTodayShift(userId);
-      if (shift) {
-        shiftId = shift.id;
-        cashierId = userId;
-      }
-    }
-
-    // Cargar productos con flags relevantes para descuento de stock
-    const productIds = Array.from(new Set(existing.items.map((it) => it.productId)));
-    // Cargar productos del sale con sus componentes de combo (1 nivel — no hay
-    // combos anidados, enforced al crear). Un combo se descompone en sus
-    // componentes y descuenta stock de cada uno (reventa directa o receta).
-    const saleProducts = await this.prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: {
-        id: true,
-        name: true,
-        directResale: true,
-        isCombo: true,
-        comboComponents: { select: { productId: true, quantity: true } },
-      },
-    });
-    const saleProductMap = new Map(saleProducts.map((p) => [p.id, p]));
-
-    // Productos que son componentes de los combos presentes — para conocer su
-    // flag (reventa) y poder expandir su receta.
-    const componentIds = new Set<string>();
-    for (const p of saleProducts) {
-      if (p.isCombo) for (const c of p.comboComponents) componentIds.add(c.productId);
-    }
-    const componentProducts = componentIds.size
-      ? await this.prisma.product.findMany({
-          where: { id: { in: [...componentIds] } },
-          select: { id: true, name: true, directResale: true, isCombo: true },
-        })
-      : [];
-    const componentMap = new Map(componentProducts.map((p) => [p.id, p]));
-
-    const stockMovementsToCreate: Prisma.InventoryMovementCreateManyInput[] = [];
-
-    const consume = async (
-      p: { id: string; name: string; directResale: boolean },
-      qty: number,
-      sizeId?: string | null,
-    ): Promise<void> => {
-      if (p.directResale) {
-        stockMovementsToCreate.push({
-          entityType: 'PRODUCT',
-          productId: p.id,
-          delta: -qty,
-          type: 'SALE',
-          sourceType: 'sale',
-          sourceId: saleId,
-          userId,
-          notes: `Sale ${existing.id.slice(0, 8)} item ${p.name}`,
-        });
-        return;
-      }
-      // sizeId → suma la receta de la variante (proteína) a la base.
-      const { graph, root } = await this.recipes.loadGraphForProduct(
-        p.id,
-        sizeId ?? undefined,
-      );
-      let expanded;
-      try {
-        expanded = expandRecipe(graph, root, qty);
-      } catch (err) {
-        throw new BadRequestException({
-          message: `Falla al expandir receta de "${p.name}"`,
-          cause: err instanceof Error ? err.message : String(err),
-        });
-      }
-      for (const ing of expanded.values()) {
-        stockMovementsToCreate.push({
-          entityType: 'INGREDIENT',
-          ingredientId: ing.ingredientId,
-          delta: -ing.totalQuantity,
-          type: 'SALE',
-          sourceType: 'sale',
-          sourceId: saleId,
-          userId,
-          notes: `Sale ${existing.id.slice(0, 8)} via "${p.name}"`,
-        });
-      }
-    };
-
-    for (const item of existing.items) {
-      const product = saleProductMap.get(item.productId);
-      if (!product) {
+      if (!shift) {
+        // Sin caja abierta la venta web quedaría con shiftId/cashierId null y
+        // nunca entraría al cierre de caja (Z-report) ni a la atribución de
+        // comisiones → descuadre silencioso. Igual que COUNTER, exigimos caja.
         throw new BadRequestException(
-          `Sale tiene un item para product ${item.productId} que ya no existe.`,
+          'Abrí la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).',
         );
       }
-
-      if (product.isCombo) {
-        for (const comp of product.comboComponents) {
-          const cp = componentMap.get(comp.productId);
-          if (!cp) {
-            throw new BadRequestException(
-              `Combo "${product.name}" referencia un producto inexistente (${comp.productId}).`,
-            );
-          }
-          if (cp.isCombo) {
-            throw new BadRequestException(
-              `Combo anidado no soportado en "${product.name}".`,
-            );
-          }
-          await consume(cp, item.quantity * comp.quantity);
-        }
-      } else {
-        await consume(product, item.quantity, item.sizeId);
-      }
+      shiftId = shift.id;
+      cashierId = userId;
     }
+
+    // Consumo de stock: lógica ÚNICA compartida con syncOffline (reventa
+    // directa / receta un nivel / combos por componentes).
+    const consumptionSpecs = await this.consumption.computeConsumptionSpecs(
+      existing.items.map((it) => ({
+        productId: it.productId,
+        quantity: it.quantity,
+        sizeId: it.sizeId,
+      })),
+      `Sale ${existing.id.slice(0, 8)}`,
+    );
+    const stockMovementsToCreate: Prisma.InventoryMovementCreateManyInput[] =
+      consumptionSpecs.map((s) => ({
+        entityType: s.entityType,
+        ingredientId: s.ingredientId ?? null,
+        productId: s.productId ?? null,
+        subproductId: s.subproductId ?? null,
+        delta: s.delta,
+        type: 'SALE',
+        sourceType: 'sale',
+        sourceId: saleId,
+        userId,
+        notes: s.note,
+      }));
 
     const updated = await this.prisma.$transaction(async (tx) => {
       // Turno: secuencia ÚNICA por CAJA (no global). Resetea cada vez que se
@@ -466,6 +360,12 @@ export class SalesService {
         },
       });
       if (stockMovementsToCreate.length > 0) {
+        // Defensa contra stock negativo: el cajero ya pasó por el sold-out gate
+        // del POS, pero si la ventana de availability se desactualizó (otra
+        // venta consumió primero, o el snapshot offline está stale), bloqueamos
+        // acá antes de crear el movement. Lee el stock actual en una sola
+        // groupBy y compara contra la suma de deltas negativos por entidad.
+        await this.consumption.assertStockSufficient(tx, stockMovementsToCreate);
         await tx.inventoryMovement.createMany({
           data: stockMovementsToCreate,
         });
@@ -497,261 +397,6 @@ export class SalesService {
       void this.notifications.notify(saleId, 'payment_received');
     }
     return dto;
-  }
-
-  // ==================================================================
-  // SYNC OFFLINE (Fase B.3)
-  // ==================================================================
-
-  /**
-   * Registra una venta cobrada OFFLINE (COUNTER) que el POS sincroniza al
-   * recuperar conexión. La graba TAL CUAL se cobró:
-   *  - Totales VERBATIM (no recomputa promos ni valida soldOut → "gana lo
-   *    cobrado offline"; cualquier diferencia se ve en el stock/auditoría).
-   *  - `paidAt = soldOfflineAt` (backdateado → el revenue cae en la hora real).
-   *  - Status ENTREGADO: la venta ya fue entrega directa offline (NO entra al
-   *    KDS ni al turnero, ni dispara notificaciones).
-   *  - Idempotente por `localId` (= idempotency key) → cero doble-cobro.
-   */
-  async syncOffline(input: SyncOfflineSale, userId: string): Promise<Sale> {
-    const dup = await this.prisma.sale.findUnique({
-      where: { idempotencyKey: input.localId },
-      include: includeFull(),
-    });
-    if (dup) {
-      await this.audit.log({
-        userId,
-        action: 'IDEMPOTENCY_HIT',
-        entityType: 'sale',
-        entityId: dup.id,
-        metadata: { endpoint: 'POST /sales/sync-offline', key: input.localId },
-      });
-      return toSaleDto(dup);
-    }
-
-    // Caja del día abierta (la que estaba abierta antes del corte). Si quedó una
-    // de un día previo, getActiveTodayShift lanza Conflict → falla → el cajero
-    // cierra la caja vieja y reintenta (bandeja de revisión, B.5).
-    const shift = await this.shifts.getActiveTodayShift(userId);
-    if (!shift) {
-      throw new BadRequestException(
-        'No hay caja abierta para asociar la venta offline. Abrí/cerrá caja y reintentá.',
-      );
-    }
-
-    // Validar productos + computar consumo ANTES de la tx: un fallo acá manda la
-    // venta a la bandeja de revisión sin quemar número de recibo.
-    const specs = await this.computeOfflineConsumption(input.payload.lines);
-
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const [{ next }] = await tx.$queryRaw<{ next: bigint }[]>`
-        SELECT nextval('receipt_seq') AS next
-      `;
-      const receiptNumber = next;
-      // Turno: secuencia por caja (igual que confirmPayment).
-      const assigned = await tx.sale.count({
-        where: { shiftId: shift.id, turnNumber: { not: null } },
-      });
-      const turnNumber = assigned + 1;
-
-      const sale = await tx.sale.create({
-        data: {
-          receiptNumber,
-          type: 'COUNTER',
-          status: 'ENTREGADO',
-          turnNumber,
-          customerName: input.payload.customerName,
-          subtotal: input.payload.subtotal,
-          discountTotal: input.payload.discount,
-          total: input.payload.total,
-          paymentMethod: input.payment.method as PaymentMethod,
-          paidAt: new Date(input.soldOfflineAt),
-          paidByUserId: userId,
-          cashierId: userId,
-          shiftId: shift.id,
-          idempotencyKey: input.localId,
-          items: {
-            create: input.payload.lines.map((l) => ({
-              productId: l.productId,
-              sizeId: l.sizeId,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              modifiersJson: l.modifiers as unknown as Prisma.InputJsonValue,
-              notes: l.notes ?? null,
-              appliedPromotionId: l.appliedPromotionId,
-              lineSubtotal: l.lineSubtotal,
-              lineDiscount: l.lineDiscount,
-              lineTotal: l.lineTotal,
-            })),
-          },
-          statusLog: {
-            create: {
-              statusFrom: null,
-              statusTo: 'ENTREGADO',
-              userId,
-              notes: `Venta offline ${input.provisionalNumber} sincronizada`,
-            },
-          },
-        },
-        select: { id: true },
-      });
-
-      if (specs.length > 0) {
-        await tx.inventoryMovement.createMany({
-          data: specs.map((s) => ({
-            entityType: s.entityType,
-            ingredientId: s.ingredientId ?? null,
-            productId: s.productId ?? null,
-            delta: s.delta,
-            type: 'SALE' as const,
-            sourceType: 'sale',
-            sourceId: sale.id,
-            userId,
-            notes: s.note,
-          })),
-        });
-      }
-
-      return tx.sale.findUniqueOrThrow({
-        where: { id: sale.id },
-        include: includeFull(),
-      });
-    });
-
-    const dto = toSaleDto(updated);
-    await this.audit.log({
-      userId,
-      action: 'SALE_SYNCED_OFFLINE',
-      entityType: 'sale',
-      entityId: dto.id,
-      metadata: {
-        provisionalNumber: input.provisionalNumber,
-        receiptNumber: dto.receiptNumber,
-        turnNumber: dto.turnNumber,
-        method: input.payment.method,
-        offlineVerified: input.payment.offlineVerified,
-        soldOfflineAt: input.soldOfflineAt,
-        movementsCreated: specs.length,
-      },
-    });
-    // Sin KDS ni notificaciones: la venta offline ya se entregó (entrega directa).
-    return dto;
-  }
-
-  /**
-   * Consumo de stock de una venta offline. Mismo criterio que confirmPayment
-   * (reventa directa / receta vía expandRecipe / combos por componentes) pero
-   * devuelve SPECS sin saleId (se inyecta al crear la venta en la tx).
-   */
-  private async computeOfflineConsumption(
-    lines: ReadonlyArray<{ productId: string; quantity: number; sizeId: string | null }>,
-  ): Promise<
-    Array<{
-      entityType: 'PRODUCT' | 'INGREDIENT';
-      ingredientId?: string;
-      productId?: string;
-      delta: number;
-      note: string;
-    }>
-  > {
-    const specs: Array<{
-      entityType: 'PRODUCT' | 'INGREDIENT';
-      ingredientId?: string;
-      productId?: string;
-      delta: number;
-      note: string;
-    }> = [];
-
-    const productIds = Array.from(new Set(lines.map((l) => l.productId)));
-    const saleProducts = await this.prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: {
-        id: true,
-        name: true,
-        directResale: true,
-        isCombo: true,
-        comboComponents: { select: { productId: true, quantity: true } },
-      },
-    });
-    const saleProductMap = new Map(saleProducts.map((p) => [p.id, p]));
-
-    const componentIds = new Set<string>();
-    for (const p of saleProducts) {
-      if (p.isCombo) for (const c of p.comboComponents) componentIds.add(c.productId);
-    }
-    const componentProducts = componentIds.size
-      ? await this.prisma.product.findMany({
-          where: { id: { in: [...componentIds] } },
-          select: { id: true, name: true, directResale: true, isCombo: true },
-        })
-      : [];
-    const componentMap = new Map(componentProducts.map((p) => [p.id, p]));
-
-    const consume = async (
-      p: { id: string; name: string; directResale: boolean },
-      qty: number,
-      sizeId?: string | null,
-    ): Promise<void> => {
-      if (p.directResale) {
-        specs.push({
-          entityType: 'PRODUCT',
-          productId: p.id,
-          delta: -qty,
-          note: `Offline venta item ${p.name}`,
-        });
-        return;
-      }
-      const { graph, root } = await this.recipes.loadGraphForProduct(
-        p.id,
-        sizeId ?? undefined,
-      );
-      let expanded;
-      try {
-        expanded = expandRecipe(graph, root, qty);
-      } catch (err) {
-        throw new BadRequestException({
-          message: `Falla al expandir receta de "${p.name}" (venta offline)`,
-          cause: err instanceof Error ? err.message : String(err),
-        });
-      }
-      for (const ing of expanded.values()) {
-        specs.push({
-          entityType: 'INGREDIENT',
-          ingredientId: ing.ingredientId,
-          delta: -ing.totalQuantity,
-          note: `Offline via "${p.name}"`,
-        });
-      }
-    };
-
-    for (const line of lines) {
-      const product = saleProductMap.get(line.productId);
-      if (!product) {
-        throw new BadRequestException(
-          `Producto ${line.productId} ya no existe (venta offline).`,
-        );
-      }
-      if (product.isCombo) {
-        for (const comp of product.comboComponents) {
-          const cp = componentMap.get(comp.productId);
-          if (!cp) {
-            throw new BadRequestException(
-              `Combo "${product.name}" referencia un producto inexistente.`,
-            );
-          }
-          if (cp.isCombo) {
-            throw new BadRequestException(
-              `Combo anidado no soportado en "${product.name}".`,
-            );
-          }
-          await consume(cp, line.quantity * comp.quantity);
-        }
-      } else {
-        await consume(product, line.quantity, line.sizeId);
-      }
-    }
-
-    return specs;
   }
 
   // ==================================================================
@@ -809,6 +454,7 @@ export class SalesService {
           entityType: orig.entityType,
           ingredientId: orig.ingredientId,
           productId: orig.productId,
+          subproductId: orig.subproductId,
           delta: Number(orig.delta) * -1,
           type: 'SALE',
           sourceType: 'sale',
@@ -960,209 +606,6 @@ export class SalesService {
   }
 
   // ==================================================================
-  // PRINT RECEIPT
-  // ==================================================================
-
-  /**
-   * Devuelve el recibo renderizado a bytes ESC/POS (base64) para que el
-   * NAVEGADOR del mostrador lo mande al print-agent LOCAL (impresión sin que
-   * el backend tenga que alcanzar la impresora). Audita igual que printReceipt.
-   */
-  async getReceiptEscPos(
-    saleId: string,
-    userId: string,
-  ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
-    const sale = await this.prisma.sale.findUnique({
-      where: { id: saleId },
-      include: includeFull(),
-    });
-    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (
-      sale.status !== 'PAGADO' &&
-      sale.status !== 'EN_PREPARACION' &&
-      sale.status !== 'LISTO_DESPACHO' &&
-      sale.status !== 'ENTREGADO'
-    ) {
-      throw new BadRequestException(
-        `Sale en status ${sale.status} no se puede imprimir (solo desde PAGADO en adelante).`,
-      );
-    }
-
-    const previousPrints = await this.prisma.auditLog.count({
-      where: {
-        action: { in: ['RECEIPT_PRINTED', 'RECEIPT_REPRINTED'] },
-        entityType: 'sale',
-        entityId: saleId,
-      },
-    });
-    const isReprint = previousPrints > 0;
-    const receipt = buildReceiptData(toSaleDto(sale), isReprint);
-    const bytes = renderReceiptEscPos(receipt);
-
-    await this.audit.log({
-      userId,
-      action: isReprint ? 'RECEIPT_REPRINTED' : 'RECEIPT_PRINTED',
-      entityType: 'sale',
-      entityId: saleId,
-      metadata: {
-        receiptNumber: Number(sale.receiptNumber),
-        via: 'browser-agent',
-        previousPrintCount: previousPrints,
-      },
-    });
-
-    return {
-      escposBase64: bytes.toString('base64'),
-      receiptNumber: Number(sale.receiptNumber),
-      reprint: isReprint,
-    };
-  }
-
-  /**
-   * Imprime/reimprime el recibo de la sale. La 1ra vez audita
-   * RECEIPT_PRINTED; las siguientes audit RECEIPT_REPRINTED y el HTML
-   * generado lleva banner "DUPLICADO" + sufijo en filename para
-   * mantener histórico (no pisa el original).
-   *
-   * Solo para sales status=PAGADO (no tiene sentido imprimir un
-   * draft o un VOID).
-   */
-  async printReceipt(saleId: string, userId: string): Promise<PrintResult> {
-    const sale = await this.prisma.sale.findUnique({
-      where: { id: saleId },
-      include: includeFull(),
-    });
-    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (sale.status !== 'PAGADO' && sale.status !== 'EN_PREPARACION' &&
-        sale.status !== 'LISTO_DESPACHO' && sale.status !== 'ENTREGADO') {
-      throw new BadRequestException(
-        `Sale en status ${sale.status} no se puede imprimir (solo desde PAGADO en adelante).`,
-      );
-    }
-
-    // Detectar reimpresión: si ya hay audit RECEIPT_PRINTED para esta sale,
-    // marcar como reprint.
-    const previousPrints = await this.prisma.auditLog.count({
-      where: {
-        action: { in: ['RECEIPT_PRINTED', 'RECEIPT_REPRINTED'] },
-        entityType: 'sale',
-        entityId: saleId,
-      },
-    });
-    const isReprint = previousPrints > 0;
-
-    const receipt = buildReceiptData(toSaleDto(sale), isReprint);
-    const result = await this.printer.print(receipt);
-
-    await this.audit.log({
-      userId,
-      action: isReprint ? 'RECEIPT_REPRINTED' : 'RECEIPT_PRINTED',
-      entityType: 'sale',
-      entityId: saleId,
-      metadata: {
-        receiptNumber: Number(sale.receiptNumber),
-        printerKey: result.key,
-        previousPrintCount: previousPrints,
-      },
-    });
-
-    return result;
-  }
-
-  // ==================================================================
-  // OPEN DRAWER
-  // ==================================================================
-
-  /**
-   * Abre el cajón monedero. Dos modos:
-   *  - Con sale (saleId presente): apertura normal post-pago. Sin PIN.
-   *  - Sin sale ("no-sale"): requiere reason + X-Approval-Pin (cajero NO
-   *    puede abrir cajón sin venta sin aprobación, pos-spec.v1.md:58).
-   *
-   * En FASE 5.D el adapter es mock (solo loggea + audit). En FASE 15 el
-   * Print Agent local manda el comando ESC/POS al cajón físico.
-   */
-  async openDrawer(input: {
-    saleId: string | null;
-    reason: string | null;
-    cashierId: string;
-    approverPin?: string;
-  }): Promise<DrawerOpenResult> {
-    const isNoSale = input.saleId === null;
-
-    if (isNoSale) {
-      if (!input.reason || input.reason.trim().length < 5) {
-        throw new BadRequestException(
-          'Apertura sin venta requiere reason (mínimo 5 caracteres).',
-        );
-      }
-      if (!input.approverPin) {
-        throw new ForbiddenException(
-          'Apertura sin venta requiere X-Approval-Pin de Admin/Dueño.',
-        );
-      }
-      const approverId = await this.approvals.verify(input.approverPin).catch(
-        async (err) => {
-          await this.audit.log({
-            userId: input.cashierId,
-            action: 'APPROVAL_DENIED',
-            entityType: 'cash_drawer',
-            metadata: {
-              reason: 'open-no-sale',
-              given: input.reason,
-              message: err instanceof Error ? err.message : 'invalid pin',
-            },
-          });
-          throw err instanceof ForbiddenException
-            ? err
-            : new ForbiddenException('PIN inválido');
-        },
-      );
-
-      const result = await this.drawer.open({ reason: input.reason });
-
-      await this.audit.log({
-        userId: input.cashierId,
-        action: 'CASH_DRAWER_OPENED_NO_SALE',
-        entityType: 'cash_drawer',
-        metadata: { reason: input.reason, approverId },
-      });
-      await this.audit.log({
-        userId: approverId,
-        action: 'APPROVAL_GRANTED',
-        entityType: 'cash_drawer',
-        metadata: { context: 'open-no-sale', cashierId: input.cashierId },
-      });
-
-      return result;
-    }
-
-    // Apertura normal: validar que la sale exista + esté pagada
-    const sale = await this.prisma.sale.findUnique({
-      where: { id: input.saleId! },
-      select: { id: true, status: true, receiptNumber: true },
-    });
-    if (!sale) throw new NotFoundException(`Sale ${input.saleId} not found`);
-    if (sale.status !== 'PAGADO') {
-      throw new BadRequestException(
-        `Sale en status ${sale.status} no permite apertura de cajón (solo PAGADO).`,
-      );
-    }
-
-    const result = await this.drawer.open({ reason: null });
-
-    await this.audit.log({
-      userId: input.cashierId,
-      action: 'CASH_DRAWER_OPENED',
-      entityType: 'sale',
-      entityId: sale.id,
-      metadata: { receiptNumber: Number(sale.receiptNumber) },
-    });
-
-    return result;
-  }
-
-  // ==================================================================
   // STATUS LOG
   // ==================================================================
 
@@ -1188,6 +631,7 @@ export class SalesService {
       changedAt: r.changedAt.toISOString(),
     }));
   }
+
 }
 
 // =====================================================================
@@ -1303,109 +747,5 @@ function computeLine(
     lineSubtotal,
     lineDiscount,
     lineTotal,
-  };
-}
-
-function roundMoney(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function includeFull() {
-  return {
-    cashier: { select: { fullName: true } },
-    paidBy: { select: { fullName: true } },
-    items: {
-      include: {
-        product: { select: { name: true } },
-        size: { select: { name: true } },
-        appliedPromotion: { select: { name: true } },
-      },
-    },
-  } satisfies Prisma.SaleInclude;
-}
-
-/**
- * Convierte un Sale DTO + flag de reimpresión al formato `ReceiptData`
- * que consume el renderer puro. Branding del negocio viene de env vars
- * con fallbacks razonables para dev.
- */
-function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
-  return {
-    receiptNumber: sale.receiptNumber,
-    turnNumber: sale.turnNumber,
-    createdAt: sale.createdAt,
-    cashierName: sale.cashierName ?? null,
-    customerName: sale.customerName,
-    items: (sale.items ?? []).map((it) => ({
-      productName: it.productName ?? '(sin nombre)',
-      sizeName: it.sizeName ?? null,
-      quantity: it.quantity,
-      unitPrice: it.unitPrice,
-      lineSubtotal: it.lineSubtotal,
-      lineDiscount: it.lineDiscount,
-      lineTotal: it.lineTotal,
-      appliedPromotionName: it.appliedPromotionName ?? null,
-      modifiers: (it.modifiers ?? []).map((m) => ({
-        name: m.name,
-        priceDelta: m.priceDelta,
-      })),
-    })),
-    subtotal: sale.subtotal,
-    discountTotal: sale.discountTotal,
-    total: sale.total,
-    reprintLabel: isReprint ? 'DUPLICADO' : null,
-    // En efectivo el print abre el cajón (RJ-11). En transferencia no hace falta.
-    openDrawer: sale.paymentMethod === 'CASH',
-    business: {
-      name: process.env.BUSINESS_NAME ?? 'POS Tercos',
-      address: process.env.BUSINESS_ADDRESS ?? 'Dirección por configurar',
-      nit: process.env.BUSINESS_NIT ?? '900.000.000-0',
-      phone: process.env.BUSINESS_PHONE ?? null,
-    },
-  };
-}
-
-function toSaleDto(row: DbSaleWithDetail): Sale {
-  const items: SaleItem[] = row.items.map((it) => ({
-    id: it.id,
-    saleId: it.saleId,
-    productId: it.productId,
-    productName: it.product?.name ?? undefined,
-    sizeId: it.sizeId,
-    sizeName: it.size?.name ?? null,
-    quantity: it.quantity,
-    unitPrice: Number(it.unitPrice),
-    modifiers: (it.modifiersJson as unknown as AppliedModifier[]) ?? [],
-    notes: it.notes ?? null,
-    appliedPromotionId: it.appliedPromotionId,
-    appliedPromotionName: it.appliedPromotion?.name ?? null,
-    lineSubtotal: Number(it.lineSubtotal),
-    lineDiscount: Number(it.lineDiscount),
-    lineTotal: Number(it.lineTotal),
-  }));
-  return {
-    id: row.id,
-    receiptNumber: Number(row.receiptNumber),
-    type: row.type,
-    status: row.status,
-    turnNumber: row.turnNumber,
-    customerName: row.customerName,
-    customerPhone: row.customerPhone,
-    customerNit: row.customerNit,
-    subtotal: Number(row.subtotal),
-    discountTotal: Number(row.discountTotal),
-    total: Number(row.total),
-    paymentMethod: row.paymentMethod,
-    paidAt: row.paidAt?.toISOString() ?? null,
-    paidByUserId: row.paidByUserId,
-    paidByName: row.paidBy?.fullName ?? null,
-    cashierId: row.cashierId,
-    cashierName: row.cashier?.fullName ?? null,
-    shiftId: row.shiftId,
-    notes: row.notes,
-    voidReason: row.voidReason,
-    idempotencyKey: row.idempotencyKey,
-    createdAt: row.createdAt.toISOString(),
-    items,
   };
 }
