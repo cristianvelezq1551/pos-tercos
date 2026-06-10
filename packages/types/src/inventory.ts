@@ -128,3 +128,60 @@ export const IngredientWithStockSchema = z.object({
   lowStock: z.boolean(),
 });
 export type IngredientWithStock = z.infer<typeof IngredientWithStockSchema>;
+
+// ====================================================================
+// CONTEO FÍSICO CICLADO — contado vs ledger + ajuste compensatorio
+// ====================================================================
+
+export const CreateStockCountSchema = z
+  .object({
+    entityType: StockableTypeEnum,
+    ingredientId: z.string().uuid().optional(),
+    productId: z.string().uuid().optional(),
+    subproductId: z.string().uuid().optional(),
+    /** Cantidad física contada, en unidad de stock/receta. */
+    countedQty: z.number().nonnegative(),
+    notes: z.string().max(300).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const expected =
+      data.entityType === 'INGREDIENT' ? 'ingredientId'
+      : data.entityType === 'PRODUCT' ? 'productId'
+      : 'subproductId';
+    if (!data[expected]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${expected} es requerido cuando entityType=${data.entityType}`,
+        path: [expected],
+      });
+    }
+  });
+export type CreateStockCount = z.infer<typeof CreateStockCountSchema>;
+
+export const StockCountSchema = z.object({
+  id: z.string().uuid(),
+  entityType: StockableTypeEnum,
+  entityId: z.string().uuid(),
+  name: z.string(),
+  countedQty: z.number(),
+  ledgerQty: z.number(),
+  difference: z.number(),
+  userId: z.string().uuid().nullable(),
+  userName: z.string().nullable(),
+  notes: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type StockCount = z.infer<typeof StockCountSchema>;
+
+/** Tarea de conteo sugerida para hoy (rotación cíclica). */
+export const CountTaskSchema = z.object({
+  entityType: StockableTypeEnum,
+  entityId: z.string().uuid(),
+  name: z.string(),
+  unit: z.string(),
+  /** Stock según el ledger AHORA. La UI lo oculta hasta registrar (conteo ciego). */
+  ledgerQty: z.number(),
+  /** Último conteo registrado. Null = nunca contado (máxima prioridad). */
+  lastCountedAt: z.string().datetime().nullable(),
+});
+export type CountTask = z.infer<typeof CountTaskSchema>;

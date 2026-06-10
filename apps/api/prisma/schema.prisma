@@ -32,6 +32,7 @@ model User {
   cashMovements      CashMovement[]
   idempotencyKeys    IdempotencyKey[]
   inventoryMovements InventoryMovement[]
+  stockCounts        StockCount[]
   invoicesConfirmed  Invoice[]               @relation("InvoiceConfirmedBy")
   invoicesPaid       Invoice[]               @relation("InvoicePaymentActor")
   invoicesUploaded   Invoice[]               @relation("InvoiceUploadedBy")
@@ -92,6 +93,7 @@ model Product {
   partOfCombos          ComboComponent[]    @relation("ComboChild")
   movements             InventoryMovement[]
   invoiceItems          InvoiceItem[]
+  stockCounts           StockCount[]
   modifiers             ProductModifier[]
   sizes                 ProductSize[]
   promotionProducts     PromotionProduct[]
@@ -161,6 +163,7 @@ model Subproduct {
   consumedAs          RecipeEdge[]        @relation("SubproductChild")
   recipeEdges         RecipeEdge[]        @relation("SubproductRecipe")
   inventoryMovements  InventoryMovement[]
+  stockCounts         StockCount[]
 
   @@index([isActive])
   @@map("subproducts")
@@ -181,6 +184,7 @@ model Ingredient {
   updatedAt        DateTime            @updatedAt @map("updated_at")
   movements        InventoryMovement[]
   invoiceItems     InvoiceItem[]
+  stockCounts      StockCount[]
   consumedAs       RecipeEdge[]        @relation("IngredientChild")
   purchaseSuggestions PurchaseSuggestion[]
   supplierProducts SupplierProduct[]
@@ -915,4 +919,32 @@ model FixedCostPayment {
   @@unique([fixedCostId, periodYear, periodMonth])
   @@index([paidAt])
   @@map("fixed_cost_payments")
+}
+
+/// Conteo físico ciclado (control de inventario). Cada fila es un snapshot:
+/// lo CONTADO físicamente vs lo que decía el ledger en ese momento. Si hay
+/// diferencia, el service crea un MANUAL_ADJUSTMENT compensatorio
+/// (source_type='stock_count', source_id=id) que corrige el ledger — el
+/// conteo en sí nunca se edita (mismo espíritu insert-only que movements).
+model StockCount {
+  id           String        @id @default(uuid())
+  entityType   StockableType @map("entity_type")
+  ingredientId String?       @map("ingredient_id")
+  productId    String?       @map("product_id")
+  subproductId String?       @map("subproduct_id")
+  countedQty   Decimal       @db.Decimal(14, 4) @map("counted_qty")
+  ledgerQty    Decimal       @db.Decimal(14, 4) @map("ledger_qty")
+  difference   Decimal       @db.Decimal(14, 4)
+  userId       String?       @map("user_id")
+  notes        String?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  ingredient   Ingredient?   @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  product      Product?      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  subproduct   Subproduct?   @relation(fields: [subproductId], references: [id], onDelete: Restrict)
+  user         User?         @relation(fields: [userId], references: [id])
+
+  @@index([entityType, ingredientId, createdAt(sort: Desc)])
+  @@index([entityType, productId, createdAt(sort: Desc)])
+  @@index([entityType, subproductId, createdAt(sort: Desc)])
+  @@map("stock_counts")
 }

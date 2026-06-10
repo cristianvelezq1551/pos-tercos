@@ -1,11 +1,15 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import {
   CreateInventoryMovementSchema,
+  CreateStockCountSchema,
   StockableTypeEnum,
+  type CountTask,
   type CreateInventoryMovement,
+  type CreateStockCount,
   type InventoryMovement,
   type Stockable,
   type StockableType,
+  type StockCount,
 } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -13,11 +17,13 @@ import { AdminAccess } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { InventoryService } from './inventory.service';
+import { StockCountsService } from './stock-counts.service';
 
 @Controller('inventory')
 export class InventoryController {
   constructor(
     private readonly inventory: InventoryService,
+    private readonly stockCounts: StockCountsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -42,6 +48,32 @@ export class InventoryController {
       throw new BadRequestException('entityType debe ser INGREDIENT, PRODUCT o SUBPRODUCT');
     }
     return this.inventory.getStockableById(parsed.data, id);
+  }
+
+  /** Conteo físico ciclado: qué contar hoy (rotación, nunca contados primero). */
+  @AdminAccess()
+  @Get('count-tasks')
+  getCountTasks(@Query('limit') limit?: string): Promise<CountTask[]> {
+    const n = limit ? Math.min(Math.max(Number(limit) || 5, 1), 50) : 5;
+    return this.stockCounts.getCountTasks(n);
+  }
+
+  /** Registra un conteo físico; si difiere del ledger crea el ajuste compensatorio. */
+  @AdminAccess()
+  @Post('counts')
+  registerCount(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(CreateStockCountSchema)) body: CreateStockCount,
+  ): Promise<StockCount> {
+    return this.stockCounts.register(body, user.sub);
+  }
+
+  /** Historial de conteos recientes. */
+  @AdminAccess()
+  @Get('counts')
+  listCounts(@Query('limit') limit?: string): Promise<StockCount[]> {
+    const n = limit ? Math.min(Math.max(Number(limit) || 30, 1), 100) : 30;
+    return this.stockCounts.listRecent(n);
   }
 
   @Get('movements')

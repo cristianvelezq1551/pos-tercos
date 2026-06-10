@@ -126,6 +126,8 @@ export const AuditActionEnum = z.enum([
   // Alerta puntual al dueño por WhatsApp (descuadre, void, cajón sin venta,
   // suba de costos). metadata.kind distingue el tipo.
   'OWNER_ALERT_SENT',
+  // Conteo físico ciclado registrado (con o sin diferencia).
+  'STOCK_COUNT_REGISTERED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 
