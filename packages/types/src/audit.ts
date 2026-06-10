@@ -120,6 +120,9 @@ export const AuditActionEnum = z.enum([
   // KDS (bitácora de cocina): tardanza de preparación. Login/logout de la
   // cocina quedan en AUTH_LOGIN/AUTH_LOGOUT del usuario COCINERO.
   'KDS_ORDER_DELAYED',
+
+  // Resumen diario automático al dueño por WhatsApp (cron nocturno).
+  'OWNER_DAILY_DIGEST_SENT',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 

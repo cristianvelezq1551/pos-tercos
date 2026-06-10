@@ -41,6 +41,7 @@ import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { CogsService } from './cogs.service';
 import { FinanceSummaryService } from './finance-summary.service';
 import { InventoryUsageService } from './inventory-usage.service';
+import { OwnerDigestService } from './owner-digest.service';
 import { FinancialReportsService } from './financial-reports.service';
 import { ReconciliationService } from './reconciliation.service';
 import { ReportsService } from './reports.service';
@@ -58,6 +59,7 @@ export class ReportsController {
     private readonly financial: FinancialReportsService,
     private readonly financeSummary: FinanceSummaryService,
     private readonly inventoryUsage: InventoryUsageService,
+    private readonly ownerDigest: OwnerDigestService,
   ) {}
 
   // ==================================================================
@@ -201,6 +203,16 @@ export class ReportsController {
     const range = parseDateRange(from, to);
     const limit = limitRaw ? Math.min(Math.max(Number(limitRaw) || 20, 1), 100) : 20;
     return this.salesReports.getTopProducts(range.from, range.to, limit);
+  }
+
+  /**
+   * Trigger manual del resumen diario por WhatsApp al dueño (el cron corre
+   * 21:30 hora local). Sirve para probar el flujo sin esperar la noche.
+   */
+  @OnlyDueno()
+  @Post('admin/send-daily-digest')
+  sendDailyDigest(): Promise<{ sent: boolean; reason?: string; modelUsed?: string }> {
+    return this.ownerDigest.sendDailyDigest();
   }
 
   /**
