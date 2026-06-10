@@ -880,6 +880,36 @@ Esto NO afecta ingredientes (siguen con su stock histórico) ni productos direct
 
 ---
 
+## 7.v5 Auditoría de calidad + mejoras (2026-06-09/10)
+
+Sesión de auditoría completa + hardening. Verificado: typecheck 12/12, lint 0, domain 97/97, e2e 47/47.
+
+### Refactors (sin cambio de comportamiento)
+
+- **SalesService partido** (1.464 → 752 líneas): `sales-consumption.service.ts` (computeConsumptionSpecs + assertStockSufficient — **lógica de consumo ÚNICA online/offline**), `sales-offline.service.ts` (syncOffline), `sales-receipt.service.ts` (ESC/POS + cajón), `sales.mappers.ts` (toSaleDto/includeFull/buildReceiptData). El controller rutea a cada servicio; los módulos externos siguen inyectando `SalesService`.
+- **Redondeo canónico** en `@pos-tercos/domain/common/money.ts`: `roundMoney` (2 dec, montos cobrados) y `roundCost` (4 dec, costos/FIFO). NO crear más helpers locales de redondeo.
+- **Guarda de merma**: `grossQuantity()` en expand-recipe lanza `RecipeInvalidMermaError` si `mermaPct ∉ [0,1)` (defensa contra Decimal corrupto en DB; el Zod de entrada ya validaba).
+- **Componentes admin <200 líneas**: PaymentActions, FinanceCockpit, ShiftSessionDetailView, InvoicePaymentActions, FixedCostsManager — partidos en subcomponentes hermanos.
+
+### Tests
+
+- Domain (Vitest): 97 tests. Nuevos: expandRecipe/expandRecipeOneLevel (18), computeProductCost/Combo (12), evaluateAvailability (16), grossQuantity (6). `state-shape.test.ts` reescrito al shape de turnos v2.
+- E2E API (Jest, requiere Postgres): 47 tests en 6 suites. Nueva `consumption.e2e-spec.ts`: consumo con merma/subproducto, reventa, combos, **equivalencia exacta online vs syncOffline**, 409 por stock insuficiente, reverso de void, reporte inventory-usage. Regla: TODA suite e2e debe crear sus propios usuarios (no depender del seed) y llamar `cleanDb` en afterAll (la caja única bloquea a la suite siguiente si queda OPEN).
+
+### Features y hardening nuevos
+
+- **Reporte "Uso y mermas"**: `GET /reports/inventory-usage?from=&to=` (AdminAccess) + página `/reports/usage` + sidebar. Por stockable: consumo por ventas (neto de voids), producción in/out, compras, mermas WASTE, ajustes netos, % merma y **$ perdido** (merma + faltantes × lastUnitCost/conversionFactor; subproductos sin valorizar — su costo es FIFO).
+- **Resumen diario al dueño por WhatsApp**: `OwnerDigestService` (reports module), cron 21:30 hora local, reusa `getDailyAiSummary` + `WHATSAPP_PROVIDER`. Requiere `OWNER_WHATSAPP_PHONE`; sin la var no envía. Trigger manual `POST /reports/admin/send-daily-digest` (Dueño). Audit `OWNER_DAILY_DIGEST_SENT`.
+- **Validación de env al arranque**: `assertRequiredEnv()` en main.ts — `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` siempre; `WEB_ORDER_TOKEN_SECRET` en prod. Proceso muere temprano con mensaje claro.
+- **SSE pantalla pública**: backoff exponencial 3s→60s con techo. NUNCA deja de reintentar (kiosko sin operador) — solo deja de martillar.
+- **Sync offline POS**: `OfflineSale.attempts`; tras 3 fallos el drain automático salta la venta (rechazo permanente probable). El "Reintentar" de la bandeja usa `{ includeExhausted: true }`.
+
+### B.4b sigue DIFERIDA
+
+La apertura de caja offline NO se implementó: respeta la decisión documentada en `offline-fase-b.md` (2026-05-24). Condición para retomarla: verificar el núcleo offline en build de producción y/o que el negocio realmente arranque jornadas sin internet.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
