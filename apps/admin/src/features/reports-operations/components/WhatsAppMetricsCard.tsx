@@ -2,15 +2,16 @@ import type { WhatsAppMetrics } from '@pos-tercos/types';
 import { formatNumber } from '../../../lib/format';
 
 const STAGE_LABEL: Record<string, string> = {
-  accepted: 'Aceptar y contactar',
-  confirmed: 'Pago confirmado',
-  ready: 'Pedido listo',
+  payment_instructions: 'Instrucciones de pago',
+  payment_received: 'Pago confirmado',
+  pickup_ready: 'Pedido listo',
 };
 
 const STAGE_DESC: Record<string, string> = {
-  accepted: 'Cajero acepta el pedido → se envía WhatsApp con instrucciones de pago.',
-  confirmed: 'Al confirmar el pago → WhatsApp "ya está en cocina".',
-  ready: 'Cocinero marca listo → WhatsApp "listo para retirar".',
+  payment_instructions:
+    'Al crear el pedido web → WhatsApp automático con instrucciones de pago (Nequi/transferencia).',
+  payment_received: 'Al confirmar el pago → WhatsApp "ya está en cocina".',
+  pickup_ready: 'Cocina marca listo → WhatsApp "listo para retirar".',
 };
 
 export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
@@ -23,7 +24,7 @@ export function WhatsAppMetricsCard({ metrics }: { metrics: WhatsAppMetrics }) {
         <p className="mt-1 text-xs text-muted-foreground">
           {metrics.totalWebSales} pedido{metrics.totalWebSales === 1 ? '' : 's'} web en
           el período. Cobertura = pedidos con WhatsApp enviado /
-          pedidos elegibles para ese stage.
+          pedidos que debían recibirlo en esa etapa.
         </p>
       </div>
       <div className="space-y-4">

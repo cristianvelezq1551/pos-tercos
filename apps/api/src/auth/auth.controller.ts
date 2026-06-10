@@ -8,10 +8,27 @@ import { LoginDtoSchema, type LoginDto } from './dto/login.dto';
 import { UsersService } from '../users/users.service';
 import type { JwtAccessPayload, LoginResponse, RefreshResponse, User } from '@pos-tercos/types';
 
-const ACCESS_COOKIE_NAME = 'pos_access';
-const REFRESH_COOKIE_NAME = 'pos_refresh';
 const ACCESS_COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Cookies por app. En dev admin y pos comparten host (localhost, distinto puerto)
+ * y las cookies se aíslan por hostname — no por puerto. Nombres distintos evitan
+ * que una sesión de cajero pise/active la de admin y viceversa. El frontend
+ * declara su app con el header `X-Client-App`. Default `pos` por compatibilidad.
+ */
+type ClientApp = 'admin' | 'pos';
+
+const COOKIE_NAMES: Record<ClientApp, { access: string; refresh: string }> = {
+  admin: { access: 'admin_access', refresh: 'admin_refresh' },
+  pos: { access: 'pos_access', refresh: 'pos_refresh' },
+};
+
+function resolveApp(req: Request): ClientApp {
+  const header = req.headers['x-client-app'];
+  const value = Array.isArray(header) ? header[0] : header;
+  return value === 'admin' ? 'admin' : 'pos';
+}
 
 @Controller('auth')
 export class AuthController {
@@ -26,10 +43,11 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(LoginDtoSchema))
   async login(
     @Body() body: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<LoginResponse> {
     const { result, refresh } = await this.auth.login(body.email, body.password);
-    this.setAuthCookies(res, result.accessToken, refresh);
+    this.setAuthCookies(res, resolveApp(req), result.accessToken, refresh);
     return result;
   }
 
@@ -40,12 +58,13 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<RefreshResponse> {
-    const cookie = (req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE_NAME];
+    const app = resolveApp(req);
+    const cookie = (req.cookies as Record<string, string> | undefined)?.[COOKIE_NAMES[app].refresh];
     if (!cookie) {
       throw new UnauthorizedException('Missing refresh token');
     }
     const { accessToken, refresh } = await this.auth.refresh(cookie);
-    this.setAuthCookies(res, accessToken, refresh);
+    this.setAuthCookies(res, app, accessToken, refresh);
     return { accessToken };
   }
 
@@ -53,9 +72,10 @@ export class AuthController {
   @Post('logout')
   @HttpCode(204)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
-    const cookie = (req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE_NAME];
+    const app = resolveApp(req);
+    const cookie = (req.cookies as Record<string, string> | undefined)?.[COOKIE_NAMES[app].refresh];
     await this.auth.logout(cookie);
-    this.clearAuthCookies(res);
+    this.clearAuthCookies(res, app);
   }
 
   @Get('me')
@@ -64,16 +84,22 @@ export class AuthController {
     return this.auth.toPublicUser(dbUser);
   }
 
-  private setAuthCookies(res: Response, accessToken: string, refresh: string): void {
+  private setAuthCookies(
+    res: Response,
+    app: ClientApp,
+    accessToken: string,
+    refresh: string,
+  ): void {
     const isProd = process.env.NODE_ENV === 'production';
-    res.cookie(ACCESS_COOKIE_NAME, accessToken, {
+    const names = COOKIE_NAMES[app];
+    res.cookie(names.access, accessToken, {
       httpOnly: true,
       secure: isProd,
       sameSite: 'lax',
       maxAge: ACCESS_COOKIE_MAX_AGE_MS,
       path: '/',
     });
-    res.cookie(REFRESH_COOKIE_NAME, refresh, {
+    res.cookie(names.refresh, refresh, {
       httpOnly: true,
       secure: isProd,
       sameSite: 'lax',
@@ -82,8 +108,9 @@ export class AuthController {
     });
   }
 
-  private clearAuthCookies(res: Response): void {
-    res.clearCookie(ACCESS_COOKIE_NAME, { path: '/' });
-    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/' });
+  private clearAuthCookies(res: Response, app: ClientApp): void {
+    const names = COOKIE_NAMES[app];
+    res.clearCookie(names.access, { path: '/' });
+    res.clearCookie(names.refresh, { path: '/' });
   }
 }

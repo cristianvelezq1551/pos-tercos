@@ -54,8 +54,9 @@ export function OpenShiftForm() {
           value={openingCash}
           onChange={setOpeningCash}
           prefix="$"
+          grouping
           min={0}
-          placeholder="50000"
+          placeholder="50.000"
           autoFocus
           required
         />

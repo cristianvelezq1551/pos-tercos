@@ -5,12 +5,16 @@ import 'package:kds/app/core/network/kds_socket.dart';
 import 'package:kds/app/core/sound/sound_service.dart';
 import 'package:kds/app/data/repositories_impl/auth_repository_impl.dart';
 import 'package:kds/app/data/repositories_impl/kds_repository_impl.dart';
+import 'package:kds/app/data/repositories_impl/production_repository_impl.dart';
 import 'package:kds/app/data/use_cases/get_kitchen_orders_use_case.dart';
+import 'package:kds/app/data/use_cases/list_producibles_use_case.dart';
 import 'package:kds/app/data/use_cases/login_use_case.dart';
+import 'package:kds/app/data/use_cases/produce_subproduct_use_case.dart';
 import 'package:kds/app/data/use_cases/ready_order_use_case.dart';
 import 'package:kds/app/data/use_cases/start_order_use_case.dart';
 import 'package:kds/app/domain/repositories/auth_repository.dart';
 import 'package:kds/app/domain/repositories/kds_repository.dart';
+import 'package:kds/app/domain/repositories/production_repository.dart';
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
 
@@ -44,6 +48,10 @@ final kdsRepositoryProvider = Provider<KdsRepository>(
   (ref) => KdsRepositoryImpl(http: ref.read(dioHttpProvider)),
 );
 
+final productionRepositoryProvider = Provider<ProductionRepository>(
+  (ref) => ProductionRepositoryImpl(http: ref.read(dioHttpProvider)),
+);
+
 // ── Use cases ─────────────────────────────────────────────────────────────────
 
 final loginUseCaseProvider = Provider<LoginUseCase>(
@@ -61,4 +69,16 @@ final startOrderUseCaseProvider = Provider<StartOrderUseCase>(
 
 final readyOrderUseCaseProvider = Provider<ReadyOrderUseCase>(
   (ref) => ReadyOrderUseCase(repository: ref.read(kdsRepositoryProvider)),
+);
+
+final listProduciblesUseCaseProvider = Provider<ListProduciblesUseCase>(
+  (ref) => ListProduciblesUseCase(
+    repository: ref.read(productionRepositoryProvider),
+  ),
+);
+
+final produceSubproductUseCaseProvider = Provider<ProduceSubproductUseCase>(
+  (ref) => ProduceSubproductUseCase(
+    repository: ref.read(productionRepositoryProvider),
+  ),
 );

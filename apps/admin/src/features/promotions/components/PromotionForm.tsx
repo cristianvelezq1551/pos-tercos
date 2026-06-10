@@ -3,10 +3,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@pos-tercos/ui';
-import type { Product } from '@pos-tercos/types';
+import type { Product, Promotion } from '@pos-tercos/types';
 import { listProducts } from '../../products';
-import { createPromotion } from '../api';
-import { type FormState, validate, buildPayload } from './PromotionFormHelpers';
+import { createPromotion, updatePromotion } from '../api';
+import {
+  type FormState,
+  validate,
+  buildPayload,
+  buildUpdatePayload,
+  stateFromPromotion,
+} from './PromotionFormHelpers';
 import { PromotionGeneralSection, PromotionDiscountSection } from './PromotionDiscountSection';
 import { PromotionWhenSection } from './PromotionWhenSection';
 import { PromotionProductsSection } from './PromotionProductsSection';
@@ -27,11 +33,19 @@ const INITIAL_STATE: FormState = {
   productIds: new Set(),
 };
 
-export function PromotionForm() {
+interface PromotionFormProps {
+  /** Si viene, modo edición: pre-llena y bloquea tipo+descuento (no son editables). */
+  initial?: Promotion;
+}
+
+export function PromotionForm({ initial }: PromotionFormProps = {}) {
   const router = useRouter();
+  const isEdit = initial !== undefined;
   const [products, setProducts] = useState<Product[]>([]);
   const [productsError, setProductsError] = useState<string | null>(null);
-  const [state, setState] = useState<FormState>(INITIAL_STATE);
+  const [state, setState] = useState<FormState>(() =>
+    initial ? stateFromPromotion(initial) : INITIAL_STATE,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,9 +78,13 @@ export function PromotionForm() {
     setSubmitting(true);
     setError(null);
     try {
-      const payload = buildPayload(state);
-      await createPromotion(payload);
-      router.push('/promotions');
+      if (isEdit && initial) {
+        await updatePromotion(initial.id, buildUpdatePayload(state));
+        router.push(`/promotions/${initial.id}`);
+      } else {
+        await createPromotion(buildPayload(state));
+        router.push('/promotions');
+      }
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -76,9 +94,9 @@ export function PromotionForm() {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
-      <PromotionGeneralSection state={state} onUpdate={update} />
+      <PromotionGeneralSection state={state} onUpdate={update} locked={isEdit} />
 
-      <PromotionDiscountSection state={state} onUpdate={update} />
+      <PromotionDiscountSection state={state} onUpdate={update} locked={isEdit} />
 
       <PromotionWhenSection state={state} onUpdate={update} onToggleDay={toggleDay} />
 
@@ -105,7 +123,13 @@ export function PromotionForm() {
           Cancelar
         </Button>
         <Button type="submit" disabled={submitting || validation.error !== null}>
-          {submitting ? 'Creando…' : 'Crear promoción'}
+          {submitting
+            ? isEdit
+              ? 'Guardando…'
+              : 'Creando…'
+            : isEdit
+              ? 'Guardar cambios'
+              : 'Crear promoción'}
         </Button>
       </div>
     </form>

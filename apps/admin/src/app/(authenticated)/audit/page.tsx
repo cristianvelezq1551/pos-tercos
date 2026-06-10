@@ -2,6 +2,7 @@ import { Container, PageHeader } from '@pos-tercos/ui';
 import { History } from 'lucide-react';
 import { AuditTable } from '../../../features/audit';
 import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { requireRole } from '../../../lib/guards';
 import type { AuditLogEntry } from '@pos-tercos/types';
 
 async function loadAudit(): Promise<AuditLogEntry[] | { error: string; status?: number }> {
@@ -12,24 +13,25 @@ async function loadAudit(): Promise<AuditLogEntry[] | { error: string; status?: 
       return {
         error:
           err.status === 403
-            ? 'Solo el Dueño puede ver el log de auditoría.'
-            : `API ${err.status}`,
+            ? 'Solo el Dueño puede ver el registro de auditoría.'
+            : `Error del servidor (${err.status})`,
         status: err.status,
       };
     }
-    return { error: 'Network error' };
+    return { error: 'Error de conexión' };
   }
 }
 
 export default async function AuditPage() {
+  await requireRole(['DUENO']);
   const result = await loadAudit();
 
   return (
     <>
       <PageHeader
-        eyebrow="Compliance"
+        eyebrow="Control"
         title="Auditoría"
-        description="Histórico inmutable de acciones sensibles: logins, cambios de catálogo, movimientos de inventario, anulaciones, descuentos, aperturas de cajón, ajustes manuales."
+        description="Registro que no se puede modificar de todas las acciones sensibles: inicios de sesión, cambios de catálogo, movimientos de inventario, anulaciones, descuentos, aperturas de cajón y ajustes manuales."
         icon={<History className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

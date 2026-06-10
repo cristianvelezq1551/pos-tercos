@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 
 const API_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
-const ACCESS_COOKIE = 'pos_access';
+const ACCESS_COOKIE = 'admin_access';
 
 /**
  * Forwards the access cookie to the backend API from a Server Component

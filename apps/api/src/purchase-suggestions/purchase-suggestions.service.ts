@@ -1,19 +1,24 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { buildPurchaseSuggestionUserPrompt } from '@pos-tercos/domain';
+import { buildPurchaseSuggestionUserPrompt, type WhatsAppProvider } from '@pos-tercos/domain';
 import type {
+  HistoricalSupplier,
   PurchaseSuggestion,
   PurchaseSuggestionStatus,
   ResolveSuggestion,
   ScanResult,
+  SendToSupplier,
+  WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
+import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,6 +45,7 @@ export class PurchaseSuggestionsService {
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
     private readonly llm: LLMService,
+    @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
   // ==================================================================
@@ -441,6 +447,247 @@ export class PurchaseSuggestionsService {
 
     return toDto(updated);
   }
+
+  // ==================================================================
+  // PROVEEDORES: histórico + envío por WhatsApp
+  // ==================================================================
+
+  /**
+   * Devuelve los proveedores que alguna vez vendieron el item de la sugerencia.
+   * Ordenado por última compra DESC. Marca el más reciente como `isLast=true`
+   * (la UI lo usa como default en el selector).
+   */
+  async listSuppliersFor(suggestionId: string): Promise<HistoricalSupplier[]> {
+    const s = await this.prisma.purchaseSuggestion.findUnique({
+      where: { id: suggestionId },
+      select: { entityType: true, ingredientId: true, productId: true },
+    });
+    if (!s) throw new NotFoundException(`Suggestion ${suggestionId} not found`);
+
+    const rows = await this.prisma.supplierProduct.findMany({
+      where:
+        s.entityType === 'INGREDIENT'
+          ? { ingredientId: s.ingredientId! }
+          : { productId: s.productId! },
+      include: {
+        supplier: { select: { id: true, name: true, phone: true, isActive: true } },
+      },
+      orderBy: [{ lastPurchaseDate: 'desc' }, { updatedAt: 'desc' }],
+    });
+
+    if (rows.length === 0) return [];
+    const lastId = rows[0].supplierId;
+    return rows.map((r) => ({
+      supplierId: r.supplier.id,
+      name: r.supplier.name,
+      phone: r.supplier.phone,
+      isActive: r.supplier.isActive,
+      lastUnitPrice: r.lastUnitPrice === null ? null : Number(r.lastUnitPrice),
+      lastPurchaseDate: r.lastPurchaseDate ? r.lastPurchaseDate.toISOString() : null,
+      isLast: r.supplierId === lastId,
+    }));
+  }
+
+  /**
+   * Envía el pedido al proveedor por WhatsApp y marca la sugerencia ACCEPTED.
+   * Si el proveedor no tiene `phone` configurado → falla con BadRequest.
+   */
+  async sendToSupplier(
+    suggestionId: string,
+    input: SendToSupplier,
+    actorId: string,
+  ): Promise<{ outcome: WhatsAppSendOutcome; suggestion: PurchaseSuggestion }> {
+    const sugg = await this.prisma.purchaseSuggestion.findUnique({
+      where: { id: suggestionId },
+      include: includeFull(),
+    });
+    if (!sugg) throw new NotFoundException(`Suggestion ${suggestionId} not found`);
+    if (sugg.status !== 'PENDING' && sugg.status !== 'EVALUATED') {
+      throw new BadRequestException(`Suggestion already resolved (status=${sugg.status})`);
+    }
+
+    const supplier = await this.prisma.supplier.findUnique({
+      where: { id: input.supplierId },
+      select: { id: true, name: true, phone: true },
+    });
+    if (!supplier) throw new NotFoundException(`Supplier ${input.supplierId} not found`);
+    if (!supplier.phone) {
+      throw new BadRequestException(
+        `El proveedor "${supplier.name}" no tiene WhatsApp configurado. Editalo desde Compras → Proveedores.`,
+      );
+    }
+
+    const itemName =
+      sugg.entityType === 'INGREDIENT'
+        ? (sugg.ingredient?.name ?? '(insumo)')
+        : (sugg.product?.name ?? '(producto)');
+    const quantity = input.quantity ?? Number(sugg.suggestedQty);
+    const message = buildSupplierOrderMessage({
+      itemName,
+      quantity,
+      unitPurchase: sugg.unitPurchase,
+      note: input.note,
+    });
+
+    const phoneE164 = normalizePhone(supplier.phone);
+    const result = await this.whatsapp.sendText(phoneE164, message);
+    const ok = result.ok;
+
+    // Marcar la sugerencia como ACCEPTED.
+    const updated = await this.prisma.purchaseSuggestion.update({
+      where: { id: suggestionId },
+      data: {
+        status: 'ACCEPTED',
+        resolvedById: actorId,
+        resolvedAt: new Date(),
+        resolutionNote: `Pedido enviado a ${supplier.name} por WhatsApp${
+          input.note ? ` · ${input.note}` : ''
+        }`,
+      },
+      include: includeFull(),
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'PURCHASE_SUGGESTION_SENT_SUPPLIER',
+      entityType: 'purchase_suggestion',
+      entityId: suggestionId,
+      metadata: {
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        phone: phoneE164,
+        quantity,
+        ok: result.ok,
+        error: result.error ?? null,
+      },
+    });
+
+    return {
+      outcome: {
+        sent: ok ? 1 : 0,
+        failed: ok ? 0 : 1,
+        recipients: [
+          {
+            name: supplier.name,
+            phone: phoneE164,
+            status: ok ? 'sent' : 'failed',
+            reason: result.error,
+          },
+        ],
+        preview: message,
+      },
+      suggestion: toDto(updated),
+    };
+  }
+
+  /**
+   * Manda un resumen de TODAS las sugerencias activas (PENDING + EVALUATED) a
+   * los WhatsApp de Dueños y Admins Operativos activos que tengan teléfono.
+   * Útil para "atención: estos pedidos están pendientes de gestionar".
+   */
+  async sendSummaryToAdmins(actorId: string): Promise<WhatsAppSendOutcome> {
+    const open = await this.prisma.purchaseSuggestion.findMany({
+      where: { status: { in: ['PENDING', 'EVALUATED'] } },
+      include: includeFull(),
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (open.length === 0) {
+      return {
+        sent: 0,
+        failed: 0,
+        recipients: [],
+        preview: 'No hay sugerencias pendientes — no se envió nada.',
+      };
+    }
+
+    const admins = await this.prisma.user.findMany({
+      where: { active: true, role: { in: ['DUENO', 'ADMIN_OPERATIVO'] } },
+      select: { id: true, fullName: true, phone: true },
+    });
+
+    const lines = open.map((s) => {
+      const name =
+        s.entityType === 'INGREDIENT'
+          ? (s.ingredient?.name ?? '(insumo)')
+          : (s.product?.name ?? '(producto)');
+      const qty = Number(s.suggestedQty);
+      const cost = s.estTotal === null ? '' : ` · ~$${Math.round(Number(s.estTotal)).toLocaleString('es-CO')}`;
+      return `• ${name}: ${qty} ${s.unitPurchase}${cost}`;
+    });
+    const total = open.reduce((acc, s) => acc + (s.estTotal === null ? 0 : Number(s.estTotal)), 0);
+    const message = [
+      '📋 *Compras pendientes de gestionar*',
+      '',
+      ...lines,
+      '',
+      `Total estimado: $${Math.round(total).toLocaleString('es-CO')}`,
+      `(${open.length} ${open.length === 1 ? 'sugerencia abierta' : 'sugerencias abiertas'})`,
+    ].join('\n');
+
+    const recipients: WhatsAppSendOutcome['recipients'] = [];
+    let sent = 0;
+    let failed = 0;
+
+    for (const a of admins) {
+      if (!a.phone) {
+        recipients.push({
+          name: a.fullName,
+          phone: '—',
+          status: 'skipped',
+          reason: 'sin teléfono cargado',
+        });
+        continue;
+      }
+      const phoneE164 = normalizePhone(a.phone);
+      const res = await this.whatsapp.sendText(phoneE164, message);
+      const ok = res.ok;
+      if (ok) sent += 1;
+      else failed += 1;
+      recipients.push({
+        name: a.fullName,
+        phone: phoneE164,
+        status: ok ? 'sent' : 'failed',
+        reason: res.error,
+      });
+    }
+
+    await this.audit.log({
+      userId: actorId,
+      action: 'PURCHASE_SUGGESTION_SUMMARY_SENT',
+      entityType: 'purchase_suggestion',
+      metadata: { suggestions: open.length, sent, failed, total },
+    });
+
+    return { sent, failed, recipients, preview: message };
+  }
+}
+
+/** Texto del mensaje al proveedor (sencillo y directo). */
+function buildSupplierOrderMessage(input: {
+  itemName: string;
+  quantity: number;
+  unitPurchase: string;
+  note?: string;
+}): string {
+  const qty = Number(input.quantity).toLocaleString('es-CO', { maximumFractionDigits: 2 });
+  const lines = [
+    'Hola! Quisiera hacer un pedido:',
+    '',
+    `• ${input.itemName}: ${qty} ${input.unitPurchase}`,
+  ];
+  if (input.note) lines.push('', input.note);
+  lines.push('', 'Gracias!');
+  return lines.join('\n');
+}
+
+/** Normaliza teléfono a E.164 colombiano cuando es razonable. Best-effort. */
+function normalizePhone(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10) return `+57${digits}`;
+  if (digits.startsWith('57') && digits.length === 12) return `+${digits}`;
+  return `+${digits}`;
 }
 
 // ====================================================================

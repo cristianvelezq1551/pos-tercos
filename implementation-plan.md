@@ -602,7 +602,7 @@ Estos se gestionan en paralelo, pero NO frenan ninguna fase de implementación. 
 ## 6. Cómo arrancar HOY
 
 1. Instalá Node, pnpm, Docker en tu Mac.
-2. Creá tu cuenta en GitHub (si no la tenés), Anthropic, OpenAI, Mapbox.
+2. Crea tu cuenta en GitHub (si no la tenés), Anthropic, OpenAI, Mapbox.
 3. Recargá $10 en Anthropic, $5 en OpenAI.
 4. Tomá tus tokens y guardalos en password manager.
 5. Abrí Claude Code en una carpeta nueva (`mkdir pos-tercos`) y dale como contexto este `implementation-plan.md` + `pos-spec.v1.md` + `architecture.md`.

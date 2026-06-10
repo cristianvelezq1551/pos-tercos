@@ -15,6 +15,7 @@ export function SessionKeeper() {
     const refresh = () => {
       void fetch('/api/auth/refresh', {
         method: 'POST',
+        headers: { 'X-Client-App': 'admin' },
         credentials: 'include',
       }).catch(() => undefined);
     };

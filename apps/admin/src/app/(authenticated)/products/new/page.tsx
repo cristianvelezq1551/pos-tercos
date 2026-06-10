@@ -17,7 +17,7 @@ export default async function NewProductPage() {
       <PageHeader
         eyebrow="Catálogo"
         title="Nuevo producto"
-        description="Elegí el tipo de producto y completá los datos. Combos y variantes se arman acá mismo."
+        description="Elige el tipo de producto y completá los datos. Combos y variantes se arman aquí mismo."
         breadcrumbs={[
           { label: 'Productos', href: '/products' },
           { label: 'Nuevo' },

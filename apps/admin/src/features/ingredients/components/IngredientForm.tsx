@@ -51,7 +51,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
       return;
     }
     if (form.thresholdMin === null || form.thresholdMin < 0) {
-      setError('El threshold debe ser un número ≥ 0.');
+      setError('El mínimo de alerta debe ser un número ≥ 0.');
       return;
     }
 
@@ -116,6 +116,13 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           />
         </FormField>
 
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Compras en una unidad (bulto, caja, litro) pero cocinas en otra (g, ml). El{' '}
+          <strong>factor</strong> conecta las dos para costear recetas y descontar stock. Ej: un
+          bulto de sal de 1.000 g → unidad de compra <em>bulto</em>, unidad de receta <em>g</em>,
+          factor <em>1000</em>.
+        </p>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField label="Unidad de compra" hint="Unidad como se compra al proveedor." required>
             <Input
@@ -143,7 +150,11 @@ export function IngredientForm({ initial }: IngredientFormProps) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
             label="Factor de conversión"
-            hint={`1 ${form.unitPurchase || 'compra'} = N ${form.unitRecipe || 'receta'}.`}
+            hint={`1 ${form.unitPurchase || 'compra'} = ${
+              form.conversionFactor && form.conversionFactor > 0
+                ? form.conversionFactor.toLocaleString('es-CO')
+                : '…'
+            } ${form.unitRecipe || 'receta'}.`}
             required
           >
             <NumberInput

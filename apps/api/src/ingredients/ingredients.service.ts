@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CreateIngredient, Ingredient, UpdateIngredient } from '@pos-tercos/types';
 import type { Ingredient as DbIngredient, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -61,6 +61,31 @@ export class IngredientsService {
       data: { isActive: false },
     });
     return toIngredientDto(row);
+  }
+
+  /**
+   * Elimina DEFINITIVAMENTE el insumo. Solo si no fue usado nunca:
+   * sin recetas, sin movimientos de inventario, sin facturas. Si tiene
+   * historial → 409 con mensaje guiando a "Desactivar" (preserva historia).
+   * Cascada: borra supplier_products y purchase_suggestions ligados.
+   */
+  async remove(id: string): Promise<void> {
+    await this.assertExists(id);
+    const [recipeCount, moveCount, invoiceCount] = await Promise.all([
+      this.prisma.recipeEdge.count({ where: { childIngredientId: id } }),
+      this.prisma.inventoryMovement.count({ where: { ingredientId: id } }),
+      this.prisma.invoiceItem.count({ where: { ingredientId: id } }),
+    ]);
+    if (recipeCount > 0 || moveCount > 0 || invoiceCount > 0) {
+      throw new ConflictException(
+        'No se puede eliminar: el insumo está en uso (recetas, movimientos de inventario o facturas). Usa "Desactivar" para inactivarlo conservando el historial.',
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.supplierProduct.deleteMany({ where: { ingredientId: id } }),
+      this.prisma.purchaseSuggestion.deleteMany({ where: { ingredientId: id } }),
+      this.prisma.ingredient.delete({ where: { id } }),
+    ]);
   }
 
   private async assertExists(id: string): Promise<void> {

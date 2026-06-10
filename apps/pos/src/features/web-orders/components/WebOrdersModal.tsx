@@ -166,7 +166,7 @@ export function WebOrdersModal({
           ) : visible.length === 0 ? (
             <EmptyState
               title="Sin pedidos en este filtro"
-              description="Cuando entre un pedido aparece acá."
+              description="Cuando entre un pedido aparece aquí."
               size="sm"
             />
           ) : (

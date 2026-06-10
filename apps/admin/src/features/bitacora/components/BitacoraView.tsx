@@ -1,13 +1,14 @@
 'use client';
 
 import type { AuditLogEntry } from '@pos-tercos/types';
+import { EmptyState } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { listAudit } from '../../audit';
 import { formatDate } from '../../../lib/format';
 import { BITACORA_GROUPS, describeEvent, type EventTone } from '../lib/events';
 
 const TONE_DOT: Record<EventTone, string> = {
-  neutral: 'bg-gray-400',
+  neutral: 'bg-ink-400',
   success: 'bg-success',
   warning: 'bg-warning',
   danger: 'bg-destructive',
@@ -35,7 +36,12 @@ export function BitacoraView() {
       const data = await listAudit({ action: group.actions.join(','), limit: 300 });
       setRows(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando la bitácora');
+      const msg = e instanceof Error ? e.message : '';
+      setError(
+        /403/.test(msg)
+          ? 'No tienes permiso para ver esta sección.'
+          : 'No se pudo cargar la bitácora. Revisa tu conexión e intenta de nuevo.',
+      );
     } finally {
       setLoading(false);
     }
@@ -81,9 +87,11 @@ export function BitacoraView() {
       ) : loading && rows.length === 0 ? (
         <p className="px-1 py-8 text-center text-sm text-muted-foreground">Cargando…</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-input bg-card p-12 text-center text-sm text-muted-foreground">
-          Sin registros en esta categoría.
-        </div>
+        <EmptyState
+          size="sm"
+          title="Sin registros"
+          description={`No hay actividad de "${group.label}" en el período reciente.`}
+        />
       ) : (
         <ol className="overflow-hidden rounded-lg border border-border bg-card">
           {rows.map((entry, i) => {

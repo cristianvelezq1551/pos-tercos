@@ -23,7 +23,7 @@ export function StockTable({ rows }: StockTableProps) {
     },
     {
       key: 'item',
-      header: 'Item',
+      header: 'Producto',
       cell: (r) => (
         <span className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium text-foreground">{r.name}</span>
@@ -38,12 +38,12 @@ export function StockTable({ rows }: StockTableProps) {
     },
     {
       key: 'stock',
-      header: 'Stock actual',
+      header: 'Existencias actuales',
       align: 'right',
       numeric: true,
       cell: (r) => (
         <span className={r.lowStock ? 'font-semibold text-warning' : 'text-foreground'}>
-          <Quantity value={r.currentStock} decimals={4} className="text-current" />
+          <Quantity value={r.currentStock} maxDecimals={4} className="text-current" />
         </span>
       ),
     },
@@ -55,13 +55,13 @@ export function StockTable({ rows }: StockTableProps) {
     },
     {
       key: 'threshold',
-      header: 'Threshold',
+      header: 'Mínimo',
       align: 'right',
       numeric: true,
       hideOnMobile: true,
       cell: (r) => (
         <span className="text-muted-foreground">
-          <Quantity value={r.thresholdMin} decimals={4} className="text-current" />
+          <Quantity value={r.thresholdMin} maxDecimals={4} className="text-current" />
         </span>
       ),
     },
@@ -71,7 +71,7 @@ export function StockTable({ rows }: StockTableProps) {
       cell: (r) =>
         r.lowStock ? (
           <Badge tone="warning" size="sm" withDot>
-            Stock crítico
+            Bajo mínimo
           </Badge>
         ) : (
           <Badge tone="success" size="sm">
@@ -116,14 +116,14 @@ export function StockTable({ rows }: StockTableProps) {
       emptyState={
         <EmptyState
           illustration={<LineArtIllustration name="empty-plate" />}
-          title="No hay items con stock"
+          title="No hay productos con inventario"
           description={
             <>
               Crea insumos en{' '}
               <Link href="/ingredients" className="text-primary hover:underline">
                 Insumos
               </Link>{' '}
-              o productos direct-resale en{' '}
+              o productos de reventa directa en{' '}
               <Link href="/products" className="text-primary hover:underline">
                 Productos
               </Link>

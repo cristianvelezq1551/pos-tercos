@@ -11,6 +11,7 @@ import {
   evaluateSuggestion,
   rejectSuggestion,
 } from '../api';
+import { SendToSupplierDialog } from './SendToSupplierDialog';
 
 interface SuggestionDetailProps {
   initial: PurchaseSuggestion;
@@ -24,6 +25,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [sendOpen, setSendOpen] = useState(false);
 
   const isOpen =
     suggestion.status === 'PENDING' || suggestion.status === 'EVALUATED';
@@ -58,7 +60,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
     <div className="max-w-3xl space-y-6">
       <div className="rounded-lg border border-border bg-card p-5">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <Row label="Item" value={suggestion.entityName} />
+          <Row label="Insumo / producto" value={suggestion.entityName} />
           <Row
             label="Tipo"
             value={
@@ -69,12 +71,12 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
             }
           />
           <Row
-            label="Stock actual"
+            label="Existencias actuales"
             value={`${formatNumber(suggestion.currentStock, { decimals: 2 })}`}
             mono
           />
           <Row
-            label="Threshold mínimo"
+            label="Mínimo de alerta"
             value={`${formatNumber(suggestion.thresholdMin, { decimals: 2 })}`}
             mono
           />
@@ -170,36 +172,61 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
       </div>
 
       {isOpen && (
-        <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+        <div className="space-y-3 rounded-lg border border-border bg-card p-5">
           <h2 className="text-sm font-semibold text-foreground">Resolver</h2>
-          <label className="block text-sm">
-            <span className="text-foreground">Nota (opcional)</span>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              maxLength={500}
-              rows={2}
-              placeholder="Ej. ya pide por whatsapp / espero a viernes"
-              className="mt-1 block w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring"
-            />
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => handleResolve('reject')}
-              disabled={pending !== null}
-            >
-              {pending === 'reject' ? 'Rechazando…' : 'Rechazar'}
+
+          {/* Camino principal: enviar pedido al proveedor por WhatsApp. */}
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+            <p className="text-sm font-medium text-foreground">Pedir al proveedor por WhatsApp</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Elegís el proveedor (queda preseleccionado el más reciente; podés cambiarlo a cualquiera
+              que haya vendido este item) y se envía el pedido. La sugerencia queda aceptada
+              automáticamente.
+            </p>
+            <Button size="sm" className="mt-3" onClick={() => setSendOpen(true)} disabled={pending !== null}>
+              Enviar pedido al proveedor
             </Button>
-            <Button
-              onClick={() => handleResolve('accept')}
-              disabled={pending !== null}
-            >
-              {pending === 'accept' ? 'Aceptando…' : 'Aceptar'}
-            </Button>
+          </div>
+
+          {/* Alternativa: resolver manualmente sin enviar (ej. ya pediste por fuera). */}
+          <div className="border-t border-border pt-3">
+            <p className="text-xs text-muted-foreground">
+              ¿Ya hiciste el pedido por otro lado o querés rechazarla? Resolvela manualmente:
+            </p>
+            <label className="mt-2 block text-sm">
+              <span className="text-foreground">Nota (opcional)</span>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={500}
+                rows={2}
+                placeholder="Ej. ya pedido por teléfono / no se va a comprar"
+                className="mt-1 block w-full rounded-md border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring"
+              />
+            </label>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => handleResolve('reject')} disabled={pending !== null}>
+                {pending === 'reject' ? 'Rechazando…' : 'Rechazar'}
+              </Button>
+              <Button variant="outline" onClick={() => handleResolve('accept')} disabled={pending !== null}>
+                {pending === 'accept' ? 'Aceptando…' : 'Solo marcar aceptada'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
+
+      {sendOpen ? (
+        <SendToSupplierDialog
+          suggestion={suggestion}
+          onClose={() => setSendOpen(false)}
+          onSuccess={() => {
+            setSendOpen(false);
+            // Recargar para reflejar el nuevo estado.
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {error && (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

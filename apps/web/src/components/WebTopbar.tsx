@@ -28,8 +28,10 @@ export function WebTopbar({ transparent = false }: { transparent?: boolean }) {
           : 'bg-background/85 border-b border-border',
       )}
     >
-      <Link href="/" aria-label="Inicio Tercos" className="flex items-center">
-        <BrandLogo variant="wordmark" theme="dark" className="text-base" />
+      <Link href="/" aria-label="Inicio Terco's" className="flex items-center">
+        {/* Sobre el hero transparente (oscuro) va el cursivo blanco; sobre el
+            topbar claro va el cursivo oscuro. */}
+        <BrandLogo variant="wordmark" theme={transparent ? 'dark' : 'light'} size="h-7" />
       </Link>
 
       <nav className="hidden items-center gap-8 md:flex">

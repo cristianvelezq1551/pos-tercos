@@ -81,3 +81,18 @@ export function setSizeRecipe(
 export function getExpandedCost(id: string): Promise<ExpandedCostResponse> {
   return request(`/products/${id}/expanded-cost`, { method: 'GET' }, ExpandedCostResponseSchema);
 }
+
+export function getSubproductExpandedCost(id: string): Promise<ExpandedCostResponse> {
+  return request(`/subproducts/${id}/expanded-cost`, { method: 'GET' }, ExpandedCostResponseSchema);
+}
+
+export function getSizeExpandedCost(
+  productId: string,
+  sizeId: string,
+): Promise<ExpandedCostResponse> {
+  return request(
+    `/products/${productId}/sizes/${sizeId}/expanded-cost`,
+    { method: 'GET' },
+    ExpandedCostResponseSchema,
+  );
+}

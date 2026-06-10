@@ -54,5 +54,14 @@ export function updateIngredient(id: string, input: UpdateIngredient): Promise<I
 }
 
 export function deactivateIngredient(id: string): Promise<Ingredient> {
-  return request(`/ingredients/${id}`, { method: 'DELETE' }, IngredientSchema);
+  return request(`/ingredients/${id}/deactivate`, { method: 'POST' }, IngredientSchema);
+}
+
+/** Elimina DEFINITIVAMENTE (solo si no fue usado nunca). 409 si tiene historial. */
+export async function deleteIngredient(id: string): Promise<void> {
+  const res = await fetch(`/api/ingredients/${id}`, { method: 'DELETE', credentials: 'include' });
+  if (!res.ok && res.status !== 204) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Error ${res.status}`);
+  }
 }

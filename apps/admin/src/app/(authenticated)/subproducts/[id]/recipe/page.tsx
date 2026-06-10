@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { RecipeEditor } from '../../../../../features/recipes';
 import { ApiError, serverFetchJson } from '../../../../../lib/api-server';
+import { requireRole } from '../../../../../lib/guards';
 import type {
   Ingredient,
   RecipeResponse,
@@ -13,6 +14,8 @@ interface PageProps {
 }
 
 export default async function SubproductRecipePage({ params }: PageProps) {
+  // Modificar recetas es Dueño-only.
+  await requireRole(['DUENO']);
   const { id } = await params;
 
   let subproduct: Subproduct;
@@ -52,6 +55,7 @@ export default async function SubproductRecipePage({ params }: PageProps) {
           initialRecipe={recipe}
           ingredients={ingredients}
           subproducts={subproducts}
+          showExpandedCost
         />
       </Container>
     </>

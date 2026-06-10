@@ -2,17 +2,15 @@ import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { Truck } from 'lucide-react';
 import { SuppliersTable } from '../../../features/suppliers';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
 import type { Supplier } from '@pos-tercos/types';
 
 async function loadSuppliers(): Promise<Supplier[] | { error: string }> {
   try {
     return await serverFetchJson<Supplier[]>('/suppliers');
   } catch (err) {
-    if (err instanceof ApiError) {
-      return { error: `API ${err.status}` };
-    }
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 

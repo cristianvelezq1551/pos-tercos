@@ -27,7 +27,7 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
     <div className="space-y-6">
       {/* Totales */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Revenue" value={formatCop(summary.totals.revenue)} />
+        <Stat label="Ingresos" value={formatCop(summary.totals.revenue)} />
         <Stat label="Ventas" value={String(summary.totals.count)} />
         <Stat label="Ticket promedio" value={formatCop(summary.totals.avgTicket)} />
         <Stat
@@ -126,7 +126,7 @@ function BreakdownTable({
             <tr className="text-xs uppercase text-muted-foreground">
               <th className="pb-2 text-left font-semibold">Categoría</th>
               <th className="pb-2 text-right font-semibold">Ventas</th>
-              <th className="pb-2 text-right font-semibold">Revenue</th>
+              <th className="pb-2 text-right font-semibold">Ingresos</th>
               <th className="pb-2 text-right font-semibold">% del total</th>
             </tr>
           </thead>

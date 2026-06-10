@@ -1,14 +1,35 @@
 import { Module } from '@nestjs/common';
+import { FixedCostsModule } from '../fixed-costs/fixed-costs.module';
 import { RecipesModule } from '../recipes/recipes.module';
+import { WorkersModule } from '../workers/workers.module';
+import { CogsService } from './cogs.service';
+import { FinanceSummaryService } from './finance-summary.service';
+import { FinancialReportsService } from './financial-reports.service';
+import { InventoryUsageService } from './inventory-usage.service';
 import { ReconciliationService } from './reconciliation.service';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
 import { SalesReportsService } from './sales-reports.service';
 
 @Module({
-  imports: [RecipesModule],
+  imports: [RecipesModule, FixedCostsModule, WorkersModule],
   controllers: [ReportsController],
-  providers: [ReportsService, ReconciliationService, SalesReportsService],
-  exports: [ReportsService, ReconciliationService, SalesReportsService],
+  providers: [
+    ReportsService,
+    ReconciliationService,
+    SalesReportsService,
+    CogsService,
+    FinancialReportsService,
+    FinanceSummaryService,
+    InventoryUsageService,
+  ],
+  exports: [
+    ReportsService,
+    ReconciliationService,
+    SalesReportsService,
+    CogsService,
+    FinancialReportsService,
+    FinanceSummaryService,
+  ],
 })
 export class ReportsModule {}

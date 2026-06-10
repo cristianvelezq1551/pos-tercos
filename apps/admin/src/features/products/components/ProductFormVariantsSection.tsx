@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Input } from '@pos-tercos/ui';
+import { Button, Input, MoneyInput } from '@pos-tercos/ui';
 import type { FormState } from './ProductFormTypes';
 
 export function ProductFormVariantsSection({
@@ -47,19 +47,12 @@ export function ProductFormVariantsSection({
                 disabled={pending}
                 className="flex-1"
               />
-              <div className="relative w-36 shrink-0">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                  $
-                </span>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
+              <div className="w-36 shrink-0">
+                <MoneyInput
                   placeholder="Precio"
                   value={s.price}
-                  onChange={(e) => update(i, { price: e.target.value })}
+                  onChange={(v) => update(i, { price: v })}
                   disabled={pending}
-                  className="pl-6 tabular-nums"
                 />
               </div>
               <Button

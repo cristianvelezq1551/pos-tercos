@@ -1,6 +1,6 @@
 'use client';
 
-import { FormField, Money, NumberInput } from '@pos-tercos/ui';
+import { FormField, Money, NumberInput, groupDigits } from '@pos-tercos/ui';
 
 export function CashSection({
   total,
@@ -21,8 +21,9 @@ export function CashSection({
           value={cashReceived}
           onChange={onChange}
           prefix="$"
+          grouping
           min={0}
-          placeholder={total.toString()}
+          placeholder={groupDigits(String(total))}
           autoFocus
         />
       </FormField>

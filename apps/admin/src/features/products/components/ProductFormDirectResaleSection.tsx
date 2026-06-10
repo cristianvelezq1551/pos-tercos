@@ -46,13 +46,13 @@ export function ProductFormDirectResaleSection({
             Es producto de <strong>reventa directa</strong>
           </Label>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Marcar para productos que se venden tal como se compran (Coca-Cola, snacks, papas
-            empacadas). Se descontará stock al cobrar — no usa receta.
+            Marcalo para productos que se venden tal como se compran (Coca-Cola, snacks, papas
+            empacadas). Descuenta inventario al cobrar — no usa receta.
           </p>
           {directResaleLocked ? (
             <p className="mt-1 text-xs text-warning">
-              ⚠ Este flag NO se puede desactivar porque cambiaría el modelo de stock del producto
-              (rompería conversiones históricas).
+              ⚠ Esto no se puede desactivar porque cambiaría la forma de llevar el inventario del producto
+              (dañaría las conversiones ya registradas).
             </p>
           ) : null}
         </div>
@@ -62,7 +62,7 @@ export function ProductFormDirectResaleSection({
       {form.directResale && (
         <div className="space-y-3 pl-6 pt-2">
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            <strong>Costo ≠ Precio.</strong> El <code>basePrice</code> es lo que cobras al cliente.
+            <strong>Costo ≠ Precio.</strong> El precio de venta es lo que le cobras al cliente.
             El costo histórico se actualiza solo al confirmar facturas con este producto.
           </p>
 
@@ -91,7 +91,7 @@ export function ProductFormDirectResaleSection({
                 onChange={(e) => setForm((f) => ({ ...f, unitStock: e.target.value }))}
                 placeholder="botella, lata, unidad"
               />
-              <p className="text-[10px] text-muted-foreground">Cómo lo vendés al cliente.</p>
+              <p className="text-[10px] text-muted-foreground">Cómo lo vendes al cliente.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="conversionFactor">Factor de conversión</Label>
@@ -113,7 +113,7 @@ export function ProductFormDirectResaleSection({
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="thresholdMin">Umbral mínimo (alerta)</Label>
+              <Label htmlFor="thresholdMin">Mínimo de alerta</Label>
               <Input
                 id="thresholdMin"
                 type="number"
@@ -127,7 +127,7 @@ export function ProductFormDirectResaleSection({
                 placeholder="12"
               />
               <p className="text-[10px] text-muted-foreground">
-                En <em>{form.unitStock || 'unidades de venta'}</em>. Cuando el stock baja de acá,
+                En <em>{form.unitStock || 'unidades de venta'}</em>. Cuando el inventario baja de aquí,
                 aparece alerta.
               </p>
             </div>

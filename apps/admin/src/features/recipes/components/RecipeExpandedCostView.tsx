@@ -1,4 +1,5 @@
 import type { ExpandedCostResponse } from '@pos-tercos/types';
+import { formatCop } from '@pos-tercos/ui';
 import { Th, Td, formatRecipeNumber } from './RecipeTablePrimitives';
 
 interface RecipeExpandedCostViewProps {
@@ -7,12 +8,30 @@ interface RecipeExpandedCostViewProps {
   isDirty: boolean;
 }
 
+// Un costo más viejo que esto se marca como potencialmente desactualizado.
+const STALE_DAYS = 60;
+
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+}
+function isStale(iso: string | null): boolean {
+  const d = daysSince(iso);
+  return d !== null && d >= STALE_DAYS;
+}
+function staleTitle(iso: string | null): string {
+  const d = daysSince(iso);
+  return d === null
+    ? 'Sin fecha de costo registrada'
+    : `Último costo hace ${d} días — puede estar desactualizado`;
+}
+
 export function RecipeExpandedCostView({ cost, error, isDirty }: RecipeExpandedCostViewProps) {
   if (isDirty) {
     return (
       <section className="rounded-lg border border-warning-border bg-warning-bg/30 p-4">
         <p className="text-sm text-warning">
-          Hay cambios sin guardar. Guarda la receta para recalcular el desglose de insumos.
+          Hay cambios sin guardar. Guarda la receta para recalcular el costo y el desglose de insumos.
         </p>
       </section>
     );
@@ -44,15 +63,44 @@ export function RecipeExpandedCostView({ cost, error, isDirty }: RecipeExpandedC
     );
   }
 
+  const hasStale = cost.totals.some(
+    (t) => t.unitCostInRecipe !== null && isStale(t.lastUnitCostDate),
+  );
+
   return (
     <section className="space-y-3">
+      {/* Resumen de costo: el dato ya viene del backend; antes se descartaba. */}
+      <div className="rounded-lg border border-border bg-muted/40 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Costo estimado por unidad
+        </p>
+        {cost.totalCost !== null ? (
+          <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">
+            {formatCop(cost.totalCost)}
+          </p>
+        ) : (
+          <div className="mt-1.5">
+            <p className="text-sm font-medium text-warning">Todavía no se puede calcular el costo:</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+              {cost.missingReasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          Usa el <strong>último costo de compra</strong> de cada insumo (no un promedio). Cambia
+          cuando confirmas una factura con un precio distinto.
+        </p>
+      </div>
+
       <div>
         <h2 className="text-lg font-semibold text-foreground">
           Desglose de insumos por unidad vendida
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Cantidad bruta a descontar de cada insumo cuando se vende 1 unidad de este producto,
-          considerando merma y yield de subproductos transitivamente.
+          considerando merma y rendimiento de subproductos transitivamente.
         </p>
       </div>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -60,8 +108,10 @@ export function RecipeExpandedCostView({ cost, error, isDirty }: RecipeExpandedC
           <thead className="bg-muted/40">
             <tr>
               <Th>Insumo</Th>
-              <Th align="right">Cantidad total</Th>
+              <Th align="right">Cantidad</Th>
               <Th>Unidad</Th>
+              <Th align="right">Costo unit.</Th>
+              <Th align="right">Costo</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -74,11 +124,42 @@ export function RecipeExpandedCostView({ cost, error, isDirty }: RecipeExpandedC
                   {formatRecipeNumber(t.totalQuantity)}
                 </Td>
                 <Td>{t.unitRecipe}</Td>
+                <Td align="right" mono>
+                  {t.unitCostInRecipe !== null ? (
+                    <span className="inline-flex items-center justify-end gap-1.5">
+                      {isStale(t.lastUnitCostDate) && (
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                          title={staleTitle(t.lastUnitCostDate)}
+                          aria-label={staleTitle(t.lastUnitCostDate)}
+                        />
+                      )}
+                      {formatCop(t.unitCostInRecipe)}
+                    </span>
+                  ) : (
+                    <span className="text-warning">sin costo</span>
+                  )}
+                </Td>
+                <Td align="right" mono>
+                  {t.costContribution !== null ? (
+                    <span className="font-medium text-foreground">{formatCop(t.costContribution)}</span>
+                  ) : (
+                    <span className="text-ink-300">—</span>
+                  )}
+                </Td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {hasStale && (
+        <p className="flex items-center gap-1.5 text-xs text-warning">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+          Algunos insumos no se compran hace más de {STALE_DAYS} días: su costo (y el margen) pueden
+          estar desactualizados.
+        </p>
+      )}
     </section>
   );
 }

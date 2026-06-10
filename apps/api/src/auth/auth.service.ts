@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { JwtAccessPayload, LoginResponse, User } from '@pos-tercos/types';
 import * as bcrypt from 'bcrypt';
@@ -23,12 +23,12 @@ export class AuthService {
 
   async login(email: string, password: string): Promise<{ result: LoginResponse; refresh: string }> {
     const user = await this.users.findByEmail(email);
-    if (!user || !user.active) {
+    if (!user) {
       await this.audit.log({
         action: 'AUTH_LOGIN_FAILED',
-        metadata: { email, reason: !user ? 'unknown_email' : 'inactive' },
+        metadata: { email, reason: 'unknown_email' },
       });
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciales inválidas');
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
@@ -38,7 +38,18 @@ export class AuthService {
         action: 'AUTH_LOGIN_FAILED',
         metadata: { email, reason: 'wrong_password' },
       });
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    // Credenciales correctas pero usuario desactivado → mensaje claro (no
+    // "credenciales inválidas", que confunde a un empleado dado de baja).
+    if (!user.active) {
+      await this.audit.log({
+        userId: user.id,
+        action: 'AUTH_LOGIN_FAILED',
+        metadata: { email, reason: 'inactive' },
+      });
+      throw new ForbiddenException('Tu usuario está inactivo. Contactá al administrador.');
     }
 
     const accessToken = await this.signAccess(user.id, user.role, user.email);
@@ -89,10 +100,8 @@ export class AuthService {
     const accessToken = await this.signAccess(record.user.id, record.user.role, record.user.email);
     const newRefresh = await this.issueRefreshToken(record.user.id);
 
-    await this.audit.log({
-      userId: record.user.id,
-      action: 'AUTH_REFRESH',
-    });
+    // No se audita el refresh exitoso: pasa cada pocas horas por sesión y solo
+    // hace ruido en la bitácora. Los fallos (AUTH_REFRESH_FAILED) sí se registran.
 
     return { accessToken, refresh: newRefresh };
   }

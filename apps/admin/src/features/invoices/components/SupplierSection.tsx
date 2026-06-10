@@ -57,7 +57,7 @@ export function SupplierSection({
             <option value="">— Seleccionar —</option>
             {suppliers.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.nit})</option>))}
           </select>
-          {suppliers.length === 0 && (<p className="text-xs text-warning">No hay proveedores cargados. Cambiá a &quot;Nuevo&quot; para crear uno.</p>)}
+          {suppliers.length === 0 && (<p className="text-xs text-warning">No hay proveedores cargados. Cambia a &quot;Nuevo&quot; para crear uno.</p>)}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

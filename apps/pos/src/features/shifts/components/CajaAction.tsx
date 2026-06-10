@@ -14,7 +14,7 @@ export function CajaAction({ shift }: { shift: Shift | null }) {
         size="sm"
         onClick={() => setOpen(true)}
         disabled={!shift}
-        title={shift ? 'Ver cómo va la caja' : 'Abrí un turno primero'}
+        title={shift ? 'Ver cómo va la caja' : 'Abre un turno primero'}
       >
         Caja
       </Button>

@@ -107,7 +107,7 @@ export interface BadgeProps
 
 /**
  * Badge tonal cerrado a la paleta de marca.
- * Usá `<StatusBadge>` cuando el estado venga de un enum mapeado.
+ * Usa `<StatusBadge>` cuando el estado venga de un enum mapeado.
  */
 export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
   ({ className, tone, variant, size, withDot, children, ...rest }, ref) => (

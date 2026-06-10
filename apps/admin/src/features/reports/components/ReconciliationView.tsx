@@ -75,8 +75,7 @@ export function ReconciliationView() {
             <Label htmlFor="csv">CSV</Label>
             <Input id="csv" ref={fileInput} type="file" accept=".csv,text/csv" disabled={pending} />
             <p className="text-[11px] text-muted-foreground">
-              Formato esperado: header + cols `fecha, monto, referencia` (CSV simple).
-              Otros proveedores se agregan en FASE 14.
+              Formato esperado: encabezado + columnas fecha, monto y referencia (CSV simple).
             </p>
           </div>
         </div>
@@ -89,7 +88,7 @@ export function ReconciliationView() {
             className="h-4 w-4"
           />
           <span className="text-foreground">
-            Guardar este reporte en el historial (FASE 14.D)
+            Guardar este reporte en el historial
           </span>
         </label>
         {error ? (
@@ -111,8 +110,8 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Stat label="Fuente" value={SOURCE_LABEL[report.source]} />
         <Stat label="Filas CSV" value={String(report.csvRowsParsed)} />
-        <Stat label="Sales POS" value={String(report.posSalesEvaluated)} />
-        <Stat label="Matched" value={String(report.summary.matched)} tone="good" />
+        <Stat label="Ventas POS" value={String(report.posSalesEvaluated)} />
+        <Stat label="Coinciden" value={String(report.summary.matched)} tone="good" />
         <Stat
           label="Sospechas"
           value={String(report.summary.unmatchedCsv + report.summary.unmatchedSale)}
@@ -136,7 +135,7 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
               <Th align="right">Monto CSV</Th>
               <Th>Referencia</Th>
               <Th align="right">Recibo</Th>
-              <Th align="right">Sale total</Th>
+              <Th align="right">Total venta</Th>
               <Th>Pagado en</Th>
               <Th>Método</Th>
             </tr>
@@ -182,7 +181,7 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
 
 function StatusBadge({ status }: { status: ReconciliationReport['rows'][number]['status'] }) {
   const map = {
-    matched: { label: '✓ Match', cls: 'bg-success-bg text-success' },
+    matched: { label: '✓ Coincide', cls: 'bg-success-bg text-success' },
     unmatched_csv: { label: '⚠ CSV sin POS', cls: 'bg-destructive/15 text-destructive' },
     unmatched_sale: { label: '? POS sin CSV', cls: 'bg-warning-bg text-warning' },
   } as const;

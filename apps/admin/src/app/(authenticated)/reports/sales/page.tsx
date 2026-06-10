@@ -4,7 +4,8 @@ import {
   RangeFilter,
   SalesSummaryView,
 } from '../../../../features/reports-sales';
-import { ApiError, serverFetchJson } from '../../../../lib/api-server';
+import { serverFetchJson } from '../../../../lib/api-server';
+import { friendlyApiError } from '../../../../lib/error-copy';
 import type { SalesSummary } from '@pos-tercos/types';
 
 interface PageProps {
@@ -28,8 +29,7 @@ async function loadSummary(
   try {
     return await serverFetchJson<SalesSummary>(path);
   } catch (err) {
-    if (err instanceof ApiError) return { error: `API ${err.status}` };
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 

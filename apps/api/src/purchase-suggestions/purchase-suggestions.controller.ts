@@ -10,14 +10,18 @@ import {
 import {
   PurchaseSuggestionStatusEnum,
   ResolveSuggestionSchema,
+  SendToSupplierSchema,
+  type HistoricalSupplier,
   type JwtAccessPayload,
   type PurchaseSuggestion,
   type PurchaseSuggestionStatus,
   type ResolveSuggestion,
   type ScanResult,
+  type SendToSupplier,
+  type WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { AdminAccess } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PurchaseSuggestionsService } from './purchase-suggestions.service';
 
@@ -70,15 +74,15 @@ export class PurchaseSuggestionsController {
     return this.service.reject(id, user.sub, body);
   }
 
-  /** Scan manual (debugging / on-demand). Dueño-only. */
-  @OnlyDueno()
+  /** Scan manual (debugging / on-demand). Admin Operativo + Dueño. */
+  @AdminAccess()
   @Post('admin/scan')
   scan(@CurrentUser() user: JwtAccessPayload): Promise<ScanResult> {
     return this.service.runScan(user.sub);
   }
 
-  /** Evaluación LLM individual. Dueño-only (cuesta $$). */
-  @OnlyDueno()
+  /** Evaluación LLM individual (cuesta $$). Admin Operativo + Dueño. */
+  @AdminAccess()
   @Post(':id/evaluate')
   evaluate(
     @Param('id', ParseUUIDPipe) id: string,
@@ -87,14 +91,39 @@ export class PurchaseSuggestionsController {
     return this.service.evaluate(id, user.sub);
   }
 
-  /** Evaluar todas las PENDING en batch. Dueño-only. */
-  @OnlyDueno()
+  /** Evaluar todas las PENDING en batch. Admin Operativo + Dueño. */
+  @AdminAccess()
   @Post('admin/evaluate-all-pending')
   evaluateAllPending(@CurrentUser() user: JwtAccessPayload): Promise<{
     evaluated: number;
     failed: number;
   }> {
     return this.service.evaluateAllPending(user.sub);
+  }
+
+  /** Lista los proveedores que históricamente han vendido este item. */
+  @AdminAccess()
+  @Get(':id/suppliers')
+  listSuppliers(@Param('id', ParseUUIDPipe) id: string): Promise<HistoricalSupplier[]> {
+    return this.service.listSuppliersFor(id);
+  }
+
+  /** Envía el pedido a UN proveedor por WhatsApp y marca la sugerencia ACCEPTED. */
+  @AdminAccess()
+  @Post(':id/send-to-supplier')
+  sendToSupplier(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(SendToSupplierSchema)) body: SendToSupplier,
+  ): Promise<{ outcome: WhatsAppSendOutcome; suggestion: PurchaseSuggestion }> {
+    return this.service.sendToSupplier(id, body, user.sub);
+  }
+
+  /** Manda un resumen de las sugerencias abiertas a dueños/admins por WhatsApp. */
+  @AdminAccess()
+  @Post('admin/send-summary')
+  sendSummary(@CurrentUser() user: JwtAccessPayload): Promise<WhatsAppSendOutcome> {
+    return this.service.sendSummaryToAdmins(user.sub);
   }
 }
 

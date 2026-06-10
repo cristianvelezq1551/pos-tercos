@@ -2,6 +2,7 @@ import { Container, PageHeader } from '@pos-tercos/ui';
 import { AlertTriangle } from 'lucide-react';
 import { AnomaliesView } from '../../../../features/reports';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
+import { requireRole } from '../../../../lib/guards';
 import type { CashierAnomalies } from '@pos-tercos/types';
 
 async function loadAnomalies(): Promise<CashierAnomalies[] | { error: string }> {
@@ -9,13 +10,14 @@ async function loadAnomalies(): Promise<CashierAnomalies[] | { error: string }> 
     return await serverFetchJson<CashierAnomalies[]>('/reports/anomalies');
   } catch (err) {
     if (err instanceof ApiError) {
-      return { error: `API ${err.status} — solo el dueño puede ver este reporte.` };
+      return { error: `Error del servidor (${err.status}) — solo el dueño puede ver este reporte.` };
     }
-    return { error: 'Network error' };
+    return { error: 'Error de conexión' };
   }
 }
 
 export default async function AnomaliesPage() {
+  await requireRole(['DUENO']);
   const result = await loadAnomalies();
 
   return (

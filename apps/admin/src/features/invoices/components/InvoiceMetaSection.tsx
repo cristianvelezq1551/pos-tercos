@@ -1,6 +1,6 @@
 'use client';
 
-import { Input, Label } from '@pos-tercos/ui';
+import { Input, Label, MoneyInput, formatCop } from '@pos-tercos/ui';
 
 interface InvoiceMetaSectionProps {
   invoiceNumber: string;
@@ -38,14 +38,14 @@ export function InvoiceMetaSection({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="total">Total (COP)</Label>
-          <Input id="total" type="number" inputMode="decimal" step="any" min="0" required disabled={disabled} value={total} onChange={(e) => onTotalChange(e.target.value)} />
+          <MoneyInput id="total" required disabled={disabled} value={total} onChange={onTotalChange} />
           {Math.abs(Number(total) - computedItemsTotal) > 1 && total !== '' && (
-            <p className="text-xs text-warning">Suma de ítems: {computedItemsTotal.toLocaleString('es-CO')}.</p>
+            <p className="text-xs text-warning">Suma de ítems: {formatCop(computedItemsTotal)}.</p>
           )}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="iva">IVA (COP)</Label>
-          <Input id="iva" type="number" inputMode="decimal" step="any" min="0" disabled={disabled} value={iva} onChange={(e) => onIvaChange(e.target.value)} placeholder="opcional" />
+          <MoneyInput id="iva" disabled={disabled} value={iva} onChange={onIvaChange} placeholder="opcional" />
         </div>
       </div>
 

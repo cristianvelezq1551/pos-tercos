@@ -2,17 +2,15 @@ import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { Tag } from 'lucide-react';
 import { PromotionsTable } from '../../../features/promotions';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
 import type { Promotion } from '@pos-tercos/types';
 
 async function loadPromotions(): Promise<Promotion[] | { error: string }> {
   try {
     return await serverFetchJson<Promotion[]>('/promotions');
   } catch (err) {
-    if (err instanceof ApiError) {
-      return { error: `API ${err.status}` };
-    }
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 
@@ -24,7 +22,7 @@ export default async function PromotionsPage() {
       <PageHeader
         eyebrow="Catálogo"
         title="Promociones"
-        description="Descuentos automáticos que se aplican al cobrar la venta. 4 tipos: descuento %, descuento fijo, BOGO y combo."
+        description="Descuentos automáticos que se aplican al cobrar la venta. 4 tipos: descuento %, descuento fijo, lleva 2 paga 1 y combo."
         icon={<Tag className="h-6 w-6" strokeWidth={1.75} />}
         actions={
           <Link href="/promotions/new">

@@ -1,13 +1,17 @@
 'use client';
 
-import type { Product, ProductAvailability } from '@pos-tercos/types';
-import { EmptyState, Money, cn } from '@pos-tercos/ui';
+import type { Product, ProductAvailability, Promotion } from '@pos-tercos/types';
+import { EmptyState, Money, cn, formatCop } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
-import { useMemo, useState } from 'react';
-import { useCartStore } from '../../sales';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchActivePromotions, useCartStore } from '../../sales';
+import { getActivePromoBadge, type ProductPromoBadge } from '../../sales/lib/promo-preview';
 import { setSoldOut } from '../api';
 import { useAvailability } from '../hooks/useAvailability';
 import { ProductPickerModal, type PickerSelection } from './ProductPickerModal';
+
+/** Re-fetch de promos cada 60s: refleja cambios rápido desde admin. */
+const PROMO_REFRESH_MS = 60_000;
 
 const ALL = '__all__';
 
@@ -18,6 +22,25 @@ export function CatalogGrid({ products }: { products: Product[] }) {
   const [activeCategory, setActiveCategory] = useState<string>(ALL);
 
   const { byId, refresh } = useAvailability();
+  const [promos, setPromos] = useState<Promotion[]>([]);
+
+  // Cargar promos activas + refrescar cada 60s. Mismas que el carrito usa.
+  useEffect(() => {
+    let cancelled = false;
+    const load = (): void => {
+      fetchActivePromotions()
+        .then((data) => {
+          if (!cancelled) setPromos(data);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = window.setInterval(load, PROMO_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
   // Override optimista del flag manual mientras el refetch llega.
   const [soldOutOverride, setSoldOutOverride] = useState<Map<string, boolean>>(new Map());
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -111,8 +134,8 @@ export function CatalogGrid({ products }: { products: Product[] }) {
             const avail = byId.get(p.id);
             const manualSoldOut = soldOutOverride.get(p.id) ?? p.soldOut;
             const unavailable = manualSoldOut || (avail ? !avail.available : false);
-            // El motivo de insumos solo cuando no es agotado manual (el toggle ya lo dice).
             const reason = manualSoldOut ? null : (avail?.reason ?? null);
+            const promoBadge = getActivePromoBadge(p.id, p.basePrice, promos);
             return (
               <ProductTile
                 key={p.id}
@@ -122,6 +145,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
                 unavailable={unavailable}
                 reason={reason}
                 toggling={togglingId === p.id}
+                promo={promoBadge}
                 onClick={() => openPicker(p)}
                 onToggleSoldOut={() => void handleToggleSoldOut(p, !manualSoldOut)}
               />
@@ -173,6 +197,7 @@ function ProductTile({
   unavailable,
   reason,
   toggling,
+  promo,
   onClick,
   onToggleSoldOut,
 }: {
@@ -182,6 +207,7 @@ function ProductTile({
   unavailable: boolean;
   reason: string | null;
   toggling: boolean;
+  promo: ProductPromoBadge | null;
   onClick: () => void;
   onToggleSoldOut: () => void;
 }) {
@@ -191,6 +217,8 @@ function ProductTile({
   // Stock numérico solo aplica a reventa directa (bebidas, snacks).
   const stock = availability && availability.stock !== null ? availability.stock : null;
   const lowStock = stock !== null && stock > 0 && stock <= 3;
+  // Mostrar el chip de promo solo si está disponible (si no, queda raro).
+  const showPromo = promo !== null && !unavailable;
 
   return (
     <div className="relative h-full">
@@ -212,35 +240,65 @@ function ProductTile({
         <span className="caps line-clamp-1 h-3.5 text-[0.625rem] text-muted-foreground">
           {product.category ?? ''}
         </span>
+        {/* Chip de promo — debajo de la categoría, no compite con stock/86. */}
+        {showPromo ? (
+          <span
+            className={cn(
+              'mt-1 inline-flex w-fit items-center rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide',
+              promo.kind === 'discount'
+                ? 'bg-success/20 text-success'
+                : 'bg-info/20 text-info',
+            )}
+          >
+            {promo.label}
+          </span>
+        ) : null}
         {/* Nombre — reserva 2 líneas siempre → cards de igual altura. */}
         <span className="mt-1 line-clamp-2 min-h-[2.5rem] text-[0.9375rem] font-semibold leading-snug text-foreground">
           {product.name}
         </span>
         <div className="mt-auto pt-3">
-          <Money
-            amount={product.basePrice}
-            size="lg"
-            weight="bold"
-            className="text-foreground"
-          />
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex min-w-0 flex-col">
+              {/* Precio base tachado cuando hay descuento que reduce el precio. */}
+              {showPromo && promo.discountedPrice !== null ? (
+                <span className="text-xs leading-none text-muted-foreground line-through tabular-nums">
+                  {formatCop(product.basePrice)}
+                </span>
+              ) : null}
+              <Money
+                amount={
+                  showPromo && promo.discountedPrice !== null
+                    ? promo.discountedPrice
+                    : product.basePrice
+                }
+                size="lg"
+                weight="bold"
+                className={
+                  showPromo && promo.discountedPrice !== null
+                    ? 'text-success'
+                    : 'text-foreground'
+                }
+              />
+            </div>
+            {/* Stock de reventa: chip al lado del precio, sin tapar la categoría. */}
+            {stock !== null && !unavailable ? (
+              <span
+                className={cn(
+                  'shrink-0 rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold tabular-nums',
+                  lowStock ? 'bg-warning/20 text-warning' : 'bg-ink-800/80 text-muted-foreground',
+                )}
+              >
+                {stock} u
+              </span>
+            ) : null}
+          </div>
           {/* Línea reservada (h-4) para que todas las cards midan igual. */}
           <span className="block h-4 text-[0.6875rem] font-medium leading-4 text-muted-foreground">
             {hasVariants ? '+ opciones' : ''}
           </span>
         </div>
       </button>
-
-      {/* Stock de reventa (badge top-left, no altera la altura). */}
-      {stock !== null && !unavailable ? (
-        <span
-          className={cn(
-            'pointer-events-none absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[0.5625rem] font-bold tabular-nums',
-            lowStock ? 'bg-warning/20 text-warning' : 'bg-ink-800/80 text-muted-foreground',
-          )}
-        >
-          {stock} u
-        </span>
-      ) : null}
 
       {/* AGOTADO + motivo — overlay centrado, no altera la altura. */}
       {unavailable ? (

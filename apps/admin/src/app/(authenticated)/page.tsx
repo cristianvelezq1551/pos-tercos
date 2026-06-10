@@ -1,12 +1,4 @@
-import {
-  Card,
-  Container,
-  Money,
-  PageHeader,
-  Section,
-  StatCard,
-  formatDate,
-} from '@pos-tercos/ui';
+import { Container, PageHeader, Section, formatDate } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
 import Link from 'next/link';
 import {
@@ -15,13 +7,14 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   BarChart3,
-  ChefHat,
   LineChart,
-  PackageCheck,
-  Sparkles,
+  TrendingUp,
 } from 'lucide-react';
+import { redirect } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../lib/api-server';
 import { DailyAiSummaryCard } from '../../features/ai-insights';
+import { getCurrentUserServer } from '../../features/auth/server';
+import { LiveDashboardSections } from '../../features/dashboard/components/LiveDashboardSections';
 import type { DashboardSummary } from '@pos-tercos/types';
 
 async function loadDashboard(): Promise<DashboardSummary | null> {
@@ -36,6 +29,13 @@ async function loadDashboard(): Promise<DashboardSummary | null> {
 }
 
 export default async function InicioPage() {
+  // El Inicio es Dueño-only: muestra ingresos, descuadres, dashboards
+  // financieros. Admin operativo no debería verlo — redirigir a Catálogo.
+  const user = await getCurrentUserServer();
+  if (!user || user.role !== 'DUENO') {
+    redirect('/products');
+  }
+
   const summary = await loadDashboard();
   const today = summary ? formatDate(summary.date, 'long') : null;
 
@@ -54,91 +54,7 @@ export default async function InicioPage() {
         <div className="space-y-10">
           <DailyAiSummaryCard />
           {summary ? (
-            <>
-              <Section
-                eyebrow="Hoy en números"
-                title="Pulso del local"
-                size="md"
-                actions={
-                  <Link
-                    href="/reports/sales"
-                    className="caps inline-flex items-center gap-1 text-[0.6875rem] text-primary hover:underline"
-                  >
-                    Ver reporte completo
-                    <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
-                  </Link>
-                }
-              >
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard
-                    label="Revenue de hoy"
-                    value={<Money amount={summary.todayRevenue} size="3xl" weight="bold" />}
-                    delta={
-                      summary.weekOverWeekPct == null
-                        ? null
-                        : Number((summary.weekOverWeekPct * 100).toFixed(1))
-                    }
-                    deltaLabel={
-                      summary.weekOverWeekPct == null ? 'sin datos previos' : 'vs hace 7 días'
-                    }
-                    icon={<BrandIcon name="flame" className="h-5 w-5" />}
-                    tone="primary"
-                  />
-                  <StatCard
-                    label="Ventas hoy"
-                    value={String(summary.todayCount)}
-                    hint={
-                      <>
-                        Descuentos:{' '}
-                        <Money amount={summary.todayDiscount} size="xs" weight="medium" />
-                      </>
-                    }
-                    icon={<BrandIcon name="burger" className="h-5 w-5" />}
-                  />
-                  <StatCard
-                    label="Pedidos web por aceptar"
-                    value={String(summary.pendingWebOrders)}
-                    hint="Aceptar y contactar desde POS"
-                    tone={summary.pendingWebOrders > 0 ? 'warning' : 'neutral'}
-                    icon={<AlertTriangle className="h-5 w-5" strokeWidth={1.75} />}
-                  />
-                  <StatCard
-                    label="Stock crítico"
-                    value={String(summary.lowStockCount)}
-                    hint={
-                      summary.pendingSuggestions > 0
-                        ? `${summary.pendingSuggestions} sugerencias IA esperando`
-                        : 'sin sugerencias pendientes'
-                    }
-                    tone={summary.lowStockCount > 0 ? 'warning' : 'neutral'}
-                    icon={<PackageCheck className="h-5 w-5" strokeWidth={1.75} />}
-                  />
-                </div>
-              </Section>
-
-              <Section eyebrow="Cocina" title="En vivo" size="md">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <KitchenCard
-                    label="En cocina"
-                    value={summary.ordersInKitchen}
-                    icon={<ChefHat className="h-5 w-5" strokeWidth={1.75} />}
-                    tone="warning"
-                  />
-                  <KitchenCard
-                    label="Listos para entregar"
-                    value={summary.ordersReady}
-                    icon={<BrandIcon name="flame" className="h-5 w-5" />}
-                    tone="success"
-                  />
-                  <KitchenCard
-                    label="Sugerencias pendientes"
-                    value={summary.pendingSuggestions}
-                    icon={<Sparkles className="h-5 w-5" strokeWidth={1.75} />}
-                    href="/purchase-suggestions"
-                  />
-                </div>
-              </Section>
-            </>
+            <LiveDashboardSections initial={summary} />
           ) : (
             <div
               role="alert"
@@ -148,36 +64,58 @@ export default async function InicioPage() {
             </div>
           )}
 
+          {/* CTA principal: Estado financiero del mes — el más importante del día a día. */}
+          <Section eyebrow="Finanzas" title="Estado financiero del mes" size="md">
+            <Link
+              href="/finanzas/estado"
+              className="group flex items-center gap-4 rounded-2xl border border-primary/30 bg-primary/5 p-5 transition-all duration-150 hover:border-primary hover:bg-primary/10 hover:shadow-sm"
+            >
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
+                <TrendingUp className="h-6 w-6" strokeWidth={1.75} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-display text-base font-bold tracking-tight text-foreground">
+                  Ver resultado del mes
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Ingresos − COGS − nómina − costos fijos = ganancia/pérdida real. Con análisis IA y
+                  punto de equilibrio.
+                </p>
+              </div>
+              <ArrowUpRight className="h-5 w-5 shrink-0 text-primary transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" strokeWidth={1.75} />
+            </Link>
+          </Section>
+
           <Section eyebrow="Profundizar" title="Reportes" size="md">
             <div className="grid gap-3 sm:grid-cols-2">
               <ReportLink
                 href="/reports/sales"
                 title="Ventas y métodos de pago"
-                desc="Serie temporal, breakdown por tipo y método"
+                desc="Cómo vendiste día a día, por tipo de venta y forma de pago"
                 icon={<LineChart className="h-4 w-4" strokeWidth={1.75} />}
               />
               <ReportLink
                 href="/reports/products"
-                title="Top productos y márgenes"
-                desc="Qty, revenue y margen estimado por receta"
+                title="Productos más vendidos y márgenes"
+                desc="Cuánto se vendió de cada producto y cuánto te deja"
                 icon={<BarChart3 className="h-4 w-4" strokeWidth={1.75} />}
               />
               <ReportLink
                 href="/reports/operations"
                 title="Operación: WhatsApp + IA + horarios"
-                desc="Cobertura WA, métricas IA, heatmap día/hora"
+                desc="Cobertura de WhatsApp, datos de la IA y mapa de calor por día y hora"
                 icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
               />
               <ReportLink
                 href="/reports/anomalies"
                 title="Anomalías por cajero"
-                desc="Detección 2σ de descuadres y voids"
+                desc="Detecta descuadres y anulaciones fuera de lo normal"
                 icon={<AlertTriangle className="h-4 w-4" strokeWidth={1.75} />}
               />
               <ReportLink
                 href="/reports/reconciliation"
-                title="Reconciliación CSV pagos"
-                desc="Match Nequi/Bancolombia vs sales digitales"
+                title="Conciliación de pagos digitales"
+                desc="Cruza los movimientos de Nequi/Bancolombia con tus ventas"
                 icon={<ArrowLeftRight className="h-4 w-4" strokeWidth={1.75} />}
               />
             </div>
@@ -186,44 +124,6 @@ export default async function InicioPage() {
       </Container>
     </>
   );
-}
-
-function KitchenCard({
-  label,
-  value,
-  icon,
-  tone,
-  href,
-}: {
-  label: string;
-  value: number;
-  icon?: React.ReactNode;
-  tone?: 'success' | 'warning' | 'primary';
-  href?: string;
-}) {
-  const variant = tone === 'warning' ? 'accent' : 'default';
-  const inner = (
-    <Card
-      variant={variant}
-      tone={tone === 'warning' ? 'warning' : tone === 'success' ? 'success' : 'none'}
-      className="px-5 py-4"
-      interactive={Boolean(href)}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          {icon}
-          {label}
-        </span>
-        <span className="font-display text-3xl font-extrabold tabular tracking-tight text-foreground">
-          {value}
-        </span>
-      </div>
-    </Card>
-  );
-  if (href) {
-    return <Link href={href}>{inner}</Link>;
-  }
-  return inner;
 }
 
 function ReportLink({

@@ -1,80 +1,80 @@
 import Link from 'next/link';
 import { Chip, Container, PageHeader } from '@pos-tercos/ui';
 import { Clock } from 'lucide-react';
-import { PayrollPeriodTable } from '../../../../features/workers';
-import { RangeFilter } from '../../../../features/reports-sales';
-import { ApiError, serverFetchJson } from '../../../../lib/api-server';
-import type { PayrollPeriodReport } from '@pos-tercos/types';
+import { PaymentTable } from '../../../../features/workers';
+import { serverFetchJson } from '../../../../lib/api-server';
+import { friendlyApiError } from '../../../../lib/error-copy';
+import { requireRole } from '../../../../lib/guards';
+import type { PagoReport } from '@pos-tercos/types';
 
 interface PageProps {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ start?: string }>;
 }
 
-function defaultRange(): { from: string; to: string } {
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(from.getDate() - 13);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: fmt(from), to: fmt(today) };
+const fmt = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Inicio del pago (1, 8, 16 o 23 del mes) que contiene la fecha. */
+function paymentStartOf(d: Date): string {
+  const day = d.getDate();
+  const startDay = day <= 7 ? 1 : day <= 15 ? 8 : day <= 22 ? 16 : 23;
+  return fmt(new Date(d.getFullYear(), d.getMonth(), startDay));
 }
 
-async function loadReport(
-  from: string,
-  to: string,
-): Promise<PayrollPeriodReport | { error: string }> {
+/** Inicio del pago anterior al que contiene startYmd. */
+function prevPaymentStart(startYmd: string): string {
+  const d = new Date(`${startYmd}T12:00:00`);
+  d.setDate(d.getDate() - 1); // un día antes → garantiza pago anterior
+  return paymentStartOf(d);
+}
+
+async function load(start: string): Promise<PagoReport | { error: string }> {
   try {
-    return await serverFetchJson<PayrollPeriodReport>(
-      `/workers/payroll-period?from=${from}&to=${to}`,
-    );
+    return await serverFetchJson<PagoReport>(`/workers/period?start=${start}`);
   } catch (err) {
-    if (err instanceof ApiError) return { error: `API ${err.status}` };
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 
 export default async function PayrollPage({ searchParams }: PageProps) {
+  // requireRole(['DUENO']) bloquea cualquier otro rol con redirect → al pasar
+  // de acá, el usuario es siempre Dueño (las acciones de pago se habilitan).
+  await requireRole(['DUENO']);
   const sp = await searchParams;
-  const def = defaultRange();
-  const from = sp.from ?? def.from;
-  const to = sp.to ?? def.to;
-  const result = await loadReport(from, to);
+  const current = paymentStartOf(new Date());
+  const previous = prevPaymentStart(current);
+  const start = sp.start ?? current;
+  const isCurrent = start === current;
+  const result = await load(start);
 
   return (
     <>
       <PageHeader
         eyebrow="Personal"
-        title="Nómina del período"
-        description="Total de horas y comisión estimada por trabajador en el rango. Vista previa del pago — no genera asientos contables ni movimientos en caja."
+        title="Nómina del pago"
+        description="Lo que se le paga a cada empleado en este pago. El mes se divide en 2 quincenas, y cada quincena en 2 sub-pagos (4 pagos por mes). Toca un empleado para ver el detalle del mes."
         icon={<Clock className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">
-        <nav className="mb-5 flex flex-wrap gap-2">
-          <Link href="/workers/attendance">
-            <Chip type="button">Asistencia</Chip>
-          </Link>
-          <Link href="/workers/commissions">
-            <Chip type="button">Comisiones</Chip>
-          </Link>
-          <Link href="/workers/payroll">
-            <Chip selected type="button">
-              Nómina del período
+        <div className="mb-5 flex flex-wrap gap-2">
+          <Link href={`/workers/payroll?start=${previous}`}>
+            <Chip selected={!isCurrent} type="button">
+              Pago anterior
             </Chip>
           </Link>
-        </nav>
-
-        <div className="mb-5">
-          <RangeFilter />
+          <Link href="/workers/payroll">
+            <Chip selected={isCurrent} type="button">
+              Pago actual
+            </Chip>
+          </Link>
         </div>
 
         {'error' in result ? (
-          <p
-            role="alert"
-            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-          >
-            No se pudo cargar el reporte. {result.error}
+          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            No se pudo cargar la nómina. {result.error}
           </p>
         ) : (
-          <PayrollPeriodTable report={result} />
+          <PaymentTable report={result} />
         )}
       </Container>
     </>

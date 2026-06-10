@@ -13,12 +13,15 @@ export const AuditActionEnum = z.enum([
   'PRODUCT_CREATED',
   'PRODUCT_UPDATED',
   'PRODUCT_DEACTIVATED',
+  'PRODUCT_DELETED',
   'SUBPRODUCT_CREATED',
   'SUBPRODUCT_UPDATED',
   'SUBPRODUCT_DEACTIVATED',
+  'SUBPRODUCT_DELETED',
   'INGREDIENT_CREATED',
   'INGREDIENT_UPDATED',
   'INGREDIENT_DEACTIVATED',
+  'INGREDIENT_DELETED',
   'RECIPE_UPDATED',
 
   // Inventory
@@ -69,6 +72,8 @@ export const AuditActionEnum = z.enum([
   'INVOICE_REJECTED',
   'INVOICE_CLONED',
   'INVOICE_DELETED',
+  'INVOICE_PAYMENT_MARKED',
+  'INVOICE_PAYMENT_UNMARKED',
 
   // Purchase suggestions (FASE 12.C)
   'PURCHASE_SUGGESTION_CREATED',
@@ -76,17 +81,41 @@ export const AuditActionEnum = z.enum([
   'PURCHASE_SUGGESTION_ACCEPTED',
   'PURCHASE_SUGGESTION_REJECTED',
   'PURCHASE_SUGGESTION_STALE',
+  'PURCHASE_SUGGESTION_SENT_SUPPLIER',
+  'PURCHASE_SUGGESTION_SUMMARY_SENT',
 
   // WhatsApp wa.me semi-automático (FASE 9)
   'WHATSAPP_LINK_OPENED',
 
-  // Workers RRHH (FASE 14.B)
-  'WORKER_CHECK_IN',
-  'WORKER_CHECK_OUT',
-  'WORKER_COMMISSION_CREATED',
+  // RRHH / Nómina
+  'USER_SALARY_CHANGED',
+  'EMPLOYMENT_TERMINATED',
+  'PAYROLL_DAY_SET',
+  'PAYROLL_ADJUSTMENT_ADDED',
+  'PAYROLL_PAYMENT_MARKED',
+  'PAYROLL_PAYMENT_UNMARKED',
 
   // Persistencia reconciliación (FASE 14.D)
   'RECONCILIATION_IMPORTED',
+
+  // Gestión de usuarios (admin)
+  'USER_CREATED',
+  'USER_UPDATED',
+  'USER_DEACTIVATED',
+  'USER_REACTIVATED',
+  'USER_DELETED',
+  'USER_PASSWORD_RESET',
+  'USER_PIN_SET',
+  'FIXED_COST_CREATED',
+  'FIXED_COST_UPDATED',
+  'FIXED_COST_DELETED',
+  'FIXED_COST_PAYMENT_MARKED',
+  'FIXED_COST_PAYMENT_UNMARKED',
+
+  // Producción de subproductos (cocinero o admin registra una tanda).
+  // El movimiento de inventario en sí se loggea como INVENTORY_MOVEMENT_*.
+  'SUBPRODUCT_PRODUCED',
+  'FINANCIAL_ANALYSIS_GENERATED',
 
   // KDS (bitácora de cocina): tardanza de preparación. Login/logout de la
   // cocina quedan en AUTH_LOGIN/AUTH_LOGOUT del usuario COCINERO.

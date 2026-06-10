@@ -26,6 +26,7 @@ import { PublicDisplayModule } from './public-display/public-display.module';
 import { PurchaseSuggestionsModule } from './purchase-suggestions/purchase-suggestions.module';
 import { WorkersModule } from './workers/workers.module';
 import { RecipesModule } from './recipes/recipes.module';
+import { FixedCostsModule } from './fixed-costs/fixed-costs.module';
 import { ReportsModule } from './reports/reports.module';
 import { SalesModule } from './sales/sales.module';
 import { ShiftsModule } from './shifts/shifts.module';
@@ -68,6 +69,7 @@ import { WebOrdersModule } from './web-orders/web-orders.module';
     ReportsModule,
     PurchaseSuggestionsModule,
     WorkersModule,
+    FixedCostsModule,
   ],
   controllers: [HealthController],
   providers: [

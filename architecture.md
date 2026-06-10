@@ -1,1135 +1,1880 @@
-# POS Comida Rápida — Arquitectura v1
+# 📐 Arquitectura del Proyecto — CrediClub Mobile App
 
-> Salida de Fase 3. Toma `pos-spec.v1.md` como insumo único. Documento ejecutable: si lo seguís, podés empezar a codear el lunes.
-
----
-
-## 1. Diagrama de componentes
-
-```mermaid
-flowchart TB
-  subgraph "Tienda física"
-    POS["POS Cajero<br/>(Next.js PWA + IndexedDB)"]
-    KDS["KDS Cocina<br/>(Next.js PWA)"]
-    DISPLAY["Pantalla Pública<br/>(Next.js + SSE)"]
-    AGENT["Print Agent<br/>(Node, localhost:9100)"]
-    PRINTER["Impresora térmica<br/>Epson TM-T20III + Cajón"]
-    POS -- HTTP local --> AGENT
-    AGENT -- USB / ESC-POS --> PRINTER
-  end
-
-  subgraph "Cliente final"
-    WEB["Web Pública Pedidos<br/>(Next.js)"]
-    WAPP_CLIENT["WhatsApp del cliente"]
-  end
-
-  subgraph "Equipo interno"
-    ADMIN["Admin completo<br/>(Next.js + módulos<br/>Repartidor / Trabajador)"]
-    REPA["App Repartidor<br/>(PWA mobile)"]
-  end
-
-  subgraph "Backend (Railway US East)"
-    API["NestJS API<br/>REST + WS + SSE"]
-    PG[("PostgreSQL")]
-    API --- PG
-  end
-
-  subgraph "Servicios externos"
-    META["WhatsApp Cloud API<br/>(Meta)"]
-    AI1["Anthropic API<br/>Haiku 4.5 vision"]
-    AI2["OpenAI API<br/>GPT-4o-mini fallback"]
-    MBX["Mapbox<br/>Geocoding + Maps + Search"]
-    R2["Cloudflare R2<br/>(fotos facturas)"]
-  end
-
-  POS -- HTTPS REST + WS --> API
-  KDS -- WS --> API
-  DISPLAY -- SSE --> API
-  WEB -- HTTPS REST --> API
-  ADMIN -- HTTPS REST + WS --> API
-  REPA -- HTTPS REST + WS --> API
-
-  WEB -- Maps + Autocomplete --> MBX
-  ADMIN -- Maps --> MBX
-  REPA -- Maps --> MBX
-
-  API -- Geocoding server-side --> MBX
-  API -- Templates msg --> META
-  META -- Webhook delivery status --> API
-  META -- Mensaje --> WAPP_CLIENT
-  API -- Vision extraction --> AI1
-  API -- Fallback --> AI2
-  API -- Upload / signed URL --> R2
-```
+> **Documento técnico de referencia** para IA y desarrolladores.
+> Última actualización: 26 de febrero de 2026.
 
 ---
 
-## 2. Estructura de monorepo
+## Tabla de Contenidos
 
-**Tooling:** Turborepo + pnpm workspaces + TypeScript strict + Prisma ORM.
-
-```
-pos-tercos/
-├── apps/
-│   ├── api/                  # NestJS backend (REST + WS + SSE)
-│   ├── pos/                  # POS Cajero (Next.js PWA)
-│   ├── kds/                  # KDS Cocina (Next.js PWA)
-│   ├── public-display/       # Pantalla pública (Next.js, SSE)
-│   ├── web/                  # Web pública pedidos (Next.js)
-│   ├── admin/                # Admin + módulos repartidor / trabajador (Next.js)
-│   └── print-agent/          # Servicio Node local impresora (instalado en PC mostrador)
-├── packages/
-│   ├── types/                # Tipos compartidos + schemas Zod (single source of truth)
-│   ├── domain/               # Lógica de dominio compartida (motor de pricing, cálculo de receta, conversiones)
-│   ├── ui/                   # Componentes UI compartidos (shadcn/ui base)
-│   ├── config/               # eslint, prettier, tsconfig, tailwind base
-│   └── api-client/           # Cliente tipado del API (generado de los DTOs Zod)
-├── prisma/
-│   ├── schema.prisma
-│   └── migrations/
-├── docker-compose.dev.yml    # Postgres local para dev
-├── turbo.json
-└── package.json
-```
-
-**Decisiones implícitas:**
-- Prisma como ORM (mejor DX con TS, types autogenerados).
-- Zod como single source of truth de validación: backend valida con Zod, types se infieren para frontend.
-- shadcn/ui para componentes (radix + tailwind, sin lock-in).
-- pnpm > npm/yarn (workspaces más rápidos, menos disco).
-- Misma codebase de Next.js para POS/KDS pero con manifest.json + service worker propios para PWA.
+1. [Visión General](#1-visión-general)
+2. [Stack Tecnológico](#2-stack-tecnológico)
+3. [Estructura de Carpetas](#3-estructura-de-carpetas)
+4. [Capas de la Arquitectura (Clean Architecture)](#4-capas-de-la-arquitectura)
+   - 4.1 [Core](#41-core)
+   - 4.2 [Domain](#42-domain)
+   - 4.3 [Data](#43-data)
+   - 4.4 [Presentation](#44-presentation)
+5. [Flujo Completo de un Feature (Caso: Cards)](#5-flujo-completo-de-un-feature-caso-cards)
+6. [Sesión 1: Implementación de Servicios / APIs](#6-sesión-1-implementación-de-servicios--apis)
+7. [Sesión 2: Manejo de Vistas, Widgets, Colores, Tipografía y Spacing](#7-sesión-2-manejo-de-vistas-widgets-colores-tipografía-y-spacing)
+8. [Inyección de Dependencias (DI)](#8-inyección-de-dependencias-di)
+9. [Navegación (Routing)](#9-navegación-routing)
+10. [Convenciones de Nombrado](#10-convenciones-de-nombrado)
+11. [Manejo de Errores](#11-manejo-de-errores)
+12. [Guía Rápida para Crear un Nuevo Módulo](#12-guía-rápida-para-crear-un-nuevo-módulo)
 
 ---
 
-## 3. Modelo de datos completo
+## 1. Visión General
 
-### 3.1 Auth & Users
+La app sigue una **Clean Architecture** adaptada a Flutter con 4 capas principales:
 
-```sql
-users (
-  id              uuid PK
-  email           text UNIQUE
-  password_hash   text
-  full_name       text
-  phone           text
-  role            enum('CAJERO','COCINERO','REPARTIDOR','ADMIN_OPERATIVO','DUENO','TRABAJADOR')
-  must_change_pwd boolean default true
-  active          boolean default true
-  created_at      timestamptz
-  
-  -- Repartidor-only:
-  availability    enum('DISPONIBLE','OCUPADO','OFFLINE') NULL
-  last_active_at  timestamptz NULL
-)
-
-INDEX users (role, active)
-INDEX users (email)
+```
+┌─────────────────────────────────────────────┐
+│              PRESENTATION                   │
+│   (Widgets, Vistas, Controladores, Router)  │
+├─────────────────────────────────────────────┤
+│                 DOMAIN                      │
+│   (Modelos, Repositorios abstractos, Defs)  │
+├─────────────────────────────────────────────┤
+│                  DATA                       │
+│   (UseCases, RepoImpl, Providers/API)       │
+├─────────────────────────────────────────────┤
+│                  CORE                       │
+│   (Network, Theme, DI, Utils, Adaptive)     │
+└─────────────────────────────────────────────┘
 ```
 
-JWT auth: access token (15 min, en memoria) + refresh token (7 días, httpOnly cookie). Endpoint `/auth/refresh`.
-
-### 3.2 Catálogo
-
-```sql
-products (
-  id                    uuid PK
-  name                  text
-  description           text
-  base_price            numeric(12,2)
-  category              text
-  image_url             text NULL
-  modifiers_enabled     boolean default false
-  is_combo              boolean default false  -- combos = productos especiales
-  combo_price           numeric(12,2) NULL     -- only if is_combo
-  is_active             boolean default true
-  created_at            timestamptz
-)
-
-product_sizes (
-  id                 uuid PK
-  product_id         uuid FK
-  name               text   -- "Pequeña", "Mediana", "Grande"
-  price_modifier     numeric(12,2)  -- delta sobre base_price
-)
-
-product_modifiers (
-  id              uuid PK
-  product_id      uuid FK
-  name            text
-  price_delta     numeric(12,2)
-  recipe_delta    jsonb  -- { add: [{ ingredient_id, qty }], remove: [...] }
-)
-
-combo_components (
-  id          uuid PK
-  combo_id    uuid FK   -- el product que es combo
-  product_id  uuid FK   -- el componente
-  quantity    int
-)
-
-subproducts (
-  id          uuid PK
-  name        text
-  yield       numeric(10,4)  -- 1 batch produces N units
-  unit        text default 'unidad'
-  is_active   boolean default true
-)
-
-ingredients (
-  id                 uuid PK
-  name               text
-  unit_purchase      text          -- 'kg', 'lt', 'caja'
-  unit_recipe        text          -- 'g', 'ml', 'unidad'
-  conversion_factor  numeric(14,6) -- unit_purchase * factor = unit_recipe
-  threshold_min      numeric(14,4) -- alerta cuando stock < este valor (en unit_recipe)
-  is_active          boolean default true
-)
-```
-
-### 3.3 Receta (árbol producto/subproducto/insumo)
-
-```sql
-recipe_edges (
-  id                    uuid PK
-  parent_product_id     uuid FK NULL  -- exactly one of parent_*
-  parent_subproduct_id  uuid FK NULL
-  child_ingredient_id   uuid FK NULL  -- exactly one of child_*
-  child_subproduct_id   uuid FK NULL
-  quantity_neta         numeric(14,4)  -- en unit_recipe del child
-  merma_pct             numeric(5,4) default 0  -- 0.05 = 5%
-  
-  CHECK (parent_product_id IS NOT NULL AND parent_subproduct_id IS NULL
-       OR parent_product_id IS NULL     AND parent_subproduct_id IS NOT NULL)
-  CHECK (child_ingredient_id IS NOT NULL AND child_subproduct_id IS NULL
-       OR child_ingredient_id IS NULL     AND child_subproduct_id IS NOT NULL)
-)
-
-INDEX recipe_edges (parent_product_id)
-INDEX recipe_edges (parent_subproduct_id)
-INDEX recipe_edges (child_ingredient_id)
-INDEX recipe_edges (child_subproduct_id)
-```
-
-**Función crítica `expandRecipe(productId)`** en `packages/domain`:
-- Recursivamente desciende por subproductos hasta llegar a ingredientes raíz.
-- Aplica `quantity_neta / (1 - merma_pct)` en cada nivel.
-- Aplica `yield` del subproducto para escalar abajo.
-- Retorna `Map<ingredientId, totalNeededInRecipeUnit>`.
-- **Detecta ciclos** (un subproducto que se referencia a sí mismo) y lanza error.
-
-### 3.4 Promociones
-
-```sql
-promotions (
-  id                  uuid PK
-  name                text
-  type                enum('PERCENT_OFF','BOGO','FIXED_OFF','COMBO_OFF') default 'PERCENT_OFF'  -- v1 solo PERCENT_OFF
-  discount_pct        numeric(5,4)  -- 0.20 = 20%
-  days_of_week_mask   int           -- bitmask, lunes=1, martes=2, miércoles=4, ... domingo=64
-  time_start          time          -- '14:00'
-  time_end            time          -- '17:00'
-  active_from         date NULL
-  active_to           date NULL
-  is_active           boolean default true
-  created_by          uuid FK users
-  created_at          timestamptz
-)
-
-promotion_products (
-  promotion_id  uuid FK
-  product_id    uuid FK
-  PRIMARY KEY (promotion_id, product_id)
-)
-```
-
-**Resolución overlap:** al cobrar, motor evalúa todas las promos activas que matchean día+hora+producto, elige la de mayor `discount_pct`. No acumulables.
-
-### 3.5 Inventario
-
-```sql
-inventory_movements (
-  id              uuid PK
-  ingredient_id   uuid FK
-  delta           numeric(14,4)  -- en unit_recipe (positivo=entrada, negativo=salida)
-  type            enum('PURCHASE','SALE','MANUAL_ADJUSTMENT','WASTE','INITIAL')
-  source_type     enum('invoice','sale','adjustment','manual') NULL
-  source_id       uuid NULL
-  user_id         uuid FK NULL
-  notes           text NULL
-  created_at      timestamptz default now()
-  idempotency_key text UNIQUE NULL  -- para sync offline desde POS
-)
-
-INDEX inventory_movements (ingredient_id, created_at DESC)
-```
-
-Stock actual = `SELECT SUM(delta) FROM inventory_movements WHERE ingredient_id = ?`.
-
-**Vista materializada `current_stock`** (refresh cada 30s o por trigger) para no recalcular en cada lectura del dashboard.
-
-### 3.6 Proveedores y Facturas
-
-```sql
-suppliers (
-  id          uuid PK
-  nit         text UNIQUE
-  name        text
-  phone       text NULL  -- para WhatsApp (F-B)
-  email       text NULL
-  notes       text NULL
-  is_active   boolean default true
-  created_at  timestamptz
-)
-
-supplier_products (
-  id                 uuid PK
-  supplier_id        uuid FK
-  ingredient_id      uuid FK
-  last_unit_price    numeric(12,2)
-  last_purchase_date date
-  
-  UNIQUE (supplier_id, ingredient_id)
-)
-
-invoices (
-  id                  uuid PK
-  supplier_id         uuid FK NULL  -- null hasta ser confirmada con un proveedor
-  invoice_number      text          -- número del proveedor
-  total               numeric(14,2)
-  iva                 numeric(14,2)
-  photo_url           text          -- R2 URL
-  ai_extraction_json  jsonb         -- raw output del LLM
-  status              enum('PENDING_REVIEW','CONFIRMED','REJECTED')
-  confirmed_by        uuid FK users NULL
-  confirmed_at        timestamptz NULL
-  created_at          timestamptz
-)
-
-invoice_items (
-  id              uuid PK
-  invoice_id      uuid FK
-  ingredient_id   uuid FK NULL  -- null si la IA no pudo matchear, requires manual
-  description_raw text          -- lo que dice la factura
-  quantity        numeric(14,4)
-  unit            text          -- la unidad como dice la factura
-  unit_price      numeric(14,2)
-  total           numeric(14,2)
-)
-```
-
-Al confirmar factura: por cada `invoice_item` con `ingredient_id`, se inserta un `inventory_movement` con `type=PURCHASE`, `delta = +quantity * conversion_factor` (si el item viene en unit_purchase) o `+quantity` (si ya viene en unit_recipe).
-
-### 3.7 Ventas
-
-```sql
-sales (
-  id                    uuid PK
-  receipt_number        bigint UNIQUE  -- consecutivo continuo
-  type                  enum('COUNTER','WEB_PICKUP','WEB_DELIVERY')
-  status                enum(
-                          'PENDIENTE_PAGO','PAGADO','EN_PREPARACION','LISTO_DESPACHO',
-                          'ASIGNADO','EN_RUTA','ENTREGADO',
-                          'CANCELADO_NO_PAGO','CANCELADO_SIN_REEMBOLSO',
-                          'INTENTO_FALLIDO','DEVUELTO','EN_DISPUTA','VOID'
-                        )
-  turn_number           int        -- número de turno del día
-  customer_name         text NULL
-  customer_phone        text NULL
-  customer_nit          text NULL
-  delivery_address      text NULL
-  delivery_lat          numeric(10,7) NULL
-  delivery_lng          numeric(10,7) NULL
-  subtotal              numeric(14,2)
-  discount_total        numeric(14,2) default 0
-  total                 numeric(14,2)
-  payment_method        enum('CASH','NEQUI','DAVIPLATA','QR_BANCOLOMBIA','TRANSFER') NULL
-  paid_at               timestamptz NULL
-  paid_by_user_id       uuid FK users NULL  -- quien confirmó pago
-  cashier_id            uuid FK users NULL
-  shift_id              uuid FK shifts NULL
-  
-  -- delivery
-  repartidor_id         uuid FK users NULL
-  assigned_at           timestamptz NULL
-  picked_up_at          timestamptz NULL
-  departed_at           timestamptz NULL
-  delivered_at          timestamptz NULL
-  failed_attempts       int default 0
-  
-  notes                 text NULL
-  idempotency_key       text UNIQUE NULL  -- para POS offline
-  created_at            timestamptz default now()
-)
-
-INDEX sales (status, created_at DESC)
-INDEX sales (cashier_id, created_at DESC)
-INDEX sales (repartidor_id, status)
-INDEX sales (type, status, created_at DESC)
-
-sale_items (
-  id                   uuid PK
-  sale_id              uuid FK
-  product_id           uuid FK
-  size_id              uuid FK NULL
-  quantity             int
-  unit_price           numeric(12,2)  -- congelado al momento de venta
-  modifiers_json       jsonb          -- snapshot de modifiers aplicados
-  applied_promotion_id uuid FK NULL
-  line_subtotal        numeric(14,2)
-  line_discount        numeric(14,2) default 0
-  line_total           numeric(14,2)
-)
-
-sale_status_log (
-  id          uuid PK
-  sale_id     uuid FK
-  status_from text NULL
-  status_to   text
-  user_id     uuid FK NULL
-  notes       text NULL
-  changed_at  timestamptz default now()
-)
-
-INDEX sale_status_log (sale_id, changed_at)
-```
-
-**Receipt numbering:** secuencia Postgres `receipt_seq`, monotónica. Detección de saltos: cron diario que valida `MAX(receipt_number) - MIN(receipt_number) + 1 == COUNT(*)`. Si hay salto, alerta al Dueño.
-
-### 3.8 Cierre de caja
-
-```sql
-shifts (
-  id                uuid PK
-  cashier_id        uuid FK users
-  opened_at         timestamptz
-  closed_at         timestamptz NULL
-  opening_cash      numeric(14,2)
-  expected_cash     numeric(14,2) NULL  -- calculado al cerrar
-  counted_cash      numeric(14,2) NULL
-  difference        numeric(14,2) NULL  -- counted - expected
-  notes             text NULL
-  status            enum('OPEN','CLOSED','RECONCILED')
-)
-```
-
-Al cerrar:
-- `expected_cash = opening_cash + SUM(sales WHERE payment_method='CASH' AND shift_id=this) - SUM(refunds CASH)`.
-- `difference = counted_cash - expected_cash`.
-- Si `|difference| > umbral_configurable` (ej. $5000 COP) → WhatsApp al Dueño.
-
-### 3.9 Audit log y anti-fraude
-
-```sql
-audit_log (
-  id           uuid PK
-  user_id      uuid FK users
-  action       text  -- 'sale.void', 'discount.apply', 'inventory.adjust', 'cash_drawer.open_no_sale', etc.
-  entity_type  text
-  entity_id    uuid NULL
-  before_json  jsonb NULL
-  after_json   jsonb NULL
-  metadata     jsonb NULL  -- contexto extra (ej. amount, reason)
-  created_at   timestamptz default now()
-)
-
-INDEX audit_log (user_id, created_at DESC)
-INDEX audit_log (action, created_at DESC)
-
-payment_reconciliations (
-  id            uuid PK
-  imported_by   uuid FK users
-  period_from   date
-  period_to     date
-  source        enum('NEQUI_CSV','BANCOLOMBIA_CSV')
-  raw_data      jsonb
-  matches       jsonb  -- [{sale_id, status: 'OK'|'MISMATCH'|'MISSING'}]
-  created_at    timestamptz
-)
-```
-
-Audit log es **insert-only** (no UPDATE, no DELETE — enforced by Postgres permission).
-
-### 3.10 Trabajadores (RRHH ligero)
-
-```sql
-workers (
-  id                uuid PK
-  user_id           uuid FK users  -- 1:1 con users.role='TRABAJADOR'
-  full_name         text
-  document          text
-  position          text  -- 'Cajero', 'Cocinero', 'Repartidor', etc.
-  payment_type      enum('PER_DAY','MONTHLY')
-  payment_amount    numeric(14,2)
-  active            boolean default true
-  created_at        timestamptz
-)
-
-attendance (
-  id          uuid PK
-  worker_id   uuid FK
-  check_in    timestamptz
-  check_out   timestamptz NULL
-  date        date
-  notes       text NULL
-)
-
-payrolls (
-  id            uuid PK
-  worker_id     uuid FK
-  period_from   date
-  period_to     date
-  total_amount  numeric(14,2)
-  status        enum('DRAFT','APPROVED','PAID')
-  paid_at       timestamptz NULL
-  created_by    uuid FK users
-)
-```
-
-### 3.11 WhatsApp y notificaciones
-
-```sql
-whatsapp_messages (
-  id                 uuid PK
-  recipient_phone    text
-  template_name      text NULL  -- null si es free-text post-respuesta del cliente
-  payload            jsonb
-  meta_message_id    text NULL
-  status             enum('QUEUED','SENT','DELIVERED','READ','FAILED')
-  error              text NULL
-  related_entity     text NULL  -- 'sale', 'invoice_alert', 'cash_alert', etc.
-  related_id         uuid NULL
-  sent_at            timestamptz NULL
-  created_at         timestamptz default now()
-)
-
-INDEX whatsapp_messages (status, created_at)
-INDEX whatsapp_messages (related_entity, related_id)
-```
-
-### 3.12 Sugerencias de auto-pedido [F-B]
-
-```sql
-purchase_suggestions (
-  id              uuid PK
-  generated_at    timestamptz
-  ai_model_used   text  -- 'claude-haiku-4-5' / 'gpt-4o-mini'
-  triggered_by    enum('AUTO_THRESHOLD','MANUAL')
-  payload         jsonb  -- { groups: [{ supplier_id, items: [...], whatsapp_text }] }
-  status          enum('PENDING','APPROVED','REJECTED','SENT')
-  approved_by     uuid FK users NULL
-  approved_at     timestamptz NULL
-  whatsapp_msg_id uuid FK whatsapp_messages NULL
-)
-```
-
-Trigger: cron cada hora evalúa insumos bajo `threshold_min`. Si hay alguno → IA genera sugerencia → `purchase_suggestions` queda en `PENDING` → notif al Admin Operativo y Dueño. Tap aprobar → fanout WhatsApp al proveedor.
+**Regla de dependencia**: Cada capa solo puede depender de capas inferiores. La capa **Domain** es la más pura — no depende de Flutter ni de paquetes externos (salvo `freezed_annotation`).
 
 ---
 
-## 4. Superficie de API
+## 2. Stack Tecnológico
 
-REST con NestJS, validación con Zod (vía `nestjs-zod`). Realtime en endpoints separados (WS / SSE).
-
-### 4.1 Convenciones
-
-- Auth: `Authorization: Bearer <jwt>`.
-- Formato: JSON, `application/json`.
-- Errores: `{ statusCode, message, code, details? }` consistentes.
-- Idempotency: `Idempotency-Key` header en POSTs críticos (ventas, movimientos, confirmaciones).
-- Pagination: `?page=1&limit=20` con `X-Total-Count` header.
-
-### 4.2 Endpoints por dominio
-
-#### Auth
-```
-POST   /auth/login                 { email, password } → { access, refresh, user }
-POST   /auth/refresh               { refresh } → { access }
-POST   /auth/logout                
-POST   /auth/change-password       { old, new }
-GET    /auth/me                    → user
-```
-
-#### Productos / Recetas
-```
-GET    /products                   ?category=&active=
-GET    /products/:id
-POST   /products                   [admin/dueño]
-PATCH  /products/:id               [admin/dueño]
-DELETE /products/:id               [admin/dueño]
-
-GET    /products/:id/recipe        → tree
-PUT    /products/:id/recipe        → set complete recipe
-
-GET    /subproducts                
-POST   /subproducts                
-PATCH  /subproducts/:id            
-GET    /subproducts/:id/recipe
-PUT    /subproducts/:id/recipe
-
-GET    /products/:id/expanded-cost → COGS recursivo (usa `expandRecipe`)
-```
-
-#### Inventario / Insumos
-```
-GET    /ingredients                ?low_stock=true
-GET    /ingredients/:id            (incluye stock actual)
-POST   /ingredients                [admin]
-PATCH  /ingredients/:id            
-POST   /inventory/adjustments      [admin operativo / dueño] { ingredient_id, delta, reason }
-GET    /inventory/movements        ?ingredient_id=&from=&to=
-```
-
-#### Proveedores / Facturas
-```
-GET    /suppliers
-POST   /suppliers                  
-GET    /suppliers/:id              (con productos típicos)
-GET    /suppliers/:id/invoices
-
-POST   /invoices/upload-photo      multipart → { invoice_id_draft, ai_extraction }
-POST   /invoices/from-clone        { supplier_id } → { invoice_id_draft, prefilled_items }  (manual rápido)
-POST   /invoices/:id/confirm       [admin operativo / dueño] { items[] } → impacta inventario
-GET    /invoices                   ?supplier_id=&status=
-```
-
-#### Ventas POS (mostrador)
-```
-POST   /sales                      [cajero] { items, payment_method, customer_nit? }
-                                   header Idempotency-Key
-                                   → { sale_id, receipt_number, ... }
-POST   /sales/:id/confirm-payment  [cajero] { method, amount }
-POST   /sales/:id/void             [admin operativo / dueño] { reason } (requires approval)
-POST   /sales/:id/print            (re-print)
-```
-
-#### Pedidos web
-```
-POST   /web/orders                 (público) { items, customer, type, address?, lat?, lng? }
-                                   → { order_id, payment_instructions, eta }
-GET    /web/orders/:id             ?token= (público con token de orden)
-POST   /web/orders/:id/confirm-payment  [cajero / admin]
-```
-
-#### KDS
-```
-GET    /kds/orders                 [cocinero] (PAID + EN_PREPARACION)
-POST   /kds/orders/:id/start       (status PAID → EN_PREPARACION)
-POST   /kds/orders/:id/ready       (status EN_PREPARACION → LISTO_DESPACHO)
-WS     /ws/kds                     subscribe to kitchen.queue
-```
-
-#### Repartidor
-```
-GET    /repartidor/orders          [repartidor] (sus asignados, ordered Haversine)
-POST   /repartidor/orders/:id/depart      (ASIGNADO → EN_RUTA)
-POST   /repartidor/orders/:id/deliver     (EN_RUTA → ENTREGADO)
-POST   /repartidor/orders/:id/failed      (EN_RUTA → INTENTO_FALLIDO_N)
-POST   /repartidor/orders/:id/return      (* → DEVUELTO)
-PUT    /repartidor/availability    { status: 'DISPONIBLE'|'OCUPADO'|'OFFLINE' }
-WS     /ws/repartidor              subscribe to repartidor.assignments
-```
-
-Asignación: cuando una sale pasa a `LISTO_DESPACHO` y `type=WEB_DELIVERY`, un servicio busca repartidor `DISPONIBLE` con menor `last_assigned_at`, asigna, emite WS.
-
-#### Pantalla pública
-```
-GET    /public-display/state       → { current_turn, next_turns[] }
-GET    /public-display/stream      SSE: emite cada cambio de current_turn
-```
-
-#### Cierre de caja
-```
-POST   /shifts/open                [cajero] { opening_cash }
-GET    /shifts/current             [cajero]
-POST   /shifts/close               [cajero] { counted_cash, notes? }
-                                   → { expected, difference, alert_sent }
-GET    /shifts                     ?cashier_id=&from=&to=  [admin/dueño]
-```
-
-#### Reportes / Dashboard
-```
-GET    /reports/dashboard          [dueño] → top 8 hero
-GET    /reports/sales              ?from=&to=&group_by=day|week|month
-GET    /reports/cogs               ?product_id=
-GET    /reports/anomalies          [dueño]
-GET    /reports/inventory          (rotación, cobertura, merma)
-GET    /reports/web-funnel
-GET    /reports/payment-reconciliation
-POST   /reports/payment-reconciliation/import multipart (CSV)
-```
-
-#### Promociones
-```
-GET    /promotions                 ?active_now=true
-POST   /promotions                 [admin operativo / dueño]
-PATCH  /promotions/:id
-DELETE /promotions/:id
-```
-
-#### Auto-pedido [F-B]
-```
-GET    /purchase-suggestions       ?status=PENDING
-POST   /purchase-suggestions/regenerate  [admin/dueño]
-PATCH  /purchase-suggestions/:id   (editar antes de aprobar)
-POST   /purchase-suggestions/:id/approve [admin/dueño]
-                                   → genera WhatsApp(s) al/los proveedor(es)
-POST   /purchase-suggestions/:id/reject  [admin/dueño]
-```
-
-#### Trabajadores (RRHH)
-```
-GET    /workers                    [admin/dueño]
-POST   /workers                    [admin/dueño]
-GET    /workers/me                 [trabajador]
-POST   /workers/me/check-in        [trabajador]
-POST   /workers/me/check-out       [trabajador]
-GET    /workers/me/payroll         [trabajador]
-POST   /workers/:id/payrolls       [admin/dueño] (genera período)
-PATCH  /workers/:id/payrolls/:pid  status PAID
-```
-
-#### Audit log
-```
-GET    /audit                      [dueño] ?from=&to=&user_id=&action=
-```
-
-#### WhatsApp webhooks
-```
-POST   /webhooks/whatsapp          (Meta callback: delivery, read, replies)
-GET    /webhooks/whatsapp          (Meta verification challenge)
-```
-
-### 4.3 Realtime
-
-| Canal | Protocolo | Eventos |
-|---|---|---|
-| `/ws/kds` | WebSocket | `order.created`, `order.status.changed` |
-| `/ws/pos` | WebSocket | `web-order.pending-payment`, `cashier.alert` |
-| `/ws/repartidor` | WebSocket | `assignment.new`, `assignment.cancelled` |
-| `/public-display/stream` | SSE | `turn.updated` |
-| `/ws/admin` | WebSocket | `purchase-suggestion.new`, `cash.discrepancy`, `inventory.alert` |
-
-WS implementado con `@nestjs/websockets` + `socket.io`. Auth por JWT en handshake.
+| Categoría | Tecnología |
+|---|---|
+| **Estado** | Riverpod + Riverpod Code Generation (`@riverpod`, `@Riverpod(keepAlive: true)`) |
+| **Modelos** | Freezed (`@freezed`) + `json_serializable` (código generado: `.freezed.dart`, `.g.dart`) |
+| **HTTP** | Dio con interceptores personalizados (CRC, logging, errores críticos) |
+| **Navegación** | GoRouter (`go_router`) |
+| **Textos UI** | Firebase Remote Config (100% configurable en remoto) |
+| **Responsive** | Sistema adaptativo propio (`AdaptiveScreen`, `AdaptiveFontSize`, `AdaptiveSpacing`) |
+| **Seguridad** | RSA para encryption, CRC-HMAC para integridad de requests, Dynatrace APM |
+| **CI/CD** | Azure Pipelines, 4 flavors: `dev`, `qa`, `staging`, `production` |
+| **Lenguaje** | Dart 3+ (sealed classes, pattern matching, records) |
 
 ---
 
-## 5. Estrategia offline (POS y KDS)
+## 3. Estructura de Carpetas
 
-### 5.1 Qué se cachea local
+```
+lib/
+├── main.dart                        # Entry point default
+├── main_dev.dart                    # Entry point: development
+├── main_qa.dart                     # Entry point: QA
+├── main_staging.dart                # Entry point: staging
+├── main_production.dart             # Entry point: production
+└── app/
+    ├── main_with_flavor.dart        # Bootstrap con flavor
+    ├── my_app.dart                  # Widget raíz (MaterialApp.router)
+    ├── state_app.dart               # Inicialización de sesión/router
+    │
+    ├── core/                        # ← Utilidades transversales
+    │   ├── adaptive_screen/         # Responsive: wpx(), hpx(), dpx(), sp()
+    │   ├── config/                  # Flavor (dev/qa/staging/prod)
+    │   ├── constants/               # Endpoints, error codes
+    │   ├── enum/                    # Enums globales
+    │   ├── error/                   # Global error handler
+    │   ├── icon/                    # Iconos custom (CrediClub icons)
+    │   ├── injects_providers/       # Proveedores DI por servicio
+    │   ├── instances/               # Singletons (Dio, Logger, SecureStorage)
+    │   ├── l10n/                    # Localización
+    │   ├── network/                 # Either, Failure, HttpClient, Interceptors
+    │   ├── theme/                   # SemanticColors, ThemeApp, Typography
+    │   └── utils/                   # RSA, JSON, Assets, Device info, etc.
+    │
+    ├── domain/                      # ← Contratos y modelos puros
+    │   ├── defs/                    # Type aliases (FutureEither, Json)
+    │   ├── models/                  # Modelos Freezed por feature
+    │   └── repositories/           # Interfaces abstractas de repositorios
+    │
+    ├── data/                        # ← Implementación de datos
+    │   ├── uses_cases/              # Casos de uso por feature
+    │   ├── repositories_impl/       # Implementaciones de repositorios
+    │   └── source/                  # Fuentes de datos
+    │       ├── api/                 # Providers HTTP por feature
+    │       └── providers/           # Providers locales (Firebase, SharedPrefs, Dio, etc.)
+    │
+    └── presentation/                # ← UI
+        ├── global/                  # Compartido entre módulos
+        │   ├── controllers/         # Controladores globales (session, router, auth...)
+        │   ├── extensions/          # Extensions sobre Widget, String, DateTime, etc.
+        │   ├── modules/             # Módulos globales (Loader, OTP, SessionDetector...)
+        │   ├── utils/               # RouterUtil, LoaderUtil, ToastUtil, BottomSheetUtil...
+        │   ├── validators/          # Validadores de input (password, email, money...)
+        │   ├── widgets/             # 42 widgets globales reutilizables
+        │   └── global.dart          # ProviderContainer global
+        ├── modules/                 # Features de la app
+        │   ├── cards/               # Tarjetas (crédito/débito)
+        │   ├── home/                # Home + bottom nav
+        │   ├── sign_in/             # Login
+        │   ├── transfers/           # Transferencias
+        │   ├── ... (27 módulos)
+        └── router/                  # GoRouter config + routes
+            ├── go_router_provider.dart
+            ├── app_routes/          # Definición de rutas por feature
+            ├── routes/              # Rutas adicionales
+            └── transitions/         # Animaciones de transición
+```
 
-PWA + `IndexedDB` con stores:
-- `catalog_snapshot`: productos, subproductos, insumos, recetas, modificadores, combos. Incluye hash. Se refresca al iniciar sesión y cada 30 min mientras hay conexión.
-- `promotions_snapshot`: promociones activas + agenda futura (próximas 7 días).
-- `pending_operations`: cola FIFO de operaciones offline.
-- `recent_sales`: últimas 50 ventas para mostrar histórico.
-- `current_shift`: turno abierto.
+---
 
-Service worker estrategia:
-- API `GET` reads → `network-first, fallback cache`.
-- API `POST/PATCH/DELETE` → `network-only`. Si falla, encola en `pending_operations`.
-- Static assets → `cache-first`.
+## 4. Capas de la Arquitectura
 
-### 5.2 Cola de sync
+### 4.1 Core
 
-Schema `pending_operations`:
-```typescript
-{
-  id: string,           // UUID local
-  idempotency_key: string,
-  endpoint: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
-  payload: object,
-  created_at: Date,
-  retry_count: number,
-  last_error?: string,
+La capa **Core** contiene utilidades transversales que NO pertenecen a ningún feature específico.
+
+#### 4.1.1 Network (`core/network/`)
+
+| Archivo | Responsabilidad |
+|---|---|
+| `either.dart` | Implementación propia de `Either<L, R>` (Left = error, Right = éxito) |
+| `failure.dart` | Sealed class `Failure` con subtipos: `NetworkFailure`, `ApiFailure`, `AuthFailure`, `ValidationFailure`, `BusinessFailure`, `NoDataFailure`, `TimeoutFailure`, `StorageFailure`, `UnknownFailure` |
+| `handle_failure.dart` | `mapFailureToView(Failure)` → convierte `Failure` en `FailureViewData` con icono y mensaje para la UI |
+| `http_client_repository.dart` | Interfaz abstracta con `get`, `post`, `put`, `delete`, `patch` genéricos |
+| `http_result.dart` | Sealed class alternativa `HttpResult<T>` → `HttpSuccess` / `HttpFailure` |
+| `success.dart` | Sealed class `Result<T>` → `Success<T>` |
+
+**Interceptores Dio** (se ejecutan en cadena):
+
+| Interceptor | Función |
+|---|---|
+| `CrcInterceptor` | Genera HMAC-SHA256 CRC para requests/responses (integridad) |
+| `CriticalErrorInterceptor` | Detecta 401/404/5xx → fuerza logout automático |
+| `LoggerInterceptor` | Log de request/response/error |
+| `GlobalErrorInterceptor` | Captura errores no manejados |
+| `CallStackInterceptor` | Adjunta stack trace del caller para debugging |
+
+**Patrón `Either` (errores funcionales)**:
+
+```dart
+// Definición de tipo alias
+typedef FutureEither<L, R> = Future<Either<L, R>>;
+typedef Json = Map<String, dynamic>;
+
+// Uso en repositorio abstracto
+FutureEither<Failure, CardDetailResponseModel> getCardDetails(String cardNumber);
+
+// Uso en use case (convierte Failure → FailureViewData)
+FutureEither<FailureViewData, CardDetailResponseModel> call(String cardNumber) async {
+  final result = await _cardsRepository.getCardDetails(cardNumber);
+  return result.fold(
+    (failure) => Left(FailureViewData(message: RemoteConfigKeys.defaultErrorMessage.text)),
+    (data) => Right(data),
+  );
+}
+
+// Uso en controller
+final result = await _getCardDetailsUseCase(cardNumber);
+result.fold(
+  (failure) => state = state.copyWith(error: failure.message),
+  (data) => state = state.copyWith(cardDetail: data),
+);
+```
+
+#### 4.1.2 Adaptive Screen (`core/adaptive_screen/`)
+
+Sistema de responsive design con base de diseño **402×874 px**.
+
+```dart
+// AdaptiveScreen — Escala proporcional
+final screen = AdaptiveScreen(context);
+screen.wpx(16)   // Ancho proporcional: pixels * (screenWidth / 402)
+screen.hpx(24)   // Alto proporcional: pixels * (screenHeight / 874)
+screen.dpx(12)   // Diagonal proporcional (para padding/spacing)
+screen.sp(14)    // Font size con factor clamped entre 0.8 y 1.2
+
+// AdaptiveSpacing — Escala de padding normalizada
+final spacing = AdaptiveSpacing(context);
+spacing.sx    //  2px base
+spacing.sm    //  4px base
+spacing.base  //  8px base
+spacing.md    // 12px base
+spacing.lg    // 16px base
+spacing.xl    // 24px base
+spacing.xxl   // 32px base
+spacing.xxxl  // 44px base
+spacing.safe  // 60px base
+
+// AdaptiveFontSize — Sistema tipográfico
+final fonts = AdaptiveFontSize(context);
+fonts.system.sm       // 10px base, font: Area
+fonts.system.base     // 13px base
+fonts.system.lg       // 16px base
+fonts.system.xl       // 24px base
+fonts.system.xl2      // 32px base
+fonts.system.xl2Display // 40px base
+fonts.display.lg      // 16px base, font: PP-Fragment-Glare
+
+// Extensions de estilo (encadenable)
+fonts.system.base.bold.carbon80
+fonts.display.xl2.white
+fonts.system.lg.medium.teal
+```
+
+#### 4.1.3 Theme (`core/theme/`)
+
+**SemanticColors** — Interfaz abstracta con ~35 tokens de color organizados por componente:
+
+```dart
+abstract class SemanticColors {
+  // Buttons (Primary, Secondary, Outlined, Ghost) × (Normal, Disabled)
+  Color get buttonPrimaryBackground;
+  Color get buttonPrimaryForeground;
+  Color get buttonPrimaryBorder;
+  // ... 12 más botones
+
+  // Navigation (AppBar, BottomNav)
+  Color get appBarBackground;
+  Color get navigationBarActive;
+
+  // Cards
+  Color get cardBackground;
+  Color get cardForeground;
+  Color get cardBorder;
+  Color get cardMuted;
+
+  // Inputs (Default, Error)
+  Color get inputDefaultBackground;
+  Color get inputErrorBorder;
+
+  // System
+  Color get systemBackground;
+  Color get systemPrimary;
+  Color get systemMuted;
+
+  // Credit
+  Color get creditAccent;
 }
 ```
 
-Worker: cada vez que hay conexión, drena la cola en orden FIFO. Si una request falla por error 5xx, retry con backoff exponencial (1s, 5s, 30s, 2min). Si falla 4xx (validación), marca error y notifica al usuario.
+**Implementaciones concretas**: `SemanticLightColor` y `SemanticDarkColor`.
 
-**Idempotency en backend:** todas las rutas que aceptan `Idempotency-Key` chequean en una tabla `idempotency_keys` (ttl 7 días) si ya procesaron esa key. Si sí → retornan respuesta cacheada. No duplican operaciones.
+**ThemeApp** — Singleton que construye `ThemeData` para light/dark:
 
-### 5.3 Operaciones permitidas offline
+```dart
+ThemeApp.lightTheme  // ThemeData con SemanticLightColor
+ThemeApp.darkTheme   // ThemeData con SemanticDarkColor
+```
 
-| Operación | Offline OK | Razón |
-|---|---|---|
-| Abrir turno | ❌ | Necesita verificar que no hay otro turno abierto. |
-| Crear venta mostrador | ✅ | idempotency_key garantiza unicidad. |
-| Cobrar (efectivo o digital) | ✅ | Se confirma localmente, sync después. **Excepción:** confirmación de pago digital web requiere conexión (no podés validar app del banco offline). |
-| Imprimir recibo | ✅ | El agente local se conecta a la impresora directamente, no necesita API. |
-| Abrir cajón | ✅ | Comando ESC/POS, sin API. |
-| Cambiar estado en KDS | ✅ | Idempotente con `idempotency_key`. |
-| Crear/editar producto | ❌ | Bloqueado en UI cuando offline. |
-| Cierre de turno | ❌ | Necesita drenar cola pendiente y calcular esperado contra DB. UI fuerza sync antes. |
-| Cargar factura | ❌ | Necesita IA, sí o sí online. |
+**Uso en widgets**:
 
-### 5.4 Conflicts y reconciliación
+```dart
+// Vía utilidad global (fuera de widget tree)
+AppColorUtil().tealDark
+AppSemanticColorUtil().cardForeground
 
-- **Ventas creadas offline mientras producto fue editado online:** el `unit_price` está congelado en `sale_items` desde la creación local. Se sube tal cual. No hay conflicto.
-- **Stock derivado:** los `inventory_movements` derivados de ventas se calculan **en backend** al recibir la venta, no en cliente. Imposible que el cliente cause stock negativo "imposible".
-- **Stock negativo aceptable:** si una venta deja un insumo en negativo, se permite (puede haber stock real que no se contabilizó por inventario inicial mal cargado), se loguea warning y se alerta al admin.
-- **Cierre de turno con cola pendiente:** UI bloquea el botón de cierre hasta `pending_operations.length === 0`. Mensaje: "Subiendo X ventas pendientes...".
+// Vía Theme
+Theme.of(context).primaryColor
+```
+
+#### 4.1.4 Inyección de Providers (`core/injects_providers/`)
+
+Cada servicio externo tiene su carpeta con un `*_inject_provider.dart`:
+
+```
+injects_providers/
+├── dio/            → DioInjectProvider.dioProvider
+├── firebase/       → FirebaseInjectProvider.firebaseAnalyticsProvider
+├── segment/        → SegmentInjectProvider.segmentRepositoryProvider
+├── singular/       → SingularInjectProvider.singularProvider
+├── storage/        → StorageInjectProvider.storageInjectProvider
+├── shared_preferences/ → SharedPreferencesInjectProvider
+├── local_auth/     → LocalAuthInjectProvider
+├── session_manager/ → SessionManagerInjectProvider
+├── push_notification/ → PushNotificationInjectProvider
+└── ... (15+ providers)
+```
 
 ---
 
-## 6. Tiempo real
+### 4.2 Domain
 
-### 6.1 KDS (WebSocket)
+La capa más pura. Define **QUÉ** hace el sistema, no **CÓMO**.
 
-Cuando una sale entra a `PAGADO` (sea de mostrador o web), backend emite a room `kitchen.queue`:
-```typescript
-{ event: 'order.created', sale }
-```
-KDS suscrito al room recibe en vivo. Cuando cocinero marca `EN_PREPARACION` o `LISTO_DESPACHO`, backend emite `order.status.changed`.
+#### 4.2.1 Modelos (`domain/models/`)
 
-### 6.2 Pantalla pública (SSE)
+Todos usan **Freezed** para inmutabilidad + serialización JSON:
 
-Endpoint `/public-display/stream` mantiene conexión SSE abierta. Backend emite cuando:
-- Una sale `LISTO_DESPACHO` cambia a "atendido en mostrador" (cliente recoge) → next turn.
-- Cocinero marca un nuevo turno como listo.
+```dart
+@freezed
+abstract class CardCvvResponseModel with _$CardCvvResponseModel {
+  const factory CardCvvResponseModel({
+    required bool success,
+    String? errorCode,
+    String? message,
+    String? cvv,
+  }) = _CardCvvResponseModel;
 
-Estado en pantalla:
-```typescript
-{
-  current_turn: number,         // turno en este momento
-  next_turns: number[]          // próximos 1-2 listos
+  factory CardCvvResponseModel.fromJson(Map<String, dynamic> json) =>
+      _$CardCvvResponseModelFromJson(json);
 }
 ```
 
-Reconnect automático del browser (`EventSource`) si se cae conexión. Si TV/tablet pierde red, sigue mostrando el último estado hasta reconectar.
+**Estructura de carpeta por modelo**:
 
-### 6.3 Repartidor (WebSocket)
-
-Repartidor abre WS al iniciar app. Backend emite a su user_id room:
-- `assignment.new` cuando le asignan pedido (round-robin lo eligió).
-- `assignment.cancelled` si el cliente cancela mientras está asignado.
-
-### 6.4 POS Cajero (WebSocket)
-
-Cajero recibe:
-- `web-order.pending-payment` cuando entra un pedido web nuevo (suena alerta sonora).
-- `cashier.alert` para casos como "tu request de aprobación fue aceptada/rechazada".
-
-### 6.5 Admin (WebSocket)
-
-Admin operativo y Dueño suscritos a:
-- `purchase-suggestion.new` cuando IA generó nueva sugerencia de auto-pedido.
-- `cash.discrepancy` cuando un cierre tiene descuadre.
-- `inventory.alert` cuando un insumo cae bajo umbral.
-
----
-
-## 7. Autenticación, roles y permisos
-
-### 7.1 Auth
-
-- JWT HS256, secret en env var de Railway.
-- Access token: 15 min, en memoria de la app frontend.
-- Refresh token: 7 días, httpOnly + Secure + SameSite=Lax cookie.
-- Endpoint `/auth/refresh` rota access. Refresh rotation opcional en v2.
-- Logout: invalida refresh en server-side blacklist (Redis o columna en DB con expiry).
-
-### 7.2 Guards (NestJS)
-
-```typescript
-@Roles('DUENO')
-@UseGuards(JwtAuthGuard, RolesGuard)
+```
+domain/models/cards/common/card_cvv_response/
+├── card_cvv_response_model.dart           # Código fuente
+├── card_cvv_response_model.freezed.dart   # Generado por Freezed
+└── card_cvv_response_model.g.dart         # Generado por json_serializable
 ```
 
-Decoradores compuestos por rol:
-- `@OnlyDueno()` → DUENO
-- `@AdminAccess()` → ADMIN_OPERATIVO | DUENO
-- `@CashierAccess()` → CAJERO | ADMIN_OPERATIVO | DUENO
-- `@InternalAccess()` → cualquier rol interno (no público).
+**Convenciones de modelos**:
 
-### 7.3 Aprobaciones inline (cajero)
+- Sufijo `_model` para modelos de datos
+- Sufijo `_response_model` para respuestas de API
+- Sufijo `_request_model` para requests de API
+- `@JsonKey(name: 'fieldName')` cuando el JSON difiere del Dart
+- `@Default(value)` para valores por defecto
+- `@JsonSerializable(explicitToJson: true)` cuando hay listas anidadas
+- Los enums se definen en el mismo archivo del modelo que los usa
 
-Cuando cajero intenta una acción que requiere aprobación (ej. anular venta, descuento >15%):
-1. POS llama endpoint con header `X-Approval-Pin: <pin>`.
-2. Backend valida PIN del Admin Operativo o Dueño contra tabla de pines de aprobación.
-3. Si OK: ejecuta la acción + audit log con `approved_by_user_id`.
-4. Si NO: 403 + log de intento fallido.
+**Ejemplo de modelo con request y response**:
 
-Pines de aprobación: cada Admin/Dueño tiene un PIN de 6 dígitos (separado de su password) que se ingresa en el POS sin abrir sesión nueva. Tabla `approval_pins` con hash.
+```
+domain/models/cards/credit_card/purchase_simulator/
+├── purchase_simulator_request/
+│   └── purchase_simulator_request_model.dart
+└── purchase_simulator_response/
+    └── purchase_simulator_response_model.dart
+```
 
-### 7.4 Endpoints públicos (sin auth)
+#### 4.2.2 Repositorios Abstractos (`domain/repositories/`)
 
-- `/web/orders` POST (crear pedido).
-- `/web/orders/:id` GET con token (status check).
-- `/auth/login`.
-- `/webhooks/whatsapp`.
-- `/healthz`.
+Definen contratos que la capa Data debe implementar:
 
-Rate-limit: 100 req/min por IP en endpoints públicos (NestJS Throttler).
+```dart
+abstract class CardsRepository {
+  FutureEither<Failure, CardDetailResponseModel> getCardDetails(String cardNumber);
+  FutureEither<Failure, CardCvvResponseModel> getCardCvv(String cardNumber, String expirationDate);
+  FutureEither<Failure, ToggleCardLockResponseModel> toggleCardLock({required ToggleCardLockRequestModel request});
+  FutureEither<Failure, CustomerCardsResponseModel> getCustomerCards();
+}
+```
+
+**Convenciones**:
+
+- Retornan `FutureEither<Failure, T>` (Failure de domain, no de data)
+- Parámetros con `required` named parameters para claridad
+- Un repositorio por sub-feature (ej: `cards/common/` vs `cards/credit_card/`)
+
+#### 4.2.3 Definiciones (`domain/defs/`)
+
+```dart
+typedef Json = Map<String, dynamic>;
+typedef FutureEither<L, R> = Future<Either<L, R>>;
+```
 
 ---
 
-## 8. Integraciones externas (resumen — detalle en Fase 4)
+### 4.3 Data
 
-| Servicio | Uso | Adapter |
+La capa Data implementa los contratos del Domain y conecta con fuentes externas.
+
+#### 4.3.1 Source — API Providers (`data/source/api/`)
+
+Cada feature tiene una carpeta con:
+
+```
+data/source/api/cards/common/
+├── cards_provider.dart         # Clase que hace los HTTP calls
+└── cards_inject_provider.dart  # Provider de Riverpod para DI
+```
+
+**Patrón del Provider HTTP**:
+
+```dart
+class CardsProvider {
+  const CardsProvider({required DioHttpProvider dioHttpProvider})
+    : _dioHttpProvider = dioHttpProvider;
+
+  final DioHttpProvider _dioHttpProvider;
+
+  FutureEither<Failure, CardDetailResponseModel> getCardDetails(String cardNumber) async {
+    final queryParams = <String, dynamic>{'CardNumber': cardNumber};
+    return await _dioHttpProvider.get(
+      constants.Endpoints.cardDetails.endpoint,        // Path del API
+      headers: {'api-version': constants.Endpoints.cardDetails.version},  // Versión
+      queryParameters: queryParams,
+      converter: (json) => CardDetailResponseModel.fromJson(json as Map<String, dynamic>),
+    );
+  }
+}
+```
+
+**Inject Provider**:
+
+```dart
+class CardsInjectProvider {
+  const CardsInjectProvider._();
+
+  static final cardsProvider = Provider(
+    (ref) => CardsProvider(dioHttpProvider: ref.read(DioInjectProvider.dioProvider)),
+  );
+}
+```
+
+**DioHttpProvider** (`data/source/providers/dio/dio_http_provider.dart`):
+
+Implementa `HttpClientRepository` — es el adaptador entre Dio y el sistema `Either`:
+
+- Inyecta headers de device automáticamente (`DeviceInfoUtil.getHeaders()`)
+- Detecta `success: false` en responses y lo trata como error
+- Mapea `DioException` → subtipos de `Failure`:
+  - `connectionTimeout/receiveTimeout/sendTimeout` → `TimeoutFailure`
+  - `400` → `AuthFailure`
+  - `401/403` → `AuthFailure`
+  - `404` → `ApiFailure`
+  - `422` → `ValidationFailure`
+  - `5xx` → `ApiFailure`
+  - `999` → `ApiFailure` (política de seguridad)
+  - Response con `success: false` → `BusinessFailure`
+- Envía eventos a Dynatrace para APM
+- Refresca sesión en cada response exitoso
+
+#### 4.3.2 Source — Local Providers (`data/source/providers/`)
+
+```
+providers/
+├── dio/                    # DioHttpProvider (HTTP adapter)
+├── firebase/               # Remote Config keys + provider
+├── firebase_analytics/     # Analytics tracking
+├── shared_prefs/           # SharedPreferences wrapper
+├── storage/                # Secure storage (FlutterSecureStorage)
+├── segment/                # Segment analytics
+├── singular/               # Singular attribution
+├── credolab/               # Credolab behavioral
+├── incode/                 # Incode identity
+├── local_auth/             # Biometric auth
+├── push_notification/      # Push notifications
+├── session_manager/        # Session timeout management
+└── ... (25+ providers)
+```
+
+#### 4.3.3 Repository Implementations (`data/repositories_impl/`)
+
+Implementan las interfaces del Domain, delegando al Provider:
+
+```dart
+class CardsRepositoryImpl implements CardsRepository {
+  const CardsRepositoryImpl({required CardsProvider cardsProvider})
+    : _cardsProvider = cardsProvider;
+
+  final CardsProvider _cardsProvider;
+
+  @override
+  FutureEither<Failure, CardDetailResponseModel> getCardDetails(String cardNumber) {
+    return _cardsProvider.getCardDetails(cardNumber);
+  }
+  // ... demás métodos delegados
+}
+```
+
+**Patrón**: la implementación es un "pass-through" simple. La lógica de negocio está en los Use Cases.
+
+#### 4.3.4 Use Cases (`data/uses_cases/`)
+
+Cada use case es una clase con un método `call()`:
+
+```dart
+class GetCardDetailsUseCase {
+  const GetCardDetailsUseCase({required CardsRepository cardsRepository})
+    : _cardsRepository = cardsRepository;
+
+  final CardsRepository _cardsRepository;
+
+  FutureEither<FailureViewData, CardDetailResponseModel> call(String cardNumber) async {
+    final result = await _cardsRepository.getCardDetails(cardNumber);
+    return result.fold(
+      (failure) => Left(FailureViewData(message: RemoteConfigKeys.defaultErrorMessage.text)),
+      (data) => Right(data),
+    );
+  }
+}
+```
+
+**Diferencia clave Repo vs UseCase**:
+
+| | Repository | Use Case |
 |---|---|---|
-| WhatsApp Cloud API (Meta) | Notificaciones tx | `WhatsAppProvider` interface, impl `MetaWhatsAppAdapter` |
-| Anthropic Claude Haiku 4.5 | Extracción factura, sugerencias auto-pedido | `LLMProvider`, impl `AnthropicAdapter` |
-| OpenAI GPT-4o-mini | Fallback IA | `LLMProvider`, impl `OpenAIAdapter` |
-| Mapbox | Geocoding + Autocomplete + Maps | Cliente (frontend) usa SDK directo. Backend usa Geocoding API para validación 3km. |
-| Cloudflare R2 | Storage fotos facturas | S3 SDK con endpoint R2 |
-| Bancolombia / Nequi | v1: solo confirmación visual + import CSV | `PaymentProvider` interface (stub en v1) |
-| DIAN | v2 | `BillingProvider` interface (stub en v1) |
-| Rappi | v2 | `DeliveryAggregatorProvider` interface (stub en v1) |
+| Error type | `Failure` (técnico) | `FailureViewData` (con UI: icono, mensaje) |
+| Lógica | Delegación pura al provider | Transformación + lógica de negocio |
+| Dependencia | Provider HTTP | Repository (interface) |
 
-**Adapter pattern obligatorio** para WhatsApp, IA, pagos, billing, delivery aggregator. Todos detrás de interfaces tipadas en `packages/types`. Permite swap a v2 sin tocar dominio.
+**Tipos de Use Cases**:
 
----
+1. **API Use Cases** — Llaman al repositorio y transforman `Failure` → `FailureViewData`
+2. **Local Use Cases** — Interactúan con SharedPreferences (ej: `HasCreditCardTooltipShownUseCase`)
+3. **Compuestos** — Orquestan múltiples use cases (ej: `CompleteSignInUseCase`)
 
-## 9. Despliegue
+**Registro de Use Cases** (`data/uses_cases/uses_cases.dart`):
 
-### 9.1 Topología
+Clase `UsesCases` con ~80+ `static final Provider<T>` fields:
 
-| Recurso | Proveedor | Plan | Costo USD/mes |
-|---|---|---|---|
-| Frontends (5 apps Next.js) | Vercel | Pro | $20 |
-| Backend NestJS | Railway | Service medium | $10-20 |
-| PostgreSQL | Railway | Postgres medium | $10-20 |
-| Storage facturas | Cloudflare R2 | Pay-as-you-go | <$1 |
-| Print Agent | Self-hosted en PC mostrador | — | $0 |
-| WhatsApp Cloud API | Meta | Pay-per-conversation | $25-45 |
-| Anthropic API | Pay-as-you-go | Cap $20 | <$10 |
-| Mapbox | Free tier | — | $0 |
-| Domain + SSL | Cualquier registrar (Cloudflare) | — | $1-2 |
-| **TOTAL estimado** | | | **$67-118** |
+```dart
+class UsesCases {
+  const UsesCases._();
 
-### 9.2 Environments
+  static final getCardDetailsUseCase = Provider(
+    (ref) => GetCardDetailsUseCase(
+      cardsRepository: ref.read(InjectRepository.cardsRepository),
+    ),
+  );
 
-- **local:** Postgres en Docker compose, frontends en dev mode, WhatsApp sandbox/Twilio dev.
-- **staging:** Railway env staging + Vercel preview branches. WhatsApp con número de prueba. IA con tokens reducidos.
-- **production:** Railway main + Vercel main branch.
+  static final getCustomerCardsUseCase = Provider(
+    (ref) => GetCustomerCardsUseCase(
+      cardsRepository: ref.read(InjectRepository.cardsRepository),
+    ),
+  );
+  // ... 80+ use cases
+}
+```
 
-### 9.3 CI/CD (GitHub Actions)
+#### 4.3.5 Endpoints (`core/constants/endpoints.dart`)
 
-- Push a `main` → deploy automático a Vercel + Railway.
-- Push a feature branches → preview Vercel.
-- Pre-deploy: lint + typecheck + tests (jest unit + supertest e2e backend) + Prisma migrate deploy.
-- Manual approval gate antes de Railway production deploy (proteger DB de migraciones rotas).
-
-### 9.4 Configuración del PC de mostrador
-
-- Windows o Ubuntu.
-- Auto-arranque del navegador apuntando a `https://pos.tudominio.co`.
-- Auto-arranque del Print Agent (servicio Windows / systemd).
-- VPN opcional para acceso remoto (Tailscale gratis para 1 device).
-- Backup local: el navegador guarda IndexedDB → no perdés ventas si crashea.
-
-### 9.5 Configuración tablet pantalla pública
-
-- Tablet Android con kiosk app (ej. Fully Kiosk Browser).
-- URL: `https://display.tudominio.co`.
-- Auto-encendido al conectar a corriente (donde el hardware lo soporte).
-- Sin user input, sin gestures, full screen.
+```dart
+abstract class Endpoints {
+  static const Endpoint cardDetails = Endpoint(
+    endpoint: '/platform/cards/card-detail',
+    version: 1.0,
+  );
+  static const Endpoint cardCvv = Endpoint(
+    endpoint: '/platform/cards/card-cvv',
+    version: 1.0,
+  );
+  // ~200+ endpoints organizados por sección:
+  // PLATFORM-AUTH, PLATFORM-SESSION, PLATFORM-CUSTOMER,
+  // BANKING, INVESTMENTS, CARDS, LOANS, etc.
+}
+```
 
 ---
 
-## 10. Backups y recuperación
+### 4.4 Presentation
 
-| Activo | Frecuencia | Retención | Restore RTO |
-|---|---|---|---|
-| Postgres | Diario automático (Railway) | 7 días | <1h |
-| Fotos facturas (R2) | Inmutable, immediate | Indefinido | Inmediato |
-| Audit log (DB) | Sigue al backup de Postgres | 7 días + export trimestral a R2 | <1h |
-| Código | Git en GitHub | Indefinido | <30 min |
+#### 4.4.1 Estructura de un Módulo (`presentation/modules/{feature}/`)
 
-**Restore drill recomendado:** una vez antes de go-live, hacer `pg_restore` en una DB temporal y verificar que todo funciona. Documentar pasos en `runbook.md`.
+Cada feature sigue esta estructura interna:
 
----
+```
+modules/cards/credit_card/home/
+├── controller/
+│   ├── home_credit_card_controller.dart      # Riverpod controller (@riverpod)
+│   └── home_credit_card_state.dart           # Estado Freezed
+├── view/
+│   ├── credit_card_home_view.dart            # Vista principal (ConsumerWidget)
+│   └── credit_card_home_error_view.dart      # Vista de error
+└── widgets/                                  # Widgets específicos del feature
+    ├── credit_card_header_w.dart
+    ├── credit_card_sub_header_w.dart
+    ├── credit_card_body_w.dart
+    ├── credit_card_next_pay_w.dart
+    ├── credit_card_calendar_payment_card_w.dart
+    ├── credit_card_details_bottom_sheet.dart
+    ├── credit_card_home_shimmer.dart
+    ├── digital_card_btn_w.dart
+    ├── dot_w.dart
+    ├── sequential_animated_text_w.dart
+    └── animated/                              # Sub-carpeta para widgets animados
+        ├── animated_button.dart
+        └── animated_detail_field.dart
+```
 
-## 11. Riesgos técnicos top 5 con mitigación
+#### 4.4.2 Controladores (Riverpod Notifiers)
 
-| # | Riesgo | Probabilidad | Impacto | Mitigación |
+Existen **dos convenciones** de naming para controllers:
+
+| Tipo | Sufijo archivo | Sufijo clase | Anotación | keepAlive |
 |---|---|---|---|---|
-| 1 | **Aprobación de Meta WABA tarda > 15 días** o niega plantillas | Alta | Bloquea WhatsApp en prod | Iniciar día 1; mientras se aprueba, dev en sandbox de Twilio (tiene WhatsApp dev gratis); plan B = Twilio en producción si Meta deniega; arquitectura ya tiene adapter `WhatsAppProvider`. |
-| 2 | **Calidad de IA en facturas reales colombianas** (foto borrosa, escritura a mano, formatos varios) | Alta | Adopción de [F-C] floja → manual rápido se vuelve la vía dominante | Testing con 30+ facturas reales semana 4; prompt iterativo; fallback automático a OpenAI; manual rápido (clonar última factura) siempre disponible; UI de edición humana resuelve fallas residuales. |
-| 3 | **Hardware ESC/POS — diversidad de modelos genera bugs raros** | Media | Print fail bloquea operación | Comprar Epson TM-T20III específicamente (más documentado en CO); usar `node-thermal-printer` (testeada); tener una impresora de backup; modo de fallback que muestra recibo en pantalla del POS si la impresora falla. |
-| 4 | **Sync offline POS — race conditions en cola al volver online con muchas ventas pendientes** | Media | Posible duplicación o pérdida de venta | Idempotency keys obligatorias; retries con backoff; tests de stress de sync; UI bloquea cierre de turno hasta cola vacía; logs detallados de cada sync. |
-| 5 | **Plazo realista vs scope creep durante dev** | Alta | v1 se atrasa más allá de 18 semanas | Feature freeze post-Fase-2; cualquier idea nueva va a `v1.x-backlog.md`; review semanal de avance contra plan; flag temprano de bloqueos a discutir. |
+| **Global Controller** (compartido) | `_gc.dart` | `GC` | `@Riverpod(keepAlive: true)` | Sí |
+| **Feature Controller** (por pantalla) | `_controller.dart` | `Controller` | `@riverpod` (lowercase) | No (auto-dispose) |
 
-**Riesgo bonus #6 (regulatorio, no técnico):** **Validación DIAN con contador**. Si tu régimen tributario obliga a documento equivalente electrónico POS, hay que reescoper. Marcado en GAP-14, validar antes de semana 4.
+**Feature Controller** (ejemplo real: `home_credit_card_controller.dart`):
+
+```dart
+// home_credit_card_controller.dart
+part 'home_credit_card_controller.g.dart';
+
+@riverpod  // ← lowercase = auto-dispose cuando la vista se desmonta
+class HomeCreditCardController extends _$HomeCreditCardController {
+  @override
+  HomeCreditCardState build() {
+    Future.microtask(() => initializeHome());
+    return HomeCreditCardState.initialState;
+  }
+
+  Future<void> initializeHome() async {
+    state = state.copyWith(appViewState: AppViewState.loading);
+    final result = await ref.read(UsesCases.getCreditCardSummaryUseCase).call(
+      cardNumber: state.cardNumber,
+    );
+    result.fold(
+      (failure) => state = state.copyWith(appViewState: AppViewState.error),
+      (data) => state = state.copyWith(
+        appViewState: AppViewState.loaded,
+        creditCardSummaryResponse: data,
+      ),
+    );
+  }
+}
+// Provider generado: homeCreditCardControllerProvider
+```
+
+**Global Controller** (ejemplo real: `card_gc.dart` — compartido entre credit/debit):
+
+```dart
+// card_gc.dart
+part 'card_gc.g.dart';
+
+@Riverpod(keepAlive: true)  // ← uppercase R = persiste en memoria
+class CardGC extends _$CardGC {
+  @override
+  CardState build() {
+    return const CardState();
+  }
+  // Lógica compartida: CVV timer, card lock, etc.
+}
+// Provider generado: cardGCProvider
+```
+
+**State con Freezed** (ejemplo real: `home_credit_card_state.dart`):
+
+```dart
+// home_credit_card_state.dart
+part 'home_credit_card_state.freezed.dart';
+
+@freezed
+abstract class HomeCreditCardState with _$HomeCreditCardState {
+  const HomeCreditCardState._();  // ← constructor privado para métodos custom
+
+  const factory HomeCreditCardState({
+    @Default(AppViewState.idle) AppViewState appViewState,
+    CreditCardSummaryResponseModel? creditCardSummaryResponse,
+    CustomerCardModel? customerCard,
+    @Default('') String cardNumber,
+    // ... más campos
+  }) = _HomeCreditCardState;
+
+  static HomeCreditCardState get initialState => const HomeCreditCardState();
+}
+```
+
+**AppViewState enum** (estados de carga):
+
+```dart
+enum AppViewState { idle, loading, loaded, error, empty }
+```
+
+#### 4.4.3 Vistas
+
+Existen **dos convenciones** de vista:
+
+| Tipo | Base class | Cuándo usar |
+|---|---|---|
+| `ConsumerWidget` | Stateless | Vista sin lógica local (el controller maneja todo) |
+| `ConsumerStatefulWidget` | Stateful | Vista con TextEditingControllers, initState, dispose |
+
+**Patrón ConsumerWidget** (ejemplo real: `credit_card_home_view.dart`):
+
+```dart
+// credit_card_home_view.dart
+class CreditCardHomeView extends ConsumerWidget {
+  const CreditCardHomeView({
+    super.key,
+    required this.adaptiveScreen,     // ← recibe instancias adaptativas
+    required this.adaptiveSpacing,
+    required this.adaptiveFontSize,
+  });
+
+  final AdaptiveScreen adaptiveScreen;
+  final AdaptiveSpacing adaptiveSpacing;
+  final AdaptiveFontSize adaptiveFontSize;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(homeCreditCardControllerProvider);
+
+    return PushScaffoldGW(                   // ← PushScaffoldGW para push navigation
+      title: RemoteConfigKeys.cardsTitle.text,
+      body: AppStateHandlerGW(
+        state: state.appViewState,            // ← parámetro "state:", no "status:"
+        loadingWidget: const CreditCardHomeShimmer(),
+        errorWidget: const CreditCardHomeErrorView(),
+        onSuccess: SingleChildScrollView(     // ← parámetro "onSuccess:", no "child:"
+          child: Column(
+            children: [
+              CreditCardHeaderW(
+                adaptiveScreen: adaptiveScreen,
+                adaptiveSpacing: adaptiveSpacing,
+                adaptiveFontSize: adaptiveFontSize,
+              ),
+              CreditCardSubHeaderW(...),
+              CreditCardBodyW(...),
+              if (state.creditCardSummaryResponse?.paymentAmount != null)
+                CreditCardNextPayW(...),
+              CreditCardCalendarPaymentCardW(...),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+**Patrón ConsumerStatefulWidget** (ejemplo real: `credit_card_payment_view.dart`):
+
+```dart
+// credit_card_payment_view.dart
+class CreditCardPaymentView extends ConsumerStatefulWidget {
+  const CreditCardPaymentView({super.key});
+
+  @override
+  ConsumerState<CreditCardPaymentView> createState() => _CreditCardPaymentViewState();
+}
+
+class _CreditCardPaymentViewState extends ConsumerState<CreditCardPaymentView> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(cardPaymentControllerProvider.notifier).initialize();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(cardPaymentControllerProvider);
+    // ... build UI
+  }
+}
+```
+
+> **Nota**: Las vistas reciben `AdaptiveScreen`, `AdaptiveSpacing`, `AdaptiveFontSize` como **parámetros del constructor** y los pasan a sus widgets hijos. Esto evita recrear instancias repetidamente en el tree.
+
+#### 4.4.4 Controladores Globales (`presentation/global/controllers/`)
+
+| Controller | `keepAlive` | Responsabilidad |
+|---|---|---|
+| `SessionGC` | ✅ | Permisos, user prefs, OTP, keychain, shared prefs |
+| `RouterGC` | ✅ | Wrapper de GoRouter: `push()`, `go()`, `pop()` |
+| `SignInGC` | ❌ | Flujo de login (device ID, FCM, biometric, base64 password) |
+| `BiometricGC` | ❌ | Auth biométrica con CRC, prompt via RemoteConfig |
+| `DeepLinkEventGC` | ✅ | Deep link state machine (pending → consumed/error) |
+| `NavigatorKeyGC` | ✅ | Navigator key global |
+| `SessionDetectorGC` | ❌ | Tracking de actividad de usuario, session timeout, force logout |
+| `CurrentRouteGC` | ✅ | Ruta actual para analytics |
+
+#### 4.4.5 Widget Library Global (`presentation/global/widgets/`)
+
+42 widgets reutilizables con sufijo `GW` (Global Widget):
+
+**Scaffolds**:
+
+| Widget | Propósito |
+|---|---|
+| `ScaffoldGW` | AppBar + SliverAppBar + pull-to-refresh |
+| `PushScaffoldGW` | Push navigation con animación |
+| `ScaffoldGradientGW` | Fondo con gradient |
+| `ErrorScaffoldGW` | Pantalla de error genérica |
+
+**Botones** (`widgets/buttons/` — 9 archivos + subcarpeta `segmented/`):
+
+| Widget | Propósito |
+|---|---|
+| `BaseButtonGW` | Fundación con `ButtonType` enum y `WidgetStateProperty` |
+| `PrimaryButtonGW` | Botón primario (teal filled). Tiene factory `.large` |
+| `SecondaryButtonGW` | Botón secundario |
+| `OutlinedButtonGW` | Botón outlined |
+| `GhostButtonGW` | Botón transparente |
+| `ActionButtonGW` | Botón de acción (icon + text / compacto) |
+| `ActionButtonWithTermsGW` | Botón de acción con términos y condiciones |
+| `SignatureBtnGW` | Botón para firma |
+| `segmented/` | Botón segmentado (tabs) |
+
+**Inputs**:
+
+| Widget | Propósito |
+|---|---|
+| `InputTextGW` | Input con masking, `BaseValidator`, error/success states, `InputValidationMode` (onChange/onBlur) |
+| `OtpInputGW` | Input de OTP de N dígitos |
+| `DropdownGW` | Dropdown selector |
+
+**Cards**:
+
+| Widget | Propósito |
+|---|---|
+| `CardGW` | Card base con `CardType` enum (card/productCard/cardShadow) |
+| `ListItemGW` | List item con factories: spaced/tight/inverted, avatar, badge |
+
+**Feedback**:
+
+| Widget | Propósito |
+|---|---|
+| `AppStateHandlerGW` | Maneja idle/loading/success/error/empty + Skeletonizer |
+| `FullscreenShimmerGW` | Shimmer de pantalla completa |
+| `InfoBannerGW` | Banner informativo |
+| `CarouselGW` | PageView con dot indicators |
+
+**Overlays**:
+
+| Widget | Propósito |
+|---|---|
+| `ActionBottomSheetGW` | Bottom sheet con acciones |
+| `ModalDialogGW` | Modal dialog |
+
+**Texto**:
+
+| Widget | Propósito |
+|---|---|
+| `StyledTextGW` | Parser de `<tag>` + detección de URLs |
+
+#### 4.4.6 Utilidades Globales (`presentation/global/utils/`)
+
+Todas son clases estáticas que acceden al `globalContainer`:
+
+| Utility | Métodos clave |
+|---|---|
+| `RouterUtil` | `push()`, `go()`, `pop()`, `canPop()`, `pushPageRoute()` |
+| `LoaderUtil` | `show()`, `hide()` |
+| `ToastUtil` | `show()`, `showCustomWidget()`, `showFilterToast()`, `dismissAll()` |
+| `BottomSheetUtil` | `simple()`, `customBody()`, `simpleAsync()`, `input()`, `loaderShow()`, `errorShow()` |
+| `SessionErrorHandler` | Maneja códigos de error PLT001-046, GPS001-005, BIO001-002, PCY000, GTW001 |
+| `MaskingUtil` | `maskName()`, `maskPhoneNumber()`, `maskEmail()`, `maskAccountNumber()` |
+| `CurrencyUtil` | `format()`, `formatCustom()`, `CurrencyInputFormatter` |
+| `AppColorUtil` | Colores adaptados a dark mode via `globalContainer` |
+| `AppSemanticColorUtil` | Colores semánticos adaptados a dark mode |
+| `BaseValidator` | Clase abstracta para validadores de input |
+
+#### 4.4.7 Validadores (`presentation/global/validators/`)
+
+Sistema basado en `BaseValidator` con lista de `ValidatorModel`:
+
+```dart
+abstract class BaseValidator {
+  List<ValidatorModel> get rules;
+  List<ValidatorModel> get success;
+
+  List<String> validate(String value) {
+    return rules
+        .where((rule) => !rule.isValid(value))
+        .map((rule) => rule.message)
+        .toList();
+  }
+}
+
+class ValidatorModel {
+  final String message;
+  final bool Function(String) isValid;
+  final Function(bool)? onError;
+}
+```
+
+**Validadores disponibles**:
+
+| Validador | Reglas |
+|---|---|
+| `PasswordValidator` | ≥8 chars, no secuencias, no contiene "crediclub" ni teléfono, upperCase+lowerCase+digit |
+| `PasswordConfirmationValidator` | Coincide con password original |
+| `EmailValidator` | Regex de email válido |
+| `MoneyValidator` | Balance disponible, límite diario/mensual, mín $1.00, max transacciones |
+| `NumberValidators` | Longitud de teléfono según país |
+| `UserValidator` | No vacío, ≥6 chars |
+| `CodeValidator` | Longitud exacta de código |
+| `CustomValidator` | Reglas inyectadas dinámicamente |
 
 ---
 
-## 12. Plan v1 detallado por sprints (14-18 semanas)
+## 5. Flujo Completo de un Feature (Caso: Cards)
 
-> Cada sprint = 1 semana calendario. Ajustá si tu velocidad real difiere.
+### Diagrama de flujo de una llamada API (ej: obtener resumen de tarjeta de crédito)
 
-### Sprint 0 — Setup e infra (semana 1)
-- [ ] Crear monorepo Turborepo + pnpm workspaces.
-- [ ] NestJS app + Prisma + Postgres dev en Docker.
-- [ ] Setup Railway staging + Postgres managed.
-- [ ] Auth (JWT + refresh + roles + guards).
-- [ ] CI/CD GitHub Actions.
-- [ ] Vercel preview deploys.
-- [ ] **En paralelo, NO BLOQUEANTES:** comprar línea telefónica del negocio + iniciar Meta Business Verification + comprar impresora Epson TM-T20III + cajón + tablet + reunión con contador.
+```
+                    ┌───────────────────────────────┐
+                    │ CreditCardHomeView (Vista) │
+                    │   ref.watch(controller)    │
+                    │   build() con state        │
+                    └────────────┬──────────────────┘
+                                 │
+                    ┌────────────▼──────────────────┐
+                    │ HomeCreditCardController    │
+                    │ (@riverpod Notifier)        │
+                    │  state → loading          │
+                    │  await useCase.call()     │
+                    │  result.fold(...)         │
+                    │  state → loaded/error     │
+                    └────────────┬─────────────┘
+                                 │
+                    ┌────────────▼─────────────┐
+                    │ GetCreditCardSummaryUseCase│
+                    │  repo.getCreditCardSummary │
+                    │  .fold(Failure→FailureView,│
+                    │        Data→Right(data))   │
+                    └────────────┬─────────────┘
+                                 │
+                    ┌────────────▼─────────────┐
+                    │ CreditCardRepositoryImpl  │
+                    │  delegates to provider     │
+                    └────────────┬─────────────┘
+                                 │
+                    ┌────────────▼─────────────┐
+                    │ CreditCardProvider        │
+                    │  _dioHttpProvider.get(     │
+                    │    Endpoints.cardSummary,  │
+                    │    queryParams,            │
+                    │    converter: fromJson     │
+                    │  )                         │
+                    └────────────┬─────────────┘
+                                 │
+                    ┌────────────▼─────────────┐
+                    │ DioHttpProvider           │
+                    │  _dio.get() → Response    │
+                    │  converter(res.data)      │
+                    │  return Right(data)       │
+                    │  OR catch → Left(Failure) │
+                    └────────────┬─────────────┘
+                                 │
+              ┌──────────────────▼──────────────────┐
+              │           Interceptores Dio          │
+              │  CRC → Logger → CriticalError → etc. │
+              └──────────────────┬──────────────────┘
+                                 │
+                    ┌────────────▼─────────────┐
+                    │      API Backend          │
+                    └──────────────────────────┘
+```
 
-### Sprint 1 — Modelo central de productos y recetas (semana 2)
-- [ ] Migrations: products, subproducts, ingredients, recipe_edges, sizes, modifiers, combo_components.
-- [ ] Función `expandRecipe(productId)` con detección de ciclos.
-- [ ] CRUD de products en Admin.
-- [ ] CRUD de subproducts.
-- [ ] CRUD de ingredients (con conversion_factor + threshold_min).
+### Estructura de carpetas del caso Cards:
 
-### Sprint 2 — UI de gestión de recetas + inventario base (semana 3)
-- [ ] UI editor de receta con árbol expandible (drag-and-drop opcional).
-- [ ] Ingestión de receta con validación (no ciclos, unidades coherentes).
-- [ ] Migration: inventory_movements + idempotency_keys.
-- [ ] CRUD de movimientos manuales.
-- [ ] Vista materializada `current_stock` + refresh automático.
-- [ ] Audit log infra (insert-only enforcement).
-
-### Sprint 3 — Proveedores + IA facturas (semana 4)
-- [ ] Migrations: suppliers, supplier_products, invoices, invoice_items.
-- [ ] CRUD de proveedores con UI completa de productos por proveedor (decisión GAP-8 = C).
-- [ ] Adapter `LLMProvider` con impl `AnthropicAdapter` y `OpenAIAdapter`.
-- [ ] Endpoint `/invoices/upload-photo` → R2 + extracción IA.
-- [ ] UI de revisión y edición de factura extraída.
-- [ ] **Manual rápido:** endpoint `/invoices/from-clone` + UI Excel-like.
-- [ ] Confirmación de factura → impacto en inventario.
-- [ ] **Hito:** validar con 10 facturas reales del negocio.
-
-### Sprint 4 — POS Cajero base (semana 5)
-- [ ] UI POS con catálogo, carrito, modificadores, combos.
-- [ ] Cobro efectivo + digital (sin doble validación todavía).
-- [ ] Numeración de recibos consecutiva.
-- [ ] Promociones engine: aplicar descuento mayor en overlap.
-- [ ] Integración con expandRecipe para descuentos de inventario al confirmar venta.
-
-### Sprint 5 — POS offline + Print Agent (semana 6)
-- [ ] PWA setup (manifest, service worker).
-- [ ] IndexedDB stores: catalog_snapshot, pending_operations, etc.
-- [ ] Cola de sync con idempotency keys.
-- [ ] Print Agent: Node service local, ESC/POS via `node-thermal-printer`.
-- [ ] Comando apertura de cajón.
-- [ ] Modo fallback: recibo en pantalla si impresora falla.
-- [ ] Doble validación de pago digital (UI + flujo).
-
-### Sprint 6 — KDS + Pantalla Pública (semana 7)
-- [ ] UI KDS con tarjetas + estados + tap.
-- [ ] WS gateway `/ws/kds`.
-- [ ] Tiempos por etapa registrados (sale_status_log).
-- [ ] Pantalla pública UI (turno grande centrado).
-- [ ] SSE endpoint `/public-display/stream`.
-- [ ] Modo kiosko probado en tablet real.
-
-### Sprint 7 — Web Pública + Mapbox (semana 8)
-- [ ] UI web pública: menú, carrito, checkout sin login.
-- [ ] Mapbox Search Box para autocomplete.
-- [ ] Mapbox map con círculo 3km en checkout.
-- [ ] Validación 3km backend con Mapbox Geocoding.
-- [ ] Estados PENDIENTE_PAGO + creación de orden web.
-- [ ] Confirmación de pago desde POS por cajero.
-
-### Sprint 8 — WhatsApp Cloud API (semana 9)
-- [ ] Adapter `WhatsAppProvider` con impl `MetaWhatsAppAdapter`.
-- [ ] Plantillas a aprobar en Meta (4 mínimo: payment_instructions, payment_received, order_in_preparation, order_dispatched, order_delivered, cash_discrepancy_alert).
-- [ ] Webhook receiver para delivery status.
-- [ ] Tabla whatsapp_messages + queue worker.
-- [ ] Integración con flujo de pedido web (envíos automáticos en cada cambio de estado).
-
-### Sprint 9 — Módulo Repartidor parte 1 (semana 10)
-- [ ] App PWA mobile-first del repartidor.
-- [ ] Auth login email/password con cambio de pwd inicial obligatorio.
-- [ ] Toggle availability DISPONIBLE / OCUPADO / OFFLINE.
-- [ ] Lista de pedidos asignados (por user_id).
-- [ ] Round-robin assignation service en backend.
-- [ ] WS `/ws/repartidor` para asignaciones nuevas.
-
-### Sprint 10 — Módulo Repartidor parte 2 (semana 11)
-- [ ] Mapa Mapbox con pines de pedidos asignados.
-- [ ] Sort por Haversine desde dirección del restaurante.
-- [ ] Estados ASIGNADO → EN_RUTA → ENTREGADO con botones grandes.
-- [ ] Edge cases: INTENTO_FALLIDO_N (1, 2, max 3), DEVUELTO.
-- [ ] Visibilidad celular cliente solo durante estado activo.
-- [ ] Override manual desde POS/Admin.
-- [ ] Cancelación post-pago = `CANCELADO_SIN_REEMBOLSO`, requires aprobación dueño.
-
-### Sprint 11 — Cierre de caja + anti-fraude controles 1-3 (semana 12)
-- [ ] Apertura/cierre de turno (shifts).
-- [ ] Conteo + comparación + cálculo difference.
-- [ ] Alerta WhatsApp al Dueño si descuadre.
-- [ ] **Control 1:** audit log poblado + UI lectura para Dueño.
-- [ ] **Control 2:** flujo de aprobación con PIN para acciones sensibles del cajero.
-- [ ] **Control 3:** reporte de anomalías por cajero (2σ del histórico personal).
-
-### Sprint 12 — Anti-fraude controles 4-5 + auto-pedido [F-B] (semana 13)
-- [ ] **Control 4:** import CSV de extracto Nequi/Bancolombia + matching contra confirmaciones.
-- [ ] **Control 5:** detección de saltos en consecutivo de recibos (cron diario).
-- [ ] Tabla `purchase_suggestions` + cron que genera sugerencias.
-- [ ] Adapter prompt para Claude Haiku 4.5 (con histórico de consumo + última factura).
-- [ ] UI de sugerencias pendientes en Admin/Dueño.
-- [ ] Aprobación con tap → fanout WhatsApp(s) al/los proveedor(es).
-
-### Sprint 13 — Reportes y dashboard (semana 14)
-- [ ] Endpoint `/reports/dashboard` con top 8.
-- [ ] UI dashboard hero del Dueño.
-- [ ] Sub-páginas: ventas detalle, COGS, inventario, web funnel, anti-fraude profundo, payment reconciliation.
-- [ ] Export CSV de reportes.
-
-### Sprint 14 — Web de Trabajadores (RRHH ligero) (semana 15)
-- [ ] UI login para rol Trabajador.
-- [ ] CRUD workers desde Admin.
-- [ ] Asistencia (check-in/check-out).
-- [ ] Generación de payrolls (período).
-- [ ] Aprobación + marcado de pago.
-
-### Sprint 15 — Polish UX cajero + PWA hardening (semana 16)
-- [ ] Foco en [F-J]: revisar todo el flujo del cajero, eliminar fricción.
-- [ ] Atajos de teclado en POS.
-- [ ] Tests de stress de sync offline (cola con 50+ ventas).
-- [ ] Error handling consistente.
-- [ ] Internacionalización mínima (es-CO).
-
-### Sprint 16 — QA con usuarios reales + bugfix (semana 17)
-- [ ] Sesión de prueba con cajero real (1-2 días).
-- [ ] Sesión de prueba con cocinero real.
-- [ ] Sesión de prueba con repartidor real.
-- [ ] Bugfix de issues encontrados.
-- [ ] Validación legal con contador (DIAN GAP-14) — debería estar resuelta antes pero acá es el último checkpoint.
-- [ ] Migración del catálogo real al sistema (productos, recetas, insumos, proveedores, primeras facturas).
-
-### Sprint 17 — Soft launch y ajustes (semana 18)
-- [ ] Deploy producción Vercel + Railway.
-- [ ] Verificación de plantillas WhatsApp aprobadas y activas.
-- [ ] Soft launch en tienda con uso real (3-4 días).
-- [ ] Standby para bugs en producción.
-- [ ] Ajustes finos en UX y umbrales.
-
-### Sprint 18 — Buffer y go-live oficial (semana 19, opcional)
-- [ ] Slack reservado para imprevistos.
-- [ ] Documentación de runbook (cómo reiniciar Print Agent, cómo importar CSV de Nequi, etc.).
-- [ ] Capacitación final del equipo.
-- [ ] Go-live oficial.
+```
+lib/app/
+├── domain/
+│   ├── models/cards/
+│   │   ├── common/                          # Modelos compartidos
+│   │   │   ├── card_cvv_response/
+│   │   │   ├── card_detail_response/
+│   │   │   ├── customer_cards_response/
+│   │   │   └── toggle_card_lock/            # Request + Response
+│   │   ├── credit_card/                     # Modelos de tarjeta de crédito
+│   │   │   ├── credit_card_summary_response/
+│   │   │   ├── credit_card_payment_terms/
+│   │   │   ├── credit_card_payment_summary/
+│   │   │   ├── credit_card_payment_confirmation/
+│   │   │   ├── credit_card_purchase_term/
+│   │   │   ├── credit_card_scheduled_payment/
+│   │   │   ├── customer_card/
+│   │   │   └── purchase_simulator/          # Request + Response
+│   │   └── debit_card/                      # Placeholder (.gitkeep)
+│   └── repositories/cards/
+│       ├── common/cards_repository.dart      # Interface abstracta
+│       └── credit_card/credit_card_repository.dart
+│
+├── data/
+│   ├── source/api/cards/
+│   │   ├── common/
+│   │   │   ├── cards_provider.dart           # HTTP calls
+│   │   │   └── cards_inject_provider.dart    # DI
+│   │   └── credit_card/
+│   │       ├── credit_card_provider.dart
+│   │       └── credit_card_inject_provider.dart
+│   ├── repositories_impl/cards/
+│   │   ├── common/cards_repository_impl.dart
+│   │   └── credit_card/credit_card_repository_impl.dart
+│   └── uses_cases/cards/
+│       ├── common/                           # 4 use cases
+│       │   ├── get_card_cvv_use_case.dart
+│       │   ├── get_card_details_use_case.dart
+│       │   ├── get_customer_cards_use_case.dart
+│       │   └── toggle_card_lock_use_case.dart
+│       └── credit_card/                      # 9 use cases
+│           ├── get_credit_card_summary_use_case.dart
+│           ├── get_credit_card_payment_terms_use_case.dart
+│           ├── get_purchase_simulator_use_case.dart
+│           ├── payment_credit_card_use_case.dart
+│           ├── update_next_purchase_use_case.dart
+│           ├── has_credit_card_tooltip_shown_use_case.dart
+│           ├── mark_credit_card_tooltip_shown_use_case.dart
+│           ├── has_credit_card_calc_tooltip_shown_use_case.dart
+│           └── mark_credit_card_calc_tooltip_shown_use_case.dart
+│
+└── presentation/modules/cards/
+    ├── common/
+    │   ├── controllers/                      # CardGC (shared state)
+    │   └── widgets/
+    ├── credit_card/
+    │   ├── home/          controller/ + view/ + widgets/
+    │   ├── all_options/   controller/ + view/ + widgets/
+    │   ├── card_payment/  controller/ + view/ + widgets/
+    │   ├── payment_summary/ controller/ + view/
+    │   ├── confirmation/  controller/ + view/
+    │   ├── purchase_simulator/ controller/ + view/ + widgets/
+    │   ├── select_term/   controller/ + view/ + widgets/
+    │   ├── onboarding/    view/
+    │   └── widgets/       CreditCardTooltipW
+    └── debit_card/
+        ├── controller/
+        └── views/
+```
 
 ---
 
-## 13. v2 — qué queda diferido
+## 6. Sesión 1: Implementación de Servicios / APIs
 
-Lista completa en `pos-spec.v1.md` sección 6. Resumen:
+### Paso 1: Definir el Endpoint
 
-- DIAN facturación electrónica.
-- Pasarela de pagos integrada + datáfono.
-- Lector de barras.
-- Rappi / Didi / Uber Eats (puerto/adapter ya listo).
-- App nativa.
-- Login / fidelización del cliente final.
-- Multi-tienda / multi-tenant.
-- Tracking GPS continuo + ETA dinámico al cliente.
-- Optimización TSP real para repartidor multi-parada.
-- Sort dinámico desde ubicación actual del repartidor.
-- Promociones avanzadas (BOGO, FIXED_OFF, COMBO_OFF).
-- Auto-importación del extracto bancario.
-- Detección anómala anti-fraude por IA.
-- IA narrativa (estados financieros, reportes operativos).
-- IA en cierre de caja sugiriendo causas.
-- RBAC granular.
-- Alertas avanzadas de inventario (vencimientos, rotación, anomalía).
+```dart
+// core/constants/endpoints.dart
+static const Endpoint miNuevoEndpoint = Endpoint(
+  endpoint: '/platform/mi-feature/accion',
+  version: 1.0,
+);
+```
+
+### Paso 2: Crear el Modelo (Domain)
+
+```dart
+// domain/models/mi_feature/mi_response/mi_response_model.dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'mi_response_model.freezed.dart';
+part 'mi_response_model.g.dart';
+
+@freezed
+abstract class MiResponseModel with _$MiResponseModel {
+  const factory MiResponseModel({
+    required bool success,
+    String? errorCode,
+    String? message,
+    String? dato1,
+    int? dato2,
+  }) = _MiResponseModel;
+
+  factory MiResponseModel.fromJson(Map<String, dynamic> json) =>
+      _$MiResponseModelFromJson(json);
+}
+```
+
+**Ejecutar generación de código**:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+### Paso 3: Crear el Repositorio Abstracto (Domain)
+
+```dart
+// domain/repositories/mi_feature/mi_feature_repository.dart
+import 'package:crediclub/app/core/network/failure.dart';
+import 'package:crediclub/app/domain/defs/type_defs.dart';
+import 'package:crediclub/app/domain/models/mi_feature/mi_response/mi_response_model.dart';
+
+abstract class MiFeatureRepository {
+  FutureEither<Failure, MiResponseModel> obtenerDatos({required String id});
+}
+```
+
+### Paso 4: Crear el API Provider (Data/Source)
+
+```dart
+// data/source/api/mi_feature/mi_feature_provider.dart
+import 'package:crediclub/app/core/constants/endpoints.dart' as constants;
+import 'package:crediclub/app/core/network/failure.dart';
+import 'package:crediclub/app/data/source/providers/dio/dio_http_provider.dart';
+import 'package:crediclub/app/domain/defs/type_defs.dart';
+import 'package:crediclub/app/domain/models/mi_feature/mi_response/mi_response_model.dart';
+
+class MiFeatureProvider {
+  const MiFeatureProvider({required DioHttpProvider dioHttpProvider})
+    : _dioHttpProvider = dioHttpProvider;
+
+  final DioHttpProvider _dioHttpProvider;
+
+  FutureEither<Failure, MiResponseModel> obtenerDatos({required String id}) async {
+    final queryParams = <String, dynamic>{'Id': id};
+    return await _dioHttpProvider.get(
+      constants.Endpoints.miNuevoEndpoint.endpoint,
+      headers: {'api-version': constants.Endpoints.miNuevoEndpoint.version},
+      queryParameters: queryParams,
+      converter: (json) => MiResponseModel.fromJson(json as Map<String, dynamic>),
+    );
+  }
+}
+```
+
+```dart
+// data/source/api/mi_feature/mi_feature_inject_provider.dart
+import 'package:crediclub/app/core/injects_providers/dio/dio_inject_provider.dart';
+import 'package:crediclub/app/data/source/api/mi_feature/mi_feature_provider.dart';
+import 'package:meta/meta.dart';
+import 'package:riverpod/riverpod.dart';
+
+class MiFeatureInjectProvider {
+  const MiFeatureInjectProvider._();
+
+  @visibleForTesting
+  static void testConstructor() {
+    final instance = const MiFeatureInjectProvider._();
+    instance;
+  }
+
+  static final miFeatureProvider = Provider(
+    (ref) => MiFeatureProvider(
+      dioHttpProvider: ref.read(DioInjectProvider.dioProvider),
+    ),
+  );
+}
+```
+
+### Paso 5: Implementar el Repositorio (Data)
+
+```dart
+// data/repositories_impl/mi_feature/mi_feature_repository_impl.dart
+import 'package:crediclub/app/core/network/failure.dart';
+import 'package:crediclub/app/data/source/api/mi_feature/mi_feature_provider.dart';
+import 'package:crediclub/app/domain/defs/type_defs.dart';
+import 'package:crediclub/app/domain/models/mi_feature/mi_response/mi_response_model.dart';
+import 'package:crediclub/app/domain/repositories/mi_feature/mi_feature_repository.dart';
+
+class MiFeatureRepositoryImpl implements MiFeatureRepository {
+  const MiFeatureRepositoryImpl({required MiFeatureProvider miFeatureProvider})
+    : _miFeatureProvider = miFeatureProvider;
+
+  final MiFeatureProvider _miFeatureProvider;
+
+  @override
+  FutureEither<Failure, MiResponseModel> obtenerDatos({required String id}) {
+    return _miFeatureProvider.obtenerDatos(id: id);
+  }
+}
+```
+
+### Paso 6: Crear el Use Case (Data)
+
+```dart
+// data/uses_cases/mi_feature/obtener_datos_use_case.dart
+import 'package:crediclub/app/core/network/either.dart';
+import 'package:crediclub/app/core/network/handle_failure.dart';
+import 'package:crediclub/app/core/utils/failure_view_data.dart';
+import 'package:crediclub/app/domain/models/mi_feature/mi_response/mi_response_model.dart';
+import 'package:crediclub/app/domain/repositories/mi_feature/mi_feature_repository.dart';
+
+class ObtenerDatosUseCase {
+  const ObtenerDatosUseCase({required MiFeatureRepository miFeatureRepository})
+    : _miFeatureRepository = miFeatureRepository;
+
+  final MiFeatureRepository _miFeatureRepository;
+
+  Future<Either<FailureViewData, MiResponseModel>> call({required String id}) async {
+    final result = await _miFeatureRepository.obtenerDatos(id: id);
+    return result.fold(
+      (failure) => Left(mapFailureToView(failure)),
+      (data) => Right(data),
+    );
+  }
+}
+```
+
+### Paso 7: Registrar en DI
+
+```dart
+// domain/repositories/inject_repository.dart (agregar)
+static final miFeatureRepository = Provider<MiFeatureRepository>(
+  (ref) => MiFeatureRepositoryImpl(
+    miFeatureProvider: ref.read(MiFeatureInjectProvider.miFeatureProvider),
+  ),
+);
+```
+
+```dart
+// data/uses_cases/uses_cases.dart (agregar)
+static final obtenerDatosUseCase = Provider(
+  (ref) => ObtenerDatosUseCase(
+    miFeatureRepository: ref.read(InjectRepository.miFeatureRepository),
+  ),
+);
+```
+
+```dart
+// data/uses_cases/index_uses_cases.dart (agregar)
+export 'mi_feature/obtener_datos_use_case.dart';
+```
+
+```dart
+// data/repositories_impl/index_repositories_impl.dart (agregar)
+export 'mi_feature/mi_feature_repository_impl.dart';
+```
+
+```dart
+// data/source/index_injects_providers.dart (agregar)
+export 'api/mi_feature/mi_feature_inject_provider.dart';
+```
 
 ---
 
-**FASE 3 COMPLETADA, ¿OK, sigue?**
+## 7. Sesión 2: Manejo de Vistas, Widgets, Colores, Tipografía y Spacing
+
+### 7.1 Estructura de una Vista Completa
+
+**Variante ConsumerWidget** (preferida cuando no hay estado local):
+
+```dart
+class MiFeatureView extends ConsumerWidget {
+  const MiFeatureView({
+    super.key,
+    required this.adaptiveScreen,
+    required this.adaptiveSpacing,
+    required this.adaptiveFontSize,
+  });
+
+  final AdaptiveScreen adaptiveScreen;
+  final AdaptiveSpacing adaptiveSpacing;
+  final AdaptiveFontSize adaptiveFontSize;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(miFeatureControllerProvider);
+
+    return PushScaffoldGW(
+      title: RemoteConfigKeys.miFeatureTitle.text,
+      body: AppStateHandlerGW(
+        state: state.appViewState,
+        loadingWidget: const MiFeatureShimmer(),
+        errorWidget: const MiFeatureErrorView(),
+        onSuccess: _buildContent(state),
+      ),
+    );
+  }
+
+  Widget _buildContent(MiFeatureState state) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(
+        horizontal: adaptiveSpacing.lg,   // 16px adaptativo
+        vertical: adaptiveSpacing.xl,     // 24px adaptativo
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            RemoteConfigKeys.miFeatureTitle.text,
+            style: adaptiveFontSize.system.xl.bold.carbon100,
+          ),
+          SizedBox(height: adaptiveSpacing.base), // 8px
+          Text(
+            'Descripción del feature',
+            style: adaptiveFontSize.system.base.medium.carbon60,
+          ),
+          SizedBox(height: adaptiveSpacing.xl), // 24px
+          // ... más widgets
+        ],
+      ),
+    );
+  }
+}
+```
+
+**Variante ConsumerStatefulWidget** (cuando se necesita initState, dispose, TextEditingControllers):
+
+```dart
+class MiFeatureFormView extends ConsumerStatefulWidget {
+  const MiFeatureFormView({super.key});
+
+  @override
+  ConsumerState<MiFeatureFormView> createState() => _MiFeatureFormViewState();
+}
+
+class _MiFeatureFormViewState extends ConsumerState<MiFeatureFormView> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(miFeatureControllerProvider.notifier).initialize();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final adaptiveScreen = AdaptiveScreen(context);
+    final adaptiveSpacing = AdaptiveSpacing(context);
+    final fonts = AdaptiveFontSize(context);
+
+    final state = ref.watch(miFeatureControllerProvider);
+
+    return PushScaffoldGW(
+      title: RemoteConfigKeys.miFeatureTitle.text,
+      body: AppStateHandlerGW(
+        state: state.appViewState,
+        loadingWidget: const FullscreenShimmerGW(),
+        errorWidget: Text(state.error ?? ''),
+        onSuccess: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: adaptiveSpacing.lg,
+            vertical: adaptiveSpacing.xl,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                RemoteConfigKeys.miFeatureTitle.text,
+                style: fonts.system.xl.bold.carbon100,
+              ),
+              SizedBox(height: adaptiveSpacing.base),
+              CardGW(
+                type: CardType.card,
+                child: Padding(
+                  padding: EdgeInsets.all(adaptiveSpacing.lg),
+                  child: Column(
+                    children: [
+                      ListItemGW.spaced(title: 'Campo', subtitle: state.data?.valor ?? ''),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: adaptiveSpacing.xxl),
+              PrimaryButtonGW(
+                text: RemoteConfigKeys.continueButton.text,
+                onPressed: () => _handleAction(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+### 7.2 Colores — Uso Correcto
+
+```dart
+// ❌ INCORRECTO — nunca usar colores hardcodeados
+Container(color: Color(0xFF00A69C))
+
+// ✅ CORRECTO — usar AppColorUtil o SemanticColors
+Container(color: AppColorUtil().tealDark)
+Container(color: AppSemanticColorUtil().cardBackground)
+
+// ✅ CORRECTO — en TextStyle con extension
+Text('Hola', style: fonts.system.lg.bold.tealDark)
+Text('Error', style: fonts.system.base.errorText)
+Text('Info', style: fonts.system.sm.carbon60)
+```
+
+**Paleta de colores disponibles (vía `AppColorUtil`)**:
+
+| Nombre | Uso |
+|---|---|
+| `primary` | Color principal (negro/carbon) |
+| `teal` | Acento principal |
+| `tealDark` | Acento oscuro |
+| `alert` | Rojo de error |
+| `greenBase` | Verde de éxito |
+| `white` | Blanco |
+| `carbon40/50/60/80/100` | Escala de grises |
+| `grayMedium` | Gris info |
+| `textSecondaryNeutral` | Texto secundario |
+
+### 7.3 Tipografía — Escala Completa
+
+| Token | Base px | Familia | Uso |
+|---|---|---|---|
+| `system.sm` | 10 | Area | Etiquetas pequeñas, timestamps |
+| `system.base` | 13 | Area | Texto body, descripciones |
+| `system.subtitle` | 15 | Area | Subtítulos especiales |
+| `system.lg` | 16 | Area | Texto body grande, labels |
+| `system.xl` | 24 | Area | Títulos de sección |
+| `system.xl2` | 32 | Area | Títulos principales |
+| `system.xl2Display` | 40 | Area | Títulos hero |
+| `display.sm/base/lg/xl/xl2` | Mismos | PP-Fragment-Glare | Títulos decorativos |
+| `metric.base` | 16 | Area | Métricas |
+| `metric.large` | 32 | Area | Números grandes |
+
+**Modificadores encadenables**:
+
+```dart
+fonts.system.lg          // Regular, Area, 16px
+fonts.system.lg.bold     // Bold (w700)
+fonts.system.lg.medium   // Medium (w500)
+fonts.system.lg.bold.tealDark    // Bold + color teal
+fonts.system.xl2.white           // Extra large + blanco
+fonts.display.xl.bold.carbon80   // Display + bold + gris
+```
+
+### 7.4 Spacing — Escala Adaptativa
+
+```dart
+final s = AdaptiveSpacing(context);
+
+// Uso en padding
+EdgeInsets.all(s.lg)                    // 16px all
+EdgeInsets.symmetric(horizontal: s.lg)  // 16px horizontal
+EdgeInsets.only(top: s.xl, bottom: s.lg) // 24px top, 16px bottom
+
+// Uso en SizedBox
+SizedBox(height: s.base)   //  8px gap
+SizedBox(height: s.md)     // 12px gap
+SizedBox(height: s.lg)     // 16px gap
+SizedBox(height: s.xl)     // 24px gap
+SizedBox(height: s.xxl)    // 32px gap
+SizedBox(height: s.safe)   // 60px safe area
+```
+
+| Token | Valor base | Uso típico |
+|---|---|---|
+| `sx` | 2px | Micro-spacing, bordes |
+| `sm` | 4px | Spacing tight entre chips/tags |
+| `base` | 8px | Spacing estándar entre elementos |
+| `md` | 12px | Spacing medium |
+| `lg` | 16px | Padding default de containers |
+| `xl` | 24px | Separación entre secciones |
+| `xxl` | 32px | Separación entre bloques |
+| `xxxl` | 44px | Separación grande |
+| `safe` | 60px | Safe area bottom |
+
+### 7.5 Widgets Globales — Catálogo de Uso
+
+**AppStateHandlerGW** — Maneja todos los estados de carga:
+
+```dart
+AppStateHandlerGW(
+  state: state.appViewState,           // AppViewState (← parámetro "state:", no "status:")
+  loadingWidget: FullscreenShimmerGW(), // Shimmer placeholder
+  errorWidget: Text('Error'),          // Widget de error custom
+  onSuccess: MiContenidoWidget(),      // Contenido cuando loaded (← "onSuccess:", no "child:")
+)
+```
+
+**CardGW** — Card reusable:
+
+```dart
+CardGW(
+  type: CardType.card,           // card | productCard | cardShadow
+  child: Padding(
+    padding: EdgeInsets.all(spacing.lg),
+    child: Column(...),
+  ),
+)
+```
+
+**ListItemGW** — Items de lista con factories:
+
+```dart
+ListItemGW.spaced(title: 'Saldo', subtitle: '\$10,000.00')
+ListItemGW.spacedWithTooltip(title: 'Info', subtitle: 'Dato', tooltipMessage: 'Ayuda')
+ListItemGW.tight(title: 'Campo', subtitle: 'Valor')
+ListItemGW.inverted(title: 'Etiqueta', subtitle: 'Contenido')
+```
+
+**InputTextGW** — Input con validación:
+
+```dart
+InputTextGW(
+  label: 'Correo electrónico',
+  controller: _emailController,
+  validator: EmailValidator(),
+  validationMode: InputValidationMode.onBlur,
+  keyboardType: TextInputType.emailAddress,
+  onChanged: (value) => _handleChange(value),
+)
+```
+
+**PrimaryButtonGW** — Botón primario:
+
+```dart
+PrimaryButtonGW(
+  text: 'Continuar',
+  onPressed: isFormValid ? () => _submit() : null,  // null = disabled
+  isLoading: state.isSubmitting,
+)
+```
+
+**BottomSheetUtil** — Bottom sheets programáticos:
+
+```dart
+// Simple con título y cuerpo
+BottomSheetUtil.simple(
+  title: 'Seleccionar cuenta',
+  body: ListView(...),
+);
+
+// Con loader
+BottomSheetUtil.loaderShow();
+// ... carga
+BottomSheetUtil.loaderHide();
+
+// Error
+BottomSheetUtil.errorShow(message: 'No se pudo procesar');
+
+// Async con resultado
+final result = await BottomSheetUtil.simpleAsync<String>(
+  title: 'Seleccionar',
+  body: ListView(...),
+);
+```
+
+**ToastUtil** — Toasts:
+
+```dart
+ToastUtil.show(message: 'Operación exitosa', type: ToastType.success);
+ToastUtil.show(message: 'Error al procesar', type: ToastType.error);
+```
+
+**LoaderUtil** — Loader de pantalla completa:
+
+```dart
+LoaderUtil.show();
+// ... operación async
+LoaderUtil.hide();
+```
+
+### 7.6 Widgets Específicos de Feature
+
+Los widgets específicos del feature van dentro de `widgets/` del módulo:
+
+```
+modules/cards/credit_card/home/widgets/
+├── credit_card_header_w.dart               # Sufijo _w (widget de feature)
+├── credit_card_sub_header_w.dart
+├── credit_card_body_w.dart
+├── credit_card_next_pay_w.dart
+├── credit_card_calendar_payment_card_w.dart
+├── credit_card_details_bottom_sheet.dart
+├── credit_card_home_shimmer.dart
+├── digital_card_btn_w.dart
+├── dot_w.dart
+├── sequential_animated_text_w.dart
+└── animated/
+    ├── animated_button.dart
+    └── animated_detail_field.dart
+```
+
+**Convención**: reciben `AdaptiveScreen`, `AdaptiveSpacing`, `AdaptiveFontSize` como parámetros del constructor (no los crean internamente).
+
+### 7.7 Textos desde Remote Config
+
+```dart
+// NUNCA hardcodear textos de UI
+Text('Bienvenido')  // ❌
+
+// SIEMPRE usar Remote Config
+Text(RemoteConfigKeys.welcomeTitle.text)  // ✅
+
+// Con variables
+Text(RemoteConfigKeys.depositedExceeds.textWithVars(['diario', '\$1,000']))  // ✅
+Text(RemoteConfigKeys.enterAnAmountError.textWithVar('1.00'))  // ✅
+```
+
+---
+
+## 8. Inyección de Dependencias (DI)
+
+### Flujo de DI completo:
+
+```
+┌─────────────────────────────────────────────────┐
+│ UsesCases.miUseCase (Provider<MiUseCase>)        │
+│   └─ MiUseCase(repo: InjectRepository.miRepo)   │
+│       └─ InjectRepository.miRepo (Provider)      │
+│           └─ MiRepoImpl(provider: MiInject.prov) │
+│               └─ MiInjectProvider.provider        │
+│                   └─ MiProvider(dio: DioInject)   │
+│                       └─ DioInjectProvider        │
+│                           └─ DioHttpProvider(dio) │
+│                               └─ DioInstance.dio  │
+└─────────────────────────────────────────────────┘
+```
+
+### Registros centrales:
+
+| Registro | Archivo | Contenido |
+|---|---|---|
+| **Inject Providers (Source)** | `data/source/index_injects_providers.dart` | Exports de API inject providers |
+| **Repo Implementations** | `data/repositories_impl/index_repositories_impl.dart` | Exports de todas las implementaciones |
+| **Use Cases Index** | `data/uses_cases/index_uses_cases.dart` | Exports de todos los use cases |
+| **Use Cases Registry** | `data/uses_cases/uses_cases.dart` | ~80 `Provider<UseCase>` con DI |
+| **Repository DI** | `domain/repositories/inject_repository.dart` | ~35 `Provider<Repository>` con DI |
+
+### Global Container:
+
+```dart
+// global.dart
+late final ProviderContainer globalContainer;
+
+// main_with_flavor.dart
+globalContainer = ProviderContainer(
+  overrides: [flavorProvider.overrideWithValue(flavor)],
+);
+```
+
+El `globalContainer` se usa para acceder a providers **fuera del widget tree** (utilidades estáticas, interceptores, etc.).
+
+---
+
+## 9. Navegación (Routing)
+
+### GoRouter Provider:
+
+```dart
+final goRouterProvider = Provider((ref) {
+  final router = GoRouter(
+    navigatorKey: ref.read(navigatorKeyGCProvider).navigatorKey,
+    initialLocation: OnboardingRoute.path,
+    routes: [
+      OnboardingRoute.route,
+      SignInRoute.route,
+      // ... 50+ rutas
+      StatefulShellRoute.indexedStack(  // Bottom nav tabs
+        branches: [
+          StatefulShellBranch(routes: [HomeRoute.route]),
+          StatefulShellBranch(routes: [MyInvestmentsRoute.route]),
+          StatefulShellBranch(routes: [/* cards placeholder */]),
+          StatefulShellBranch(routes: [/* star placeholder */]),
+        ],
+      ),
+      ...CreditCardRoutes.routes,
+    ],
+  );
+  return router;
+});
+```
+
+### Definición de una Ruta:
+
+```dart
+// app_routes/credit_card/credit_card_home_route.dart
+class CreditCardHomeRoute {
+  static const path = '/credit-card-home';
+
+  static final route = GoRoute(
+    path: path,
+    name: 'credit-card-home',
+    builder: (context, state) => CreditCardHomeView(
+      adaptiveScreen: AdaptiveScreen(context),
+      adaptiveSpacing: AdaptiveSpacing(context),
+      adaptiveFontSize: AdaptiveFontSize(context),
+    ),
+  );
+}
+```
+
+### Uso de Navegación:
+
+```dart
+// Desde cualquier parte con RouterUtil (estático)
+RouterUtil.push(CreditCardHomeRoute.path);
+RouterUtil.go(HomeRoute.path);
+RouterUtil.pop();
+
+// Desde un widget con ref
+ref.read(routerGCProvider.notifier).push(CreditCardHomeRoute.path);
+
+// Con extra data
+RouterUtil.push(CreditCardPaymentRoute.path, extra: paymentModel);
+```
+
+---
+
+## 10. Convenciones de Nombrado
+
+### Sufijos de Archivos:
+
+**Controladores y Vistas** (dos convenciones según scope):
+
+| Sufijo | Tipo | Clase | Ejemplo real |
+|---|---|---|---|
+| `_gc.dart` | Controller global/compartido | `CardGC`, `SessionGC`, `RouterGC` | `card_gc.dart`, `session_gc.dart` |
+| `_controller.dart` | Controller de feature | `HomeCreditCardController`, `CardPaymentController` | `home_credit_card_controller.dart` |
+| `_state.dart` | Estado Freezed | `HomeCreditCardState`, `CardState` | `home_credit_card_state.dart` |
+| `_view.dart` | Vista de feature | `CreditCardHomeView`, `CreditCardPaymentView` | `credit_card_home_view.dart` |
+| `_gw.dart` | Widget global reutilizable | `ScaffoldGW`, `PrimaryButtonGW` | `scaffold_gw.dart` |
+| `_w.dart` | Widget específico de feature | `CreditCardHeaderW` | `credit_card_header_w.dart` |
+
+**Capa Data/Domain** (sin variantes):
+
+| Sufijo | Tipo | Ejemplo |
+|---|---|---|
+| `_model.dart` | Modelo Freezed | `card_cvv_response_model.dart` |
+| `_use_case.dart` | Caso de uso | `get_card_details_use_case.dart` |
+| `_repository.dart` | Repositorio abstracto | `cards_repository.dart` |
+| `_repository_impl.dart` | Implementación de repositorio | `cards_repository_impl.dart` |
+| `_provider.dart` | Provider HTTP / API | `cards_provider.dart` |
+| `_inject_provider.dart` | Provider de inyección | `cards_inject_provider.dart` |
+| `_route.dart` | Definición de ruta | `credit_card_home_route.dart` |
+| `_ext.dart` | Extension | `strings_ext.dart` |
+| `_util.dart` | Utilidad estática | `currency_util.dart` |
+| `_validator.dart` | Validador | `password_validator.dart` |
+
+### Prefijos de Widgets en Cards:
+
+| Prefijo | Feature |
+|---|---|
+| `credit_card_` | Widgets/vistas de tarjeta de crédito |
+| `card_` | Widgets/controllers compartidos |
+| `digital_card_` | Widgets de tarjeta digital |
+
+### Nombres de Providers Riverpod (generados):
+
+```dart
+// Global Controllers → nombreGCProvider
+cardGCProvider             // de CardGC en card_gc.dart
+sessionGCProvider          // de SessionGC en session_gc.dart
+routerGCProvider           // de RouterGC en router_gc.dart
+
+// Feature Controllers → nombreControllerProvider
+homeCreditCardControllerProvider    // de HomeCreditCardController
+cardPaymentControllerProvider       // de CardPaymentController
+allOptionsControllerProvider        // de AllOptionsController
+selectTermControllerProvider        // de SelectTermController
+
+// Use Case → UsesCases.camelCaseUseCase
+UsesCases.getCardDetailsUseCase
+UsesCases.getCreditCardSummaryUseCase
+
+// Repository → InjectRepository.camelCaseRepository
+InjectRepository.cardsRepository
+InjectRepository.creditCardRepository
+```
+
+---
+
+## 11. Manejo de Errores
+
+### Cadena de errores:
+
+```
+DioException → DioHttpProvider._mapError() → Failure
+  → UseCase.fold() → FailureViewData (icon + message + errorCode)
+    → Controller.state.error → Vista muestra error
+
+// O para errores críticos:
+DioException → CriticalErrorInterceptor → forceLogout()
+```
+
+### Tipos de Failure y sus causas:
+
+| Failure | Cuando |
+|---|---|
+| `NetworkFailure` | Sin internet, SSL error |
+| `TimeoutFailure` | Timeout de request |
+| `ApiFailure` | 404, 5xx, respuesta inesperada |
+| `AuthFailure` | 400, 401, 403 |
+| `ValidationFailure` | 422 |
+| `BusinessFailure` | `success: false` en response body |
+| `NoDataFailure` | Sin datos para mostrar |
+| `StorageFailure` | Error de almacenamiento local |
+| `UnknownFailure` | Cualquier otro error |
+
+### SessionErrorHandler:
+
+Maneja códigos de error específicos de la app:
+
+```
+PLT001-PLT046  → Errores de plataforma (sesión, login, permisos)
+GPS001-GPS005  → Errores de geolocalización
+BIO001-BIO002  → Errores biométricos
+PCY000         → Política de seguridad
+GTW001         → Gateway error
+```
+
+---
+
+## 12. Guía Rápida para Crear un Nuevo Módulo
+
+### Checklist de archivos a crear:
+
+```
+--- CAPA DOMAIN ---
+1. ☐ Endpoint en core/constants/endpoints.dart
+2. ☐ Modelo(s) en domain/models/mi_feature/
+3. ☐ Repositorio abstracto en domain/repositories/mi_feature/
+
+--- CAPA DATA ---
+4. ☐ API Provider en data/source/api/mi_feature/mi_feature_provider.dart
+5. ☐ Inject Provider en data/source/api/mi_feature/mi_feature_inject_provider.dart
+6. ☐ Repositorio impl en data/repositories_impl/mi_feature/
+7. ☐ Use Case(s) en data/uses_cases/mi_feature/
+8. ☐ Registrar en InjectRepository (inject_repository.dart)
+9. ☐ Registrar en UsesCases (uses_cases.dart)
+10. ☐ Registrar exports en index files (3 archivos: index_uses_cases, index_repositories_impl, index_injects_providers)
+
+--- CAPA PRESENTATION ---
+11. ☐ Controller en presentation/modules/mi_feature/controller/mi_feature_controller.dart  ← sufijo _controller
+12. ☐ State en presentation/modules/mi_feature/controller/mi_feature_state.dart
+13. ☐ View en presentation/modules/mi_feature/view/mi_feature_view.dart  ← sufijo _view
+14. ☐ Widgets específicos en presentation/modules/mi_feature/widgets/  ← sufijo _w
+15. ☐ Ruta en presentation/router/app_routes/mi_feature/
+16. ☐ Agregar ruta al GoRouter en go_router_provider.dart
+17. ☐ Ejecutar: dart run build_runner build --delete-conflicting-outputs
+```
+
+> **Nota sobre naming**: Los controllers de feature usan `@riverpod` (lowercase, auto-dispose) y sufijo `_controller.dart`. Solo usa `@Riverpod(keepAlive: true)` y sufijo `_gc.dart` si el controller es **compartido globalmente** entre múltiples features.
+
+### Comandos útiles:
+
+```bash
+# Generar código Freezed + Riverpod
+dart run build_runner build --delete-conflicting-outputs
+
+# Generar código en modo watch
+dart run build_runner watch --delete-conflicting-outputs
+
+# Limpiar y reconstruir
+flutter clean && flutter pub get && dart run build_runner build --delete-conflicting-outputs
+```
+
+---
+
+## Apéndice: Bootstrap de la App
+
+```
+main_dev.dart
+  └─ mainWithFlavor(AppFlavor.development)
+      ├─ WidgetsFlutterBinding.ensureInitialized()
+      ├─ globalContainer = ProviderContainer(overrides: [flavorProvider])
+      ├─ SystemChrome.setPreferredOrientations([portrait])
+      └─ Dynatrace.start(
+           UncontrolledProviderScope(container: globalContainer,
+             child: CredoAppBehavioral(
+               child: MyApp()
+                 └─ _appInitProvider.when(
+                      data: ToastificationWrapper(
+                        child: StateApp(
+                          body: SessionDetectorGw(
+                            child: Stack([
+                              MaterialApp.router(
+                                routerConfig: goRouter,
+                                theme: ThemeApp.lightTheme,
+                                locale: Locale('es', 'MX'),
+                              ),
+                              LoaderGv(),  // Overlay de loading
+                            ])
+                          )
+                        )
+                      ),
+                      loading: Scaffold(LoaderIndicatorGW),
+                      error: ErrorScaffoldGw(),
+                    )
+             )
+           )
+         )
+```
+
+**StateApp** inicializa:
+
+1. `routerGC.onInit(goRouter)`
+2. `sessionGC.clearKeychainValues()`
+3. `sessionGC.initPermission()`
+4. `sessionGC.onInitSharedPreferences()`
+5. `sessionGC.initializeSessionManager(ref)`

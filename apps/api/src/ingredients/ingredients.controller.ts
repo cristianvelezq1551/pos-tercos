@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UsePipes } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UsePipes } from '@nestjs/common';
 import {
   CreateIngredientSchema,
   UpdateIngredientSchema,
@@ -6,7 +6,7 @@ import {
   type Ingredient,
   type UpdateIngredient,
 } from '@pos-tercos/types';
-import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { IngredientsService } from './ingredients.service';
 
@@ -40,9 +40,18 @@ export class IngredientsController {
     return this.ingredients.update(id, body);
   }
 
+  /** Desactiva (soft): el insumo queda inactivo conservando todo el historial. */
   @AdminAccess()
-  @Delete(':id')
+  @Post(':id/deactivate')
   deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<Ingredient> {
     return this.ingredients.deactivate(id);
+  }
+
+  /** Elimina DEFINITIVAMENTE — Dueño-only (acción destructiva). */
+  @OnlyDueno()
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.ingredients.remove(id);
   }
 }

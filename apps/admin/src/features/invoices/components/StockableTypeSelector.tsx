@@ -22,7 +22,7 @@ export function StockableTypeSelector({ value, onChange, disabled }: StockableTy
       <label className={cn('flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-2.5 transition-colors', value === 'PRODUCT' ? 'border-primary bg-destructive/10' : 'border-border bg-card hover:bg-muted/40')}>
         <input type="radio" name="stk-type" checked={value === 'PRODUCT'} onChange={() => onChange('PRODUCT')} disabled={disabled} className="mt-0.5 h-4 w-4 text-primary" />
         <span>
-          <span className="block font-medium text-foreground">Producto direct-resale</span>
+          <span className="block font-medium text-foreground">Producto de reventa directa</span>
           <span className="text-xs text-muted-foreground">Comprado y vendido tal cual (Coca-Cola)</span>
         </span>
       </label>

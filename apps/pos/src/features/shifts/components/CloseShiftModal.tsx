@@ -11,6 +11,7 @@ import {
   NumberInput,
   cn,
   formatDate,
+  groupDigits,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { useOffline } from '../../offline';
@@ -56,7 +57,7 @@ export function CloseShiftModal({
     status === 'offline'
       ? 'Sin conexión. El cierre necesita el backend (Z-report y efectivo esperado). Reconectá para cerrar el turno.'
       : offlinePending > 0
-        ? `Hay ${offlinePending} venta(s) offline sin sincronizar. Esperá a que terminen de sincronizar antes de cerrar — si no, el efectivo esperado quedaría mal.`
+        ? `Hay ${offlinePending} venta(s) offline sin sincronizar. Espera a que terminen de sincronizar antes de cerrar — si no, el efectivo esperado quedaría mal.`
         : null;
 
   useEffect(() => {
@@ -191,8 +192,9 @@ export function CloseShiftModal({
                 value={manual}
                 onChange={setManual}
                 prefix="$"
+                grouping
                 min={0}
-                placeholder={showResult && expectedCash !== null ? String(expectedCash) : '0'}
+                placeholder={showResult && expectedCash !== null ? groupDigits(String(expectedCash)) : '0'}
                 disabled={pending}
                 autoFocus
                 required
@@ -213,7 +215,7 @@ export function CloseShiftModal({
                 'w-full rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50',
               )}
             >
-              Conteo ciego activo · tocá para revelar el esperado y la diferencia
+              Conteo ciego activo · toca para revelar el esperado y la diferencia
             </button>
           )
         ) : null}

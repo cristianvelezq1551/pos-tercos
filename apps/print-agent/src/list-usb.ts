@@ -36,8 +36,8 @@ function main(): void {
     );
   }
   console.log(
-    '\nIdentificá tu impresora (probá conectar/desconectar para ver cuál cambia),\n' +
-      'pegá esas 2 variables en apps/print-agent/.env y reiniciá el dev.\n',
+    '\nIdentificar la impresora (probar conectar/desconectar para ver cuál cambia),\n' +
+      'copiar esas 2 variables en apps/print-agent/.env y reiniciar el dev.\n',
   );
 }
 

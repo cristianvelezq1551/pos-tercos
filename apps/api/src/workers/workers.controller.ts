@@ -2,129 +2,174 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import {
-  CheckInSchema,
-  CheckOutSchema,
-  CreateCommissionSchema,
-  type CheckIn,
-  type CheckOut,
-  type CreateCommission,
+  AddPayrollAdjustmentSchema,
+  SetPayrollDaySchema,
+  type AddPayrollAdjustment,
+  type EmployeePanel,
   type JwtAccessPayload,
-  type PayrollPeriodReport,
-  type WorkerAttendance,
-  type WorkerCommission,
+  type PagoReport,
+  type PayrollAdjustment,
+  type PayrollDay,
+  type PayrollPayment,
+  type SetPayrollDay,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { detectImageMimeLoose } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { WorkersService } from './workers.service';
 
-/**
- * Endpoints RRHH ligero (FASE 14.B). Todo Admin/Dueño — solo el dueño/
- * admin operativo registra asistencia y configura comisiones.
- */
+/** RRHH / nómina. Admin/Dueño. */
 @Controller('workers')
 @AdminAccess()
 export class WorkersController {
   constructor(private readonly workers: WorkersService) {}
 
-  // -----------------------
-  // Workers (lista de candidatos)
-  // -----------------------
-
   @Get('users')
-  listUsers(): Promise<
-    Array<{ id: string; fullName: string; role: string; email: string }>
-  > {
-    return this.workers.listWorkerCandidates();
+  listUsers(): Promise<Array<{ id: string; fullName: string; role: string; payType: string | null }>> {
+    return this.workers.listPayrollUsers();
   }
 
-  // -----------------------
-  // Attendance
-  // -----------------------
-
-  @Get('attendance')
-  listAttendance(
-    @Query('user_id') userId?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('only_open') onlyOpen?: string,
-    @Query('limit') limitRaw?: string,
-  ): Promise<WorkerAttendance[]> {
-    const limit = limitRaw ? Math.min(Math.max(Number(limitRaw) || 200, 1), 500) : 200;
-    return this.workers.listAttendance({
-      userId,
-      from: from ? parseDate(from) : undefined,
-      to: to ? parseDate(to, true) : undefined,
-      onlyOpen: onlyOpen === 'true',
-      limit,
-    });
+  /** Pago para pagar. ?start=YYYY-MM-DD (cualquier día del pago: se ancla al
+   *  inicio = día 1, 8, 16 o 23 del mes); por defecto el pago actual. */
+  @Get('period')
+  getPaymentPeriod(@Query('start') start?: string): Promise<PagoReport> {
+    return this.workers.getPaymentPeriod(start ?? new Date().toISOString().slice(0, 10));
   }
 
-  @Post(':userId/check-in')
-  checkIn(
+  /** Panel mensual de un empleado. ?year=&month= (1-12); por defecto mes actual. */
+  @Get('panel/:userId')
+  getPanel(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(CheckInSchema)) body: CheckIn,
-  ): Promise<WorkerAttendance> {
-    return this.workers.checkIn(userId, body, user.sub);
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<EmployeePanel> {
+    const now = new Date();
+    const y = year ? Number(year) : now.getFullYear();
+    const m = month ? Number(month) : now.getMonth() + 1;
+    return this.workers.getEmployeePanel(userId, y, m);
   }
 
-  @Post('attendance/:id/check-out')
-  checkOut(
-    @Param('id', ParseUUIDPipe) attendanceId: string,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(CheckOutSchema)) body: CheckOut,
-  ): Promise<WorkerAttendance> {
-    return this.workers.checkOut(attendanceId, body, user.sub);
-  }
-
-  // -----------------------
-  // Commissions
-  // -----------------------
-
-  @Get('commissions')
-  listCommissions(
-    @Query('user_id') userId?: string,
-  ): Promise<WorkerCommission[]> {
-    return this.workers.listCommissions(userId);
-  }
-
-  @Post(':userId/commission')
-  createCommission(
+  @Post(':userId/day')
+  setDay(
     @Param('userId', ParseUUIDPipe) userId: string,
+    @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(CreateCommissionSchema)) body: CreateCommission,
-  ): Promise<WorkerCommission> {
-    return this.workers.createCommission(userId, body, user.sub);
+    @Body(new ZodValidationPipe(SetPayrollDaySchema)) body: SetPayrollDay,
+  ): Promise<PayrollDay> {
+    return this.workers.setPayrollDay(userId, body, requirePin(pin), user.sub);
   }
 
-  // -----------------------
-  // Payroll period
-  // -----------------------
+  @Delete(':userId/day')
+  deleteDay(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Query('date') date: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    return this.workers.deletePayrollDay(userId, date, requirePin(pin), user.sub);
+  }
 
-  @Get('payroll-period')
-  getPayrollPeriod(
-    @Query('from') from: string | undefined,
-    @Query('to') to: string | undefined,
-  ): Promise<PayrollPeriodReport> {
-    if (!from || !to) {
-      throw new BadRequestException('?from y ?to requeridos (YYYY-MM-DD)');
+  @Post(':userId/adjustment')
+  addAdjustment(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(AddPayrollAdjustmentSchema)) body: AddPayrollAdjustment,
+  ): Promise<PayrollAdjustment> {
+    return this.workers.addAdjustment(userId, body, requirePin(pin), user.sub);
+  }
+
+  @Delete('adjustment/:id')
+  deleteAdjustment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    return this.workers.deleteAdjustment(id, requirePin(pin), user.sub);
+  }
+
+  // ================================================================
+  // CONTROL DE PAGOS (solo Dueño)
+  // ================================================================
+
+  /** Marca PAGADO con comprobante (imagen). Solo Dueño + PIN. Sat/Sun. */
+  @OnlyDueno()
+  @Post(':userId/payment/paid')
+  @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async markPaid(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body('periodStart') periodStart: string | undefined,
+    @Body('note') note: string | undefined,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<PayrollPayment> {
+    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
+    if (!periodStart || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) {
+      throw new BadRequestException('periodStart (YYYY-MM-DD) requerido.');
     }
-    return this.workers.getPayrollPeriod(parseDate(from), parseDate(to, true));
+    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    if (!detected) {
+      throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
+    }
+    return this.workers.markPaymentPaid(
+      userId,
+      periodStart,
+      requirePin(pin),
+      user.sub,
+      { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
+      note?.trim() || undefined,
+    );
+  }
+
+  /** Desmarca (borra el registro y la imagen). Solo Dueño + PIN. */
+  @OnlyDueno()
+  @Delete(':userId/payment')
+  unmarkPayment(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Query('period') periodStart: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    if (!periodStart || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) {
+      throw new BadRequestException('?period=YYYY-MM-DD requerido.');
+    }
+    return this.workers.unmarkPayment(userId, periodStart, requirePin(pin), user.sub);
+  }
+
+  /** Comprobante binario (Dueño). */
+  @OnlyDueno()
+  @Get('payment/:id/proof')
+  async getProof(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, mime } = await this.workers.getPaymentProof(id);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
   }
 }
 
-function parseDate(s: string, endOfDay = false): Date {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) throw new BadRequestException(`Fecha inválida: ${s}`);
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  if (endOfDay) d.setHours(23, 59, 59, 999);
-  return d;
+/** Exige el PIN de aprobación; toda acción de nómina afecta plata. */
+function requirePin(pin: string | undefined): string {
+  if (!pin) {
+    throw new BadRequestException('Se requiere el PIN de aprobación (header X-Approval-Pin).');
+  }
+  return pin;
 }

@@ -21,6 +21,7 @@ interface FormState {
   name: string;
   yield: number | null;
   unit: string;
+  thresholdMin: number | null;
   isActive: boolean;
 }
 
@@ -33,6 +34,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     name: initial?.name ?? '',
     yield: initial?.yield ?? null,
     unit: initial?.unit ?? 'unidad',
+    thresholdMin: initial?.thresholdMin ?? null,
     isActive: initial?.isActive ?? true,
   }));
 
@@ -43,7 +45,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     setError(null);
 
     if (form.yield === null || form.yield <= 0) {
-      setError('El yield debe ser un número positivo.');
+      setError('El rendimiento debe ser un número positivo.');
       return;
     }
 
@@ -53,6 +55,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           name: form.name,
           yield: form.yield,
           unit: form.unit,
+          thresholdMin: form.thresholdMin ?? 0,
           isActive: form.isActive,
         });
       } else {
@@ -60,6 +63,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           name: form.name,
           yield: form.yield,
           unit: form.unit,
+          thresholdMin: form.thresholdMin ?? 0,
         });
       }
       startTransition(() => {
@@ -106,8 +110,8 @@ export function SubproductForm({ initial }: SubproductFormProps) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
-            label="Yield (unidades por batch)"
-            hint="Cuántas unidades produce 1 corrida de la receta."
+            label="Rendimiento (porciones por preparación)"
+            hint="Cuántas porciones rinde una preparación de la receta. Ej: una olla de salsa rinde 7 porciones → 7."
             required
           >
             <NumberInput
@@ -131,6 +135,20 @@ export function SubproductForm({ initial }: SubproductFormProps) {
             />
           </FormField>
         </div>
+
+        <FormField
+          label="Umbral mínimo de stock"
+          hint={`Si el stock cae bajo este nivel (en ${form.unit || 'unidad'}), aparece como "Falta producir" en el inventario. 0 = sin umbral.`}
+        >
+          <NumberInput
+            value={form.thresholdMin}
+            onChange={(v) => setForm((f) => ({ ...f, thresholdMin: v }))}
+            decimals={4}
+            min={0}
+            disabled={pending}
+            placeholder="0"
+          />
+        </FormField>
 
         {isEdit ? (
           <Checkbox

@@ -68,8 +68,8 @@ export async function sendBytes(bytes: Buffer): Promise<void> {
   // (en vez de "guardar a disco" silencioso que parece que no hace nada).
   if (process.platform === 'win32') {
     throw new Error(
-      'Falta PRINTER_NAME en el .env (junto al .exe). Ponelo igual al nombre de Get-Printer | Select Name. ' +
-        'Ojo: el archivo debe llamarse .env (no .env.txt).',
+      'Falta PRINTER_NAME en el .env (junto al .exe). Debe ser igual al nombre de Get-Printer | Select Name. ' +
+        'Atención: el archivo debe llamarse .env (no .env.txt).',
     );
   }
 
@@ -110,7 +110,7 @@ public class TercosRawPrinter {
   [DllImport("winspool.Drv", EntryPoint="WritePrinter")] public static extern bool WritePrinter(IntPtr h, IntPtr buf, int count, out int written);
   public static void Send(string printer, byte[] data) {
     IntPtr h;
-    if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("No se pudo abrir la impresora '" + printer + "'. Revisa el nombre exacto en Dispositivos e impresoras.");
+    if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("No se pudo abrir la impresora '" + printer + "'. Verificar el nombre exacto en Dispositivos e impresoras.");
     DOCINFO di = new DOCINFO(); di.pDocName = "Tercos Recibo"; di.pDataType = "RAW";
     try {
       if (!StartDocPrinter(h, 1, ref di)) throw new Exception("StartDocPrinter fallo");

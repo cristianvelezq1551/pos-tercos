@@ -44,6 +44,8 @@ export const SubproductSchema = z.object({
   name: z.string(),
   yield: z.number().positive(),
   unit: z.string(),
+  /** Umbral mínimo de stock en `unit`. 0 = sin umbral. */
+  thresholdMin: z.number().nonnegative(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -54,6 +56,7 @@ export const CreateSubproductSchema = z.object({
   name: z.string().min(1).max(120),
   yield: z.number().positive(),
   unit: z.string().min(1).max(20).optional(),
+  thresholdMin: z.number().nonnegative().optional(),
 });
 export type CreateSubproduct = z.infer<typeof CreateSubproductSchema>;
 
@@ -61,6 +64,47 @@ export const UpdateSubproductSchema = CreateSubproductSchema.partial().extend({
   isActive: z.boolean().optional(),
 });
 export type UpdateSubproduct = z.infer<typeof UpdateSubproductSchema>;
+
+/**
+ * Registrar producción de un subproducto: cocinero/admin sube N unidades
+ * (en `subproduct.unit`) y el sistema consume insumos según receta.
+ *
+ * - quantityProduced > 0: cantidad final que se va al stock del subproducto.
+ * - El backend computa los insumos a consumir como: receta × (qty / yield).
+ * - Si algún insumo no tiene stock suficiente, la operación falla (no se
+ *   permite stock negativo).
+ */
+export const RecordProductionSchema = z.object({
+  quantityProduced: z.number().positive(),
+  notes: z.string().max(500).optional(),
+  /** Idempotency-key para reintentos del cliente sin doble producción. */
+  idempotencyKey: z.string().min(1).max(100).optional(),
+});
+export type RecordProduction = z.infer<typeof RecordProductionSchema>;
+
+/** Respuesta al producir: detalle del movement creado + insumos/sub-subproductos
+ *  consumidos. Cada item está discriminado por entityType para evitar confundir
+ *  ingredientes con sub-subproductos. */
+export const ProductionRunSchema = z.object({
+  runId: z.string().uuid(),
+  subproductId: z.string().uuid(),
+  subproductName: z.string(),
+  quantityProduced: z.number().positive(),
+  unit: z.string(),
+  consumed: z.array(
+    z.object({
+      /** 'INGREDIENT' o 'SUBPRODUCT' (sub-subproductos también se consumen). */
+      entityType: z.enum(['INGREDIENT', 'SUBPRODUCT']),
+      /** ID del insumo o subproducto consumido. */
+      entityId: z.string().uuid(),
+      name: z.string(),
+      quantityConsumed: z.number().positive(),
+      unit: z.string(),
+    }),
+  ),
+  createdAt: z.string().datetime(),
+});
+export type ProductionRun = z.infer<typeof ProductionRunSchema>;
 
 // ====================================================================
 // PRODUCTS (incluye sizes, modifiers, combo components)
@@ -357,6 +401,8 @@ export const ExpandedIngredientUsageSchema = z.object({
   unitCostInRecipe: z.number().nullable(),
   /** Aporte al costo total = totalQuantity × unitCostInRecipe. Null si falta cost. */
   costContribution: z.number().nullable(),
+  /** Fecha del último costo de compra del insumo. Para señalar costo viejo/volátil. */
+  lastUnitCostDate: z.string().datetime().nullable(),
 });
 export type ExpandedIngredientUsage = z.infer<typeof ExpandedIngredientUsageSchema>;
 
@@ -390,3 +436,11 @@ export const ExpandedCostResponseSchema = z.object({
   missingReasons: z.array(z.string()),
 });
 export type ExpandedCostResponse = z.infer<typeof ExpandedCostResponseSchema>;
+
+/** Costo por unidad de cada subproducto (resumen batch, sin N+1). */
+export const SubproductCostSummarySchema = z.object({
+  subproductId: z.string().uuid(),
+  /** Costo estimado por 1 unidad del subproducto. Null si falta costo de algún insumo. */
+  totalCost: z.number().nullable(),
+});
+export type SubproductCostSummary = z.infer<typeof SubproductCostSummarySchema>;

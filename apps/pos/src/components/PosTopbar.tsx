@@ -21,7 +21,7 @@ export function PosTopbar({
   return (
     <Topbar variant="light">
       <Topbar.Brand className="shrink-0">
-        <BrandLogo variant="full" theme="dark" size="h-7" />
+        <BrandLogo variant="wordmark" theme="dark" size="h-6" />
         {/* El badge de caja ocupa espacio: se oculta en pantallas chicas. */}
         <span className="hidden lg:flex">
           <ShiftCashBadge shift={shift} />

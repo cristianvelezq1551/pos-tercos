@@ -43,7 +43,7 @@ export function RecipeDraftTable({
             <Th align="right">Cantidad neta</Th>
             <Th>Unidad</Th>
             <Th align="right">Merma</Th>
-            <Th align="right">Bruto</Th>
+            <Th align="right">Se descuenta</Th>
             <Th align="right">Acción</Th>
           </tr>
         </thead>

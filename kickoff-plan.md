@@ -192,7 +192,7 @@ Cuando llegues a Sprint 8 (WhatsApp), Sprint 12 (anti-fraude / IA auto-pedido), 
 
 ## 4. CLAUDE.md inicial del repo
 
-En Sprint 0 día 3, creá `CLAUDE.md` en la raíz con este contenido base. Es el contexto que Claude lee siempre.
+En Sprint 0 día 3, crea `CLAUDE.md` en la raíz con este contenido base. Es el contexto que Claude lee siempre.
 
 ```markdown
 # POS Tercos — Guía para Claude Code

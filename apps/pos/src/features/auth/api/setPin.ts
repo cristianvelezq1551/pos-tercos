@@ -1,8 +1,8 @@
-export async function setOwnApprovalPin(pin: string): Promise<void> {
+export async function setOwnApprovalPin(pin: string, password: string): Promise<void> {
   const res = await fetch('/api/approvals/pin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin }),
+    body: JSON.stringify({ pin, password }),
     credentials: 'include',
   });
   if (!res.ok) {

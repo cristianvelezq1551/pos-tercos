@@ -6,7 +6,8 @@ import {
   SuggestionsMetricsCard,
   WhatsAppMetricsCard,
 } from '../../../../features/reports-operations';
-import { ApiError, serverFetchJson } from '../../../../lib/api-server';
+import { serverFetchJson } from '../../../../lib/api-server';
+import { friendlyApiError } from '../../../../lib/error-copy';
 import type {
   HourHeatmapReport,
   SuggestionsMetrics,
@@ -40,8 +41,7 @@ async function loadAll(
     ]);
     return { whatsapp, suggestions, heatmap };
   } catch (err) {
-    if (err instanceof ApiError) return { error: `API ${err.status}` };
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 

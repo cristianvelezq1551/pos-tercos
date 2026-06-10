@@ -36,7 +36,7 @@ export function ProductFormCostInfoPanel({ product, basePriceInput }: ProductFor
         <p className="font-medium">Sin costo histórico aún</p>
         <p className="mt-1 text-xs text-warning">
           Este producto se creó como reventa directa, pero todavía no se cargó en ninguna factura
-          confirmada. Una vez registres una factura con este producto, vas a ver acá su último
+          confirmada. Una vez registres una factura con este producto, vas a ver aquí su último
           costo y el margen sobre el precio de venta.
         </p>
       </div>
@@ -47,7 +47,7 @@ export function ProductFormCostInfoPanel({ product, basePriceInput }: ProductFor
     <div className="space-y-2 rounded-md border border-border bg-muted/40 p-4">
       <div className="flex items-baseline justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Costo histórico (read-only)
+          Costo histórico (solo lectura)
         </p>
         {date && (
           <span className="text-xs text-muted-foreground">
@@ -67,7 +67,7 @@ export function ProductFormCostInfoPanel({ product, basePriceInput }: ProductFor
           hint={
             factor
               ? `÷ factor ${factor}`
-              : 'Falta conversionFactor para calcular costo por unidad de venta'
+              : 'Falta el factor de conversión para calcular el costo por unidad de venta'
           }
         />
         <CostStat

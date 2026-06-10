@@ -1,5 +1,6 @@
 import type { TopProductsReport } from '@pos-tercos/types';
 import { formatCop, formatNumber } from '../../../lib/format';
+import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
 
 interface TopProductsTableProps {
   report: TopProductsReport;
@@ -27,7 +28,7 @@ export function TopProductsTable({ report }: TopProductsTableProps) {
             <Th>#</Th>
             <Th>Producto</Th>
             <Th align="right">Cantidad</Th>
-            <Th align="right">Revenue</Th>
+            <Th align="right">Ingresos</Th>
             <Th>Distribución</Th>
             <Th align="right">Costo est.</Th>
             <Th align="right">Margen est.</Th>
@@ -37,7 +38,12 @@ export function TopProductsTable({ report }: TopProductsTableProps) {
         <tbody className="divide-y divide-border">
           {products.map((p, i) => {
             const pct = topRevenue > 0 ? (p.revenue / topRevenue) * 100 : 0;
-            const marginTone = marginColor(p.estMarginPct);
+            // Escala unificada con el resto del admin (lib/margin-thresholds).
+            // estMarginPct viene como fracción (0..1) → ×100 para el umbral en %.
+            const marginClass =
+              p.estMarginPct === null
+                ? 'text-foreground'
+                : MARGIN_TONE_CLASS[marginTone(p.estMarginPct * 100)];
             return (
               <tr key={p.productId} className="transition-colors hover:bg-muted/40">
                 <Td mono>{i + 1}</Td>
@@ -65,14 +71,14 @@ export function TopProductsTable({ report }: TopProductsTableProps) {
                   {p.estMargin === null ? (
                     <span className="text-muted-foreground">—</span>
                   ) : (
-                    <span className={marginTone}>{formatCop(p.estMargin)}</span>
+                    <span className={marginClass}>{formatCop(p.estMargin)}</span>
                   )}
                 </Td>
                 <Td mono align="right">
                   {p.estMarginPct === null ? (
                     <span className="text-muted-foreground">—</span>
                   ) : (
-                    <span className={`font-medium ${marginTone}`}>
+                    <span className={`font-medium ${marginClass}`}>
                       {formatNumber(p.estMarginPct * 100, { decimals: 1 })}%
                     </span>
                   )}
@@ -83,19 +89,11 @@ export function TopProductsTable({ report }: TopProductsTableProps) {
         </tbody>
       </table>
       <div className="border-t border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-        Costo estimado: receta directa (subproductos no expandidos).
-        Productos sin <code>lastUnitCost</code> registrado muestran "—".
+        Costo estimado a partir de la receta directa (sin desglosar subproductos).
+        Los productos sin costo registrado muestran "—".
       </div>
     </div>
   );
-}
-
-function marginColor(pct: number | null): string {
-  if (pct === null) return 'text-foreground';
-  if (pct >= 0.5) return 'text-success';
-  if (pct >= 0.3) return 'text-primary';
-  if (pct >= 0.15) return 'text-warning';
-  return 'text-destructive';
 }
 
 function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {

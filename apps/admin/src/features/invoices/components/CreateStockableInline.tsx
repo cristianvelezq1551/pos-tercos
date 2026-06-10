@@ -46,7 +46,7 @@ export function CreateStockableInline({
     const factor = Number(conversionFactor);
     if (!Number.isFinite(factor) || factor <= 0) { setErr('El factor debe ser positivo.'); return; }
     const threshold = Number(thresholdMin);
-    if (!Number.isFinite(threshold) || threshold < 0) { setErr('Threshold inválido.'); return; }
+    if (!Number.isFinite(threshold) || threshold < 0) { setErr('Mínimo de alerta inválido.'); return; }
 
     setSubmitting(true);
     try {
@@ -75,7 +75,7 @@ export function CreateStockableInline({
       } else {
         const priceNum = Number(basePrice);
         if (!Number.isFinite(priceNum) || priceNum < 0) {
-          setErr('Precio base inválido (requerido para productos direct-resale).');
+          setErr('Precio base inválido (requerido para productos de reventa directa).');
           setSubmitting(false);
           return;
         }
@@ -133,23 +133,23 @@ export function CreateStockableInline({
             unitPurchase.trim().toLowerCase() !== invoiceUnit.trim().toLowerCase() ? (
               <p className="text-[10px] text-warning">
                 ⚠ La factura declara la cantidad en{' '}
-                <strong>{invoiceUnit}</strong> pero estás creando con{' '}
-                <strong>unitPurchase: {unitPurchase}</strong>. Asegurate que el factor refleje la
-                conversión real (ej. 1 caja = 10 kg → factor 10) o esto va a desestabilizar el stock.
+                <strong>{invoiceUnit}</strong> pero estás creando con unidad de compra{' '}
+                <strong>{unitPurchase}</strong>. Asegúrate de que el factor refleje la
+                conversión real (ej. 1 caja = 10 kg → factor 10) o el inventario quedará mal.
               </p>
             ) : null}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="cs-us">Unidad stock</Label>
+            <Label htmlFor="cs-us">Unidad de inventario</Label>
             <Input id="cs-us" disabled={submitting} value={unitStock} onChange={(e) => setUnitStock(e.target.value)} placeholder="g, unidad" />
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="cs-cf">Factor (1 compra = N stock)</Label>
+          <Label htmlFor="cs-cf">Factor (1 de compra = N de inventario)</Label>
           <Input id="cs-cf" type="number" inputMode="decimal" step="any" min="0" disabled={submitting} value={conversionFactor} onChange={(e) => setConversionFactor(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="cs-th">Threshold (alerta)</Label>
+          <Label htmlFor="cs-th">Mínimo de alerta</Label>
           <Input id="cs-th" type="number" inputMode="decimal" step="any" min="0" disabled={submitting} value={thresholdMin} onChange={(e) => setThresholdMin(e.target.value)} />
         </div>
         {type === 'PRODUCT' && (

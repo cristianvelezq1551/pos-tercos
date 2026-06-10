@@ -7,7 +7,7 @@ export default function NewInvoicePage() {
       <PageHeader
         eyebrow="Compras"
         title="Nueva factura"
-        description="Sube una foto de factura del proveedor. La IA extrae los datos y abre una ventana donde puedes editar todo antes de confirmar."
+        description="Sube una foto y deja que la IA extraiga proveedor, items y precios — o cárgala manualmente si no tienes foto. Editas todo antes de confirmar."
         breadcrumbs={[{ label: 'Facturas', href: '/invoices' }, { label: 'Nueva' }]}
       />
       <Container size="6xl" padY="md">

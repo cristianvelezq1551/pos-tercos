@@ -1,5 +1,8 @@
+'use client';
+
 import type { User } from '@pos-tercos/types';
-import { AppShell } from '@pos-tercos/ui';
+import { AppShell, Drawer } from '@pos-tercos/ui';
+import { useState } from 'react';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminTopbar } from './AdminTopbar';
 
@@ -9,21 +12,35 @@ interface AdminShellProps {
 }
 
 /**
- * Shell admin: topbar + sidebar lg+ + main scrollable. El main NO trae
- * padding — cada page es responsable de envolver en `<Container>` para
- * obtener gutters consistentes (px-4 sm:px-6 lg:px-8).
+ * Shell admin: topbar + sidebar lg+ + main scrollable. En <lg la sidebar se
+ * oculta y se abre como Drawer desde la hamburguesa del topbar (antes no había
+ * forma de navegar en móvil/tablet).
  *
- * Si una page renderiza solo un PageHeader (full-width) + Container,
- * el resultado se ve uniformemente alineado en todas las rutas.
+ * El main NO trae padding — cada page envuelve en `<Container>` para gutters
+ * consistentes (px-4 sm:px-6 lg:px-8).
  */
 export function AdminShell({ user, children }: AdminShellProps) {
+  const [navOpen, setNavOpen] = useState(false);
+
   return (
-    <AppShell
-      topbar={<AdminTopbar user={user} />}
-      sidebar={<AdminSidebar />}
-      mainClassName="overflow-y-auto"
-    >
-      {children}
-    </AppShell>
+    <>
+      <AppShell
+        topbar={<AdminTopbar user={user} onMenuClick={() => setNavOpen(true)} />}
+        sidebar={<AdminSidebar role={user?.role} />}
+        mainClassName="overflow-y-auto"
+      >
+        {children}
+      </AppShell>
+
+      <Drawer
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+        side="left"
+        width="w-72"
+        label="Navegación"
+      >
+        <AdminSidebar role={user?.role} onNavigate={() => setNavOpen(false)} />
+      </Drawer>
+    </>
   );
 }

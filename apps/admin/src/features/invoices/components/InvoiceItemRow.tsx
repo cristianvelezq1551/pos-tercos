@@ -111,8 +111,8 @@ export function InvoiceItemRow({
                 placeholder="kg, lt, unidad, caja"
               />
             </div>
-            <NumField id={`price-${row.localId}`} label="Costo unit." value={row.unitPrice} onChange={(v) => onChange({ unitPrice: v })} disabled={disabled} />
-            <NumField id={`total-${row.localId}`} label="Total costo" value={row.total} onChange={(v) => onChange({ total: v })} disabled={disabled} />
+            <NumField id={`price-${row.localId}`} label="Costo unit." value={row.unitPrice} onChange={(v) => onChange({ unitPrice: v })} money disabled={disabled} />
+            <NumField id={`total-${row.localId}`} label="Total costo" value={row.total} onChange={(v) => onChange({ total: v })} money disabled={disabled} />
           </div>
 
           <div className="space-y-1.5">
@@ -143,7 +143,7 @@ export function InvoiceItemRow({
                       </option>
                     ))}
                 </optgroup>
-                <optgroup label="Productos direct-resale (se venden tal cual)">
+                <optgroup label="Productos de reventa directa (se venden tal cual)">
                   {stockables
                     .filter((s) => s.type === 'PRODUCT')
                     .map((s) => (
@@ -170,7 +170,7 @@ export function InvoiceItemRow({
                 onClick={applySuggestion}
                 className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground ring-1 ring-inset ring-purple-600/20 hover:bg-purple-100"
               >
-                🤖 Sugerencia: {row.suggestion.name} ({Math.round(row.suggestion.score * 100)}% similar) — click para aplicar
+                🤖 Sugerencia: {row.suggestion.name} ({Math.round(row.suggestion.score * 100)}% similar) — toca para aplicar
               </button>
             )}
           </div>

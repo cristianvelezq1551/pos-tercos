@@ -89,6 +89,7 @@ export function ProductRecipeTabs({
           initialRecipe={activeVariant.recipe}
           ingredients={ingredients}
           subproducts={subproducts}
+          showExpandedCost
           hideHeader
         />
       ) : null}

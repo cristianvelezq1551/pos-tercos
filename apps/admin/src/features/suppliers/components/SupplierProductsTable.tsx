@@ -22,7 +22,7 @@ export function SupplierProductsTable({ items }: Props) {
   const columns: DataTableColumn<SupplierProduct>[] = [
     {
       key: 'name',
-      header: 'Item',
+      header: 'Insumo / producto',
       cell: (sp) => (
         <span className="font-medium text-foreground">{sp.name ?? '(eliminado)'}</span>
       ),

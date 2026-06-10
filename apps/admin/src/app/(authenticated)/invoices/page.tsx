@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { Button, Chip, Container, PageHeader } from '@pos-tercos/ui';
 import { Receipt } from 'lucide-react';
 import { InvoicesTable } from '../../../features/invoices';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
 import type { Invoice } from '@pos-tercos/types';
 
 interface PageProps {
@@ -14,10 +15,7 @@ async function loadInvoices(status?: string): Promise<Invoice[] | { error: strin
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';
     return await serverFetchJson<Invoice[]>(`/invoices${qs}`);
   } catch (err) {
-    if (err instanceof ApiError) {
-      return { error: `API ${err.status}` };
-    }
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 

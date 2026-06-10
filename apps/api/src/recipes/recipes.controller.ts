@@ -4,8 +4,9 @@ import {
   type ExpandedCostResponse,
   type RecipeResponse,
   type SetRecipeRequest,
+  type SubproductCostSummary,
 } from '@pos-tercos/types';
-import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { RecipesService } from './recipes.service';
 
@@ -18,7 +19,7 @@ export class RecipesController {
     return this.recipes.getRecipe('product', id);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Put('products/:id/recipe')
   setProductRecipe(
     @Param('id', ParseUUIDPipe) id: string,
@@ -32,7 +33,7 @@ export class RecipesController {
     return this.recipes.getRecipe('subproduct', id);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Put('subproducts/:id/recipe')
   setSubproductRecipe(
     @Param('id', ParseUUIDPipe) id: string,
@@ -49,7 +50,7 @@ export class RecipesController {
     return this.recipes.getSizeRecipe(id, sizeId);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Put('products/:id/sizes/:sizeId/recipe')
   setSizeRecipe(
     @Param('id', ParseUUIDPipe) id: string,
@@ -62,5 +63,26 @@ export class RecipesController {
   @Get('products/:id/expanded-cost')
   expandedCost(@Param('id', ParseUUIDPipe) id: string): Promise<ExpandedCostResponse> {
     return this.recipes.expandedCost(id);
+  }
+
+  @Get('products/:id/sizes/:sizeId/expanded-cost')
+  expandedSizeCost(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('sizeId', ParseUUIDPipe) sizeId: string,
+  ): Promise<ExpandedCostResponse> {
+    return this.recipes.expandedCost(id, sizeId);
+  }
+
+  @Get('subproducts/:id/expanded-cost')
+  expandedSubproductCost(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ExpandedCostResponse> {
+    return this.recipes.expandedSubproductCost(id);
+  }
+
+  // Ruta top-level (no bajo /subproducts) para no chocar con `subproducts/:id`.
+  @Get('subproduct-costs')
+  subproductCosts(): Promise<SubproductCostSummary[]> {
+    return this.recipes.listSubproductCosts();
   }
 }

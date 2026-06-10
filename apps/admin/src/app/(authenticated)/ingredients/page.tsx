@@ -2,29 +2,28 @@ import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
 import { IngredientsTable } from '../../../features/ingredients';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
+import { getCurrentUserServer } from '../../../features/auth/server';
 import type { Ingredient } from '@pos-tercos/types';
 
 async function loadIngredients(): Promise<Ingredient[] | { error: string }> {
   try {
     return await serverFetchJson<Ingredient[]>('/ingredients');
   } catch (err) {
-    if (err instanceof ApiError) {
-      return { error: `API ${err.status}` };
-    }
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 
 export default async function IngredientsPage() {
-  const result = await loadIngredients();
+  const [result, user] = await Promise.all([loadIngredients(), getCurrentUserServer()]);
 
   return (
     <>
       <PageHeader
         eyebrow="Catálogo"
         title="Insumos"
-        description="Materias primas que comprás a proveedores. Define unidad de compra, unidad de receta y factor de conversión."
+        description="Materias primas que compras a proveedores. Define unidad de compra, unidad de receta y factor de conversión."
         icon={<BrandIcon name="flame" className="h-6 w-6" />}
         actions={
           <Link href="/ingredients/new">
@@ -35,7 +34,7 @@ export default async function IngredientsPage() {
 
       <Container size="7xl" padY="md">
         {Array.isArray(result) ? (
-          <IngredientsTable ingredients={result} />
+          <IngredientsTable ingredients={result} userRole={user?.role} />
         ) : (
           <p
             role="alert"

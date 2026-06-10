@@ -16,6 +16,16 @@ model User {
   role               UserRole
   mustChangePwd      Boolean                 @default(true) @map("must_change_pwd")
   active             Boolean                 @default(true)
+  /// Datos de empleo (RRHH). payType = MENSUAL (salario/mes) o DIARIO (valor/día).
+  /// salaryAmount = salario mensual o valor por día según payType. La paga es
+  /// SIEMPRE SEMANAL (lunes a domingo). terminationDate = fin del trabajo (null
+  /// = activo). restDaysOfWeek = días de descanso cíclicos (0=domingo … 6=sábado);
+  /// solo afecta a DAILY: esos días NO se pagan ni cuentan como trabajados.
+  hireDate           DateTime?               @map("hire_date")
+  payType            PayType?                @map("pay_type")
+  salaryAmount       Decimal?                @map("salary_amount") @db.Decimal(12, 2)
+  terminationDate    DateTime?               @map("termination_date")
+  restDaysOfWeek     Int[]                   @default([]) @map("rest_days_of_week")
   createdAt          DateTime                @default(now()) @map("created_at")
   approvalPin        ApprovalPin?
   auditLogs          AuditLog[]
@@ -23,6 +33,7 @@ model User {
   idempotencyKeys    IdempotencyKey[]
   inventoryMovements InventoryMovement[]
   invoicesConfirmed  Invoice[]               @relation("InvoiceConfirmedBy")
+  invoicesPaid       Invoice[]               @relation("InvoicePaymentActor")
   invoicesUploaded   Invoice[]               @relation("InvoiceUploadedBy")
   promotionsCreated  Promotion[]
   purchaseSuggestionsResolved PurchaseSuggestion[]
@@ -32,8 +43,10 @@ model User {
   salesAsPaidBy      Sale[]                  @relation("SalePaidBy")
   shifts             Shift[]
   paymentReconciliations PaymentReconciliation[]
-  workerAttendance   WorkerAttendance[]
-  workerCommissions  WorkerCommission[]
+  payrollDays        PayrollDay[]
+  payrollAdjustments PayrollAdjustment[]
+  payrollPayments    PayrollPayment[]
+  fixedCostPayments  FixedCostPayment[]      @relation("FixedCostPaymentActor")
 
   @@index([role, active])
   @@map("users")
@@ -135,15 +148,19 @@ model ComboComponent {
 }
 
 model Subproduct {
-  id          String       @id @default(uuid())
-  name        String
-  yield       Decimal      @db.Decimal(10, 4)
-  unit        String       @default("unidad")
-  isActive    Boolean      @default(true) @map("is_active")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
-  consumedAs  RecipeEdge[] @relation("SubproductChild")
-  recipeEdges RecipeEdge[] @relation("SubproductRecipe")
+  id                  String              @id @default(uuid())
+  name                String
+  yield               Decimal             @db.Decimal(10, 4)
+  unit                String              @default("unidad")
+  /// Umbral mínimo de stock (en `unit`). Si stock cae bajo este nivel
+  /// debería sugerirse producir más. 0 = sin umbral.
+  thresholdMin        Decimal             @default(0) @db.Decimal(14, 4) @map("threshold_min")
+  isActive            Boolean             @default(true) @map("is_active")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  consumedAs          RecipeEdge[]        @relation("SubproductChild")
+  recipeEdges         RecipeEdge[]        @relation("SubproductRecipe")
+  inventoryMovements  InventoryMovement[]
 
   @@index([isActive])
   @@map("subproducts")
@@ -201,6 +218,10 @@ model InventoryMovement {
   ingredientId   String?               @map("ingredient_id")
   delta          Decimal               @db.Decimal(14, 4)
   type           InventoryMovementType
+  /// Costo por unidad de stock/receta. Solo entradas (delta > 0: PURCHASE,
+  /// INITIAL, ajuste+). NULL en consumos (el costo lo resuelve el motor FIFO)
+  /// y en entradas sin costo conocido. Base del costeo real (COGS).
+  unitCost       Decimal?              @db.Decimal(14, 4) @map("unit_cost")
   sourceType     String?               @map("source_type")
   sourceId       String?               @map("source_id")
   userId         String?               @map("user_id")
@@ -209,12 +230,15 @@ model InventoryMovement {
   createdAt      DateTime              @default(now()) @map("created_at")
   entityType     StockableType         @map("entity_type")
   productId      String?               @map("product_id")
+  subproductId   String?               @map("subproduct_id")
   ingredient     Ingredient?           @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
   product        Product?              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  subproduct     Subproduct?           @relation(fields: [subproductId], references: [id], onDelete: Restrict)
   user           User?                 @relation(fields: [userId], references: [id])
 
   @@index([ingredientId, createdAt(sort: Desc)])
   @@index([productId, createdAt(sort: Desc)])
+  @@index([subproductId, createdAt(sort: Desc)])
   @@index([entityType, createdAt(sort: Desc)])
   @@index([type, createdAt(sort: Desc)])
   @@map("inventory_movements")
@@ -302,15 +326,28 @@ model Invoice {
   confirmedById    String?       @map("confirmed_by_id")
   confirmedAt      DateTime?     @map("confirmed_at")
   notes            String?
+  /// Control de pago al proveedor (independiente de `status` que es solo
+  /// sobre la validación IA). NULL = aún no aplicable (factura sin confirmar);
+  /// 'PENDING' = confirmada pero no transferida; 'PAID' = ya pagada con
+  /// comprobante. Solo Dueño + PIN. CHECK al nivel DB.
+  paymentStatus    String?       @map("payment_status")
+  paidAt           DateTime?     @map("paid_at")
+  /// Storage key de la foto del comprobante de transferencia. Obligatorio
+  /// si paymentStatus='PAID'.
+  paymentProofKey  String?       @map("payment_proof_key")
+  paymentActorId   String?       @map("payment_actor_id")
+  paymentNote      String?       @map("payment_note")
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
   items            InvoiceItem[]
   confirmedBy      User?         @relation("InvoiceConfirmedBy", fields: [confirmedById], references: [id])
+  paymentActor     User?         @relation("InvoicePaymentActor", fields: [paymentActorId], references: [id])
   supplier         Supplier?     @relation(fields: [supplierId], references: [id])
   uploadedBy       User?         @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
 
   @@index([status, createdAt(sort: Desc)])
   @@index([supplierId, createdAt(sort: Desc)])
+  @@index([paymentStatus, createdAt(sort: Desc)])
   @@map("invoices")
 }
 
@@ -641,56 +678,72 @@ model PaymentReconciliation {
   @@map("payment_reconciliations")
 }
 
-/// Asistencia de trabajadores (FASE 14.B). Cada fila representa UN
-/// día de trabajo: el `checkIn` lo registra el dueño/admin (o el
-/// trabajador desde su PIN) al llegar; `checkOut` se setea al finalizar
-/// la jornada. `notes` libre.
-///
-/// `hoursWorked` es columna calculada al setear checkOut:
-/// (checkOut - checkIn) en horas decimales (ej. 8.5 para 8h 30min).
-/// Si checkOut es null, hoursWorked queda null y la fila representa
-/// un turno abierto.
-///
-/// CHECK: checkOut > checkIn cuando ambos definidos.
-model WorkerAttendance {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id")
-  checkIn      DateTime  @map("check_in")
-  checkOut     DateTime? @map("check_out")
-  hoursWorked  Decimal?  @map("hours_worked") @db.Decimal(6, 2)
-  notes        String?
-  createdAt    DateTime  @default(now()) @map("created_at")
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, checkIn(sort: Desc)])
-  @@index([checkIn])
-  @@map("worker_attendance")
+/// Modalidad de pago del empleado.
+enum PayType {
+  MONTHLY
+  DAILY
 }
 
-/// Comisión de un trabajador (FASE 14.B). Configuración asociada a un
-/// usuario: porcentaje sobre el revenue del turno (cajero) o monto fijo
-/// por sale (mesera con mesas). v1: solo PERCENT_OF_SHIFT.
-///
-/// `appliedAt` indica desde cuándo aplica esta config — un cambio crea
-/// una nueva fila, manteniendo histórico inmutable. La comisión vigente
-/// para una fecha dada es la fila con appliedAt <= fecha más reciente.
-///
-/// CHECK: percent en [0, 1) cuando type = PERCENT_OF_SHIFT.
-model WorkerCommission {
-  id          String                  @id @default(uuid())
-  userId      String                  @map("user_id")
-  type        WorkerCommissionType    @default(PERCENT_OF_SHIFT)
-  /// PERCENT_OF_SHIFT: % de revenue (0..1). FIXED_PER_SALE: ignorado.
-  percent     Decimal?                @db.Decimal(5, 4)
-  /// FIXED_PER_SALE: COP por sale. PERCENT_OF_SHIFT: ignorado.
-  fixedAmount Decimal?                @map("fixed_amount") @db.Decimal(12, 2)
-  appliedAt   DateTime                @default(now()) @map("applied_at")
-  notes       String?
-  createdAt   DateTime                @default(now()) @map("created_at")
-  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+/// Día de pago de un trabajador DIARIO. Una fila = un día trabajado, con su
+/// `amount` (por defecto el valor/día del usuario, editable: trabajó más / faltó
+/// → se paga más/menos). La nómina de la quincena suma estos montos.
+model PayrollDay {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  workDate    DateTime @map("work_date") @db.Date
+  amount      Decimal  @db.Decimal(12, 2)
+  note        String?
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, appliedAt(sort: Desc)])
-  @@map("worker_commissions")
+  @@unique([userId, workDate])
+  @@index([userId, workDate(sort: Desc)])
+  @@map("payroll_days")
+}
+
+/// Novedad de un PAGO (bono, regalo, horas extra, descuento). `periodStart`
+/// identifica el inicio del pago: uno de {día 1, 8, 16, 23} del mismo mes
+/// (4 pagos por mes = 2 quincenas × 2 sub-pagos). Se suma (o resta) al pago.
+model PayrollAdjustment {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  periodStart DateTime @map("period_start") @db.Date
+  concept     String
+  amount      Decimal  @db.Decimal(12, 2)
+  note        String?
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, periodStart])
+  @@map("payroll_adjustments")
+}
+
+/// Control de pago: marca cada PAGO de cada trabajador como PAID (con
+/// `proofImageKey` obligatoria = comprobante) o CANCELLED (motivo en `note`).
+/// `amount` es snapshot del total al momento de marcar (sin auto-update).
+/// Solo Dueño + PIN. Unique(userId, periodStart): un solo registro por par.
+model PayrollPayment {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  periodStart     DateTime @map("period_start") @db.Date
+  /// 'PAID' | 'CANCELLED'
+  status          String
+  amount          Decimal  @db.Decimal(12, 2)
+  resolvedAt      DateTime @map("resolved_at")
+  actorId         String?  @map("actor_id")
+  /// Clave en storage del comprobante (obligatorio si status=PAID).
+  proofImageKey   String?  @map("proof_image_key")
+  /// Para CANCELLED, motivo; para PAID, nota opcional.
+  note            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodStart])
+  @@index([periodStart])
+  @@map("payroll_payments")
 }
 
 /// Log de notificaciones WhatsApp al cliente vía OpenWA (WS-2). Auditoría
@@ -729,12 +782,16 @@ enum InventoryMovementType {
   MANUAL_ADJUSTMENT
   WASTE
   INITIAL
+  /// Tanda de producción interna: +N a subproducto, -receta a insumos.
+  /// Todos los movements de una misma producción comparten source_id.
+  PRODUCTION
 }
 
 /// Discriminador para entidades stock-trackeables.
 enum StockableType {
   INGREDIENT
   PRODUCT
+  SUBPRODUCT
 }
 
 enum InvoiceStatus {
@@ -806,7 +863,56 @@ enum PurchaseSuggestionStatus {
 
 /// Tipo de comisión (FASE 14.B). v1 implementa solo PERCENT_OF_SHIFT;
 /// FIXED_PER_SALE queda como reserva para meseras.
-enum WorkerCommissionType {
-  PERCENT_OF_SHIFT
-  FIXED_PER_SALE
+
+/// Costo fijo del negocio (alquiler, servicios, software, contador, etc.).
+/// MENSUAL = se cuenta tal cual en cada mes activo.
+/// ANUAL = se prorratea ÷12 al mostrarse en un mes.
+/// Vigencia opcional (started_at / ended_at) para subidas de precio o costos
+/// que terminaron. La nómina NO se modela aquí — se jala automática del
+/// módulo workers para no duplicar.
+model FixedCost {
+  id        String              @id @default(uuid())
+  name      String
+  amount    Decimal             @db.Decimal(14, 2)
+  frequency FixedCostFrequency  @default(MONTHLY)
+  category  String              @default("Otros")
+  startedAt DateTime?           @map("started_at") @db.Date
+  endedAt   DateTime?           @map("ended_at") @db.Date
+  isActive  Boolean             @default(true) @map("is_active")
+  notes     String?
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @default(now()) @updatedAt @map("updated_at")
+  payments  FixedCostPayment[]
+
+  @@index([isActive])
+  @@map("fixed_costs")
+}
+
+enum FixedCostFrequency {
+  MONTHLY
+  ANNUAL
+}
+
+/// Pagos efectivos de costos fijos. Un registro = un costo fijo × (año, mes).
+/// Para MONTHLY hay un período por mes; para ANNUAL el módulo usa
+/// period_month=1 por convención (el pago anual cubre todo el año).
+/// `amount` es snapshot de lo realmente pagado (puede diferir del
+/// `fixed_costs.amount` actual). `proof_image_key` es obligatorio.
+model FixedCostPayment {
+  id            String    @id @default(uuid())
+  fixedCostId   String    @map("fixed_cost_id")
+  periodYear    Int       @map("period_year")
+  periodMonth   Int       @map("period_month")
+  amount        Decimal   @db.Decimal(14, 2)
+  paidAt        DateTime  @map("paid_at")
+  proofImageKey String    @map("proof_image_key")
+  actorId       String?   @map("actor_id")
+  note          String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  fixedCost     FixedCost @relation(fields: [fixedCostId], references: [id], onDelete: Cascade)
+  actor         User?     @relation("FixedCostPaymentActor", fields: [actorId], references: [id])
+
+  @@unique([fixedCostId, periodYear, periodMonth])
+  @@index([paidAt])
+  @@map("fixed_cost_payments")
 }

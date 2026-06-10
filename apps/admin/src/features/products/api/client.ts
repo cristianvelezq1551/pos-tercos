@@ -56,7 +56,16 @@ export function updateProduct(id: string, input: UpdateProduct): Promise<Product
 }
 
 export function deactivateProduct(id: string): Promise<Product> {
-  return request(`/products/${id}`, { method: 'DELETE' }, ProductSchema);
+  return request(`/products/${id}/deactivate`, { method: 'POST' }, ProductSchema);
+}
+
+/** Elimina DEFINITIVAMENTE (solo si no tiene historial ni está en combos). */
+export async function deleteProduct(id: string): Promise<void> {
+  const res = await fetch(`/api/products/${id}`, { method: 'DELETE', credentials: 'include' });
+  if (!res.ok && res.status !== 204) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Error ${res.status}`);
+  }
 }
 
 /** Reemplaza variantes + extras de un producto existente. */

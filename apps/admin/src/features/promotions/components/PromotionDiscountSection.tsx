@@ -1,12 +1,15 @@
+import { MoneyInput } from '@pos-tercos/ui';
 import { PromotionTypeEnum } from '@pos-tercos/types';
 import { Section, Field, inputClass, labelFor, descriptionFor, type FormState } from './PromotionFormHelpers';
 
 interface PromotionDiscountSectionProps {
   state: FormState;
   onUpdate: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
+  /** En edición, el tipo de promo y el descuento son inmutables. */
+  locked?: boolean;
 }
 
-export function PromotionGeneralSection({ state, onUpdate }: PromotionDiscountSectionProps) {
+export function PromotionGeneralSection({ state, onUpdate, locked = false }: PromotionDiscountSectionProps) {
   return (
     <Section title="Información general">
       <Field label="Nombre" required>
@@ -23,34 +26,46 @@ export function PromotionGeneralSection({ state, onUpdate }: PromotionDiscountSe
 
       <Field label="Tipo" required>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {PromotionTypeEnum.options.map((t) => (
-            <label
-              key={t}
-              className={`cursor-pointer rounded-md border px-3 py-2 text-center text-sm ${
-                state.type === t
-                  ? 'border-primary bg-destructive/10 text-primary font-semibold'
-                  : 'border-border bg-card text-foreground hover:bg-muted/40'
-              }`}
-            >
-              <input
-                type="radio"
-                name="type"
-                className="sr-only"
-                value={t}
-                checked={state.type === t}
-                onChange={() => onUpdate('type', t)}
-              />
-              {labelFor(t)}
-            </label>
-          ))}
+          {PromotionTypeEnum.options.map((t) => {
+            const active = state.type === t;
+            const disabledStyle = locked && !active ? 'opacity-40' : '';
+            return (
+              <label
+                key={t}
+                className={`rounded-md border px-3 py-2 text-center text-sm ${
+                  locked ? 'cursor-not-allowed' : 'cursor-pointer'
+                } ${
+                  active
+                    ? 'border-primary bg-destructive/10 text-primary font-semibold'
+                    : 'border-border bg-card text-foreground hover:bg-muted/40'
+                } ${disabledStyle}`}
+              >
+                <input
+                  type="radio"
+                  name="type"
+                  className="sr-only"
+                  value={t}
+                  checked={active}
+                  disabled={locked}
+                  onChange={() => onUpdate('type', t)}
+                />
+                {labelFor(t)}
+              </label>
+            );
+          })}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">{descriptionFor(state.type)}</p>
+        {locked ? (
+          <p className="mt-1 text-xs text-muted-foreground italic">
+            El tipo no se puede cambiar. Para usar otro tipo, desactiva esta promo y crea una nueva.
+          </p>
+        ) : null}
       </Field>
     </Section>
   );
 }
 
-export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountSectionProps) {
+export function PromotionDiscountSection({ state, onUpdate, locked = false }: PromotionDiscountSectionProps) {
   return (
     <Section title="Descuento">
       {state.type === 'PERCENT_OFF' && (
@@ -62,6 +77,7 @@ export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountS
               max={99}
               step={1}
               required
+              disabled={locked}
               value={state.discountPctPercent}
               onChange={(e) => onUpdate('discountPctPercent', e.target.value)}
               className={`${inputClass} max-w-[120px]`}
@@ -74,30 +90,26 @@ export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountS
 
       {state.type === 'FIXED_OFF' && (
         <Field label="Monto en COP" required>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">$</span>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              required
-              value={state.discountFixed}
-              onChange={(e) => onUpdate('discountFixed', e.target.value)}
-              className={`${inputClass} max-w-[200px]`}
-              placeholder="2000"
-            />
-          </div>
+          <MoneyInput
+            required
+            disabled={locked}
+            value={state.discountFixed}
+            onChange={(v) => onUpdate('discountFixed', v)}
+            className="max-w-[200px]"
+            placeholder="2.000"
+          />
         </Field>
       )}
 
       {state.type === 'BOGO' && (
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Compra (paid)" required>
+          <Field label="Compra (paga)" required>
             <input
               type="number"
               min={1}
               step={1}
               required
+              disabled={locked}
               value={state.bogoBuyQty}
               onChange={(e) => onUpdate('bogoBuyQty', e.target.value)}
               className={inputClass}
@@ -109,6 +121,7 @@ export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountS
               min={1}
               step={1}
               required
+              disabled={locked}
               value={state.bogoGetQty}
               onChange={(e) => onUpdate('bogoGetQty', e.target.value)}
               className={inputClass}
@@ -130,6 +143,7 @@ export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountS
                 <input
                   type="radio"
                   checked={state.comboMode === 'pct'}
+                  disabled={locked}
                   onChange={() => onUpdate('comboMode', 'pct')}
                 />
                 Porcentaje
@@ -138,6 +152,7 @@ export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountS
                 <input
                   type="radio"
                   checked={state.comboMode === 'fixed'}
+                  disabled={locked}
                   onChange={() => onUpdate('comboMode', 'fixed')}
                 />
                 Monto fijo
@@ -153,6 +168,7 @@ export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountS
                   max={99}
                   step={1}
                   required
+                  disabled={locked}
                   value={state.discountPctPercent}
                   onChange={(e) => onUpdate('discountPctPercent', e.target.value)}
                   className={`${inputClass} max-w-[120px]`}
@@ -162,25 +178,27 @@ export function PromotionDiscountSection({ state, onUpdate }: PromotionDiscountS
             </Field>
           ) : (
             <Field label="Monto en COP" required>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">$</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  required
-                  value={state.discountFixed}
-                  onChange={(e) => onUpdate('discountFixed', e.target.value)}
-                  className={`${inputClass} max-w-[200px]`}
-                />
-              </div>
+              <MoneyInput
+                required
+                disabled={locked}
+                value={state.discountFixed}
+                onChange={(v) => onUpdate('discountFixed', v)}
+                className="max-w-[200px]"
+                placeholder="2.000"
+              />
             </Field>
           )}
           <p className="text-xs text-muted-foreground">
-            COMBO_OFF solo aplica cuando el producto vendido es un combo (Product.isCombo).
+            El descuento de combo solo aplica cuando el producto vendido es un combo.
           </p>
         </>
       )}
+      {locked ? (
+        <p className="text-xs text-muted-foreground italic">
+          El descuento no se puede cambiar una vez creada la promo. Para modificarlo, desactiva esta
+          promo y crea una nueva.
+        </p>
+      ) : null}
     </Section>
   );
 }

@@ -25,6 +25,7 @@ import { ProductFormVariantsSection } from './ProductFormVariantsSection';
 import { ProductFormExtrasSection } from './ProductFormExtrasSection';
 import { ProductFormComboSection } from './ProductFormComboSection';
 import { ProductFormCostInfoPanel } from './ProductFormCostInfoPanel';
+import { ProductFormPreparedCostPanel } from './ProductFormPreparedCostPanel';
 
 interface ProductFormProps {
   initial?: Product;
@@ -162,6 +163,10 @@ export function ProductForm({ initial, comboCandidates = [] }: ProductFormProps)
 
         {isEdit && initial?.directResale && (
           <ProductFormCostInfoPanel product={initial} basePriceInput={form.basePrice} />
+        )}
+
+        {isEdit && initial && !initial.directResale && !initial.isCombo && (
+          <ProductFormPreparedCostPanel productId={initial.id} basePriceInput={form.basePrice} />
         )}
 
         <ProductFormImageField

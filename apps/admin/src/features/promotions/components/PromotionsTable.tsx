@@ -18,9 +18,9 @@ const TYPE_CONFIG: Record<
   Promotion['type'],
   { label: string; tone: 'primary' | 'success' | 'warning' | 'info' }
 > = {
-  PERCENT_OFF: { label: '% off', tone: 'primary' },
-  FIXED_OFF: { label: '$ off', tone: 'success' },
-  BOGO: { label: 'BOGO', tone: 'warning' },
+  PERCENT_OFF: { label: '% desc.', tone: 'primary' },
+  FIXED_OFF: { label: '$ desc.', tone: 'success' },
+  BOGO: { label: 'Lleva 2 paga 1', tone: 'warning' },
   COMBO_OFF: { label: 'Combo', tone: 'info' },
 };
 
@@ -115,7 +115,7 @@ export function PromotionsTable({ promotions }: PromotionsTableProps) {
         <EmptyState
           illustration={<LineArtIllustration name="empty-plate" />}
           title="Aún no creaste promociones"
-          description="Las promos aplican automáticamente al cobrar la venta. 4 tipos: descuento %, descuento fijo, BOGO (lleva X paga Y) y combo."
+          description="Las promos aplican automáticamente al cobrar la venta. 4 tipos: descuento %, descuento fijo, lleva X paga Y y combo."
           action={
             <Link href="/promotions/new">
               <Button>Crear primera promoción</Button>

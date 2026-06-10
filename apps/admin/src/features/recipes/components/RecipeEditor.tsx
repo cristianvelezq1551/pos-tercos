@@ -12,6 +12,8 @@ import type {
 } from '@pos-tercos/types';
 import {
   getExpandedCost,
+  getSizeExpandedCost,
+  getSubproductExpandedCost,
   setProductRecipe,
   setSizeRecipe,
   setSubproductRecipe,
@@ -99,7 +101,12 @@ export function RecipeEditor({
   useEffect(() => {
     if (!showExpandedCost || isDirty) return;
     let cancelled = false;
-    getExpandedCost(parentId)
+    const fetchCost = (): ReturnType<typeof getExpandedCost> => {
+      if (sizeId) return getSizeExpandedCost(parentId, sizeId);
+      if (parentType === 'subproduct') return getSubproductExpandedCost(parentId);
+      return getExpandedCost(parentId);
+    };
+    fetchCost()
       .then((res) => {
         if (!cancelled) {
           setExpandedCost(res);
@@ -115,11 +122,11 @@ export function RecipeEditor({
     return () => {
       cancelled = true;
     };
-  }, [showExpandedCost, isDirty, parentId, savedSnapshot]);
+  }, [showExpandedCost, isDirty, parentId, parentType, sizeId, savedSnapshot]);
 
   const handleAddRow = () => {
     setError(null);
-    if (!addChildId) { setError('Elegí un insumo o subproducto.'); return; }
+    if (!addChildId) { setError('Elige un insumo o subproducto.'); return; }
     if (draft.some((d) => d.childType === addType && d.childId === addChildId)) {
       setError('Ese item ya está en la receta. Edita la cantidad existente.'); return;
     }
@@ -175,8 +182,9 @@ export function RecipeEditor({
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{parentName}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Define qué insumos o subproductos consume {parentType === 'product' ? 'el producto' : 'el subproducto'}.
-            La merma se aplica como pérdida proporcional: la cantidad bruta descontada del stock es
-            <code className="mx-1 rounded bg-muted px-1 py-0.5 font-mono text-xs">cant_neta / (1 - merma)</code>.
+            La <strong>cantidad neta</strong> es lo que queda en el plato; la <strong>merma</strong> es lo
+            que se pierde al preparar (limpiar, recortar). Por eso del stock se descuenta un poco más:
+            si una porción usa 180 g netos y se pierde 5%, se descuentan ~189 g.
           </p>
         </header>
       )}

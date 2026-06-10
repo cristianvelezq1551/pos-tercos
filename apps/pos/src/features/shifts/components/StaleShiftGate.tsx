@@ -38,11 +38,11 @@ export function StaleShiftGate({ shift }: { shift: Shift }) {
         </div>
         <div>
           <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground">
-            Cerrá la caja anterior
+            Cierra la caja anterior
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Quedó una caja abierta del <span className="font-semibold text-foreground">{openedDate}</span>.
-            No podés vender ni hacer movimientos hasta cerrarla.
+            No puedes vender ni hacer movimientos hasta cerrarla.
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             Cerrar turno registra el efectivo con el que quedó y la hora de

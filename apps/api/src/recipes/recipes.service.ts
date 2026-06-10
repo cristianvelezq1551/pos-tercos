@@ -246,17 +246,18 @@ export class RecipesService {
     };
   }
 
-  async expandedCost(productId: string): Promise<ExpandedCostResponse> {
+  async expandedCost(productId: string, sizeId?: string): Promise<ExpandedCostResponse> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       include: { comboComponents: true },
     });
     if (!product) throw new NotFoundException(`Product ${productId} not found`);
+    if (sizeId) await this.assertSizeBelongsToProduct(productId, sizeId);
 
     // Pre-cargar TODOS los ingredientes una vez (para tener lastUnitCost +
     // conversionFactor a mano sin n+1).
     const allIngredients = await this.prisma.ingredient.findMany({
-      select: { id: true, lastUnitCost: true, conversionFactor: true },
+      select: { id: true, lastUnitCost: true, conversionFactor: true, lastUnitCostDate: true },
     });
     const ingredientCosts: IngredientCostMap = new Map(
       allIngredients.map((i) => [
@@ -265,6 +266,9 @@ export class RecipesService {
           ? Number(i.lastUnitCost) / Number(i.conversionFactor)
           : null,
       ]),
+    );
+    const ingredientCostDates = new Map(
+      allIngredients.map((i) => [i.id, i.lastUnitCostDate?.toISOString() ?? null]),
     );
 
     try {
@@ -353,7 +357,7 @@ export class RecipesService {
       let recipe: { graph: RecipeGraph; root: ParentRef } | null = null;
       let ingredients: ReturnType<typeof Array.from<ReturnType<typeof expandRecipe> extends Map<unknown, infer V> ? V : never>> = [];
       if (!product.directResale) {
-        recipe = await this.loadGraphForProduct(productId);
+        recipe = await this.loadGraphForProduct(productId, sizeId);
         const expanded = expandRecipe(recipe.graph, recipe.root);
         ingredients = Array.from(expanded.values());
       }
@@ -388,6 +392,7 @@ export class RecipesService {
             unitCostInRecipe: unitCost,
             costContribution:
               unitCost !== null ? round(e.totalQuantity * unitCost) : null,
+            lastUnitCostDate: ingredientCostDates.get(e.ingredientId) ?? null,
           };
         }),
         components: [],
@@ -410,6 +415,137 @@ export class RecipesService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Costo estimado de UN subproducto, por unidad (porción) — no por corrida.
+   * `expandRecipe` con root subproducto y factor 1 daría los insumos de una
+   * corrida completa; dividimos por `yield` (multiplier 1/yield) para obtener
+   * el costo de 1 unidad del subproducto, que es como lo consume cada receta.
+   */
+  async expandedSubproductCost(subproductId: string): Promise<ExpandedCostResponse> {
+    const subproduct = await this.prisma.subproduct.findUnique({
+      where: { id: subproductId },
+    });
+    if (!subproduct) throw new NotFoundException(`Subproduct ${subproductId} not found`);
+    const yieldN = Number(subproduct.yield);
+
+    const allIngredients = await this.prisma.ingredient.findMany({
+      select: { id: true, lastUnitCost: true, conversionFactor: true, lastUnitCostDate: true },
+    });
+    const ingredientCosts: IngredientCostMap = new Map(
+      allIngredients.map((i) => [
+        i.id,
+        i.lastUnitCost !== null && Number(i.conversionFactor) > 0
+          ? Number(i.lastUnitCost) / Number(i.conversionFactor)
+          : null,
+      ]),
+    );
+    const ingredientCostDates = new Map(
+      allIngredients.map((i) => [i.id, i.lastUnitCostDate?.toISOString() ?? null]),
+    );
+
+    try {
+      const graph = await this.loadFullGraph();
+      const root: ParentRef = { kind: 'subproduct', id: subproductId };
+      const expanded = expandRecipe(graph, root, yieldN > 0 ? 1 / yieldN : 1);
+      const ingredients = Array.from(expanded.values());
+
+      let total = 0;
+      let allKnown = true;
+      const missing: string[] = [];
+      const totals = ingredients.map((e) => {
+        const unitCost = ingredientCosts.get(e.ingredientId) ?? null;
+        const costContribution = unitCost !== null ? round(e.totalQuantity * unitCost) : null;
+        if (unitCost === null) {
+          allKnown = false;
+          missing.push(`Insumo "${e.name}" sin costo (no aparece en facturas confirmadas)`);
+        } else {
+          total += costContribution!;
+        }
+        return {
+          ingredientId: e.ingredientId,
+          name: e.name,
+          unitRecipe: e.unitRecipe,
+          totalQuantity: e.totalQuantity,
+          unitCostInRecipe: unitCost,
+          costContribution,
+          lastUnitCostDate: ingredientCostDates.get(e.ingredientId) ?? null,
+        };
+      });
+
+      return {
+        productId: subproductId,
+        kind: 'product',
+        totals,
+        components: [],
+        totalCost: allKnown ? round(total) : null,
+        missingReasons: missing,
+      };
+    } catch (err) {
+      if (err instanceof RecipeCycleError) {
+        throw new BadRequestException({ message: 'Recipe contains a cycle', cyclePath: err.cyclePath });
+      }
+      if (err instanceof RecipeMissingNodeError) {
+        throw new BadRequestException({
+          message: 'Recipe references missing node',
+          missingId: err.missingId,
+          kind: err.kind,
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Costo por unidad de TODOS los subproductos en una sola pasada (sin N+1):
+   * carga el grafo completo + costos de insumos una vez y expande cada
+   * subproducto. Un subproducto con receta rota (ciclo/insumo faltante) o sin
+   * costo conocido queda con `totalCost: null` sin tumbar el resto.
+   */
+  async listSubproductCosts(): Promise<{ subproductId: string; totalCost: number | null }[]> {
+    const [graph, allIngredients] = await Promise.all([
+      this.loadFullGraph(),
+      this.prisma.ingredient.findMany({
+        select: { id: true, lastUnitCost: true, conversionFactor: true },
+      }),
+    ]);
+    const ingredientCosts: IngredientCostMap = new Map(
+      allIngredients.map((i) => [
+        i.id,
+        i.lastUnitCost !== null && Number(i.conversionFactor) > 0
+          ? Number(i.lastUnitCost) / Number(i.conversionFactor)
+          : null,
+      ]),
+    );
+
+    const result: { subproductId: string; totalCost: number | null }[] = [];
+    for (const sub of graph.subproducts.values()) {
+      let totalCost: number | null = null;
+      try {
+        const yieldN = sub.yield;
+        const expanded = expandRecipe(
+          graph,
+          { kind: 'subproduct', id: sub.id },
+          yieldN > 0 ? 1 / yieldN : 1,
+        );
+        let total = 0;
+        let allKnown = true;
+        for (const e of expanded.values()) {
+          const unitCost = ingredientCosts.get(e.ingredientId) ?? null;
+          if (unitCost === null) {
+            allKnown = false;
+            break;
+          }
+          total += e.totalQuantity * unitCost;
+        }
+        totalCost = allKnown ? round(total) : null;
+      } catch {
+        totalCost = null; // receta rota → sin costo, no rompe el batch
+      }
+      result.push({ subproductId: sub.id, totalCost });
+    }
+    return result;
   }
 
   private async assertParentExists(kind: ParentKind, id: string): Promise<void> {

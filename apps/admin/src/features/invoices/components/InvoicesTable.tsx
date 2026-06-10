@@ -1,5 +1,6 @@
 import type { Invoice, InvoiceStatus } from '@pos-tercos/types';
 import {
+  Badge,
   Button,
   DataTable,
   EmptyState,
@@ -10,6 +11,7 @@ import {
   type StatusMapping,
 } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
+import { CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
 interface InvoicesTableProps {
@@ -64,6 +66,23 @@ export function InvoicesTable({ rows }: InvoicesTableProps) {
       key: 'status',
       header: 'Estado',
       cell: (inv) => <StatusBadge status={inv.status} mapping={STATUS_MAPPING} size="sm" />,
+    },
+    {
+      key: 'payment',
+      header: 'Pago',
+      cell: (inv) => {
+        if (inv.status !== 'CONFIRMED') {
+          return <span className="text-ink-400">—</span>;
+        }
+        if (inv.paymentStatus === 'PAID') {
+          return (
+            <Badge tone="success" size="sm">
+              <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
+            </Badge>
+          );
+        }
+        return <Badge tone="warning" size="sm">Por pagar</Badge>;
+      },
     },
     {
       key: 'uploadedBy',

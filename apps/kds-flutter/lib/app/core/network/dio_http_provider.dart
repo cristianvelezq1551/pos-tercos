@@ -187,18 +187,47 @@ class DioHttpProvider {
       DioExceptionType.sendTimeout =>
         const TimeoutFailure(),
       DioExceptionType.connectionError => const NetworkFailure(),
-      DioExceptionType.badResponse => _mapStatusCode(e.response?.statusCode),
+      DioExceptionType.badResponse =>
+        _mapStatusCode(e.response?.statusCode, e.response?.data),
       _ => UnknownFailure(message: e.message ?? 'Error de red desconocido.'),
     };
   }
 
-  Failure _mapStatusCode(int? code) {
+  Failure _mapStatusCode(int? code, dynamic body) {
     if (code == null) return const UnknownFailure();
+    // El backend (Nest) responde con `{ message: string, ... }` en errores
+    // HTTP 4xx. Extraerlo permite mostrar el detalle al usuario (ej. lista
+    // de insumos faltantes en una producción 409).
+    final extracted = _extractMessage(body);
     return switch (code) {
-      400 || 401 || 403 => const AuthFailure(),
-      404 => const ApiFailure(message: 'Recurso no encontrado.', statusCode: 404),
-      >= 500 => ApiFailure(message: 'Error del servidor ($code).', statusCode: code),
-      _ => ApiFailure(message: 'Error HTTP $code.', statusCode: code),
+      401 || 403 => const AuthFailure(),
+      400 || 404 || 409 || 422 =>
+        ApiFailure(message: extracted ?? _defaultFor(code), statusCode: code),
+      >= 500 => ApiFailure(
+          message: extracted ?? 'Error del servidor ($code).',
+          statusCode: code,
+        ),
+      _ => ApiFailure(
+          message: extracted ?? 'Error HTTP $code.',
+          statusCode: code,
+        ),
     };
   }
+
+  String? _extractMessage(dynamic body) {
+    if (body is Map) {
+      final m = body['message'];
+      if (m is String && m.trim().isNotEmpty) return m;
+      if (m is List && m.isNotEmpty) return m.join('\n');
+    }
+    return null;
+  }
+
+  String _defaultFor(int code) => switch (code) {
+        400 => 'Solicitud inválida.',
+        404 => 'Recurso no encontrado.',
+        409 => 'Conflicto con el estado actual.',
+        422 => 'Datos inválidos.',
+        _ => 'Error HTTP $code.',
+      };
 }

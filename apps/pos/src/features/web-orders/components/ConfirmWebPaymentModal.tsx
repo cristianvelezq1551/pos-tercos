@@ -63,10 +63,10 @@ export function ConfirmWebPaymentModal({
   const stale = order ? minutesSince(order.createdAt) >= STALE_MIN : false;
 
   const validation = useMemo(() => {
-    if (!order || !method) return { ok: false, reason: 'Elegí un método' };
+    if (!order || !method) return { ok: false, reason: 'Elige un método' };
     if (method === 'CASH') return { ok: true, reason: null };
     if (!doubleVerified) {
-      return { ok: false, reason: 'Confirmá que la transferencia llegó' };
+      return { ok: false, reason: 'Confirma que la transferencia llegó' };
     }
     return { ok: true, reason: null };
   }, [order, method, doubleVerified]);

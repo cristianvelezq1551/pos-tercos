@@ -16,8 +16,16 @@ import {
   type AiSummary,
   type CashierAnomalies,
   type DashboardSummary,
+  type FinanceSummary,
+  type FinancialAnalysis,
   type HourHeatmapReport,
+  type InventoryUsageReport,
+  type InventoryValuationReport,
   type JwtAccessPayload,
+  type MonthlyFinancialStatement,
+  type MonthlyTrend,
+  type PnlReport,
+  type ProductMarginReport,
   type ReconciliationReport,
   type ReconciliationSource,
   type SalesSummary,
@@ -30,6 +38,10 @@ import {
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { CogsService } from './cogs.service';
+import { FinanceSummaryService } from './finance-summary.service';
+import { InventoryUsageService } from './inventory-usage.service';
+import { FinancialReportsService } from './financial-reports.service';
 import { ReconciliationService } from './reconciliation.service';
 import { ReportsService } from './reports.service';
 import { SalesReportsService } from './sales-reports.service';
@@ -42,7 +54,106 @@ export class ReportsController {
     private readonly reports: ReportsService,
     private readonly reconciliation: ReconciliationService,
     private readonly salesReports: SalesReportsService,
+    private readonly cogs: CogsService,
+    private readonly financial: FinancialReportsService,
+    private readonly financeSummary: FinanceSummaryService,
+    private readonly inventoryUsage: InventoryUsageService,
   ) {}
+
+  // ==================================================================
+  // Cockpit financiero (cash-based) — Dueño-only
+  // ==================================================================
+
+  /** Resumen mensual: ingresos, pagado, pendiente, neto + listas de detalle. */
+  @OnlyDueno()
+  @Get('finance-summary')
+  getFinanceSummary(
+    @Query('year') yearStr?: string,
+    @Query('month') monthStr?: string,
+  ): Promise<FinanceSummary> {
+    const now = new Date();
+    const year = yearStr ? Number.parseInt(yearStr, 10) : now.getUTCFullYear();
+    const month1 = monthStr ? Number.parseInt(monthStr, 10) : now.getUTCMonth() + 1;
+    if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+      throw new BadRequestException('year inválido.');
+    }
+    if (!Number.isFinite(month1) || month1 < 1 || month1 > 12) {
+      throw new BadRequestException('month debe estar entre 1 y 12.');
+    }
+    return this.financeSummary.getMonthlySummary(year, month1);
+  }
+
+  // ==================================================================
+  // Estado financiero mensual (P&G + break-even + IA) — Dueño-only
+  // ==================================================================
+
+  @OnlyDueno()
+  @Get('financial/monthly')
+  monthlyFinancial(
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<MonthlyFinancialStatement> {
+    const now = new Date();
+    const y = year ? Number(year) : now.getUTCFullYear();
+    const m = month ? Number(month) : now.getUTCMonth() + 1;
+    return this.financial.getMonthlyStatement(y, m);
+  }
+
+  @OnlyDueno()
+  @Get('financial/trend')
+  financialTrend(
+    @Query('months') months?: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<MonthlyTrend> {
+    const n = Math.max(1, Math.min(Number(months) || 6, 12));
+    const y = year ? Number(year) : undefined;
+    const m = month ? Number(month) : undefined;
+    return this.financial.getMonthlyTrend(n, y, m);
+  }
+
+  @OnlyDueno()
+  @Post('financial/analyze')
+  analyzeFinancial(
+    @CurrentUser() user: JwtAccessPayload,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<FinancialAnalysis> {
+    const now = new Date();
+    const y = year ? Number(year) : now.getUTCFullYear();
+    const m = month ? Number(month) : now.getUTCMonth() + 1;
+    return this.financial.analyze(y, m, user.sub);
+  }
+
+  // ==================================================================
+  // Costeo real FIFO (COGS) — Dueño-only (P&L y márgenes son sensibles)
+  // ==================================================================
+
+  /** P&L del período: ventas − costo real (FIFO) − merma valorizada. */
+  @OnlyDueno()
+  @Get('cogs/pnl')
+  getPnl(@Query('from') from?: string, @Query('to') to?: string): Promise<PnlReport> {
+    const range = parseDateRange(from, to, 30);
+    return this.cogs.getPnl(range.from, range.to);
+  }
+
+  /** Margen real por producto (costo FIFO, atribución exacta por venta). */
+  @OnlyDueno()
+  @Get('cogs/product-margins')
+  getProductMargins(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<ProductMarginReport> {
+    const range = parseDateRange(from, to, 30);
+    return this.cogs.getProductMargins(range.from, range.to);
+  }
+
+  /** Valor del inventario a costo real (lotes FIFO restantes). */
+  @OnlyDueno()
+  @Get('cogs/inventory-valuation')
+  getInventoryValuation(): Promise<InventoryValuationReport> {
+    return this.cogs.getInventoryValuation();
+  }
 
   // ==================================================================
   // FASE 13.A — Reportes operativos / negocio
@@ -90,6 +201,21 @@ export class ReportsController {
     const range = parseDateRange(from, to);
     const limit = limitRaw ? Math.min(Math.max(Number(limitRaw) || 20, 1), 100) : 20;
     return this.salesReports.getTopProducts(range.from, range.to, limit);
+  }
+
+  /**
+   * Uso y mermas por insumo: consumo por ventas/producción (teórico, sale de
+   * recetas) vs mermas declaradas y faltantes de conteo, valorizado.
+   * Admin/Dueño.
+   */
+  @AdminAccess()
+  @Get('inventory-usage')
+  getInventoryUsage(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<InventoryUsageReport> {
+    const range = parseDateRange(from, to, 30);
+    return this.inventoryUsage.getUsage(range.from, range.to);
   }
 
   /** Heatmap día de semana × hora. Admin/Dueño. */
@@ -140,7 +266,7 @@ export class ReportsController {
    * FASE 11.E + 14.D: import CSV Nequi/Bancolombia + match contra sales
    * digitales. Si `?save=true`, persiste el reporte para histórico.
    */
-  @OnlyDueno()
+  @AdminAccess()
   @Post('payment-reconciliation/import')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: MAX_CSV_BYTES } }),
@@ -169,7 +295,7 @@ export class ReportsController {
   }
 
   /** FASE 14.D: histórico de reports persistidos. */
-  @OnlyDueno()
+  @AdminAccess()
   @Get('payment-reconciliation/history')
   listSavedReconciliations(
     @Query('source') sourceRaw?: string,
@@ -185,7 +311,7 @@ export class ReportsController {
   }
 
   /** FASE 14.D: detalle de un report guardado (incluye filas). */
-  @OnlyDueno()
+  @AdminAccess()
   @Get('payment-reconciliation/history/:id')
   getSavedReconciliation(
     @Param('id', ParseUUIDPipe) id: string,

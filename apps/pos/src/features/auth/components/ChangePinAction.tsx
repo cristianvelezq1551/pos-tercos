@@ -11,6 +11,7 @@ export function ChangePinAction({ user }: { user: User | null }) {
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -19,11 +20,12 @@ export function ChangePinAction({ user }: { user: User | null }) {
 
   const pinValid = /^\d{6}$/.test(pin);
   const matches = pin === confirm;
-  const canSubmit = pinValid && matches && !pending;
+  const canSubmit = pinValid && matches && password.length > 0 && !pending;
 
   const reset = () => {
     setPin('');
     setConfirm('');
+    setPassword('');
     setError(null);
     setSuccess(false);
     setPending(false);
@@ -34,7 +36,7 @@ export function ChangePinAction({ user }: { user: User | null }) {
     setError(null);
     setPending(true);
     try {
-      await setOwnApprovalPin(pin);
+      await setOwnApprovalPin(pin, password);
       setSuccess(true);
       setTimeout(() => {
         setOpen(false);
@@ -62,7 +64,7 @@ export function ChangePinAction({ user }: { user: User | null }) {
         open={open}
         onClose={pending ? () => {} : () => setOpen(false)}
         title="Cambiar mi PIN de aprobaciones"
-        description="6 dígitos numéricos. Lo usás para autorizar anulaciones, descuentos altos y apertura de cajón sin venta."
+        description="6 dígitos numéricos. Lo usas para autorizar anulaciones, descuentos altos y apertura de cajón sin venta."
         maxWidth="max-w-md"
         footer={
           <>
@@ -103,6 +105,16 @@ export function ChangePinAction({ user }: { user: User | null }) {
               placeholder="••••••"
               maxLength={6}
               className="font-mono tracking-[0.4em]"
+              disabled={pending || success}
+            />
+          </FormField>
+          <FormField label="Tu contraseña">
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Tu contraseña"
               disabled={pending || success}
             />
           </FormField>

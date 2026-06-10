@@ -2,17 +2,16 @@ import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
 import { ProductsTable } from '../../../features/products';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
+import { getCurrentUserServer } from '../../../features/auth/server';
 import type { ExpandedCostResponse, Product } from '@pos-tercos/types';
 
 async function loadProducts(): Promise<Product[] | { error: string }> {
   try {
     return await serverFetchJson<Product[]>('/products');
   } catch (err) {
-    if (err instanceof ApiError) {
-      return { error: `API ${err.status}` };
-    }
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 
@@ -36,7 +35,7 @@ async function loadCostsByProductId(
 }
 
 export default async function ProductsPage() {
-  const result = await loadProducts();
+  const [result, user] = await Promise.all([loadProducts(), getCurrentUserServer()]);
   const costsById = Array.isArray(result)
     ? await loadCostsByProductId(result)
     : new Map<string, ExpandedCostResponse>();
@@ -46,7 +45,7 @@ export default async function ProductsPage() {
       <PageHeader
         eyebrow="Catálogo"
         title="Productos"
-        description="Lo que vendés en mostrador. Marca un producto como combo si está compuesto por otros con precio especial."
+        description="Lo que vendes en mostrador. Marca un producto como combo si está compuesto por otros con precio especial."
         icon={<BrandIcon name="burger" className="h-6 w-6" />}
         actions={
           <Link href="/products/new">
@@ -57,7 +56,7 @@ export default async function ProductsPage() {
 
       <Container size="7xl" padY="md">
         {Array.isArray(result) ? (
-          <ProductsTable products={result} costsById={costsById} />
+          <ProductsTable products={result} costsById={costsById} userRole={user?.role} />
         ) : (
           <p
             role="alert"

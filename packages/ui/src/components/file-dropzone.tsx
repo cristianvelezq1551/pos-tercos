@@ -14,7 +14,7 @@ export interface FileDropzoneProps {
   onFilesSelected: (files: File[]) => void;
   /** Callback con un mensaje de error legible. */
   onError?: (message: string) => void;
-  /** Texto personalizado del prompt. Default: "Arrastrá un archivo o hacé clic para seleccionar". */
+  /** Texto personalizado del prompt. Default: "Arrastra un archivo o haz clic para seleccionar". */
   prompt?: React.ReactNode;
   /** Hint debajo del prompt. */
   hint?: React.ReactNode;
@@ -35,7 +35,7 @@ export const FileDropzone = React.forwardRef<HTMLDivElement, FileDropzoneProps>(
       maxSizeBytes,
       onFilesSelected,
       onError,
-      prompt = 'Arrastrá un archivo o hacé clic para seleccionar',
+      prompt = 'Arrastra un archivo o haz clic para seleccionar',
       hint,
       disabled = false,
       className,

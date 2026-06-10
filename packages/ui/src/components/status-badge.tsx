@@ -18,9 +18,9 @@ export interface StatusBadgeProps<S extends string = string>
   status: S;
   /** Mapping status → { label, tone, pulse } */
   mapping: StatusMapping<S>;
-  /** Override del label si querés algo distinto al mapping */
+  /** Override del label si quieres algo distinto al mapping */
   label?: string;
-  /** Override del tone si querés algo distinto al mapping */
+  /** Override del tone si quieres algo distinto al mapping */
   tone?: BadgeTone;
   /** Forzar dot ON/OFF (default: lo decide pulse del mapping) */
   withDot?: boolean;
@@ -29,7 +29,7 @@ export interface StatusBadgeProps<S extends string = string>
 /**
  * StatusBadge tipado por enum. Centralizá el mapping una vez por dominio
  * (p.ej. `WEB_ORDER_STATUS_MAPPING` en `apps/admin/features/web-orders/lib/`)
- * y reusalo en admin/POS/KDS.
+ * y reúsalo en admin/POS/KDS.
  *
  * Si el status no está mapeado, renderiza un fallback `neutral` con el string crudo.
  */

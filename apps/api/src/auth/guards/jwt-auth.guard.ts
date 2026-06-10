@@ -5,7 +5,9 @@ import { JwtAccessPayloadSchema } from '@pos-tercos/types';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
-const ACCESS_COOKIE_NAME = 'pos_access';
+// Admin y pos usan cookies de access distintas (ver auth.controller). El guard
+// acepta ambas: las llamadas cliente envían la cookie del origen vía proxy.
+const ACCESS_COOKIE_NAMES = ['pos_access', 'admin_access'] as const;
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -46,6 +48,10 @@ export class JwtAuthGuard implements CanActivate {
       if (type === 'Bearer' && value) return value;
     }
     const cookies = req.cookies as Record<string, string> | undefined;
-    return cookies?.[ACCESS_COOKIE_NAME];
+    if (!cookies) return undefined;
+    for (const name of ACCESS_COOKIE_NAMES) {
+      if (cookies[name]) return cookies[name];
+    }
+    return undefined;
   }
 }

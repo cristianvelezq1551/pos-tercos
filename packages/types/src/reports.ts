@@ -218,14 +218,14 @@ export const HourHeatmapReportSchema = z.object({
 export type HourHeatmapReport = z.infer<typeof HourHeatmapReportSchema>;
 
 // ====================================================================
-// WHATSAPP METRICS (FASE 13.A) — desde audit log WHATSAPP_LINK_OPENED
+// WHATSAPP METRICS — cobertura por stage desde tabla whatsapp_messages (v2/OpenWA)
 // ====================================================================
 
 export const WhatsAppStageCoverageSchema = z.object({
-  stage: z.enum(['accepted', 'confirmed', 'ready']),
+  stage: z.enum(['payment_instructions', 'payment_received', 'pickup_ready']),
   /** Cantidad de sales web elegibles para este stage en el período. */
   eligible: z.number().int().nonnegative(),
-  /** Cantidad de sales que tuvieron al menos 1 click registrado. */
+  /** Cantidad de sales con al menos 1 mensaje OpenWA enviado (status=sent). */
   reached: z.number().int().nonnegative(),
   /** % cobertura = reached / eligible. 0..1. null si eligible=0. */
   coveragePct: z.number().nullable(),
@@ -294,3 +294,46 @@ export const AiSummarySchema = z.object({
   generatedAt: z.string().datetime(),
 });
 export type AiSummary = z.infer<typeof AiSummarySchema>;
+
+// ====================================================================
+// USO Y MERMAS DE INVENTARIO — consumo teórico (ventas/producción) vs
+// pérdidas declaradas (WASTE) y ajustes de conteo físico
+// ====================================================================
+
+export const InventoryUsageRowSchema = z.object({
+  entityType: z.enum(['INGREDIENT', 'PRODUCT', 'SUBPRODUCT']),
+  entityId: z.string().uuid(),
+  name: z.string(),
+  /** Unidad de stock/receta en la que están las cantidades. */
+  unit: z.string(),
+  /** Consumido por ventas en el período (neto de anulaciones). Positivo. */
+  sales: z.number(),
+  /** Consumido como insumo de producciones de subproductos. Positivo. */
+  productionOut: z.number(),
+  /** Producido (entradas por PRODUCTION — solo subproductos). Positivo. */
+  productionIn: z.number(),
+  /** Entradas por compras confirmadas. Positivo. */
+  purchased: z.number(),
+  /** Mermas declaradas (movements WASTE). Positivo = cantidad perdida. */
+  waste: z.number(),
+  /** Ajustes manuales netos (+ sobra detectada / − faltante detectado). */
+  adjustments: z.number(),
+  /** waste / (sales + productionOut + waste). Null si no hubo consumo. */
+  wastePct: z.number().nullable(),
+  /** Costo estimado por unidad (lastUnitCost/conversionFactor). Null si no se conoce. */
+  unitCost: z.number().nullable(),
+  /** $ estimado perdido = (waste + faltante de ajustes) × unitCost. */
+  wasteCost: z.number().nullable(),
+});
+export type InventoryUsageRow = z.infer<typeof InventoryUsageRowSchema>;
+
+export const InventoryUsageReportSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  rows: z.array(InventoryUsageRowSchema),
+  /** Suma de wasteCost conocidos. */
+  totalWasteCost: z.number(),
+  /** Filas cuyo costo no se pudo estimar (sin lastUnitCost). */
+  unknownCostCount: z.number().int().nonnegative(),
+});
+export type InventoryUsageReport = z.infer<typeof InventoryUsageReportSchema>;

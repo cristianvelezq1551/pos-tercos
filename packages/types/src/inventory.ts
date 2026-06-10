@@ -6,6 +6,8 @@ export const InventoryMovementTypeEnum = z.enum([
   'MANUAL_ADJUSTMENT',
   'WASTE',
   'INITIAL',
+  /** Tanda de producción interna: +N en subproducto, -receta en insumos. */
+  'PRODUCTION',
 ]);
 export type InventoryMovementType = z.infer<typeof InventoryMovementTypeEnum>;
 
@@ -13,8 +15,10 @@ export type InventoryMovementType = z.infer<typeof InventoryMovementTypeEnum>;
  * Discriminador para entidades stock-trackeables.
  * - INGREDIENT: insumo (Ingredient)
  * - PRODUCT: producto direct-resale (Product con directResale=true)
+ * - SUBPRODUCT: subproducto pre-producido (con stock propio, no se expande
+ *   recursivamente al venderse)
  */
-export const StockableTypeEnum = z.enum(['INGREDIENT', 'PRODUCT']);
+export const StockableTypeEnum = z.enum(['INGREDIENT', 'PRODUCT', 'SUBPRODUCT']);
 export type StockableType = z.infer<typeof StockableTypeEnum>;
 
 export const InventoryMovementSchema = z.object({
@@ -22,9 +26,12 @@ export const InventoryMovementSchema = z.object({
   entityType: StockableTypeEnum,
   ingredientId: z.string().uuid().nullable(),
   productId: z.string().uuid().nullable(),
-  /** Nombre del item (ingredient.name o product.name) — server lo embebe. */
+  subproductId: z.string().uuid().nullable(),
+  /** Nombre del item (ingredient.name o product.name o subproduct.name) — server lo embebe. */
   itemName: z.string().optional(),
   delta: z.number(),
+  /** Costo por unidad de stock (solo entradas). Base del costeo FIFO. */
+  unitCost: z.number().nullable().optional(),
   type: InventoryMovementTypeEnum,
   sourceType: z.string().nullable(),
   sourceId: z.string().nullable(),
@@ -45,41 +52,35 @@ export const CreateInventoryMovementSchema = z
     entityType: StockableTypeEnum,
     ingredientId: z.string().uuid().optional(),
     productId: z.string().uuid().optional(),
+    subproductId: z.string().uuid().optional(),
     delta: z.number().refine((v) => v !== 0, { message: 'delta must not be zero' }),
     type: z.enum(['MANUAL_ADJUSTMENT', 'WASTE', 'INITIAL']).default('MANUAL_ADJUSTMENT'),
+    /** Costo por unidad de stock para entradas (INITIAL / ajuste+). Base FIFO. */
+    unitCost: z.number().nonnegative().nullable().optional(),
     notes: z.string().max(500).optional(),
     idempotencyKey: z.string().min(1).max(100).optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.entityType === 'INGREDIENT') {
-      if (!data.ingredientId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'ingredientId required when entityType=INGREDIENT',
-          path: ['ingredientId'],
-        });
-      }
-      if (data.productId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'productId must be omitted when entityType=INGREDIENT',
-          path: ['productId'],
-        });
-      }
+    const expected =
+      data.entityType === 'INGREDIENT' ? 'ingredientId'
+      : data.entityType === 'PRODUCT' ? 'productId'
+      : 'subproductId';
+    const provided = (
+      ['ingredientId', 'productId', 'subproductId'] as const
+    ).filter((k) => data[k] !== undefined);
+    if (!data[expected]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${expected} required when entityType=${data.entityType}`,
+        path: [expected],
+      });
     }
-    if (data.entityType === 'PRODUCT') {
-      if (!data.productId) {
+    for (const k of provided) {
+      if (k !== expected) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'productId required when entityType=PRODUCT',
-          path: ['productId'],
-        });
-      }
-      if (data.ingredientId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'ingredientId must be omitted when entityType=PRODUCT',
-          path: ['ingredientId'],
+          message: `${k} must be omitted when entityType=${data.entityType}`,
+          path: [k],
         });
       }
     }
@@ -87,8 +88,12 @@ export const CreateInventoryMovementSchema = z
 export type CreateInventoryMovement = z.infer<typeof CreateInventoryMovementSchema>;
 
 /**
- * Vista unificada de stock — incluye insumos Y productos direct-resale.
- * El frontend muestra ambos en la misma tabla distinguidos por `type`.
+ * Vista unificada de stock — incluye insumos, productos direct-resale y
+ * subproductos (producción interna). El frontend muestra los 3 en la misma
+ * tabla distinguidos por `type`.
+ *
+ * Para SUBPRODUCT: unitPurchase = unitStock = subproduct.unit (no se compra,
+ * se produce), conversionFactor = 1.
  */
 export const StockableSchema = z.object({
   type: StockableTypeEnum,
@@ -101,7 +106,7 @@ export const StockableSchema = z.object({
   currentStock: z.number(),
   lowStock: z.boolean(),
   isActive: z.boolean(),
-  // Específicos del Producto direct-resale (null en insumos):
+  // Específicos del Producto direct-resale (null en insumos y subproductos):
   category: z.string().nullable().optional(),
   basePrice: z.number().nullable().optional(),
 });

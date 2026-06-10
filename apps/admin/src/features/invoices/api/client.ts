@@ -1,8 +1,11 @@
 import {
   ConfirmInvoiceSchema,
+  CreateFromPhotoSchema,
+  ExtractInvoiceResponseSchema,
   InvoiceDraftResponseSchema,
   InvoiceSchema,
   type ConfirmInvoice,
+  type ExtractInvoiceResponse,
   type Invoice,
   type InvoiceDraftResponse,
 } from '@pos-tercos/types';
@@ -28,10 +31,52 @@ async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T
   return schema.parse(json);
 }
 
-export function uploadInvoicePhoto(file: File): Promise<InvoiceDraftResponse> {
+/**
+ * Sube foto a IA. NO crea borrador — solo devuelve la extracción + photoStorageKey.
+ * El cliente debe llamar `confirmFromPhoto` al confirmar (o `discardPhoto` si abandona).
+ */
+export function uploadInvoicePhoto(file: File): Promise<ExtractInvoiceResponse> {
   const fd = new FormData();
   fd.append('photo', file);
-  return request('/invoices/upload-photo', { method: 'POST', body: fd }, InvoiceDraftResponseSchema);
+  return request('/invoices/upload-photo', { method: 'POST', body: fd }, ExtractInvoiceResponseSchema);
+}
+
+/** Crear+confirmar factura desde foto (IA) en un solo paso. */
+export function confirmFromPhoto(
+  payload: ConfirmInvoice,
+  photoStorageKey: string,
+  aiModelUsed: string,
+): Promise<Invoice> {
+  const body = { ...payload, photoStorageKey, aiModelUsed };
+  CreateFromPhotoSchema.parse(body);
+  return request(
+    '/invoices/from-photo',
+    { method: 'POST', body: JSON.stringify(body) },
+    InvoiceSchema,
+  );
+}
+
+/** Limpia la foto subida cuando el usuario cierra el modal sin confirmar. */
+export async function discardPhoto(photoStorageKey: string): Promise<void> {
+  const res = await fetch('/api/invoices/discard-photo', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoStorageKey }),
+  });
+  if (!res.ok && res.status !== 204) {
+    // No throw: la limpieza es best-effort; el cron sweep eventualmente la elimina.
+  }
+}
+
+/** Carga manual: crea Y confirma la factura en un solo paso. No deja borrador. */
+export function confirmManualInvoice(payload: ConfirmInvoice): Promise<Invoice> {
+  ConfirmInvoiceSchema.parse(payload);
+  return request(
+    '/invoices/manual',
+    { method: 'POST', body: JSON.stringify(payload) },
+    InvoiceSchema,
+  );
 }
 
 export function listInvoices(filter: { status?: string; limit?: number } = {}): Promise<Invoice[]> {
@@ -81,4 +126,49 @@ export async function deleteInvoiceDraft(id: string): Promise<void> {
     const body = (await res.json().catch(() => null)) as { message?: string } | null;
     throw new Error(body?.message ?? `Error ${res.status}`);
   }
+}
+
+// ====================================================================
+// PAGO AL PROVEEDOR (Dueño + PIN)
+// ====================================================================
+
+function pinHeader(pin: string): Record<string, string> {
+  return { 'X-Approval-Pin': pin };
+}
+
+/** Marca pagada con comprobante (multipart). */
+export async function markInvoicePaid(
+  invoiceId: string,
+  proof: File,
+  pin: string,
+  opts: { paidAt?: string; note?: string },
+): Promise<Invoice> {
+  const fd = new FormData();
+  fd.append('proof', proof);
+  if (opts.paidAt) fd.append('paidAt', opts.paidAt);
+  if (opts.note) fd.append('note', opts.note);
+  const res = await fetch(`/api/invoices/${invoiceId}/payment/paid`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: pinHeader(pin),
+    body: fd,
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `Request failed (${res.status})`);
+  }
+  return InvoiceSchema.parse((await res.json()) as unknown);
+}
+
+export function unmarkInvoicePayment(invoiceId: string, pin: string): Promise<Invoice> {
+  return request(
+    `/invoices/${invoiceId}/payment`,
+    { method: 'DELETE', headers: pinHeader(pin) },
+    InvoiceSchema,
+  );
+}
+
+/** URL del comprobante para mostrar en <img src=...>. */
+export function invoicePaymentProofUrl(invoiceId: string): string {
+  return `/api/invoices/${invoiceId}/payment-proof`;
 }

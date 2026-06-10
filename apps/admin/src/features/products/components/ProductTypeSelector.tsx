@@ -7,7 +7,7 @@ const TYPES: { kind: ProductKind; label: string; desc: string; icon: string }[] 
   { kind: 'simple', label: 'Preparado simple', desc: '1 precio. Burgers, burros, tenders.', icon: '🍔' },
   { kind: 'variants', label: 'Con variantes', desc: 'Elección que cambia el precio (proteína).', icon: '🍟' },
   { kind: 'drink', label: 'Bebida / reventa', desc: 'Se compra y revende. Gaseosas, agua.', icon: '🥤' },
-  { kind: 'combo', label: 'Combo', desc: 'Bundle de productos a precio especial.', icon: '🎁' },
+  { kind: 'combo', label: 'Combo', desc: 'Varios productos juntos a precio especial.', icon: '🎁' },
 ];
 
 export function ProductTypeSelector({

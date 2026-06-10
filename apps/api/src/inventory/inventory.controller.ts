@@ -39,7 +39,7 @@ export class InventoryController {
   ): Promise<Stockable> {
     const parsed = StockableTypeEnum.safeParse(entityType.toUpperCase());
     if (!parsed.success) {
-      throw new BadRequestException(`entityType debe ser INGREDIENT o PRODUCT`);
+      throw new BadRequestException('entityType debe ser INGREDIENT, PRODUCT o SUBPRODUCT');
     }
     return this.inventory.getStockableById(parsed.data, id);
   }
@@ -49,6 +49,7 @@ export class InventoryController {
     @Query('entity_type') entityType?: string,
     @Query('ingredient_id') ingredientId?: string,
     @Query('product_id') productId?: string,
+    @Query('subproduct_id') subproductId?: string,
     @Query('type') type?: string,
     @Query('source_type') sourceType?: string,
     @Query('source_id') sourceId?: string,
@@ -65,6 +66,7 @@ export class InventoryController {
       entityType: parsedEntityType,
       ingredientId,
       productId,
+      subproductId,
       type,
       sourceType,
       sourceId,

@@ -35,8 +35,8 @@ function loadEnv(): void {
   console.log(
     `[print-agent] ⚠ NO se encontró .env. Buscado en:\n` +
       candidates.map((c) => `   - ${c}`).join('\n') +
-      `\n   ¡Ojo! En Windows, Notepad puede guardar el archivo como ".env.txt".` +
-      `\n   Tiene que llamarse exactamente .env (sin .txt).`,
+      `\n   Atención: en Windows, Notepad puede guardar el archivo como ".env.txt".` +
+      `\n   Debe llamarse exactamente .env (sin .txt).`,
   );
 }
 loadEnv();
@@ -215,8 +215,8 @@ server.listen(PORT, () => {
   );
   if (process.platform === 'win32' && !process.env.PRINTER_NAME) {
     console.log(
-      '[print-agent] ⚠ En Windows FALTA PRINTER_NAME en el .env → no va a imprimir. ' +
-        'Agregá PRINTER_NAME=<nombre exacto> (Get-Printer | Select Name).',
+      '[print-agent] ⚠ En Windows FALTA PRINTER_NAME en el .env → no podrá imprimir. ' +
+        'Agregar PRINTER_NAME=<nombre exacto> (Get-Printer | Select Name).',
     );
   }
 });

@@ -3,6 +3,11 @@ import { z } from 'zod';
 export const InvoiceStatusEnum = z.enum(['PENDING_REVIEW', 'CONFIRMED', 'REJECTED']);
 export type InvoiceStatus = z.infer<typeof InvoiceStatusEnum>;
 
+/** Estado de pago al proveedor (independiente de InvoiceStatus que es
+ *  sobre la validación IA). NULL si la factura aún no está CONFIRMED. */
+export const InvoicePaymentStatusEnum = z.enum(['PENDING', 'PAID']);
+export type InvoicePaymentStatus = z.infer<typeof InvoicePaymentStatusEnum>;
+
 // ====================================================================
 // IA EXTRACTION (output del LLM, validado en backend antes de guardar)
 // ====================================================================
@@ -69,11 +74,30 @@ export const InvoiceSchema = z.object({
   confirmedByName: z.string().nullable().optional(),
   confirmedAt: z.string().datetime().nullable(),
   notes: z.string().nullable(),
+  /** Estado de pago al proveedor. NULL = factura sin confirmar todavía. */
+  paymentStatus: InvoicePaymentStatusEnum.nullable(),
+  paidAt: z.string().datetime().nullable(),
+  /** True si existe comprobante en storage (no se expone la key cruda al wire). */
+  hasPaymentProof: z.boolean(),
+  paymentActorId: z.string().uuid().nullable(),
+  paymentActorName: z.string().nullable().optional(),
+  paymentNote: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   items: z.array(InvoiceItemSchema).optional(),
 });
 export type Invoice = z.infer<typeof InvoiceSchema>;
+
+/** Body para marcar pagada vía multipart (la imagen va por `proof` field). */
+export const MarkInvoicePaidSchema = z.object({
+  /** Opcional: si no se envía, el backend usa NOW(). YYYY-MM-DD. */
+  paidAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD')
+    .optional(),
+  note: z.string().max(500).optional(),
+});
+export type MarkInvoicePaid = z.infer<typeof MarkInvoicePaidSchema>;
 
 // ====================================================================
 // CONFIRM PAYLOAD (lo que envía la UI al confirmar tras editar)
@@ -124,7 +148,33 @@ export const ConfirmInvoiceSchema = z.object({
 });
 export type ConfirmInvoice = z.infer<typeof ConfirmInvoiceSchema>;
 
-// Response al subir foto (draft con extracción IA)
+/**
+ * Subir foto + IA NO crea factura en DB todavía. Solo devuelve la extracción
+ * y el `photoStorageKey`; el cliente lo envía de vuelta al confirmar (o usa
+ * discard-photo si abandona). Evita borradores fantasma cuando el usuario
+ * abre el modal y se va.
+ */
+export const ExtractInvoiceResponseSchema = z.object({
+  photoStorageKey: z.string(),
+  aiModelUsed: z.string(),
+  extraction: ExtractedInvoiceSchema,
+});
+export type ExtractInvoiceResponse = z.infer<typeof ExtractInvoiceResponseSchema>;
+
+/** Crear+confirmar factura desde foto (IA) en un solo paso. */
+export const CreateFromPhotoSchema = ConfirmInvoiceSchema.extend({
+  photoStorageKey: z.string().min(1),
+  aiModelUsed: z.string().min(1),
+});
+export type CreateFromPhoto = z.infer<typeof CreateFromPhotoSchema>;
+
+/** Descartar una foto subida que nunca se confirmó (limpia storage). */
+export const DiscardPhotoSchema = z.object({
+  photoStorageKey: z.string().min(1),
+});
+export type DiscardPhoto = z.infer<typeof DiscardPhotoSchema>;
+
+// Response al clonar (sí persiste un draft, porque el usuario ya conoce la fuente).
 export const InvoiceDraftResponseSchema = z.object({
   invoice: InvoiceSchema,
   extraction: ExtractedInvoiceSchema,

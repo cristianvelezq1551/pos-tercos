@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import type { Product, Promotion } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
+import { labelFor } from './PromotionFormHelpers';
 import { deactivatePromotion } from '../api';
 
 interface PromotionDetailProps {
@@ -41,7 +42,7 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
     <div className="max-w-3xl space-y-6">
       <div className="rounded-lg border border-border bg-card p-5">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <Row label="Tipo" value={promotion.type} mono />
+          <Row label="Tipo" value={labelFor(promotion.type)} />
           <Row label="Estado" value={promotion.isActive ? 'Activa' : 'Inactiva'} />
           <Row label="Descuento" value={describeDiscount(promotion)} mono />
           <Row label="Días" value={describeDays(promotion.daysOfWeekMask)} mono />
@@ -97,19 +98,29 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
         </p>
       )}
 
-      <div className="flex justify-between">
+      <div className="flex flex-wrap justify-between gap-2">
         <Button variant="ghost" onClick={() => router.push('/promotions')}>
           Volver al listado
         </Button>
-        {promotion.isActive && (
-          <Button
-            variant="destructive"
-            onClick={() => setConfirmDeactivate(true)}
-            disabled={deactivating}
-          >
-            {deactivating ? 'Desactivando…' : 'Desactivar promoción'}
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {promotion.isActive && (
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/promotions/${promotion.id}/edit`)}
+            >
+              Editar
+            </Button>
+          )}
+          {promotion.isActive && (
+            <Button
+              variant="destructive"
+              onClick={() => setConfirmDeactivate(true)}
+              disabled={deactivating}
+            >
+              {deactivating ? 'Desactivando…' : 'Desactivar promoción'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <ConfirmDialog
@@ -117,14 +128,14 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
         onCancel={() => setConfirmDeactivate(false)}
         onConfirm={handleDeactivate}
         title="¿Desactivar promoción?"
-        description="No se puede revertir vía UI. Para cambiarla, creá una nueva."
+        description="No se puede revertir desde aquí. Para cambiarla, crea una nueva."
         confirmLabel="Sí, desactivar"
         destructive
         pending={deactivating}
       />
       <p className="text-xs text-muted-foreground">
-        Editar campos por-tipo (ej. cambiar % o monto fijo) no está soportado: para
-        modificar el descuento, desactivá esta promo y crea una nueva.
+        No se puede cambiar el descuento (ej. el % o el monto fijo) de una promo ya creada: para
+        modificarlo, desactiva esta promo y crea una nueva.
       </p>
     </div>
   );

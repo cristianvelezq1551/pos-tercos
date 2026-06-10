@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { Box } from 'lucide-react';
 import { StockTable } from '../../../features/inventory';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
 import type { Stockable } from '@pos-tercos/types';
 
 interface PageProps {
@@ -14,10 +15,7 @@ async function loadStock(lowStockOnly: boolean): Promise<Stockable[] | { error: 
     const params = lowStockOnly ? '?low_stock=true' : '';
     return await serverFetchJson<Stockable[]>(`/inventory/stock${params}`);
   } catch (err) {
-    if (err instanceof ApiError) {
-      return { error: `API ${err.status}` };
-    }
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 

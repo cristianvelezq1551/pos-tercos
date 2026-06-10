@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   NotFoundException,
   Param,
@@ -19,16 +20,21 @@ import type { Response } from 'express';
 import {
   CloneInvoiceRequestSchema,
   ConfirmInvoiceSchema,
+  CreateFromPhotoSchema,
+  DiscardPhotoSchema,
   type CloneInvoiceRequest,
   type ConfirmInvoice,
+  type CreateFromPhoto,
+  type DiscardPhoto,
   type ExtractedInvoice,
+  type ExtractInvoiceResponse,
   type Invoice,
   type InvoiceDraftResponse,
 } from '@pos-tercos/types';
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
-import { detectImageMime } from '../common/image-mime';
+import { detectImageMime, detectImageMimeLoose } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { InvoicesService } from './invoices.service';
@@ -83,6 +89,19 @@ export class InvoicesController {
     return extraction;
   }
 
+  /**
+   * Carga manual: crea + confirma en un solo paso. NO deja borradores
+   * cuando el usuario abandona; solo persiste si llega a confirmar.
+   */
+  @AdminAccess()
+  @Post('manual')
+  createManual(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(ConfirmInvoiceSchema)) body: ConfirmInvoice,
+  ): Promise<Invoice> {
+    return this.invoices.createManualConfirmed(body, user.sub);
+  }
+
   @AdminAccess()
   @Post('from-clone')
   fromClone(
@@ -99,17 +118,19 @@ export class InvoicesController {
       limits: { fileSize: MAX_FILE_SIZE_BYTES },
     }),
   )
+  /**
+   * Sube foto + IA, devuelve la extracción + photoStorageKey. NO crea factura
+   * en DB todavía: el cliente debe llamar `from-photo` para confirmar (o
+   * `discard-photo` para abandonar). Evita borradores fantasma.
+   */
   async uploadPhoto(
     @CurrentUser() user: JwtAccessPayload,
     @UploadedFile() file: Express.Multer.File | undefined,
-  ): Promise<InvoiceDraftResponse> {
+  ): Promise<ExtractInvoiceResponse> {
     if (!file) {
       throw new BadRequestException('Falta el archivo en el campo "photo".');
     }
-
     // We trust the file CONTENT (magic bytes) over the declared mimetype.
-    // It's common for users to rename files (.png saved as .jpg) and the
-    // LLM provider rejects mismatched media types.
     const detectedMime = detectImageMime(file.buffer);
     if (!detectedMime) {
       throw new BadRequestException(
@@ -117,12 +138,33 @@ export class InvoicesController {
       );
     }
 
-    return this.invoices.uploadPhoto({
+    return this.invoices.extractFromPhoto({
       fileBuffer: file.buffer,
       mimeType: detectedMime,
       originalName: file.originalname,
       userId: user.sub,
     });
+  }
+
+  /** Crear+confirmar factura desde foto (IA). Asocia la foto previa por key. */
+  @AdminAccess()
+  @Post('from-photo')
+  createFromPhoto(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(CreateFromPhotoSchema)) body: CreateFromPhoto,
+  ): Promise<Invoice> {
+    const { photoStorageKey, aiModelUsed, ...confirm } = body;
+    return this.invoices.createFromPhoto(confirm, photoStorageKey, aiModelUsed, user.sub);
+  }
+
+  /** El usuario cerró el modal IA sin confirmar → limpiar la foto subida. */
+  @AdminAccess()
+  @Post('discard-photo')
+  @HttpCode(204)
+  async discardPhoto(
+    @Body(new ZodValidationPipe(DiscardPhotoSchema)) body: DiscardPhoto,
+  ): Promise<void> {
+    await this.invoices.discardPhoto(body.photoStorageKey);
   }
 
   @AdminAccess()
@@ -180,4 +222,70 @@ export class InvoicesController {
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.status(200).send(photo.buffer);
   }
+
+  // ==================================================================
+  // CONTROL DE PAGO AL PROVEEDOR (solo Dueño + PIN)
+  // ==================================================================
+
+  /** Marca pagada con comprobante (multipart). PIN del Dueño en header. */
+  @OnlyDueno()
+  @Post(':id/payment/paid')
+  @UseInterceptors(
+    FileInterceptor('proof', { limits: { fileSize: MAX_FILE_SIZE_BYTES } }),
+  )
+  async markPaid(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body('paidAt') paidAt: string | undefined,
+    @Body('note') note: string | undefined,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<Invoice> {
+    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
+    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    if (!detected) {
+      throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
+    }
+    if (paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(paidAt)) {
+      throw new BadRequestException('paidAt debe ser YYYY-MM-DD.');
+    }
+    return this.invoices.markPaymentPaid(
+      id,
+      requirePin(pin),
+      user.sub,
+      { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
+      { paidAtYmd: paidAt, note: note?.trim() || undefined },
+    );
+  }
+
+  /** Desmarca el pago (borra registro + comprobante). Vuelve a PENDING. */
+  @OnlyDueno()
+  @Delete(':id/payment')
+  unmarkPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<Invoice> {
+    return this.invoices.unmarkPayment(id, requirePin(pin), user.sub);
+  }
+
+  /** Comprobante de transferencia al proveedor (binario). Dueño. */
+  @OnlyDueno()
+  @Get(':id/payment-proof')
+  async getPaymentProof(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, mime } = await this.invoices.getPaymentProof(id);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
+  }
+}
+
+function requirePin(pin: string | undefined): string {
+  if (!pin) {
+    throw new BadRequestException('Se requiere el PIN de aprobación (header X-Approval-Pin).');
+  }
+  return pin;
 }

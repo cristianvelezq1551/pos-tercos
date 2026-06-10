@@ -106,7 +106,7 @@ function Demos() {
         </FormField>
 
         <FormField label="Precio de venta">
-          <NumberInput value={number} onChange={setNumber} prefix="$" min={0} />
+          <NumberInput value={number} onChange={setNumber} prefix="$" grouping min={0} />
         </FormField>
 
         <FormField label="Cantidad por porción" hint="En gramos">
@@ -261,7 +261,7 @@ function Demos() {
             </Select>
           </FormField>
           <FormField label="Monto recibido">
-            <NumberInput value={number} onChange={setNumber} prefix="$" />
+            <NumberInput value={number} onChange={setNumber} prefix="$" grouping />
           </FormField>
         </div>
       </Dialog>

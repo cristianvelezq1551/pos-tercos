@@ -3,4 +3,6 @@ export { InvoicesTable } from './components/InvoicesTable';
 export { EditDraftScreen } from './components/EditDraftScreen';
 export { CloneInvoiceButton } from './components/CloneInvoiceButton';
 export { DeleteDraftButton } from './components/DeleteDraftButton';
+export { InvoicePaymentActions } from './components/InvoicePaymentActions';
+export { InvoicePaymentSection } from './components/InvoicePaymentSection';
 export * from './api';

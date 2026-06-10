@@ -15,7 +15,7 @@ export function ReconciliationHistory({
   if (reports.length === 0) {
     return (
       <p className="rounded-md border border-dashed border-input bg-card p-6 text-center text-sm text-muted-foreground">
-        Aún no hay reports guardados. Tildá "Guardar en historial" al
+        Aún no hay reportes guardados. Marca "Guardar en historial" al
         procesar el próximo CSV.
       </p>
     );
@@ -28,7 +28,7 @@ export function ReconciliationHistory({
             <Th>Fuente</Th>
             <Th>Período</Th>
             <Th align="right">Filas CSV</Th>
-            <Th align="right">Match</Th>
+            <Th align="right">Coinciden</Th>
             <Th align="right">CSV sin POS</Th>
             <Th align="right">POS sin CSV</Th>
             <Th>Importado</Th>

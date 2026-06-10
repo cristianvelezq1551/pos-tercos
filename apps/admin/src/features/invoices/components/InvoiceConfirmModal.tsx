@@ -4,7 +4,13 @@ import { Button, ConfirmDialog, Dialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { InvoiceDraftResponse, Stockable, Supplier } from '@pos-tercos/types';
-import { confirmInvoice, rejectInvoice } from '../api/client';
+import {
+  confirmFromPhoto,
+  confirmInvoice,
+  confirmManualInvoice,
+  discardPhoto,
+  rejectInvoice,
+} from '../api/client';
 import { SupplierSection } from './SupplierSection';
 import { InvoiceMetaSection } from './InvoiceMetaSection';
 import { ItemsSection } from './ItemsSection';
@@ -13,6 +19,10 @@ import { useInvoiceRows } from '../hooks/useInvoiceRows';
 
 interface InvoiceConfirmModalProps {
   draft: InvoiceDraftResponse;
+  /** Carga manual sin draft persistido: confirm crea+confirma; reject solo cierra. */
+  manualMode?: boolean;
+  /** Si vino del flujo IA: foto en storage + modelo. Confirm la asocia y la persiste. */
+  iaContext?: { photoStorageKey: string; aiModelUsed: string };
   suppliers: Supplier[];
   stockables: Stockable[];
   onClose: () => void;
@@ -24,6 +34,8 @@ type SupplierMode = 'existing' | 'new';
 
 export function InvoiceConfirmModal({
   draft,
+  manualMode = false,
+  iaContext,
   suppliers,
   stockables,
   onClose,
@@ -66,7 +78,16 @@ export function InvoiceConfirmModal({
     if (!v.valid) { setError(v.reason); return; }
     setSubmitting(true);
     try {
-      await confirmInvoice(draft.invoice.id, v.payload);
+      if (iaContext) {
+        // IA: crea+confirma en un solo paso, asociando la foto previa.
+        await confirmFromPhoto(v.payload, iaContext.photoStorageKey, iaContext.aiModelUsed);
+      } else if (manualMode) {
+        // Manual: crea+confirma sin foto. Sin borrador previo.
+        await confirmManualInvoice(v.payload);
+      } else {
+        // Caso legacy: draft persistido (clone) → solo confirma.
+        await confirmInvoice(draft.invoice.id, v.payload);
+      }
       onConfirmed();
       startTransition(() => { router.push('/invoices'); router.refresh(); });
     } catch (e) {
@@ -79,6 +100,12 @@ export function InvoiceConfirmModal({
   const handleReject = async (): Promise<void> => {
     setConfirmReject(false);
     setError(null);
+    // En modo IA limpiamos la foto subida; manual no tiene nada que limpiar.
+    if (iaContext || manualMode) {
+      if (iaContext) await discardPhoto(iaContext.photoStorageKey);
+      onClose();
+      return;
+    }
     setSubmitting(true);
     try {
       await rejectInvoice(draft.invoice.id);
@@ -107,7 +134,7 @@ export function InvoiceConfirmModal({
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>Cancelar</Button>
           <Button variant="destructive" size="sm" onClick={() => setConfirmReject(true)} disabled={submitting}>Rechazar</Button>
           <Button size="sm" onClick={handleConfirm} disabled={submitting || pending}>
-            {submitting ? 'Confirmando…' : 'Confirmar y descargar de stock'}
+            {submitting ? 'Confirmando…' : 'Confirmar y sumar al inventario'}
           </Button>
         </>
       }
@@ -170,7 +197,7 @@ export function InvoiceConfirmModal({
         onCancel={() => setConfirmReject(false)}
         onConfirm={handleReject}
         title="¿Rechazar esta factura?"
-        description="El borrador queda marcado como REJECTED. No se descuenta stock."
+        description="El borrador queda marcado como rechazado. No se toca el inventario."
         confirmLabel="Sí, rechazar"
         destructive
         pending={submitting}

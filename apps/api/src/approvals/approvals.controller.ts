@@ -28,6 +28,7 @@ export class ApprovalsController {
     @CurrentUser() user: JwtAccessPayload,
     @Body(new ZodValidationPipe(SetApprovalPinSchema)) body: SetApprovalPin,
   ): Promise<{ ok: true }> {
+    await this.approvals.assertPassword(user.sub, body.password); // 403 si la clave no matchea
     await this.approvals.setPin(user.sub, body.pin);
     await this.audit.log({
       userId: user.sub,

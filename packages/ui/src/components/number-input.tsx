@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { cn } from '../lib/utils';
+import { groupDigits, onlyDigits } from '../lib/format';
 
 export interface NumberInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange' | 'prefix'> {
@@ -13,6 +14,12 @@ export interface NumberInputProps
   suffix?: React.ReactNode;
   /** Decimales máximos permitidos. Default 0 (enteros). */
   decimals?: number;
+  /**
+   * Muestra separadores de miles mientras se escribe (ej: 100.000). Solo aplica
+   * a enteros (decimals === 0); pensado para montos en COP. Cambia el input a
+   * texto porque <input type="number"> no puede renderizar puntos de miles.
+   */
+  grouping?: boolean;
   /** Min / max permitidos. */
   min?: number;
   max?: number;
@@ -21,26 +28,38 @@ export interface NumberInputProps
 /**
  * Input numérico con prefijo/sufijo. tabular-nums siempre.
  *
- * - Valores enteros por default — para precio en COP, use con `prefix="$"`.
+ * - Valores enteros por default — para precio en COP, use con `prefix="$" grouping`.
  * - Para decimales (cantidad en kg/L), pasar `decimals={2}` o `decimals={3}`.
  */
 export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
   (
-    { value, onChange, prefix, suffix, decimals = 0, min, max, className, disabled, ...rest },
+    { value, onChange, prefix, suffix, decimals = 0, grouping = false, min, max, className, disabled, ...rest },
     ref,
   ) => {
+    const grouped = grouping && decimals === 0;
+
+    const clamp = (n: number): number => {
+      let v = n;
+      if (typeof min === 'number') v = Math.max(min, v);
+      if (typeof max === 'number') v = Math.min(max, v);
+      return v;
+    };
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
+      if (grouped) {
+        const digits = onlyDigits(raw);
+        onChange(digits === '' ? null : clamp(Number(digits)));
+        return;
+      }
       if (raw === '' || raw === '-') {
         onChange(null);
         return;
       }
       const parsed = Number(raw);
       if (!Number.isFinite(parsed)) return;
-      let n = decimals === 0 ? Math.trunc(parsed) : Number(parsed.toFixed(decimals));
-      if (typeof min === 'number') n = Math.max(min, n);
-      if (typeof max === 'number') n = Math.min(max, n);
-      onChange(n);
+      const n = decimals === 0 ? Math.trunc(parsed) : Number(parsed.toFixed(decimals));
+      onChange(clamp(n));
     };
 
     return (
@@ -61,12 +80,12 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
         ) : null}
         <input
           ref={ref}
-          type="number"
-          inputMode={decimals > 0 ? 'decimal' : 'numeric'}
-          step={decimals === 0 ? 1 : Math.pow(10, -decimals)}
-          min={min}
-          max={max}
-          value={value ?? ''}
+          type={grouped ? 'text' : 'number'}
+          inputMode={grouped ? 'numeric' : decimals > 0 ? 'decimal' : 'numeric'}
+          step={grouped ? undefined : decimals === 0 ? 1 : Math.pow(10, -decimals)}
+          min={grouped ? undefined : min}
+          max={grouped ? undefined : max}
+          value={grouped ? (value == null ? '' : groupDigits(String(value))) : value ?? ''}
           onChange={handleChange}
           disabled={disabled}
           className={cn(

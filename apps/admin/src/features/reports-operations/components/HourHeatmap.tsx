@@ -16,7 +16,7 @@ export function HourHeatmap({ report }: { report: HourHeatmapReport }) {
     <section className="rounded-lg border border-border bg-card p-5">
       <div className="mb-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Heatmap día × hora
+          Mapa de calor día × hora
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Cantidad de ventas pagadas por día de la semana y hora. Útil para
@@ -79,7 +79,7 @@ export function HourHeatmap({ report }: { report: HourHeatmapReport }) {
       )}
 
       <p className="mt-3 text-[11px] text-muted-foreground">
-        Color: claro = pocas ventas, oscuro = pico. Hover muestra revenue.
+        Color: claro = pocas ventas, oscuro = pico. Pasa el cursor sobre cada celda para ver los ingresos.
       </p>
     </section>
   );

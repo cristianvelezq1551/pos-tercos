@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
-import { CloneInvoiceButton, DeleteDraftButton } from '../../../../features/invoices';
-import { Button, Container, PageHeader } from '@pos-tercos/ui';
+import { CloneInvoiceButton, DeleteDraftButton, InvoicePaymentSection } from '../../../../features/invoices';
+import { getCurrentUserServer } from '../../../../features/auth/server';
+import { Button, Container, PageHeader, formatCop } from '@pos-tercos/ui';
 import type { Invoice, InventoryMovement } from '@pos-tercos/types';
 import { StockableTypeBadge } from '../../../../components/StockableTypeBadge';
 
@@ -44,6 +45,9 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
         ).catch(() => [])
       : [];
 
+  const currentUser = await getCurrentUserServer();
+  const isDueno = currentUser?.role === 'DUENO';
+
   return (
     <>
       <PageHeader
@@ -83,16 +87,18 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           </span>
         </div>
 
+      <InvoicePaymentSection invoice={invoice} canAct={isDueno} />
+
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Número factura" value={invoice.invoiceNumber ?? '—'} />
         <Card
           label="Total"
-          value={invoice.total !== null ? formatCurrency(invoice.total) : '—'}
+          value={invoice.total !== null ? formatCop(invoice.total) : '—'}
           mono
         />
         <Card
           label="IVA"
-          value={invoice.iva !== null ? formatCurrency(invoice.iva) : '—'}
+          value={invoice.iva !== null ? formatCop(invoice.iva) : '—'}
           mono
         />
         <Card
@@ -160,10 +166,10 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                     </Td>
                     <Td>{item.unit}</Td>
                     <Td align="right" mono>
-                      {formatCurrency(item.unitPrice)}
+                      {formatCop(item.unitPrice)}
                     </Td>
                     <Td align="right" mono>
-                      {formatCurrency(item.total)}
+                      {formatCop(item.total)}
                     </Td>
                   </tr>
                 ))}
@@ -179,7 +185,7 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
       {invoice.status === 'PENDING_REVIEW' && (
         <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-sm text-warning">
-          Esta factura está como borrador. Usá{' '}
+          Esta factura está como borrador. Usa{' '}
           <Link href={`/invoices/${invoice.id}/edit`} className="font-medium underline">
             Continuar edición
           </Link>{' '}
@@ -195,16 +201,16 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           </h2>
           {movements.length === 0 ? (
             <p className="rounded-md border border-dashed border-input bg-card p-6 text-center text-sm text-muted-foreground">
-              Sin movimientos registrados (caso inesperado para una factura CONFIRMED).
+              Sin movimientos registrados (algo inesperado para una factura confirmada).
             </p>
           ) : (
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">
                   <tr>
-                    <Th>Item</Th>
+                    <Th>Producto</Th>
                     <Th>Tipo</Th>
-                    <Th align="right">Delta</Th>
+                    <Th align="right">Cambio</Th>
                     <Th>Notas</Th>
                     <Th align="right">Acción</Th>
                   </tr>
@@ -352,14 +358,6 @@ function Td({
 
 function formatNumber(n: number): string {
   return n.toLocaleString('es-CO', { maximumFractionDigits: 4 });
-}
-
-function formatCurrency(n: number): string {
-  return n.toLocaleString('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  });
 }
 
 function formatDate(iso: string): string {

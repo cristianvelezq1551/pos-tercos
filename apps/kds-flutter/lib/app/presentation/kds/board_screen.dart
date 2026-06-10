@@ -77,6 +77,12 @@ class BoardScreen extends ConsumerWidget {
           if (state is BoardData) _OrderCounter(count: state.orders.length),
           const SizedBox(width: 4),
           IconButton(
+            icon: const Icon(Icons.precision_manufacturing,
+                color: AppTheme.primary),
+            tooltip: 'Producir subproductos',
+            onPressed: () => context.go('/production'),
+          ),
+          IconButton(
             icon: const Icon(Icons.power_settings_new, color: AppTheme.error),
             tooltip: 'Cerrar sesión',
             onPressed: () => _confirmLogout(context, ref),

@@ -7,7 +7,7 @@ import type { LastSaleSummary } from '../store/cart-store';
 /**
  * Confirmación de la última venta. El recibo se imprime solo al cobrar y el
  * cajón se abre con esa impresión (efectivo). La reimpresión vive en el
- * Historial del día. Acá solo se muestra el resumen.
+ * Historial del día. Aquí solo se muestra el resumen.
  */
 export function LastSaleBanner({
   sale,

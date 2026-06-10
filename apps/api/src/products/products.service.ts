@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -322,14 +323,15 @@ export class ProductsService {
     return evaluateAvailability(await this.loadAvailabilityData());
   }
 
-  /** Productos + stock (productos/insumos) + grafo de recetas (sin N+1). */
+  /** Productos + stock (productos/insumos/subproductos) + grafo (sin N+1). */
   private async loadAvailabilityData(): Promise<{
     products: AvailabilityProduct[];
     graph: RecipeGraph;
     productStock: Map<string, number>;
     ingredientStock: Map<string, number>;
+    subproductStock: Map<string, number>;
   }> {
-    const [allProducts, prodStockRows, ingStockRows, graph] = await Promise.all([
+    const [allProducts, prodStockRows, ingStockRows, subStockRows, graph] = await Promise.all([
       this.prisma.product.findMany({
         select: {
           id: true,
@@ -351,6 +353,11 @@ export class ProductsService {
         where: { entityType: 'INGREDIENT' },
         _sum: { delta: true },
       }),
+      this.prisma.inventoryMovement.groupBy({
+        by: ['subproductId'],
+        where: { entityType: 'SUBPRODUCT' },
+        _sum: { delta: true },
+      }),
       this.recipes.loadFullGraph(),
     ]);
 
@@ -362,18 +369,23 @@ export class ProductsService {
     for (const r of ingStockRows) {
       if (r.ingredientId) ingredientStock.set(r.ingredientId, Number(r._sum.delta ?? 0));
     }
-    return { products: allProducts, graph, productStock, ingredientStock };
+    const subproductStock = new Map<string, number>();
+    for (const r of subStockRows) {
+      if (r.subproductId) subproductStock.set(r.subproductId, Number(r._sum.delta ?? 0));
+    }
+    return { products: allProducts, graph, productStock, ingredientStock, subproductStock };
   }
 
   /** Snapshot serializable para calcular disponibilidad OFFLINE (B.2.2). */
   async getOfflineSnapshot(): Promise<OfflineAvailabilitySnapshot> {
-    const { products, graph, productStock, ingredientStock } =
+    const { products, graph, productStock, ingredientStock, subproductStock } =
       await this.loadAvailabilityData();
     return {
       products,
       graph: serializeRecipeGraph(graph),
       productStock: Object.fromEntries(productStock),
       ingredientStock: Object.fromEntries(ingredientStock),
+      subproductStock: Object.fromEntries(subproductStock),
       asOf: new Date().toISOString(),
     };
   }
@@ -404,6 +416,38 @@ export class ProductsService {
       include: { sizes: true, modifiers: true, comboComponents: true },
     });
     return toProductDto(row);
+  }
+
+  /**
+   * Elimina DEFINITIVAMENTE el producto. Solo si NO tiene historial operativo:
+   * cero ventas, cero movimientos de inventario, cero facturas, y no es
+   * componente de ningún combo. Cascada: borra su propia receta, sizes,
+   * modifiers, combo_components (donde es el combo), promotion_products,
+   * supplier_products. Si tiene historial → 409 guiando a "Desactivar".
+   */
+  async remove(id: string): Promise<void> {
+    const exists = await this.prisma.product.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) throw new NotFoundException(`Product ${id} not found`);
+    const [saleCount, partOfCombo, moveCount, invoiceCount] = await Promise.all([
+      this.prisma.saleItem.count({ where: { productId: id } }),
+      this.prisma.comboComponent.count({ where: { productId: id } }),
+      this.prisma.inventoryMovement.count({ where: { productId: id } }),
+      this.prisma.invoiceItem.count({ where: { productId: id } }),
+    ]);
+    if (saleCount > 0 || partOfCombo > 0 || moveCount > 0 || invoiceCount > 0) {
+      throw new ConflictException(
+        'No se puede eliminar: el producto tiene historial (ventas, movimientos, facturas) o forma parte de un combo. Usa "Desactivar" para inactivarlo conservando el historial.',
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.recipeEdge.deleteMany({ where: { parentProductId: id } }),
+      this.prisma.productSize.deleteMany({ where: { productId: id } }),
+      this.prisma.productModifier.deleteMany({ where: { productId: id } }),
+      this.prisma.comboComponent.deleteMany({ where: { comboId: id } }),
+      this.prisma.promotionProduct.deleteMany({ where: { productId: id } }),
+      this.prisma.supplierProduct.deleteMany({ where: { productId: id } }),
+      this.prisma.product.delete({ where: { id } }),
+    ]);
   }
 
   private async assertComboComponentsAreNonComboProducts(

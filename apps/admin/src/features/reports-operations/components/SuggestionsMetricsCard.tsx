@@ -20,7 +20,7 @@ export function SuggestionsMetricsCard({
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           {total} sugerencia{total === 1 ? '' : 's'} en el período. {metrics.evaluatedCount}{' '}
-          evaluada{metrics.evaluatedCount === 1 ? '' : 's'} con LLM.
+          evaluada{metrics.evaluatedCount === 1 ? '' : 's'} con IA.
         </p>
       </div>
 
@@ -40,7 +40,7 @@ export function SuggestionsMetricsCard({
           {formatCop(metrics.acceptedEstTotal)}
         </p>
         <p className="mt-1 text-xs text-success">
-          Suma del costo estimado (suggestedQty × estUnitCost) de las sugerencias
+          Suma del costo estimado (cantidad sugerida × costo unitario estimado) de las sugerencias
           que el dueño aceptó en el período.
         </p>
       </div>

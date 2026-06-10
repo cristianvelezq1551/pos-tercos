@@ -21,6 +21,7 @@ const TYPE_LABEL: Record<InventoryMovementType, string> = {
   MANUAL_ADJUSTMENT: 'Ajuste manual',
   WASTE: 'Merma',
   INITIAL: 'Stock inicial',
+  PRODUCTION: 'Producción',
 };
 
 const TYPE_TONE: Record<InventoryMovementType, BadgeTone> = {
@@ -29,6 +30,7 @@ const TYPE_TONE: Record<InventoryMovementType, BadgeTone> = {
   MANUAL_ADJUSTMENT: 'primary',
   WASTE: 'warning',
   INITIAL: 'neutral',
+  PRODUCTION: 'info',
 };
 
 export function MovementsTable({ rows }: MovementsTableProps) {
@@ -53,22 +55,19 @@ export function MovementsTable({ rows }: MovementsTableProps) {
     },
     {
       key: 'item',
-      header: 'Item',
+      header: 'Producto',
       cell: (m) => (
         <div className="flex flex-col gap-0.5 leading-tight">
           <span className="font-medium text-foreground">
-            {m.itemName ?? m.ingredientId ?? m.productId ?? '—'}
+            {m.itemName ?? m.ingredientId ?? m.productId ?? m.subproductId ?? '—'}
           </span>
-          <StockableTypeBadge
-            type={m.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
-            size="sm"
-          />
+          <StockableTypeBadge type={m.entityType} size="sm" />
         </div>
       ),
     },
     {
       key: 'delta',
-      header: 'Delta',
+      header: 'Cambio',
       align: 'right',
       numeric: true,
       cell: (m) => (
@@ -76,7 +75,7 @@ export function MovementsTable({ rows }: MovementsTableProps) {
           className={`tabular font-semibold ${m.delta >= 0 ? 'text-success' : 'text-destructive'}`}
         >
           {m.delta >= 0 ? '+' : ''}
-          <Quantity value={m.delta} decimals={4} className="text-current" />
+          <Quantity value={m.delta} maxDecimals={4} className="text-current" />
         </span>
       ),
     },
@@ -113,7 +112,7 @@ export function MovementsTable({ rows }: MovementsTableProps) {
         <EmptyState
           illustration={<LineArtIllustration name="empty-plate" />}
           title="Aún no hay movimientos"
-          description="Cada compra, venta o ajuste manual queda registrada acá. La tabla es insert-only."
+          description="Cada compra, venta o ajuste manual queda registrada aquí. Los registros no se borran ni se editan; las correcciones se hacen con un nuevo movimiento."
         />
       }
     />

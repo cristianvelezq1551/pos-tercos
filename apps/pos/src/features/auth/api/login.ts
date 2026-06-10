@@ -3,17 +3,18 @@ import { LoginResponseSchema, type LoginRequest, type LoginResponse } from '@pos
 export async function loginRequest(input: LoginRequest): Promise<LoginResponse> {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Client-App': 'pos' },
     body: JSON.stringify(input),
     credentials: 'include',
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
     if (res.status === 401) {
       throw new Error('Credenciales inválidas');
     }
-    throw new Error(`Error ${res.status}: ${text || res.statusText}`);
+    // 403 (usuario inactivo) y otros: mostrar el mensaje del backend.
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Error ${res.status}`);
   }
 
   const json = (await res.json()) as unknown;

@@ -1,6 +1,6 @@
 'use client';
 
-import { Input, Label } from '@pos-tercos/ui';
+import { Input, Label, MoneyInput } from '@pos-tercos/ui';
 import type { FormState } from './ProductFormTypes';
 
 interface ProductFormBasicFieldsProps {
@@ -41,21 +41,28 @@ export function ProductFormBasicFields({ form, setForm, pending }: ProductFormBa
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="basePrice">Precio base (COP)</Label>
-          <Input
+          <Label htmlFor="basePrice">
+            {form.kind === 'variants' ? 'Precio de referencia (COP)' : 'Precio base (COP)'}
+          </Label>
+          <MoneyInput
             id="basePrice"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min="0"
             required
             disabled={pending}
             value={form.basePrice}
-            onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
-            placeholder="18000"
+            onChange={(v) => setForm((f) => ({ ...f, basePrice: v }))}
+            placeholder="18.000"
           />
           <p className="text-xs text-muted-foreground">
-            Precio de <strong>venta</strong> al cliente. No es el costo de compra.
+            {form.kind === 'variants' ? (
+              <>
+                El cliente paga el <strong>precio de cada variante</strong> (abajo). Este valor es
+                solo la referencia desde la que se calculan.
+              </>
+            ) : (
+              <>
+                Precio de <strong>venta</strong> al cliente. No es el costo de compra.
+              </>
+            )}
           </p>
         </div>
         <div className="space-y-2">

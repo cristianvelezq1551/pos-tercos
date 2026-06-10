@@ -282,7 +282,7 @@ function CalledRow({
           <p className="text-xs font-semibold text-foreground">
             {order.customerName ?? channelLabel(order.type)}
           </p>
-          {/* Info del pedido también acá: el cajero re-llama sin ir al historial. */}
+          {/* Info del pedido también aquí: el cajero re-llama sin ir al historial. */}
           {items ? (
             <p className="mt-0.5 text-[0.6875rem] leading-snug text-muted-foreground">
               {items}

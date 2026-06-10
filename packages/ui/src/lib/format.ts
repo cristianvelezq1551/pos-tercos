@@ -1,6 +1,6 @@
 /**
  * Formatters canónicos para POS Tercos. Single source of truth — NO duplicar
- * en cada app. Usá estos helpers en cualquier lugar que renderice plata,
+ * en cada app. Usa estos helpers en cualquier lugar que renderice plata,
  * números, fechas u horas.
  */
 
@@ -35,13 +35,40 @@ export function formatCop(amount: number | string | null | undefined, opts?: { w
 }
 
 /**
- * Formatea un número con cantidad fija de decimales y locale es-CO.
+ * Descarta todo lo que no sea dígito. Útil para inputs de plata (COP es entero)
+ * donde el usuario ve separadores de miles pero el estado guarda solo dígitos.
+ */
+export function onlyDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+/**
+ * Agrupa una cadena de dígitos con puntos de miles: "100000" → "100.000".
+ * Recorta ceros a la izquierda. Cadena vacía → "".
+ */
+export function groupDigits(value: string): string {
+  const clean = onlyDigits(value).replace(/^0+(?=\d)/, '');
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/**
+ * Formatea un número en es-CO.
+ * - `decimals`: cantidad FIJA de decimales (siempre los muestra, aunque sean ceros).
+ * - `maxDecimals`: HASTA esa cantidad, recortando ceros al final.
+ *   Ej. `maxDecimals: 4` → 1000 → "1.000", 1.5 → "1,5", 0.001 → "0,001".
+ * Si no se pasa nada, entero (0 decimales).
  */
 export function formatNumber(
   value: number | null | undefined,
-  opts?: { decimals?: number },
+  opts?: { decimals?: number; maxDecimals?: number },
 ): string {
   if (value == null || !Number.isFinite(value)) return '—';
+  if (opts?.maxDecimals !== undefined) {
+    return new Intl.NumberFormat('es-CO', {
+      maximumFractionDigits: opts.maxDecimals,
+      minimumFractionDigits: 0,
+    }).format(value);
+  }
   return NUM_FRACTION(opts?.decimals ?? 0).format(value);
 }
 

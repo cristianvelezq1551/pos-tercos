@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { ProductRecipeTabs, RecipeEditor } from '../../../../../features/recipes';
 import { ApiError, serverFetchJson } from '../../../../../lib/api-server';
+import { requireRole } from '../../../../../lib/guards';
 import type {
   Ingredient,
   Product,
@@ -15,6 +16,8 @@ interface PageProps {
 }
 
 export default async function ProductRecipePage({ params }: PageProps) {
+  // Solo Dueño puede modificar recetas — el editor de receta es Dueño-only.
+  await requireRole(['DUENO']);
   const { id } = await params;
 
   let product: Product;

@@ -59,7 +59,7 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
           </span>
         ) : (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
-            Sin baseline (≥5 turnos requeridos)
+            Sin historial suficiente (se necesitan 5 turnos o más)
           </span>
         )}
       </header>
@@ -92,7 +92,7 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
               <Th align="right">Descuadre</Th>
               <Th align="right">Anulaciones</Th>
               <Th align="right">Cajón sin venta</Th>
-              <Th>Flags</Th>
+              <Th>Alertas</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -133,7 +133,7 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
                 <Td>
                   {s.flags.length > 0 ? (
                     <span className="text-xs text-destructive">
-                      {s.flags.map((f) => f.replace('_', ' ')).join(' · ')}
+                      {s.flags.map((f) => FLAG_LABEL[f]).join(' · ')}
                     </span>
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>

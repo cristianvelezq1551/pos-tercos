@@ -2,39 +2,74 @@ import Link from 'next/link';
 import { Button, Container, FormField, PageHeader, Select } from '@pos-tercos/ui';
 import { PackageOpen } from 'lucide-react';
 import { MovementsTable } from '../../../../features/inventory';
-import { ApiError, serverFetchJson } from '../../../../lib/api-server';
-import type { Ingredient, InventoryMovement } from '@pos-tercos/types';
+import { serverFetchJson } from '../../../../lib/api-server';
+import { friendlyApiError } from '../../../../lib/error-copy';
+import type {
+  Ingredient,
+  InventoryMovement,
+  Product,
+  Subproduct,
+} from '@pos-tercos/types';
 
 interface PageProps {
-  searchParams: Promise<{ ingredient_id?: string; type?: string }>;
+  searchParams: Promise<{
+    ingredient_id?: string;
+    product_id?: string;
+    subproduct_id?: string;
+    type?: string;
+  }>;
+}
+
+interface MovementsData {
+  movements: InventoryMovement[];
+  ingredients: Ingredient[];
+  products: Product[];
+  subproducts: Subproduct[];
+  filterName?: string;
 }
 
 async function loadData(filters: {
   ingredientId?: string;
+  productId?: string;
+  subproductId?: string;
   type?: string;
-}): Promise<
-  | { movements: InventoryMovement[]; ingredients: Ingredient[]; ingredientName?: string }
-  | { error: string }
-> {
+}): Promise<MovementsData | { error: string }> {
   try {
     const params = new URLSearchParams();
     if (filters.ingredientId) params.set('ingredient_id', filters.ingredientId);
+    if (filters.productId) {
+      params.set('entity_type', 'PRODUCT');
+      params.set('product_id', filters.productId);
+    }
+    if (filters.subproductId) {
+      params.set('entity_type', 'SUBPRODUCT');
+      params.set('subproduct_id', filters.subproductId);
+    }
     if (filters.type) params.set('type', filters.type);
     params.set('limit', '200');
 
-    const [movements, ingredients] = await Promise.all([
+    const [movements, ingredients, allProducts, subproducts] = await Promise.all([
       serverFetchJson<InventoryMovement[]>(`/inventory/movements?${params.toString()}`),
       serverFetchJson<Ingredient[]>('/ingredients'),
+      serverFetchJson<Product[]>('/products?only_active=true'),
+      serverFetchJson<Subproduct[]>('/subproducts'),
     ]);
 
-    const ingredientName = filters.ingredientId
-      ? ingredients.find((i) => i.id === filters.ingredientId)?.name
-      : undefined;
+    // Solo los productos de reventa directa generan movimientos de stock.
+    const products = allProducts.filter((p) => p.directResale);
 
-    return { movements, ingredients, ingredientName };
+    let filterName: string | undefined;
+    if (filters.ingredientId) {
+      filterName = ingredients.find((i) => i.id === filters.ingredientId)?.name;
+    } else if (filters.productId) {
+      filterName = products.find((p) => p.id === filters.productId)?.name;
+    } else if (filters.subproductId) {
+      filterName = subproducts.find((s) => s.id === filters.subproductId)?.name;
+    }
+
+    return { movements, ingredients, products, subproducts, filterName };
   } catch (err) {
-    if (err instanceof ApiError) return { error: `API ${err.status}` };
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 
@@ -42,6 +77,7 @@ const TYPE_OPTIONS = [
   { value: '', label: 'Todos los tipos' },
   { value: 'PURCHASE', label: 'Compra' },
   { value: 'SALE', label: 'Venta' },
+  { value: 'PRODUCTION', label: 'Producción' },
   { value: 'MANUAL_ADJUSTMENT', label: 'Ajuste manual' },
   { value: 'WASTE', label: 'Merma' },
   { value: 'INITIAL', label: 'Stock inicial' },
@@ -49,7 +85,12 @@ const TYPE_OPTIONS = [
 
 export default async function MovementsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const result = await loadData({ ingredientId: sp.ingredient_id, type: sp.type });
+  const result = await loadData({
+    ingredientId: sp.ingredient_id,
+    productId: sp.product_id,
+    subproductId: sp.subproduct_id,
+    type: sp.type,
+  });
 
   return (
     <>
@@ -58,29 +99,33 @@ export default async function MovementsPage({ searchParams }: PageProps) {
         title="Movimientos"
         description="Histórico inmutable de cada cambio de stock. Las correcciones van como movimientos compensatorios."
         icon={<PackageOpen className="h-6 w-6" strokeWidth={1.75} />}
-        breadcrumbs={[{ label: 'Stock', href: '/inventory' }, { label: 'Movimientos' }]}
+        breadcrumbs={[{ label: 'Existencias', href: '/inventory' }, { label: 'Movimientos' }]}
       />
       <Container size="7xl" padY="md">
         {!('error' in result) ? (
           <FiltersBar
             ingredients={result.ingredients}
+            products={result.products}
+            subproducts={result.subproducts}
             ingredientId={sp.ingredient_id ?? ''}
+            productId={sp.product_id ?? ''}
+            subproductId={sp.subproduct_id ?? ''}
             type={sp.type ?? ''}
-            ingredientName={result.ingredientName}
+            filterName={result.filterName}
           />
         ) : null}
 
         <div className="mt-5">
-          {Array.isArray((result as { movements?: InventoryMovement[] }).movements) ? (
-            <MovementsTable rows={(result as { movements: InventoryMovement[] }).movements} />
-          ) : 'error' in result ? (
+          {!('error' in result) ? (
+            <MovementsTable rows={result.movements} />
+          ) : (
             <p
               role="alert"
               className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
             >
               No se pudieron cargar los movimientos. {result.error}
             </p>
-          ) : null}
+          )}
         </div>
       </Container>
     </>
@@ -89,14 +134,22 @@ export default async function MovementsPage({ searchParams }: PageProps) {
 
 function FiltersBar({
   ingredients,
+  products,
+  subproducts,
   ingredientId,
+  productId,
+  subproductId,
   type,
-  ingredientName,
+  filterName,
 }: {
   ingredients: Ingredient[];
+  products: Product[];
+  subproducts: Subproduct[];
   ingredientId: string;
+  productId: string;
+  subproductId: string;
   type: string;
-  ingredientName?: string;
+  filterName?: string;
 }) {
   return (
     <form className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-4">
@@ -106,6 +159,26 @@ function FiltersBar({
           {ingredients.map((i) => (
             <option key={i.id} value={i.id}>
               {i.name}
+            </option>
+          ))}
+        </Select>
+      </FormField>
+      <FormField label="Subproducto">
+        <Select id="subproduct_id" name="subproduct_id" defaultValue={subproductId}>
+          <option value="">Todos los subproductos</option>
+          {subproducts.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </Select>
+      </FormField>
+      <FormField label="Producto (reventa)">
+        <Select id="product_id" name="product_id" defaultValue={productId}>
+          <option value="">Todos los productos</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
             </option>
           ))}
         </Select>
@@ -120,7 +193,7 @@ function FiltersBar({
         </Select>
       </FormField>
       <Button type="submit">Aplicar</Button>
-      {ingredientId || type ? (
+      {ingredientId || productId || subproductId || type ? (
         <Link
           href="/inventory/movements"
           className="text-sm text-muted-foreground hover:text-foreground hover:underline"
@@ -128,10 +201,9 @@ function FiltersBar({
           Limpiar filtros
         </Link>
       ) : null}
-      {ingredientName ? (
+      {filterName ? (
         <p className="ml-auto text-xs text-muted-foreground">
-          Filtrando por{' '}
-          <span className="font-semibold text-foreground">{ingredientName}</span>
+          Filtrando por <span className="font-semibold text-foreground">{filterName}</span>
         </p>
       ) : null}
     </form>

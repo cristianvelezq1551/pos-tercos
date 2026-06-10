@@ -1,137 +1,184 @@
 import { z } from 'zod';
+import { PayTypeEnum } from './users';
 
 // ====================================================================
-// WORKERS — RRHH ligero (FASE 14.B)
+// Nómina v5 — pago mensual o diario, liquidación por PAGOS: 2 quincenas
+// × 2 sub-pagos = 4 pagos fijos por mes. Cero cards "fantasma" del
+// calendario; cada pago vive dentro de su mes.
+//
+//   Pago 1 de Q1: días 1–7
+//   Pago 2 de Q1: días 8–15
+//   Pago 1 de Q2: días 16–22
+//   Pago 2 de Q2: días 23–fin del mes
 // ====================================================================
 
-// --------------------------------------------------------------------
-// Attendance
-// --------------------------------------------------------------------
+const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)');
 
-export const WorkerAttendanceSchema = z.object({
+// --- Día de pago (trabajador DIARIO) ---
+
+export const PayrollDaySchema = z.object({
   id: z.string().uuid(),
   userId: z.string().uuid(),
-  userFullName: z.string().nullable().optional(),
-  userRole: z.string().nullable().optional(),
-  checkIn: z.string().datetime(),
-  checkOut: z.string().datetime().nullable(),
-  /** Horas decimales (ej. 8.5 = 8h 30min). Null si turno abierto. */
-  hoursWorked: z.number().nullable(),
-  notes: z.string().nullable(),
+  workDate: z.string(), // YYYY-MM-DD
+  amount: z.number(),
+  note: z.string().nullable(),
   createdAt: z.string().datetime(),
 });
-export type WorkerAttendance = z.infer<typeof WorkerAttendanceSchema>;
+export type PayrollDay = z.infer<typeof PayrollDaySchema>;
 
-/** POST /workers/:userId/check-in */
-export const CheckInSchema = z.object({
-  /** Override del momento — útil si el dueño registra atrás. Default: now(). */
-  at: z.string().datetime().optional(),
-  notes: z.string().max(500).optional(),
+/** EXCEPCIÓN de un día: monto 0 = no asistió, o un monto distinto al valor/día.
+ *  Sin excepción el día paga el valor por defecto (o 0 si es descanso cíclico). */
+export const SetPayrollDaySchema = z.object({
+  workDate: DateOnly,
+  amount: z.number().nonnegative(),
+  note: z.string().max(300).optional(),
 });
-export type CheckIn = z.infer<typeof CheckInSchema>;
+export type SetPayrollDay = z.infer<typeof SetPayrollDaySchema>;
 
-/** POST /workers/attendance/:id/check-out */
-export const CheckOutSchema = z.object({
-  at: z.string().datetime().optional(),
-  notes: z.string().max(500).optional(),
-});
-export type CheckOut = z.infer<typeof CheckOutSchema>;
+// --- Novedad de PAGO (bono, regalo, horas extra, descuento) ---
 
-// --------------------------------------------------------------------
-// Commissions
-// --------------------------------------------------------------------
-
-export const WorkerCommissionTypeEnum = z.enum([
-  'PERCENT_OF_SHIFT',
-  'FIXED_PER_SALE',
-]);
-export type WorkerCommissionType = z.infer<typeof WorkerCommissionTypeEnum>;
-
-export const WorkerCommissionSchema = z.object({
+export const PayrollAdjustmentSchema = z.object({
   id: z.string().uuid(),
   userId: z.string().uuid(),
-  userFullName: z.string().nullable().optional(),
-  type: WorkerCommissionTypeEnum,
-  /** [0, 1). Required en PERCENT_OF_SHIFT. */
-  percent: z.number().min(0).lt(1).nullable(),
-  /** COP > 0. Required en FIXED_PER_SALE. */
-  fixedAmount: z.number().positive().nullable(),
-  appliedAt: z.string().datetime(),
-  notes: z.string().nullable(),
+  /** YYYY-MM-DD = inicio del pago (uno de {día 1, 8, 16, 23} del mes). */
+  periodStart: z.string(),
+  concept: z.string(),
+  amount: z.number(), // + suma (bono) / − resta (descuento)
+  note: z.string().nullable(),
   createdAt: z.string().datetime(),
 });
-export type WorkerCommission = z.infer<typeof WorkerCommissionSchema>;
+export type PayrollAdjustment = z.infer<typeof PayrollAdjustmentSchema>;
 
-/**
- * POST /workers/:userId/commission. Crea una NUEVA fila — el histórico
- * es inmutable; un cambio de % o monto deja la config anterior visible
- * para auditar comisiones pasadas.
- */
-export const CreateCommissionSchema = z
-  .object({
-    type: WorkerCommissionTypeEnum,
-    percent: z.number().min(0).lt(1).optional(),
-    fixedAmount: z.number().positive().optional(),
-    appliedAt: z.string().datetime().optional(),
-    notes: z.string().max(500).optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.type === 'PERCENT_OF_SHIFT') {
-      if (data.percent === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'percent requerido para PERCENT_OF_SHIFT',
-          path: ['percent'],
-        });
-      }
-      if (data.fixedAmount !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'fixedAmount no aplica para PERCENT_OF_SHIFT',
-          path: ['fixedAmount'],
-        });
-      }
-    } else {
-      // FIXED_PER_SALE
-      if (data.fixedAmount === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'fixedAmount requerido para FIXED_PER_SALE',
-          path: ['fixedAmount'],
-        });
-      }
-      if (data.percent !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'percent no aplica para FIXED_PER_SALE',
-          path: ['percent'],
-        });
-      }
-    }
-  });
-export type CreateCommission = z.infer<typeof CreateCommissionSchema>;
+export const AddPayrollAdjustmentSchema = z.object({
+  /** Cualquier día del pago al que se agrega; el backend lo ancla al inicio. */
+  periodStart: DateOnly,
+  concept: z.string().min(1).max(120),
+  amount: z.number().refine((v) => v !== 0, 'El monto no puede ser 0'),
+  note: z.string().max(300).optional(),
+});
+export type AddPayrollAdjustment = z.infer<typeof AddPayrollAdjustmentSchema>;
 
-// --------------------------------------------------------------------
-// Reports
-// --------------------------------------------------------------------
+// --- Control de pago (marcar pagado/cancelado con comprobante; solo Dueño) ---
 
-/** GET /workers/payroll-period?from=&to= — payroll preview por trabajador. */
-export const PayrollPeriodEntrySchema = z.object({
+export const PayrollPaymentStatusEnum = z.enum(['PAID', 'CANCELLED']);
+export type PayrollPaymentStatus = z.infer<typeof PayrollPaymentStatusEnum>;
+
+export const PayrollPaymentSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  periodStart: z.string(),
+  status: PayrollPaymentStatusEnum,
+  /** Snapshot del total al momento de marcar (sin auto-update). */
+  amount: z.number().nonnegative(),
+  resolvedAt: z.string().datetime(),
+  actorName: z.string().nullable(),
+  /** True si hay imagen de comprobante (siempre true para PAID). */
+  hasProof: z.boolean(),
+  note: z.string().nullable(),
+});
+export type PayrollPayment = z.infer<typeof PayrollPaymentSchema>;
+
+// --- Pago (lista para pagar este pago a TODOS los empleados) ---
+
+export const PagoEntrySchema = z.object({
   userId: z.string().uuid(),
   userFullName: z.string(),
   userRole: z.string(),
-  totalHours: z.number().nonnegative(),
-  attendanceDays: z.number().int().nonnegative(),
-  /** Comisión vigente al final del período (puede ser null si no hay config). */
-  activeCommission: WorkerCommissionSchema.nullable(),
-  /** Total comisión calculada para los shifts del usuario en el período (solo CAJERO). */
-  estimatedCommission: z.number().nonnegative(),
+  payType: PayTypeEnum.nullable(),
+  salaryAmount: z.number().nullable(),
+  hireDate: z.string().datetime().nullable(),
+  terminationDate: z.string().datetime().nullable(),
+  /** Días calendario empleado dentro del pago (para proración mensual). */
+  daysEmployed: z.number().int().nonnegative(),
+  /** Días con pago registrado (DAILY: excluye descansos cíclicos). */
+  daysWorked: z.number().int().nonnegative(),
+  /** Base del pago. MONTHLY = salario/4 (prorrateado por días empleados);
+   *  DAILY = suma de días no-descanso (con overrides). */
+  base: z.number(),
+  adjustmentsTotal: z.number(),
+  total: z.number(),
+  /** Marca de PAGADO/CANCELADO (con comprobante), si existe. */
+  payment: PayrollPaymentSchema.nullable(),
 });
-export type PayrollPeriodEntry = z.infer<typeof PayrollPeriodEntrySchema>;
+export type PagoEntry = z.infer<typeof PagoEntrySchema>;
 
-export const PayrollPeriodReportSchema = z.object({
-  periodFrom: z.string(),
-  periodTo: z.string(),
-  entries: z.array(PayrollPeriodEntrySchema),
+export const PagoReportSchema = z.object({
+  periodStart: z.string(),   // inicio del pago (día 1/8/16/23 del mes)
+  periodEnd: z.string(),     // último día del pago
+  periodLabel: z.string(),   // "Pago 2 · 8–15 jun 2026 · Q1"
+  /** 1 = Quincena 1 (días 1–15); 2 = Quincena 2 (días 16–fin). */
+  quincena: z.number().int().min(1).max(2),
+  /** 1 = primer sub-pago de la quincena; 2 = segundo. */
+  pago: z.number().int().min(1).max(2),
+  entries: z.array(PagoEntrySchema),
+  totalPay: z.number(),
 });
-export type PayrollPeriodReport = z.infer<typeof PayrollPeriodReportSchema>;
+export type PagoReport = z.infer<typeof PagoReportSchema>;
+
+// --- Día del mes ya calculado (modalidad DIARIA) ---
+
+export const PanelDaySchema = z.object({
+  workDate: z.string(), // YYYY-MM-DD
+  amount: z.number(),
+  isDefault: z.boolean(),
+  isAbsence: z.boolean(),
+  /** true = día de descanso cíclico (DOW ∈ user.restDaysOfWeek). */
+  isRest: z.boolean(),
+  isFuture: z.boolean(),
+  note: z.string().nullable(),
+  overrideId: z.string().uuid().nullable(),
+});
+export type PanelDay = z.infer<typeof PanelDaySchema>;
+
+// --- Panel mensual por empleado: 2 quincenas × 2 pagos = 4 pagos siempre ---
+
+export const PanelPagoSchema = z.object({
+  periodStart: z.string(),   // YYYY-MM-DD
+  periodEnd: z.string(),
+  /** "Parte 1 · 1–7 jun 2026 · Quincena 1" — NO son semanas Mon-Sun;
+   *  son sub-pagos quincenales fijos (4 por mes, total = salario). */
+  label: z.string(),
+  /** 1 = primera parte de la quincena; 2 = segunda. */
+  pago: z.number().int().min(1).max(2),
+  base: z.number(),
+  daysEmployed: z.number().int().nonnegative(),
+  daysWorked: z.number().int().nonnegative(),
+  adjustments: z.array(PayrollAdjustmentSchema),
+  adjustmentsTotal: z.number(),
+  total: z.number(),
+  /** Marca de PAGADO/CANCELADO (con comprobante), si existe. */
+  payment: PayrollPaymentSchema.nullable(),
+});
+export type PanelPago = z.infer<typeof PanelPagoSchema>;
+
+export const PanelQuincenaSchema = z.object({
+  /** 1 (días 1–15) o 2 (días 16–fin). */
+  quincena: z.number().int().min(1).max(2),
+  /** "Quincena 1 · 1–15 jun" */
+  label: z.string(),
+  /** Exactamente 2 sub-pagos en orden. */
+  pagos: z.tuple([PanelPagoSchema, PanelPagoSchema]),
+  subtotal: z.number(),
+});
+export type PanelQuincena = z.infer<typeof PanelQuincenaSchema>;
+
+export const EmployeePanelSchema = z.object({
+  userId: z.string().uuid(),
+  userFullName: z.string(),
+  userRole: z.string(),
+  payType: PayTypeEnum.nullable(),
+  salaryAmount: z.number().nullable(),
+  hireDate: z.string().datetime().nullable(),
+  terminationDate: z.string().datetime().nullable(),
+  /** Días de descanso cíclicos del trabajador (0=domingo … 6=sábado). */
+  restDaysOfWeek: z.array(z.number().int().min(0).max(6)),
+  year: z.number().int(),
+  month: z.number().int(),
+  monthLabel: z.string(),
+  /** Exactamente 2 quincenas; cada una con 2 pagos. */
+  quincenas: z.tuple([PanelQuincenaSchema, PanelQuincenaSchema]),
+  /** Calendario de días del mes (solo modalidad diaria). */
+  days: z.array(PanelDaySchema),
+  monthTotal: z.number(),
+});
+export type EmployeePanel = z.infer<typeof EmployeePanelSchema>;

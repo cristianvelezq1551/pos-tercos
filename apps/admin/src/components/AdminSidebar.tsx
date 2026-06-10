@@ -1,10 +1,10 @@
 'use client';
 
-import { BrandLogo } from '@pos-tercos/brand';
 import { Sidebar, sidebarLinkClass } from '@pos-tercos/ui';
 import {
   Activity,
   ArrowLeftRight,
+  Banknote,
   BarChart3,
   Box,
   CalendarRange,
@@ -18,26 +18,31 @@ import {
   Package,
   PackageOpen,
   Receipt,
+  Recycle,
   ShoppingBasket,
   Sparkles,
   Tag,
+  TrendingUp,
   Truck,
-  UserCheck,
+  Users,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { UserRole } from '@pos-tercos/types';
 
 interface NavItem {
   label: string;
   href: string;
   section: string;
   icon: LucideIcon;
+  /** Solo visible para el Dueño (anti-fraude / auditoría cruda). */
+  onlyDueno?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { section: 'Operación', label: 'Inicio', href: '/', icon: LayoutDashboard },
+  { section: 'Operación', label: 'Inicio', href: '/', icon: LayoutDashboard, onlyDueno: true },
   { section: 'Catálogo', label: 'Productos', href: '/products', icon: ShoppingBasket },
   { section: 'Catálogo', label: 'Subproductos', href: '/subproducts', icon: Layers },
   { section: 'Catálogo', label: 'Insumos', href: '/ingredients', icon: Package },
@@ -47,45 +52,102 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Compras', label: 'Sugerencias inteligentes', href: '/purchase-suggestions', icon: Sparkles },
   { section: 'Inventario', label: 'Existencias', href: '/inventory', icon: Box },
   { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements', icon: PackageOpen },
-  { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet },
-  { section: 'Personal', label: 'Asistencia', href: '/workers/attendance', icon: UserCheck },
-  { section: 'Personal', label: 'Comisiones', href: '/workers/commissions', icon: Coins },
-  { section: 'Personal', label: 'Nómina del período', href: '/workers/payroll', icon: Clock },
-  { section: 'Reportes', label: 'Ventas', href: '/reports/sales', icon: LineChart },
-  { section: 'Reportes', label: 'Productos', href: '/reports/products', icon: BarChart3 },
-  { section: 'Reportes', label: 'Operación', href: '/reports/operations', icon: Activity },
-  { section: 'Reportes', label: 'Anomalías', href: '/reports/anomalies', icon: CalendarRange },
+  { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet, onlyDueno: true },
+  { section: 'Personal', label: 'Usuarios', href: '/users', icon: Users, onlyDueno: true },
+  { section: 'Personal', label: 'Nómina', href: '/workers/payroll', icon: Clock, onlyDueno: true },
+  {
+    section: 'Finanzas',
+    label: 'Pagos y cobros',
+    href: '/finanzas/pagos',
+    icon: Banknote,
+    onlyDueno: true,
+  },
+  {
+    section: 'Finanzas',
+    label: 'Estado financiero',
+    href: '/finanzas/estado',
+    icon: TrendingUp,
+    onlyDueno: true,
+  },
+  {
+    section: 'Finanzas',
+    label: 'Costos fijos',
+    href: '/finanzas/costos-fijos',
+    icon: Coins,
+    onlyDueno: true,
+  },
+  { section: 'Reportes', label: 'Ventas', href: '/reports/sales', icon: LineChart, onlyDueno: true },
+  { section: 'Reportes', label: 'Productos', href: '/reports/products', icon: BarChart3, onlyDueno: true },
+  { section: 'Reportes', label: 'Operación', href: '/reports/operations', icon: Activity, onlyDueno: true },
+  {
+    section: 'Reportes',
+    label: 'Costos y margen real',
+    href: '/reports/costos',
+    icon: Coins,
+    onlyDueno: true,
+  },
+  {
+    section: 'Reportes',
+    label: 'Uso y mermas',
+    href: '/reports/usage',
+    icon: Recycle,
+    onlyDueno: true,
+  },
+  {
+    section: 'Reportes',
+    label: 'Anomalías',
+    href: '/reports/anomalies',
+    icon: CalendarRange,
+    onlyDueno: true,
+  },
   {
     section: 'Reportes',
     label: 'Reconciliación',
     href: '/reports/reconciliation',
     icon: ArrowLeftRight,
+    onlyDueno: true,
   },
-  { section: 'Auditoría', label: 'Bitácora', href: '/bitacora', icon: ClipboardList },
-  { section: 'Auditoría', label: 'Auditoría completa', href: '/audit', icon: History },
+  { section: 'Auditoría', label: 'Bitácora', href: '/bitacora', icon: ClipboardList, onlyDueno: true },
+  {
+    section: 'Auditoría',
+    label: 'Auditoría completa',
+    href: '/audit',
+    icon: History,
+    onlyDueno: true,
+  },
 ];
 
-export function AdminSidebar() {
+export function AdminSidebar({
+  role,
+  onNavigate,
+}: {
+  role?: UserRole;
+  /** Se invoca al tocar un link — útil para cerrar el drawer en móvil. */
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
-  const sections = Array.from(new Set(NAV_ITEMS.map((i) => i.section)));
+  const items = NAV_ITEMS.filter((i) => !i.onlyDueno || role === 'DUENO');
+  const sections = Array.from(new Set(items.map((i) => i.section)));
+  // Solo UN item activo: el que mejor matchea (prefijo más largo). Evita que
+  // "Existencias" (/inventory) se prenda cuando estás en "Movimientos"
+  // (/inventory/movements).
+  const activeHref = bestMatchHref(pathname, items);
 
   return (
     <Sidebar>
-      <Sidebar.Header>
-        <BrandLogo variant="full" theme="dark" size="h-8" />
-      </Sidebar.Header>
-
+      {/* La marca vive en el topbar — la sidebar arranca directo con las secciones. */}
       <Sidebar.Sections>
         {sections.map((section) => (
           <Sidebar.Section key={section} title={section}>
-            {NAV_ITEMS.filter((i) => i.section === section).map((item) => {
-              const active = isActive(pathname, item.href);
+            {items.filter((i) => i.section === section).map((item) => {
+              const active = item.href === activeHref;
               const Icon = item.icon;
               return (
                 <li key={item.href}>
                   <Link
                     href={item.href}
                     aria-current={active ? 'page' : undefined}
+                    onClick={onNavigate}
                     className={sidebarLinkClass(active)}
                   >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
@@ -101,7 +163,19 @@ export function AdminSidebar() {
   );
 }
 
-function isActive(pathname: string, href: string): boolean {
-  if (href === '/') return pathname === '/';
-  return pathname === href || pathname.startsWith(`${href}/`);
+/** El href del ítem que mejor cubre el pathname (prefijo más largo). */
+function bestMatchHref(pathname: string, items: NavItem[]): string | null {
+  let best: string | null = null;
+  let bestLen = -1;
+  for (const item of items) {
+    const matches =
+      item.href === '/'
+        ? pathname === '/'
+        : pathname === item.href || pathname.startsWith(`${item.href}/`);
+    if (matches && item.href.length > bestLen) {
+      best = item.href;
+      bestLen = item.href.length;
+    }
+  }
+  return best;
 }

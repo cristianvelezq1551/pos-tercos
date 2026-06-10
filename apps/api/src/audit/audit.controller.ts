@@ -1,10 +1,13 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import type { AuditAction, AuditLogEntry } from '@pos-tercos/types';
 import { AuditActionEnum } from '@pos-tercos/types';
-import { OnlyDueno } from '../auth/decorators/roles.decorator';
+import { AdminAccess } from '../auth/decorators/roles.decorator';
 import { AuditService } from './audit.service';
 
-@OnlyDueno()
+// AdminAccess (no OnlyDueno): la Bitácora operativa (vista filtrada) la usa el
+// Admin Operativo. La página de "Auditoría completa" (log crudo) se restringe
+// al Dueño desde la UI; este endpoint es la fuente común de ambas vistas.
+@AdminAccess()
 @Controller('audit')
 export class AuditController {
   constructor(private readonly audit: AuditService) {}

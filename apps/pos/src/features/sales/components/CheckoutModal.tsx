@@ -92,7 +92,7 @@ export function CheckoutModal({
   const changeDue = method === 'CASH' ? Math.max(0, cashNum - total) : 0;
 
   const validation = useMemo(() => {
-    if (!method) return { ok: false, reason: 'Elegí un método de pago' };
+    if (!method) return { ok: false, reason: 'Elige un método de pago' };
     if (method === 'CASH') {
       if (cashNum < total) {
         return {
@@ -106,7 +106,7 @@ export function CheckoutModal({
     if (!doubleVerified) {
       return {
         ok: false,
-        reason: 'Confirmá que la transferencia llegó a la cuenta',
+        reason: 'Confirma que la transferencia llegó a la cuenta',
       };
     }
     return { ok: true, reason: null };

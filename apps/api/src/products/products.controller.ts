@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -33,7 +34,7 @@ import {
   type SetSoldOut,
   type UpdateProduct,
 } from '@pos-tercos/types';
-import { AdminAccess, CashierAccess } from '../auth/decorators/roles.decorator';
+import { AdminAccess, CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { detectImageMimeLoose } from '../common/image-mime';
@@ -117,9 +118,17 @@ export class ProductsController {
   }
 
   @AdminAccess()
-  @Delete(':id')
+  @Post(':id/deactivate')
   deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<Product> {
     return this.products.deactivate(id);
+  }
+
+  /** Elimina DEFINITIVAMENTE — Dueño-only. */
+  @OnlyDueno()
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.products.remove(id);
   }
 
   @AdminAccess()

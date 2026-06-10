@@ -234,6 +234,27 @@ Migrations pendientes que se aplican:
 
 ---
 
+## 6.bis Cold start de subproductos (CRÍTICO — paso obligatorio si el sistema usa inventario de producción)
+
+> Aplica desde el deploy del módulo "inventario de producción" (sec 7.v4 del CLAUDE.md). Si tu instancia no usa subproductos en recetas, podés saltar esta sección.
+
+**Por qué:** los subproductos arrancan en stock 0. Cualquier producto preparado que dependa de un subproducto aparecerá como "Sin {subproducto}" en `/products/availability` hasta que se registre al menos una producción.
+
+**Antes de abrir el local el día del deploy:**
+
+1. Login en admin (Dueño o Admin Operativo).
+2. Entrar a `/subproducts`.
+3. Para cada subproducto con stock en cocina hoy:
+   - Click "Producir" (icon-only verde en la fila o botón grande en `/subproducts/[id]`).
+   - Ingresar la cantidad en cocina (en la unidad del subproducto: piezas, gramos, etc).
+   - El backend valida que hay stock de insumos suficiente. Si rechaza, conseguir más insumos o reducir la cantidad.
+4. Verificar que cada subproducto producido aparezca con stock > 0 en `/inventory`.
+5. Abrir `pos.tercos.co` → productos preparados deberían estar disponibles.
+
+**Si se omite este paso:** el cajero verá todos los productos preparados como "Agotado" y no podrá vender hasta producir.
+
+---
+
 ## 7. Backup Postgres
 
 Cron diario en Railway o externo (recomendado: GitHub Actions con

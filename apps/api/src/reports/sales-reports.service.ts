@@ -316,40 +316,37 @@ export class SalesReportsService {
       select: { id: true, status: true, paidAt: true },
     });
     const totalWebSales = webSales.length;
+    const webSaleIds = new Set(webSales.map((s) => s.id));
 
-    const eligibleAccepted = webSales.length; // todo pedido web pasa por accepted
-    const eligibleConfirmed = webSales.filter(
-      (s) => s.paidAt !== null,
-    ).length;
-    const eligibleReady = webSales.filter((s) =>
+    // todo pedido web debería recibir instrucciones de pago al crearse
+    const eligiblePaymentInstructions = webSales.length;
+    const eligiblePaymentReceived = webSales.filter((s) => s.paidAt !== null).length;
+    const eligiblePickupReady = webSales.filter((s) =>
       ['LISTO_DESPACHO', 'ENTREGADO'].includes(s.status),
     ).length;
 
-    // Audit log WHATSAPP_LINK_OPENED por stage.
-    const audits = await this.prisma.auditLog.findMany({
-      where: {
-        action: 'WHATSAPP_LINK_OPENED',
-        createdAt: { gte: from, lte: to },
-      },
-      select: { entityId: true, metadata: true },
-    });
+    // Mensajes OpenWA realmente enviados (status='sent') de estos pedidos web.
+    // Filtramos por saleId (no por createdAt del mensaje) para no perder mensajes
+    // de etapas tardías — p. ej. "listo" se envía horas después de crear el pedido.
+    const messages = webSaleIds.size
+      ? await this.prisma.whatsAppMessage.findMany({
+          where: { status: 'sent', saleId: { in: [...webSaleIds] } },
+          select: { saleId: true, stage: true },
+        })
+      : [];
     const reachedByStage: Record<string, Set<string>> = {
-      accepted: new Set(),
-      confirmed: new Set(),
-      ready: new Set(),
+      payment_instructions: new Set(),
+      payment_received: new Set(),
+      pickup_ready: new Set(),
     };
-    const webSaleIds = new Set(webSales.map((s) => s.id));
-    for (const a of audits) {
-      if (!a.entityId || !webSaleIds.has(a.entityId)) continue;
-      const meta = a.metadata as { stage?: string } | null;
-      const stage = meta?.stage;
-      if (stage && reachedByStage[stage]) {
-        reachedByStage[stage].add(a.entityId);
-      }
+    for (const m of messages) {
+      if (!m.saleId) continue;
+      const bucket = reachedByStage[m.stage];
+      if (bucket) bucket.add(m.saleId);
     }
 
     const buildStage = (
-      stage: 'accepted' | 'confirmed' | 'ready',
+      stage: 'payment_instructions' | 'payment_received' | 'pickup_ready',
       eligible: number,
     ) => {
       const reached = reachedByStage[stage].size;
@@ -366,9 +363,9 @@ export class SalesReportsService {
       periodTo: toDayBucket(to),
       totalWebSales,
       stages: [
-        buildStage('accepted', eligibleAccepted),
-        buildStage('confirmed', eligibleConfirmed),
-        buildStage('ready', eligibleReady),
+        buildStage('payment_instructions', eligiblePaymentInstructions),
+        buildStage('payment_received', eligiblePaymentReceived),
+        buildStage('pickup_ready', eligiblePickupReady),
       ],
     };
   }
@@ -430,7 +427,10 @@ export class SalesReportsService {
     const dayStart = startOfDay(now);
     const dayEnd = endOfDay(now);
     const lastWeekStart = startOfDay(addDays(now, -7));
-    const lastWeekEnd = endOfDay(addDays(now, -7));
+    // Mismo instante (HH:mm) de hace 7 días, NO el día completo: así el día
+    // parcial de hoy se compara contra el mismo tramo parcial de la semana
+    // pasada (si no, en la mañana el WoW% siempre se ve fuertemente negativo).
+    const lastWeekEnd = addDays(now, -7);
 
     const [today, lastWeekSameDay, pendingWeb, inKitchen, ready, lowStock, pendingSugg] = await Promise.all([
       this.prisma.sale.aggregate({

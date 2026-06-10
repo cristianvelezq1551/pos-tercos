@@ -74,6 +74,7 @@ export function CashMovementsSection({
           value={amount}
           onChange={setAmount}
           prefix="$"
+          grouping
           min={0}
           placeholder="Monto"
           className="w-32 shrink-0"

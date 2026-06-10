@@ -3,7 +3,7 @@ import { cn } from '../lib/utils';
 import { Button, type ButtonProps } from './button';
 
 export interface IconButtonProps extends Omit<ButtonProps, 'size'> {
-  /** Label requerido para accesibilidad — si NO mostrás texto, el screen reader lo necesita. */
+  /** Label requerido para accesibilidad — si NO muestras texto, el screen reader lo necesita. */
   'aria-label': string;
   /** Tamaño del botón cuadrado. */
   size?: 'sm' | 'md' | 'lg';

@@ -47,19 +47,19 @@ export default async function SavedReconciliationDetailPage({ params }: PageProp
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Stat label="Filas CSV" value={String(detail.csvRowsParsed)} />
-        <Stat label="Sales POS" value={String(detail.posSalesEvaluated)} />
-        <Stat label="Match" value={String(detail.matched)} tone="good" />
+        <Stat label="Ventas POS" value={String(detail.posSalesEvaluated)} />
+        <Stat label="Coinciden" value={String(detail.matched)} tone="good" />
         <Stat label="CSV sin POS" value={String(detail.unmatchedCsv)} tone={detail.unmatchedCsv > 0 ? 'bad' : 'muted'} />
         <Stat label="POS sin CSV" value={String(detail.unmatchedSale)} tone={detail.unmatchedSale > 0 ? 'warn' : 'muted'} />
       </div>
 
       {sospechas === 0 ? (
         <p className="rounded-md bg-success-bg/30 px-4 py-2 text-sm text-success ring-1 ring-inset ring-success-border">
-          ✓ Período limpio: todos los CSV rows tienen su sale POS correspondiente.
+          ✓ Período limpio: cada fila del CSV tiene su venta del POS correspondiente.
         </p>
       ) : (
         <p className="rounded-md bg-warning-bg/30 px-4 py-2 text-sm text-warning ring-1 ring-inset ring-warning-border">
-          {sospechas} discrepancia{sospechas === 1 ? '' : 's'} detectada{sospechas === 1 ? '' : 's'}. Revisá las filas resaltadas abajo.
+          {sospechas} discrepancia{sospechas === 1 ? '' : 's'} detectada{sospechas === 1 ? '' : 's'}. Revisa las filas resaltadas abajo.
         </p>
       )}
 
@@ -72,7 +72,7 @@ export default async function SavedReconciliationDetailPage({ params }: PageProp
               <Th align="right">Monto CSV</Th>
               <Th>Referencia</Th>
               <Th align="right">Recibo</Th>
-              <Th align="right">Sale total</Th>
+              <Th align="right">Total venta</Th>
               <Th>Pagado en</Th>
               <Th>Método</Th>
             </tr>
@@ -118,7 +118,7 @@ export default async function SavedReconciliationDetailPage({ params }: PageProp
 
 function StatusBadge({ status }: { status: 'matched' | 'unmatched_csv' | 'unmatched_sale' }) {
   const cfg = {
-    matched: { label: 'Match', cls: 'bg-success-bg/30 text-success ring-success-border' },
+    matched: { label: 'Coincide', cls: 'bg-success-bg/30 text-success ring-success-border' },
     unmatched_csv: { label: 'CSV sin POS', cls: 'bg-destructive/10 text-destructive ring-destructive/30' },
     unmatched_sale: { label: 'POS sin CSV', cls: 'bg-warning-bg/30 text-warning ring-warning-border' },
   }[status];

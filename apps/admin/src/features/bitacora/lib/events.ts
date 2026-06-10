@@ -1,4 +1,5 @@
 import type { AuditAction, AuditLogEntry } from '@pos-tercos/types';
+import { formatCop } from '@pos-tercos/ui';
 
 /** Grupos de la bitácora operativa (caja, cocina, sesiones). */
 export interface BitacoraGroup {
@@ -20,14 +21,22 @@ const CAJON: AuditAction[] = ['CASH_DRAWER_OPENED', 'CASH_DRAWER_OPENED_NO_SALE'
 const APROBACIONES: AuditAction[] = ['APPROVAL_GRANTED', 'APPROVAL_DENIED', 'APPROVAL_PIN_SET'];
 const SESIONES: AuditAction[] = ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED', 'AUTH_LOGOUT'];
 const COCINA: AuditAction[] = ['KDS_ORDER_DELAYED'];
+const PERSONAL: AuditAction[] = [
+  'USER_SALARY_CHANGED',
+  'EMPLOYMENT_TERMINATED',
+  'USER_DELETED',
+  'PAYROLL_ADJUSTMENT_ADDED',
+  'PAYROLL_DAY_SET',
+];
 
 export const BITACORA_GROUPS: BitacoraGroup[] = [
-  { key: 'todo', label: 'Todo', actions: [...CAJA, ...ANULACIONES, ...CAJON, ...APROBACIONES, ...SESIONES, ...COCINA] },
+  { key: 'todo', label: 'Todo', actions: [...CAJA, ...ANULACIONES, ...CAJON, ...APROBACIONES, ...SESIONES, ...PERSONAL, ...COCINA] },
   { key: 'caja', label: 'Caja', actions: CAJA },
   { key: 'anulaciones', label: 'Anulaciones', actions: ANULACIONES },
   { key: 'cajon', label: 'Cajón', actions: CAJON },
   { key: 'aprobaciones', label: 'Aprobaciones', actions: APROBACIONES },
   { key: 'sesiones', label: 'Sesiones', actions: SESIONES },
+  { key: 'personal', label: 'Personal / Nómina', actions: PERSONAL },
   { key: 'cocina', label: 'Cocina (KDS)', actions: COCINA },
 ];
 
@@ -46,13 +55,7 @@ function meta(entry: AuditLogEntry): Record<string, unknown> {
 }
 
 function cop(n: unknown): string {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return '—';
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  }).format(v);
+  return formatCop(Number(n));
 }
 
 /** Traduce una entrada de auditoría a una fila legible de la bitácora. */
@@ -112,7 +115,39 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
     case 'AUTH_LOGOUT':
       return { label: 'Cerró sesión', detail: null, tone: 'neutral' };
     case 'AUTH_LOGIN_FAILED':
-      return { label: 'Login fallido', detail: null, tone: 'warning' };
+      return { label: 'Intento de sesión fallido', detail: null, tone: 'warning' };
+    case 'USER_SALARY_CHANGED': {
+      const after = (m.after && typeof m.after === 'object' ? (m.after as Record<string, unknown>) : {});
+      return {
+        label: 'Cambió el salario de un empleado',
+        detail: after.salaryAmount != null ? `Nuevo: ${cop(after.salaryAmount)} (${String(after.payType ?? '')})` : null,
+        tone: 'warning',
+      };
+    }
+    case 'EMPLOYMENT_TERMINATED':
+      return {
+        label: 'Terminó el empleo de un usuario',
+        detail: m.date ? `Fecha de salida: ${String(m.date)}` : null,
+        tone: 'danger',
+      };
+    case 'USER_DELETED':
+      return {
+        label: 'Eliminó un usuario',
+        detail: m.email ? `${String(m.email)} (${String(m.role ?? '')})` : null,
+        tone: 'danger',
+      };
+    case 'PAYROLL_ADJUSTMENT_ADDED':
+      return {
+        label: 'Novedad de nómina',
+        detail: m.removed ? 'Eliminó una novedad' : `${String(m.concept ?? '')}: ${cop(m.amount)}`,
+        tone: 'neutral',
+      };
+    case 'PAYROLL_DAY_SET':
+      return {
+        label: 'Día de pago',
+        detail: m.removed ? `Quitó ${String(m.workDate ?? '')}` : `${String(m.workDate ?? '')}: ${cop(m.amount)}`,
+        tone: 'neutral',
+      };
     case 'KDS_ORDER_DELAYED':
       return {
         label: 'Pedido demorado en cocina',

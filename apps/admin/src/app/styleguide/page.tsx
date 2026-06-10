@@ -382,7 +382,7 @@ export default function StyleguidePage() {
             <EmptyState
               illustration={<LineArtIllustration name="empty-plate" />}
               title="No hay pedidos en cocina"
-              description="Cuando entre el primer pedido del turno, aparecerá acá con su cronómetro."
+              description="Cuando entre el primer pedido del turno, aparecerá aquí con su cronómetro."
               action={<Button>Ver pedidos web</Button>}
             />
           </Subsection>
@@ -583,7 +583,7 @@ function PreviewCard({ label, children }: { label: string; children: React.React
   );
 }
 
-// Íconos lucide-style inline (para no requerir lucide-react acá)
+// Íconos lucide-style inline (para no requerir lucide-react aquí)
 function Star() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

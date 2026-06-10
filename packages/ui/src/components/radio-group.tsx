@@ -49,7 +49,8 @@ export function RadioGroup({
               'group flex cursor-pointer items-start gap-2.5 rounded-lg border bg-card transition-colors duration-150 ease-out',
               'hover:border-ink-300',
               'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-background',
-              checked ? 'border-primary bg-red-50' : 'border-border',
+              // Tinte rojo a 10% sobre el card (tema-aware: legible en oscuro y claro).
+              checked ? 'border-primary bg-primary/10' : 'border-border',
               opt.disabled && 'cursor-not-allowed opacity-50',
               layout === 'card' ? 'p-3' : 'px-3 py-2',
               'motion-reduce:transition-none',

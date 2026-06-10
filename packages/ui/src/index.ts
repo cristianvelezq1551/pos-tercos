@@ -50,6 +50,8 @@ export { Checkbox, type CheckboxProps } from './components/checkbox';
 export { Switch, type SwitchProps } from './components/switch';
 export { RadioGroup, type RadioGroupProps, type RadioOption } from './components/radio-group';
 export { NumberInput, type NumberInputProps } from './components/number-input';
+export { MoneyInput, type MoneyInputProps } from './components/money-input';
+export { PinField, isValidPin, type PinFieldProps } from './components/pin-field';
 export {
   DateInput,
   TimeInput,
@@ -101,5 +103,7 @@ export {
   formatPercent,
   formatDate,
   formatDuration,
+  onlyDigits,
+  groupDigits,
   type DateFormat,
 } from './lib/format';

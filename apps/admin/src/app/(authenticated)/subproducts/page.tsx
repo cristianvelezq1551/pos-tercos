@@ -2,29 +2,46 @@ import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
 import { SubproductsTable } from '../../../features/subproducts';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
-import type { Subproduct } from '@pos-tercos/types';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
+import { getCurrentUserServer } from '../../../features/auth/server';
+import type { Stockable, Subproduct, SubproductCostSummary } from '@pos-tercos/types';
 
-async function loadSubproducts(): Promise<Subproduct[] | { error: string }> {
+async function loadSubproducts(): Promise<
+  {
+    subproducts: Subproduct[];
+    costById: Map<string, number | null>;
+    stockById: Map<string, number>;
+  } | { error: string }
+> {
   try {
-    return await serverFetchJson<Subproduct[]>('/subproducts');
-  } catch (err) {
-    if (err instanceof ApiError) {
-      return { error: `API ${err.status}` };
+    const [subproducts, costs, stockables] = await Promise.all([
+      serverFetchJson<Subproduct[]>('/subproducts'),
+      // El costo es secundario: si falla, mostramos la tabla igual sin costos.
+      serverFetchJson<SubproductCostSummary[]>('/subproduct-costs').catch(() => []),
+      // Stock de subproductos para la columna nueva.
+      serverFetchJson<Stockable[]>('/inventory/stock').catch(() => []),
+    ]);
+    const costById = new Map(costs.map((c) => [c.subproductId, c.totalCost]));
+    const stockById = new Map<string, number>();
+    for (const s of stockables) {
+      if (s.type === 'SUBPRODUCT') stockById.set(s.id, s.currentStock);
     }
-    return { error: 'Network error' };
+    return { subproducts, costById, stockById };
+  } catch (err) {
+    return { error: friendlyApiError(err) };
   }
 }
 
 export default async function SubproductsPage() {
-  const result = await loadSubproducts();
+  const [result, user] = await Promise.all([loadSubproducts(), getCurrentUserServer()]);
 
   return (
     <>
       <PageHeader
         eyebrow="Catálogo"
         title="Subproductos"
-        description="Intermedios cocinados que se usan en la receta de productos vendibles. Define el yield (unidades por batch) para que el sistema calcule consumo proporcional."
+        description="Intermedios cocinados que se usan en la receta de productos vendibles. Definí el rendimiento (porciones por preparación) para que el sistema calcule el consumo proporcional."
         icon={<BrandIcon name="knife" className="h-6 w-6" />}
         actions={
           <Link href="/subproducts/new">
@@ -33,8 +50,13 @@ export default async function SubproductsPage() {
         }
       />
       <Container size="7xl" padY="md">
-        {Array.isArray(result) ? (
-          <SubproductsTable subproducts={result} />
+        {!('error' in result) ? (
+          <SubproductsTable
+            subproducts={result.subproducts}
+            costById={result.costById}
+            stockById={result.stockById}
+            userRole={user?.role}
+          />
         ) : (
           <p
             role="alert"

@@ -1,7 +1,7 @@
 'use client';
 
 import type { Product } from '@pos-tercos/types';
-import { Button, Input, Label } from '@pos-tercos/ui';
+import { Button, Input, Label, MoneyInput } from '@pos-tercos/ui';
 import { useMemo } from 'react';
 import { formatCop } from '../../../lib/format';
 import type { FormState } from './ProductFormTypes';
@@ -105,17 +105,13 @@ export function ProductFormComboSection({
 
       <div className="space-y-2 border-t border-border pt-3">
         <Label htmlFor="comboPrice">Precio del combo (COP)</Label>
-        <Input
+        <MoneyInput
           id="comboPrice"
-          type="number"
-          inputMode="numeric"
-          min="0"
           required
           disabled={pending}
           value={form.comboPrice}
-          onChange={(e) => setForm((f) => ({ ...f, comboPrice: e.target.value }))}
-          placeholder="78000"
-          className="tabular-nums"
+          onChange={(v) => setForm((f) => ({ ...f, comboPrice: v }))}
+          placeholder="78.000"
         />
         {componentsSum > 0 ? (
           <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">

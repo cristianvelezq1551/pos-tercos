@@ -35,6 +35,23 @@ export class ApprovalsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Verifica la contraseña de `userId`. Se usa como segundo factor para CAMBIAR
+   * un PIN: si una sesión queda abierta, no alcanza con estar logueado para
+   * tocar PINs — hay que reingresar la clave. 401 si no matchea.
+   */
+  async assertPassword(userId: string, password: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+    if (!user) throw new NotFoundException(`User ${userId} not found`);
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      throw new ForbiddenException('Contraseña incorrecta.');
+    }
+  }
+
+  /**
    * Setea (o resetea) el PIN para `userId`. Solo lo invoca:
    *   - El propio Admin/Dueño cambiando su PIN.
    *   - El Dueño reseteando el de un Admin Operativo (FASE 11).

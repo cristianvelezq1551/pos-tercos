@@ -5,7 +5,8 @@ import {
   RunActionsBar,
   SuggestionsTable,
 } from '../../../features/purchase-suggestions';
-import { ApiError, serverFetchJson } from '../../../lib/api-server';
+import { serverFetchJson } from '../../../lib/api-server';
+import { friendlyApiError } from '../../../lib/error-copy';
 import type { PurchaseSuggestion } from '@pos-tercos/types';
 
 const FILTER_TABS: { value: string; label: string }[] = [
@@ -29,8 +30,7 @@ async function loadSuggestions(
   try {
     return await serverFetchJson<PurchaseSuggestion[]>(`/purchase-suggestions${qs}`);
   } catch (err) {
-    if (err instanceof ApiError) return { error: `API ${err.status}` };
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 

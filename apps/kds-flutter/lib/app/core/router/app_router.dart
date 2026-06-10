@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:kds/app/core/di/providers.dart';
 import 'package:kds/app/presentation/auth/login_screen.dart';
 import 'package:kds/app/presentation/kds/board_screen.dart';
+import 'package:kds/app/presentation/production/production_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final storage = ref.read(secureStorageProvider);
@@ -25,6 +26,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/board',
         builder: (context, state) => const BoardScreen(),
+      ),
+      GoRoute(
+        path: '/production',
+        builder: (context, state) => const ProductionScreen(),
       ),
     ],
   );

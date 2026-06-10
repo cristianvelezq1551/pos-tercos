@@ -1,6 +1,6 @@
 'use client';
 
-import { Input, Label } from '@pos-tercos/ui';
+import { Input, Label, MoneyInput, formatCop } from '@pos-tercos/ui';
 
 interface ProductPricingFieldsProps {
   invoiceUnitCost: number;
@@ -12,10 +12,6 @@ interface ProductPricingFieldsProps {
   category: string;
   onCategoryChange: (v: string) => void;
   disabled?: boolean;
-}
-
-function formatCop(n: number): string {
-  return n.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 }
 
 export function ProductPricingFields({
@@ -35,7 +31,7 @@ export function ProductPricingFields({
         <p className="font-semibold">⚠️ El costo y el precio de venta son distintos:</p>
         <ul className="mt-1 list-disc space-y-0.5 pl-4">
           <li>
-            <strong>Costo:</strong> {invoiceUnitCost > 0 ? `~${formatCop(invoiceUnitCost)} por ${unitPurchase || 'unidad-compra'} (de la factura)` : 'lo que pagás al proveedor (de la factura)'}.
+            <strong>Costo:</strong> {invoiceUnitCost > 0 ? `~${formatCop(invoiceUnitCost)} por ${unitPurchase || 'unidad-compra'} (de la factura)` : 'lo que pagas al proveedor (de la factura)'}.
             Se guarda automáticamente al confirmar.
           </li>
           <li>
@@ -45,16 +41,12 @@ export function ProductPricingFields({
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="cs-bp">💰 Precio de venta al cliente (COP)</Label>
-        <Input
+        <MoneyInput
           id="cs-bp"
-          type="number"
-          inputMode="decimal"
-          step="any"
-          min="0"
           disabled={disabled}
           value={basePrice}
-          onChange={(e) => onBasePriceChange(e.target.value)}
-          placeholder="3500"
+          onChange={onBasePriceChange}
+          placeholder="3.500"
         />
         {basePrice && invoiceUnitCost > 0 && Number(conversionFactor) > 0 && (
           <p className="text-xs text-muted-foreground">

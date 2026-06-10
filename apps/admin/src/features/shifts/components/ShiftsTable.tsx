@@ -24,7 +24,7 @@ export function ShiftsTable({ shifts }: Props) {
       <div className="rounded-md border border-dashed border-input bg-card p-12 text-center">
         <p className="text-sm font-medium text-foreground">Aún no hay turnos registrados.</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cuando un cajero abra turno desde el POS aparecerá acá.
+          Cuando un cajero abra turno desde el POS aparecerá aquí.
         </p>
       </div>
     );

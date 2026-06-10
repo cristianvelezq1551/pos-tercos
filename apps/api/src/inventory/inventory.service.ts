@@ -9,6 +9,7 @@ import type {
   Ingredient as DbIngredient,
   Prisma,
   Product as DbProduct,
+  Subproduct as DbSubproduct,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -16,6 +17,7 @@ type DbInventoryMovement = Prisma.InventoryMovementGetPayload<{
   include: {
     ingredient: { select: { name: true } };
     product: { select: { name: true } };
+    subproduct: { select: { name: true } };
     user: { select: { fullName: true } };
   };
 }>;
@@ -24,6 +26,7 @@ interface ListMovementsFilter {
   entityType?: StockableType;
   ingredientId?: string;
   productId?: string;
+  subproductId?: string;
   type?: string;
   /** FASE 4 ajustes 2.6: filtra por origen (ej. invoice). */
   sourceType?: string;
@@ -42,12 +45,15 @@ export class InventoryService {
    */
   async getCurrentStockMap(): Promise<Map<string, number>> {
     const rows = await this.prisma.inventoryMovement.groupBy({
-      by: ['entityType', 'ingredientId', 'productId'],
+      by: ['entityType', 'ingredientId', 'productId', 'subproductId'],
       _sum: { delta: true },
     });
     const map = new Map<string, number>();
     for (const r of rows) {
-      const id = r.entityType === 'INGREDIENT' ? r.ingredientId : r.productId;
+      const id =
+        r.entityType === 'INGREDIENT' ? r.ingredientId
+        : r.entityType === 'PRODUCT' ? r.productId
+        : r.subproductId;
       if (!id) continue;
       const key = `${r.entityType}:${id}`;
       map.set(key, (map.get(key) ?? 0) + Number(r._sum.delta ?? 0));
@@ -59,7 +65,9 @@ export class InventoryService {
     const where: Prisma.InventoryMovementWhereInput =
       entityType === 'INGREDIENT'
         ? { entityType: 'INGREDIENT', ingredientId: id }
-        : { entityType: 'PRODUCT', productId: id };
+        : entityType === 'PRODUCT'
+          ? { entityType: 'PRODUCT', productId: id }
+          : { entityType: 'SUBPRODUCT', subproductId: id };
     const result = await this.prisma.inventoryMovement.aggregate({
       where,
       _sum: { delta: true },
@@ -68,7 +76,8 @@ export class InventoryService {
   }
 
   /**
-   * Lista unificada: insumos + productos direct-resale.
+   * Lista unificada: insumos + productos direct-resale + subproductos.
+   * Los 3 son stockables de primera clase con su propio inventario.
    */
   async listStockables(opts: { onlyActive?: boolean; lowStock?: boolean } = {}): Promise<Stockable[]> {
     const ingredientWhere: Prisma.IngredientWhereInput = opts.onlyActive ? { isActive: true } : {};
@@ -76,10 +85,12 @@ export class InventoryService {
       directResale: true,
       ...(opts.onlyActive ? { isActive: true } : {}),
     };
+    const subproductWhere: Prisma.SubproductWhereInput = opts.onlyActive ? { isActive: true } : {};
 
-    const [ingredients, products, stockMap] = await Promise.all([
+    const [ingredients, products, subproducts, stockMap] = await Promise.all([
       this.prisma.ingredient.findMany({ where: ingredientWhere, orderBy: { name: 'asc' } }),
       this.prisma.product.findMany({ where: productWhere, orderBy: { name: 'asc' } }),
+      this.prisma.subproduct.findMany({ where: subproductWhere, orderBy: { name: 'asc' } }),
       this.getCurrentStockMap(),
     ]);
 
@@ -89,8 +100,11 @@ export class InventoryService {
     const prodItems: Stockable[] = products.map((p) =>
       productToStockable(p, stockMap.get(`PRODUCT:${p.id}`) ?? 0),
     );
+    const subItems: Stockable[] = subproducts.map((s) =>
+      subproductToStockable(s, stockMap.get(`SUBPRODUCT:${s.id}`) ?? 0),
+    );
 
-    let merged = [...ingrItems, ...prodItems];
+    let merged = [...ingrItems, ...prodItems, ...subItems];
     if (opts.lowStock) merged = merged.filter((s) => s.lowStock);
     return merged.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -101,6 +115,12 @@ export class InventoryService {
       if (!row) throw new NotFoundException(`Ingredient ${id} not found`);
       const current = await this.getCurrentStock('INGREDIENT', id);
       return ingredientToStockable(row, current);
+    }
+    if (entityType === 'SUBPRODUCT') {
+      const row = await this.prisma.subproduct.findUnique({ where: { id } });
+      if (!row) throw new NotFoundException(`Subproduct ${id} not found`);
+      const current = await this.getCurrentStock('SUBPRODUCT', id);
+      return subproductToStockable(row, current);
     }
     const row = await this.prisma.product.findUnique({ where: { id } });
     if (!row) throw new NotFoundException(`Product ${id} not found`);
@@ -124,6 +144,15 @@ export class InventoryService {
       if (!ing.isActive) {
         throw new BadRequestException(`Ingredient ${input.ingredientId} is inactive`);
       }
+    } else if (input.entityType === 'SUBPRODUCT') {
+      const sub = await this.prisma.subproduct.findUnique({
+        where: { id: input.subproductId! },
+        select: { id: true, isActive: true },
+      });
+      if (!sub) throw new NotFoundException(`Subproduct ${input.subproductId} not found`);
+      if (!sub.isActive) {
+        throw new BadRequestException(`Subproduct ${input.subproductId} is inactive`);
+      }
     } else {
       const prod = await this.prisma.product.findUnique({
         where: { id: input.productId! },
@@ -136,6 +165,28 @@ export class InventoryService {
       if (!prod.directResale) {
         throw new BadRequestException(
           `Product ${input.productId} is not direct-resale; cannot track stock`,
+        );
+      }
+    }
+
+    // "Stock inicial" es la carga única al arrancar el sistema. Un segundo
+    // INITIAL corrompería el significado del ledger → se rechaza. Las
+    // correcciones posteriores van como MANUAL_ADJUSTMENT compensatorio.
+    if (input.type === 'INITIAL') {
+      const existingInitial = await this.prisma.inventoryMovement.findFirst({
+        where: {
+          type: 'INITIAL',
+          ...(input.entityType === 'INGREDIENT'
+            ? { ingredientId: input.ingredientId! }
+            : input.entityType === 'SUBPRODUCT'
+              ? { subproductId: input.subproductId! }
+              : { productId: input.productId! }),
+        },
+        select: { id: true },
+      });
+      if (existingInitial) {
+        throw new BadRequestException(
+          'Este item ya tiene un "Stock inicial" registrado. Para corregir el stock usá un ajuste manual.',
         );
       }
     }
@@ -154,7 +205,10 @@ export class InventoryService {
           entityType: input.entityType,
           ingredientId: input.entityType === 'INGREDIENT' ? input.ingredientId : null,
           productId: input.entityType === 'PRODUCT' ? input.productId : null,
+          subproductId: input.entityType === 'SUBPRODUCT' ? input.subproductId : null,
           delta: input.delta,
+          // El costo solo aplica a entradas (delta > 0); en consumos lo resuelve FIFO.
+          unitCost: input.delta > 0 ? (input.unitCost ?? null) : null,
           type: input.type,
           notes: input.notes ?? null,
           idempotencyKey: input.idempotencyKey ?? null,
@@ -180,6 +234,7 @@ export class InventoryService {
     if (filter.entityType) where.entityType = filter.entityType;
     if (filter.ingredientId) where.ingredientId = filter.ingredientId;
     if (filter.productId) where.productId = filter.productId;
+    if (filter.subproductId) where.subproductId = filter.subproductId;
     if (filter.type) where.type = filter.type as Prisma.InventoryMovementWhereInput['type'];
     if (filter.sourceType) where.sourceType = filter.sourceType;
     if (filter.sourceId) where.sourceId = filter.sourceId;
@@ -203,6 +258,7 @@ function includeFull() {
   return {
     ingredient: { select: { name: true } },
     product: { select: { name: true } },
+    subproduct: { select: { name: true } },
     user: { select: { fullName: true } },
   } satisfies Prisma.InventoryMovementInclude;
 }
@@ -243,16 +299,40 @@ function productToStockable(row: DbProduct, current: number): Stockable {
   };
 }
 
+function subproductToStockable(row: DbSubproduct, current: number): Stockable {
+  const thresholdMin = Number(row.thresholdMin);
+  return {
+    type: 'SUBPRODUCT',
+    id: row.id,
+    name: row.name,
+    // Subproducto: unidad de stock = unidad de "compra" = unit del subproducto
+    // (no se compra, se produce internamente). conversionFactor=1 siempre.
+    unitStock: row.unit,
+    unitPurchase: row.unit,
+    conversionFactor: 1,
+    thresholdMin,
+    isActive: row.isActive,
+    currentStock: current,
+    lowStock: row.isActive && current < thresholdMin,
+    category: null,
+    basePrice: null,
+  };
+}
+
 function toMovementDto(row: DbInventoryMovement): InventoryMovement {
   const itemName =
-    row.entityType === 'INGREDIENT' ? row.ingredient?.name : row.product?.name;
+    row.entityType === 'INGREDIENT' ? row.ingredient?.name
+    : row.entityType === 'PRODUCT' ? row.product?.name
+    : row.subproduct?.name;
   return {
     id: row.id,
     entityType: row.entityType,
     ingredientId: row.ingredientId,
     productId: row.productId,
+    subproductId: row.subproductId,
     itemName: itemName ?? undefined,
     delta: Number(row.delta),
+    unitCost: row.unitCost !== null ? Number(row.unitCost) : null,
     type: row.type as InventoryMovement['type'],
     sourceType: row.sourceType,
     sourceId: row.sourceId,

@@ -172,7 +172,7 @@ export function OrderStatusView({
             {order.turnNumber}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Mirá la pantalla del local — te llamamos por este número.
+            Mira la pantalla del local — te llamamos por este número.
           </p>
         </div>
       ) : null}

@@ -41,6 +41,8 @@ export interface StockLedgerSnapshot {
   productConsumed: Record<string, number>;
   /** Consumo local de insumos (ingredientId → cantidad en unitRecipe). */
   ingredientConsumed: Record<string, number>;
+  /** Consumo local de subproductos (inventario de producción). */
+  subproductConsumed: Record<string, number>;
   cachedAt: string;
 }
 

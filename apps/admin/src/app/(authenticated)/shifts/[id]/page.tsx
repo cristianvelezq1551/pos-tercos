@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ShiftSessionDetailView } from '../../../../features/shifts';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
+import { friendlyApiError } from '../../../../lib/error-copy';
 import type { ShiftSessionDetail } from '@pos-tercos/types';
 
 async function loadDetail(
@@ -12,11 +13,8 @@ async function loadDetail(
   try {
     return await serverFetchJson<ShiftSessionDetail>(`/shifts/${id}/detail`);
   } catch (err) {
-    if (err instanceof ApiError) {
-      if (err.status === 404) return null;
-      return { error: `API ${err.status}` };
-    }
-    return { error: 'Network error' };
+    if (err instanceof ApiError && err.status === 404) return null;
+    return { error: friendlyApiError(err) };
   }
 }
 

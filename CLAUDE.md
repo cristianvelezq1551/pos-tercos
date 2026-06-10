@@ -521,9 +521,9 @@ apps/admin/src/
 
 ### Design system aplicado
 
-- Light theme. Sidebar fijo 240px desktop, oculto <1024px.
-- Primary: blue-600 / Stock crítico: amber-600 / Destructive: red-600 / Success: green-600.
-- Tablas: light borders, hover row, no zebra, `tabular-nums` en columnas numéricas.
+- **Tema oscuro permanente** ("grafito azulado", tokens v6 en `packages/ui/src/styles/tokens.css`; `color-scheme: dark`). Sidebar fijo 240px en desktop; en <1024px se abre como `Drawer` izquierdo desde la hamburguesa del topbar (`AdminShell`/`AdminTopbar`).
+- Primary: **rojo** `#E5293E` (= destructive) / Warning/Stock crítico: amber `#FBBF24` / Success: verde `#4ADE80` / Neutros: escala `ink-*` grafito azulado. (El `/styleguide` aún tiene labels de hex de la paleta clara vieja — deuda menor; la fuente de verdad es `tokens.css`.)
+- Tablas: borders sutiles (`border-border`), hover row, no zebra, `tabular-nums` en columnas numéricas.
 - Empty states explícitos con CTA.
 - Badges polimórficos: 🌾 Insumo (emerald) / 📦 Producto (blue).
 
@@ -811,6 +811,72 @@ Cambios sobre `refactor/v2-reorientacion`. **Superseden** los supuestos de §5/�
 ### KDS (Flutter)
 - Modelo `KitchenOrderModel.turnNumber`; la card muestra **TURNO N** + badge de urgencia ("SIN INICIAR"/"DEMORADO").
 - Re-alerta: PAGADO >3 min "no iniciado" y **EN_PREPARACION >10 min "aún no se ha finalizado"** (campana + voz TTS), re-recuerda cada 2 min.
+
+---
+
+## 7.v4 Inventario de producción (subproductos como stockables) — 2026-05-28
+
+Cambio arquitectónico mayor: los subproductos pasan de ser "agrupadores de receta" a **stockables** con su propio inventario. Vender un producto preparado descuenta de sus **subproductos directos + insumos directos** (un nivel), NO se expande recursivo hasta los insumos profundos.
+
+### Modelo
+
+- `StockableType` extendida con `SUBPRODUCT`. `InventoryMovementType` gana `PRODUCTION`.
+- `inventory_movements.subproduct_id` (xor con ingredient_id/product_id, CHECK polimórfico actualizado).
+- `subproducts.threshold_min` para alertas "Falta producir".
+- Tabla `inventory_movements` registra producciones: +N al subproducto y -X por cada insumo/sub-subproducto. Todos encadenados por `source_type='production'` y un `source_id` UUID común (la "tanda").
+- Migrations: `20260528000000_subproduct_inventory` (ADD VALUE en enums) + `20260528010000_subproduct_inventory_use` (columna + CHECK + threshold). Partidas por límite de Postgres con enum-en-tx.
+
+### Reglas duras
+
+- ✅ **Producir N unidades** consume `N/yield × receta` (insumos + sub-subproductos). Vía `ProductionService.produce()`.
+- ✅ **Validación de stock atómica**: chequeo y escritura van DENTRO de la transacción bajo SERIALIZABLE isolation, con reintento automático en conflict (40001) hasta 3 veces. Bloquea producciones concurrentes que dejarían stock negativo.
+- ✅ **Venta valida stock antes de descontar**: `SalesService.confirmPayment` llama `assertStockSufficient` dentro de la tx — si faltara stock por desincronización del sold-out UI, falla con 409 antes de crear movements. Defensa-en-profundidad sobre el gate del POS.
+- ✅ **Sub-subproductos**: si subproducto A usa subproducto B en su receta, producir A consume B de su propio stock (no expande hacia sus insumos). Producir B es operación separada.
+- ✅ **Idempotency-key** en el movement +N del subproducto. Reintentos del cliente con la misma key devuelven la tanda previa.
+- ✅ **`expandRecipeOneLevel`** en `@pos-tercos/domain` — nueva función pura que devuelve `{ ingredients: Map, subproducts: Map }` solo del primer nivel. La recursiva `expandRecipe` se preserva (la usa CogsService hasta que entre FIFO de subproductos).
+- ❌ Cocinero NO puede producir desde el admin (no tiene acceso). La pantalla de producción en KDS Flutter entra en sesión próxima.
+- ❌ **Stock negativo no permitido**: producir o vender lo rechaza con 409 dentro de la tx.
+
+### Endpoints nuevos
+
+- `POST /subproducts/:id/produce` `@KitchenAccess` — body `{ quantityProduced, notes?, idempotencyKey? }` → devuelve `ProductionRun { runId, subproductId, quantityProduced, consumed: [{ entityType, entityId, name, quantityConsumed, unit }] }`.
+- `GET /inventory/stock` extendido para incluir subproductos como Stockable. `GET /inventory/stock/:type/:id` acepta `subproduct`.
+- `GET /inventory/movements?subproduct_id=...` filtra por subproducto.
+
+### UI admin
+
+- `/subproducts` lista con columna **Stock** + badge "Bajo" (umbral) + botón inline "Producir" (icon-only, Dueño/Admin).
+- `/subproducts/[id]` panel a la derecha con stock actual, umbral, botón "Producir" grande, últimos 15 movimientos.
+- `SubproductForm` con campo `thresholdMin`.
+- `/inventory/movements` filtro "Subproducto" + opción "Producción" en Tipo.
+- `/inventory/[type]/[id]/adjust` acepta `subproduct` (rama agregada).
+
+### COGS — FIFO completo (cerrado en sesión 2)
+
+- `CogsService.runLedger` ahora es un **orquestador cronológico** que procesa los 3 tipos de stockable (insumos + productos directos + subproductos) en una sola pasada por tiempo, manteniendo una cola FIFO por entidad.
+- **Tandas de producción son atómicas en el orquestador**: el +N del subproducto se materializa como un lote con `unitCost = (suma de costos FIFO de los insumos consumidos) / cantidad_producida`. El lote queda disponible para vender en eventos posteriores.
+- **Ventas de productos preparados** descuentan FIFO del subproducto Y de insumos directos en la misma sale. Los 3 costos se atribuyen a la venta y suman al COGS del período.
+- **Sub-subproductos**: si subproducto A consume subproducto B, A se produce DESPUÉS de B → A toma el costo FIFO de B (que ya tiene lote). Si B no tiene stock al momento, el costo de A queda parcialmente desconocido (`unknownQty` propaga).
+- **`getInventoryValuation`** incluye lotes de subproductos en `entityType='SUBPRODUCT'`.
+- **`getProductMargins`** atribuye al producto el costo de sus insumos + subproductos directos (vía `expandRecipeOneLevel`).
+- **No hay "Waste Cost" inflado**: los consumos PRODUCTION ya no se categorizan como mermas, se materializan en los lotes de los subproductos.
+
+### ⚠️ Cold start (CRÍTICO al desplegar)
+
+El día que se despliegue este cambio, **todos los subproductos arrancan en stock 0**. Cualquier producto que dependa de subproductos en su receta aparecerá como **"Sin {subproducto}"** en la disponibilidad hasta que el cocinero/dueño registre al menos una producción.
+
+**Plan obligatorio el día del deploy:**
+1. Antes de abrir el local, entrar a `/subproducts` y producir todas las tandas que ya hay listas en cocina (movement `INITIAL` no se usa para subproductos — se hace vía `Producir`).
+2. Si el cocinero produjo y no registró: marcar como producido para que aparezcan disponibles.
+3. **Si no se hace este paso**, el POS va a mostrar productos preparados como "Agotado" → bloqueo de ventas.
+
+Esto NO afecta ingredientes (siguen con su stock histórico) ni productos directResale.
+
+### Sesiones pendientes (post-este-cambio)
+
+- **Sesión 2 (FIFO subproductos)**: lot por producción, `runFifo` consume FIFO de subproductos, P&G correcto. Cierra la deuda temporal del WASTE-mapping.
+- **Sesión 4 (KDS Flutter producción)**: pantalla en Flutter para que el cocinero produzca desde la tablet.
+- **Sesión 5 (POS/web menu pulido)**: micro-copy de "Sin {subproducto}" si necesita ajuste.
 
 ---
 

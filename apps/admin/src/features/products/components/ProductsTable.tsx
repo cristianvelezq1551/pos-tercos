@@ -1,4 +1,4 @@
-import type { ExpandedCostResponse, Product } from '@pos-tercos/types';
+import type { ExpandedCostResponse, Product, UserRole } from '@pos-tercos/types';
 import {
   Badge,
   Button,
@@ -10,12 +10,15 @@ import {
 import { LineArtIllustration } from '@pos-tercos/brand';
 import Link from 'next/link';
 import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
+import { DeleteProductAction } from './DeleteProductAction';
 
 interface ProductsTableProps {
   products: Product[];
   /** Costos pre-calculados por productId (FASE 4 ajustes 2.2). Si no
    *  está, fallback a lastUnitCost para direct-resale. */
   costsById?: Map<string, ExpandedCostResponse>;
+  /** Rol del usuario actual. Solo Dueño puede modificar receta o eliminar. */
+  userRole?: UserRole;
 }
 
 interface ProductRow {
@@ -27,7 +30,9 @@ interface ProductRow {
   missingHint?: string;
 }
 
-export function ProductsTable({ products, costsById }: ProductsTableProps) {
+export function ProductsTable({ products, costsById, userRole }: ProductsTableProps) {
+  const canEditRecipe = userRole === 'DUENO';
+  const canDelete = userRole === 'DUENO';
   const rows: ProductRow[] = products.map((p) => {
     const salePrice = p.isCombo ? (p.comboPrice ?? p.basePrice) : p.basePrice;
     const expanded = costsById?.get(p.id) ?? null;
@@ -108,7 +113,7 @@ export function ProductsTable({ products, costsById }: ProductsTableProps) {
     },
     {
       key: 'margin',
-      header: <span title="(Precio venta − Costo) / Precio venta. Solo direct-resale con costo histórico.">Margen %</span>,
+      header: <span title="Margen estimado = (precio de venta − costo) / precio de venta. Para reventa usa el último costo de compra; para preparados usa el costo de receta (último costo de cada insumo).">Margen %</span>,
       align: 'right',
       numeric: true,
       hideOnMobile: true,
@@ -139,21 +144,26 @@ export function ProductsTable({ products, costsById }: ProductsTableProps) {
       align: 'right',
       cell: ({ product }) => (
         <span className="flex items-center justify-end gap-2">
-          <Link
-            href={`/products/${product.id}/recipe`}
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            Receta
-          </Link>
-          <span className="text-ink-300" aria-hidden>
-            ·
-          </span>
+          {canEditRecipe ? (
+            <>
+              <Link
+                href={`/products/${product.id}/recipe`}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Receta
+              </Link>
+              <span className="text-ink-300" aria-hidden>
+                ·
+              </span>
+            </>
+          ) : null}
           <Link
             href={`/products/${product.id}`}
             className="text-sm font-medium text-primary hover:underline"
           >
             Editar
           </Link>
+          {canDelete ? <DeleteProductAction id={product.id} name={product.name} /> : null}
         </span>
       ),
     },
@@ -168,7 +178,7 @@ export function ProductsTable({ products, costsById }: ProductsTableProps) {
         <EmptyState
           illustration={<LineArtIllustration name="empty-plate" />}
           title="Aún no tienes productos cargados"
-          description="Productos son lo que vendés en mostrador (hamburguesas, combos, bebidas, etc.)."
+          description="Productos son lo que vendes en mostrador (hamburguesas, combos, bebidas, etc.)."
           action={
             <Link href="/products/new">
               <Button>Crear primer producto</Button>

@@ -55,6 +55,7 @@ export async function cacheStockSnapshot(): Promise<void> {
     snapshot: raw,
     productConsumed: {},
     ingredientConsumed: {},
+    subproductConsumed: {},
     cachedAt: new Date().toISOString(),
   });
 }

@@ -41,7 +41,11 @@ export function PromotionWhenSection({ state, onUpdate, onToggleDay }: Promotion
           ))}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          Mask actual: {state.daysMask}{state.daysMask === 127 ? ' (todos)' : ''}
+          {state.daysMask === 127
+            ? 'Aplica todos los días.'
+            : (state.daysMask & 127) === 0
+              ? 'Elige al menos un día.'
+              : `Días seleccionados: ${DAYS.filter((d) => (state.daysMask & d.mask) !== 0).map((d) => d.label).join(' · ')}`}
         </p>
       </Field>
 

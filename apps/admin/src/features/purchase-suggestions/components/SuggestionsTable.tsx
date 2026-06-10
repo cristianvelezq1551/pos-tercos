@@ -28,7 +28,7 @@ export function SuggestionsTable({ suggestions }: SuggestionsTableProps) {
   const columns: DataTableColumn<PurchaseSuggestion>[] = [
     {
       key: 'item',
-      header: 'Item',
+      header: 'Insumo / producto',
       cell: (s) => (
         <span className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium text-foreground">{s.entityName}</span>
@@ -45,7 +45,7 @@ export function SuggestionsTable({ suggestions }: SuggestionsTableProps) {
     },
     {
       key: 'stock',
-      header: 'Stock',
+      header: 'Existencias',
       align: 'right',
       numeric: true,
       cell: (s) => (
@@ -115,7 +115,7 @@ export function SuggestionsTable({ suggestions }: SuggestionsTableProps) {
         <EmptyState
           illustration={<LineArtIllustration name="no-results" />}
           title="Sin sugerencias en este filtro"
-          description="El cron horario detecta stockables con stock por debajo del threshold y crea sugerencias automáticamente. También puedes correr un scan manual."
+          description="Cada hora el sistema revisa los insumos y productos con existencias por debajo del mínimo y crea sugerencias automáticamente. También puedes revisar manualmente cuando quieras."
         />
       }
     />

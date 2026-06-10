@@ -2,7 +2,8 @@ import { Container, PageHeader } from '@pos-tercos/ui';
 import { BarChart3 } from 'lucide-react';
 import { RangeFilter } from '../../../../features/reports-sales';
 import { TopProductsTable } from '../../../../features/reports-products';
-import { ApiError, serverFetchJson } from '../../../../lib/api-server';
+import { serverFetchJson } from '../../../../lib/api-server';
+import { friendlyApiError } from '../../../../lib/error-copy';
 import type { TopProductsReport } from '@pos-tercos/types';
 
 interface PageProps {
@@ -22,8 +23,7 @@ async function loadReport(
   try {
     return await serverFetchJson<TopProductsReport>(path);
   } catch (err) {
-    if (err instanceof ApiError) return { error: `API ${err.status}` };
-    return { error: 'Network error' };
+    return { error: friendlyApiError(err) };
   }
 }
 
@@ -35,8 +35,8 @@ export default async function ReportsProductsPage({ searchParams }: PageProps) {
     <>
       <PageHeader
         eyebrow="Reportes"
-        title="Top productos y márgenes"
-        description="Productos ordenados por ingresos. Costo y margen estimados desde la receta y el último costo unitario de los insumos."
+        title="Productos más vendidos y márgenes"
+        description="Tus productos ordenados por ingresos. El costo y el margen se estiman con la receta y el último costo de los insumos."
         icon={<BarChart3 className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

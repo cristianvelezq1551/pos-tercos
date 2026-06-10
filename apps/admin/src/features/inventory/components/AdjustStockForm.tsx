@@ -70,22 +70,13 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
 
     setSubmitting(true);
     try {
+      const baseBody = { delta, type, notes: notes.trim() || undefined } as const;
       await createMovement(
         stockable.type === 'INGREDIENT'
-          ? {
-              entityType: 'INGREDIENT',
-              ingredientId: stockable.id,
-              delta,
-              type,
-              notes: notes.trim() || undefined,
-            }
-          : {
-              entityType: 'PRODUCT',
-              productId: stockable.id,
-              delta,
-              type,
-              notes: notes.trim() || undefined,
-            },
+          ? { entityType: 'INGREDIENT', ingredientId: stockable.id, ...baseBody }
+          : stockable.type === 'SUBPRODUCT'
+            ? { entityType: 'SUBPRODUCT', subproductId: stockable.id, ...baseBody }
+            : { entityType: 'PRODUCT', productId: stockable.id, ...baseBody },
       );
       startTransition(() => {
         router.push('/inventory');
@@ -107,15 +98,15 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
         <p className="font-display text-base font-bold text-foreground">{stockable.name}</p>
         <dl className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
           <div>
-            <dt className="text-muted-foreground">Stock actual</dt>
+            <dt className="text-muted-foreground">Existencias actuales</dt>
             <dd className="font-semibold text-foreground">
-              <Quantity value={stockable.currentStock} unit={stockable.unitStock} decimals={4} />
+              <Quantity value={stockable.currentStock} unit={stockable.unitStock} maxDecimals={4} />
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Threshold</dt>
+            <dt className="text-muted-foreground">Mínimo de alerta</dt>
             <dd>
-              <Quantity value={stockable.thresholdMin} unit={stockable.unitStock} decimals={4} />
+              <Quantity value={stockable.thresholdMin} unit={stockable.unitStock} maxDecimals={4} />
             </dd>
           </div>
           <div>
@@ -123,7 +114,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
             <dd>
               {stockable.lowStock ? (
                 <Badge tone="warning" size="sm" withDot>
-                  Stock crítico
+                  Bajo mínimo
                 </Badge>
               ) : (
                 <Badge tone="success" size="sm">
@@ -171,7 +162,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
           projected !== null ? (
             <>
               Proyección:{' '}
-              <Quantity value={stockable.currentStock} decimals={4} className="text-current" />
+              <Quantity value={stockable.currentStock} maxDecimals={4} className="text-current" />
               {' '}
               {wasteForcesNegative || direction === 'OUT' ? '−' : '+'}{' '}
               <span className="tabular">{magnitude}</span>
@@ -184,7 +175,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
                 <Quantity
                   value={projected}
                   unit={stockable.unitStock}
-                  decimals={4}
+                  maxDecimals={4}
                   className="text-current"
                 />
               </span>

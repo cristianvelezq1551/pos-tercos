@@ -2,7 +2,7 @@ import { UserSchema, type User } from '@pos-tercos/types';
 import { cookies } from 'next/headers';
 
 const API_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
-const ACCESS_COOKIE = 'pos_access';
+const ACCESS_COOKIE = 'admin_access';
 
 /**
  * Obtiene el usuario actual desde Server Components.

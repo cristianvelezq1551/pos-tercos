@@ -22,7 +22,7 @@ export function TransferSection({
         checked={verified}
         onChange={(e) => onVerified(e.target.checked)}
         label={`Confirmo que la transferencia de ${formatCop(total)} llegó a la cuenta`}
-        description="Verificá en la app del banco antes de confirmar."
+        description="Verifica en la app del banco antes de confirmar."
       />
     </div>
   );

@@ -66,7 +66,7 @@ const LoginForm = React.forwardRef<HTMLFormElement, LoginFormProps>(
               Iniciar sesión
             </h1>
             <p className="text-sm text-muted-foreground">
-              Ingresá tus credenciales para continuar.
+              Ingresa tus credenciales para continuar.
             </p>
           </header>
         )}

@@ -5,14 +5,16 @@ import {
   ExtractedInvoiceSchema,
   type ConfirmInvoice,
   type ExtractedInvoice,
+  type ExtractInvoiceResponse,
   type Invoice,
   type InvoiceItem,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
-import { extensionForMime, type SupportedImageMime } from '../common/image-mime';
+import { extensionForMime, mimeForExtension, type SupportedImageMime } from '../common/image-mime';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SuppliersService } from '../suppliers/suppliers.service';
@@ -22,6 +24,7 @@ type DbInvoiceWithDetail = Prisma.InvoiceGetPayload<{
     supplier: { select: { name: true } };
     uploadedBy: { select: { fullName: true } };
     confirmedBy: { select: { fullName: true } };
+    paymentActor: { select: { fullName: true } };
     items: {
       include: {
         ingredient: { select: { name: true } };
@@ -51,6 +54,16 @@ function computeStockQty(opts: {
   return opts.quantity * opts.conversionFactor;
 }
 
+/**
+ * Costo por unidad de stock para FIFO: total de la línea (cantidad × precio en
+ * unidad de compra) dividido por las unidades de stock recibidas. Null si no se
+ * puede calcular (delta 0).
+ */
+function stockUnitCost(quantity: number, unitPrice: number, stockQty: number): number | null {
+  if (stockQty <= 0) return null;
+  return Math.round(((quantity * unitPrice) / stockQty) * 10000) / 10000;
+}
+
 @Injectable()
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
@@ -61,6 +74,7 @@ export class InvoicesService {
     private readonly suppliers: SuppliersService,
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
+    private readonly approvals: ApprovalsService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -117,13 +131,20 @@ export class InvoicesService {
     };
   }
 
-  async uploadPhoto(input: {
+  /**
+   * Sube la foto al storage y extrae con IA, pero NO crea factura en DB. El
+   * cliente recibe `{photoStorageKey, aiModelUsed, extraction}` y debe:
+   *   - llamar `createFromPhoto` al confirmar (persiste + confirma en uno).
+   *   - o llamar `discardPhoto` al abandonar (limpia la foto).
+   * Si el cliente desaparece sin hacer ninguna, la foto queda huérfana hasta
+   * que pase el `sweepOrphanInvoiceFiles` semanal.
+   */
+  async extractFromPhoto(input: {
     fileBuffer: Buffer;
-    /** MIME type DETECTED from magic bytes (controller already validated). */
     mimeType: SupportedImageMime;
     originalName: string;
     userId: string;
-  }): Promise<{ invoice: Invoice; extraction: ExtractedInvoice }> {
+  }): Promise<ExtractInvoiceResponse> {
     const ext = extensionForMime(input.mimeType);
     const stored = await this.storage.put('invoices', input.fileBuffer, input.mimeType, ext);
 
@@ -134,41 +155,61 @@ export class InvoicesService {
         mimeType: input.mimeType,
       });
     } catch (err) {
+      // Si la IA falló, no dejamos la foto huérfana — limpiamos ya mismo.
+      await this.storage.delete(stored.key).catch(() => {});
       throw new BadRequestException({
         message: 'IA no pudo extraer la factura. Probá con otra foto o cargala manualmente.',
         cause: err instanceof Error ? err.message : String(err),
       });
     }
 
-    const created = await this.prisma.invoice.create({
-      data: {
-        photoStorageKey: stored.key,
-        aiExtractionJson: llmResult.extraction as unknown as Prisma.InputJsonValue,
-        aiModelUsed: llmResult.modelUsed,
-        invoiceNumber: llmResult.extraction.invoiceNumber,
-        total: llmResult.extraction.total ?? null,
-        iva: llmResult.extraction.iva ?? null,
-        status: 'PENDING_REVIEW',
-        uploadedById: input.userId,
-      },
-      include: includeFull(),
-    });
-
-    await this.audit.log({
-      userId: input.userId,
-      action: 'INVOICE_UPLOADED',
-      entityType: 'invoice',
-      entityId: created.id,
-      metadata: {
-        modelUsed: llmResult.modelUsed,
-        warnings: llmResult.extraction.warnings,
-      },
-    });
-
     return {
-      invoice: toInvoiceDto(created),
+      photoStorageKey: stored.key,
+      aiModelUsed: llmResult.modelUsed,
       extraction: llmResult.extraction,
     };
+  }
+
+  /**
+   * Crear+confirmar factura desde foto (IA): único endpoint que persiste. Sin
+   * draft intermedio. Asocia la foto previamente subida (`photoStorageKey`).
+   */
+  async createFromPhoto(
+    input: ConfirmInvoice,
+    photoStorageKey: string,
+    aiModelUsed: string,
+    userId: string,
+  ): Promise<Invoice> {
+    // Verifica que la foto siga existiendo en storage (anti-replay/race).
+    const exists = await this.storage.url(photoStorageKey).catch(() => null);
+    if (!exists) {
+      throw new BadRequestException(
+        'La foto ya no está disponible. Vuelve a subirla.',
+      );
+    }
+    // Crea el invoice PENDING_REVIEW con la foto + modelo IA, y luego confirma.
+    const created = await this.prisma.invoice.create({
+      data: {
+        photoStorageKey,
+        aiModelUsed,
+        aiExtractionJson: {} as Prisma.InputJsonValue,
+        status: 'PENDING_REVIEW',
+        uploadedById: userId,
+      },
+    });
+    try {
+      return await this.confirm(created.id, input, userId);
+    } catch (err) {
+      // Si confirm falla, limpia el invoice y la foto.
+      await this.prisma.invoice.delete({ where: { id: created.id } }).catch(() => {});
+      await this.storage.delete(photoStorageKey).catch(() => {});
+      throw err;
+    }
+  }
+
+  /** Limpia una foto subida que el usuario decidió no confirmar. */
+  async discardPhoto(photoStorageKey: string): Promise<void> {
+    await this.storage.delete(photoStorageKey).catch(() => {});
   }
 
   async list(opts: { status?: string; supplierId?: string; limit?: number } = {}): Promise<Invoice[]> {
@@ -303,7 +344,10 @@ export class InvoicesService {
         })),
       });
 
-      // 2. Update invoice header
+      // 2. Update invoice header.
+      //    paymentStatus arranca en PENDING (sin importar si ya estaba seteado
+      //    por una confirmación previa que fue revertida): confirmar = generó
+      //    la obligación de pagar al proveedor.
       const invoiceUpdated = await tx.invoice.update({
         where: { id },
         data: {
@@ -315,6 +359,11 @@ export class InvoicesService {
           confirmedById: userId,
           confirmedAt: new Date(),
           notes: input.notes ?? null,
+          paymentStatus: 'PENDING',
+          paidAt: null,
+          paymentProofKey: null,
+          paymentActorId: null,
+          paymentNote: null,
         },
         include: includeFull(),
       });
@@ -337,6 +386,8 @@ export class InvoicesService {
               entityType: 'INGREDIENT',
               ingredientId: item.ingredientId as string,
               delta: stockQty,
+              // Costo por unidad de stock = total de la línea / unidades recibidas.
+              unitCost: stockUnitCost(item.quantity, item.unitPrice, stockQty),
               type: 'PURCHASE',
               sourceType: 'invoice',
               sourceId: id,
@@ -358,6 +409,7 @@ export class InvoicesService {
               entityType: 'PRODUCT',
               productId: item.productId as string,
               delta: stockQty,
+              unitCost: stockUnitCost(item.quantity, item.unitPrice, stockQty),
               type: 'PURCHASE',
               sourceType: 'invoice',
               sourceId: id,
@@ -572,6 +624,75 @@ export class InvoicesService {
   }
 
   /**
+   * Carga manual: crea la factura Y la confirma en un único flujo. No deja
+   * borrador suelto si el usuario abandona — solo se persiste si llega a
+   * confirmar. Si confirm() falla, limpia el invoice intermedio para no
+   * dejar huérfanos.
+   */
+  async createManualConfirmed(
+    input: ConfirmInvoice,
+    userId: string,
+  ): Promise<Invoice> {
+    const blank = await this.createBlankDraft(userId);
+    try {
+      return await this.confirm(blank.invoice.id, input, userId);
+    } catch (err) {
+      // Limpia el borrador huérfano para que no quede ensuciando la lista.
+      await this.prisma.invoice
+        .delete({ where: { id: blank.invoice.id } })
+        .catch(() => {});
+      throw err;
+    }
+  }
+
+  /**
+   * Crea una factura en blanco (sin foto, sin IA). Se usa internamente desde
+   * `createManualConfirmed`; no se expone como endpoint suelto (no queremos
+   * borradores creados sin que el usuario confirme nada).
+   */
+  private async createBlankDraft(
+    userId: string,
+  ): Promise<{ invoice: Invoice; extraction: ExtractedInvoice }> {
+    const blankExtraction: ExtractedInvoice = {
+      supplierName: null,
+      supplierNit: null,
+      invoiceNumber: null,
+      total: null,
+      iva: null,
+      items: [],
+      warnings: ['Carga manual — la IA no extrajo datos. Ingresá proveedor, items y totales.'],
+    };
+
+    const created = await this.prisma.invoice.create({
+      data: {
+        supplierId: null,
+        invoiceNumber: null,
+        total: null,
+        iva: null,
+        status: 'PENDING_REVIEW',
+        photoStorageKey: null,
+        aiModelUsed: 'manual-blank',
+        aiExtractionJson: blankExtraction as unknown as Prisma.InputJsonValue,
+        uploadedById: userId,
+      },
+      include: includeFull(),
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'INVOICE_UPLOADED',
+      entityType: 'invoice',
+      entityId: created.id,
+      metadata: { source: 'manual' },
+    });
+
+    return {
+      invoice: toInvoiceDto(created),
+      extraction: blankExtraction,
+    };
+  }
+
+  /**
    * FASE 4 ajustes 2.9: lee la foto original de la factura desde storage.
    * Devuelve null si la factura no tiene foto (ej. clonada manual).
    */
@@ -627,6 +748,125 @@ export class InvoicesService {
     });
   }
 
+  // ==================================================================
+  // CONTROL DE PAGO A PROVEEDORES (solo Dueño + PIN)
+  // ==================================================================
+
+  /** Marca una factura confirmada como PAGADA con comprobante de transferencia.
+   *  Espeja el patrón de `WorkersService.markPaymentPaid`. */
+  async markPaymentPaid(
+    invoiceId: string,
+    pin: string,
+    actorId: string,
+    proof: { buffer: Buffer; mime: string; ext: string },
+    opts: { paidAtYmd?: string; note?: string },
+  ): Promise<Invoice> {
+    const approverId = await this.approvals.verify(pin);
+    const existing = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        status: true,
+        total: true,
+        paymentStatus: true,
+        paymentProofKey: true,
+      },
+    });
+    if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+    if (existing.status !== 'CONFIRMED') {
+      throw new BadRequestException(
+        'Solo se pueden marcar pagadas las facturas CONFIRMADAS.',
+      );
+    }
+    const paidAt = opts.paidAtYmd ? new Date(`${opts.paidAtYmd}T12:00:00.000Z`) : new Date();
+
+    // Sube comprobante; si ya había uno, lo borramos cuando termine el upsert.
+    const stored = await this.storage.put(
+      `invoice-payments/${invoiceId}`,
+      proof.buffer,
+      proof.mime,
+      proof.ext,
+    );
+    if (existing.paymentProofKey && existing.paymentProofKey !== stored.key) {
+      await this.storage.delete(existing.paymentProofKey).catch(() => undefined);
+    }
+
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        paymentStatus: 'PAID',
+        paidAt,
+        paymentProofKey: stored.key,
+        paymentActorId: actorId,
+        paymentNote: opts.note ?? null,
+      },
+      include: includeFull(),
+    });
+
+    await this.audit.log({
+      userId: actorId,
+      action: 'INVOICE_PAYMENT_MARKED',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      metadata: {
+        approverId,
+        total: existing.total !== null ? Number(existing.total) : null,
+        paidAt: paidAt.toISOString(),
+        proofImageKey: stored.key,
+      },
+    });
+    return toInvoiceDto(updated);
+  }
+
+  /** Revierte el pago: borra el registro y la imagen, vuelve a PENDING. */
+  async unmarkPayment(invoiceId: string, pin: string, actorId: string): Promise<Invoice> {
+    const approverId = await this.approvals.verify(pin);
+    const existing = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { id: true, status: true, paymentStatus: true, paymentProofKey: true },
+    });
+    if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+    if (existing.status !== 'CONFIRMED') {
+      throw new BadRequestException('Solo aplica a facturas confirmadas.');
+    }
+    if (existing.paymentProofKey) {
+      await this.storage.delete(existing.paymentProofKey).catch(() => undefined);
+    }
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        paymentStatus: 'PENDING',
+        paidAt: null,
+        paymentProofKey: null,
+        paymentActorId: null,
+        paymentNote: null,
+      },
+      include: includeFull(),
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'INVOICE_PAYMENT_UNMARKED',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      metadata: { approverId, prevStatus: existing.paymentStatus },
+    });
+    return toInvoiceDto(updated);
+  }
+
+  /** Lee el comprobante de pago al proveedor. */
+  async getPaymentProof(invoiceId: string): Promise<{ buffer: Buffer; mime: string }> {
+    const row = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { paymentProofKey: true },
+    });
+    if (!row?.paymentProofKey) {
+      throw new NotFoundException('Comprobante no encontrado.');
+    }
+    const buffer = await this.storage.get(row.paymentProofKey);
+    const ext = row.paymentProofKey.split('.').pop() ?? '';
+    return { buffer, mime: mimeForExtension(ext) };
+  }
+
   async reject(id: string, userId: string, reason?: string): Promise<Invoice> {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
@@ -657,6 +897,7 @@ function includeFull() {
     supplier: { select: { name: true } },
     uploadedBy: { select: { fullName: true } },
     confirmedBy: { select: { fullName: true } },
+    paymentActor: { select: { fullName: true } },
     items: {
       include: {
         ingredient: { select: { name: true } },
@@ -671,7 +912,10 @@ function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
   const items: InvoiceItem[] = row.items.map((it) => ({
     id: it.id,
     invoiceId: it.invoiceId,
-    entityType: it.entityType,
+    // Las facturas solo refieren INGREDIENT o PRODUCT (subproductos no se
+    // compran, se producen). El cast narrowing aquí es seguro porque la app
+    // nunca crea invoice_items con entityType='SUBPRODUCT'.
+    entityType: it.entityType as 'INGREDIENT' | 'PRODUCT' | null,
     ingredientId: it.ingredientId,
     productId: it.productId,
     itemName:
@@ -687,6 +931,7 @@ function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
     total: Number(it.total),
     sortOrder: it.sortOrder,
   }));
+  const paymentStatus = row.paymentStatus as 'PENDING' | 'PAID' | null;
   return {
     id: row.id,
     supplierId: row.supplierId,
@@ -703,6 +948,12 @@ function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
     confirmedByName: row.confirmedBy?.fullName ?? null,
     confirmedAt: row.confirmedAt?.toISOString() ?? null,
     notes: row.notes,
+    paymentStatus,
+    paidAt: row.paidAt?.toISOString() ?? null,
+    hasPaymentProof: row.paymentProofKey !== null,
+    paymentActorId: row.paymentActorId,
+    paymentActorName: row.paymentActor?.fullName ?? null,
+    paymentNote: row.paymentNote,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     items,

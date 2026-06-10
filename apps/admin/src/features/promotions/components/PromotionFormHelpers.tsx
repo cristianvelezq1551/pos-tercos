@@ -1,5 +1,5 @@
 /** Shared primitives used by PromotionForm sub-components. */
-import type { PromotionType, CreatePromotion } from '@pos-tercos/types';
+import type { PromotionType, CreatePromotion, Promotion, UpdatePromotion } from '@pos-tercos/types';
 
 export const inputClass =
   'block h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring';
@@ -43,17 +43,17 @@ export function labelFor(t: PromotionType): string {
   return {
     PERCENT_OFF: 'Descuento %',
     FIXED_OFF: 'Descuento $',
-    BOGO: 'BOGO',
+    BOGO: 'Lleva X paga Y',
     COMBO_OFF: 'Combo',
   }[t];
 }
 
 export function descriptionFor(t: PromotionType): string {
   return {
-    PERCENT_OFF: 'Descuento porcentual sobre la línea (ej. 20% off Hamburguesa).',
-    FIXED_OFF: 'Descuento absoluto en COP. Capeado al subtotal de la línea.',
-    BOGO: 'Buy X get Y free. Calcula sets completos desde la cantidad de la línea.',
-    COMBO_OFF: 'Pct o monto fijo, aplica solo si el producto es un combo.',
+    PERCENT_OFF: 'Descuento porcentual sobre el producto (ej. 20% en la Hamburguesa).',
+    FIXED_OFF: 'Descuento de un monto fijo en pesos. No baja del subtotal del producto.',
+    COMBO_OFF: 'Porcentaje o monto fijo; aplica solo si el producto es un combo.',
+    BOGO: 'Lleva X y paga Y. Calcula los juegos completos según la cantidad comprada.',
   }[t];
 }
 
@@ -118,6 +118,40 @@ export function validate(s: FormState): { error: string | null } {
     }
   }
   return { error: null };
+}
+
+/** Pre-llena el form desde una promo existente (modo edición). */
+export function stateFromPromotion(p: Promotion): FormState {
+  const pctStr = p.discountPct !== null ? String(Math.round(p.discountPct * 100)) : '';
+  const fixedStr = p.discountFixed !== null ? String(p.discountFixed) : '';
+  return {
+    name: p.name,
+    type: p.type,
+    discountPctPercent: pctStr,
+    discountFixed: fixedStr,
+    bogoBuyQty: p.bogoBuyQty !== null ? String(p.bogoBuyQty) : '1',
+    bogoGetQty: p.bogoGetQty !== null ? String(p.bogoGetQty) : '1',
+    comboMode: p.discountFixed !== null ? 'fixed' : 'pct',
+    daysMask: p.daysOfWeekMask,
+    timeStart: p.timeStart.slice(0, 5),
+    timeEnd: p.timeEnd.slice(0, 5),
+    activeFrom: p.activeFrom ?? '',
+    activeTo: p.activeTo ?? '',
+    productIds: new Set(p.productIds),
+  };
+}
+
+/** Payload de edición (UpdatePromotion). Solo campos editables — el backend rechaza los demás. */
+export function buildUpdatePayload(s: FormState): UpdatePromotion {
+  return {
+    name: s.name.trim(),
+    daysOfWeekMask: s.daysMask,
+    timeStart: `${s.timeStart}:00`,
+    timeEnd: `${s.timeEnd}:00`,
+    activeFrom: s.activeFrom ? s.activeFrom : null,
+    activeTo: s.activeTo ? s.activeTo : null,
+    productIds: Array.from(s.productIds),
+  };
 }
 
 export function buildPayload(s: FormState): CreatePromotion {
