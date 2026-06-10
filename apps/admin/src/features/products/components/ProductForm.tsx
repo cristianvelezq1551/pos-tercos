@@ -62,10 +62,16 @@ function initFormState(initial?: Product): FormState {
       name: s.name,
       price: String(base + s.priceModifier),
     })),
-    modifiers: (initial?.modifiers ?? []).map((m) => ({
-      name: m.name,
-      priceDelta: String(m.priceDelta),
-    })),
+    modifiers: (initial?.modifiers ?? []).map((m) => {
+      const consumption = m.recipeDelta?.[0];
+      return {
+        name: m.name,
+        priceDelta: String(m.priceDelta),
+        consumeChildType: consumption?.childType ?? ('' as const),
+        consumeChildId: consumption?.childId ?? '',
+        consumeQty: consumption ? String(consumption.quantity) : '',
+      };
+    }),
     comboComponents: (initial?.comboComponents ?? []).map((c) => ({
       productId: c.productId,
       quantity: String(c.quantity),

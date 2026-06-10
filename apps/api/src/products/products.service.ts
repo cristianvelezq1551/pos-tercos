@@ -6,9 +6,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ModifierRecipeDeltaSchema } from '@pos-tercos/types';
 import type {
   ComboComponent,
   CreateProduct,
+  ModifierConsumption,
   Product,
   ProductAvailability,
   ProductModifier,
@@ -103,7 +105,41 @@ export class ProductsService {
     return toProductDto(row);
   }
 
+  /**
+   * Valida que cada consumo de modificador apunte a un insumo/subproducto
+   * existente y activo. Sin FK (recipe_delta es JSON) — esta es la única
+   * integridad referencial, por eso es obligatoria en cada escritura.
+   */
+  private async assertModifierConsumptions(
+    modifiers: ReadonlyArray<{ name: string; recipeDelta?: ModifierConsumption[] }> | undefined,
+  ): Promise<void> {
+    const items = (modifiers ?? []).flatMap((m) =>
+      (m.recipeDelta ?? []).map((c) => ({ modifierName: m.name, ...c })),
+    );
+    if (items.length === 0) return;
+    const ingIds = items.filter((i) => i.childType === 'ingredient').map((i) => i.childId);
+    const subIds = items.filter((i) => i.childType === 'subproduct').map((i) => i.childId);
+    const [ings, subs] = await Promise.all([
+      this.prisma.ingredient.findMany({
+        where: { id: { in: ingIds }, isActive: true },
+        select: { id: true },
+      }),
+      this.prisma.subproduct.findMany({
+        where: { id: { in: subIds }, isActive: true },
+        select: { id: true },
+      }),
+    ]);
+    const found = new Set([...ings.map((x) => x.id), ...subs.map((x) => x.id)]);
+    const missing = items.find((i) => !found.has(i.childId));
+    if (missing) {
+      throw new BadRequestException(
+        `El extra "${missing.modifierName}" consume un ${missing.childType === 'ingredient' ? 'insumo' : 'subproducto'} inexistente o inactivo.`,
+      );
+    }
+  }
+
   async create(input: CreateProduct): Promise<Product> {
+    await this.assertModifierConsumptions(input.modifiers);
     if (input.isCombo) {
       await this.assertComboComponentsAreNonComboProducts(input.comboComponents ?? []);
     }
@@ -136,7 +172,7 @@ export class ProductsService {
               create: input.modifiers.map((m) => ({
                 name: m.name,
                 priceDelta: m.priceDelta,
-                recipeDelta: (m.recipeDelta as Prisma.InputJsonValue | undefined) ?? {},
+                recipeDelta: (m.recipeDelta ?? []) as unknown as Prisma.InputJsonValue,
               })),
             }
           : undefined,
@@ -201,6 +237,7 @@ export class ProductsService {
    *   se deriva de si hay extras.
    */
   async setOptions(productId: string, input: SetProductOptions): Promise<Product> {
+    await this.assertModifierConsumptions(input.modifiers);
     const existing = await this.prisma.product.findUnique({
       where: { id: productId },
       include: { sizes: { select: { id: true, name: true } } },
@@ -265,7 +302,7 @@ export class ProductsService {
             productId,
             name: m.name,
             priceDelta: m.priceDelta,
-            recipeDelta: (m.recipeDelta as Prisma.InputJsonValue | undefined) ?? {},
+            recipeDelta: (m.recipeDelta ?? []) as unknown as Prisma.InputJsonValue,
           })),
         });
       }
@@ -514,7 +551,8 @@ function toModifierDto(row: { id: string; productId: string; name: string; price
     productId: row.productId,
     name: row.name,
     priceDelta: Number(row.priceDelta),
-    recipeDelta: row.recipeDelta,
+    // Legacy: filas viejas tienen '{}' — todo lo que no parsee es lista vacía.
+    recipeDelta: ModifierRecipeDeltaSchema.catch([]).parse(row.recipeDelta),
   };
 }
 

@@ -126,19 +126,35 @@ export const ProductSizeInputSchema = z.object({
 });
 export type ProductSizeInput = z.infer<typeof ProductSizeInputSchema>;
 
+/**
+ * Consumo de inventario de un modificador: qué descuenta del stock cada
+ * unidad vendida con este extra (ej. "Doble carne" → +150g de carne).
+ * `quantity` está en la unidad de RECETA del child y es bruta (sin merma).
+ */
+export const ModifierConsumptionSchema = z.object({
+  childType: z.enum(['ingredient', 'subproduct']),
+  childId: z.string().uuid(),
+  quantity: z.number().positive(),
+});
+export type ModifierConsumption = z.infer<typeof ModifierConsumptionSchema>;
+
+/** Lista de consumos del modificador (persistida en product_modifiers.recipe_delta). */
+export const ModifierRecipeDeltaSchema = z.array(ModifierConsumptionSchema).max(5);
+export type ModifierRecipeDelta = z.infer<typeof ModifierRecipeDeltaSchema>;
+
 export const ProductModifierSchema = z.object({
   id: z.string().uuid(),
   productId: z.string().uuid(),
   name: z.string(),
   priceDelta: z.number(),
-  recipeDelta: z.unknown(),
+  recipeDelta: ModifierRecipeDeltaSchema,
 });
 export type ProductModifier = z.infer<typeof ProductModifierSchema>;
 
 export const ProductModifierInputSchema = z.object({
   name: z.string().min(1).max(60),
   priceDelta: z.number(),
-  recipeDelta: z.unknown().optional(),
+  recipeDelta: ModifierRecipeDeltaSchema.optional(),
 });
 export type ProductModifierInput = z.infer<typeof ProductModifierInputSchema>;
 

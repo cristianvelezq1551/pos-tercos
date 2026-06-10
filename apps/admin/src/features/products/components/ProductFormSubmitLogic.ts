@@ -9,7 +9,11 @@ type DrFields = {
 };
 
 type ParsedSize = { id?: string; name: string; priceModifier: number };
-type ParsedExtra = { name: string; priceDelta: number };
+type ParsedExtra = {
+  name: string;
+  priceDelta: number;
+  recipeDelta?: Array<{ childType: 'ingredient' | 'subproduct'; childId: string; quantity: number }>;
+};
 type ParsedComponent = { productId: string; quantity: number };
 
 export type ParsedFormResult =
@@ -60,7 +64,25 @@ export function parseFormValues(form: FormState): ParsedFormResult {
       if (!Number.isFinite(pd)) {
         return { ok: false, error: `Precio inválido en el extra "${m.name}".` };
       }
-      modifiers.push({ name: m.name.trim(), priceDelta: pd });
+      const extra: ParsedExtra = { name: m.name.trim(), priceDelta: pd };
+      if (m.consumeChildType && m.consumeChildId) {
+        const qty = Number(m.consumeQty);
+        if (!Number.isFinite(qty) || qty <= 0) {
+          return {
+            ok: false,
+            error: `Cantidad de consumo inválida en el extra "${m.name}" (debe ser > 0).`,
+          };
+        }
+        extra.recipeDelta = [
+          { childType: m.consumeChildType, childId: m.consumeChildId, quantity: qty },
+        ];
+      } else if (m.consumeChildType && !m.consumeChildId) {
+        return {
+          ok: false,
+          error: `Elegí qué consume el extra "${m.name}" (o dejá el consumo en "No descuenta").`,
+        };
+      }
+      modifiers.push(extra);
     }
   }
 

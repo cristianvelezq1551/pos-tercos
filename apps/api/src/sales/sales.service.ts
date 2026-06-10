@@ -302,6 +302,9 @@ export class SalesService {
         productId: it.productId,
         quantity: it.quantity,
         sizeId: it.sizeId,
+        modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
+          modifierId: m.modifierId,
+        })),
       })),
       `Sale ${existing.id.slice(0, 8)}`,
     );

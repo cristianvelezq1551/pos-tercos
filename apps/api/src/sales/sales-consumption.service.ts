@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { expandRecipeOneLevel, roundCost } from '@pos-tercos/domain';
+import { ModifierRecipeDeltaSchema } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
@@ -36,11 +37,20 @@ export class SalesConsumptionService {
    *  - preparado → subproductos directos + insumos directos (un nivel; los
    *    insumos profundos se descontaron al producir el subproducto).
    *  - combo → componentes (no anidados, enforced al crear).
+   *  - modificadores aplicados → su `recipeDelta` (ej. "Doble carne" descuenta
+   *    la porción extra). Se resuelve por la definición ACTUAL del modificador
+   *    (mismo criterio que las recetas); si el modificador ya no existe, no
+   *    consume (el snapshot de precio en sale_items queda intacto).
    * Devuelve SPECS sin saleId/userId: cada caller los inyecta al crear los
    * movements. `notePrefix` etiqueta el origen ("Sale abc123" / "Offline venta").
    */
   async computeConsumptionSpecs(
-    lines: ReadonlyArray<{ productId: string; quantity: number; sizeId: string | null }>,
+    lines: ReadonlyArray<{
+      productId: string;
+      quantity: number;
+      sizeId: string | null;
+      modifiers?: ReadonlyArray<{ modifierId: string }>;
+    }>,
     notePrefix: string,
   ): Promise<ConsumptionSpec[]> {
     const specs: ConsumptionSpec[] = [];
@@ -71,6 +81,42 @@ export class SalesConsumptionService {
         })
       : [];
     const componentMap = new Map(componentProducts.map((p) => [p.id, p]));
+
+    // Defs actuales de los modificadores aplicados (para su consumo extra).
+    const appliedModifierIds = Array.from(
+      new Set(lines.flatMap((l) => (l.modifiers ?? []).map((m) => m.modifierId))),
+    );
+    const modifierDefs = appliedModifierIds.length
+      ? await this.prisma.productModifier.findMany({
+          where: { id: { in: appliedModifierIds } },
+          select: { id: true, name: true, recipeDelta: true },
+        })
+      : [];
+    const modifierMap = new Map(
+      modifierDefs.map((m) => [
+        m.id,
+        { name: m.name, recipeDelta: ModifierRecipeDeltaSchema.catch([]).parse(m.recipeDelta) },
+      ]),
+    );
+
+    const consumeModifiers = (
+      line: { quantity: number; modifiers?: ReadonlyArray<{ modifierId: string }> },
+    ): void => {
+      for (const applied of line.modifiers ?? []) {
+        const def = modifierMap.get(applied.modifierId);
+        if (!def) continue; // modificador borrado después de la venta — no consume
+        for (const c of def.recipeDelta) {
+          specs.push({
+            entityType: c.childType === 'ingredient' ? 'INGREDIENT' : 'SUBPRODUCT',
+            ...(c.childType === 'ingredient'
+              ? { ingredientId: c.childId }
+              : { subproductId: c.childId }),
+            delta: -(c.quantity * line.quantity),
+            note: `${notePrefix} extra "${def.name}"`,
+          });
+        }
+      }
+    };
 
     const consume = async (
       p: { id: string; name: string; directResale: boolean },
@@ -122,6 +168,7 @@ export class SalesConsumptionService {
       if (!product) {
         throw new BadRequestException(`Producto ${line.productId} ya no existe.`);
       }
+      consumeModifiers(line);
       if (product.isCombo) {
         for (const comp of product.comboComponents) {
           const cp = componentMap.get(comp.productId);

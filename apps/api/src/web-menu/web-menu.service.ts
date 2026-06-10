@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ModifierRecipeDeltaSchema } from '@pos-tercos/types';
 import type { PublicMenuProduct, PublicMenuResponse } from '@pos-tercos/types';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -38,7 +39,7 @@ export class WebMenuService {
         productId: m.productId,
         name: m.name,
         priceDelta: Number(m.priceDelta),
-        recipeDelta: m.recipeDelta,
+        recipeDelta: ModifierRecipeDeltaSchema.catch([]).parse(m.recipeDelta),
       })),
     }));
 

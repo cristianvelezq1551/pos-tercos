@@ -10,10 +10,14 @@ export interface VariantRow {
   price: string;
 }
 
-/** Fila de extra (modificador). */
+/** Fila de extra (modificador). El consumo es opcional (1 ítem en la UI). */
 export interface ExtraRow {
   name: string;
   priceDelta: string;
+  /** '' = no consume inventario. */
+  consumeChildType: '' | 'ingredient' | 'subproduct';
+  consumeChildId: string;
+  consumeQty: string;
 }
 
 /** Fila de componente de combo. */

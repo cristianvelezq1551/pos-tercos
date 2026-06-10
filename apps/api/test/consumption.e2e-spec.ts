@@ -352,6 +352,101 @@ describe('Consumo de stock E2E (online + offline)', () => {
     expect(total).toBe(0);
   });
 
+  it('un extra con consumo (doble carne) descuenta la porción adicional, online y offline', async () => {
+    // Producto con receta base (100g carne) + extra "Doble carne" (+150g).
+    const prodRes = await request
+      .post('/products')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        name: 'Perro Consumo',
+        basePrice: 10000,
+        directResale: false,
+        isCombo: false,
+        modifiersEnabled: true,
+        modifiers: [
+          {
+            name: 'Doble carne',
+            priceDelta: 4000,
+            recipeDelta: [{ childType: 'ingredient', childId: carneId, quantity: 150 }],
+          },
+        ],
+      })
+      .expect(201);
+    const perroId = prodRes.body.id as string;
+    const modifierId = prodRes.body.modifiers[0].id as string;
+    expect(prodRes.body.modifiers[0].recipeDelta).toEqual([
+      { childType: 'ingredient', childId: carneId, quantity: 150 },
+    ]);
+
+    await request
+      .put(`/products/${perroId}/recipe`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ edges: [{ childType: 'ingredient', childId: carneId, quantityNeta: 100 }] })
+      .expect(200);
+
+    // Online: 2 perros con doble carne → base 200g + extra 300g.
+    const createRes = await request
+      .post('/sales')
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        type: 'COUNTER',
+        items: [{ productId: perroId, quantity: 2, modifiers: [{ modifierId }] }],
+      })
+      .expect(201);
+    const sale = createRes.body;
+    expect(sale.total).toBe(28000); // (10000 + 4000) × 2
+    await request
+      .post(`/sales/${sale.id}/confirm-payment`)
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .send({ method: 'CASH', amountReceived: sale.total })
+      .expect(201);
+
+    const online = await movementsFor(sale.id as string);
+    const carneTotal = online
+      .filter((m) => m.entityId === carneId)
+      .reduce((acc, m) => acc + m.delta, 0);
+    expect(carneTotal).toBe(-500); // 200 base + 300 extra
+    expect(online.some((m) => m.notes?.includes('extra "Doble carne"'))).toBe(true);
+
+    // Offline: 1 perro con doble carne → mismo criterio (100 + 150).
+    const syncRes = await request
+      .post('/sales/sync-offline')
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .send({
+        localId: randomUUID(),
+        provisionalNumber: 'OFF-2',
+        soldOfflineAt: new Date().toISOString(),
+        payment: { method: 'CASH', amountReceived: 14000, offlineVerified: true },
+        payload: {
+          type: 'COUNTER',
+          customerName: null,
+          lines: [
+            {
+              productId: perroId,
+              sizeId: null,
+              quantity: 1,
+              unitPrice: 14000,
+              modifiers: [{ modifierId, name: 'Doble carne', priceDelta: 4000 }],
+              lineSubtotal: 14000,
+              lineDiscount: 0,
+              lineTotal: 14000,
+              appliedPromotionId: null,
+            },
+          ],
+          subtotal: 14000,
+          discount: 0,
+          total: 14000,
+        },
+      })
+      .expect(201);
+    const offline = await movementsFor(syncRes.body.id as string);
+    const carneOffline = offline
+      .filter((m) => m.entityId === carneId)
+      .reduce((acc, m) => acc + m.delta, 0);
+    expect(carneOffline).toBe(-250);
+  });
+
   it('GET /reports/inventory-usage refleja ventas, mermas y pérdida valorizada', async () => {
     // Darle costo conocido a la carne ($30.000/kg → $30/g) y declarar 100g de merma.
     await prisma.ingredient.update({
