@@ -1,8 +1,7 @@
-export { runFifo } from './run-fifo';
-export type {
-  FifoMovement,
-  FifoMovementType,
-  FifoConsumption,
-  FifoLot,
-  FifoResult,
-} from './types';
+export {
+  runLedgerFifo,
+  type CostQty,
+  type LedgerEntityType,
+  type LedgerFifo,
+  type LedgerMovement,
+} from './run-ledger';

@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import {
   expandRecipeOneLevel,
+  runLedgerFifo,
+  type CostQty,
+  type LedgerFifo,
+  type LedgerMovement,
   type ParentRef,
   type RecipeGraph,
 } from '@pos-tercos/domain';
@@ -15,38 +19,8 @@ import { RecipesService } from '../recipes/recipes.service';
 
 const EXCLUDED_STATUSES = ['PENDIENTE_PAGO', 'CANCELADO_NO_PAGO', 'VOID'] as const;
 
-interface CostQty {
-  cost: number;
-  qty: number;
-  unknownQty: number;
-}
-
-/** Resultado del replay FIFO de TODO el ledger, indexado para los reportes. */
-interface LedgerFifo {
-  /** saleId → ingredientId → costo/cantidad consumida (insumos directos). */
-  saleIngredientCost: Map<string, Map<string, CostQty>>;
-  /** saleId → productId → costo/cantidad (productos de reventa directa). */
-  saleProductCost: Map<string, Map<string, CostQty>>;
-  /** saleId → subproductId → costo/cantidad (subproductos consumidos por
-   *  productos preparados). El costo viene del lot FIFO del subproducto que
-   *  se creó al producirlo (suma de insumos consumidos / cantidad producida). */
-  saleSubproductCost: Map<string, Map<string, CostQty>>;
-  /** Mermas valorizadas, con timestamp para filtrar por período. NO incluye
-   *  consumos de tipo PRODUCTION (esos se cuentan dentro del lot cost del
-   *  subproducto producido). */
-  waste: { createdAt: string; cost: number; unknownQty: number }[];
-  /** Lotes restantes por stockable: `${entityType}:${id}` → valor/cantidad. */
-  remaining: Map<string, { qty: number; value: number; unknownQty: number }>;
-}
-
 function round(n: number): number {
   return Math.round(n * 100) / 100;
-}
-function round4(n: number): number {
-  return Math.round(n * 10000) / 10000;
-}
-function toIso(d: string | Date): string {
-  return typeof d === 'string' ? d : d.toISOString();
 }
 
 @Injectable()
@@ -57,22 +31,9 @@ export class CogsService {
   ) {}
 
   // ==================================================================
-  // Replay FIFO de todo el ledger (núcleo de todos los reportes).
-  //
-  // Orquestador cronológico que procesa TODOS los stockables en una sola
-  // pasada por tiempo, manteniendo una cola FIFO por entidad. Esto es
-  // necesario porque las tandas de PRODUCCIÓN cruzan stockables:
-  //   - consume insumos (FIFO de su lote)
-  //   - emite +N de un subproducto con lot cost = suma de insumos / qty
-  //
-  // El siguiente evento (otra venta o producción) puede consumir esos lotes
-  // recién creados. Por eso necesitamos interleaving en el tiempo.
-  //
-  // Para sub-subproductos (subproducto A consume subproducto B en su
-  // producción): el orquestador propaga el costo automáticamente porque B
-  // ya tiene su lot al momento que A se produce (si B se produjo antes).
-  // Si B no tiene stock al momento, el costo de A queda parcialmente
-  // desconocido (unknownQty).
+  // Replay FIFO del ledger — la lógica vive en @pos-tercos/domain
+  // (runLedgerFifo, pura y testeada). Acá solo cargamos los movimientos
+  // ordenados y los mapeamos a datos planos.
   // ==================================================================
 
   private async runLedger(): Promise<LedgerFifo> {
@@ -92,247 +53,20 @@ export class CogsService {
       },
       orderBy: { createdAt: 'asc' },
     });
-
-    type Mov = typeof movements[number];
-    const keyOf = (m: Mov): string | null => {
-      const id =
-        m.entityType === 'INGREDIENT' ? m.ingredientId
-        : m.entityType === 'PRODUCT' ? m.productId
-        : m.subproductId;
-      return id ? `${m.entityType}:${id}` : null;
-    };
-
-    // Eventos: cada producción es UN evento atómico (todos sus movements
-    // se procesan juntos para poder computar lot cost del +N). El resto
-    // son eventos individuales.
-    type Event =
-      | { kind: 'single'; ts: Date; m: Mov }
-      | { kind: 'production'; ts: Date; consumes: Mov[]; produces: Mov };
-
-    const productionSeen = new Set<string>();
-    const events: Event[] = [];
-    for (const m of movements) {
-      if (m.sourceType === 'production' && m.sourceId) {
-        if (productionSeen.has(m.sourceId)) continue;
-        productionSeen.add(m.sourceId);
-        const batch = movements.filter(
-          (x) => x.sourceType === 'production' && x.sourceId === m.sourceId,
-        );
-        const produces = batch.find((x) => Number(x.delta) > 0);
-        const consumes = batch.filter((x) => Number(x.delta) < 0);
-        if (!produces) continue; // batch malformado, ignorar
-        events.push({ kind: 'production', ts: m.createdAt, consumes, produces });
-      } else {
-        events.push({ kind: 'single', ts: m.createdAt, m });
-      }
-    }
-    // Estable por createdAt. Las producciones ya están atómicas.
-    events.sort((a, b) => a.ts.getTime() - b.ts.getTime());
-
-    // Estado FIFO por stockable.
-    interface Lot {
-      movementId: string;
-      qty: number;
-      unitCost: number | null;
-      createdAt: string;
-    }
-    interface Draw {
-      qty: number;
-      unitCost: number | null;
-      movementId: string;
-      createdAt: string;
-    }
-    const queues = new Map<string, Lot[]>();
-    // Para revertir consumo de venta cuando se anula: key = `${saleId}:${stockableKey}`.
-    const drawsBySource = new Map<string, Draw[]>();
-
-    const out: LedgerFifo = {
-      saleIngredientCost: new Map(),
-      saleProductCost: new Map(),
-      saleSubproductCost: new Map(),
-      waste: [],
-      remaining: new Map(),
-    };
-
-    const targetMap = (et: string): Map<string, Map<string, CostQty>> | null => {
-      if (et === 'INGREDIENT') return out.saleIngredientCost;
-      if (et === 'PRODUCT') return out.saleProductCost;
-      if (et === 'SUBPRODUCT') return out.saleSubproductCost;
-      return null;
-    };
-    const attributeToSale = (
-      et: string,
-      stockableId: string,
-      saleId: string,
-      cost: number,
-      qty: number,
-      unknownQty: number,
-    ): void => {
-      const t = targetMap(et);
-      if (!t) return;
-      const bySale = t.get(saleId) ?? new Map<string, CostQty>();
-      const prev = bySale.get(stockableId) ?? { cost: 0, qty: 0, unknownQty: 0 };
-      prev.cost += cost;
-      prev.qty += qty;
-      prev.unknownQty += unknownQty;
-      bySale.set(stockableId, prev);
-      t.set(saleId, bySale);
-    };
-
-    /** Consume FIFO de la cola del stockable. Devuelve costo + lotes tocados. */
-    const consumeFifo = (
-      key: string,
-      qtyNeeded: number,
-    ): { cost: number; unknownQty: number; draws: Draw[] } => {
-      const q = queues.get(key) ?? [];
-      let remaining = qtyNeeded;
-      let cost = 0;
-      let unknownQty = 0;
-      const draws: Draw[] = [];
-      while (remaining > 0 && q.length > 0) {
-        const lot = q[0]!;
-        const take = Math.min(remaining, lot.qty);
-        if (lot.unitCost === null) unknownQty += take;
-        else cost += take * lot.unitCost;
-        draws.push({
-          qty: take,
-          unitCost: lot.unitCost,
-          movementId: lot.movementId,
-          createdAt: lot.createdAt,
-        });
-        lot.qty -= take;
-        remaining -= take;
-        if (lot.qty <= 0) q.shift();
-      }
-      if (remaining > 0) unknownQty += remaining;
-      queues.set(key, q);
-      return { cost: round4(cost), unknownQty: round4(unknownQty), draws };
-    };
-
-    const addLot = (
-      key: string,
-      lot: Lot,
-    ): void => {
-      const q = queues.get(key) ?? [];
-      q.push(lot);
-      queues.set(key, q);
-    };
-
-    for (const e of events) {
-      if (e.kind === 'production') {
-        // 1. Consumir insumos / sub-subproductos.
-        let totalCost = 0;
-        let totalUnknownQty = 0;
-        for (const c of e.consumes) {
-          const cKey = keyOf(c);
-          if (!cKey) continue;
-          const { cost, unknownQty } = consumeFifo(cKey, Math.abs(Number(c.delta)));
-          totalCost += cost;
-          totalUnknownQty += unknownQty;
-        }
-        // 2. Crear lote del +N con costo unitario derivado.
-        const posKey = keyOf(e.produces);
-        const posQty = Number(e.produces.delta);
-        if (posKey && posQty > 0) {
-          // Si hubo unknownQty en consumos, el costo del lote queda null
-          // (no asumimos $0). Igual entra al stock como reserva sin costo.
-          const lotUnitCost =
-            totalUnknownQty > 0 ? null : round4(totalCost / posQty);
-          addLot(posKey, {
-            movementId: e.produces.id,
-            qty: posQty,
-            unitCost: lotUnitCost,
-            createdAt: toIso(e.produces.createdAt),
-          });
-        }
-        continue;
-      }
-
-      // === SINGLE ===
-      const m = e.m;
-      const key = keyOf(m);
-      if (!key) continue;
-      const delta = Number(m.delta);
-      const iso = toIso(m.createdAt);
-
-      // Reversión de venta (anulación): SALE con delta > 0.
-      if (m.type === 'SALE' && delta > 0) {
-        const drawKey = `${m.sourceId ?? ''}:${key}`;
-        const draws = drawsBySource.get(drawKey) ?? [];
-        let returnedCost = 0;
-        let returnedUnknown = 0;
-        let returnedQty = 0;
-        // Re-inyectar al FRENTE en orden inverso (más viejos primero).
-        const q = queues.get(key) ?? [];
-        for (let i = draws.length - 1; i >= 0; i--) {
-          const d = draws[i]!;
-          q.unshift({
-            movementId: d.movementId,
-            qty: d.qty,
-            unitCost: d.unitCost,
-            createdAt: d.createdAt,
-          });
-          returnedQty += d.qty;
-          if (d.unitCost === null) returnedUnknown += d.qty;
-          else returnedCost += d.qty * d.unitCost;
-        }
-        queues.set(key, q);
-        drawsBySource.delete(drawKey);
-        // Atribuir el reverso (cost negativo) a la misma venta original.
-        if (m.sourceId) {
-          const stockableId = key.slice(key.indexOf(':') + 1);
-          attributeToSale(
-            m.entityType,
-            stockableId,
-            m.sourceId,
-            -round4(returnedCost),
-            returnedQty,
-            returnedUnknown,
-          );
-        }
-        continue;
-      }
-
-      // Entrada (PURCHASE, INITIAL, MANUAL_ADJUSTMENT+).
-      if (delta > 0) {
-        addLot(key, {
-          movementId: m.id,
-          qty: delta,
-          unitCost: m.unitCost !== null ? Number(m.unitCost) : null,
-          createdAt: iso,
-        });
-        continue;
-      }
-
-      // Consumo (SALE, WASTE, MANUAL_ADJUSTMENT-).
-      const { cost, unknownQty, draws } = consumeFifo(key, -delta);
-      if (m.type === 'SALE' && m.sourceId) {
-        drawsBySource.set(`${m.sourceId}:${key}`, draws);
-        const stockableId = key.slice(key.indexOf(':') + 1);
-        attributeToSale(m.entityType, stockableId, m.sourceId, cost, -delta, unknownQty);
-      } else if (m.type === 'WASTE') {
-        out.waste.push({ createdAt: iso, cost, unknownQty });
-      }
-      // MANUAL_ADJUSTMENT- no se atribuye (sale del libro y listo).
-    }
-
-    // Construir remaining a partir del estado final de cada cola.
-    for (const [key, q] of queues) {
-      let value = 0;
-      let unknownQty = 0;
-      let qty = 0;
-      for (const l of q) {
-        qty += l.qty;
-        if (l.unitCost === null) unknownQty += l.qty;
-        else value += l.qty * l.unitCost;
-      }
-      out.remaining.set(key, {
-        qty: round4(qty),
-        value: round4(value),
-        unknownQty: round4(unknownQty),
-      });
-    }
-    return out;
+    const plain: LedgerMovement[] = movements.map((m) => ({
+      id: m.id,
+      createdAt: m.createdAt,
+      delta: Number(m.delta),
+      type: m.type,
+      unitCost: m.unitCost !== null ? Number(m.unitCost) : null,
+      sourceType: m.sourceType,
+      sourceId: m.sourceId,
+      entityType: m.entityType,
+      ingredientId: m.ingredientId,
+      productId: m.productId,
+      subproductId: m.subproductId,
+    }));
+    return runLedgerFifo(plain);
   }
 
   // ==================================================================

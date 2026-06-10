@@ -1,0 +1,162 @@
+import { describe, expect, it } from 'vitest';
+import { runLedgerFifo, type LedgerMovement } from './run-ledger';
+
+let seq = 0;
+function mov(p: Partial<LedgerMovement> & { delta: number }): LedgerMovement {
+  seq += 1;
+  const entityType = p.entityType ?? 'INGREDIENT';
+  return {
+    id: p.id ?? `m${seq}`,
+    createdAt: p.createdAt ?? new Date(2026, 0, 1, 0, seq),
+    type: p.type ?? (p.delta > 0 ? 'PURCHASE' : 'SALE'),
+    unitCost: p.unitCost ?? null,
+    sourceType: p.sourceType ?? (p.type === 'SALE' || (!p.type && p.delta < 0) ? 'sale' : null),
+    sourceId: p.sourceId ?? null,
+    entityType,
+    ingredientId: entityType === 'INGREDIENT' ? (p.ingredientId ?? 'ing1') : null,
+    productId: entityType === 'PRODUCT' ? (p.productId ?? 'prod1') : null,
+    subproductId: entityType === 'SUBPRODUCT' ? (p.subproductId ?? 'sub1') : null,
+    delta: p.delta,
+  };
+}
+
+describe('runLedgerFifo · consumo básico', () => {
+  it('costea una venta contra un único lote', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 8000 }),
+      mov({ delta: -2, type: 'SALE', sourceId: 'sale1' }),
+    ]);
+    const cq = r.saleIngredientCost.get('sale1')?.get('ing1');
+    expect(cq).toEqual({ cost: 16000, qty: 2, unknownQty: 0 });
+  });
+
+  it('cruza lotes en orden FIFO (el viejo primero)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 5, unitCost: 10 }),
+      mov({ delta: 5, unitCost: 20 }),
+      mov({ delta: -7, type: 'SALE', sourceId: 'sale1' }),
+    ]);
+    // 5×10 + 2×20 = 90
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')?.cost).toBe(90);
+  });
+
+  it('lote sin costo → unknownQty, nunca $0 asumido', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 5, unitCost: null }),
+      mov({ delta: -3, type: 'SALE', sourceId: 'sale1' }),
+    ]);
+    const cq = r.saleIngredientCost.get('sale1')?.get('ing1');
+    expect(cq?.cost).toBe(0);
+    expect(cq?.unknownQty).toBe(3);
+  });
+
+  it('consumo sin stock disponible → todo unknownQty', () => {
+    const r = runLedgerFifo([mov({ delta: -4, type: 'SALE', sourceId: 'sale1' })]);
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')?.unknownQty).toBe(4);
+  });
+
+  it('reventa directa se atribuye en saleProductCost', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 24, unitCost: 1500, entityType: 'PRODUCT' }),
+      mov({ delta: -3, type: 'SALE', sourceId: 'sale1', entityType: 'PRODUCT' }),
+    ]);
+    expect(r.saleProductCost.get('sale1')?.get('prod1')?.cost).toBe(4500);
+  });
+
+  it('WASTE se valoriza con timestamp y no se atribuye a ventas', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 30 }),
+      mov({ delta: -2, type: 'WASTE', sourceType: null }),
+    ]);
+    expect(r.waste).toHaveLength(1);
+    expect(r.waste[0]!.cost).toBe(60);
+    expect(r.saleIngredientCost.size).toBe(0);
+  });
+
+  it('MANUAL_ADJUSTMENT negativo consume del libro sin atribuirse', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 30 }),
+      mov({ delta: -4, type: 'MANUAL_ADJUSTMENT', sourceType: 'stock_count', sourceId: 'c1' }),
+    ]);
+    expect(r.saleIngredientCost.size).toBe(0);
+    expect(r.waste).toHaveLength(0);
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(6);
+  });
+});
+
+describe('runLedgerFifo · anulaciones', () => {
+  it('el reverso re-inyecta los lotes y deja la venta con costo neto cero', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 10 }),
+      mov({ delta: -3, type: 'SALE', sourceId: 'sale1' }),
+      // void: reverso compensatorio
+      mov({ delta: 3, type: 'SALE', sourceId: 'sale1' }),
+      // otra venta consume — debe costear como si la primera nunca pasó
+      mov({ delta: -10, type: 'SALE', sourceId: 'sale2' }),
+    ]);
+    const voided = r.saleIngredientCost.get('sale1')?.get('ing1');
+    expect(voided?.cost).toBe(0); // 30 − 30
+    const next = r.saleIngredientCost.get('sale2')?.get('ing1');
+    expect(next).toEqual({ cost: 100, qty: 10, unknownQty: 0 });
+  });
+});
+
+describe('runLedgerFifo · producción (cruce de stockables)', () => {
+  const PROD = { sourceType: 'production', sourceId: 'run1' };
+
+  it('la tanda crea el lote del subproducto con costo = insumos / cantidad', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1000, unitCost: 2 }), // 1000g a $2/g
+      mov({ delta: -500, type: 'PRODUCTION', ...PROD }), // consume 500g = $1000
+      mov({ delta: 10, type: 'PRODUCTION', entityType: 'SUBPRODUCT', ...PROD }), // produce 10 uds
+    ]);
+    // lote del subproducto: $1000 / 10 = $100/u
+    expect(r.remaining.get('SUBPRODUCT:sub1')).toEqual({ qty: 10, value: 1000, unknownQty: 0 });
+  });
+
+  it('una venta posterior consume el lote producido con su costo FIFO', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1000, unitCost: 2 }),
+      mov({ delta: -500, type: 'PRODUCTION', ...PROD }),
+      mov({ delta: 10, type: 'PRODUCTION', entityType: 'SUBPRODUCT', ...PROD }),
+      mov({ delta: -2, type: 'SALE', sourceId: 'sale1', entityType: 'SUBPRODUCT' }),
+    ]);
+    expect(r.saleSubproductCost.get('sale1')?.get('sub1')?.cost).toBe(200); // 2 × $100
+  });
+
+  it('sub-subproducto: el costo de B se propaga al lote de A', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1000, unitCost: 1 }),
+      // Producir B: 200g de insumo → 4 uds de B ($50/u)
+      mov({ delta: -200, type: 'PRODUCTION', sourceType: 'production', sourceId: 'runB' }),
+      mov({ delta: 4, type: 'PRODUCTION', entityType: 'SUBPRODUCT', subproductId: 'B', sourceType: 'production', sourceId: 'runB' }),
+      // Producir A: consume 2 uds de B → 1 ud de A ($100/u)
+      mov({ delta: -2, type: 'PRODUCTION', entityType: 'SUBPRODUCT', subproductId: 'B', sourceType: 'production', sourceId: 'runA' }),
+      mov({ delta: 1, type: 'PRODUCTION', entityType: 'SUBPRODUCT', subproductId: 'A', sourceType: 'production', sourceId: 'runA' }),
+    ]);
+    expect(r.remaining.get('SUBPRODUCT:A')).toEqual({ qty: 1, value: 100, unknownQty: 0 });
+  });
+
+  it('si los insumos no tienen costo, el lote producido queda sin costo (no $0)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 500, unitCost: null }),
+      mov({ delta: -500, type: 'PRODUCTION', ...PROD }),
+      mov({ delta: 10, type: 'PRODUCTION', entityType: 'SUBPRODUCT', ...PROD }),
+      mov({ delta: -2, type: 'SALE', sourceId: 'sale1', entityType: 'SUBPRODUCT' }),
+    ]);
+    expect(r.saleSubproductCost.get('sale1')?.get('sub1')?.unknownQty).toBe(2);
+    expect(r.remaining.get('SUBPRODUCT:sub1')?.unknownQty).toBe(8);
+  });
+});
+
+describe('runLedgerFifo · remaining', () => {
+  it('valoriza lo que queda por lote', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 10 }),
+      mov({ delta: 10, unitCost: 20 }),
+      mov({ delta: -12, type: 'SALE', sourceId: 's1' }),
+    ]);
+    // quedan 8 del lote de $20
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 8, value: 160, unknownQty: 0 });
+  });
+});
