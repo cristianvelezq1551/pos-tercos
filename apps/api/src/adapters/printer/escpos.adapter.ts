@@ -22,7 +22,7 @@ import { join, resolve } from 'path';
  * usar "imprimir desde browser" como fallback (el HTML sigue ahí).
  *
  * Variables env:
- *  - PRINT_AGENT_URL — `http://192.168.1.50:9100` (default localhost:9100)
+ *  - PRINT_AGENT_URL — `http://192.168.1.50:9120` (default localhost:9120)
  *  - PRINT_AGENT_SECRET — opcional, header X-Agent-Secret.
  */
 @Injectable()
@@ -34,7 +34,7 @@ export class EscPosPrinterAdapter implements PrinterProvider {
   private readonly basePath: string;
 
   constructor() {
-    this.agentUrl = process.env.PRINT_AGENT_URL ?? 'http://localhost:9100';
+    this.agentUrl = process.env.PRINT_AGENT_URL ?? 'http://localhost:9120';
     this.agentSecret = process.env.PRINT_AGENT_SECRET ?? null;
     this.basePath = resolve(
       process.cwd(),

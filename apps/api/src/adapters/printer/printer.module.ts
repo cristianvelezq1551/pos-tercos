@@ -9,7 +9,7 @@ import { LocalFsPrinterAdapter } from './local-fs.adapter';
  *
  * Selección via `PRINTER_PROVIDER=local|escpos`. Default `local` (dev).
  * `escpos` requiere que apps/print-agent esté corriendo en
- * PRINT_AGENT_URL (default `http://localhost:9100`).
+ * PRINT_AGENT_URL (default `http://localhost:9120`).
  */
 export const PRINTER_PROVIDER = Symbol('PRINTER_PROVIDER');
 

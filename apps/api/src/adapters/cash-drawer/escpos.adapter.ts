@@ -15,7 +15,7 @@ export class EscPosCashDrawerAdapter implements CashDrawerProvider {
   private readonly agentSecret: string | null;
 
   constructor() {
-    this.agentUrl = process.env.PRINT_AGENT_URL ?? 'http://localhost:9100';
+    this.agentUrl = process.env.PRINT_AGENT_URL ?? 'http://localhost:9120';
     this.agentSecret = process.env.PRINT_AGENT_SECRET ?? null;
   }
 
