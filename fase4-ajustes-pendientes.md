@@ -1,3 +1,8 @@
+> ⚠️ **DOCUMENTO HISTÓRICO (congelado).** Describe planificación que YA SE EJECUTÓ — sus
+> "pendientes" están casi todos hechos y verificados. NO planear trabajo desde acá.
+> Estado real y vigente: `CLAUDE.md` (canónico) + `estado-del-sistema.md` (§10 lista
+> qué items de este doc ya están implementados).
+
 # FASE 4 — Ajustes pendientes y mejoras requeridas
 
 > **Documento canónico de pendientes para FASE 4.** Este archivo lista

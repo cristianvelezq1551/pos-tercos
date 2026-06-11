@@ -1,3 +1,8 @@
+> ⚠️ **DOCUMENTO HISTÓRICO (congelado).** Describe planificación que YA SE EJECUTÓ — sus
+> "pendientes" están casi todos hechos y verificados. NO planear trabajo desde acá.
+> Estado real y vigente: `CLAUDE.md` (canónico) + `estado-del-sistema.md` (§10 lista
+> qué items de este doc ya están implementados).
+
 # Plan de Implementación Técnica — Local-First con Claude
 
 > Plan modular para construir v1 trabajando 100% en local con Claude, sin bloquearse por Meta WABA, hardware o trámites externos. Cada módulo se construye, prueba y firma como "hecho" antes de pasar al siguiente.

@@ -1,3 +1,7 @@
+> ⚠️ **DOCUMENTO HISTÓRICO (congelado).** La Fase B se implementó completa (B.0a→B.5)
+> salvo **B.4b (abrir caja offline)**, que sigue DIFERIDA a propósito — esa es la única
+> parte viva de este doc. Estado real: `CLAUDE.md` + `estado-del-sistema.md`.
+
 # Fase B — POS online-first con respaldo offline
 
 > **Documento canónico de la Fase B.** Define el comportamiento del POS Cajero

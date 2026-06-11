@@ -19,8 +19,9 @@ export class ApprovalsController {
    * o DUENO) cambia SU PROPIO PIN. El path `/approvals/pin` se mantiene
    * (en 5.B era Dueño-only para bootstrap; ahora es Admin+Dueño).
    *
-   * NO se permite que un Admin/Dueño cambie el PIN de OTRO usuario desde
-   * acá — ese flujo (reset por Dueño) entra en FASE 14 si se decide habilitar.
+   * NO se permite cambiar el PIN de OTRO usuario desde acá. Ese flujo ya
+   * existe en el módulo users: `POST /users/:id/pin` (Dueño, con re-ingreso
+   * de contraseña + audit USER_PIN_SET + protección del dueño principal).
    */
   @AdminAccess()
   @Post('pin')

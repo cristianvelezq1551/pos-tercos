@@ -282,7 +282,7 @@ apps/api/src/notifications/
 - `OPENWA_SESSION_ID` — ID de sesión (ej. `tercos`)
 - `BUSINESS_NAME` — Nombre del negocio en los mensajes (server-side, no `NEXT_PUBLIC_`)
 - `BUSINESS_ADDRESS_SHORT` — Dirección corta en mensaje de "listo para retirar"
-- `PAYMENT_INSTRUCTIONS` — Texto Nequi/transfer que va en el mensaje de instrucciones
+- `PAYMENT_INSTRUCTIONS_NEQUI` / `PAYMENT_INSTRUCTIONS_TRANSFER` — Textos que van en el mensaje de instrucciones de pago
 
 **Setup OpenWA:** ver `openwa-setup.md` en raíz. **Cómo probar flujo completo:** ver `probar-backend-sin-apps.md`.
 
@@ -1496,7 +1496,7 @@ pnpm lint          # eslint funcional (sin ignoreDuringBuilds)
 7. Backup Postgres con GitHub Actions cron (`deploy.md §7`).
 
 **Variables env críticas (v2):**
-- API: `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `STORAGE_PROVIDER=r2` + `R2_*`, `PRINTER_PROVIDER=escpos` + `PRINT_AGENT_URL/SECRET`, `OWNER_WHATSAPP_PHONE`, `BUSINESS_NAME`, `BUSINESS_ADDRESS_SHORT`, `PAYMENT_INSTRUCTIONS`, `OPENWA_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID`.
+- API: `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `STORAGE_PROVIDER=r2` + `R2_*`, `PRINTER_PROVIDER=escpos` + `PRINT_AGENT_URL/SECRET`, `OWNER_WHATSAPP_PHONE`, `BUSINESS_NAME`, `BUSINESS_ADDRESS_SHORT`, `PAYMENT_INSTRUCTIONS_NEQUI/TRANSFER`, `OPENWA_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID`.
 - Frontends Next.js: `JWT_ACCESS_SECRET` (POS edge middleware), `API_INTERNAL_URL`, `NEXT_PUBLIC_API_WS_URL`.
 - KDS Flutter: `API_BASE_URL`, `WS_URL` en `app_config.dart` (compiladas en el build).
 - Print Agent (Pi): `PRINTER_DEVICE=/dev/usb/lp0`, `PRINT_AGENT_PORT=9100`, `PRINT_AGENT_SECRET` (matches API).

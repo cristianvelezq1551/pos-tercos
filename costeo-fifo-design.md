@@ -1,3 +1,8 @@
+> ⚠️ **DOCUMENTO HISTÓRICO (congelado).** Describe planificación que YA SE EJECUTÓ — sus
+> "pendientes" están casi todos hechos y verificados. NO planear trabajo desde acá.
+> Estado real y vigente: `CLAUDE.md` (canónico) + `estado-del-sistema.md` (§10 lista
+> qué items de este doc ya están implementados).
+
 # Diseño técnico — Costeo real FIFO por lote (COGS)
 
 > **Estado:** propuesta para aprobación. **No implementado.** Autor: sesión de auditoría 2026-05-25.

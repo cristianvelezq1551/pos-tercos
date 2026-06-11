@@ -27,7 +27,7 @@
 | **workers** | Nómina v2 | payType MONTHLY/DAILY + descansos cíclicos, días/ajustes con PIN, períodos quincenales (4 sub-pagos/mes), pagos con comprobante. (Las comisiones se eliminaron a propósito) | ✅ |
 | **fixed-costs** | Costos fijos del negocio | CRUD Dueño-only + pago mensual/anual con comprobante; alimenta el P&G | ✅ |
 | **notifications** | WhatsApp saliente | `NotificationService` (cliente: instrucciones/pago recibido/listo/cancelado — idempotente por flags, fire-and-forget) + `OwnerNotificationService` (**alertas antifraude/costos al dueño**) | ✅ |
-| **approvals** | PIN de aprobación 6 dígitos | Self-service con contraseña; verificación bcrypt; exigido en void, cajón sin venta, salarios, pagos | ✅ (reset de PIN ajeno por Dueño: diferido) |
+| **approvals** | PIN de aprobación 6 dígitos | Self-service con contraseña; verificación bcrypt; exigido en void, cajón sin venta, salarios, pagos. Reset de PIN ajeno: existe en users (`POST /users/:id/pin`, Dueño) | ✅ |
 | **adapters/** | Puertos a servicios externos | LLM (Anthropic Haiku primario + OpenAI fallback), Storage (local/R2), Printer + CashDrawer (local-dump / ESC/POS via print-agent), WhatsApp (mock / OpenWA) — todos con factory por env var, mock por defecto en dev | ✅ (por diseño: dev usa mocks) |
 | **common** | Transversales | ZodValidationPipe, IdempotencyService (TTL 7d + purge 3AM), MIME por magic bytes, `assertRequiredEnv` al arranque | ✅ |
 
@@ -88,9 +88,8 @@ HTTP local con auth opcional: `POST /print` acepta bytes ESC/POS ya renderizados
 | 1 | **B.4b — abrir caja offline** (jornada que ARRANCA sin red). Diferida a propósito 2026-05-24: exige mover el gate de turno de SSR a cliente. Retomarla solo si el negocio realmente arranca jornadas sin internet | `offline-fase-b.md` | M |
 | 2 | **Tests del KDS Flutter** (0 reales) — la tablet de cocina no tiene red de seguridad ante refactors | `apps/kds-flutter/test/` | M |
 | 3 | **Services backend gigantes**: `WorkersService` (~840 líneas), `PurchaseSuggestionsService` (~750), `RecipesService` (~740), `CogsService.runLedger` (orquestador FIFO de ~260 líneas en una función) | `apps/api/src/{workers,purchase-suggestions,recipes,reports}` | M-L |
-| 4 | **Auth duplicada admin/pos** (~800 líneas casi idénticas: LoginScreen, SessionKeeper, api-server) | `apps/{admin,pos}/src/features/auth` | M |
+| 4 | ~~Auth duplicada admin/pos~~ — **verificado 2026-06-10: NO es deuda real.** Lo idéntico son ~95 líneas parametrizadas por `X-Client-App` (login/logout/me/SessionKeeper); LoginScreen y LogoutButton difieren a propósito (diseño por app) y server.ts por cookie. Un package compartido no paga su costo. | — | — |
 | 5 | **Reconciliación CSV: hardening por proveedor** (delimitadores/encoding variantes) — nota en código | `reconciliation.service.ts:240` | S |
-| 6 | **Reset de PIN ajeno por el Dueño** — hoy cada admin solo setea el suyo | `approvals.controller.ts:23` | S |
 | 7 | **`ARCHITECTURE.md` es la plantilla Flutter de CrediClub**, no describe el POS — confunde a cualquiera que llegue nuevo | raíz | S |
 | 8 | **`/styleguide`** con labels hex de la paleta vieja | `apps/admin/src/app/styleguide` | S |
 | 9 | Pulido admin menor (hints del uploader manual, urgencia en cockpit, detalle de matches en historial de reconciliación) | §2 de este doc | S |

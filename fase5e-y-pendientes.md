@@ -1,3 +1,8 @@
+> ⚠️ **DOCUMENTO HISTÓRICO (congelado).** Describe planificación que YA SE EJECUTÓ — sus
+> "pendientes" están casi todos hechos y verificados. NO planear trabajo desde acá.
+> Estado real y vigente: `CLAUDE.md` (canónico) + `estado-del-sistema.md` (§10 lista
+> qué items de este doc ya están implementados).
+
 # POS Tercos — Guía exhaustiva Sprint 5.E + FASES 6 a 15
 
 > **Documento canónico de roadmap.** Cubre desde el último sprint pendiente
