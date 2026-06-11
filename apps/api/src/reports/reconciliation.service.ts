@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { parseReconciliationCsv } from '@pos-tercos/domain';
 import {
   ReconciliationReportSchema,
   type ReconciliationReport,
@@ -13,12 +14,6 @@ import { PrismaService } from '../prisma/prisma.service';
 
 /** Tolerancia para considerar match temporal: ±N horas entre CSV y sale.paidAt. */
 const TIME_TOLERANCE_HOURS = 24;
-
-interface CsvRow {
-  date: Date;
-  amount: number;
-  reference: string;
-}
 
 @Injectable()
 export class ReconciliationService {
@@ -118,7 +113,7 @@ export class ReconciliationService {
    *  4. Sales POS digitales en rango sin CSV match → 'unmatched_sale'.
    */
   async reconcile(source: ReconciliationSource, csvText: string): Promise<ReconciliationReport> {
-    const csvRows = this.parseCsv(source, csvText);
+    const csvRows = parseReconciliationCsv(csvText);
     if (csvRows.length === 0) {
       throw new BadRequestException('CSV vacío o sin filas válidas.');
     }
@@ -228,36 +223,6 @@ export class ReconciliationService {
       summary,
       rows,
     };
-  }
-
-  /**
-   * Parser CSV minimalista. Asume formato:
-   *  - Header en línea 1.
-   *  - Columnas: fecha, monto, referencia (en ese orden, separadas por `,`).
-   *  - Fechas ISO o YYYY-MM-DD.
-   *
-   * Para CSVs reales de Nequi/Bancolombia este parser hay que extenderlo
-   * por proveedor (delimitadores, columnas, encoding) — FASE 14 hardening.
-   */
-  private parseCsv(source: ReconciliationSource, text: string): CsvRow[] {
-    const lines = text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    if (lines.length < 2) return [];
-    const rows: CsvRow[] = [];
-    // Skip header (line 0). Parse desde línea 1.
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i]!.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-      if (cols.length < 3) continue;
-      const date = new Date(cols[0]!);
-      const amount = Number(cols[1]!.replace(/[^\d.-]/g, ''));
-      const reference = cols[2] ?? '';
-      if (Number.isNaN(date.getTime()) || !Number.isFinite(amount)) continue;
-      rows.push({ date, amount, reference });
-    }
-    void source; // kept for future per-source parsing
-    return rows;
   }
 }
 
