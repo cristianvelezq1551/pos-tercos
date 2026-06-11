@@ -202,13 +202,31 @@ describe('Pagos divididos E2E', () => {
     expect(nequi?.total).toBe(7000);
 
     // Cierre: esperado = apertura 50.000 + porción CASH 8.000 (la NEQUI no
-    // entra al cajón). Contado exacto → diferencia 0.
+    // entra al cajón). Contado exacto → diferencia 0. Arqueo DIGITAL: la app
+    // de Nequi muestra 6.000 (faltan 1.000 vs la parte vendida de 7.000).
     const close = await request
       .post(`/shifts/${shiftId}/close`)
       .set('Authorization', `Bearer ${cajeroToken}`)
-      .send({ countedCash: 58000 })
+      .send({
+        countedCash: 58000,
+        digitalCounts: [{ method: 'NEQUI', counted: 6000 }],
+      })
       .expect(201);
     expect(Number(close.body.expectedCash)).toBe(58000);
     expect(Number(close.body.difference)).toBe(0);
+
+    const digital = close.body.digitalCountBreakdown as Array<{
+      method: string;
+      expected: number;
+      counted: number | null;
+      difference: number | null;
+    }>;
+    const nequiLine = digital.find((d) => d.method === 'NEQUI');
+    expect(nequiLine).toEqual({
+      method: 'NEQUI',
+      expected: 7000,
+      counted: 6000,
+      difference: -1000,
+    });
   });
 });

@@ -500,6 +500,7 @@ model Shift {
   notes        String?
   /// Arqueo por denominación al cerrar (JSON [{denomination, count}]). Opcional.
   cashCountBreakdown Json?  @map("cash_count_breakdown")
+  digitalCountBreakdown Json?     @map("digital_count_breakdown")
   status       ShiftStatus @default(OPEN)
   sales        Sale[]
   cashMovements CashMovement[]

@@ -3,7 +3,6 @@ export { CheckoutModal, type CheckoutSuccess } from './components/CheckoutModal'
 export { TransferSection } from './components/TransferSection';
 export { VoidModal } from './components/VoidModal';
 export { VoidSaleAction } from './components/VoidSaleAction';
-export { DayHistoryAction } from './components/DayHistoryAction';
 export { DayHistoryPanel } from './components/DayHistoryPanel';
 export { useCartStore, cartLinesToCreateItems, type LastSaleSummary } from './store/cart-store';
 export {

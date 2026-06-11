@@ -2,6 +2,7 @@ import { PosTopbar } from '../../components/PosTopbar';
 import { SessionKeeper } from '../../features/auth';
 import { getAccessTokenServer, getCurrentUserServer } from '../../features/auth/server';
 import { OfflineProvider, OfflineStatusBar } from '../../features/offline';
+import { ReadyChimeWatcher } from '../../features/turn';
 import { getCurrentShiftServer } from '../../features/shifts/server';
 import { getPendingWebOrdersServer } from '../../features/web-orders/server';
 import { saleToPublicWebOrder } from '../../features/web-orders/lib/project';
@@ -24,6 +25,7 @@ export default async function AuthenticatedLayout({
     <OfflineProvider user={user} shift={shift}>
       <div className="flex h-dvh flex-col bg-background text-foreground">
         <SessionKeeper />
+        <ReadyChimeWatcher />
         <OfflineStatusBar />
         <PosTopbar
           user={user}

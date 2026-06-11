@@ -1,6 +1,7 @@
 import type { ShiftSessionDetail } from '@pos-tercos/types';
 import { ShiftCloseAiButton } from '../../ai-insights';
 import { ShiftCashSection } from './ShiftCashSection';
+import { ShiftDigitalCountSection } from './ShiftDigitalCountSection';
 import { ShiftSessionBreakdowns } from './ShiftSessionBreakdowns';
 import { ShiftSessionHeader } from './ShiftSessionHeader';
 import { ShiftSessionOrdersTable } from './ShiftSessionOrdersTable';
@@ -25,6 +26,8 @@ export function ShiftSessionDetailView({ detail }: { detail: ShiftSessionDetail 
         cashMovements={detail.cashMovements}
         cashCountBreakdown={detail.cashCountBreakdown}
       />
+
+      <ShiftDigitalCountSection breakdown={detail.digitalCountBreakdown} />
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-foreground">

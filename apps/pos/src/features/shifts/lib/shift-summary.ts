@@ -35,10 +35,16 @@ export function computeShiftSummary(sales: Sale[]): ShiftSummary {
     }
     countSales += 1;
     totalSales += s.total;
-    const method = s.paymentMethod ?? 'UNKNOWN';
-    byMethod[method] ??= { count: 0, total: 0 };
-    byMethod[method].count += 1;
-    byMethod[method].total += s.total;
+    // Por método desde los PAGOS (una cuenta dividida aporta a varios métodos).
+    const payments =
+      s.payments && s.payments.length > 0
+        ? s.payments
+        : [{ method: s.paymentMethod ?? 'UNKNOWN', amount: s.total }];
+    for (const pay of payments) {
+      byMethod[pay.method] ??= { count: 0, total: 0 };
+      byMethod[pay.method].count += 1;
+      byMethod[pay.method].total += pay.amount;
+    }
   }
 
   return {

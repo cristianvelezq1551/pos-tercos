@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PaymentMethodEnum } from './sales';
 
 // ====================================================================
 // SHIFT (turno de caja) — FASE 5 cubre solo apertura
@@ -6,6 +7,33 @@ import { z } from 'zod';
 
 export const ShiftStatusEnum = z.enum(['OPEN', 'CLOSED', 'RECONCILED']);
 export type ShiftStatus = z.infer<typeof ShiftStatusEnum>;
+
+/** Arqueo por denominación: cuántas piezas de cada valor (billete/moneda). */
+export const CashCountLineSchema = z.object({
+  denomination: z.number().int().positive(),
+  count: z.number().int().nonnegative(),
+});
+export type CashCountLine = z.infer<typeof CashCountLineSchema>;
+
+/** Arqueo DIGITAL: lo que el cajero ve en la app de cada método al cerrar. */
+export const DigitalCountInputSchema = z.object({
+  method: PaymentMethodEnum,
+  /** Total recibido según la app (Nequi/Daviplata/banco) durante el turno. */
+  counted: z.number().nonnegative(),
+});
+export type DigitalCountInput = z.infer<typeof DigitalCountInputSchema>;
+
+/** Línea persistida del arqueo digital (snapshot al cierre). */
+export const DigitalCountLineSchema = z.object({
+  method: PaymentMethodEnum,
+  /** Esperado según las ventas del turno (porción de ese método). */
+  expected: z.number(),
+  /** Lo contado por el cajero. Null si no arqueó ese método. */
+  counted: z.number().nullable(),
+  /** counted − expected. Null si no se contó. */
+  difference: z.number().nullable(),
+});
+export type DigitalCountLine = z.infer<typeof DigitalCountLineSchema>;
 
 export const ShiftSchema = z.object({
   id: z.string().uuid(),
@@ -20,6 +48,10 @@ export const ShiftSchema = z.object({
   difference: z.number().nullable(),
   notes: z.string().nullable(),
   status: ShiftStatusEnum,
+  /** Arqueo de efectivo por denominación (solo tras el cierre). */
+  cashCountBreakdown: z.array(CashCountLineSchema).nullable().optional(),
+  /** Arqueo digital (expected/counted/diff por método; solo tras el cierre). */
+  digitalCountBreakdown: z.array(DigitalCountLineSchema).nullable().optional(),
 });
 export type Shift = z.infer<typeof ShiftSchema>;
 
@@ -38,18 +70,17 @@ export type OpenShift = z.infer<typeof OpenShiftSchema>;
 // CLOSE SHIFT — POST /shifts/:id/close (FASE 11, schema definido ya)
 // ====================================================================
 
-/** Arqueo por denominación: cuántas piezas de cada valor (billete/moneda). */
-export const CashCountLineSchema = z.object({
-  denomination: z.number().int().positive(),
-  count: z.number().int().nonnegative(),
-});
-export type CashCountLine = z.infer<typeof CashCountLineSchema>;
+
+
+
 
 export const CloseShiftSchema = z.object({
   /** Efectivo contado físicamente al cerrar (suma del arqueo si se usa). */
   countedCash: z.number().nonnegative(),
   /** Desglose por denominación (arqueo). Opcional; queda para auditoría. */
   breakdown: z.array(CashCountLineSchema).optional(),
+  /** Arqueo de transferencias/digitales por método (opcional). */
+  digitalCounts: z.array(DigitalCountInputSchema).optional(),
   notes: z.string().max(500).optional(),
 });
 export type CloseShift = z.infer<typeof CloseShiftSchema>;
@@ -126,5 +157,7 @@ export const ShiftSessionDetailSchema = z.object({
   orders: z.array(ShiftSessionOrderSchema),
   cashMovements: z.array(CashMovementSchema).default([]),
   cashCountBreakdown: z.array(CashCountLineSchema).nullable().default(null),
+  /** Arqueo digital al cierre (expected/counted/diff por método). */
+  digitalCountBreakdown: z.array(DigitalCountLineSchema).nullable().default(null),
 });
 export type ShiftSessionDetail = z.infer<typeof ShiftSessionDetailSchema>;

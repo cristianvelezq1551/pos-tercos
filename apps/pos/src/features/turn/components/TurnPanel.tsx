@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, Input } from '@pos-tercos/ui';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReadyToCallOrder } from '@pos-tercos/types';
 import {
   callManual,
@@ -11,7 +11,6 @@ import {
   getReadyToCall,
   resetTurn,
 } from '../api/client';
-import { playReadyChime } from '../lib/ready-chime';
 
 const POLL_MS = 5000;
 /** Cuántos llamados recientes mostrar para re-llamar. */
@@ -92,16 +91,8 @@ export function TurnPanel({ active = true }: { active?: boolean }) {
     [orders],
   );
 
-  // Campana cuando entra un pedido nuevo a "Por llamar" (la cocina marcó listo).
-  // Así el cajero se entera aunque esté mirando el Historial, no solo Turnos.
-  const prevPending = useRef<number | null>(null);
-  useEffect(() => {
-    const count = pending.length;
-    if (prevPending.current !== null && count > prevPending.current) {
-      playReadyChime();
-    }
-    prevPending.current = count;
-  }, [pending.length]);
+  // La campana de "pedido listo" es GLOBAL (ReadyChimeWatcher en el layout)
+  // — acá solo se muestra la cola.
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">

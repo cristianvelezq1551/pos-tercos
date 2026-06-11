@@ -1,12 +1,17 @@
 import type { PublicWebOrder, Shift, User } from '@pos-tercos/types';
 import { Topbar, UserMenu } from '@pos-tercos/ui';
 import { BrandLogo } from '@pos-tercos/brand';
+import Link from 'next/link';
 import { LogoutButton } from '../features/auth';
-import { DayHistoryAction, VoidSaleAction } from '../features/sales';
-import { CajaAction, CloseShiftAction, ShiftCashBadge } from '../features/shifts';
-import { TurnAction } from '../features/turn';
+import { ShiftCashBadge } from '../features/shifts';
 import { WebOrdersAction } from '../features/web-orders';
+import { PosNav } from './PosNav';
 
+/**
+ * Barra superior del POS (estilo FUDO): marca + pestañas con ícono
+ * (Vender / Turnos / Historial / Caja) + pedidos web en vivo + usuario.
+ * Anular vive en Historial; el estado/cierre de caja, en la pestaña Caja.
+ */
 export function PosTopbar({
   user,
   shift,
@@ -22,28 +27,18 @@ export function PosTopbar({
     <Topbar variant="light">
       <Topbar.Brand className="shrink-0">
         <BrandLogo variant="wordmark" theme="dark" size="h-6" />
-        {/* El badge de caja ocupa espacio: se oculta en pantallas chicas. */}
-        <span className="hidden lg:flex">
-          <ShiftCashBadge shift={shift} />
-        </span>
       </Topbar.Brand>
 
-      {/*
-        Las acciones se desplazan horizontalmente si no caben (pantallas muy
-        chicas) en vez de romper el layout. Turnos e Historial se ocultan del
-        topbar cuando la barra lateral ya los muestra (lg+).
-      */}
-      <Topbar.Actions className="min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
+      <div className="flex min-w-0 flex-1 items-stretch justify-center self-stretch py-1.5">
+        <PosNav />
+      </div>
+
+      <Topbar.Actions className="shrink-0 [&>*]:shrink-0">
         <WebOrdersAction initial={webOrdersInitial} wsToken={wsToken} />
-        <span className="flex items-center lg:hidden">
-          <TurnAction />
-        </span>
-        <span className="flex items-center lg:hidden">
-          <DayHistoryAction />
-        </span>
-        <VoidSaleAction shiftId={shift?.id ?? null} />
-        <CajaAction shift={shift} />
-        <CloseShiftAction shift={shift} />
+        {/* El efectivo esperado linkea a la pestaña Caja. */}
+        <Link href="/caja" className="hidden lg:flex" aria-label="Ir a Caja">
+          <ShiftCashBadge shift={shift} />
+        </Link>
         {user ? (
           <UserMenu
             variant="dark"

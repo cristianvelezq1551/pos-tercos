@@ -13,6 +13,7 @@ import {
 import type {
   AiSummary,
   CashCountLine,
+  DigitalCountLine,
   CashMovement,
   CloseShift,
   CreateCashMovement,
@@ -368,6 +369,7 @@ export class ShiftsService {
 
     return {
       shift,
+      digitalCountBreakdown: shift.digitalCountBreakdown ?? null,
       summary: {
         orderCount: orders.length,
         paidCount: paid.length,
@@ -452,6 +454,47 @@ export class ShiftsService {
       Math.round(Number(shift.openingCash)) + cashSalesTotal + cashIn - cashOut;
     const difference = Math.round(input.countedCash) - expectedCash; // (+) sobrante, (-) faltante
 
+    // Arqueo DIGITAL: esperado por método (porción de cada venta en ese
+    // método, desde sale_payments) vs lo que el cajero ve en cada app.
+    const digitalExpectedRows = await this.prisma.salePayment.groupBy({
+      by: ['method'],
+      where: {
+        method: { not: 'CASH' },
+        sale: {
+          shiftId,
+          status: {
+            in: [
+              'PAGADO',
+              'EN_PREPARACION',
+              'LISTO_DESPACHO',
+              'ENTREGADO',
+              'CANCELADO_SIN_REEMBOLSO',
+            ],
+          },
+        },
+      },
+      _sum: { amount: true },
+    });
+    const countedByMethod = new Map(
+      (input.digitalCounts ?? []).map((d) => [d.method, Math.round(d.counted)]),
+    );
+    const digitalMethods = new Set<string>([
+      ...digitalExpectedRows.map((r) => r.method as string),
+      ...countedByMethod.keys(),
+    ]);
+    const digitalBreakdown: DigitalCountLine[] = [...digitalMethods].map((method) => {
+      const expected = Math.round(
+        Number(digitalExpectedRows.find((r) => r.method === method)?._sum.amount ?? 0),
+      );
+      const counted = countedByMethod.get(method as DigitalCountLine['method']) ?? null;
+      return {
+        method: method as DigitalCountLine['method'],
+        expected,
+        counted,
+        difference: counted !== null ? counted - expected : null,
+      };
+    });
+
     const closed = await this.prisma.shift.update({
       where: { id: shiftId },
       data: {
@@ -461,6 +504,10 @@ export class ShiftsService {
         countedCash: input.countedCash,
         difference,
         cashCountBreakdown: input.breakdown ?? undefined,
+        digitalCountBreakdown:
+          digitalBreakdown.length > 0
+            ? (digitalBreakdown as unknown as Prisma.InputJsonValue)
+            : undefined,
         notes: input.notes ?? null,
       },
       include: { cashier: { select: { fullName: true } } },
@@ -513,6 +560,31 @@ export class ShiftsService {
           difference,
         });
       }
+    }
+
+    // Descuadre DIGITAL (lo que dice la app vs las ventas): alerta aparte.
+    const digitalMismatch = digitalBreakdown.filter(
+      (d) => d.difference !== null && Math.abs(d.difference) >= DISCREPANCY_THRESHOLD_COP,
+    );
+    if (digitalMismatch.length > 0) {
+      const detail = digitalMismatch
+        .map(
+          (d) =>
+            `${d.method}: esperado $${d.expected.toLocaleString('es-CO')}, app $${(d.counted ?? 0).toLocaleString('es-CO')} (${d.difference! > 0 ? '+' : ''}$${d.difference!.toLocaleString('es-CO')})`,
+        )
+        .join('\n');
+      await this.audit.log({
+        userId: cashierId,
+        action: 'SHIFT_DISCREPANCY_DETECTED',
+        entityType: 'shift',
+        entityId: shiftId,
+        metadata: { kind: 'digital', digital: digitalMismatch, threshold: DISCREPANCY_THRESHOLD_COP },
+      });
+      void this.ownerNotifications.alert(
+        'shift_discrepancy',
+        `[${process.env.BUSINESS_NAME ?? 'Tercos'}] ⚠ Descuadre DIGITAL en cierre de caja\n\n${detail}\n\nShift: ${shiftId.slice(0, 8)}`,
+        { shiftId, kind: 'digital' },
+      );
     }
 
     return toShiftDto(closed);
@@ -633,6 +705,8 @@ function toShiftDto(row: DbShiftWithCashier): Shift {
     difference: row.difference !== null ? Number(row.difference) : null,
     notes: row.notes,
     status: row.status,
+    cashCountBreakdown: (row.cashCountBreakdown as CashCountLine[] | null) ?? null,
+    digitalCountBreakdown: (row.digitalCountBreakdown as DigitalCountLine[] | null) ?? null,
   };
 }
 

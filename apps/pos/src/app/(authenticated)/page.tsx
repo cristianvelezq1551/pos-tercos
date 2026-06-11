@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { OpsSidebar } from '../../components/OpsSidebar';
 import { CatalogGrid } from '../../features/catalog';
 import { getActiveProductsServer } from '../../features/catalog/server';
 import { CartPanel } from '../../features/sales';
@@ -18,14 +17,9 @@ export default async function PosHomePage() {
   const products = await getActiveProductsServer();
   return (
     <div className="flex h-full min-h-0">
-      {/*
-        Barra de operación (Turnos / Historial en pestañas) — visible desde lg.
-        En pantallas chicas se accede por los botones del topbar (mismo
-        contenido en modal), así no se pierde funcionalidad.
-      */}
-      <OpsSidebar />
-
-      {/* Núcleo: catálogo + carrito — siempre visible, ocupa el resto. */}
+      {/* Núcleo: catálogo + carrito a ancho completo. Turnos/Historial/Caja
+          viven en sus pestañas de la nav superior (la campana de "listo" es
+          global, suena en cualquier pestaña). */}
       <section className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <CatalogGrid products={products} />

@@ -20,6 +20,7 @@ import { closeShift } from '../api/close';
 import { listCashMovements } from '../api';
 import { cashMovementsNet, sumBreakdown, toBreakdownLines } from '../lib/denominations';
 import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
+import { DigitalCountSection } from './DigitalCountSection';
 import { DenominationCounter } from './DenominationCounter';
 import { DifferenceWidget } from './DifferenceWidget';
 import { ShiftZReport } from './ShiftZReport';
@@ -36,6 +37,7 @@ export function CloseShiftModal({
   onClosed: (shift: Shift) => void;
 }) {
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
+  const [digitalCounts, setDigitalCounts] = useState<Record<string, number | null>>({});
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [loading, setLoading] = useState(false);
   // Arqueo por denominación (default) o monto directo.
@@ -105,9 +107,13 @@ export function CloseShiftModal({
     setError(null);
     setPending(true);
     try {
+      const digital = Object.entries(digitalCounts)
+        .filter(([, v]) => v !== null)
+        .map(([method, v]) => ({ method: method as never, counted: v! }));
       const closed = await closeShift(shift.id, {
         countedCash: countedNum,
         breakdown: arqueo ? toBreakdownLines(counts) : undefined,
+        digitalCounts: digital.length > 0 ? digital : undefined,
         notes: notes.trim() || undefined,
       });
       onClosed(closed);
@@ -201,6 +207,19 @@ export function CloseShiftModal({
               />
             </FormField>
           )
+        ) : null}
+
+        {/* Arqueo digital: transferencias según cada app. */}
+        {!loading && summary ? (
+          <DigitalCountSection
+            summary={summary}
+            values={digitalCounts}
+            onChange={(method, value) =>
+              setDigitalCounts((prev) => ({ ...prev, [method]: value }))
+            }
+            showExpected={showResult}
+            disabled={pending}
+          />
         ) : null}
 
         {/* Diferencia: visible solo si no es ciego o ya se reveló. */}
