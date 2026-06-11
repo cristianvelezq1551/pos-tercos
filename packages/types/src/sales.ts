@@ -81,6 +81,16 @@ export type SaleItem = z.infer<typeof SaleItemSchema>;
 // SALE — wire format (output del backend)
 // ====================================================================
 
+/** Pago registrado de una venta (wire). 1 fila en simple, N en dividida. */
+export const SalePaymentSchema = z.object({
+  id: z.string().uuid(),
+  method: PaymentMethodEnum,
+  amount: z.number(),
+  amountReceived: z.number().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type SalePayment = z.infer<typeof SalePaymentSchema>;
+
 export const SaleSchema = z.object({
   id: z.string().uuid(),
   receiptNumber: z.number().int().positive(),
@@ -112,6 +122,8 @@ export const SaleSchema = z.object({
   /** Motivo de anulación (solo cuando status=VOID). */
   voidReason: z.string().nullable().optional(),
   idempotencyKey: z.string().nullable(),
+  /** Pagos registrados. >1 elemento = cuenta dividida (paymentMethod null). */
+  payments: z.array(SalePaymentSchema).optional(),
   createdAt: z.string().datetime(),
 
   items: z.array(SaleItemSchema).optional(),
@@ -188,28 +200,84 @@ export type CreateSale = z.infer<typeof CreateSaleSchema>;
 // CONFIRM PAYMENT — POST /sales/:id/confirm-payment
 // ====================================================================
 
-export const ConfirmPaymentSchema = z
+/** Una parte de una cuenta DIVIDIDA (modo split de ConfirmPayment). */
+export const SalePaymentInputSchema = z
   .object({
     method: PaymentMethodEnum,
-    /** Monto recibido (CASH puede ser > total → vuelto). Para digital === total. */
-    amountReceived: z.number().positive(),
-    /** Para métodos digitales: confirmación explícita de doble validación
-     *  (verificar app del negocio + comprobante cliente). UI obliga true. */
-    digitalDoubleVerified: z.boolean().optional(),
-    notes: z.string().max(200).optional(),
-    /** true = actualización retroactiva (offline) → NO avisar al cliente por WhatsApp. */
-    silent: z.boolean().optional(),
+    /** Cuánto cubre esta parte. La suma de las partes debe = sales.total. */
+    amount: z.number().positive(),
+    /** CASH: efectivo recibido para ESTA parte (>= amount → vuelto). */
+    amountReceived: z.number().positive().optional(),
+    /** Partes digitales: el cajero verificó ESTE comprobante. */
+    digitalVerified: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
       data.method,
     );
-    if (isDigital && !data.digitalDoubleVerified) {
+    if (isDigital && !data.digitalVerified) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `${data.method} requires digitalDoubleVerified=true (app del negocio + comprobante cliente)`,
-        path: ['digitalDoubleVerified'],
+        message: `La parte en ${data.method} requiere verificar su comprobante (digitalVerified=true)`,
+        path: ['digitalVerified'],
       });
+    }
+    if (data.method === 'CASH' && data.amountReceived !== undefined && data.amountReceived < data.amount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'El efectivo recibido no puede ser menor que la parte a cubrir',
+        path: ['amountReceived'],
+      });
+    }
+  });
+export type SalePaymentInput = z.infer<typeof SalePaymentInputSchema>;
+
+export const MAX_SPLIT_PARTS = 10;
+
+export const ConfirmPaymentSchema = z
+  .object({
+    /** Modo SIMPLE (un solo método). Mutuamente excluyente con `payments`. */
+    method: PaymentMethodEnum.optional(),
+    /** Monto recibido (CASH puede ser > total → vuelto). Para digital === total. */
+    amountReceived: z.number().positive().optional(),
+    /** Para métodos digitales: confirmación explícita de doble validación
+     *  (verificar app del negocio + comprobante cliente). UI obliga true. */
+    digitalDoubleVerified: z.boolean().optional(),
+    /** Modo DIVIDIDO: 2..N partes que suman exactamente el total de la venta. */
+    payments: z.array(SalePaymentInputSchema).min(2).max(MAX_SPLIT_PARTS).optional(),
+    notes: z.string().max(200).optional(),
+    /** true = actualización retroactiva (offline) → NO avisar al cliente por WhatsApp. */
+    silent: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const simple = data.method !== undefined;
+    const split = data.payments !== undefined;
+    if (simple === split) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Indicá `method` (pago simple) O `payments` (cuenta dividida), no ambos.',
+        path: ['method'],
+      });
+      return;
+    }
+    if (simple) {
+      if (data.amountReceived === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'amountReceived es requerido en pago simple',
+          path: ['amountReceived'],
+        });
+      }
+      const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
+        data.method!,
+      );
+      if (isDigital && !data.digitalDoubleVerified) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${data.method} requires digitalDoubleVerified=true (app del negocio + comprobante cliente)`,
+          path: ['digitalDoubleVerified'],
+        });
+      }
     }
   });
 export type ConfirmPayment = z.infer<typeof ConfirmPaymentSchema>;

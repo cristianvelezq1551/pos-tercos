@@ -16,6 +16,7 @@ import { DIGITAL_PAYMENT_METHODS } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ConfirmPayment,
+  SalePaymentInput,
   CreateSale,
   CreateSaleItem,
   PaymentMethod,
@@ -252,28 +253,19 @@ export class SalesService {
       );
     }
     const total = Number(existing.total);
-    if (input.amountReceived < total - 0.005) {
-      throw new BadRequestException(
-        `Amount received (${input.amountReceived}) < total (${total})`,
-      );
-    }
-    // Defensa server-side (no confiar solo en el Zod del controller): los pagos
-    // digitales exigen monto exacto + doble verificación.
-    const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
-      input.method as PaymentMethod,
-    );
-    if (isDigital) {
-      if (!input.digitalDoubleVerified) {
-        throw new BadRequestException(
-          `${input.method} requiere doble verificación (app del negocio + comprobante).`,
-        );
-      }
-      if (Math.abs(input.amountReceived - total) > 0.005) {
-        throw new BadRequestException(
-          `Pago digital: el monto debe ser exacto al total (${total}).`,
-        );
-      }
-    }
+    // Normalizar: el pago simple es una cuenta de UNA parte; la dividida trae
+    // 2..N. Validación y persistencia idénticas para ambos modos.
+    const parts: SalePaymentInput[] = input.payments ?? [
+      {
+        method: input.method!,
+        amount: total,
+        amountReceived: input.amountReceived,
+        digitalVerified: input.digitalDoubleVerified,
+      },
+    ];
+    this.assertPaymentParts(parts, total);
+    const summaryMethod: PaymentMethod | null =
+      parts.length === 1 ? (parts[0]!.method as PaymentMethod) : null;
 
     // WEB_PICKUP entra sin turno; al confirmar el cajero le asocia SU turno
     // abierto (si no, la venta nunca entra al cierre de caja / Z-report).
@@ -348,7 +340,7 @@ export class SalesService {
         where: { id: saleId, status: 'PENDIENTE_PAGO' },
         data: {
           status: 'PAGADO',
-          paymentMethod: input.method as PaymentMethod,
+          paymentMethod: summaryMethod,
           paidAt: new Date(),
           paidByUserId: userId,
           turnNumber,
@@ -367,8 +359,17 @@ export class SalesService {
           statusFrom: 'PENDIENTE_PAGO',
           statusTo: 'PAGADO',
           userId,
-          notes: input.notes ?? `Cobro ${input.method}`,
+          notes: input.notes ?? (summaryMethod ? `Cobro ${summaryMethod}` : `Cobro dividido (${parts.length} pagos)`),
         },
+      });
+      await tx.salePayment.createMany({
+        data: parts.map((p) => ({
+          saleId,
+          method: p.method as PaymentMethod,
+          amount: p.amount,
+          // El vuelto solo existe en efectivo; default = exacto.
+          amountReceived: p.method === 'CASH' ? (p.amountReceived ?? p.amount) : null,
+        })),
       });
       if (stockMovementsToCreate.length > 0) {
         // Defensa contra stock negativo: el cajero ya pasó por el sold-out gate
@@ -393,8 +394,9 @@ export class SalesService {
       entityType: 'sale',
       entityId: saleId,
       metadata: {
-        method: input.method,
-        amountReceived: input.amountReceived,
+        method: summaryMethod ?? 'SPLIT',
+        parts: parts.length,
+        amountReceived: input.amountReceived ?? null,
         movementsCreated: stockMovementsToCreate.length,
       },
     });
@@ -408,6 +410,42 @@ export class SalesService {
       void this.notifications.notify(saleId, 'payment_received');
     }
     return dto;
+  }
+
+  /**
+   * Defensa server-side de las partes de pago (no confiar solo en el Zod del
+   * controller): suma exacta al total, comprobante verificado por cada parte
+   * digital (y monto exacto si declara recibido), efectivo recibido >= parte.
+   */
+  private assertPaymentParts(parts: readonly SalePaymentInput[], total: number): void {
+    const sum = parts.reduce((acc, p) => acc + p.amount, 0);
+    if (Math.abs(sum - total) > 0.005) {
+      throw new BadRequestException(
+        `Las partes suman ${roundMoney(sum)} pero el total es ${total}. La cuenta debe quedar exacta.`,
+      );
+    }
+    for (const p of parts) {
+      const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
+        p.method as PaymentMethod,
+      );
+      if (isDigital) {
+        if (!p.digitalVerified) {
+          throw new BadRequestException(
+            `La parte en ${p.method} requiere verificar su comprobante (digitalVerified).`,
+          );
+        }
+        if (p.amountReceived !== undefined && Math.abs(p.amountReceived - p.amount) > 0.005) {
+          throw new BadRequestException(
+            `Pago digital: el monto debe ser exacto a la parte (${p.amount}).`,
+          );
+        }
+      }
+      if (p.method === 'CASH' && p.amountReceived !== undefined && p.amountReceived < p.amount - 0.005) {
+        throw new BadRequestException(
+          `Efectivo recibido (${p.amountReceived}) menor que la parte a cubrir (${p.amount}).`,
+        );
+      }
+    }
   }
 
   // ==================================================================

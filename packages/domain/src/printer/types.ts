@@ -30,6 +30,13 @@ export interface ReceiptData {
   subtotal: number;
   discountTotal: number;
   total: number;
+  /** Pagos de la venta. Con >1 elemento el recibo imprime el desglose de la
+   *  cuenta dividida (método + monto por parte, vuelto en efectivo). */
+  payments?: Array<{
+    method: string;
+    amount: number;
+    amountReceived: number | null;
+  }>;
   /** Marcador para reimpresiones (ej. "DUPLICADO"). null si es la 1ra. */
   reprintLabel: string | null;
   /** Si true, el ESC/POS incluye el pulso para abrir el cajón monedero

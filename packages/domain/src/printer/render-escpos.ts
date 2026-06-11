@@ -128,6 +128,25 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   out.push(SIZE_NORMAL);
   out.push(BOLD_OFF);
   out.push(LF);
+
+  // Cuenta dividida: desglose por parte (método + monto + vuelto en efectivo).
+  if (receipt.payments && receipt.payments.length > 1) {
+    out.push(LF);
+    out.push(latin1('PAGOS (cuenta dividida)'));
+    out.push(LF);
+    for (const pay of receipt.payments) {
+      out.push(latin1(twoCol(`  ${methodLabel(pay.method)}`, formatCop(pay.amount), 32)));
+      out.push(LF);
+      if (pay.amountReceived !== null && pay.amountReceived > pay.amount) {
+        out.push(
+          latin1(
+            twoCol('    recibido / vuelto', `${formatCop(pay.amountReceived)} / ${formatCop(pay.amountReceived - pay.amount)}`, 32),
+          ),
+        );
+        out.push(LF);
+      }
+    }
+  }
   out.push(LF);
 
   // Footer
@@ -208,4 +227,16 @@ function formatDate(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+const METHOD_LABELS: Record<string, string> = {
+  CASH: 'Efectivo',
+  NEQUI: 'Nequi',
+  DAVIPLATA: 'Daviplata',
+  QR_BANCOLOMBIA: 'QR Bancolombia',
+  TRANSFER: 'Transferencia',
+};
+
+function methodLabel(method: string): string {
+  return METHOD_LABELS[method] ?? method;
 }

@@ -29,13 +29,15 @@ import { cartLinesToCreateItems } from '../store/cart-store';
 import { CashSection } from './CashSection';
 import { PaymentMethodSelector } from './PaymentMethodSelector';
 import { TransferSection } from './TransferSection';
+import { SplitPaymentSection, type SplitResult } from './split/SplitPaymentSection';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
 export interface CheckoutSuccess {
   turnNumber: number | null;
   total: number;
-  paymentMethod: PaymentMethod;
+  /** Método único, o etiqueta "Dividido (N pagos)" en cuenta separada. */
+  paymentMethod: string;
   changeDue: number;
   // ── Venta ONLINE ──
   saleId?: string;
@@ -70,6 +72,9 @@ export function CheckoutModal({
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [cashReceived, setCashReceived] = useState<number | null>(null);
   const [doubleVerified, setDoubleVerified] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitResult, setSplitResult] = useState<SplitResult | null>(null);
+  const [splitReason, setSplitReason] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -81,6 +86,9 @@ export function CheckoutModal({
       setMethod(null);
       setCashReceived(null);
       setDoubleVerified(false);
+      setSplitOpen(false);
+      setSplitResult(null);
+      setSplitReason(null);
       setError(null);
       setPending(false);
     }
@@ -92,6 +100,10 @@ export function CheckoutModal({
   const changeDue = method === 'CASH' ? Math.max(0, cashNum - total) : 0;
 
   const validation = useMemo(() => {
+    if (splitOpen) {
+      if (splitResult) return { ok: true, reason: null };
+      return { ok: false, reason: splitReason ?? 'Completá la división de la cuenta' };
+    }
     if (!method) return { ok: false, reason: 'Elige un método de pago' };
     if (method === 'CASH') {
       if (cashNum < total) {
@@ -110,32 +122,52 @@ export function CheckoutModal({
       };
     }
     return { ok: true, reason: null };
-  }, [method, cashNum, doubleVerified, total]);
+  }, [splitOpen, splitResult, splitReason, method, cashNum, doubleVerified, total]);
 
   const handleConfirm = async () => {
-    if (!validation.ok || !method || pending) return;
+    if (!validation.ok || pending) return;
+    if (!splitOpen && !method) return;
     setError(null);
     setPending(true);
     try {
+      // CUENTA DIVIDIDA (solo online): N partes en una sola confirmación atómica.
+      if (splitOpen && splitResult) {
+        const sale = await createSale(
+          { type: 'COUNTER', items: cartLinesToCreateItems(items) },
+          idempotencyKey,
+        );
+        const paid = await confirmPayment(sale.id, { payments: splitResult.payments });
+        onSuccess({
+          saleId: paid.id,
+          receiptNumber: paid.receiptNumber,
+          turnNumber: paid.turnNumber,
+          total: paid.total,
+          paymentMethod: `Dividido (${splitResult.payments.length} pagos)`,
+          changeDue: splitResult.changeDue,
+          sale: paid,
+        });
+        return;
+      }
+
       const amountReceived = method === 'CASH' ? cashNum : total;
 
       // OFFLINE: encolar la venta + imprimir recibo provisional (sin backend).
       if (offline) {
         const enqueued = await enqueueOfflineSale({
           payload: buildOfflinePayload(items, totals),
-          payment: { method, amountReceived, offlineVerified: isDigital },
+          payment: { method: method!, amountReceived, offlineVerified: isDigital },
         });
         const cashierName = await getCachedCashierName();
         const receipt = buildOfflineReceiptInput(items, totals, promos, {
           provisionalNumber: enqueued.provisionalNumber,
           cashierName,
-          paymentMethod: method,
+          paymentMethod: method!,
         });
         refreshPending();
         onSuccess({
           turnNumber: null,
           total,
-          paymentMethod: method,
+          paymentMethod: method!,
           changeDue,
           provisionalNumber: enqueued.provisionalNumber,
           receipt,
@@ -149,7 +181,7 @@ export function CheckoutModal({
         idempotencyKey,
       );
       const paid = await confirmPayment(sale.id, {
-        method,
+        method: method!,
         amountReceived,
         digitalDoubleVerified: isDigital ? true : undefined,
       });
@@ -158,7 +190,7 @@ export function CheckoutModal({
         receiptNumber: paid.receiptNumber,
         turnNumber: paid.turnNumber,
         total: paid.total,
-        paymentMethod: method,
+        paymentMethod: method!,
         changeDue,
         sale: paid,
       });
@@ -205,25 +237,58 @@ export function CheckoutModal({
         <p className="rounded-md border border-border bg-muted/60 px-3 py-2 text-sm font-medium text-foreground">
           📋 Repasá el pedido en voz alta con el cliente antes de cobrar.
         </p>
-        <FormField label="Método de pago">
-          <PaymentMethodSelector selected={method} onSelect={setMethod} />
-        </FormField>
-
-        {method === 'CASH' ? (
-          <CashSection
-            total={total}
-            cashReceived={cashReceived}
-            onChange={setCashReceived}
-          />
+        {!offline ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-foreground">
+              {splitOpen ? 'Cuenta dividida' : 'Pago único'}
+            </span>
+            <Button
+              type="button"
+              variant={splitOpen ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setSplitOpen((v) => !v);
+                setSplitResult(null);
+                setSplitReason(null);
+              }}
+            >
+              {splitOpen ? '← Pago único' : 'Dividir cuenta'}
+            </Button>
+          </div>
         ) : null}
 
-        {isDigital ? (
-          <TransferSection
+        {splitOpen ? (
+          <SplitPaymentSection
             total={total}
-            verified={doubleVerified}
-            onVerified={setDoubleVerified}
+            totals={totals}
+            onChange={(result, reason) => {
+              setSplitResult(result);
+              setSplitReason(reason);
+            }}
           />
-        ) : null}
+        ) : (
+          <>
+            <FormField label="Método de pago">
+              <PaymentMethodSelector selected={method} onSelect={setMethod} />
+            </FormField>
+
+            {method === 'CASH' ? (
+              <CashSection
+                total={total}
+                cashReceived={cashReceived}
+                onChange={setCashReceived}
+              />
+            ) : null}
+
+            {isDigital ? (
+              <TransferSection
+                total={total}
+                verified={doubleVerified}
+                onVerified={setDoubleVerified}
+              />
+            ) : null}
+          </>
+        )}
 
         {error ? (
           <p
@@ -234,7 +299,7 @@ export function CheckoutModal({
           </p>
         ) : null}
 
-        {!validation.ok && method ? (
+        {!validation.ok && (method || splitOpen) ? (
           <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
             {validation.reason}
           </p>

@@ -113,6 +113,15 @@ export class SalesOfflineService {
               notes: `Venta offline ${input.provisionalNumber} sincronizada`,
             },
           },
+          // Fuente única de verdad del método: el cobro offline es 1 parte.
+          payments: {
+            create: {
+              method: input.payment.method as PaymentMethod,
+              amount: input.payload.total,
+              amountReceived:
+                input.payment.method === 'CASH' ? input.payment.amountReceived : null,
+            },
+          },
         },
         select: { id: true },
       });

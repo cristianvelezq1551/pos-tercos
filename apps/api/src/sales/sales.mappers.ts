@@ -11,6 +11,7 @@ export type DbSaleWithDetail = Prisma.SaleGetPayload<{
   include: {
     cashier: { select: { fullName: true } };
     paidBy: { select: { fullName: true } };
+    payments: true;
     items: {
       include: {
         product: { select: { name: true } };
@@ -25,6 +26,7 @@ export function includeFull() {
   return {
     cashier: { select: { fullName: true } },
     paidBy: { select: { fullName: true } },
+    payments: { orderBy: { createdAt: 'asc' as const } },
     items: {
       include: {
         product: { select: { name: true } },
@@ -64,9 +66,16 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
     subtotal: sale.subtotal,
     discountTotal: sale.discountTotal,
     total: sale.total,
+    payments: (sale.payments ?? []).map((p) => ({
+      method: p.method,
+      amount: p.amount,
+      amountReceived: p.amountReceived,
+    })),
     reprintLabel: isReprint ? 'DUPLICADO' : null,
-    // En efectivo el print abre el cajón (RJ-11). En transferencia no hace falta.
-    openDrawer: sale.paymentMethod === 'CASH',
+    // El cajón se abre si ALGUNA parte fue en efectivo (RJ-11 en el print).
+    openDrawer:
+      sale.paymentMethod === 'CASH' ||
+      (sale.payments ?? []).some((p) => p.method === 'CASH'),
     business: {
       name: process.env.BUSINESS_NAME ?? 'POS Tercos',
       address: process.env.BUSINESS_ADDRESS ?? 'Dirección por configurar',
@@ -116,6 +125,13 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     notes: row.notes,
     voidReason: row.voidReason,
     idempotencyKey: row.idempotencyKey,
+    payments: (row.payments ?? []).map((p) => ({
+      id: p.id,
+      method: p.method,
+      amount: Number(p.amount),
+      amountReceived: p.amountReceived !== null ? Number(p.amountReceived) : null,
+      createdAt: p.createdAt.toISOString(),
+    })),
     createdAt: row.createdAt.toISOString(),
     items,
   };

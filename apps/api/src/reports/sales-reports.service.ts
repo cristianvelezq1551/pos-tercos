@@ -109,6 +109,7 @@ export class SalesReportsService {
         discountTotal: true,
         paidAt: true,
         status: true,
+        payments: { select: { method: true, amount: true } },
       },
     });
 
@@ -148,11 +149,13 @@ export class SalesReportsService {
       t.revenue += total;
       byType.set(s.type, t);
 
-      if (s.paymentMethod) {
-        const m = byMethod.get(s.paymentMethod) ?? { count: 0, revenue: 0 };
+      // Por método desde sale_payments: la plata de una cuenta dividida cae
+      // en CADA método por su parte (count = pagos, no ventas).
+      for (const pay of s.payments) {
+        const m = byMethod.get(pay.method) ?? { count: 0, revenue: 0 };
         m.count += 1;
-        m.revenue += total;
-        byMethod.set(s.paymentMethod, m);
+        m.revenue += Number(pay.amount);
+        byMethod.set(pay.method, m);
       }
     }
 

@@ -76,21 +76,23 @@ export class ShiftsService {
 
     const [cashSales, { cashIn, cashOut }, voidCount, noSaleDrawerCount] =
       await Promise.all([
-        this.prisma.sale.aggregate({
+        this.prisma.salePayment.aggregate({
           where: {
-            shiftId,
-            paymentMethod: 'CASH',
-            status: {
-              in: [
+            method: 'CASH',
+            sale: {
+              shiftId,
+              status: {
+                in: [
                 'PAGADO',
                 'EN_PREPARACION',
                 'LISTO_DESPACHO',
                 'ENTREGADO',
                 'CANCELADO_SIN_REEMBOLSO',
-              ],
+              ]
+              },
             },
           },
-          _sum: { total: true },
+          _sum: { amount: true },
         }),
         this.sumCashMovements(shiftId),
         this.prisma.sale.count({ where: { shiftId, status: 'VOID' } }),
@@ -106,7 +108,7 @@ export class ShiftsService {
       systemPrompt: SHIFT_CLOSE_SYSTEM,
       userPrompt: buildShiftCloseUserPrompt({
         openingCash: Math.round(Number(shift.openingCash)),
-        cashSalesTotal: Math.round(Number(cashSales._sum.total ?? 0)),
+        cashSalesTotal: Math.round(Number(cashSales._sum.amount ?? 0)),
         cashIn,
         cashOut,
         expectedCash: Math.round(Number(shift.expectedCash)),
@@ -324,6 +326,7 @@ export class ShiftsService {
         paymentMethod: true,
         customerName: true,
         createdAt: true,
+        payments: { select: { method: true, amount: true } },
       },
     });
 
@@ -340,13 +343,23 @@ export class ShiftsService {
     }));
 
     const PAID = new Set(['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO']);
-    const paid = orders.filter((o) => PAID.has(o.status));
+    const paidIds = new Set(orders.filter((o) => PAID.has(o.status)).map((o) => o.id));
+    const paid = orders.filter((o) => paidIds.has(o.id));
+    // Por método desde sale_payments: una cuenta DIVIDIDA aporta su parte a
+    // cada método (count = cantidad de pagos, no de ventas).
     const byMethodMap = new Map<string, { count: number; total: number }>();
+    for (const r of rows) {
+      if (!paidIds.has(r.id)) continue;
+      for (const pay of r.payments) {
+        const bm = byMethodMap.get(pay.method) ?? { count: 0, total: 0 };
+        byMethodMap.set(pay.method, {
+          count: bm.count + 1,
+          total: bm.total + Number(pay.amount),
+        });
+      }
+    }
     const byTypeMap = new Map<string, { count: number; total: number }>();
     for (const o of paid) {
-      const m = o.paymentMethod ?? 'N/D';
-      const bm = byMethodMap.get(m) ?? { count: 0, total: 0 };
-      byMethodMap.set(m, { count: bm.count + 1, total: bm.total + o.total });
       const bt = byTypeMap.get(o.type) ?? { count: 0, total: 0 };
       byTypeMap.set(o.type, { count: bt.count + 1, total: bt.total + o.total });
     }
@@ -409,27 +422,30 @@ export class ShiftsService {
       );
     }
 
-    // Efectivo que debe estar en el cajón: ventas CASH cuyo dinero se cobró y
-    // NO se devolvió. Excluye VOID (reembolsado → neto 0) y CANCELADO_NO_PAGO
-    // (nunca se pagó). Incluye CANCELADO_SIN_REEMBOLSO (el efectivo se quedó).
-    const cashSales = await this.prisma.sale.aggregate({
+    // Efectivo que debe estar en el cajón: la porción CASH de cada venta
+    // cobrada (sale_payments es la fuente de verdad — una cuenta dividida
+    // solo aporta su parte en efectivo). Excluye VOID (reembolsado → neto 0)
+    // y CANCELADO_NO_PAGO (nunca se pagó). Incluye CANCELADO_SIN_REEMBOLSO.
+    const cashSales = await this.prisma.salePayment.aggregate({
       where: {
-        shiftId,
-        status: {
-          in: [
-            'PAGADO',
-            'EN_PREPARACION',
-            'LISTO_DESPACHO',
-            'ENTREGADO',
-            'CANCELADO_SIN_REEMBOLSO',
-          ],
+        method: 'CASH',
+        sale: {
+          shiftId,
+          status: {
+            in: [
+              'PAGADO',
+              'EN_PREPARACION',
+              'LISTO_DESPACHO',
+              'ENTREGADO',
+              'CANCELADO_SIN_REEMBOLSO',
+            ],
+          },
         },
-        paymentMethod: 'CASH',
       },
-      _sum: { total: true },
+      _sum: { amount: true },
     });
     // COP son enteros; redondeamos para evitar cualquier drift Decimal→Number.
-    const cashSalesTotal = Math.round(Number(cashSales._sum.total ?? 0));
+    const cashSalesTotal = Math.round(Number(cashSales._sum.amount ?? 0));
     // Movimientos de efectivo del turno: entradas suman, salidas restan.
     const { cashIn, cashOut } = await this.sumCashMovements(shiftId);
     const expectedCash =

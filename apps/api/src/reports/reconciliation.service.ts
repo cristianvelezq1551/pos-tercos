@@ -121,58 +121,79 @@ export class ReconciliationService {
     const periodFrom = csvRows.reduce((min, r) => (r.date < min ? r.date : min), csvRows[0]!.date);
     const periodTo = csvRows.reduce((max, r) => (r.date > max ? r.date : max), csvRows[0]!.date);
 
-    // Sales digitales del POS en el rango (con buffer ±24h para tolerancia).
+    // PAGOS digitales del POS en el rango (con buffer ±24h de tolerancia).
+    // La unidad de match es el PAGO (sale_payments), no la venta: una cuenta
+    // dividida con 2 transferencias genera 2 abonos en el banco, cada uno
+    // matchea contra su parte. (Antes además solo se miraba status=PAGADO —
+    // pero al reconciliar las ventas ya avanzaron a ENTREGADO: bug latente.)
     const bufferMs = TIME_TOLERANCE_HOURS * 60 * 60 * 1000;
     const compatibleMethods = methodsForSource(source);
-    const sales = await this.prisma.sale.findMany({
+    const paymentRows = await this.prisma.salePayment.findMany({
       where: {
-        status: 'PAGADO',
-        paymentMethod: {
-          in: compatibleMethods as Prisma.EnumPaymentMethodNullableFilter['in'],
-        },
-        paidAt: {
-          gte: new Date(periodFrom.getTime() - bufferMs),
-          lte: new Date(periodTo.getTime() + bufferMs),
+        method: { in: compatibleMethods as Prisma.EnumPaymentMethodFilter['in'] },
+        sale: {
+          status: {
+            in: [
+              'PAGADO',
+              'EN_PREPARACION',
+              'LISTO_DESPACHO',
+              'ENTREGADO',
+              'CANCELADO_SIN_REEMBOLSO',
+            ],
+          },
+          paidAt: {
+            gte: new Date(periodFrom.getTime() - bufferMs),
+            lte: new Date(periodTo.getTime() + bufferMs),
+          },
         },
       },
       select: {
         id: true,
-        receiptNumber: true,
-        total: true,
-        paidAt: true,
-        paymentMethod: true,
+        method: true,
+        amount: true,
+        sale: { select: { id: true, receiptNumber: true, paidAt: true } },
       },
-      orderBy: { paidAt: 'asc' },
     });
+    const candidates = paymentRows
+      .map((pr) => ({
+        paymentId: pr.id,
+        saleId: pr.sale.id,
+        receiptNumber: Number(pr.sale.receiptNumber),
+        amount: Number(pr.amount),
+        paidAt: pr.sale.paidAt,
+        method: pr.method as string,
+      }))
+      .filter((c) => c.paidAt !== null)
+      .sort((a, b) => a.paidAt!.getTime() - b.paidAt!.getTime());
 
     // Greedy matching: para cada CSV row, buscar la primera sale candidata
     // que aún no esté tomada.
-    const usedSaleIds = new Set<string>();
+    const usedPaymentIds = new Set<string>();
     const rows: ReconciliationRow[] = [];
 
     for (const csv of csvRows) {
-      let match: typeof sales[number] | undefined;
-      for (const sale of sales) {
-        if (usedSaleIds.has(sale.id)) continue;
-        if (Number(sale.total) !== csv.amount) continue;
-        if (!sale.paidAt) continue;
-        const dt = Math.abs(sale.paidAt.getTime() - csv.date.getTime());
+      let match: typeof candidates[number] | undefined;
+      for (const cand of candidates) {
+        if (usedPaymentIds.has(cand.paymentId)) continue;
+        if (cand.amount !== csv.amount) continue;
+        const dt = Math.abs(cand.paidAt!.getTime() - csv.date.getTime());
         if (dt > bufferMs) continue;
-        match = sale;
+        match = cand;
         break;
       }
       if (match) {
-        usedSaleIds.add(match.id);
+        usedPaymentIds.add(match.paymentId);
         rows.push({
           status: 'matched',
           csvDate: csv.date.toISOString(),
           csvAmount: csv.amount,
           csvReference: csv.reference,
-          saleId: match.id,
-          receiptNumber: Number(match.receiptNumber),
-          saleTotal: Number(match.total),
+          saleId: match.saleId,
+          receiptNumber: match.receiptNumber,
+          // En cuentas divididas es el monto de ESA parte (lo que ve el banco).
+          saleTotal: match.amount,
           salePaidAt: match.paidAt!.toISOString(),
-          paymentMethod: match.paymentMethod,
+          paymentMethod: match.method as ReconciliationRow['paymentMethod'],
         });
       } else {
         rows.push({
@@ -189,22 +210,21 @@ export class ReconciliationService {
       }
     }
 
-    // Sales digitales sin match en CSV
-    for (const sale of sales) {
-      if (usedSaleIds.has(sale.id)) continue;
-      // Solo consideramos sin-match las sales que estén EN el periodo CSV (no en el buffer).
-      if (!sale.paidAt) continue;
-      if (sale.paidAt < periodFrom || sale.paidAt > periodTo) continue;
+    // Pagos digitales del POS sin match en el CSV
+    for (const cand of candidates) {
+      if (usedPaymentIds.has(cand.paymentId)) continue;
+      // Solo consideramos sin-match los que estén EN el periodo CSV (no en el buffer).
+      if (cand.paidAt! < periodFrom || cand.paidAt! > periodTo) continue;
       rows.push({
         status: 'unmatched_sale',
         csvDate: null,
         csvAmount: null,
         csvReference: null,
-        saleId: sale.id,
-        receiptNumber: Number(sale.receiptNumber),
-        saleTotal: Number(sale.total),
-        salePaidAt: sale.paidAt.toISOString(),
-        paymentMethod: sale.paymentMethod,
+        saleId: cand.saleId,
+        receiptNumber: cand.receiptNumber,
+        saleTotal: cand.amount,
+        salePaidAt: cand.paidAt!.toISOString(),
+        paymentMethod: cand.method as ReconciliationRow['paymentMethod'],
       });
     }
 
@@ -219,7 +239,7 @@ export class ReconciliationService {
       periodFrom: periodFrom.toISOString(),
       periodTo: periodTo.toISOString(),
       csvRowsParsed: csvRows.length,
-      posSalesEvaluated: sales.length,
+      posSalesEvaluated: candidates.length,
       summary,
       rows,
     };

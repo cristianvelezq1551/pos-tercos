@@ -910,6 +910,32 @@ La apertura de caja offline NO se implementó: respeta la decisión documentada 
 
 ---
 
+## 7.v6 Pagos divididos (cuenta separada) — 2026-06-10
+
+El cobro acepta **una cuenta dividida en 2..10 partes**, cada una con su método.
+
+### Modelo
+- **Tabla `sale_payments`** (migración `20260610150000_sale_payments` + backfill): fuente ÚNICA de verdad del método de pago. El cobro simple escribe 1 fila; el dividido N. CHECKs: `amount > 0`, `amount_received >= amount`.
+- `sales.payment_method` queda como **resumen denormalizado**: el método si es único, **NULL si la cuenta se dividió** (el CHECK viejo `paid_at ⇒ method` se relajó a `sin pagar ⇒ sin método`).
+- **Sin estado "medio pagado"**: la división se compone en el POS y `confirmPayment` la confirma ATÓMICA (todas las partes o ninguna). Validación server-side: suma exacta al total, comprobante verificado por parte digital, efectivo recibido ≥ parte.
+- Wire: `ConfirmPayment` acepta `method+amountReceived` (simple) XOR `payments: SalePaymentInput[]`. `Sale.payments[]` en el DTO.
+
+### Integraciones financieras (todas leen de sale_payments)
+- **Caja** (`expectedCash`) y **close-analysis IA**: solo la porción CASH de cada venta.
+- **Z-report / session detail `byMethod`**: por pago (una dividida aporta a varios métodos; count = pagos).
+- **Reportes `byMethod`**: ídem.
+- **Reconciliación CSV**: la unidad de match es el PAGO — una dividida con 2 transferencias matchea cada abono del banco por su parte. (De paso se corrigió un bug latente: solo miraba `status=PAGADO`, pero al reconciliar las ventas ya están ENTREGADO.)
+- **Recibo ESC/POS**: sección "PAGOS (cuenta dividida)" con método/monto/vuelto por parte; el cajón abre si ALGUNA parte fue CASH.
+- **Offline**: la venta offline sigue siendo de pago único y también escribe su fila en sale_payments al sincronizar. La UI oculta "Dividir cuenta" sin red.
+
+### POS UI (`features/sales/components/split/` + `lib/split.ts` puro)
+- Toggle "Dividir cuenta" en CheckoutModal (solo online) → 3 modos: **Partes iguales** (N con redondeo exacto: el remanente va a las primeras), **Por productos** (cada UNIDAD vendida se asigna a una persona; promos prorrateadas por unidad), **Montos libres** (la última parte autocompleta el resto).
+- Cada persona: método + efectivo recibido con vuelto propio, o check de comprobante por transferencia. El botón Confirmar se habilita cuando todas las partes están cobradas y la suma cuadra.
+
+E2E: `split-payments.e2e-spec.ts` (7 casos). Verificado: typecheck 12/12, lint 0, domain 122/122, e2e 70/70.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
