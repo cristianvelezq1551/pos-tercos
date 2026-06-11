@@ -26,7 +26,9 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 - **Backend:** NestJS 11 + Prisma 6 + PostgreSQL 16 (Railway en prod, Docker en dev)
 - **Frontends:** Next.js 15 App Router + React 19 + Tailwind v4 (Vercel en prod)
 - **Monorepo:** Turborepo + pnpm workspaces
-- **Auth:** JWT (access **24h** en cookie+Bearer + refresh 7d httpOnly cookie con rotación). KDS refresca en `auth.error` del WS; POS y admin con `SessionKeeper` (refresh cada 6h + al volver el foco).
+- **Auth:** JWT (access **24h** en cookie+Bearer + refresh 7d httpOnly cookie con rotación). KDS refresca en `auth.error` del WS; POS y admin con `SessionKeeper` (refresh cada 6h + al volver el foco) **+ refresh automático en el middleware** (si el access venció pero el refresh vive, renueva en la misma request — el usuario no ve login mientras el refresh de 7d sea válido).
+  - **Aislamiento admin/pos (2026-06-11):** cookies por app (`admin_*`/`pos_*`) + el guard del API exige la cookie de la app que declara `X-Client-App` (sin fallback cruzado) + el middleware de cada app sanea las cookies ajenas antes de proxiar `/api`. ⚠️ Gotcha Next 15.5: el matcher regex `'/((?!...).*)'` NO matchea `/api` — por eso hay una entrada explícita `'/api/:path*'` en ambos middleware. NO quitarla.
+  - **DB de tests separada:** los e2e corren contra `pos_tercos_test` (creada+migrada por `test/global-setup.ts`; `setup-env.ts` fuerza `DATABASE_URL`). NUNCA tocan la DB de dev (antes `cleanDb` truncaba usuarios/catálogo de dev y "desaparecían" las sesiones).
 - **Realtime:** WebSocket (KDS Flutter via `socket_io_client`, POS via socket.io-client) + SSE (pantalla pública)
 - **IA:** Anthropic Claude Haiku 4.5 (primario) + OpenAI GPT-4o-mini (fallback) — vision para facturas
 - **WhatsApp:** OpenWA (gateway self-hosted, `whatsapp-web.js`) — envío automático desde backend. Ver sec 4.10. Dev: `MockWhatsAppAdapter` (sin config OpenWA).

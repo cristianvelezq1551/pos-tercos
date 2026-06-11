@@ -5,8 +5,16 @@ import { JwtAccessPayloadSchema } from '@pos-tercos/types';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
-// Admin y pos usan cookies de access distintas (ver auth.controller). El guard
-// acepta ambas: las llamadas cliente envían la cookie del origen vía proxy.
+// Admin y pos usan cookies de access distintas (ver auth.controller). En dev
+// comparten host (localhost — las cookies NO distinguen puerto), así que un
+// request puede traer AMBAS. Regla estricta: si viene `X-Client-App`, SOLO se
+// acepta la cookie de ESA app (los middlewares de admin/pos lo inyectan en
+// todo /api/*). El fallback a ambas queda solo para llamadas sin header
+// (curl/clientes legacy) — nunca para los frontends.
+const ACCESS_COOKIE_BY_APP: Record<string, string> = {
+  admin: 'admin_access',
+  pos: 'pos_access',
+};
 const ACCESS_COOKIE_NAMES = ['pos_access', 'admin_access'] as const;
 
 @Injectable()
@@ -49,6 +57,12 @@ export class JwtAuthGuard implements CanActivate {
     }
     const cookies = req.cookies as Record<string, string> | undefined;
     if (!cookies) return undefined;
+    // Con X-Client-App: SOLO la cookie de esa app (aislamiento de sesiones).
+    const appHeader = req.headers['x-client-app'];
+    const app = Array.isArray(appHeader) ? appHeader[0] : appHeader;
+    if (app && ACCESS_COOKIE_BY_APP[app]) {
+      return cookies[ACCESS_COOKIE_BY_APP[app]];
+    }
     for (const name of ACCESS_COOKIE_NAMES) {
       if (cookies[name]) return cookies[name];
     }
