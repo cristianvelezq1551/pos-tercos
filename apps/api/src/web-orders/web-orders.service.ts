@@ -88,6 +88,14 @@ export class WebOrdersService {
       discountTotal: sale.discountTotal,
       total: sale.total,
       createdAt: sale.createdAt,
+      items: (sale.items ?? []).map((it) => ({
+        productName: it.productName ?? 'Producto',
+        sizeName: it.sizeName ?? null,
+        quantity: it.quantity,
+        modifiers: (it.modifiers ?? []).map((m) => m.name),
+        notes: it.notes ?? null,
+        lineTotal: it.lineTotal,
+      })),
     };
   }
 }

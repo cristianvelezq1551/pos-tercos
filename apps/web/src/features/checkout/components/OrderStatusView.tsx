@@ -247,6 +247,39 @@ function DetailsCard({
 
   return (
     <section className="w-full max-w-[420px] rounded-xl border border-border bg-card p-6">
+      {order.items.length > 0 ? (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tu pedido
+          </p>
+          <ul className="mt-3 flex flex-col gap-2.5">
+            {order.items.map((it, i) => (
+              <li key={i} className="flex items-start justify-between gap-3 text-sm">
+                <span className="min-w-0">
+                  <span className="font-medium text-foreground">
+                    ×{it.quantity} {it.productName}
+                    {it.sizeName ? ` · ${it.sizeName}` : ''}
+                  </span>
+                  {it.modifiers.length > 0 ? (
+                    <span className="block text-xs text-primary">
+                      + {it.modifiers.join(', ')}
+                    </span>
+                  ) : null}
+                  {it.notes ? (
+                    <span className="block text-xs italic text-muted-foreground">
+                      “{it.notes}”
+                    </span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-sm font-semibold text-foreground">
+                  {COP.format(it.lineTotal)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="my-4 h-px bg-border" />
+        </>
+      ) : null}
       <ul className="flex flex-col gap-4">
         {rows.map((row, idx) => (
           <li key={row.label}>

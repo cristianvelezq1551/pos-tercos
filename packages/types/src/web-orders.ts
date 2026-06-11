@@ -42,6 +42,18 @@ export type CreateWebOrder = z.infer<typeof CreateWebOrderSchema>;
  * sin cashier, sin shift. Sí incluye total + status + payment
  * instructions opacas.
  */
+/** Ítem del pedido tal como lo ve el CLIENTE (tracking): nombre + adiciones. */
+export const PublicWebOrderItemSchema = z.object({
+  productName: z.string(),
+  sizeName: z.string().nullable(),
+  quantity: z.number().int().positive(),
+  /** Adiciones elegidas (tocineta, queso…). Solo nombre — sin ids internos. */
+  modifiers: z.array(z.string()),
+  notes: z.string().nullable(),
+  lineTotal: z.number().nonnegative(),
+});
+export type PublicWebOrderItem = z.infer<typeof PublicWebOrderItemSchema>;
+
 export const PublicWebOrderSchema = z.object({
   id: z.string().uuid(),
   receiptNumber: z.number().int().positive(),
@@ -54,6 +66,8 @@ export const PublicWebOrderSchema = z.object({
   subtotal: z.number().nonnegative(),
   discountTotal: z.number().nonnegative(),
   total: z.number().nonnegative(),
+  /** Detalle del pedido (con adiciones) — para el tracking del cliente. */
+  items: z.array(PublicWebOrderItemSchema).default([]),
   createdAt: z.string().datetime(),
   /**
    * Instrucciones de pago canónicas (Nequi/transferencia). El backend es la

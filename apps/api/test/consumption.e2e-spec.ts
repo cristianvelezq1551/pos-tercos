@@ -35,6 +35,8 @@ describe('Consumo de stock E2E (online + offline)', () => {
   let cocaId: string;
   let comboId: string;
   let quesudaId: string;
+  let perroId: string;
+  let dobleCarneId: string;
 
   async function movementsFor(saleId: string) {
     const rows = await prisma.inventoryMovement.findMany({
@@ -372,8 +374,9 @@ describe('Consumo de stock E2E (online + offline)', () => {
         ],
       })
       .expect(201);
-    const perroId = prodRes.body.id as string;
+    perroId = prodRes.body.id as string;
     const modifierId = prodRes.body.modifiers[0].id as string;
+    dobleCarneId = modifierId;
     expect(prodRes.body.modifiers[0].recipeDelta).toEqual([
       { childType: 'ingredient', childId: carneId, quantity: 150 },
     ]);
@@ -445,6 +448,28 @@ describe('Consumo de stock E2E (online + offline)', () => {
       .filter((m) => m.entityId === carneId)
       .reduce((acc, m) => acc + m.delta, 0);
     expect(carneOffline).toBe(-250);
+  });
+
+  it('pedido WEB con adición: el cliente ve sus adiciones en el tracking público', async () => {
+    const createRes = await request
+      .post('/web/orders')
+      .send({
+        type: 'WEB_PICKUP',
+        items: [{ productId: perroId, quantity: 1, modifiers: [{ modifierId: dobleCarneId }] }],
+        customerName: 'Cliente Adición',
+        customerPhone: '+573001234567',
+      })
+      .expect(201);
+    expect(createRes.body.order.total).toBe(14000); // 10.000 + 4.000 del extra
+    expect(createRes.body.order.items).toHaveLength(1);
+    expect(createRes.body.order.items[0].modifiers).toEqual(['Doble carne']);
+
+    // Tracking con token (lo que ve el cliente al recargar/compartir URL).
+    const tracked = await request
+      .get(`/web/orders/${createRes.body.order.id}?token=${encodeURIComponent(createRes.body.token)}`)
+      .expect(200);
+    expect(tracked.body.items[0].modifiers).toEqual(['Doble carne']);
+    expect(tracked.body.items[0].productName).toBe('Perro Consumo');
   });
 
   it('GET /reports/inventory-usage refleja ventas, mermas y pérdida valorizada', async () => {
