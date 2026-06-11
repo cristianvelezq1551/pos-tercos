@@ -31,13 +31,17 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMimeLoose } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { WorkersPaymentsService } from './workers-payments.service';
 import { WorkersService } from './workers.service';
 
 /** RRHH / nómina. Admin/Dueño. */
 @Controller('workers')
 @AdminAccess()
 export class WorkersController {
-  constructor(private readonly workers: WorkersService) {}
+  constructor(
+    private readonly workers: WorkersService,
+    private readonly payments: WorkersPaymentsService,
+  ) {}
 
   @Get('users')
   listUsers(): Promise<Array<{ id: string; fullName: string; role: string; payType: string | null }>> {
@@ -127,7 +131,7 @@ export class WorkersController {
     if (!detected) {
       throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
     }
-    return this.workers.markPaymentPaid(
+    return this.payments.markPaymentPaid(
       userId,
       periodStart,
       requirePin(pin),
@@ -149,7 +153,7 @@ export class WorkersController {
     if (!periodStart || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) {
       throw new BadRequestException('?period=YYYY-MM-DD requerido.');
     }
-    return this.workers.unmarkPayment(userId, periodStart, requirePin(pin), user.sub);
+    return this.payments.unmarkPayment(userId, periodStart, requirePin(pin), user.sub);
   }
 
   /** Comprobante binario (Dueño). */
@@ -159,7 +163,7 @@ export class WorkersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Res() res: Response,
   ): Promise<void> {
-    const { buffer, mime } = await this.workers.getPaymentProof(id);
+    const { buffer, mime } = await this.payments.getPaymentProof(id);
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);
