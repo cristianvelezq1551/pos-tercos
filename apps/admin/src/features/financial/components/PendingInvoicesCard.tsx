@@ -2,6 +2,7 @@ import type { FinancePendingInvoice } from '@pos-tercos/types';
 import { Money } from '@pos-tercos/ui';
 import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import { AgingBadge } from './AgingBadge';
 import { EmptyHint } from './EmptyHint';
 import { formatShortDate } from './format-short-date';
 
@@ -27,10 +28,13 @@ export function PendingInvoicesCard({ rows }: { rows: FinancePendingInvoice[] })
                   <p className="truncate text-sm font-medium text-foreground">
                     {r.supplierName ?? 'Proveedor sin nombre'}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {r.invoiceNumber ?? 'sin nº'}
-                    {r.confirmedAt ? ` · ${formatShortDate(r.confirmedAt)}` : ''}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-xs text-muted-foreground">
+                      {r.invoiceNumber ?? 'sin nº'}
+                      {r.confirmedAt ? ` · ${formatShortDate(r.confirmedAt)}` : ''}
+                    </p>
+                    <AgingBadge since={r.confirmedAt} />
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Money amount={r.total} weight="semibold" />

@@ -5,6 +5,7 @@ import { Button, Money } from '@pos-tercos/ui';
 import { CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 import { FixedCostPaymentDialog } from '../../fixed-costs';
+import { AgingBadge, endOfPeriodMonth } from './AgingBadge';
 import { EmptyHint } from './EmptyHint';
 
 export function PendingFixedCostsCard({
@@ -31,9 +32,12 @@ export function PendingFixedCostsCard({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{r.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {r.category} · {r.periodLabel.replace(`${r.name} · `, '')}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-xs text-muted-foreground">
+                      {r.category} · {r.periodLabel.replace(`${r.name} · `, '')}
+                    </p>
+                    <AgingBadge since={endOfPeriodMonth(r.periodYear, r.periodMonth)} />
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Money amount={r.amount} weight="semibold" />

@@ -48,6 +48,7 @@ function buildSyntheticDraft(
   };
 }
 
+// Sin warnings: el modal muestra la guía de 3 pasos (ManualEntryGuide) en modo manual.
 const EMPTY_EXTRACTION: ExtractedInvoice = {
   supplierName: null,
   supplierNit: null,
@@ -55,7 +56,7 @@ const EMPTY_EXTRACTION: ExtractedInvoice = {
   total: null,
   iva: null,
   items: [],
-  warnings: ['Carga manual — ingresa proveedor, items y totales.'],
+  warnings: [],
 };
 
 export function InvoiceUploader() {

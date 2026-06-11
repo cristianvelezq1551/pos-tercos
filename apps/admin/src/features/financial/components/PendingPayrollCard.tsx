@@ -2,6 +2,7 @@ import type { FinancePendingPayroll } from '@pos-tercos/types';
 import { Money } from '@pos-tercos/ui';
 import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import { AgingBadge } from './AgingBadge';
 import { EmptyHint } from './EmptyHint';
 
 export function PendingPayrollCard({ rows }: { rows: FinancePendingPayroll[] }) {
@@ -24,7 +25,10 @@ export function PendingPayrollCard({ rows }: { rows: FinancePendingPayroll[] }) 
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{r.userName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{r.periodLabel}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-xs text-muted-foreground">{r.periodLabel}</p>
+                    <AgingBadge since={r.periodStart} />
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Money amount={r.total} weight="semibold" />

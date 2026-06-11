@@ -52,22 +52,14 @@ export function ReconciliationHistory({
                 <Td mono align="right">
                   {r.csvRowsParsed}
                 </Td>
-                <Td mono align="right">
-                  <span className="font-medium text-success">{r.matched}</span>
+                <Td align="right">
+                  <CountPill value={r.matched} tone="success" />
                 </Td>
-                <Td mono align="right">
-                  {r.unmatchedCsv > 0 ? (
-                    <span className="font-medium text-destructive">{r.unmatchedCsv}</span>
-                  ) : (
-                    r.unmatchedCsv
-                  )}
+                <Td align="right">
+                  <CountPill value={r.unmatchedCsv} tone="destructive" neutralWhenZero />
                 </Td>
-                <Td mono align="right">
-                  {r.unmatchedSale > 0 ? (
-                    <span className="font-medium text-warning">{r.unmatchedSale}</span>
-                  ) : (
-                    r.unmatchedSale
-                  )}
+                <Td align="right">
+                  <CountPill value={r.unmatchedSale} tone="warning" neutralWhenZero />
                 </Td>
                 <Td mono>{formatDate(r.createdAt, 'datetime')}</Td>
                 <Td>{r.importedByName ?? '—'}</Td>
@@ -88,6 +80,32 @@ export function ReconciliationHistory({
         </tbody>
       </table>
     </div>
+  );
+}
+
+const PILL_TONE: Record<string, string> = {
+  success: 'border-success-border bg-success-bg/50 text-success',
+  destructive: 'border-destructive/40 bg-destructive/10 text-destructive',
+  warning: 'border-warning-border bg-warning-bg/40 text-warning',
+  neutral: 'border-border bg-muted/40 text-muted-foreground',
+};
+
+function CountPill({
+  value,
+  tone,
+  neutralWhenZero,
+}: {
+  value: number;
+  tone: 'success' | 'destructive' | 'warning';
+  neutralWhenZero?: boolean;
+}) {
+  const effective = neutralWhenZero && value === 0 ? 'neutral' : tone;
+  return (
+    <span
+      className={`inline-flex min-w-[2rem] items-center justify-center rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums ${PILL_TONE[effective]}`}
+    >
+      {value}
+    </span>
   );
 }
 

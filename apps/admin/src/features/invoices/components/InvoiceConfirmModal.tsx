@@ -11,6 +11,7 @@ import {
   discardPhoto,
   rejectInvoice,
 } from '../api/client';
+import { ManualEntryGuide } from './ManualEntryGuide';
 import { SupplierSection } from './SupplierSection';
 import { InvoiceMetaSection } from './InvoiceMetaSection';
 import { ItemsSection } from './ItemsSection';
@@ -127,7 +128,13 @@ export function InvoiceConfirmModal({
       open
       onClose={submitting ? () => {} : onClose}
       title="Revisar y confirmar factura"
-      description={aiModel ? `Extracción IA · ${aiModel}` : 'Extracción IA'}
+      description={
+        manualMode
+          ? 'Carga manual · sin IA'
+          : aiModel
+            ? `Extracción IA · ${aiModel}`
+            : 'Extracción IA'
+      }
       maxWidth="max-w-5xl"
       footer={
         <>
@@ -140,6 +147,7 @@ export function InvoiceConfirmModal({
       }
     >
       <div className="space-y-6">
+        {manualMode && <ManualEntryGuide />}
         {warnings.length > 0 && (
           <div className="rounded-md border border-warning-border bg-warning-bg/30 p-3 text-sm text-warning">
             <p className="font-semibold">⚠️ La IA marcó estas observaciones:</p>

@@ -133,51 +133,60 @@ export default function StyleguidePage() {
         </Section>
 
         <Section title="2 · Color · paleta cerrada">
-          <Subsection title="Primary · TIZÓN (red-50 → red-950)">
+          <Subsection title="Primary · ROJO TIZÓN saturado (red-50 → red-950)">
             <ColorScale
               colors={[
-                ['red-50', '#FBEFEF'],
-                ['red-100', '#F6DCDD'],
-                ['red-200', '#ECB7BA'],
-                ['red-300', '#DC8A8E'],
-                ['red-400', '#C95B62'],
-                ['red-500', '#C42E38'],
-                ['red-600', '#B81F2A'],
-                ['red-700', '#9D1923'],
-                ['red-800', '#7C141B'],
-                ['red-900', '#5C0F15'],
-                ['red-950', '#390A0D'],
+                ['red-50', '#FFE5E8'],
+                ['red-100', '#FFB8C0'],
+                ['red-200', '#FF8893'],
+                ['red-300', '#FF5867'],
+                ['red-400', '#F2384A'],
+                ['red-500', '#E5293E'],
+                ['red-600', '#CB1E32'],
+                ['red-700', '#A91824'],
+                ['red-800', '#821218'],
+                ['red-900', '#5C0D11'],
+                ['red-950', '#3A080B'],
               ]}
               utility="bg-red"
-              labelTone="dark"
             />
           </Subsection>
-          <Subsection title="Neutros cálidos · ink (50 → 950)">
+          <Subsection title="Neutros · grafito azulado · ink (50 → 950, con 850)">
             <ColorScale
               colors={[
-                ['ink-50', '#FAFAF7'],
-                ['ink-100', '#F2F1ED'],
-                ['ink-200', '#E5E3DD'],
-                ['ink-300', '#CFCCC5'],
-                ['ink-400', '#9C988F'],
-                ['ink-500', '#6E6A60'],
-                ['ink-600', '#4A463E'],
-                ['ink-700', '#2F2C26'],
-                ['ink-800', '#1A1815'],
-                ['ink-900', '#0F0E0C'],
-                ['ink-950', '#0A0A0A'],
+                ['ink-50', '#F1F5FA'],
+                ['ink-100', '#DEE5EE'],
+                ['ink-200', '#BFC9D6'],
+                ['ink-300', '#94A0B0'],
+                ['ink-400', '#6E7A8C'],
+                ['ink-500', '#525D6E'],
+                ['ink-600', '#3B4453'],
+                ['ink-700', '#2C3340'],
+                ['ink-800', '#232A36'],
+                ['ink-850', '#1D232E'],
+                ['ink-900', '#181D26'],
+                ['ink-950', '#131822'],
               ]}
               utility="bg-ink"
-              labelTone="dark"
             />
           </Subsection>
           <Subsection title="Tonos funcionales">
             <div className="flex flex-wrap gap-3">
-              <SwatchBlock label="success" hex="oklch(48% 0.07 110)" className="bg-success" />
-              <SwatchBlock label="warning" hex="oklch(58% 0.13 70)" className="bg-warning" />
+              <SwatchBlock
+                label="success"
+                hex="#4ADE80"
+                className="bg-success"
+                textClass="text-ink-950"
+              />
+              <SwatchBlock
+                label="warning"
+                hex="#FBBF24"
+                className="bg-warning"
+                textClass="text-ink-950"
+              />
               <SwatchBlock
                 label="destructive"
-                hex="= primary"
+                hex="#E5293E · = primary"
                 className="bg-destructive"
               />
             </div>
@@ -526,19 +535,17 @@ function BrandTile({
 function ColorScale({
   colors,
   utility,
-  labelTone,
 }: {
   colors: [string, string][];
   utility: string;
-  labelTone: 'light' | 'dark';
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-6 lg:grid-cols-11">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-6 lg:grid-cols-12">
       {colors.map(([name, hex]) => {
         const stop = name.split('-')[1];
         const numericStop = Number(stop);
-        const isLightSwatch = numericStop <= 400;
-        const labelClass = isLightSwatch ? 'text-ink-900' : 'text-ink-50';
+        const isLightSwatch = numericStop <= 300;
+        const labelClass = isLightSwatch ? 'text-ink-950' : 'text-ink-50';
         return (
           <div
             key={name}
@@ -549,8 +556,6 @@ function ColorScale({
           </div>
         );
       })}
-      {/* labelTone is intentionally unused — utility classes contain colors */}
-      <span className="hidden">{labelTone}</span>
     </div>
   );
 }
@@ -559,14 +564,16 @@ function SwatchBlock({
   label,
   hex,
   className,
+  textClass = 'text-ink-50',
 }: {
   label: string;
   hex: string;
   className: string;
+  textClass?: string;
 }) {
   return (
     <div
-      className={`flex h-20 w-40 flex-col justify-end rounded-md p-2 text-ink-50 ${className}`}
+      className={`flex h-20 w-40 flex-col justify-end rounded-md p-2 ${textClass} ${className}`}
     >
       <span className="text-xs font-semibold">{label}</span>
       <span className="text-[0.625rem] opacity-80">{hex}</span>
