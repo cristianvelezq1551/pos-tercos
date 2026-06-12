@@ -596,18 +596,15 @@ export class SalesService {
    * pagó). Transiciona a CANCELADO_NO_PAGO (sin reverso de stock: nunca se
    * descontó) y avisa al cliente por WhatsApp. Solo WEB_PICKUP.
    */
-  async cancelWebOrder(saleId: string, cashierId: string): Promise<Sale> {
+  async cancelUnpaid(saleId: string, cashierId: string): Promise<Sale> {
     const existing = await this.prisma.sale.findUnique({
       where: { id: saleId },
       select: { type: true, status: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (existing.type !== 'WEB_PICKUP') {
-      throw new BadRequestException('Solo se pueden rechazar pedidos web.');
-    }
     if (existing.status !== 'PENDIENTE_PAGO') {
       throw new BadRequestException(
-        `No se puede rechazar: el pedido está en ${existing.status}.`,
+        `No se puede cancelar: el pedido está en ${existing.status}.`,
       );
     }
 
@@ -625,7 +622,10 @@ export class SalesService {
           statusFrom: 'PENDIENTE_PAGO',
           statusTo: 'CANCELADO_NO_PAGO',
           userId: cashierId,
-          notes: 'Pedido web rechazado por el cajero',
+          notes:
+            existing.type === 'WEB_PICKUP'
+              ? 'Pedido web rechazado por el cajero'
+              : 'Cobro abandonado en el mostrador',
         },
       });
       return tx.sale.findUniqueOrThrow({

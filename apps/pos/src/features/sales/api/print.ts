@@ -43,6 +43,24 @@ export async function printReceipt(
 }
 
 /**
+ * Imprime la COMANDA de cocina (sin precios) vía print-agent local. Se
+ * dispara al COBRAR — la venta puede seguir PENDIENTE_PAGO.
+ */
+export async function printComanda(saleId: string): Promise<void> {
+  const res = await fetch(`/api/sales/${saleId}/comanda-escpos`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `No se pudo generar la comanda (${res.status})${text ? `: ${text.slice(0, 150)}` : ''}`,
+    );
+  }
+  const { escposBase64 } = (await res.json()) as { escposBase64: string };
+  await sendToAgent({ escposBase64 });
+}
+
+/**
  * Imprime un recibo OFFLINE directo desde los datos (no hay venta en el backend).
  * El agent lo renderiza y rellena el negocio desde su .env. Lo usa la venta
  * offline (B.2): el recibo lleva el número provisional OFF-N.

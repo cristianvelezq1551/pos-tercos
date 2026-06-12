@@ -57,6 +57,7 @@ export const AuditActionEnum = z.enum([
 
   // Receipts (FASE 5)
   'RECEIPT_PRINTED',
+  'COMANDA_PRINTED',
   'RECEIPT_REPRINTED',
   'RECEIPT_GAP_DETECTED',
 

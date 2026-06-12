@@ -1,4 +1,4 @@
-import type { ReceiptData } from '@pos-tercos/domain';
+import type { ComandaData, ReceiptData } from '@pos-tercos/domain';
 import type { AppliedModifier, Sale, SaleItem } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 
@@ -82,6 +82,25 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
       nit: process.env.BUSINESS_NIT ?? '900.000.000-0',
       phone: process.env.BUSINESS_PHONE ?? null,
     },
+  };
+}
+
+/** Comanda de cocina: sin precios — solo lo que la cocina prepara. */
+export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
+  return {
+    receiptNumber: sale.receiptNumber,
+    turnNumber: sale.turnNumber,
+    createdAt: sale.createdAt,
+    type: sale.type,
+    customerName: sale.customerName,
+    items: (sale.items ?? []).map((it) => ({
+      productName: it.productName ?? '(sin nombre)',
+      sizeName: it.sizeName ?? null,
+      quantity: it.quantity,
+      modifiers: (it.modifiers ?? []).map((m) => m.name),
+      notes: it.notes ?? null,
+    })),
+    reprintLabel: isReprint ? 'REIMPRESIÓN' : null,
   };
 }
 

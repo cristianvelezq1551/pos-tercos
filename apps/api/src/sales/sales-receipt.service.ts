@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   buildNoSaleDrawerAlertMessage,
+  renderComandaEscPos,
   renderReceiptEscPos,
   type CashDrawerProvider,
   type DrawerOpenResult,
@@ -19,9 +20,12 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { buildReceiptData, includeFull, toSaleDto } from './sales.mappers';
+import { buildComandaData, buildReceiptData, includeFull, toSaleDto } from './sales.mappers';
 
 const PRINTABLE_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
+
+/** La comanda sale al COBRAR (venta recién creada) o después si se repite. */
+const COMANDA_STATUSES = ['PENDIENTE_PAGO', ...PRINTABLE_STATUSES] as const;
 
 /**
  * Recibos y cajón monedero. Separado de SalesService: no toca el ciclo de
@@ -63,6 +67,50 @@ export class SalesReceiptService {
         receiptNumber: Number(sale.receiptNumber),
         via: 'browser-agent',
         previousPrintCount: previousPrints,
+      },
+    });
+
+    return {
+      escposBase64: bytes.toString('base64'),
+      receiptNumber: Number(sale.receiptNumber),
+      reprint: isReprint,
+    };
+  }
+
+  /**
+   * Comanda de COCINA en bytes ESC/POS (base64) para el print-agent local.
+   * Se permite desde PENDIENTE_PAGO: la comanda sale al COBRAR, antes de
+   * confirmar el pago, para que cocina arranque ya.
+   */
+  async getComandaEscPos(
+    saleId: string,
+    userId: string,
+  ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      include: includeFull(),
+    });
+    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (!COMANDA_STATUSES.includes(sale.status as (typeof COMANDA_STATUSES)[number])) {
+      throw new BadRequestException(
+        `Sale en status ${sale.status} no genera comanda.`,
+      );
+    }
+    const previousPrints = await this.prisma.auditLog.count({
+      where: { action: 'COMANDA_PRINTED', entityType: 'sale', entityId: saleId },
+    });
+    const isReprint = previousPrints > 0;
+    const comanda = buildComandaData(toSaleDto(sale), isReprint);
+    const bytes = renderComandaEscPos(comanda);
+
+    await this.audit.log({
+      userId,
+      action: 'COMANDA_PRINTED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: {
+        receiptNumber: Number(sale.receiptNumber),
+        reprint: isReprint,
       },
     });
 

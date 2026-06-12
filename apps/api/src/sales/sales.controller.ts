@@ -129,7 +129,7 @@ export class SalesController {
     return this.sales.void(id, body, user.sub, approvalPin);
   }
 
-  /** El cajero rechaza un pedido web que nunca se pagó (PENDIENTE_PAGO). */
+  /** Cancela un pedido que nunca se pagó (web rechazado o cobro abandonado). */
   @CashierAccess()
   @Post(':id/cancel')
   @HttpCode(200)
@@ -137,7 +137,7 @@ export class SalesController {
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Sale> {
-    return this.sales.cancelWebOrder(id, user.sub);
+    return this.sales.cancelUnpaid(id, user.sub);
   }
 
   @CashierAccess()
@@ -212,6 +212,20 @@ export class SalesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
     return this.receipts.getReceiptEscPos(id, user.sub);
+  }
+
+  /**
+   * Comanda de COCINA en bytes ESC/POS (base64) para el print-agent local.
+   * Sale al COBRAR (la venta puede seguir PENDIENTE_PAGO) — la cocina
+   * arranca sin esperar la confirmación del pago.
+   */
+  @CashierAccess()
+  @Get(':id/comanda-escpos')
+  getComandaEscPos(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
+    return this.receipts.getComandaEscPos(id, user.sub);
   }
 
   /**

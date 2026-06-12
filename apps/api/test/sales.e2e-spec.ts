@@ -298,6 +298,62 @@ describe('Sales E2E', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Caso 3.4: comanda de cocina + cancelar cobro abandonado
+  // ---------------------------------------------------------------------------
+  describe('Comanda + cancelar venta pendiente', () => {
+    let saleId: string;
+
+    beforeEach(async () => {
+      const res = await request
+        .post('/sales')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId, quantity: 2 }] })
+        .expect(201);
+      saleId = res.body.id as string;
+    });
+
+    it('genera la comanda ESC/POS con la venta aún PENDIENTE_PAGO', async () => {
+      const res = await request
+        .get(`/sales/${saleId}/comanda-escpos`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(typeof res.body.escposBase64).toBe('string');
+      expect(res.body.reprint).toBe(false);
+      const decoded = Buffer.from(res.body.escposBase64 as string, 'base64').toString('latin1');
+      expect(decoded).toContain('COMANDA COCINA');
+      expect(decoded).toContain('Hamburguesa Test');
+      // Sin turno asignado (no se ha pagado) → identifica por pedido.
+      expect(decoded).toContain(`PEDIDO #${res.body.receiptNumber}`);
+
+      // Segunda impresión queda marcada como reimpresión + audit.
+      const again = await request
+        .get(`/sales/${saleId}/comanda-escpos`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(again.body.reprint).toBe(true);
+      const logs = await prisma.auditLog.count({
+        where: { action: 'COMANDA_PRINTED', entityId: saleId },
+      });
+      expect(logs).toBe(2);
+    });
+
+    it('cancela un cobro abandonado COUNTER (PENDIENTE_PAGO → CANCELADO_NO_PAGO)', async () => {
+      const res = await request
+        .post(`/sales/${saleId}/cancel`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(res.body.status).toBe('CANCELADO_NO_PAGO');
+
+      // Una venta ya pagada NO se puede cancelar por esta vía.
+      await request
+        .post(`/sales/${saleId}/cancel`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(400);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Caso 3.5: POST /sales/sync-offline (Fase B.3)
   // ---------------------------------------------------------------------------
   describe('POST /sales/sync-offline', () => {

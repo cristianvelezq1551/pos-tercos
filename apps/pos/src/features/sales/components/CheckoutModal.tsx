@@ -24,7 +24,9 @@ import { buildOfflinePayload, buildOfflineReceiptInput } from '../lib/build-rece
 import { confirmPayment } from '../api/confirm-payment';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
+import { cancelSale } from '../api/cancel';
 import { createSale } from '../api/create';
+import { printComanda, printReceipt } from '../api/print';
 import type { CartLine } from '../lib/cart-types';
 import type { CartTotalsResult } from '../lib/totals';
 import { cartLinesToCreateItems } from '../store/cart-store';
@@ -82,6 +84,10 @@ export function CheckoutModal({
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
   const [enabledMethods, setEnabledMethods] = useState<PaymentMethod[]>(FALLBACK_METHODS);
+  // Venta creada al ABRIR el modal (Cobrar): dispara la comanda a cocina ya.
+  const [sale, setSale] = useState<Sale | null>(null);
+  const [comandaState, setComandaState] = useState<'printing' | 'ok' | 'error' | null>(null);
+  const [paid, setPaid] = useState(false);
 
   // Métodos habilitados por el admin (offline cae al fallback).
   useEffect(() => {
@@ -110,8 +116,51 @@ export function CheckoutModal({
       setSplitReason(null);
       setError(null);
       setPending(false);
+      setSale(null);
+      setComandaState(null);
+      setPaid(false);
     }
   }, [open]);
+
+  // Al COBRAR (abrir el modal, online): crear la venta YA e imprimir la
+  // comanda — la cocina arranca sin esperar a que el cliente pague.
+  useEffect(() => {
+    if (!open || offline || !idempotencyKey || items.length === 0) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const created = await createSale(
+          { type: 'COUNTER', items: cartLinesToCreateItems(items) },
+          idempotencyKey,
+        );
+        if (cancelled) return;
+        setSale(created);
+        setComandaState('printing');
+        try {
+          await printComanda(created.id);
+          if (!cancelled) setComandaState('ok');
+        } catch {
+          // Sin print-agent (dev) o impresora caída: la venta sigue normal.
+          if (!cancelled) setComandaState('error');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Error creando la venta');
+        }
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, offline, idempotencyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cerrar SIN pagar → cancelar la venta creada (no queda colgada en
+  // PENDIENTE_PAGO). La comanda impresa se retira a mano si ya salió.
+  const handleClose = () => {
+    if (sale && !paid) void cancelSale(sale.id).catch(() => {});
+    onClose();
+  };
 
   const isDigital = method !== null && DIGITAL_SET.has(method);
   const cashNum = cashReceived ?? 0;
@@ -143,6 +192,12 @@ export function CheckoutModal({
     return { ok: true, reason: null };
   }, [splitOpen, splitResult, splitReason, method, cashNum, doubleVerified, total]);
 
+  // Factura automática post-pago: best-effort — si la impresora falla, el
+  // banner de la venta conserva el botón "Imprimir recibo" para reintentar.
+  const autoPrintReceipt = (paidSale: Sale) => {
+    void printReceipt(paidSale.id, { fallback: paidSale }).catch(() => {});
+  };
+
   const handleConfirm = async () => {
     if (!validation.ok || pending) return;
     if (!splitOpen && !method) return;
@@ -151,20 +206,24 @@ export function CheckoutModal({
     try {
       // CUENTA DIVIDIDA (solo online): N partes en una sola confirmación atómica.
       if (splitOpen && splitResult) {
-        const sale = await createSale(
-          { type: 'COUNTER', items: cartLinesToCreateItems(items) },
-          idempotencyKey,
-        );
-        const paid = await confirmPayment(sale.id, { payments: splitResult.payments });
+        const created =
+          sale ??
+          (await createSale(
+            { type: 'COUNTER', items: cartLinesToCreateItems(items) },
+            idempotencyKey,
+          ));
+        const paidSale = await confirmPayment(created.id, { payments: splitResult.payments });
+        setPaid(true);
         notifyCajaChanged();
+        autoPrintReceipt(paidSale);
         onSuccess({
-          saleId: paid.id,
-          receiptNumber: paid.receiptNumber,
-          turnNumber: paid.turnNumber,
-          total: paid.total,
+          saleId: paidSale.id,
+          receiptNumber: paidSale.receiptNumber,
+          turnNumber: paidSale.turnNumber,
+          total: paidSale.total,
           paymentMethod: `Dividido (${splitResult.payments.length} pagos)`,
           changeDue: splitResult.changeDue,
-          sale: paid,
+          sale: paidSale,
         });
         return;
       }
@@ -195,25 +254,30 @@ export function CheckoutModal({
         return;
       }
 
-      // ONLINE: crear + confirmar contra el backend (camino de siempre).
-      const sale = await createSale(
-        { type: 'COUNTER', items: cartLinesToCreateItems(items) },
-        idempotencyKey,
-      );
-      const paid = await confirmPayment(sale.id, {
+      // ONLINE: la venta ya se creó al abrir el modal (con su comanda);
+      // si esa creación falló, se reintenta acá con el mismo idempotency-key.
+      const created =
+        sale ??
+        (await createSale(
+          { type: 'COUNTER', items: cartLinesToCreateItems(items) },
+          idempotencyKey,
+        ));
+      const paidSale = await confirmPayment(created.id, {
         method: method!,
         amountReceived,
         digitalDoubleVerified: isDigital ? true : undefined,
       });
+      setPaid(true);
       notifyCajaChanged();
+      autoPrintReceipt(paidSale);
       onSuccess({
-        saleId: paid.id,
-        receiptNumber: paid.receiptNumber,
-        turnNumber: paid.turnNumber,
-        total: paid.total,
+        saleId: paidSale.id,
+        receiptNumber: paidSale.receiptNumber,
+        turnNumber: paidSale.turnNumber,
+        total: paidSale.total,
         paymentMethod: method!,
         changeDue,
-        sale: paid,
+        sale: paidSale,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
@@ -224,7 +288,7 @@ export function CheckoutModal({
   return (
     <Dialog
       open={open}
-      onClose={pending ? () => {} : onClose}
+      onClose={pending ? () => {} : handleClose}
       title="Cobrar venta"
       description={`Total ${formatCop(total)} · ${items.length} ${
         items.length === 1 ? 'línea' : 'líneas'
@@ -232,7 +296,7 @@ export function CheckoutModal({
       maxWidth="max-w-lg"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
+          <Button variant="ghost" onClick={handleClose} disabled={pending}>
             Cancelar
           </Button>
           <Button size="lg" onClick={handleConfirm} disabled={!validation.ok || pending}>
@@ -258,6 +322,16 @@ export function CheckoutModal({
         <p className="rounded-md border border-border bg-muted/60 px-3 py-2 text-sm font-medium text-foreground">
           📋 Repasá el pedido en voz alta con el cliente antes de cobrar.
         </p>
+        {comandaState === 'ok' ? (
+          <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs font-medium text-success">
+            ✓ Comanda enviada a cocina
+          </p>
+        ) : comandaState === 'error' ? (
+          <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs font-medium text-warning">
+            La comanda no se imprimió (¿print-agent apagado?). La venta sigue
+            normal — avisale a cocina de palabra.
+          </p>
+        ) : null}
         {!offline ? (
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-foreground">
