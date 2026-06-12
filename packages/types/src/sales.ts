@@ -274,6 +274,57 @@ export type SalePaymentInput = z.infer<typeof SalePaymentInputSchema>;
 
 export const MAX_SPLIT_PARTS = 10;
 
+// ====================================================================
+// EDIT SALE ITEMS — PATCH /sales/:id/items
+// ====================================================================
+
+/**
+ * Edición de un pedido YA COBRADO (corrección del mostrador). Reglas server:
+ * solo PAGADO/EN_PREPARACION/LISTO_DESPACHO con la caja abierta; si cocina
+ * ya lo inició (≠ PAGADO) las líneas de PREPARACIÓN no pueden cambiar (solo
+ * reventa directa, ej. bebidas). El backend recalcula precios y stock.
+ */
+export const EditSaleItemsSchema = z.object({
+  items: z.array(CreateSaleItemSchema).min(1),
+});
+export type EditSaleItems = z.infer<typeof EditSaleItemsSchema>;
+
+// ====================================================================
+// CHANGE SALE PAYMENT — PATCH /sales/:id/payment
+// ====================================================================
+
+/** Parte del re-registro de pago (la plata YA se cobró; esto reclasifica). */
+export const ChangeSalePaymentPartSchema = z.object({
+  method: PaymentMethodEnum,
+  amount: z.number().positive(),
+});
+export type ChangeSalePaymentPart = z.infer<typeof ChangeSalePaymentPartSchema>;
+
+/**
+ * Cambia el método (o la división) de pago de una venta ya cobrada — para
+ * corregir un registro equivocado y evitar descuadres al cierre. Solo con
+ * la caja del turno todavía abierta.
+ */
+export const ChangeSalePaymentSchema = z
+  .object({
+    /** Modo SIMPLE: todo el total a un único método. */
+    method: PaymentMethodEnum.optional(),
+    /** Modo DIVIDIDO: partes que suman exactamente el total. */
+    payments: z.array(ChangeSalePaymentPartSchema).min(2).max(MAX_SPLIT_PARTS).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const simple = data.method !== undefined;
+    const split = data.payments !== undefined;
+    if (simple === split) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Indicá `method` (único) O `payments` (dividido), no ambos.',
+        path: ['method'],
+      });
+    }
+  });
+export type ChangeSalePayment = z.infer<typeof ChangeSalePaymentSchema>;
+
 export const ConfirmPaymentSchema = z
   .object({
     /** Modo SIMPLE (un solo método). Mutuamente excluyente con `payments`. */

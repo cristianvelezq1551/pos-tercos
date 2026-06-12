@@ -947,6 +947,36 @@ E2E: `split-payments.e2e-spec.ts` (7 casos). Verificado: typecheck 12/12, lint 0
 
 ---
 
+## 7.v8 Cajero pro II — correcciones de mostrador, comanda, propinas (2026-06-11)
+
+Cambios sobre §7.v7. Verificado: typecheck 12/12, lint 0, domain 122/122, e2e 91/91.
+
+### Movimientos de caja con método
+- `cash_movements.method` (PaymentMethod, default CASH): un egreso por transferencia ajusta el **arqueo digital** de su método, NO el cajón. `expectedCash` solo suma movimientos CASH. Esperado digital al cierre = ventas del método + movimientos IN−OUT.
+- El registro vive en la pestaña **Caja** (no hay botón en topbar) con selector de método. Editar/eliminar movimientos SOLO con caja OPEN (`PATCH/DELETE /shifts/:id/cash-movements/:movementId`); cerrada = inmutable. Audit `CASH_MOVEMENT_UPDATED` (before/after) / `CASH_MOVEMENT_DELETED`.
+
+### Badge "En caja" en vivo
+- Incluye movimientos (entradas−salidas) y refresca al instante vía evento global `pos:caja-changed` (`features/shifts/lib/caja-events.ts` — `notifyCajaChanged()` se dispara en cobro, anulación, movimientos, ediciones).
+
+### Propinas
+- `shifts.tips_collected` (migración `20260611170000_shift_tips`): se ingresan al CERRAR el turno, bote APARTE (no suman a expectedCash). Visibles en arqueo POS + detalle sesión admin.
+- Nómina (`GET /workers/period`): `tipsTotal` del período + `tipsShare` por empleado (proporcional a días trabajados, remanente a los primeros). Informativo — NO entra al total a pagar.
+
+### Comanda + factura
+- `renderComandaEscPos` en domain (`printer/render-comanda.ts`): ticket cocina 58mm sin precios.
+- `GET /sales/:id/comanda-escpos` — permitido desde PENDIENTE_PAGO. Audit `COMANDA_PRINTED`.
+- **Flujo POS**: al tocar **Cobrar** se CREA la venta (PENDIENTE_PAGO) + se imprime la comanda; al **Confirmar** se cobra + factura automática (best-effort); cerrar el modal sin pagar **cancela** la venta (`POST /sales/:id/cancel` ahora acepta COUNTER → CANCELADO_NO_PAGO).
+
+### Edición de pedidos cobrados (SalesEditService)
+- `PATCH /sales/:id/items`: editable en PAGADO/EN_PREPARACION/LISTO_DESPACHO con caja OPEN. **Regla de cocina**: si ≠ PAGADO, las líneas de preparación (no directResale) deben quedar idénticas — solo cambia reventa (bebidas). Recalcula precios/promos con `computeLine` (export de sales.service), ajusta stock por la DIFERENCIA de consumo, ajusta el pago único al nuevo total (cuenta dividida + total distinto → 400). Emite `order.status.changed` al KDS. Audit `SALE_ITEMS_EDITED`.
+- `PATCH /sales/:id/payment`: reclasifica método/división del pago (suma exacta al total, solo métodos habilitados, caja OPEN). Audit `SALE_PAYMENT_CHANGED`. Para corregir descuadres.
+- POS Historial: botones **Editar** (EditSaleModal con candados en líneas de preparación + agregar producto vía ProductPickerModal) y **Pago** (ChangePaymentModal). Al guardar edición se reimprime la comanda.
+
+### Arqueo histórico (POS /arqueos)
+- Detalle completo: apertura, ventas en efectivo, entradas−salidas, esperado, contado, descuadre, propinas + vendido por método + lista colapsable de ventas con su método + arqueo digital.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

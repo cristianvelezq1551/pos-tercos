@@ -713,7 +713,7 @@ export class SalesService {
 // HELPERS
 // =====================================================================
 
-interface ComputedSaleItem {
+export interface ComputedSaleItem {
   productId: string;
   sizeId: string | null;
   quantity: number;
@@ -726,11 +726,11 @@ interface ComputedSaleItem {
   lineTotal: number;
 }
 
-type ProductWithRelations = Prisma.ProductGetPayload<{
+export type ProductWithRelations = Prisma.ProductGetPayload<{
   include: { sizes: true; modifiers: true };
 }>;
 
-function computeLine(
+export function computeLine(
   input: CreateSaleItem,
   productMap: Map<string, ProductWithRelations>,
   activePromotions: PromotionDef[],

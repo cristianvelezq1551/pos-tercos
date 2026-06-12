@@ -7,6 +7,7 @@ import { ReceiptIntegrityService } from './receipt-integrity.service';
 import { SalesConsumptionService } from './sales-consumption.service';
 import { SalesController } from './sales.controller';
 import { SalesOfflineService } from './sales-offline.service';
+import { SalesEditService } from './sales-edit.service';
 import { SalesReceiptService } from './sales-receipt.service';
 import { SalesService } from './sales.service';
 
@@ -23,6 +24,7 @@ import { SalesService } from './sales.service';
     SalesConsumptionService,
     SalesOfflineService,
     SalesReceiptService,
+    SalesEditService,
     ReceiptIntegrityService,
   ],
   exports: [SalesService, ReceiptIntegrityService],

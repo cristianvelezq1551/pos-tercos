@@ -14,6 +14,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../api/list';
 import { printReceipt } from '../api/print';
 import { markKitchenReady } from '../api/kitchen';
+import { ChangePaymentModal } from './ChangePaymentModal';
+import { EditSaleModal } from './EditSaleModal';
 import {
   ACTIVE_SALE_STATUSES,
   SALE_STATUS_MAPPING,
@@ -71,6 +73,8 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterKey, setFilterKey] = useState('todos');
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [payingSale, setPayingSale] = useState<Sale | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -162,14 +166,42 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
         ) : (
           <ul className="space-y-2">
             {visible.map((s) => (
-              <HistoryRow key={s.id} sale={s} onChanged={refresh} />
+              <HistoryRow
+                key={s.id}
+                sale={s}
+                onChanged={refresh}
+                onEdit={() => setEditingSale(s)}
+                onChangePayment={() => setPayingSale(s)}
+              />
             ))}
           </ul>
         )}
       </div>
+
+      <EditSaleModal
+        sale={editingSale}
+        open={editingSale !== null}
+        onClose={() => setEditingSale(null)}
+        onSaved={() => void refresh()}
+      />
+      <ChangePaymentModal
+        sale={payingSale}
+        open={payingSale !== null}
+        onClose={() => setPayingSale(null)}
+        onSaved={() => void refresh()}
+      />
     </div>
   );
 }
+
+/** Pedido vivo en el local: aún se puede corregir. */
+const EDITABLE_STATUSES = new Set<SaleStatus>(['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO']);
+const PAYMENT_CHANGE_STATUSES = new Set<SaleStatus>([
+  'PAGADO',
+  'EN_PREPARACION',
+  'LISTO_DESPACHO',
+  'ENTREGADO',
+]);
 
 function elapsedTone(minutes: number): string {
   if (minutes >= SLOW_ORDER_THRESHOLD_MIN) return 'text-destructive';
@@ -180,9 +212,13 @@ function elapsedTone(minutes: number): string {
 function HistoryRow({
   sale,
   onChanged,
+  onEdit,
+  onChangePayment,
 }: {
   sale: Sale;
   onChanged: () => Promise<void> | void;
+  onEdit: () => void;
+  onChangePayment: () => void;
 }) {
   const [reprint, setReprint] = useState<'idle' | 'pending' | 'ok' | 'error'>(
     'idle',
@@ -253,6 +289,21 @@ function HistoryRow({
       <div className="mt-2 flex items-center justify-between gap-2">
         <StatusBadge status={sale.status} mapping={SALE_STATUS_MAPPING} />
         <div className="flex items-center gap-1.5">
+          {EDITABLE_STATUSES.has(sale.status) ? (
+            <Button variant="outline" size="sm" onClick={onEdit} title="Editar productos del pedido">
+              Editar
+            </Button>
+          ) : null}
+          {PAYMENT_CHANGE_STATUSES.has(sale.status) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onChangePayment}
+              title="Cambiar método de pago registrado"
+            >
+              Pago
+            </Button>
+          ) : null}
           {/* El cajero NO inicia pedidos (eso es del KDS); solo puede marcar
               listo cuando la cocina ya lo está preparando. */}
           {sale.status === 'EN_PREPARACION' ? (

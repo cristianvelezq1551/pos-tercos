@@ -8,22 +8,27 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
 import type { DrawerOpenResult } from '@pos-tercos/domain';
 import {
   APPROVAL_PIN_HEADER,
+  ChangeSalePaymentSchema,
   ConfirmPaymentSchema,
   CreateSaleSchema,
+  EditSaleItemsSchema,
   IDEMPOTENCY_HEADER,
   IdempotencyKeySchema,
   OpenDrawerSchema,
   SaleStatusEnum,
   SyncOfflineSaleSchema,
   VoidSaleSchema,
+  type ChangeSalePayment,
   type ConfirmPayment,
   type CreateSale,
+  type EditSaleItems,
   type JwtAccessPayload,
   type OpenDrawer,
   type Sale,
@@ -39,6 +44,7 @@ import {
 } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
+import { SalesEditService } from './sales-edit.service';
 import { SalesOfflineService } from './sales-offline.service';
 import { SalesReceiptService } from './sales-receipt.service';
 import { SalesService } from './sales.service';
@@ -50,6 +56,7 @@ export class SalesController {
     private readonly offline: SalesOfflineService,
     private readonly receipts: SalesReceiptService,
     private readonly receiptIntegrity: ReceiptIntegrityService,
+    private readonly edits: SalesEditService,
   ) {}
 
   /**
@@ -127,6 +134,34 @@ export class SalesController {
       );
     }
     return this.sales.void(id, body, user.sub, approvalPin);
+  }
+
+  /**
+   * Edita los productos de un pedido ya cobrado. Si la cocina ya lo inició,
+   * solo se pueden cambiar líneas de reventa directa (ej. bebidas).
+   */
+  @CashierAccess()
+  @Patch(':id/items')
+  editItems(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(EditSaleItemsSchema)) body: EditSaleItems,
+  ): Promise<Sale> {
+    return this.edits.editItems(id, body, user.sub);
+  }
+
+  /**
+   * Reclasifica el método/división de pago de una venta cobrada (corrige un
+   * registro equivocado para que el arqueo cuadre). Solo con la caja abierta.
+   */
+  @CashierAccess()
+  @Patch(':id/payment')
+  changePayment(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ChangeSalePaymentSchema)) body: ChangeSalePayment,
+  ): Promise<Sale> {
+    return this.edits.changePayment(id, body, user.sub);
   }
 
   /** Cancela un pedido que nunca se pagó (web rechazado o cobro abandonado). */
