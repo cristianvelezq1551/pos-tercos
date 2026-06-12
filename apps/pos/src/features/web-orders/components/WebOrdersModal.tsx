@@ -19,6 +19,7 @@ import { cancelWebOrder, markWebOrderReady } from '../api';
 import { useKdsLiveRefresh } from '../hooks/useKdsLiveRefresh';
 import { saleToPublicWebOrder } from '../lib/project';
 import { ConfirmWebPaymentModal } from './ConfirmWebPaymentModal';
+import { usePolling } from '../../../lib/use-polling';
 
 const POLL_MS = 12_000;
 /** Solo a partir de este tiempo ofrecemos "no avisar" (actualización retroactiva). */
@@ -113,9 +114,8 @@ export function WebOrdersModal({
     if (!open) return;
     setLoading(true);
     void refresh().finally(() => setLoading(false));
-    const id = setInterval(() => void refresh(), POLL_MS);
-    return () => clearInterval(id);
   }, [open, refresh]);
+  usePolling(refresh, POLL_MS, { enabled: open, immediate: false });
 
   return (
     <>

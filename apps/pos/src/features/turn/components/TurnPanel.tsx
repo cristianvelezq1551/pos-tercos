@@ -1,8 +1,9 @@
 'use client';
 
 import { Button, Input } from '@pos-tercos/ui';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { ReadyToCallOrder } from '@pos-tercos/types';
+import { usePolling } from '../../../lib/use-polling';
 import {
   callManual,
   callSale,
@@ -43,12 +44,7 @@ export function TurnPanel({ active = true }: { active?: boolean }) {
     }
   }, []);
 
-  useEffect(() => {
-    if (!active) return;
-    void refresh();
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
-  }, [active, refresh]);
+  usePolling(refresh, POLL_MS, { enabled: active });
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);

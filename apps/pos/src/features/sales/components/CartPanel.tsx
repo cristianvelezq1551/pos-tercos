@@ -3,7 +3,7 @@
 import { Button, EmptyState, Money } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
 import type { Promotion } from '@pos-tercos/types';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { fetchActivePromotions } from '../api';
 import { printReceipt, printReceiptData } from '../api/print';
 import { computeCartTotals } from '../lib/totals';
@@ -11,6 +11,7 @@ import { useCartStore } from '../store/cart-store';
 import { CartLineRow } from './CartLineRow';
 import { CheckoutModal, type CheckoutSuccess } from './CheckoutModal';
 import { LastSaleBanner } from './LastSaleBanner';
+import { usePolling } from '../../../lib/use-polling';
 
 const PROMO_REFRESH_MS = 60_000;
 
@@ -27,28 +28,15 @@ export function CartPanel() {
   const [promoError, setPromoError] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const data = await fetchActivePromotions();
-        if (!cancelled) {
-          setPromos(data);
-          setPromoError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setPromoError(err instanceof Error ? err.message : 'Error cargando promos');
-        }
-      }
-    };
-    load();
-    const id = setInterval(load, PROMO_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  usePolling(async () => {
+    try {
+      const data = await fetchActivePromotions();
+      setPromos(data);
+      setPromoError(null);
+    } catch (err) {
+      setPromoError(err instanceof Error ? err.message : 'Error cargando promos');
+    }
+  }, PROMO_REFRESH_MS);
 
   const totals = useMemo(() => computeCartTotals(items, promos), [items, promos]);
 

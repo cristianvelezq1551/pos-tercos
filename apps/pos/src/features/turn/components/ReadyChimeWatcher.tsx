@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { getReadyToCall } from '../api/client';
 import { playReadyChime } from '../lib/ready-chime';
+import { usePolling } from '../../../lib/use-polling';
 
 const POLL_MS = 5000;
 
@@ -15,28 +16,18 @@ const POLL_MS = 5000;
 export function ReadyChimeWatcher() {
   const prevPending = useRef<number | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const ready = await getReadyToCall();
-        if (cancelled) return;
-        const count = ready.orders.filter((o) => o.calledAt === null).length;
-        if (prevPending.current !== null && count > prevPending.current) {
-          playReadyChime();
-        }
-        prevPending.current = count;
-      } catch {
-        // sin red u otro error: el próximo tick reintenta
+  usePolling(async () => {
+    try {
+      const ready = await getReadyToCall();
+      const count = ready.orders.filter((o) => o.calledAt === null).length;
+      if (prevPending.current !== null && count > prevPending.current) {
+        playReadyChime();
       }
-    };
-    void tick();
-    const id = setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+      prevPending.current = count;
+    } catch {
+      // sin red u otro error: el próximo tick reintenta
+    }
+  }, POLL_MS);
 
   return null;
 }

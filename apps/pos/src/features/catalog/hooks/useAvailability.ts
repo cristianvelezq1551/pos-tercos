@@ -1,9 +1,10 @@
 'use client';
 
 import type { ProductAvailability } from '@pos-tercos/types';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { computeOfflineAvailability } from '../../offline';
 import { fetchAvailability } from '../api';
+import { usePolling } from '../../../lib/use-polling';
 
 const POLL_MS = 20_000;
 
@@ -33,16 +34,7 @@ export function useAvailability(): AvailabilityMap {
     }
   }, []);
 
-  useEffect(() => {
-    void refresh();
-    const id = setInterval(() => void refresh(), POLL_MS);
-    const onFocus = () => void refresh();
-    window.addEventListener('focus', onFocus);
-    return () => {
-      clearInterval(id);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [refresh]);
+  usePolling(refresh, POLL_MS);
 
   return { byId, refresh };
 }

@@ -3,7 +3,8 @@
 import type { Product, ProductAvailability, Promotion } from '@pos-tercos/types';
 import { EmptyState, Money, cn, formatCop } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { usePolling } from '../../../lib/use-polling';
 import { fetchActivePromotions, useCartStore } from '../../sales';
 import { getActivePromoBadge, type ProductPromoBadge } from '../../sales/lib/promo-preview';
 import { setSoldOut } from '../api';
@@ -25,22 +26,13 @@ export function CatalogGrid({ products }: { products: Product[] }) {
   const [promos, setPromos] = useState<Promotion[]>([]);
 
   // Cargar promos activas + refrescar cada 60s. Mismas que el carrito usa.
-  useEffect(() => {
-    let cancelled = false;
-    const load = (): void => {
-      fetchActivePromotions()
-        .then((data) => {
-          if (!cancelled) setPromos(data);
-        })
-        .catch(() => {});
-    };
-    load();
-    const id = window.setInterval(load, PROMO_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+  usePolling(async () => {
+    try {
+      setPromos(await fetchActivePromotions());
+    } catch {
+      // sin red: se mantienen las últimas promos conocidas
+    }
+  }, PROMO_REFRESH_MS);
   // Override optimista del flag manual mientras el refetch llega.
   const [soldOutOverride, setSoldOutOverride] = useState<Map<string, boolean>>(new Map());
   const [togglingId, setTogglingId] = useState<string | null>(null);

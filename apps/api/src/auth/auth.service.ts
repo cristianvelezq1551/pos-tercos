@@ -151,6 +151,23 @@ export class AuthService {
     return bcrypt.hash(plain, BCRYPT_ROUNDS);
   }
 
+  /**
+   * Token fresco para el handshake de WebSocket. El navegador no puede leer
+   * la cookie httpOnly, así que los sockets reciben el JWT por handshake; al
+   * reconectar después de horas el token original puede haber vencido — este
+   * endpoint emite uno nuevo a partir de la sesión (cookie) vigente.
+   */
+  async mintWsToken(current: JwtAccessPayload): Promise<{ token: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: current.sub },
+      select: { id: true, role: true, email: true, active: true },
+    });
+    if (!user || !user.active) {
+      throw new UnauthorizedException('Usuario inactivo o inexistente');
+    }
+    return { token: await this.signAccess(user.id, user.role, user.email) };
+  }
+
   private async signAccess(userId: string, role: string, email: string): Promise<string> {
     const payload: JwtAccessPayload = {
       sub: userId,

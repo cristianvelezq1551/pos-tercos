@@ -78,6 +78,12 @@ export class AuthController {
     this.clearAuthCookies(res, app);
   }
 
+  /** Token fresco para reconectar sockets (ver AuthService.mintWsToken). */
+  @Get('ws-token')
+  wsToken(@CurrentUser() current: JwtAccessPayload): Promise<{ token: string }> {
+    return this.auth.mintWsToken(current);
+  }
+
   @Get('me')
   async me(@CurrentUser() current: JwtAccessPayload): Promise<User> {
     const dbUser = await this.users.getById(current.sub);

@@ -22,7 +22,7 @@ export function WebOrdersAction({
   const [open, setOpen] = useState(false);
   // El hook (WS) alimenta el badge contador + el pulse de "nuevo pedido".
   // El contenido del modal lo maneja el propio modal vía REST (más resiliente).
-  const { orders } = useWebOrdersSocket(initial, wsToken);
+  const { orders, connection } = useWebOrdersSocket(initial, wsToken);
   const [pulse, setPulse] = useState(false);
   const prevCount = useRef(initial.length);
 
@@ -53,6 +53,25 @@ export function WebOrdersAction({
             'scale-105 ring-2 ring-warning ring-offset-2 ring-offset-background motion-safe:animate-pulse',
         )}
       >
+        {/* Punto de salud del canal en vivo: verde = WS conectado; ámbar =
+            caído (los pedidos siguen llegando por el resync REST de 12s,
+            pero sin sonido instantáneo). */}
+        <span
+          aria-label={
+            connection === 'connected'
+              ? 'Conexión en vivo activa'
+              : 'Sin conexión en vivo — actualizando cada 12 segundos'
+          }
+          title={
+            connection === 'connected'
+              ? 'En vivo'
+              : 'Sin conexión en vivo — actualizando cada 12 s'
+          }
+          className={cn(
+            'mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full',
+            connection === 'connected' ? 'bg-success' : 'bg-warning motion-safe:animate-pulse',
+          )}
+        />
         {pulse ? '🔔 ¡Nuevo pedido!' : 'Pedidos web'}
         {total > 0 ? (
           <span

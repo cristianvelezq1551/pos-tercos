@@ -3,6 +3,7 @@
 import { KDS_NAMESPACE } from '@pos-tercos/types';
 import { useEffect } from 'react';
 import { io } from 'socket.io-client';
+import { keepSocketAuthFresh } from '../../../lib/socket-auth';
 
 const API_WS_URL =
   process.env.NEXT_PUBLIC_API_WS_URL ?? 'http://localhost:3001';
@@ -24,11 +25,13 @@ export function useKdsLiveRefresh(
       auth: { token },
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10_000,
     });
+    const disposeAuth = keepSocketAuthFresh(socket);
     socket.on('order.created', onChange);
     socket.on('order.status.changed', onChange);
     return () => {
+      disposeAuth();
       socket.disconnect();
     };
     // onChange debe ser estable (useCallback en el caller).

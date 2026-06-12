@@ -16,6 +16,7 @@ import { printReceipt } from '../api/print';
 import { markKitchenReady } from '../api/kitchen';
 import { ChangePaymentModal } from './ChangePaymentModal';
 import { EditSaleModal } from './EditSaleModal';
+import { usePolling } from '../../../lib/use-polling';
 import {
   ACTIVE_SALE_STATUSES,
   SALE_STATUS_MAPPING,
@@ -94,9 +95,8 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
     if (!active) return;
     setLoading(true);
     void refresh().finally(() => setLoading(false));
-    const id = setInterval(() => void refresh(), POLL_MS);
-    return () => clearInterval(id);
   }, [active, refresh]);
+  usePolling(refresh, POLL_MS, { enabled: active, immediate: false });
 
   const filter = FILTERS.find((f) => f.key === filterKey) ?? FILTERS[0]!;
   const visible = useMemo(

@@ -7,20 +7,28 @@ import {
 } from '@pos-tercos/types';
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { logError } from '../../../lib/client-log';
+import { keepSocketAuthFresh } from '../../../lib/socket-auth';
+import { usePolling } from '../../../lib/use-polling';
 import { fetchPendingWebOrders } from '../api';
 import { saleToPublicWebOrder } from '../lib/project';
 
 const API_WS_URL =
   process.env.NEXT_PUBLIC_API_WS_URL ?? 'http://localhost:3001';
 
+/** Red de seguridad REST (el WS no reenvía eventos perdidos en una caída). */
+const RESYNC_MS = 12_000;
+
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
 /**
- * Sincroniza la lista de órdenes web pendientes contra el WS.
- * - `web-order.created` → agrega al state si type=WEB_*.
+ * Sincroniza la lista de órdenes web pendientes contra el WS `/ws/pos`.
+ * - `web-order.created` → agrega al state si sigue PENDIENTE_PAGO.
  * - `web-order.cancelled` → quita del state.
- *
- * (`web-order.customer-paid` removido en FASE 14.A.)
+ * - Reconexión con token VIVO (keepSocketAuthFresh): el JWT del handshake
+ *   SSR vence; sin refresh, una reconexión horas después queda rechazada.
+ * - Resync REST cada 12s (pausado con pestaña oculta) — cubre eventos
+ *   perdidos y transiciones que no emiten evento (confirmar/entregar).
  */
 export function useWebOrdersSocket(
   initial: PublicWebOrder[],
@@ -36,6 +44,22 @@ export function useWebOrdersSocket(
   // el WS. No re-sincronizamos con `initial` para no revertir un removeLocal
   // optimista cuando el layout hace router.refresh.
 
+  const resync = async () => {
+    try {
+      const sales = await fetchPendingWebOrders();
+      const projected = sales
+        .map(saleToPublicWebOrder)
+        .filter((o): o is PublicWebOrder => o !== null);
+      setOrders(projected);
+    } catch (err) {
+      logError('web-orders-resync', err);
+    }
+  };
+
+  // El resync corre siempre que haya sesión (aunque el socket esté caído es
+  // justamente cuando más lo necesitamos), pausado con la pestaña oculta.
+  usePolling(resync, RESYNC_MS, { enabled: token !== null, immediate: false });
+
   useEffect(() => {
     if (!token) return;
 
@@ -44,30 +68,31 @@ export function useWebOrdersSocket(
       auth: { token },
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10_000,
     });
     socketRef.current = socket;
+    const disposeAuth = keepSocketAuthFresh(socket);
 
     socket.on('connect', () => {
       setConnection('connected');
-      // Al (re)conectar, recuperar pedidos que entraron mientras estábamos
-      // desconectados (el WS no reenvía eventos perdidos durante la caída).
-      void fetchPendingWebOrders()
-        .then((sales) => {
-          const projected = sales
-            .map(saleToPublicWebOrder)
-            .filter((o): o is PublicWebOrder => o !== null);
-          setOrders(projected);
-        })
-        .catch(() => undefined);
+      // Al (re)conectar, recuperar pedidos que entraron durante la caída.
+      void resync();
     });
     socket.on('disconnect', () => setConnection('disconnected'));
-    socket.on('connect_error', () => setConnection('error'));
+    socket.on('connect_error', (err) => {
+      setConnection('error');
+      logError('web-orders-socket', err, { stage: 'connect_error' });
+    });
     socket.on('auth.error', () => setConnection('error'));
 
     const apply = (raw: unknown) => {
       const parsed = WebOrderEventSchema.safeParse(raw);
-      if (!parsed.success) return;
+      if (!parsed.success) {
+        logError('web-orders-socket', 'evento con shape inválido', {
+          issues: parsed.error.issues.slice(0, 3),
+        });
+        return;
+      }
       const { event, order } = parsed.data;
       setOrders((current) => {
         if (event === 'web-order.cancelled') {
@@ -96,23 +121,8 @@ export function useWebOrdersSocket(
     socket.on('web-order.created', apply);
     socket.on('web-order.cancelled', apply);
 
-    // Red de seguridad: el badge cuenta PENDIENTE_PAGO. Cuando el cajero
-    // confirma/rechaza un pedido NO llega evento web-order, así que sin esto
-    // el contador quedaba stale (seguía contando pedidos ya cobrados/entregados).
-    // Re-sincroniza cada 12s contra REST (fuente de verdad).
-    const resync = () =>
-      void fetchPendingWebOrders()
-        .then((sales) => {
-          const projected = sales
-            .map(saleToPublicWebOrder)
-            .filter((o): o is PublicWebOrder => o !== null);
-          setOrders(projected);
-        })
-        .catch(() => undefined);
-    const pollId = setInterval(resync, 12_000);
-
     return () => {
-      clearInterval(pollId);
+      disposeAuth();
       socket.disconnect();
       socketRef.current = null;
     };
