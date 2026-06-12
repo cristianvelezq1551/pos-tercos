@@ -2,15 +2,13 @@
 
 import {
   PAYMENT_METHOD_LABELS,
-  type Sale,
   type ShiftSessionDetail,
   type ShiftSessionOrder,
 } from '@pos-tercos/types';
-import { Button, EmptyState, LoadingSkeleton, Money, formatDate } from '@pos-tercos/ui';
+import { EmptyState, LoadingSkeleton, Money, formatDate } from '@pos-tercos/ui';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { ChangePaymentModal, getSale } from '../../sales';
 import { getShiftDetail } from '../api/list';
 
 const label = (m: string): string =>
@@ -25,16 +23,14 @@ const PAID_STATUSES = new Set([
 ]);
 
 /**
- * Ventas de UN método de pago dentro de una caja: cada venta con sus
- * productos (cantidad, nombre, valor) y sus partes de pago. Desde acá se
- * corrige el método de una venta mal registrada — solo mientras la caja
- * siga abierta (cerrada es histórica; el admin puede reabrirla).
+ * Ventas de UN método de pago dentro de una caja cerrada: cada venta con
+ * sus productos (cantidad, nombre, valor) y sus partes de pago. Es solo
+ * lectura — un pago se corrige ANTES del cierre (Historial → Pago); con la
+ * caja cerrada el arqueo es histórico (el admin puede reabrirla).
  */
 export function MethodSalesView({ shiftId, method }: { shiftId: string; method: string }) {
   const [detail, setDetail] = useState<ShiftSessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [changing, setChanging] = useState<Sale | null>(null);
-  const [loadingSale, setLoadingSale] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -73,17 +69,6 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
     );
   const total = entries.reduce((a, e) => a + e.amount, 0);
 
-  const openChangePayment = async (orderId: string) => {
-    setLoadingSale(orderId);
-    try {
-      setChanging(await getSale(orderId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando la venta');
-    } finally {
-      setLoadingSale(null);
-    }
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -107,12 +92,6 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
         </span>
       </div>
 
-      {!shiftOpen ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          La caja ya cerró: el arqueo es histórico y los pagos no se pueden cambiar.
-          Si hay un error, un admin puede reabrir la caja desde el dashboard y ahí sí corregirlo.
-        </p>
-      ) : null}
 
       {entries.length === 0 ? (
         <EmptyState title={`Sin ventas en ${label(method)} en esta caja`} size="sm" />
@@ -131,22 +110,7 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
                   </p>
                   <PaymentTags order={o} highlight={method} />
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <Money amount={amount} weight="semibold" />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!shiftOpen || loadingSale === o.id}
-                    onClick={() => void openChangePayment(o.id)}
-                    title={
-                      shiftOpen
-                        ? 'Corregir el método o la división de pago'
-                        : 'Caja cerrada — no se puede cambiar'
-                    }
-                  >
-                    {loadingSale === o.id ? '…' : 'Cambiar pago'}
-                  </Button>
-                </div>
+                <Money amount={amount} weight="semibold" className="shrink-0" />
               </div>
 
               <ul className="mt-2 space-y-0.5 border-t border-border/60 pt-2">
@@ -165,13 +129,6 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
       )}
 
       <MethodMovements detail={detail} method={method} />
-
-      <ChangePaymentModal
-        sale={changing}
-        open={changing !== null}
-        onClose={() => setChanging(null)}
-        onSaved={() => void load()}
-      />
     </div>
   );
 }
