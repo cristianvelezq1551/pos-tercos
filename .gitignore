@@ -50,3 +50,7 @@ docker-data
 _legacy
 .vercel
 .claude/worktrees/
+
+# Playwright (smoke e2e POS)
+playwright-report/
+test-results/

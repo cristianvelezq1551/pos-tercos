@@ -999,6 +999,13 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 ### Sweep de cobros abandonados
 - `StaleSalesSweepService`: cron 10 min cancela COUNTER `PENDIENTE_PAGO` >30 min (huérfanas del flujo "venta al abrir el cobro"); guard updateMany para no pisar un cobro en curso. Audit `STALE_SALES_SWEPT` + `POST /sales/admin/sweep-stale-pending` (Dueño). Los pedidos WEB pendientes NO se barren (los rechaza el cajero).
 
+### Producción-readiness (2026-06-12)
+- **Backup**: `.github/workflows/db-backup.yml` — pg_dump -Fc nocturno → R2 con verificación (`pg_restore --list`) y retención 30 días. Restore drill documentado en deploy.md §7. Secrets de GitHub pendientes de configurar al crear la DB de prod.
+- **Alertas**: `ServerErrorAlertFilter` (APP_FILTER global, hereda BaseExceptionFilter) — 5xx inesperado → log con stack + WhatsApp al dueño (throttle 10 min por firma). `POST /client-logs` (Throttle 30/min) recibe los errores best-effort del POS (`logError` reporta con throttle local 10/min). Uptime externo: registrar `/healthz` en UptimeRobot (deploy.md §8).
+- **Sesión muerta**: SessionKeeper → dos 401 consecutivos del refresh = redirect a /login.
+- **Regla cumplida**: TODOS los componentes del POS <200 líneas (mayor: 199). Helpers comunes en `apps/pos/src/lib/` (`errors.ts getErrorMessage`, `dates.ts startOfTodayIso`, `audio.ts getAudioContext`) y `features/shifts/lib/sale-statuses.ts` (`PAID_STATUSES`) — no re-duplicar.
+- **Smoke navegador**: `apps/pos/e2e/smoke.spec.ts` (Playwright, chromium) — login→vender→cobrar→cerrar caja contra los dev servers corriendo (`pnpm -F @pos-tercos/pos test:e2e-ui`); setup/teardown por API maneja la caja única (reabre con dueño) y deja la caja OPEN al final. Es smoke LOCAL, no corre en CI.
+
 ### Tests POS (Vitest — `pnpm -F @pos-tercos/pos test`)
 - 26 tests de lógica pura: `totals` (promos: pct/BOGO/ganador absoluto/ventana), `split` (partes iguales exactas, unidades prorrateadas, validación, vuelto), `denominations` (neto CASH-only, neto digital), `shift-summary` (cuenta dividida por método, exclusión de VOID/pendientes). Integrado a `pnpm test` (turbo).
 
