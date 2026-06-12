@@ -4,6 +4,7 @@ export { TransferSection } from './components/TransferSection';
 export { VoidModal } from './components/VoidModal';
 export { VoidSaleAction } from './components/VoidSaleAction';
 export { DayHistoryPanel } from './components/DayHistoryPanel';
+export { ChangePaymentModal } from './components/ChangePaymentModal';
 export { useCartStore, cartLinesToCreateItems, type LastSaleSummary } from './store/cart-store';
 export {
   fetchActivePromotions,
@@ -22,3 +23,4 @@ export {
 export type { CartLine, CartLineSize, CartLineModifier } from './lib/cart-types';
 export type { CartLineTotals, CartTotalsResult } from './lib/totals';
 export { FALLBACK_METHODS, fetchEnabledMethods } from './api/payment-methods';
+export { getSale } from './api/get';

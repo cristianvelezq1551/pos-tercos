@@ -331,6 +331,7 @@ export class ShiftsService {
         items: {
           select: {
             quantity: true,
+            lineTotal: true,
             product: { select: { name: true } },
             size: { select: { name: true } },
           },
@@ -352,6 +353,7 @@ export class ShiftsService {
       items: r.items.map((it) => ({
         quantity: it.quantity,
         name: it.size ? `${it.product.name} ${it.size.name}` : it.product.name,
+        lineTotal: Number(it.lineTotal),
       })),
     }));
 

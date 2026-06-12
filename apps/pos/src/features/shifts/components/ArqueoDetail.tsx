@@ -126,8 +126,8 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
           key={`in-${r.method}`}
           method={r.method}
           amount={r.amount}
-          entries={entriesFor(r.method)}
-          movements={cashMovements.filter((m) => m.method === r.method && m.type === 'IN')}
+          count={entriesFor(r.method).length}
+          href={`/arqueos/${shiftId}/metodo/${encodeURIComponent(r.method)}`}
         />
       ))}
 

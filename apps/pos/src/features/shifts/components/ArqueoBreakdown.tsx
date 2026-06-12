@@ -7,6 +7,7 @@ import {
 } from '@pos-tercos/types';
 import { Money, cn, formatDate } from '@pos-tercos/ui';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 const label = (m: string): string =>
@@ -59,15 +60,43 @@ export function MethodRow({
   amount,
   entries = [],
   movements = [],
+  href,
+  count,
 }: {
   method: string;
   amount: number;
   entries?: MethodOrderEntry[];
   movements?: CashMovement[];
+  /** Si está presente, la fila NAVEGA al detalle en vez de expandir inline. */
+  href?: string;
+  /** Cantidad de ventas (solo para el modo navegación). */
+  count?: number;
 }) {
   const [open, setOpen] = useState(false);
   const hasDetail = entries.length > 0 || movements.length > 0;
   const Chevron = open ? ChevronDown : ChevronRight;
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="flex items-center justify-between border-t border-border/60 px-3 py-2 pl-6 text-sm transition-colors hover:bg-muted/30"
+      >
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          {label(method)}
+          {count !== undefined && count > 0 ? (
+            <span className="text-xs text-muted-foreground/70">
+              · {count} venta{count === 1 ? '' : 's'}
+            </span>
+          ) : null}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Money amount={amount} size="sm" weight="medium" />
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        </span>
+      </Link>
+    );
+  }
 
   return (
     <div className="border-t border-border/60">

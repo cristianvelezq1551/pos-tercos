@@ -151,7 +151,13 @@ export const ShiftSessionOrderSchema = z.object({
   payments: z.array(z.object({ method: z.string(), amount: z.number() })).default([]),
   /** Productos vendidos (resumen liviano para el arqueo). */
   items: z
-    .array(z.object({ quantity: z.number().int(), name: z.string() }))
+    .array(
+      z.object({
+        quantity: z.number().int(),
+        name: z.string(),
+        lineTotal: z.number(),
+      }),
+    )
     .default([]),
 });
 export type ShiftSessionOrder = z.infer<typeof ShiftSessionOrderSchema>;
