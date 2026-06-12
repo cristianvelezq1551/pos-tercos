@@ -665,6 +665,92 @@ export class ShiftsService {
     return toCashMovementDto(row);
   }
 
+  /**
+   * Corrige un movimiento mal registrado. Solo con la caja ABIERTA — un
+   * arqueo cerrado es histórico inmutable. Queda en bitácora con el
+   * antes/después para que el cambio sea auditable.
+   */
+  async updateCashMovement(
+    shiftId: string,
+    movementId: string,
+    input: CreateCashMovement,
+    userId: string,
+  ): Promise<CashMovement> {
+    const before = await this.findOpenShiftMovement(shiftId, movementId);
+    const row = await this.prisma.cashMovement.update({
+      where: { id: movementId },
+      data: {
+        type: input.type,
+        method: input.method,
+        amount: input.amount,
+        reason: input.reason,
+      },
+      include: { user: { select: { fullName: true } } },
+    });
+    await this.audit.log({
+      userId,
+      action: 'CASH_MOVEMENT_UPDATED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: {
+        movementId,
+        before: {
+          type: before.type,
+          method: before.method,
+          amount: Number(before.amount),
+          reason: before.reason,
+        },
+        after: {
+          type: input.type,
+          method: input.method,
+          amount: input.amount,
+          reason: input.reason,
+        },
+      },
+    });
+    return toCashMovementDto(row);
+  }
+
+  /** Elimina un movimiento mal registrado. Solo con la caja ABIERTA. */
+  async deleteCashMovement(
+    shiftId: string,
+    movementId: string,
+    userId: string,
+  ): Promise<void> {
+    const before = await this.findOpenShiftMovement(shiftId, movementId);
+    await this.prisma.cashMovement.delete({ where: { id: movementId } });
+    await this.audit.log({
+      userId,
+      action: 'CASH_MOVEMENT_DELETED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: {
+        movementId,
+        type: before.type,
+        method: before.method,
+        amount: Number(before.amount),
+        reason: before.reason,
+      },
+    });
+  }
+
+  /** El movimiento existe, pertenece a esa caja y la caja sigue OPEN. */
+  private async findOpenShiftMovement(shiftId: string, movementId: string) {
+    const row = await this.prisma.cashMovement.findUnique({
+      where: { id: movementId },
+      include: { shift: { select: { status: true } } },
+    });
+    if (!row || row.shiftId !== shiftId) {
+      throw new NotFoundException(`Movimiento ${movementId} no encontrado en esta caja`);
+    }
+    if (row.shift.status !== 'OPEN') {
+      throw new BadRequestException(
+        'La caja ya está cerrada — el arqueo es inmutable. Pedile a un admin reabrirla si hay un error.',
+      );
+    }
+    return row;
+  }
+
   async listCashMovements(shiftId: string): Promise<CashMovement[]> {
     const rows = await this.prisma.cashMovement.findMany({
       where: { shiftId },

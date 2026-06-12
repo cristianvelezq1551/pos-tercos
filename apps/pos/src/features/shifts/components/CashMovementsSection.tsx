@@ -6,15 +6,23 @@ import {
   type CashMovementType,
   type PaymentMethod,
 } from '@pos-tercos/types';
-import { Button, Input, Money, NumberInput, cn } from '@pos-tercos/ui';
+import { Button, Input, NumberInput, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../../sales';
-import { addCashMovement, listCashMovements } from '../api';
+import {
+  addCashMovement,
+  deleteCashMovement,
+  listCashMovements,
+  updateCashMovement,
+} from '../api';
+import { CashMovementRow } from './CashMovementRow';
 
 /**
  * Lista + registro de entradas/salidas del turno (aparte de ventas), con
  * MÉTODO: efectivo ajusta el cajón esperado; transferencia/digital ajusta
- * el arqueo digital de su método al cierre.
+ * el arqueo digital de su método al cierre. Mientras la caja está abierta
+ * un movimiento mal registrado se puede corregir o eliminar (queda en
+ * bitácora); cerrada, el arqueo es inmutable.
  */
 export function CashMovementsSection({
   shiftId,
@@ -29,6 +37,7 @@ export function CashMovementsSection({
   const [methods, setMethods] = useState<readonly PaymentMethod[]>(FALLBACK_METHODS);
   const [amount, setAmount] = useState<number | null>(null);
   const [reason, setReason] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,18 +56,51 @@ export function CashMovementsSection({
 
   const valid = amount !== null && amount > 0 && reason.trim().length >= 3;
 
+  const resetForm = () => {
+    setEditingId(null);
+    setAmount(null);
+    setReason('');
+    setMethod('CASH');
+    setType('OUT');
+  };
+
+  const startEdit = (m: CashMovement) => {
+    setEditingId(m.id);
+    setType(m.type);
+    setMethod(m.method);
+    setAmount(m.amount);
+    setReason(m.reason);
+    setError(null);
+  };
+
   const submit = async () => {
     if (!valid || amount === null) return;
     setBusy(true);
     setError(null);
     try {
-      await addCashMovement(shiftId, { type, method, amount, reason: reason.trim() });
-      setAmount(null);
-      setReason('');
+      const input = { type, method, amount, reason: reason.trim() };
+      if (editingId) await updateCashMovement(shiftId, editingId, input);
+      else await addCashMovement(shiftId, input);
+      resetForm();
       await refresh();
       onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error registrando el movimiento');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (movementId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteCashMovement(shiftId, movementId);
+      if (editingId === movementId) resetForm();
+      await refresh();
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error eliminando el movimiento');
     } finally {
       setBusy(false);
     }
@@ -117,9 +159,20 @@ export function CashMovementsSection({
           className="flex-1"
         />
         <Button variant="secondary" disabled={!valid || busy} onClick={() => void submit()}>
-          {busy ? '…' : 'Registrar'}
+          {busy ? '…' : editingId ? 'Guardar' : 'Registrar'}
         </Button>
+        {editingId ? (
+          <Button variant="ghost" disabled={busy} onClick={resetForm}>
+            Cancelar
+          </Button>
+        ) : null}
       </div>
+
+      {editingId ? (
+        <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">
+          Corrigiendo un movimiento — el cambio queda registrado en bitácora.
+        </p>
+      ) : null}
 
       {error ? (
         <p role="alert" className="mt-2 text-xs text-destructive">
@@ -130,32 +183,14 @@ export function CashMovementsSection({
       {movements.length > 0 ? (
         <ul className="mt-3 space-y-1.5">
           {movements.map((m) => (
-            <li
+            <CashMovementRow
               key={m.id}
-              className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs"
-            >
-              <span className="min-w-0 flex-1 truncate">
-                <span
-                  className={cn(
-                    'font-semibold',
-                    m.type === 'IN' ? 'text-success' : 'text-destructive',
-                  )}
-                >
-                  {m.type === 'IN' ? 'Entrada' : 'Salida'}
-                </span>
-                {m.method !== 'CASH' ? (
-                  <span className="text-muted-foreground"> · {PAYMENT_METHOD_LABELS[m.method]}</span>
-                ) : null}
-                <span className="text-muted-foreground"> · {m.reason}</span>
-              </span>
-              <Money
-                amount={m.type === 'IN' ? m.amount : -m.amount}
-                size="xs"
-                weight="semibold"
-                withSign
-                className="shrink-0"
-              />
-            </li>
+              movement={m}
+              editing={editingId === m.id}
+              busy={busy}
+              onEdit={() => startEdit(m)}
+              onDelete={() => remove(m.id)}
+            />
           ))}
         </ul>
       ) : (

@@ -47,6 +47,8 @@ export const AuditActionEnum = z.enum([
   'SHIFT_DISCREPANCY_DETECTED',
   'CASH_MOVEMENT_IN',
   'CASH_MOVEMENT_OUT',
+  'CASH_MOVEMENT_UPDATED',
+  'CASH_MOVEMENT_DELETED',
 
   // Promotions (FASE 5+)
   'PROMOTION_CREATED',

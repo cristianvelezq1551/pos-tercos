@@ -237,6 +237,56 @@ describe('Shifts E2E', () => {
       expect(list.body).toHaveLength(3);
     });
 
+    it('un movimiento mal registrado se corrige o elimina con la caja abierta', async () => {
+      // Registrado con monto equivocado…
+      const created = await request
+        .post(`/shifts/${shiftId}/cash-movements`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ type: 'OUT', amount: 50000, reason: 'Pago hielo (monto mal)' })
+        .expect(201);
+      const movementId = created.body.id as string;
+
+      // …se corrige (PATCH reemplaza el movimiento completo).
+      const updated = await request
+        .patch(`/shifts/${shiftId}/cash-movements/${movementId}`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ type: 'OUT', amount: 5000, reason: 'Pago hielo' })
+        .expect(200);
+      expect(updated.body.amount).toBe(5000);
+      expect(updated.body.reason).toBe('Pago hielo');
+
+      // Y si fue por error total, se elimina.
+      await request
+        .delete(`/shifts/${shiftId}/cash-movements/${movementId}`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      const list = await request
+        .get(`/shifts/${shiftId}/cash-movements`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(
+        (list.body as Array<{ id: string }>).find((m) => m.id === movementId),
+      ).toBeUndefined();
+
+      // Ambas correcciones quedan en bitácora con el antes/después.
+      const updateLog = await prisma.auditLog.findFirst({
+        where: { action: 'CASH_MOVEMENT_UPDATED', entityId: shiftId },
+      });
+      const deleteLog = await prisma.auditLog.findFirst({
+        where: { action: 'CASH_MOVEMENT_DELETED', entityId: shiftId },
+      });
+      expect(updateLog).toBeTruthy();
+      expect((updateLog!.metadata as { before: { amount: number } }).before.amount).toBe(50000);
+      expect((updateLog!.metadata as { after: { amount: number } }).after.amount).toBe(5000);
+      expect(deleteLog).toBeTruthy();
+
+      // Movimiento ajeno a la caja → 404.
+      await request
+        .delete(`/shifts/${shiftId}/cash-movements/${randomUUID()}`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(404);
+    });
+
     it('vende CASH y cierra con esperado = apertura + ventas + entradas − salidas + arqueo', async () => {
       const saleRes = await request
         .post('/sales')
@@ -317,6 +367,23 @@ describe('Shifts E2E', () => {
         .post(`/shifts/${shiftId}/close`)
         .set('Authorization', `Bearer ${cajeroToken}`)
         .send({ countedCash: 60000 })
+        .expect(400);
+    });
+
+    it('caja cerrada: los movimientos son inmutables (400)', async () => {
+      const list = await request
+        .get(`/shifts/${shiftId}/cash-movements`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      const movementId = (list.body as Array<{ id: string }>)[0]!.id;
+      await request
+        .patch(`/shifts/${shiftId}/cash-movements/${movementId}`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ type: 'IN', amount: 1000, reason: 'no debería' })
+        .expect(400);
+      await request
+        .delete(`/shifts/${shiftId}/cash-movements/${movementId}`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
         .expect(400);
     });
 

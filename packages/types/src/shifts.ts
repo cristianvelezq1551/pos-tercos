@@ -114,6 +114,10 @@ export const CreateCashMovementSchema = z.object({
 });
 export type CreateCashMovement = z.infer<typeof CreateCashMovementSchema>;
 
+/** Corrección de un movimiento mal registrado (solo con la caja abierta). */
+export const UpdateCashMovementSchema = CreateCashMovementSchema;
+export type UpdateCashMovement = z.infer<typeof UpdateCashMovementSchema>;
+
 /**
  * Estado de caja para la UI del POS. `stalePreviousDay` = el cajero dejó una
  * caja OPEN de un día anterior; debe cerrarla (Cerrar turno) antes de operar o

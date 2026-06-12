@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -12,6 +14,7 @@ import {
   CloseShiftSchema,
   CreateCashMovementSchema,
   OpenShiftSchema,
+  UpdateCashMovementSchema,
   ShiftStatusEnum,
   type AiSummary,
   type CashMovement,
@@ -20,6 +23,7 @@ import {
   type CurrentShiftStatus,
   type OpenShift,
   type Shift,
+  type UpdateCashMovement,
   type ShiftSessionDetail,
 } from '@pos-tercos/types';
 import type { JwtAccessPayload } from '@pos-tercos/types';
@@ -69,6 +73,29 @@ export class ShiftsController {
   @Get(':id/cash-movements')
   cashMovements(@Param('id', ParseUUIDPipe) id: string): Promise<CashMovement[]> {
     return this.shifts.listCashMovements(id);
+  }
+
+  /** Corrige un movimiento mal registrado (solo con la caja abierta). */
+  @CashierAccess()
+  @Patch(':id/cash-movements/:movementId')
+  updateCashMovement(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('movementId', ParseUUIDPipe) movementId: string,
+    @Body(new ZodValidationPipe(UpdateCashMovementSchema)) body: UpdateCashMovement,
+  ): Promise<CashMovement> {
+    return this.shifts.updateCashMovement(id, movementId, body, user.sub);
+  }
+
+  /** Elimina un movimiento mal registrado (solo con la caja abierta). */
+  @CashierAccess()
+  @Delete(':id/cash-movements/:movementId')
+  deleteCashMovement(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('movementId', ParseUUIDPipe) movementId: string,
+  ): Promise<void> {
+    return this.shifts.deleteCashMovement(id, movementId, user.sub);
   }
 
   /** Reabre una caja cerrada por error (admin/dueño). Conserva la sesión del día. */
