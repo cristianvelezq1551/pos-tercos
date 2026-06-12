@@ -7,7 +7,8 @@ export type OwnerAlertKind =
   | 'shift_discrepancy'
   | 'sale_voided'
   | 'drawer_no_sale'
-  | 'cost_increase';
+  | 'cost_increase'
+  | 'server_error';
 
 /**
  * Alertas puntuales al WhatsApp del DUEÑO (antifraude + costos). Igual que

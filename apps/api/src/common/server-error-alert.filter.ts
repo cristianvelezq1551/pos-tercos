@@ -1,0 +1,65 @@
+import {
+  Catch,
+  HttpException,
+  Logger,
+  type ArgumentsHost,
+  type ExceptionFilter,
+} from '@nestjs/common';
+import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
+import type { Request } from 'express';
+import { OwnerNotificationService } from '../notifications/owner-notification.service';
+
+/** Máximo una alerta cada 10 min por firma de error (no spamear al dueño). */
+const ALERT_THROTTLE_MS = 10 * 60 * 1000;
+
+/**
+ * Filtro global de excepciones: delega la RESPUESTA al filtro base de Nest
+ * (mismos códigos y bodies de siempre) y, ante un 5xx INESPERADO (bug, DB
+ * caída, adapter roto), además:
+ *  - lo deja en el log con stack completo, y
+ *  - alerta al dueño por WhatsApp (throttled por firma de error).
+ * Los 4xx (validación, permisos, conflictos de negocio) NO alertan — son
+ * operación normal.
+ */
+@Catch()
+export class ServerErrorAlertFilter implements ExceptionFilter {
+  private readonly logger = new Logger(ServerErrorAlertFilter.name);
+  private readonly base: BaseExceptionFilter;
+  private readonly lastAlertAt = new Map<string, number>();
+
+  constructor(
+    adapterHost: HttpAdapterHost,
+    private readonly ownerNotifications: OwnerNotificationService,
+  ) {
+    this.base = new BaseExceptionFilter(adapterHost.httpAdapter);
+  }
+
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const isHttp = exception instanceof HttpException;
+    const status = isHttp ? exception.getStatus() : 500;
+
+    if (status >= 500) {
+      const req = host.switchToHttp().getRequest<Request>();
+      const message = exception instanceof Error ? exception.message : String(exception);
+      const signature = `${req?.method ?? '?'} ${req?.route?.path ?? req?.url ?? '?'} :: ${message.slice(0, 80)}`;
+
+      this.logger.error(
+        `5xx en ${signature}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+
+      const last = this.lastAlertAt.get(signature) ?? 0;
+      if (Date.now() - last >= ALERT_THROTTLE_MS) {
+        this.lastAlertAt.set(signature, Date.now());
+        void this.ownerNotifications.alert(
+          'server_error',
+          `[${process.env.BUSINESS_NAME ?? 'Tercos'}] 🔴 Error del sistema\n\n${signature}\n\nSi se repite, revisá los logs del servidor.`,
+          { signature, status },
+        );
+      }
+    }
+
+    // La respuesta HTTP sale igual que siempre (filtro default de Nest).
+    this.base.catch(exception, host);
+  }
+}

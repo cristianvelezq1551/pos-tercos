@@ -11,6 +11,35 @@
 const STORAGE_KEY = 'pos-tercos-client-logs';
 const MAX_ENTRIES = 100;
 
+/** Reporte al servidor: máx 10/min por mostrador (telemetría, no firehose). */
+const REPORT_WINDOW_MS = 60_000;
+const REPORT_MAX_PER_WINDOW = 10;
+let reportWindowStart = 0;
+let reportCount = 0;
+
+function reportToServer(entry: ClientLogEntry): void {
+  const now = Date.now();
+  if (now - reportWindowStart > REPORT_WINDOW_MS) {
+    reportWindowStart = now;
+    reportCount = 0;
+  }
+  if (reportCount >= REPORT_MAX_PER_WINDOW) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  reportCount += 1;
+  // fetch directo (no logError) — un fallo acá NO debe re-reportarse (loop).
+  void fetch('/api/client-logs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scope: entry.scope,
+      message: entry.message.slice(0, 500),
+      context: entry.context,
+    }),
+    credentials: 'include',
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 export interface ClientLogEntry {
   at: string;
   scope: string;
@@ -37,6 +66,7 @@ export function logError(
     const prev = readLogs();
     prev.push(entry);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prev.slice(-MAX_ENTRIES)));
+    reportToServer(entry);
   } catch {
     // El logger jamás propaga.
   }

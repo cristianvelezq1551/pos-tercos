@@ -346,22 +346,37 @@ Desde la última edición de este doc (que listaba 4 pendientes de FASE
 
 ## 7. Backup Postgres
 
-Cron diario en Railway o externo (recomendado: GitHub Actions con
-secret `RAILWAY_DB_URL`):
+**IMPLEMENTADO** en `.github/workflows/db-backup.yml` (cron 2 AM Colombia + corrida
+manual con `workflow_dispatch`). Cada corrida hace `pg_dump -Fc`, **verifica el
+dump** (`pg_restore --list`, mínimo 10 tablas con datos), sube a R2
+(`backups/pos-tercos-YYYY-MM-DD-HHMM.dump`) y aplica retención de 30 días.
 
-```yaml
-# .github/workflows/backup.yml
-name: Postgres backup
-on:
-  schedule: [{ cron: '0 7 * * *' }] # 2 AM Colombia
-jobs:
-  backup:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          pg_dump $DATABASE_URL | gzip > backup-$(date +%F).sql.gz
-          # Subir a R2 con `rclone` o S3 CLI
-        env:
-          DATABASE_URL: ${{ secrets.RAILWAY_DB_URL }}
+Secrets a configurar en GitHub (Settings → Secrets → Actions):
+`RAILWAY_DB_URL`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`R2_BACKUP_BUCKET`.
+
+**Restore (simulacro obligatorio antes de inaugurar, y luego 1 vez al mes):**
+
+```bash
+# 1. Bajar el último backup desde R2
+aws s3 cp s3://pos-tercos-prod/backups/pos-tercos-<fecha>.dump . \
+  --endpoint-url https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+
+# 2. Restaurar en una DB de prueba (NUNCA sobre producción directo)
+createdb pos_tercos_restore_drill
+pg_restore --no-owner --no-privileges -d pos_tercos_restore_drill pos-tercos-<fecha>.dump
+
+# 3. Verificar: conteos de las tablas críticas
+psql pos_tercos_restore_drill -c "SELECT count(*) FROM sales; SELECT count(*) FROM inventory_movements;"
 ```
+
+## 8. Monitoreo y alertas
+
+- **Uptime**: registrar `https://api.tercos.co/healthz` en un monitor externo
+  (UptimeRobot / Better Stack, plan gratis, intervalo 1-5 min, alerta a WhatsApp
+  o email del dueño). El endpoint es público y verifica la DB.
+- **Errores del backend**: los 5xx inesperados disparan alerta WhatsApp al dueño
+  vía `OwnerNotificationService` (throttled — ver `ServerErrorAlertFilter`).
+- **Errores del POS**: el cliente reporta a `POST /client-logs` (quedan en los
+  logs de Railway con prefijo `[client]`); además cada mostrador guarda su ring
+  buffer local (`window.__posLogs()` en DevTools).

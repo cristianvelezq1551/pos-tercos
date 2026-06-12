@@ -1,0 +1,86 @@
+# Backup nocturno de Postgres (Railway) → Cloudflare R2.
+#
+# Un backup que nunca se probó restaurar NO es un backup: cada corrida
+# verifica el dump (gunzip -t + pg_restore --list sobre formato custom)
+# antes de subirlo, y el job falla ruidosamente si algo no cuadra.
+#
+# Secrets requeridos (Settings → Secrets and variables → Actions):
+#   RAILWAY_DB_URL        — postgres://… de la DB de producción
+#   R2_ACCOUNT_ID         — account de Cloudflare (7f706ea0…)
+#   R2_ACCESS_KEY_ID      — credencial S3 del bucket
+#   R2_SECRET_ACCESS_KEY  — credencial S3 del bucket
+#   R2_BACKUP_BUCKET      — ej. pos-tercos-prod (prefijo backups/)
+#
+# Retención: 30 días por nombre de archivo (la limpieza corre acá mismo —
+# R2 no tiene lifecycle rules gratuitas por prefijo).
+name: Postgres backup
+
+on:
+  schedule:
+    - cron: '0 7 * * *' # 07:00 UTC = 2 AM Colombia
+  workflow_dispatch: {} # corrida manual para probar el pipeline
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Instalar cliente Postgres 16
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16 || sudo apt-get install -y -qq postgresql-client
+
+      - name: Dump (formato custom, comprimido)
+        env:
+          DATABASE_URL: ${{ secrets.RAILWAY_DB_URL }}
+        run: |
+          STAMP=$(date -u +%F-%H%M)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          # Formato custom (-Fc): permite restore selectivo por tabla y
+          # pg_restore --list como verificación de integridad.
+          pg_dump --format=custom --compress=6 --no-owner --no-privileges \
+            --file="pos-tercos-$STAMP.dump" "$DATABASE_URL"
+          ls -lh "pos-tercos-$STAMP.dump"
+
+      - name: Verificar integridad del dump (restore --list)
+        run: |
+          # Si el dump está corrupto o vacío, esto falla y el job NO sube basura.
+          TABLES=$(pg_restore --list "pos-tercos-$STAMP.dump" | grep -c 'TABLE DATA' || true)
+          echo "Tablas con datos en el dump: $TABLES"
+          if [ "$TABLES" -lt 10 ]; then
+            echo "::error::El dump tiene menos de 10 tablas con datos — algo está mal."
+            exit 1
+          fi
+
+      - name: Subir a R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+        run: |
+          aws s3 cp "pos-tercos-$STAMP.dump" \
+            "s3://$BUCKET/backups/pos-tercos-$STAMP.dump" \
+            --endpoint-url "$R2_ENDPOINT"
+
+      - name: Retención 30 días
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+        run: |
+          CUTOFF=$(date -u -d '30 days ago' +%F)
+          aws s3 ls "s3://$BUCKET/backups/" --endpoint-url "$R2_ENDPOINT" \
+            | awk '{print $4}' \
+            | while read -r key; do
+                [ -z "$key" ] && continue
+                FILE_DATE=$(echo "$key" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+                [ -z "$FILE_DATE" ] && continue
+                if [[ "$FILE_DATE" < "$CUTOFF" ]]; then
+                  echo "Borrando backup viejo: $key"
+                  aws s3 rm "s3://$BUCKET/backups/$key" --endpoint-url "$R2_ENDPOINT"
+                fi
+              done

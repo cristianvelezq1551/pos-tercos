@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CashDrawerModule } from './adapters/cash-drawer/cash-drawer.module';
@@ -36,9 +36,12 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { UsersModule } from './users/users.module';
 import { WebMenuModule } from './web-menu/web-menu.module';
 import { WebOrdersModule } from './web-orders/web-orders.module';
+import { ServerErrorAlertFilter } from './common/server-error-alert.filter';
+import { ClientLogsModule } from './client-logs/client-logs.module';
 
 @Module({
   imports: [
+    ClientLogsModule,
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
@@ -78,6 +81,8 @@ import { WebOrdersModule } from './web-orders/web-orders.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // 5xx inesperados → log con stack + alerta WhatsApp al dueño (throttled).
+    { provide: APP_FILTER, useClass: ServerErrorAlertFilter },
   ],
 })
 export class AppModule {}
