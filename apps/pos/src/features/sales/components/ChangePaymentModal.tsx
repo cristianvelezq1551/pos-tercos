@@ -1,21 +1,28 @@
 'use client';
 
 import {
+  MAX_SPLIT_PARTS,
   PAYMENT_METHOD_LABELS,
   type PaymentMethod,
   type Sale,
 } from '@pos-tercos/types';
-import { Button, Dialog, Money, cn } from '@pos-tercos/ui';
+import { Button, Dialog, Money, NumberInput, cn } from '@pos-tercos/ui';
+import { Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { changeSalePayment } from '../api/edit';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
 
+interface Part {
+  method: PaymentMethod;
+  amount: number | null;
+}
+
 /**
- * Re-registra el método de pago de una venta cobrada — para corregir un
- * registro equivocado (ej. quedó "Efectivo" pero pagaron por transferencia)
- * y que el arqueo cuadre. Solo mientras la caja del turno siga abierta;
- * el cambio queda en bitácora.
+ * Re-registra el pago de una venta cobrada — método único O la división
+ * completa (cada parte con su método y monto, suma exacta al total). Para
+ * corregir registros equivocados y que el arqueo cuadre. Solo con la caja
+ * abierta; el cambio queda en bitácora.
  */
 export function ChangePaymentModal({
   sale,
@@ -29,31 +36,55 @@ export function ChangePaymentModal({
   onSaved: () => void;
 }) {
   const [methods, setMethods] = useState<readonly PaymentMethod[]>(FALLBACK_METHODS);
-  const [method, setMethod] = useState<PaymentMethod | null>(null);
+  const [parts, setParts] = useState<Part[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setMethod(null);
+    if (!open || !sale) return;
     setError(null);
     setPending(false);
+    // Arranca con la división ACTUAL de la venta (1 parte si fue pago único).
+    const current = sale.payments ?? [];
+    setParts(
+      current.length > 0
+        ? current.map((p) => ({ method: p.method, amount: p.amount }))
+        : [{ method: sale.paymentMethod ?? 'CASH', amount: sale.total }],
+    );
     void fetchEnabledMethods().then(setMethods);
-  }, [open]);
+  }, [open, sale?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!sale) return null;
 
-  const current =
-    sale.paymentMethod !== null
-      ? PAYMENT_METHOD_LABELS[sale.paymentMethod]
-      : `Dividido (${(sale.payments ?? []).length} pagos)`;
+  const assigned = parts.reduce((a, p) => a + (p.amount ?? 0), 0);
+  const remaining = sale.total - assigned;
+  const valid =
+    parts.length > 0 &&
+    parts.every((p) => p.amount !== null && p.amount > 0) &&
+    Math.abs(remaining) < 0.005;
+
+  const setPart = (i: number, patch: Partial<Part>) =>
+    setParts((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+
+  const addPart = () => {
+    if (parts.length >= MAX_SPLIT_PARTS) return;
+    // La parte nueva arranca con lo que falta por asignar.
+    setParts((prev) => [
+      ...prev,
+      { method: 'CASH', amount: remaining > 0 ? remaining : null },
+    ]);
+  };
 
   const handleConfirm = async () => {
-    if (!method || pending) return;
+    if (!valid || pending) return;
     setPending(true);
     setError(null);
     try {
-      await changeSalePayment(sale.id, { method });
+      const payload =
+        parts.length === 1
+          ? { method: parts[0]!.method }
+          : { payments: parts.map((p) => ({ method: p.method, amount: p.amount! })) };
+      await changeSalePayment(sale.id, payload);
       notifyCajaChanged();
       onSaved();
       onClose();
@@ -63,19 +94,24 @@ export function ChangePaymentModal({
     }
   };
 
+  const current =
+    sale.paymentMethod !== null
+      ? PAYMENT_METHOD_LABELS[sale.paymentMethod]
+      : `Dividido (${(sale.payments ?? []).length} pagos)`;
+
   return (
     <Dialog
       open={open}
       onClose={pending ? () => {} : onClose}
-      title="Cambiar método de pago"
+      title="Cambiar pago"
       description={`${sale.turnNumber !== null ? `Turno ${sale.turnNumber}` : `Recibo #${sale.receiptNumber}`} · registrado como ${current}`}
-      maxWidth="max-w-md"
+      maxWidth="max-w-lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>
-          <Button onClick={() => void handleConfirm()} disabled={!method || pending}>
+          <Button onClick={() => void handleConfirm()} disabled={!valid || pending}>
             {pending ? 'Guardando…' : 'Cambiar pago'}
           </Button>
         </>
@@ -87,34 +123,91 @@ export function ChangePaymentModal({
           <Money amount={sale.total} weight="semibold" />
         </div>
 
-        <div>
-          <p className="caps mb-1.5 text-[0.625rem] text-muted-foreground">
-            Quedó registrado MAL — en realidad pagaron con:
+        <div className="space-y-2">
+          <p className="caps text-[0.625rem] text-muted-foreground">
+            Cómo pagaron en realidad — {parts.length === 1 ? 'pago único' : `${parts.length} partes`}:
           </p>
-          <div className="flex flex-wrap gap-1.5">
-            {methods.map((m) => (
+          {parts.map((part, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <div className="flex flex-1 flex-wrap gap-1">
+                {methods.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    disabled={pending}
+                    onClick={() => setPart(i, { method: m })}
+                    aria-pressed={part.method === m}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors',
+                      part.method === m
+                        ? 'border-primary bg-destructive/10 text-primary'
+                        : 'border-border bg-card text-muted-foreground hover:bg-muted/40',
+                    )}
+                  >
+                    {PAYMENT_METHOD_LABELS[m]}
+                  </button>
+                ))}
+              </div>
+              <NumberInput
+                value={part.amount}
+                onChange={(v) => setPart(i, { amount: v })}
+                prefix="$"
+                grouping
+                min={0}
+                placeholder="Monto"
+                disabled={pending || parts.length === 1}
+                className="w-32 shrink-0"
+                aria-label={`Monto de la parte ${i + 1}`}
+              />
               <button
-                key={m}
                 type="button"
-                disabled={pending}
-                onClick={() => setMethod(m)}
-                aria-pressed={method === m}
+                disabled={pending || parts.length === 1}
+                onClick={() =>
+                  setParts((prev) => {
+                    const next = prev.filter((_, j) => j !== i);
+                    // Si queda una sola parte, cubre el total completo.
+                    return next.length === 1
+                      ? [{ ...next[0]!, amount: sale.total }]
+                      : next;
+                  })
+                }
+                aria-label={`Quitar parte ${i + 1}`}
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive disabled:opacity-30"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending || parts.length >= MAX_SPLIT_PARTS}
+              onClick={addPart}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" aria-hidden /> Agregar parte
+            </Button>
+            {parts.length > 1 && Math.abs(remaining) >= 0.005 ? (
+              <span
                 className={cn(
-                  'rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
-                  method === m
-                    ? 'border-primary bg-destructive/10 text-primary'
-                    : 'border-border bg-card text-muted-foreground hover:bg-muted/40',
+                  'text-xs font-semibold tabular-nums',
+                  remaining > 0 ? 'text-warning' : 'text-destructive',
                 )}
               >
-                {PAYMENT_METHOD_LABELS[m]}
-              </button>
-            ))}
+                {remaining > 0 ? 'Faltan' : 'Sobran'}{' '}
+                <Money amount={Math.abs(remaining)} size="xs" className="text-current" />
+              </span>
+            ) : parts.length > 1 ? (
+              <span className="text-xs font-semibold text-success">Suma exacta ✓</span>
+            ) : null}
           </div>
         </div>
 
         <p className="text-[0.6875rem] text-muted-foreground">
-          La plata ya entró — esto solo corrige el registro para que el arqueo
-          cuadre. El cambio queda en la bitácora del dueño.
+          La plata ya entró — esto solo corrige el registro (método o división)
+          para que el arqueo cuadre. El cambio queda en la bitácora del dueño.
         </p>
 
         {error ? (
