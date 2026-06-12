@@ -977,6 +977,33 @@ Cambios sobre §7.v7. Verificado: typecheck 12/12, lint 0, domain 122/122, e2e 9
 
 ---
 
+## 7.v9 Confiabilidad POS — sockets vivos, offline endurecido, tests (2026-06-11)
+
+Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain 122 + POS 26 (Vitest nuevo), e2e 93/93.
+
+### Realtime
+- `GET /auth/ws-token`: JWT fresco para el handshake WS (la cookie httpOnly no viaja cross-origin). `keepSocketAuthFresh` (apps/pos/src/lib/socket-auth.ts) refresca `socket.auth.token` en `reconnect_attempt` (throttle 5 min) y en `connect_error`/`auth.error` — una reconexión horas después ya no muere con token vencido. Aplica a `/ws/pos` y `/ws/kds`.
+- Badge "Pedidos web" con punto de salud (verde = WS vivo; ámbar = caído con resync REST 12s).
+- `usePolling` (apps/pos/src/lib/use-polling.ts): TODOS los pollers del POS pausan con pestaña oculta, refrescan al volver al frente y no solapan corridas. NO crear `setInterval` nuevos en el POS — usar este hook.
+
+### Observabilidad
+- `logError` (apps/pos/src/lib/client-log.ts): consola + ring buffer en localStorage (`window.__posLogs()` desde DevTools). Los catches best-effort (IndexedDB, print, sockets, payment-methods) DEBEN loguear por acá, no tragar.
+
+### Offline (cierra los huecos de la auditoría)
+- sync-engine: exclusión multi-pestaña con **Web Locks**, backoff exponencial 5s→5min por venta (`lastAttemptAt`), 5 intentos automáticos; OfflineProvider re-drena cada 30s mientras quede cola.
+- Persistencia: si el navegador deniega `navigator.storage.persist()`, el banner offline lo avisa (cola en riesgo de purga) y queda en el logger.
+- SW **v3**: warm-up de `/`, `/caja`, `/historial`, `/turnos`, `/arqueos` en install. Subir `CACHE_VERSION` al agregar rutas.
+- Server `syncOffline`: rechaza `soldOfflineAt` >15 min en el futuro (audit `OFFLINE_SYNC_CLOCK_DRIFT`); audita drift de precio >1% vs catálogo (`OFFLINE_PRICE_DRIFT_DETECTED`) sin bloquear ("gana lo cobrado offline" sigue vigente).
+- `openShift` sin red: mensaje claro (apertura offline sigue DIFERIDA — B.4b).
+
+### Sweep de cobros abandonados
+- `StaleSalesSweepService`: cron 10 min cancela COUNTER `PENDIENTE_PAGO` >30 min (huérfanas del flujo "venta al abrir el cobro"); guard updateMany para no pisar un cobro en curso. Audit `STALE_SALES_SWEPT` + `POST /sales/admin/sweep-stale-pending` (Dueño). Los pedidos WEB pendientes NO se barren (los rechaza el cajero).
+
+### Tests POS (Vitest — `pnpm -F @pos-tercos/pos test`)
+- 26 tests de lógica pura: `totals` (promos: pct/BOGO/ganador absoluto/ventana), `split` (partes iguales exactas, unidades prorrateadas, validación, vuelto), `denominations` (neto CASH-only, neto digital), `shift-summary` (cuenta dividida por método, exclusión de VOID/pendientes). Integrado a `pnpm test` (turbo).
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
