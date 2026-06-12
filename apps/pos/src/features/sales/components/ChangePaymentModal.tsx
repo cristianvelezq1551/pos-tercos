@@ -6,18 +6,14 @@ import {
   type PaymentMethod,
   type Sale,
 } from '@pos-tercos/types';
-import { Button, Dialog, Money, NumberInput, cn } from '@pos-tercos/ui';
-import { Plus, X } from 'lucide-react';
+import { Button, Dialog, Money, cn } from '@pos-tercos/ui';
+import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { changeSalePayment } from '../api/edit';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
+import { PaymentPartRow, type Part } from './PaymentPartRow';
 import { getErrorMessage } from '../../../lib/errors';
-
-interface Part {
-  method: PaymentMethod;
-  amount: number | null;
-}
 
 /**
  * Re-registra el pago de una venta cobrada — método único O la división
@@ -129,55 +125,25 @@ export function ChangePaymentModal({
             Cómo pagaron en realidad — {parts.length === 1 ? 'pago único' : `${parts.length} partes`}:
           </p>
           {parts.map((part, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <div className="flex flex-1 flex-wrap gap-1">
-                {methods.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    disabled={pending}
-                    onClick={() => setPart(i, { method: m })}
-                    aria-pressed={part.method === m}
-                    className={cn(
-                      'rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors',
-                      part.method === m
-                        ? 'border-primary bg-destructive/10 text-primary'
-                        : 'border-border bg-card text-muted-foreground hover:bg-muted/40',
-                    )}
-                  >
-                    {PAYMENT_METHOD_LABELS[m]}
-                  </button>
-                ))}
-              </div>
-              <NumberInput
-                value={part.amount}
-                onChange={(v) => setPart(i, { amount: v })}
-                prefix="$"
-                grouping
-                min={0}
-                placeholder="Monto"
-                disabled={pending || parts.length === 1}
-                className="w-32 shrink-0"
-                aria-label={`Monto de la parte ${i + 1}`}
-              />
-              <button
-                type="button"
-                disabled={pending || parts.length === 1}
-                onClick={() =>
-                  setParts((prev) => {
-                    const next = prev.filter((_, j) => j !== i);
-                    // Si queda una sola parte, cubre el total completo.
-                    return next.length === 1
-                      ? [{ ...next[0]!, amount: sale.total }]
-                      : next;
-                  })
-                }
-                aria-label={`Quitar parte ${i + 1}`}
-                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive disabled:opacity-30"
-              >
-                <X className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            </div>
+            <PaymentPartRow
+              key={i}
+              part={part}
+              index={i}
+              methods={methods}
+              pending={pending}
+              single={parts.length === 1}
+              onMethodChange={(m) => setPart(i, { method: m })}
+              onAmountChange={(v) => setPart(i, { amount: v })}
+              onRemove={() =>
+                setParts((prev) => {
+                  const next = prev.filter((_, j) => j !== i);
+                  // Si queda una sola parte, cubre el total completo.
+                  return next.length === 1
+                    ? [{ ...next[0]!, amount: sale.total }]
+                    : next;
+                })
+              }
+            />
           ))}
 
           <div className="flex items-center justify-between">

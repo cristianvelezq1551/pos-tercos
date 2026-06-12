@@ -1,12 +1,10 @@
 'use client';
 
-import {
-  PAYMENT_METHOD_LABELS,
-  type CashMovement,
-  type CashMovementType,
-  type PaymentMethod,
+import type {
+  CashMovement,
+  CashMovementType,
+  PaymentMethod,
 } from '@pos-tercos/types';
-import { Button, Input, NumberInput, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../../sales';
 import {
@@ -16,6 +14,7 @@ import {
   updateCashMovement,
 } from '../api';
 import { notifyCajaChanged } from '../lib/caja-events';
+import { CashMovementForm } from './CashMovementForm';
 import { CashMovementRow } from './CashMovementRow';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -116,67 +115,22 @@ export function CashMovementsSection({
         Movimientos de caja · efectivo y transferencias
       </p>
 
-      <div className="flex gap-1.5">
-        <TypeButton active={type === 'OUT'} onClick={() => setType('OUT')} tone="danger">
-          Salida
-        </TypeButton>
-        <TypeButton active={type === 'IN'} onClick={() => setType('IN')} tone="success">
-          Entrada
-        </TypeButton>
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {methods.map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMethod(m)}
-            aria-pressed={method === m}
-            className={cn(
-              'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-              method === m
-                ? 'border-primary bg-destructive/10 text-primary'
-                : 'border-border bg-card text-muted-foreground hover:bg-muted/40',
-            )}
-          >
-            {PAYMENT_METHOD_LABELS[m]}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-2 flex gap-2">
-        <NumberInput
-          value={amount}
-          onChange={setAmount}
-          prefix="$"
-          grouping
-          min={0}
-          placeholder="Monto"
-          className="w-32 shrink-0"
-        />
-        <Input
-          type="text"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder={type === 'OUT' ? 'Motivo (ej. pago proveedor)' : 'Motivo (ej. fondo de cambio)'}
-          maxLength={200}
-          className="flex-1"
-        />
-        <Button variant="secondary" disabled={!valid || busy} onClick={() => void submit()}>
-          {busy ? '…' : editingId ? 'Guardar' : 'Registrar'}
-        </Button>
-        {editingId ? (
-          <Button variant="ghost" disabled={busy} onClick={resetForm}>
-            Cancelar
-          </Button>
-        ) : null}
-      </div>
-
-      {editingId ? (
-        <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">
-          Corrigiendo un movimiento — el cambio queda registrado en bitácora.
-        </p>
-      ) : null}
+      <CashMovementForm
+        type={type}
+        onTypeChange={setType}
+        method={method}
+        onMethodChange={setMethod}
+        methods={methods}
+        amount={amount}
+        onAmountChange={setAmount}
+        reason={reason}
+        onReasonChange={setReason}
+        valid={valid}
+        busy={busy}
+        editing={editingId !== null}
+        onSubmit={submit}
+        onCancel={resetForm}
+      />
 
       {error ? (
         <p role="alert" className="mt-2 text-xs text-destructive">
@@ -201,34 +155,5 @@ export function CashMovementsSection({
         <p className="mt-2 text-xs text-muted-foreground">Sin movimientos en este turno.</p>
       )}
     </section>
-  );
-}
-
-function TypeButton({
-  active,
-  onClick,
-  tone,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  tone: 'success' | 'danger';
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors',
-        active
-          ? tone === 'success'
-            ? 'bg-success/20 text-success'
-            : 'bg-destructive/15 text-destructive'
-          : 'bg-muted/40 text-muted-foreground hover:bg-ink-800',
-      )}
-    >
-      {children}
-    </button>
   );
 }

@@ -2,11 +2,12 @@
 
 import type { Product, Sale } from '@pos-tercos/types';
 import { Button, Dialog, Money } from '@pos-tercos/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ProductPickerModal, fetchActiveProducts, useAvailability } from '../../catalog';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { editSaleItems } from '../api/edit';
 import { printComanda } from '../api/print';
+import { AddProductChips } from './AddProductChips';
 import { EditSaleLineRow, type EditLine } from './EditSaleLineRow';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -62,12 +63,6 @@ export function EditSaleModal({
       );
     });
   }, [open, sale?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cocina en curso → solo se pueden AGREGAR productos de reventa directa.
-  const addable = useMemo(
-    () => products.filter((p) => (kitchenStarted ? p.directResale : true)),
-    [products, kitchenStarted],
-  );
 
   const estimatedTotal = lines.reduce((a, l) => a + l.unitPrice * l.quantity, 0);
   const diff = sale ? estimatedTotal - sale.total : 0;
@@ -144,31 +139,13 @@ export function EditSaleModal({
           ))}
         </ul>
 
-        <div>
-          <p className="caps mb-1 text-[0.625rem] text-muted-foreground">Agregar producto</p>
-          <div className="flex flex-wrap gap-1.5">
-            {addable.slice(0, 24).map((p) => {
-              const soldOut = !isAvailable(p.id);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  disabled={pending || soldOut}
-                  onClick={() => setPickerProduct(p)}
-                  title={soldOut ? 'Agotado — no se puede agregar' : undefined}
-                  className={
-                    soldOut
-                      ? 'cursor-not-allowed rounded-full border border-border bg-muted/20 px-2.5 py-1 text-xs font-medium text-muted-foreground/50 line-through'
-                      : 'rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground'
-                  }
-                >
-                  + {p.name}
-                  {soldOut ? ' · Agotado' : ''}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <AddProductChips
+          products={products}
+          kitchenStarted={kitchenStarted}
+          pending={pending}
+          isAvailable={isAvailable}
+          onPick={setPickerProduct}
+        />
 
         <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2 text-sm">
           <span className="text-muted-foreground">
