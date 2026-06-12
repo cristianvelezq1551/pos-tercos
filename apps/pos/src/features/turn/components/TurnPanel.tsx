@@ -1,6 +1,5 @@
 'use client';
 
-import { Button, Input } from '@pos-tercos/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReadyToCallOrder } from '@pos-tercos/types';
 import { usePolling } from '../../../lib/use-polling';
@@ -13,6 +12,8 @@ import {
   getReadyToCall,
   resetTurn,
 } from '../api/client';
+import { CalledRow, ReadyRow } from './TurnQueueRows';
+import { ManualCallSection } from './ManualCallSection';
 
 const POLL_MS = 5000;
 /** Cuántos llamados recientes mostrar para re-llamar. */
@@ -152,41 +153,13 @@ export function TurnPanel({ active = true }: { active?: boolean }) {
       ) : null}
       </div>
 
-      <div className="shrink-0 space-y-2 border-t border-border pt-3">
-        <p className="caps text-[0.625rem] tracking-[0.2em] text-muted-foreground">
-          Llamar turno manual
-        </p>
-        <div className="flex gap-2">
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={9999}
-            placeholder="Ej: 42"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            disabled={busy}
-            className="flex-1"
-          />
-          <Button
-            variant="secondary"
-            disabled={busy || !draft}
-            onClick={handleManual}
-            className="shrink-0"
-          >
-            Llamar
-          </Button>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          disabled={busy}
-          onClick={() => void run(resetTurn)}
-        >
-          Limpiar pantalla
-        </Button>
-      </div>
+      <ManualCallSection
+        draft={draft}
+        busy={busy}
+        onDraftChange={setDraft}
+        onSubmit={handleManual}
+        onReset={() => void run(resetTurn)}
+      />
 
       {error ? (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -194,111 +167,5 @@ export function TurnPanel({ active = true }: { active?: boolean }) {
         </p>
       ) : null}
     </div>
-  );
-}
-
-function channelLabel(type: ReadyToCallOrder['type']): string {
-  return type === 'WEB_PICKUP' ? 'Pickup' : 'Mostrador';
-}
-
-function itemsText(order: ReadyToCallOrder): string {
-  return order.items.map((i) => `${i.quantity}× ${i.productName}`).join(', ');
-}
-
-function ReadyRow({
-  order,
-  busy,
-  onCall,
-}: {
-  order: ReadyToCallOrder;
-  busy: boolean;
-  onCall: () => void;
-}) {
-  const items = itemsText(order);
-  return (
-    <li className="rounded-lg border border-border bg-card p-2.5">
-      <div className="flex items-start gap-2.5">
-        <span className="font-display text-2xl font-extrabold leading-none tabular text-foreground">
-          #{order.turnNumber}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-sm font-semibold text-foreground">
-              {order.customerName ?? channelLabel(order.type)}
-            </span>
-            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase text-muted-foreground">
-              {channelLabel(order.type)}
-            </span>
-          </div>
-          {/* Ítems completos (sin truncar) para que el cajero los lea al llamar. */}
-          {items ? (
-            <p className="mt-1 text-xs leading-snug text-muted-foreground">{items}</p>
-          ) : null}
-        </div>
-      </div>
-      <Button
-        size="sm"
-        disabled={busy}
-        onClick={onCall}
-        className="mt-2 w-full"
-      >
-        Llamar #{order.turnNumber}
-      </Button>
-    </li>
-  );
-}
-
-function CalledRow({
-  order,
-  busy,
-  onRecall,
-  onDeliver,
-}: {
-  order: ReadyToCallOrder;
-  busy: boolean;
-  onRecall: () => void;
-  onDeliver: () => void;
-}) {
-  const items = itemsText(order);
-  return (
-    <li className="rounded-md border border-border/60 bg-muted/20 p-2">
-      <div className="flex items-start gap-2">
-        <span className="font-display text-lg font-bold leading-none tabular text-muted-foreground">
-          #{order.turnNumber}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-foreground">
-            {order.customerName ?? channelLabel(order.type)}
-          </p>
-          {/* Info del pedido también aquí: el cajero re-llama sin ir al historial. */}
-          {items ? (
-            <p className="mt-0.5 text-[0.6875rem] leading-snug text-muted-foreground">
-              {items}
-            </p>
-          ) : null}
-        </div>
-      </div>
-      <div className="mt-1.5 flex gap-1.5">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={onRecall}
-          className="flex-1"
-        >
-          Re-llamar #{order.turnNumber}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy}
-          onClick={onDeliver}
-          title="Marcar entregado (el cliente lo retiró)"
-          className="shrink-0 text-success"
-        >
-          ✓ Entregado
-        </Button>
-      </div>
-    </li>
   );
 }
