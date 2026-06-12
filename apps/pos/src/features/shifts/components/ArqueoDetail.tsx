@@ -3,11 +3,11 @@
 import {
   PAYMENT_METHOD_LABELS,
   type ShiftSessionDetail,
-  type ShiftSessionOrder,
 } from '@pos-tercos/types';
 import { LoadingSkeleton, Money, cn, formatDate } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { getShiftDetail } from '../api/list';
+import { MethodRow, SectionRow } from './ArqueoBreakdown';
 
 const label = (m: string): string =>
   PAYMENT_METHOD_LABELS[m as keyof typeof PAYMENT_METHOD_LABELS] ?? m;
@@ -21,7 +21,11 @@ const PAID_STATUSES = new Set([
   'CANCELADO_SIN_REEMBOLSO',
 ]);
 
-/** Detalle expandido de un arqueo: caja, métodos, movimientos, ventas y digital. */
+/**
+ * Detalle de un arqueo, estilo reporte de caja: monto inicial → ingresos y
+ * egresos por método (expandibles con cada venta/movimiento) → total
+ * esperado → lo contado por el cajero → diferencia.
+ */
 export function ArqueoDetail({ shiftId }: { shiftId: string }) {
   const [detail, setDetail] = useState<ShiftSessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,131 +54,144 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
   }
 
   const { shift, summary, cashMovements, orders } = detail;
-  const cashOnly = cashMovements.filter((m) => m.method === 'CASH');
-  const movIn = cashOnly.filter((m) => m.type === 'IN').reduce((a, m) => a + m.amount, 0);
-  const movOut = cashOnly.filter((m) => m.type === 'OUT').reduce((a, m) => a + m.amount, 0);
-  const diff = shift.difference ?? 0;
   const paidOrders = orders.filter((o) => PAID_STATUSES.has(o.status));
+  const splitOrders = paidOrders.filter((o) => o.paymentMethod === null);
+
+  // Ingresos por método = ventas (sale_payments) + entradas de caja.
+  // Egresos por método = salidas de caja.
+  const methods = new Set<string>([
+    ...summary.byMethod.map((m) => m.method),
+    ...cashMovements.map((m) => m.method),
+  ]);
+  const inRows: Array<{ method: string; amount: number }> = [];
+  const outRows: Array<{ method: string; amount: number }> = [];
+  for (const m of methods) {
+    const sales = summary.byMethod.find((x) => x.method === m)?.total ?? 0;
+    const movIn = cashMovements
+      .filter((x) => x.method === m && x.type === 'IN')
+      .reduce((a, x) => a + x.amount, 0);
+    const movOut = cashMovements
+      .filter((x) => x.method === m && x.type === 'OUT')
+      .reduce((a, x) => a + x.amount, 0);
+    if (sales + movIn > 0) inRows.push({ method: m, amount: sales + movIn });
+    if (movOut > 0) outRows.push({ method: m, amount: movOut });
+  }
+  const ingresosTotal = inRows.reduce((a, r) => a + r.amount, 0);
+  const egresosTotal = outRows.reduce((a, r) => a + r.amount, 0);
+  const expectedTotal = shift.openingCash + ingresosTotal - egresosTotal;
+
+  // Según usuario: efectivo contado + arqueo digital por método.
+  const digital = shift.digitalCountBreakdown ?? [];
+  const countedRows: Array<{ method: string; amount: number | null }> = [
+    { method: 'CASH', amount: shift.countedCash },
+    ...digital.map((d) => ({ method: d.method as string, amount: d.counted })),
+  ];
+  const countedTotal = countedRows.reduce((a, r) => a + (r.amount ?? 0), 0);
+  const diffTotal =
+    (shift.difference ?? 0) + digital.reduce((a, d) => a + (d.difference ?? 0), 0);
 
   return (
-    <div className="space-y-3 border-t border-border px-3 py-3 text-sm">
-      {/* Resumen de caja: el mismo cuadre que ve el cajero al cerrar. */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Cell label="Vendido" value={summary.totalRevenue} />
-        <Cell label="Apertura" value={shift.openingCash} />
-        <Cell label="Ventas en efectivo" value={summary.cashRevenue} />
-        <Cell label="Entradas − salidas" value={movIn - movOut} />
-        <Cell label="Efectivo esperado" value={shift.expectedCash ?? 0} />
-        <Cell label="Efectivo contado" value={shift.countedCash ?? 0} />
+    <div className="border-t border-border text-sm">
+      {/* Cabecera del arqueo */}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 px-3 py-2.5 text-xs sm:grid-cols-4">
+        <Info label="Apertura" value={formatDate(shift.openedAt, 'datetime')} />
+        <Info
+          label="Cierre"
+          value={shift.closedAt ? formatDate(shift.closedAt, 'datetime') : '—'}
+        />
+        <Info label="Cajero" value={shift.cashierName ?? '—'} />
+        <Info label="Estado" value={shift.status === 'CLOSED' ? 'Cerrado' : shift.status} />
+      </dl>
+
+      <SectionRow title="Monto inicial" amount={shift.openingCash} />
+
+      <SectionRow title="Ingresos" amount={ingresosTotal} />
+      {inRows.map((r) => (
+        <MethodRow
+          key={`in-${r.method}`}
+          method={r.method}
+          amount={r.amount}
+          orders={paidOrders.filter((o) => o.paymentMethod === r.method)}
+          movements={cashMovements.filter((m) => m.method === r.method && m.type === 'IN')}
+        />
+      ))}
+      {splitOrders.length > 0 ? (
+        <MethodRow
+          key="in-split"
+          method={`Divididas (${splitOrders.length}) · ya repartidas arriba`}
+          amount={splitOrders.reduce((a, o) => a + o.total, 0)}
+          orders={splitOrders}
+        />
+      ) : null}
+
+      <SectionRow title="Egreso" amount={egresosTotal} negative />
+      {outRows.map((r) => (
+        <MethodRow
+          key={`out-${r.method}`}
+          method={r.method}
+          amount={r.amount}
+          movements={cashMovements.filter((m) => m.method === r.method && m.type === 'OUT')}
+        />
+      ))}
+
+      <SectionRow title="Total" amount={expectedTotal} strong />
+
+      {/* Lo que el cajero contó al cerrar */}
+      <p className="caps border-t border-border bg-muted/50 px-3 py-1.5 text-[0.625rem] font-bold tracking-[0.2em] text-muted-foreground">
+        Según usuario
+      </p>
+      {countedRows.map((r) => (
         <div
+          key={`counted-${r.method}`}
+          className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 text-sm"
+        >
+          <span className="text-muted-foreground">{label(r.method)}</span>
+          {r.amount !== null ? (
+            <Money amount={r.amount} size="sm" weight="medium" />
+          ) : (
+            <span className="text-xs text-muted-foreground">sin arquear</span>
+          )}
+        </div>
+      ))}
+      <SectionRow title="Total" amount={countedTotal} strong />
+
+      <div
+        className={cn(
+          'flex items-center justify-between px-3 py-2.5',
+          diffTotal === 0
+            ? 'bg-success/15'
+            : diffTotal < 0
+              ? 'bg-destructive/15'
+              : 'bg-success/15',
+        )}
+      >
+        <span className="text-sm font-bold uppercase tracking-wide text-foreground">
+          Diferencia
+        </span>
+        <span
           className={cn(
-            'rounded-md px-2.5 py-1.5',
-            diff === 0 ? 'bg-success/10' : diff < 0 ? 'bg-destructive/10' : 'bg-warning-bg',
+            'text-base font-bold tabular-nums',
+            diffTotal === 0 ? 'text-success' : diffTotal < 0 ? 'text-destructive' : 'text-success',
           )}
         >
-          <p className="caps text-[0.5625rem] text-muted-foreground">Descuadre</p>
-          <p
-            className={cn(
-              'font-semibold tabular-nums',
-              diff === 0 ? 'text-success' : diff < 0 ? 'text-destructive' : 'text-warning',
-            )}
-          >
-            {diff === 0 ? 'Cuadró ✓' : (
-              <>
-                {diff > 0 ? '+' : ''}
-                <Money amount={diff} className="text-current" />
-              </>
-            )}
-          </p>
-        </div>
-        {shift.tipsCollected !== null && shift.tipsCollected !== undefined ? (
-          <Cell label="Propinas (aparte)" value={shift.tipsCollected} />
-        ) : null}
+          {diffTotal === 0 ? 'Cuadró ✓' : (
+            <>
+              {diffTotal > 0 ? '+' : ''}
+              <Money amount={diffTotal} weight="bold" className="text-current" />
+            </>
+          )}
+        </span>
       </div>
 
-      <div>
-        <p className="caps mb-1 text-[0.625rem] font-semibold tracking-[0.2em] text-muted-foreground">
-          Vendido por método
-        </p>
-        <div className="space-y-0.5">
-          {summary.byMethod.map((m) => (
-            <div key={m.method} className="flex justify-between tabular-nums">
-              <span className="text-muted-foreground">
-                {label(m.method)} <span className="text-xs">×{m.count}</span>
-              </span>
-              <Money amount={m.total} size="sm" weight="medium" />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {cashMovements.length > 0 ? (
-        <div>
-          <p className="caps mb-1 text-[0.625rem] font-semibold tracking-[0.2em] text-muted-foreground">
-            Movimientos de caja ({cashMovements.length})
-          </p>
-          <div className="flex gap-4 tabular-nums">
-            <span className="text-success">
-              Entradas efectivo <Money amount={movIn} size="sm" className="text-current" />
-            </span>
-            <span className="text-destructive">
-              Salidas efectivo <Money amount={movOut} size="sm" className="text-current" />
-            </span>
-          </div>
-          <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-            {cashMovements.map((m) => (
-              <li key={m.id} className="flex justify-between gap-2">
-                <span className="truncate">
-                  {m.type === 'IN' ? '↑' : '↓'} {m.reason}
-                  {m.method !== 'CASH' ? ` · ${label(m.method)}` : ''}
-                </span>
-                <Money amount={m.amount} size="xs" className="text-current" />
-              </li>
-            ))}
-          </ul>
+      {shift.tipsCollected !== null && shift.tipsCollected !== undefined ? (
+        <div className="flex items-center justify-between border-t border-border px-3 py-2 text-sm">
+          <span className="text-muted-foreground">Propinas (bote aparte)</span>
+          <Money amount={shift.tipsCollected} weight="medium" />
         </div>
       ) : null}
-
-      {shift.digitalCountBreakdown && shift.digitalCountBreakdown.length > 0 ? (
-        <div>
-          <p className="caps mb-1 text-[0.625rem] font-semibold tracking-[0.2em] text-muted-foreground">
-            Arqueo digital
-          </p>
-          <div className="space-y-0.5 tabular-nums">
-            {shift.digitalCountBreakdown.map((d) => (
-              <div key={d.method} className="flex justify-between">
-                <span className="text-muted-foreground">{label(d.method)}</span>
-                <span>
-                  <Money amount={d.expected} size="sm" className="text-muted-foreground" /> →{' '}
-                  {d.counted !== null ? (
-                    <span
-                      className={
-                        d.difference === 0
-                          ? 'font-medium text-success'
-                          : d.difference !== null && d.difference < 0
-                            ? 'font-semibold text-destructive'
-                            : 'font-semibold text-warning'
-                      }
-                    >
-                      <Money amount={d.counted} size="sm" className="text-current" />
-                      {d.difference !== null && d.difference !== 0
-                        ? ` (${d.difference > 0 ? '+' : ''}${d.difference.toLocaleString('es-CO')})`
-                        : ' ✓'}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">sin arquear</span>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {paidOrders.length > 0 ? <OrdersList orders={paidOrders} /> : null}
 
       {shift.notes ? (
-        <p className="rounded-md bg-muted/40 px-2.5 py-1.5 text-xs italic text-muted-foreground">
+        <p className="border-t border-border px-3 py-2 text-xs italic text-muted-foreground">
           “{shift.notes}”
         </p>
       ) : null}
@@ -182,44 +199,11 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
   );
 }
 
-/** Ventas cobradas del turno con su método — colapsable para no saturar. */
-function OrdersList({ orders }: { orders: ShiftSessionOrder[] }) {
-  const [open, setOpen] = useState(false);
+function Info({ label: l, value }: { label: string; value: string }) {
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="caps text-[0.625rem] font-semibold tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        Ventas del turno ({orders.length}) {open ? '▾' : '▸'}
-      </button>
-      {open ? (
-        <ul className="mt-1 space-y-0.5 text-xs">
-          {orders.map((o) => (
-            <li key={o.id} className="flex items-center justify-between gap-2 tabular-nums">
-              <span className="min-w-0 truncate text-muted-foreground">
-                {o.turnNumber !== null ? `Turno ${o.turnNumber}` : `Recibo #${o.receiptNumber}`} ·{' '}
-                {formatDate(o.createdAt, 'time')} ·{' '}
-                <span className="text-foreground">
-                  {o.paymentMethod ? label(o.paymentMethod) : 'Dividido'}
-                </span>
-              </span>
-              <Money amount={o.total} size="xs" weight="medium" className="shrink-0" />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function Cell({ label: l, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md bg-muted/40 px-2.5 py-1.5">
-      <p className="caps text-[0.5625rem] text-muted-foreground">{l}</p>
-      <Money amount={value} weight="semibold" />
+      <dt className="caps text-[0.5625rem] text-muted-foreground">{l}</dt>
+      <dd className="font-medium text-foreground">{value}</dd>
     </div>
   );
 }

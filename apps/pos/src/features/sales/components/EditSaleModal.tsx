@@ -3,7 +3,7 @@
 import type { Product, Sale } from '@pos-tercos/types';
 import { Button, Dialog, Money } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { ProductPickerModal, fetchActiveProducts } from '../../catalog';
+import { ProductPickerModal, fetchActiveProducts, useAvailability } from '../../catalog';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { editSaleItems } from '../api/edit';
 import { printComanda } from '../api/print';
@@ -33,6 +33,9 @@ export function EditSaleModal({
   const [pending, setPending] = useState(false);
 
   const kitchenStarted = sale !== null && sale.status !== 'PAGADO';
+  // Disponibilidad en vivo: lo agotado se ve y NO se puede agregar.
+  const { byId: availability } = useAvailability();
+  const isAvailable = (productId: string) => availability.get(productId)?.available !== false;
 
   useEffect(() => {
     if (!open || !sale) return;
@@ -127,6 +130,7 @@ export function EditSaleModal({
               key={`${l.productId}-${l.sizeId ?? ''}-${i}`}
               line={l}
               busy={pending}
+              plusDisabled={!isAvailable(l.productId)}
               onQty={(delta) =>
                 setLines((prev) =>
                   prev.map((x, j) =>
@@ -142,17 +146,26 @@ export function EditSaleModal({
         <div>
           <p className="caps mb-1 text-[0.625rem] text-muted-foreground">Agregar producto</p>
           <div className="flex flex-wrap gap-1.5">
-            {addable.slice(0, 24).map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                disabled={pending}
-                onClick={() => setPickerProduct(p)}
-                className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-              >
-                + {p.name}
-              </button>
-            ))}
+            {addable.slice(0, 24).map((p) => {
+              const soldOut = !isAvailable(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={pending || soldOut}
+                  onClick={() => setPickerProduct(p)}
+                  title={soldOut ? 'Agotado — no se puede agregar' : undefined}
+                  className={
+                    soldOut
+                      ? 'cursor-not-allowed rounded-full border border-border bg-muted/20 px-2.5 py-1 text-xs font-medium text-muted-foreground/50 line-through'
+                      : 'rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground'
+                  }
+                >
+                  + {p.name}
+                  {soldOut ? ' · Agotado' : ''}
+                </button>
+              );
+            })}
           </div>
         </div>
 

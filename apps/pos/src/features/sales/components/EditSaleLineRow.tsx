@@ -21,11 +21,14 @@ export interface EditLine {
 export function EditSaleLineRow({
   line,
   busy,
+  plusDisabled = false,
   onQty,
   onRemove,
 }: {
   line: EditLine;
   busy: boolean;
+  /** Producto agotado: no se puede sumar más (sí bajar o quitar). */
+  plusDisabled?: boolean;
   onQty: (delta: number) => void;
   onRemove: () => void;
 }) {
@@ -78,10 +81,11 @@ export function EditSaleLineRow({
           </span>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || plusDisabled}
             onClick={() => onQty(1)}
             aria-label={`Agregar uno de ${line.productName}`}
-            className="rounded-md border border-border p-1 text-muted-foreground transition-colors hover:bg-muted"
+            title={plusDisabled ? 'Agotado — no hay más stock' : undefined}
+            className="rounded-md border border-border p-1 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
           </button>
