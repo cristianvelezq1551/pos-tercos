@@ -52,6 +52,8 @@ export const ShiftSchema = z.object({
   cashCountBreakdown: z.array(CashCountLineSchema).nullable().optional(),
   /** Arqueo digital (expected/counted/diff por método; solo tras el cierre). */
   digitalCountBreakdown: z.array(DigitalCountLineSchema).nullable().optional(),
+  /** Propinas del día (efectivo aparte; NO suma al esperado en caja). */
+  tipsCollected: z.number().nonnegative().nullable().optional(),
 });
 export type Shift = z.infer<typeof ShiftSchema>;
 
@@ -81,6 +83,8 @@ export const CloseShiftSchema = z.object({
   breakdown: z.array(CashCountLineSchema).optional(),
   /** Arqueo de transferencias/digitales por método (opcional). */
   digitalCounts: z.array(DigitalCountInputSchema).optional(),
+  /** Propinas del día en efectivo (bote aparte; se reparten en nómina). */
+  tips: z.number().nonnegative().optional(),
   notes: z.string().max(500).optional(),
 });
 export type CloseShift = z.infer<typeof CloseShiftSchema>;

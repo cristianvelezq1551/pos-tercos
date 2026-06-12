@@ -501,6 +501,8 @@ model Shift {
   /// Arqueo por denominación al cerrar (JSON [{denomination, count}]). Opcional.
   cashCountBreakdown Json?  @map("cash_count_breakdown")
   digitalCountBreakdown Json?     @map("digital_count_breakdown")
+  /// Propinas del día (efectivo aparte de la caja; se reparten en nómina).
+  tipsCollected Decimal? @map("tips_collected") @db.Decimal(14, 2)
   status       ShiftStatus @default(OPEN)
   sales        Sale[]
   cashMovements CashMovement[]

@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from 'react';
 import { listSales } from '../api/list';
 import { voidSale } from '../api/void';
+import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
 
 const VOIDABLE_LIMIT = 50;
@@ -74,6 +75,7 @@ export function VoidModal({
     setPending(true);
     try {
       const voided = await voidSale(selectedId, { reason: reason.trim() }, pin);
+      notifyCajaChanged();
       onSuccess(voided);
       onClose();
     } catch (err) {

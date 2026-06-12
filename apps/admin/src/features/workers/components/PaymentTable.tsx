@@ -83,6 +83,23 @@ export function PaymentTable({ report }: { report: PagoReport }) {
       numeric: true,
       cell: (e) => <Money amount={e.total} weight="semibold" />,
     },
+    ...(report.tipsTotal > 0
+      ? [
+          {
+            key: 'tips',
+            header: 'Propinas',
+            align: 'right',
+            numeric: true,
+            hideOnMobile: true,
+            cell: (e) =>
+              e.tipsShare > 0 ? (
+                <Money amount={e.tipsShare} className="text-success" />
+              ) : (
+                <span className="text-ink-300">—</span>
+              ),
+          } satisfies DataTableColumn<Entry>,
+        ]
+      : []),
     {
       key: 'status',
       header: 'Estado',
@@ -111,6 +128,12 @@ export function PaymentTable({ report }: { report: PagoReport }) {
           value={<span className="text-base font-semibold text-foreground">{report.periodLabel}</span>}
         />
         <StatCard label="Empleados" value={String(report.entries.length)} />
+        {report.tipsTotal > 0 ? (
+          <StatCard
+            label="Propinas del período (efectivo aparte)"
+            value={<Money amount={report.tipsTotal} size="2xl" weight="bold" />}
+          />
+        ) : null}
         <StatCard
           label="Total a pagar"
           value={<Money amount={report.totalPay} size="2xl" weight="bold" />}
@@ -124,7 +147,8 @@ export function PaymentTable({ report }: { report: PagoReport }) {
         Mensual: salario ÷ 4 por sub-pago (constante; 4 sub-pagos por mes = salario). Diario: suma
         de los días trabajados del sub-pago (los descansos cíclicos no se pagan).{' '}
         <strong className="text-foreground">Tocá un empleado</strong> para ver su detalle del mes y
-        marcar el pago con comprobante.
+        marcar el pago con comprobante. Las propinas son el bote en efectivo de los cierres de caja
+        del período — el reparto sugerido es proporcional a los días trabajados y NO suma al pago.
       </p>
     </div>
   );

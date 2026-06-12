@@ -4,14 +4,18 @@ import type { Shift } from '@pos-tercos/types';
 import { Badge, formatCop } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { listSales } from '../../sales';
+import { listCashMovements } from '../api';
+import { onCajaChanged } from '../lib/caja-events';
+import { cashMovementsNet } from '../lib/denominations';
 import { computeShiftSummary } from '../lib/shift-summary';
 
 const REFRESH_MS = 30_000;
 
 /**
- * Badge del topbar: en vez de la apertura fija, muestra el **efectivo que
- * debería haber en caja ahora** (apertura + ventas en efectivo del turno).
- * Refresca cada 30s y al volver el foco.
+ * Badge del topbar: el **efectivo que debería haber en caja ahora**
+ * (apertura + ventas en efectivo + entradas − salidas). Refresca cada 30s,
+ * al volver el foco y al instante cuando algo mueve la caja
+ * (`notifyCajaChanged`).
  */
 export function ShiftCashBadge({ shift }: { shift: Shift | null }) {
   const [expected, setExpected] = useState<number | null>(
@@ -26,10 +30,14 @@ export function ShiftCashBadge({ shift }: { shift: Shift | null }) {
     let cancelled = false;
     const load = async () => {
       try {
-        const sales = await listSales({ shiftId: shift.id, limit: 200 });
+        const [sales, movements] = await Promise.all([
+          listSales({ shiftId: shift.id, limit: 200 }),
+          listCashMovements(shift.id),
+        ]);
         if (cancelled) return;
         const summary = computeShiftSummary(sales);
-        setExpected(shift.openingCash + summary.cashSalesTotal);
+        const net = cashMovementsNet(movements);
+        setExpected(shift.openingCash + summary.cashSalesTotal + net.net);
       } catch {
         // mantener el último valor
       }
@@ -40,10 +48,12 @@ export function ShiftCashBadge({ shift }: { shift: Shift | null }) {
       if (document.visibilityState === 'visible') void load();
     };
     document.addEventListener('visibilitychange', onVisible);
+    const offCaja = onCajaChanged(() => void load());
     return () => {
       cancelled = true;
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
+      offCaja();
     };
   }, [shift?.id, shift?.openingCash]); // eslint-disable-line react-hooks/exhaustive-deps
 

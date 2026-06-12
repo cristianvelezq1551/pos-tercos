@@ -334,12 +334,15 @@ describe('Shifts E2E', () => {
           ],
           // Esperado TRANSFER = 10000 (venta) − 2000 (movimiento OUT) = 8000.
           digitalCounts: [{ method: 'TRANSFER', counted: 8000 }],
+          // Propinas: bote aparte — NO afectan el esperado de la caja.
+          tips: 12000,
           notes: 'Cierre del día',
         })
         .expect(201);
       expect(res.body.status).toBe('CLOSED');
       expect(res.body.expectedCash).toBe(expectedCash);
       expect(res.body.difference).toBe(countedCash - expectedCash); // 0
+      expect(res.body.tipsCollected).toBe(12000);
 
       // El detalle expone movimientos + arqueo físico y digital.
       const detail = await request

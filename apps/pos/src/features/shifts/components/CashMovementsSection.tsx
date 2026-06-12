@@ -15,6 +15,7 @@ import {
   listCashMovements,
   updateCashMovement,
 } from '../api';
+import { notifyCajaChanged } from '../lib/caja-events';
 import { CashMovementRow } from './CashMovementRow';
 
 /**
@@ -84,6 +85,7 @@ export function CashMovementsSection({
       resetForm();
       await refresh();
       onChanged?.();
+      notifyCajaChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error registrando el movimiento');
     } finally {
@@ -99,6 +101,7 @@ export function CashMovementsSection({
       if (editingId === movementId) resetForm();
       await refresh();
       onChanged?.();
+      notifyCajaChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error eliminando el movimiento');
     } finally {

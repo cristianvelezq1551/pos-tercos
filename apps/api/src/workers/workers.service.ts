@@ -271,6 +271,16 @@ export class WorkersService {
     const paymentByUser = new Map(payments.map((p) => [p.userId, p] as const));
     const actorMap = await this.fetchActorNames(payments.map((p) => p.actorId));
 
+    // Propinas del período: suma de los cierres de caja del rango. Es
+    // efectivo APARTE (no entra al total a pagar) — se reparte sugerido
+    // proporcional a los días trabajados de cada uno.
+    const periodEndExclusive = new Date(pago.end.getTime() + 86_400_000);
+    const tipsAgg = await this.prisma.shift.aggregate({
+      where: { openedAt: { gte: pago.start, lt: periodEndExclusive } },
+      _sum: { tipsCollected: true },
+    });
+    const tipsTotal = Math.round(Number(tipsAgg._sum.tipsCollected ?? 0));
+
     let totalPay = 0;
     const entries: PagoEntry[] = [];
     for (const u of users) {
@@ -292,8 +302,28 @@ export class WorkersService {
         base,
         adjustmentsTotal,
         total,
+        tipsShare: 0,
         payment: paymentRow ? toPayment(paymentRow, actorMap.get(paymentRow.actorId ?? '') ?? null) : null,
       });
+    }
+
+    // Reparto sugerido por días trabajados; el remanente del redondeo va a
+    // las primeras entradas con días (mismo criterio que la cuenta dividida).
+    const totalDays = entries.reduce((a, e) => a + e.daysWorked, 0);
+    if (tipsTotal > 0 && totalDays > 0) {
+      let assigned = 0;
+      for (const e of entries) {
+        e.tipsShare = Math.floor((tipsTotal * e.daysWorked) / totalDays);
+        assigned += e.tipsShare;
+      }
+      let remainder = tipsTotal - assigned;
+      for (const e of entries) {
+        if (remainder <= 0) break;
+        if (e.daysWorked > 0) {
+          e.tipsShare += 1;
+          remainder -= 1;
+        }
+      }
     }
 
     return {
@@ -304,6 +334,7 @@ export class WorkersService {
       pago: pago.pago,
       entries,
       totalPay: round2(totalPay),
+      tipsTotal,
     };
   }
 

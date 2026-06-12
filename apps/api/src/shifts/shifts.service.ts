@@ -524,6 +524,7 @@ export class ShiftsService {
           digitalBreakdown.length > 0
             ? (digitalBreakdown as unknown as Prisma.InputJsonValue)
             : undefined,
+        tipsCollected: input.tips ?? null,
         notes: input.notes ?? null,
       },
       include: { cashier: { select: { fullName: true } } },
@@ -542,6 +543,7 @@ export class ShiftsService {
         expectedCash,
         countedCash: input.countedCash,
         difference,
+        tips: input.tips ?? null,
       },
     });
 
@@ -813,6 +815,7 @@ function toShiftDto(row: DbShiftWithCashier): Shift {
     status: row.status,
     cashCountBreakdown: (row.cashCountBreakdown as CashCountLine[] | null) ?? null,
     digitalCountBreakdown: (row.digitalCountBreakdown as DigitalCountLine[] | null) ?? null,
+    tipsCollected: row.tipsCollected !== null ? Number(row.tipsCollected) : null,
   };
 }
 

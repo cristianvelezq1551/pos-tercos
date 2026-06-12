@@ -22,6 +22,7 @@ import {
 import type { ReceiptDataInput } from '../lib/build-receipt-data';
 import { buildOfflinePayload, buildOfflineReceiptInput } from '../lib/build-receipt-data';
 import { confirmPayment } from '../api/confirm-payment';
+import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
 import { createSale } from '../api/create';
 import type { CartLine } from '../lib/cart-types';
@@ -155,6 +156,7 @@ export function CheckoutModal({
           idempotencyKey,
         );
         const paid = await confirmPayment(sale.id, { payments: splitResult.payments });
+        notifyCajaChanged();
         onSuccess({
           saleId: paid.id,
           receiptNumber: paid.receiptNumber,
@@ -203,6 +205,7 @@ export function CheckoutModal({
         amountReceived,
         digitalDoubleVerified: isDigital ? true : undefined,
       });
+      notifyCajaChanged();
       onSuccess({
         saleId: paid.id,
         receiptNumber: paid.receiptNumber,

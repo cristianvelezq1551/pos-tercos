@@ -97,6 +97,9 @@ export const PagoEntrySchema = z.object({
   base: z.number(),
   adjustmentsTotal: z.number(),
   total: z.number(),
+  /** Reparto SUGERIDO de propinas del período (proporcional a días
+   *  trabajados). Es efectivo aparte — NO suma al total a pagar. */
+  tipsShare: z.number(),
   /** Marca de PAGADO/CANCELADO (con comprobante), si existe. */
   payment: PayrollPaymentSchema.nullable(),
 });
@@ -112,6 +115,8 @@ export const PagoReportSchema = z.object({
   pago: z.number().int().min(1).max(2),
   entries: z.array(PagoEntrySchema),
   totalPay: z.number(),
+  /** Propinas recaudadas en el período (suma de cierres de caja). */
+  tipsTotal: z.number(),
 });
 export type PagoReport = z.infer<typeof PagoReportSchema>;
 

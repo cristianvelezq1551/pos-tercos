@@ -1,4 +1,4 @@
-import type { ShiftSessionDetail } from '@pos-tercos/types';
+import { PAYMENT_METHOD_LABELS, type ShiftSessionDetail } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
 
 /** Movimientos de efectivo + arqueo por denominación. Null si no hay nada que mostrar. */
@@ -16,7 +16,7 @@ export function ShiftCashSection({
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           <div className="border-b border-border bg-muted/40 px-4 py-2.5">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Movimientos de efectivo
+              Movimientos de caja
             </h3>
           </div>
           <table className="min-w-full divide-y divide-border text-sm">
@@ -31,6 +31,11 @@ export function ShiftCashSection({
                     >
                       {m.type === 'IN' ? 'Entrada' : 'Salida'}
                     </span>
+                    {m.method !== 'CASH' ? (
+                      <span className="text-muted-foreground">
+                        {' '}· {PAYMENT_METHOD_LABELS[m.method]}
+                      </span>
+                    ) : null}
                     <span className="text-muted-foreground"> · {m.reason}</span>
                   </td>
                   <td className="px-4 py-2.5 text-right font-medium tabular-nums text-foreground">

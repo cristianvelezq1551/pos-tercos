@@ -18,7 +18,7 @@ export function ShiftSessionDetailView({ detail }: { detail: ShiftSessionDetail 
       {/* Asistente de cierre (IA) — solo para cajas cerradas. */}
       {isClosed ? <ShiftCloseAiButton shiftId={shift.id} /> : null}
 
-      <ShiftSessionSummary summary={summary} />
+      <ShiftSessionSummary summary={summary} tipsCollected={shift.tipsCollected ?? null} />
 
       <ShiftSessionBreakdowns summary={summary} />
 

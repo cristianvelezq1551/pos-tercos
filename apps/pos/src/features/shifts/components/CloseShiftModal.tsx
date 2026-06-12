@@ -52,6 +52,7 @@ export function CloseShiftModal({
   // Conteo ciego: no mostrar el esperado hasta revelar (anti-sesgo).
   const [blind, setBlind] = useState(true);
   const [revealed, setRevealed] = useState(false);
+  const [tips, setTips] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -76,6 +77,7 @@ export function CloseShiftModal({
     setManual(null);
     setBlind(true);
     setRevealed(false);
+    setTips(null);
     setNotes('');
     setError(null);
     setPending(false);
@@ -120,6 +122,7 @@ export function CloseShiftModal({
         countedCash: countedNum,
         breakdown: arqueo ? toBreakdownLines(counts) : undefined,
         digitalCounts: digital.length > 0 ? digital : undefined,
+        tips: tips ?? undefined,
         notes: notes.trim() || undefined,
       });
       onClosed(closed);
@@ -245,6 +248,24 @@ export function CloseShiftModal({
             </button>
           )
         ) : null}
+
+        <div>
+          <FormField label="Propinas del día (efectivo aparte, opcional)">
+            <NumberInput
+              value={tips}
+              onChange={setTips}
+              prefix="$"
+              grouping
+              min={0}
+              placeholder="0"
+              disabled={pending}
+            />
+          </FormField>
+          <p className="mt-1 text-[0.6875rem] text-muted-foreground">
+            No suma al efectivo esperado de la caja — es el bote de propinas
+            que se reparte entre los trabajadores.
+          </p>
+        </div>
 
         <FormField label="Notas (opcional)">
           <Input
