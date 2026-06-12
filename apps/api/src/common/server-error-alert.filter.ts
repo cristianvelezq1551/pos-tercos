@@ -1,11 +1,5 @@
-import {
-  Catch,
-  HttpException,
-  Logger,
-  type ArgumentsHost,
-  type ExceptionFilter,
-} from '@nestjs/common';
-import { BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
+import { Catch, HttpException, Logger, type ArgumentsHost } from '@nestjs/common';
+import { BaseExceptionFilter } from '@nestjs/core';
 import type { Request } from 'express';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 
@@ -13,37 +7,33 @@ import { OwnerNotificationService } from '../notifications/owner-notification.se
 const ALERT_THROTTLE_MS = 10 * 60 * 1000;
 
 /**
- * Filtro global de excepciones: delega la RESPUESTA al filtro base de Nest
- * (mismos códigos y bodies de siempre) y, ante un 5xx INESPERADO (bug, DB
- * caída, adapter roto), además:
+ * Filtro global de excepciones: hereda la RESPUESTA del filtro base de Nest
+ * (mismos códigos y bodies de siempre — el httpAdapter lo inyecta el
+ * contenedor) y, ante un 5xx INESPERADO (bug, DB caída, adapter roto):
  *  - lo deja en el log con stack completo, y
  *  - alerta al dueño por WhatsApp (throttled por firma de error).
  * Los 4xx (validación, permisos, conflictos de negocio) NO alertan — son
  * operación normal.
  */
 @Catch()
-export class ServerErrorAlertFilter implements ExceptionFilter {
-  private readonly logger = new Logger(ServerErrorAlertFilter.name);
-  private readonly base: BaseExceptionFilter;
+export class ServerErrorAlertFilter extends BaseExceptionFilter {
+  private readonly alertLogger = new Logger(ServerErrorAlertFilter.name);
   private readonly lastAlertAt = new Map<string, number>();
 
-  constructor(
-    adapterHost: HttpAdapterHost,
-    private readonly ownerNotifications: OwnerNotificationService,
-  ) {
-    this.base = new BaseExceptionFilter(adapterHost.httpAdapter);
+  constructor(private readonly ownerNotifications: OwnerNotificationService) {
+    super();
   }
 
-  catch(exception: unknown, host: ArgumentsHost): void {
+  override catch(exception: unknown, host: ArgumentsHost): void {
     const isHttp = exception instanceof HttpException;
     const status = isHttp ? exception.getStatus() : 500;
 
     if (status >= 500) {
       const req = host.switchToHttp().getRequest<Request>();
       const message = exception instanceof Error ? exception.message : String(exception);
-      const signature = `${req?.method ?? '?'} ${req?.route?.path ?? req?.url ?? '?'} :: ${message.slice(0, 80)}`;
+      const signature = `${req?.method ?? '?'} ${req?.url ?? '?'} :: ${message.slice(0, 80)}`;
 
-      this.logger.error(
+      this.alertLogger.error(
         `5xx en ${signature}`,
         exception instanceof Error ? exception.stack : undefined,
       );
@@ -60,6 +50,6 @@ export class ServerErrorAlertFilter implements ExceptionFilter {
     }
 
     // La respuesta HTTP sale igual que siempre (filtro default de Nest).
-    this.base.catch(exception, host);
+    super.catch(exception, host);
   }
 }
