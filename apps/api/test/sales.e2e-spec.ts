@@ -59,6 +59,14 @@ describe('Sales E2E', () => {
     duenoToken = await loginAs(request, 'dueno-e2e@test.local');
     cajeroToken = await loginAs(request, 'cajero-e2e@test.local');
 
+
+    // NEQUI viene deshabilitado por defecto (medios de pago configurables).
+    await request
+      .put('/payment-methods')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ methods: [{ method: 'NEQUI', enabled: true }] })
+      .expect(200);
+
     // Crear un producto simple (sin tallas ni modificadores)
     const prodRes = await request
       .post('/products')

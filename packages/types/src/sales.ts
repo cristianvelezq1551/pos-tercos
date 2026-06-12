@@ -21,6 +21,7 @@ export type SaleStatus = z.infer<typeof SaleStatusEnum>;
 
 export const PaymentMethodEnum = z.enum([
   'CASH',
+  'CARD',
   'NEQUI',
   'DAVIPLATA',
   'QR_BANCOLOMBIA',
@@ -28,17 +29,56 @@ export const PaymentMethodEnum = z.enum([
 ]);
 export type PaymentMethod = z.infer<typeof PaymentMethodEnum>;
 
+/** Labels canónicos para mostrar al usuario (POS/admin/recibos HTML). */
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: 'Efectivo',
+  CARD: 'Tarjeta',
+  NEQUI: 'Nequi',
+  DAVIPLATA: 'Daviplata',
+  QR_BANCOLOMBIA: 'QR Bancolombia',
+  TRANSFER: 'Transferencia',
+};
+
 /**
  * Métodos digitales que requieren doble validación en POS antes de
  * confirmar (architecture.md §5.3): el cajero debe verificar en la app
  * del negocio + comprobante del cliente. Incluye todos excepto CASH.
  */
 export const DIGITAL_PAYMENT_METHODS = [
+  'CARD',
   'NEQUI',
   'DAVIPLATA',
   'QR_BANCOLOMBIA',
   'TRANSFER',
 ] as const satisfies readonly PaymentMethod[];
+
+// ====================================================================
+// MEDIOS DE PAGO CONFIGURABLES — el admin habilita/deshabilita métodos
+// ====================================================================
+
+export const PaymentMethodSettingSchema = z.object({
+  method: PaymentMethodEnum,
+  enabled: z.boolean(),
+  sortOrder: z.number().int(),
+});
+export type PaymentMethodSetting = z.infer<typeof PaymentMethodSettingSchema>;
+
+export const UpdatePaymentMethodsSchema = z.object({
+  methods: z
+    .array(z.object({ method: PaymentMethodEnum, enabled: z.boolean() }))
+    .min(1)
+    .superRefine((arr, ctx) => {
+      // El POS no puede quedarse sin formas de cobrar.
+      const enabledHere = arr.filter((m) => m.enabled).length;
+      if (enabledHere === 0 && arr.length >= 6) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Debe quedar al menos un medio de pago habilitado.',
+        });
+      }
+    }),
+});
+export type UpdatePaymentMethods = z.infer<typeof UpdatePaymentMethodsSchema>;
 
 // ====================================================================
 // SALE ITEM — wire format (output del backend)

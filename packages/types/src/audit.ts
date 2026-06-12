@@ -128,6 +128,8 @@ export const AuditActionEnum = z.enum([
   'OWNER_ALERT_SENT',
   // Conteo físico ciclado registrado (con o sin diferencia).
   'STOCK_COUNT_REGISTERED',
+  // El admin habilitó/deshabilitó medios de pago del POS.
+  'PAYMENT_METHODS_UPDATED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 

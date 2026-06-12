@@ -231,6 +231,7 @@ function formatDate(iso: string): string {
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Efectivo',
+  CARD: 'Tarjeta',
   NEQUI: 'Nequi',
   DAVIPLATA: 'Daviplata',
   QR_BANCOLOMBIA: 'QR Bancolombia',

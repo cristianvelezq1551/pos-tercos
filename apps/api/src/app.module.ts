@@ -8,6 +8,7 @@ import { PrinterModule } from './adapters/printer/printer.module';
 import { StorageModule } from './adapters/storage/storage.module';
 import { WhatsAppModule } from './adapters/whatsapp/whatsapp.module';
 import { NotificationModule } from './notifications/notification.module';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
@@ -48,6 +49,7 @@ import { WebOrdersModule } from './web-orders/web-orders.module';
     CashDrawerModule,
     WhatsAppModule,
     NotificationModule,
+    PaymentMethodsModule,
     IdempotencyModule,
     ApprovalsModule,
     UsersModule,

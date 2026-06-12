@@ -8,6 +8,7 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
   // Orden: hijos antes que padres
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE
     idempotency_keys,
+    payment_method_settings,
     sale_payments,
     sale_status_log,
     sale_items,

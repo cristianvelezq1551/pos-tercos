@@ -832,6 +832,7 @@ enum PaymentMethod {
   DAVIPLATA
   QR_BANCOLOMBIA
   TRANSFER
+  CARD
 }
 
 enum ShiftStatus {
@@ -969,4 +970,15 @@ model SalePayment {
   @@index([saleId])
   @@index([method, createdAt])
   @@map("sale_payments")
+}
+
+/// Qué métodos de pago están habilitados en el POS (los administra el admin).
+/// El catálogo es el enum PaymentMethod; acá solo enabled + orden.
+model PaymentMethodSetting {
+  method    PaymentMethod @id
+  enabled   Boolean       @default(false)
+  sortOrder Int           @default(0) @map("sort_order")
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  @@map("payment_method_settings")
 }

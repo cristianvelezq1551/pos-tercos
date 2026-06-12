@@ -1,16 +1,13 @@
 'use client';
 
-import { DIGITAL_PAYMENT_METHODS, type PaymentMethod } from '@pos-tercos/types';
+import {
+  DIGITAL_PAYMENT_METHODS,
+  PAYMENT_METHOD_LABELS,
+  type PaymentMethod,
+} from '@pos-tercos/types';
 import { MoneyInput, formatCop } from '@pos-tercos/ui';
 import type { SplitPart } from '../../lib/split';
 
-const METHOD_OPTIONS: Array<{ value: PaymentMethod; label: string }> = [
-  { value: 'CASH', label: 'Efectivo' },
-  { value: 'NEQUI', label: 'Nequi' },
-  { value: 'DAVIPLATA', label: 'Daviplata' },
-  { value: 'QR_BANCOLOMBIA', label: 'QR Bancolombia' },
-  { value: 'TRANSFER', label: 'Transferencia' },
-];
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
 /**
@@ -19,10 +16,12 @@ const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
  */
 export function SplitPartRow({
   part,
+  methods,
   amountEditable,
   onChange,
 }: {
   part: SplitPart;
+  methods: readonly PaymentMethod[];
   /** true en modo "montos libres" (en iguales/productos el monto es derivado). */
   amountEditable: boolean;
   onChange: (patch: Partial<SplitPart>) => void;
@@ -81,9 +80,9 @@ export function SplitPartRow({
           className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
         >
           <option value="">Método…</option>
-          {METHOD_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
+          {methods.map((m) => (
+            <option key={m} value={m}>
+              {PAYMENT_METHOD_LABELS[m]}
             </option>
           ))}
         </select>

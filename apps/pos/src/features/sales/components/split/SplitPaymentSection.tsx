@@ -37,10 +37,12 @@ export interface SplitResult {
 export function SplitPaymentSection({
   total,
   totals,
+  methods,
   onChange,
 }: {
   total: number;
   totals: CartTotalsResult;
+  methods: readonly import('@pos-tercos/types').PaymentMethod[];
   onChange: (result: SplitResult | null, reason: string | null) => void;
 }) {
   const [mode, setMode] = useState<SplitMode>('equal');
@@ -167,6 +169,7 @@ export function SplitPaymentSection({
           <SplitPartRow
             key={p.index}
             part={p}
+            methods={methods}
             amountEditable={mode === 'amounts'}
             onChange={(patch) =>
               patch.amount !== undefined

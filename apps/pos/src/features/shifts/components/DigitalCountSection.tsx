@@ -1,19 +1,15 @@
 'use client';
 
+import { PAYMENT_METHOD_LABELS } from '@pos-tercos/types';
 import { Money, NumberInput } from '@pos-tercos/ui';
 import type { ShiftSummary } from '../lib/shift-summary';
 
-const DIGITAL_LABELS: Record<string, string> = {
-  NEQUI: 'Nequi',
-  DAVIPLATA: 'Daviplata',
-  QR_BANCOLOMBIA: 'QR Bancolombia',
-  TRANSFER: 'Transferencia',
-};
+const DIGITAL_LABELS: Record<string, string> = PAYMENT_METHOD_LABELS;
 
-/** Métodos digitales con ventas en el turno (orden estable). */
+/** Métodos NO-efectivo con ventas en el turno (cualquier método habilitado). */
 export function digitalMethodsOf(summary: ShiftSummary): string[] {
-  return Object.keys(DIGITAL_LABELS).filter(
-    (m) => (summary.byMethod[m]?.total ?? 0) > 0,
+  return Object.keys(summary.byMethod).filter(
+    (m) => m !== 'CASH' && m !== 'UNKNOWN' && (summary.byMethod[m]?.total ?? 0) > 0,
   );
 }
 

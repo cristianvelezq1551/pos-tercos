@@ -59,6 +59,14 @@ describe('Pagos divididos E2E', () => {
     duenoToken = await loginAs(request, 'dueno-split@test.local');
     cajeroToken = await loginAs(request, 'cajero-split@test.local');
 
+
+    // NEQUI viene deshabilitado por defecto (medios de pago configurables).
+    await request
+      .put('/payment-methods')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ methods: [{ method: 'NEQUI', enabled: true }] })
+      .expect(200);
+
     const prodRes = await request
       .post('/products')
       .set('Authorization', `Bearer ${duenoToken}`)

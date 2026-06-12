@@ -938,6 +938,15 @@ E2E: `split-payments.e2e-spec.ts` (7 casos). Verificado: typecheck 12/12, lint 0
 
 ---
 
+## 7.v7 Cajero pro — nav FUDO, arqueos, medios de pago configurables (2026-06-11)
+
+- **Nav superior del POS** (estilo FUDO): pestañas con ícono — Vender `/`, Turnos `/turnos`, Historial `/historial` (con Anular), Caja `/caja` (Z vivo + movimientos + cierre), **Arqueos `/arqueos`** (historial de cierres con detalle expandible: vendido, por método, movimientos, arqueo digital, descuadre). + Pedidos web (modal con badge) + **acción rápida "Movimiento"** (entrada/salida de efectivo desde el topbar). La campana de "pedido listo" es GLOBAL (`ReadyChimeWatcher` en el layout). Eliminados OpsSidebar/CajaModal/TurnAction/DayHistoryAction.
+- **Arqueo digital al cierre**: además del efectivo, el cajero arquea cada método digital contra lo que dice la app (`shifts.digital_count_breakdown` = [{method, expected, counted, difference}]). Descuadre digital ≥$5.000 → audit + alerta WhatsApp al dueño. Admin lo ve en el detalle de sesión.
+- **Medios de pago configurables**: tabla `payment_method_settings` (catálogo = enum `PaymentMethod`, ahora con **CARD**). Defaults: SOLO `CASH` + `TRANSFER`. Admin los habilita en `/medios-pago` (AdminAccess). `GET /payment-methods` (habilitados, cajero) / `GET all` + `PUT` (admin, audit `PAYMENT_METHODS_UPDATED`). **El cobro rechaza métodos deshabilitados** (`assertPaymentParts`). POS: selector simple, cuenta dividida y arqueo digital usan la lista dinámica; offline cae a CASH+TRANSFER. Labels canónicos en `PAYMENT_METHOD_LABELS` (types). Nunca puede quedar 0 métodos activos.
+- E2E: payment-methods (4 casos) + arqueo digital en split suite. 81/81.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

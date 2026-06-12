@@ -32,6 +32,7 @@ import { AuditService } from '../audit/audit.service';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { KdsGateway } from '../kds/kds.gateway';
 import { NotificationService } from '../notifications/notification.service';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
@@ -63,6 +64,7 @@ export class SalesService {
     @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
     private readonly notifications: NotificationService,
     private readonly ownerNotifications: OwnerNotificationService,
+    private readonly paymentMethods: PaymentMethodsService,
     private readonly shifts: ShiftsService,
   ) {}
 
@@ -263,7 +265,7 @@ export class SalesService {
         digitalVerified: input.digitalDoubleVerified,
       },
     ];
-    this.assertPaymentParts(parts, total);
+    await this.assertPaymentParts(parts, total);
     const summaryMethod: PaymentMethod | null =
       parts.length === 1 ? (parts[0]!.method as PaymentMethod) : null;
 
@@ -417,7 +419,18 @@ export class SalesService {
    * controller): suma exacta al total, comprobante verificado por cada parte
    * digital (y monto exacto si declara recibido), efectivo recibido >= parte.
    */
-  private assertPaymentParts(parts: readonly SalePaymentInput[], total: number): void {
+  private async assertPaymentParts(
+    parts: readonly SalePaymentInput[],
+    total: number,
+  ): Promise<void> {
+    // Solo métodos habilitados por el admin (medios de pago configurables).
+    const enabled = await this.paymentMethods.enabledSet();
+    const disabledPart = parts.find((p) => !enabled.has(p.method));
+    if (disabledPart) {
+      throw new BadRequestException(
+        `El medio de pago ${disabledPart.method} no está habilitado. Configuralo en el admin.`,
+      );
+    }
     const sum = parts.reduce((acc, p) => acc + p.amount, 0);
     if (Math.abs(sum - total) > 0.005) {
       throw new BadRequestException(

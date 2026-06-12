@@ -22,6 +22,7 @@ import {
 import type { ReceiptDataInput } from '../lib/build-receipt-data';
 import { buildOfflinePayload, buildOfflineReceiptInput } from '../lib/build-receipt-data';
 import { confirmPayment } from '../api/confirm-payment';
+import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
 import { createSale } from '../api/create';
 import type { CartLine } from '../lib/cart-types';
 import type { CartTotalsResult } from '../lib/totals';
@@ -79,6 +80,23 @@ export function CheckoutModal({
   const [pending, setPending] = useState(false);
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
+  const [enabledMethods, setEnabledMethods] = useState<PaymentMethod[]>(FALLBACK_METHODS);
+
+  // Métodos habilitados por el admin (offline cae al fallback).
+  useEffect(() => {
+    if (!open) return;
+    if (offline) {
+      setEnabledMethods(FALLBACK_METHODS);
+      return;
+    }
+    let cancelled = false;
+    void fetchEnabledMethods().then((m) => {
+      if (!cancelled) setEnabledMethods(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, offline]);
 
   useEffect(() => {
     if (open) {
@@ -261,6 +279,7 @@ export function CheckoutModal({
           <SplitPaymentSection
             total={total}
             totals={totals}
+            methods={enabledMethods}
             onChange={(result, reason) => {
               setSplitResult(result);
               setSplitReason(reason);
@@ -269,7 +288,7 @@ export function CheckoutModal({
         ) : (
           <>
             <FormField label="Método de pago">
-              <PaymentMethodSelector selected={method} onSelect={setMethod} />
+              <PaymentMethodSelector methods={enabledMethods} selected={method} onSelect={setMethod} />
             </FormField>
 
             {method === 'CASH' ? (
