@@ -328,6 +328,13 @@ export class ShiftsService {
         customerName: true,
         createdAt: true,
         payments: { select: { method: true, amount: true } },
+        items: {
+          select: {
+            quantity: true,
+            product: { select: { name: true } },
+            size: { select: { name: true } },
+          },
+        },
       },
     });
 
@@ -341,6 +348,11 @@ export class ShiftsService {
       paymentMethod: r.paymentMethod,
       customerName: r.customerName,
       createdAt: r.createdAt.toISOString(),
+      payments: r.payments.map((p) => ({ method: p.method as string, amount: Number(p.amount) })),
+      items: r.items.map((it) => ({
+        quantity: it.quantity,
+        name: it.size ? `${it.product.name} ${it.size.name}` : it.product.name,
+      })),
     }));
 
     const PAID = new Set(['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO']);

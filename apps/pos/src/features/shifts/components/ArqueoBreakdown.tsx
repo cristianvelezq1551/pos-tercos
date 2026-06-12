@@ -12,6 +12,14 @@ import { useState } from 'react';
 const label = (m: string): string =>
   PAYMENT_METHOD_LABELS[m as keyof typeof PAYMENT_METHOD_LABELS] ?? m;
 
+/** Venta listada bajo un método: cuánto aportó ESE método (parte si dividió). */
+export interface MethodOrderEntry {
+  order: ShiftSessionOrder;
+  amount: number;
+  /** true = cuenta dividida (este monto es solo la parte de este método). */
+  isPart: boolean;
+}
+
 /** Fila de sección mayor (MONTO INICIAL / INGRESOS / EGRESO / Total). */
 export function SectionRow({
   title,
@@ -31,7 +39,7 @@ export function SectionRow({
         strong ? 'bg-muted/50' : '',
       )}
     >
-      <span className={cn('text-sm font-bold uppercase tracking-wide', strong ? 'text-foreground' : 'text-foreground')}>
+      <span className="text-sm font-bold uppercase tracking-wide text-foreground">
         {title}
       </span>
       <span className={cn('text-sm font-bold tabular-nums', negative ? 'text-destructive' : 'text-foreground')}>
@@ -43,22 +51,22 @@ export function SectionRow({
 }
 
 /**
- * Fila por método dentro de INGRESOS/EGRESO, expandible: muestra las ventas
- * de ese método y/o los movimientos de caja que lo componen.
+ * Fila por método dentro de INGRESOS/EGRESO, expandible: cada venta que
+ * aportó a ese método (con sus productos) y los movimientos de caja.
  */
 export function MethodRow({
   method,
   amount,
-  orders = [],
+  entries = [],
   movements = [],
 }: {
   method: string;
   amount: number;
-  orders?: ShiftSessionOrder[];
+  entries?: MethodOrderEntry[];
   movements?: CashMovement[];
 }) {
   const [open, setOpen] = useState(false);
-  const hasDetail = orders.length > 0 || movements.length > 0;
+  const hasDetail = entries.length > 0 || movements.length > 0;
   const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
@@ -74,36 +82,51 @@ export function MethodRow({
         )}
       >
         <span className="flex items-center gap-1.5 text-muted-foreground">
-          <Chevron
-            className={cn('h-3.5 w-3.5', hasDetail ? '' : 'opacity-0')}
-            aria-hidden
-          />
+          <Chevron className={cn('h-3.5 w-3.5', hasDetail ? '' : 'opacity-0')} aria-hidden />
           {label(method)}
+          {entries.length > 0 ? (
+            <span className="text-xs text-muted-foreground/70">
+              · {entries.length} venta{entries.length === 1 ? '' : 's'}
+            </span>
+          ) : null}
         </span>
         <Money amount={amount} size="sm" weight="medium" />
       </button>
       {open && hasDetail ? (
-        <ul className="space-y-0.5 px-3 pb-2 pl-12 text-xs text-muted-foreground">
-          {orders.map((o) => (
-            <li key={o.id} className="flex justify-between gap-2 tabular-nums">
-              <span className="min-w-0 truncate">
-                {o.turnNumber !== null ? `Turno ${o.turnNumber}` : `Recibo #${o.receiptNumber}`}
-                {' · '}
-                {formatDate(o.createdAt, 'time')}
-                {o.customerName ? ` · ${o.customerName}` : ''}
-              </span>
-              <Money amount={o.total} size="xs" className="shrink-0 text-current" />
-            </li>
+        <div className="space-y-1.5 px-3 pb-2 pl-12">
+          {entries.map(({ order: o, amount: part, isPart }) => (
+            <div key={o.id} className="text-xs">
+              <div className="flex justify-between gap-2 tabular-nums text-foreground">
+                <span className="min-w-0 truncate font-medium">
+                  {o.turnNumber !== null ? `Turno ${o.turnNumber}` : `Recibo #${o.receiptNumber}`}
+                  {' · '}
+                  {formatDate(o.createdAt, 'time')}
+                  {o.customerName ? ` · ${o.customerName}` : ''}
+                  {isPart ? (
+                    <span className="text-muted-foreground"> · parte de cuenta dividida</span>
+                  ) : null}
+                </span>
+                <Money amount={part} size="xs" className="shrink-0 text-current" />
+              </div>
+              {o.items.length > 0 ? (
+                <p className="truncate text-[0.6875rem] text-muted-foreground">
+                  {o.items.map((it) => `${it.quantity}× ${it.name}`).join(' · ')}
+                </p>
+              ) : null}
+            </div>
           ))}
           {movements.map((m) => (
-            <li key={m.id} className="flex justify-between gap-2 tabular-nums">
+            <div
+              key={m.id}
+              className="flex justify-between gap-2 text-xs tabular-nums text-muted-foreground"
+            >
               <span className="min-w-0 truncate">
                 {m.type === 'IN' ? '↑' : '↓'} {m.reason}
               </span>
               <Money amount={m.amount} size="xs" className="shrink-0 text-current" />
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       ) : null}
     </div>
   );

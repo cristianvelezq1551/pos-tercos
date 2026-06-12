@@ -7,7 +7,7 @@ import {
 import { LoadingSkeleton, Money, cn, formatDate } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { getShiftDetail } from '../api/list';
-import { MethodRow, SectionRow } from './ArqueoBreakdown';
+import { MethodRow, SectionRow, type MethodOrderEntry } from './ArqueoBreakdown';
 
 const label = (m: string): string =>
   PAYMENT_METHOD_LABELS[m as keyof typeof PAYMENT_METHOD_LABELS] ?? m;
@@ -55,7 +55,22 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
 
   const { shift, summary, cashMovements, orders } = detail;
   const paidOrders = orders.filter((o) => PAID_STATUSES.has(o.status));
-  const splitOrders = paidOrders.filter((o) => o.paymentMethod === null);
+
+  // Ventas por método desde sale_payments: una cuenta dividida aparece bajo
+  // CADA método con la parte que le corresponde (marcada como tal).
+  const entriesFor = (method: string): MethodOrderEntry[] =>
+    paidOrders
+      .flatMap((o) => {
+        const part = o.payments
+          .filter((p) => p.method === method)
+          .reduce((a, p) => a + p.amount, 0);
+        if (part <= 0) return [];
+        return [{ order: o, amount: part, isPart: o.payments.length > 1 }];
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime(),
+      );
 
   // Ingresos por método = ventas (sale_payments) + entradas de caja.
   // Egresos por método = salidas de caja.
@@ -111,18 +126,10 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
           key={`in-${r.method}`}
           method={r.method}
           amount={r.amount}
-          orders={paidOrders.filter((o) => o.paymentMethod === r.method)}
+          entries={entriesFor(r.method)}
           movements={cashMovements.filter((m) => m.method === r.method && m.type === 'IN')}
         />
       ))}
-      {splitOrders.length > 0 ? (
-        <MethodRow
-          key="in-split"
-          method={`Divididas (${splitOrders.length}) · ya repartidas arriba`}
-          amount={splitOrders.reduce((a, o) => a + o.total, 0)}
-          orders={splitOrders}
-        />
-      ) : null}
 
       <SectionRow title="Egreso" amount={egresosTotal} negative />
       {outRows.map((r) => (
