@@ -518,6 +518,8 @@ model CashMovement {
   id        String           @id @default(uuid())
   shiftId   String           @map("shift_id")
   type      CashMovementType
+  /// CASH = cajón físico; digital = cuenta del negocio (arqueo digital).
+  method PaymentMethod @default(CASH)
   amount    Decimal          @db.Decimal(14, 2)
   reason    String
   userId    String           @map("user_id")

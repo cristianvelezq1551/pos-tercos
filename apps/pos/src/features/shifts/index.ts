@@ -7,5 +7,4 @@ export { StaleShiftGate } from './components/StaleShiftGate';
 export { getCurrentShift, openShift, closeShift } from './api';
 export { getCurrentShiftServer, getCurrentShiftStatusServer } from './server';
 export { ArqueosPanel } from './components/ArqueosPanel';
-export { QuickMovementAction } from './components/QuickMovementAction';
 export { listClosedShifts, getShiftDetail } from './api/list';

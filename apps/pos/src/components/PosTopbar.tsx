@@ -3,7 +3,7 @@ import { Topbar, UserMenu } from '@pos-tercos/ui';
 import { BrandLogo } from '@pos-tercos/brand';
 import Link from 'next/link';
 import { LogoutButton } from '../features/auth';
-import { QuickMovementAction, ShiftCashBadge } from '../features/shifts';
+import { ShiftCashBadge } from '../features/shifts';
 import { WebOrdersAction } from '../features/web-orders';
 import { PosNav } from './PosNav';
 
@@ -35,7 +35,6 @@ export function PosTopbar({
 
       <Topbar.Actions className="shrink-0 [&>*]:shrink-0">
         <WebOrdersAction initial={webOrdersInitial} wsToken={wsToken} />
-        <QuickMovementAction shift={shift} />
         {/* El efectivo esperado linkea a la pestaña Caja. */}
         <Link href="/caja" className="hidden lg:flex" aria-label="Ir a Caja">
           <ShiftCashBadge shift={shift} />

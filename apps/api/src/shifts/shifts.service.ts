@@ -475,17 +475,33 @@ export class ShiftsService {
       },
       _sum: { amount: true },
     });
+    // Movimientos digitales del turno (entradas/salidas por método).
+    const digitalMovRows = await this.prisma.cashMovement.groupBy({
+      by: ['method', 'type'],
+      where: { shiftId, method: { not: 'CASH' } },
+      _sum: { amount: true },
+    });
+    const digitalMovNet = new Map<string, number>();
+    for (const r of digitalMovRows) {
+      const amt = Math.round(Number(r._sum.amount ?? 0));
+      digitalMovNet.set(
+        r.method as string,
+        (digitalMovNet.get(r.method as string) ?? 0) + (r.type === 'IN' ? amt : -amt),
+      );
+    }
     const countedByMethod = new Map(
       (input.digitalCounts ?? []).map((d) => [d.method, Math.round(d.counted)]),
     );
     const digitalMethods = new Set<string>([
       ...digitalExpectedRows.map((r) => r.method as string),
+      ...digitalMovNet.keys(),
       ...countedByMethod.keys(),
     ]);
     const digitalBreakdown: DigitalCountLine[] = [...digitalMethods].map((method) => {
-      const expected = Math.round(
-        Number(digitalExpectedRows.find((r) => r.method === method)?._sum.amount ?? 0),
-      );
+      const expected =
+        Math.round(
+          Number(digitalExpectedRows.find((r) => r.method === method)?._sum.amount ?? 0),
+        ) + (digitalMovNet.get(method) ?? 0);
       const counted = countedByMethod.get(method as DigitalCountLine['method']) ?? null;
       return {
         method: method as DigitalCountLine['method'],
@@ -596,7 +612,9 @@ export class ShiftsService {
   ): Promise<{ cashIn: number; cashOut: number }> {
     const grouped = await this.prisma.cashMovement.groupBy({
       by: ['type'],
-      where: { shiftId },
+      // Solo EFECTIVO: los movimientos digitales ajustan el arqueo digital
+      // de su método, no el cajón físico.
+      where: { shiftId, method: 'CASH' },
       _sum: { amount: true },
     });
     let cashIn = 0;
@@ -630,6 +648,7 @@ export class ShiftsService {
       data: {
         shiftId,
         type: input.type,
+        method: input.method,
         amount: input.amount,
         reason: input.reason,
         userId,
@@ -641,7 +660,7 @@ export class ShiftsService {
       action: input.type === 'IN' ? 'CASH_MOVEMENT_IN' : 'CASH_MOVEMENT_OUT',
       entityType: 'shift',
       entityId: shiftId,
-      metadata: { amount: input.amount, reason: input.reason },
+      metadata: { amount: input.amount, reason: input.reason, method: input.method },
     });
     return toCashMovementDto(row);
   }
@@ -678,6 +697,7 @@ function toCashMovementDto(row: DbCashMovement): CashMovement {
     id: row.id,
     shiftId: row.shiftId,
     type: row.type,
+    method: row.method,
     amount: Number(row.amount),
     reason: row.reason,
     userId: row.userId,

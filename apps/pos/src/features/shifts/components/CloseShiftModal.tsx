@@ -18,7 +18,12 @@ import { useOffline } from '../../offline';
 import { listSales } from '../../sales';
 import { closeShift } from '../api/close';
 import { listCashMovements } from '../api';
-import { cashMovementsNet, sumBreakdown, toBreakdownLines } from '../lib/denominations';
+import {
+  cashMovementsNet,
+  digitalMovementsNet,
+  sumBreakdown,
+  toBreakdownLines,
+} from '../lib/denominations';
 import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
 import { DigitalCountSection } from './DigitalCountSection';
 import { DenominationCounter } from './DenominationCounter';
@@ -90,6 +95,7 @@ export function CloseShiftModal({
   }, [open, shift?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const net = useMemo(() => cashMovementsNet(movements), [movements]);
+  const digitalNet = useMemo(() => digitalMovementsNet(movements), [movements]);
   const expectedCash = useMemo(() => {
     if (!shift || !summary) return null;
     return shift.openingCash + summary.cashSalesTotal + net.net;
@@ -213,6 +219,7 @@ export function CloseShiftModal({
         {!loading && summary ? (
           <DigitalCountSection
             summary={summary}
+            digitalNet={digitalNet}
             values={digitalCounts}
             onChange={(method, value) =>
               setDigitalCounts((prev) => ({ ...prev, [method]: value }))

@@ -1,13 +1,20 @@
 'use client';
 
-import type { CashMovement, CashMovementType } from '@pos-tercos/types';
+import {
+  PAYMENT_METHOD_LABELS,
+  type CashMovement,
+  type CashMovementType,
+  type PaymentMethod,
+} from '@pos-tercos/types';
 import { Button, Input, Money, NumberInput, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { FALLBACK_METHODS, fetchEnabledMethods } from '../../sales';
 import { addCashMovement, listCashMovements } from '../api';
 
 /**
- * Lista + registro de entradas/salidas de efectivo del turno (aparte de
- * ventas). Cada movimiento ajusta el efectivo esperado al cierre.
+ * Lista + registro de entradas/salidas del turno (aparte de ventas), con
+ * MÉTODO: efectivo ajusta el cajón esperado; transferencia/digital ajusta
+ * el arqueo digital de su método al cierre.
  */
 export function CashMovementsSection({
   shiftId,
@@ -18,6 +25,8 @@ export function CashMovementsSection({
 }) {
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [type, setType] = useState<CashMovementType>('OUT');
+  const [method, setMethod] = useState<PaymentMethod>('CASH');
+  const [methods, setMethods] = useState<readonly PaymentMethod[]>(FALLBACK_METHODS);
   const [amount, setAmount] = useState<number | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -33,6 +42,7 @@ export function CashMovementsSection({
 
   useEffect(() => {
     void refresh();
+    void fetchEnabledMethods().then(setMethods);
   }, [refresh]);
 
   const valid = amount !== null && amount > 0 && reason.trim().length >= 3;
@@ -42,7 +52,7 @@ export function CashMovementsSection({
     setBusy(true);
     setError(null);
     try {
-      await addCashMovement(shiftId, { type, amount, reason: reason.trim() });
+      await addCashMovement(shiftId, { type, method, amount, reason: reason.trim() });
       setAmount(null);
       setReason('');
       await refresh();
@@ -57,7 +67,7 @@ export function CashMovementsSection({
   return (
     <section className="rounded-xl border border-border bg-card p-3">
       <p className="caps mb-2 text-[0.625rem] text-muted-foreground">
-        Movimientos de efectivo
+        Movimientos de caja · efectivo y transferencias
       </p>
 
       <div className="flex gap-1.5">
@@ -67,6 +77,25 @@ export function CashMovementsSection({
         <TypeButton active={type === 'IN'} onClick={() => setType('IN')} tone="success">
           Entrada
         </TypeButton>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {methods.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMethod(m)}
+            aria-pressed={method === m}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+              method === m
+                ? 'border-primary bg-destructive/10 text-primary'
+                : 'border-border bg-card text-muted-foreground hover:bg-muted/40',
+            )}
+          >
+            {PAYMENT_METHOD_LABELS[m]}
+          </button>
+        ))}
       </div>
 
       <div className="mt-2 flex gap-2">
@@ -114,6 +143,9 @@ export function CashMovementsSection({
                 >
                   {m.type === 'IN' ? 'Entrada' : 'Salida'}
                 </span>
+                {m.method !== 'CASH' ? (
+                  <span className="text-muted-foreground"> · {PAYMENT_METHOD_LABELS[m.method]}</span>
+                ) : null}
                 <span className="text-muted-foreground"> · {m.reason}</span>
               </span>
               <Money

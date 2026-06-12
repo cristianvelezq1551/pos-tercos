@@ -218,11 +218,23 @@ describe('Shifts E2E', () => {
         .set('Authorization', `Bearer ${cajeroToken}`)
         .send({ type: 'OUT', amount: 3000, reason: 'Pago a mensajero' })
         .expect(201);
+      // Movimiento DIGITAL: no toca el cajón, ajusta el arqueo de TRANSFER.
+      const mov = await request
+        .post(`/shifts/${shiftId}/cash-movements`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({
+          type: 'OUT',
+          method: 'TRANSFER',
+          amount: 2000,
+          reason: 'Pago insumo por transferencia',
+        })
+        .expect(201);
+      expect(mov.body.method).toBe('TRANSFER');
       const list = await request
         .get(`/shifts/${shiftId}/cash-movements`)
         .set('Authorization', `Bearer ${cajeroToken}`)
         .expect(200);
-      expect(list.body).toHaveLength(2);
+      expect(list.body).toHaveLength(3);
     });
 
     it('vende CASH y cierra con esperado = apertura + ventas + entradas − salidas + arqueo', async () => {
@@ -238,7 +250,25 @@ describe('Shifts E2E', () => {
         .send({ method: 'CASH', amountReceived: RECEIVED })
         .expect(201);
 
-      // 50000 (apertura) + 10000 (venta) + 10000 (entrada) − 3000 (salida) = 67000
+      // Venta por TRANSFER para arquear lo digital al cierre.
+      const transferSale = await request
+        .post('/sales')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${transferSale.body.id}/confirm-payment`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({
+          method: 'TRANSFER',
+          amountReceived: PRODUCT_PRICE,
+          digitalDoubleVerified: true,
+        })
+        .expect(201);
+
+      // 50000 (apertura) + 10000 (venta CASH) + 10000 (entrada) − 3000 (salida) = 67000.
+      // El movimiento TRANSFER (−2000) NO toca el cajón físico.
       const expectedCash = OPENING_CASH + PRODUCT_PRICE + 10000 - 3000;
       const countedCash = 67000; // arqueo cuadra → diferencia 0
       const res = await request
@@ -252,6 +282,8 @@ describe('Shifts E2E', () => {
             { denomination: 5000, count: 1 },
             { denomination: 2000, count: 1 },
           ],
+          // Esperado TRANSFER = 10000 (venta) − 2000 (movimiento OUT) = 8000.
+          digitalCounts: [{ method: 'TRANSFER', counted: 8000 }],
           notes: 'Cierre del día',
         })
         .expect(201);
@@ -259,13 +291,25 @@ describe('Shifts E2E', () => {
       expect(res.body.expectedCash).toBe(expectedCash);
       expect(res.body.difference).toBe(countedCash - expectedCash); // 0
 
-      // El detalle expone movimientos + arqueo.
+      // El detalle expone movimientos + arqueo físico y digital.
       const detail = await request
         .get(`/shifts/${shiftId}/detail`)
         .set('Authorization', `Bearer ${cajeroToken}`)
         .expect(200);
-      expect(detail.body.cashMovements).toHaveLength(2);
+      expect(detail.body.cashMovements).toHaveLength(3);
       expect(detail.body.cashCountBreakdown).toHaveLength(4);
+      const transfer = (
+        detail.body.shift.digitalCountBreakdown as Array<{
+          method: string;
+          expected: number;
+          counted: number | null;
+          difference: number | null;
+        }>
+      ).find((d) => d.method === 'TRANSFER');
+      expect(transfer).toBeDefined();
+      expect(transfer!.expected).toBe(8000);
+      expect(transfer!.counted).toBe(8000);
+      expect(transfer!.difference).toBe(0);
     });
 
     it('no puede cerrar la misma caja dos veces', async () => {

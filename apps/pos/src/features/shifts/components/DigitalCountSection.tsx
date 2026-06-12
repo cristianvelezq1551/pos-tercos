@@ -6,11 +6,19 @@ import type { ShiftSummary } from '../lib/shift-summary';
 
 const DIGITAL_LABELS: Record<string, string> = PAYMENT_METHOD_LABELS;
 
-/** Métodos NO-efectivo con ventas en el turno (cualquier método habilitado). */
-export function digitalMethodsOf(summary: ShiftSummary): string[] {
-  return Object.keys(summary.byMethod).filter(
+/**
+ * Métodos NO-efectivo con plata en el turno: ventas y/o movimientos
+ * digitales registrados (un egreso por transferencia también se arquea).
+ */
+export function digitalMethodsOf(
+  summary: ShiftSummary,
+  digitalNet: Record<string, number> = {},
+): string[] {
+  const fromSales = Object.keys(summary.byMethod).filter(
     (m) => m !== 'CASH' && m !== 'UNKNOWN' && (summary.byMethod[m]?.total ?? 0) > 0,
   );
+  const fromMovs = Object.keys(digitalNet).filter((m) => digitalNet[m] !== 0);
+  return Array.from(new Set([...fromSales, ...fromMovs]));
 }
 
 /**
@@ -20,18 +28,21 @@ export function digitalMethodsOf(summary: ShiftSummary): string[] {
  */
 export function DigitalCountSection({
   summary,
+  digitalNet = {},
   values,
   onChange,
   showExpected,
   disabled,
 }: {
   summary: ShiftSummary;
+  /** Neto IN−OUT de movimientos por método digital (ajusta el esperado). */
+  digitalNet?: Record<string, number>;
   values: Record<string, number | null>;
   onChange: (method: string, value: number | null) => void;
   showExpected: boolean;
   disabled: boolean;
 }) {
-  const methods = digitalMethodsOf(summary);
+  const methods = digitalMethodsOf(summary, digitalNet);
   if (methods.length === 0) return null;
 
   return (
@@ -40,7 +51,7 @@ export function DigitalCountSection({
         Arqueo digital · según cada app
       </h3>
       {methods.map((m) => {
-        const expected = summary.byMethod[m]?.total ?? 0;
+        const expected = (summary.byMethod[m]?.total ?? 0) + (digitalNet[m] ?? 0);
         const counted = values[m] ?? null;
         const diff = counted !== null ? counted - expected : null;
         return (

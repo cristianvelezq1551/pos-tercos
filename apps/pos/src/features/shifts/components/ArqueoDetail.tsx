@@ -37,8 +37,9 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
   }
 
   const { shift, summary, cashMovements } = detail;
-  const movIn = cashMovements.filter((m) => m.type === 'IN').reduce((a, m) => a + m.amount, 0);
-  const movOut = cashMovements.filter((m) => m.type === 'OUT').reduce((a, m) => a + m.amount, 0);
+  const cashOnly = cashMovements.filter((m) => m.method === 'CASH');
+  const movIn = cashOnly.filter((m) => m.type === 'IN').reduce((a, m) => a + m.amount, 0);
+  const movOut = cashOnly.filter((m) => m.type === 'OUT').reduce((a, m) => a + m.amount, 0);
 
   return (
     <div className="space-y-3 border-t border-border px-3 py-3 text-sm">
@@ -72,10 +73,10 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
           </p>
           <div className="flex gap-4 tabular-nums">
             <span className="text-success">
-              Entradas <Money amount={movIn} size="sm" className="text-current" />
+              Entradas efectivo <Money amount={movIn} size="sm" className="text-current" />
             </span>
             <span className="text-destructive">
-              Salidas <Money amount={movOut} size="sm" className="text-current" />
+              Salidas efectivo <Money amount={movOut} size="sm" className="text-current" />
             </span>
           </div>
           <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
@@ -83,6 +84,7 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
               <li key={m.id} className="flex justify-between gap-2">
                 <span className="truncate">
                   {m.type === 'IN' ? '↑' : '↓'} {m.reason}
+                  {m.method !== 'CASH' ? ` · ${label(m.method)}` : ''}
                 </span>
                 <Money amount={m.amount} size="xs" className="text-current" />
               </li>

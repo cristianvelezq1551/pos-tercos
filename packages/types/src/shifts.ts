@@ -96,6 +96,8 @@ export const CashMovementSchema = z.object({
   id: z.string().uuid(),
   shiftId: z.string().uuid(),
   type: CashMovementTypeEnum,
+  /** CASH = cajón físico; digital = cuenta del negocio (afecta su arqueo). */
+  method: PaymentMethodEnum.default('CASH'),
   amount: z.number().positive(),
   reason: z.string(),
   userId: z.string().uuid(),
@@ -106,6 +108,7 @@ export type CashMovement = z.infer<typeof CashMovementSchema>;
 
 export const CreateCashMovementSchema = z.object({
   type: CashMovementTypeEnum,
+  method: PaymentMethodEnum.default('CASH'),
   amount: z.number().positive(),
   reason: z.string().min(3).max(200),
 });

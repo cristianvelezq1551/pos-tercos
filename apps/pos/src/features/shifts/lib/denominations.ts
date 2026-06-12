@@ -18,7 +18,7 @@ export function toBreakdownLines(counts: Record<number, number>): CashCountLine[
   }));
 }
 
-/** Neto de movimientos de efectivo del turno: entradas − salidas. */
+/** Neto de movimientos de EFECTIVO del turno (solo el cajón físico). */
 export function cashMovementsNet(movements: CashMovement[]): {
   cashIn: number;
   cashOut: number;
@@ -27,8 +27,19 @@ export function cashMovementsNet(movements: CashMovement[]): {
   let cashIn = 0;
   let cashOut = 0;
   for (const m of movements) {
+    if (m.method !== 'CASH') continue;
     if (m.type === 'IN') cashIn += m.amount;
     else cashOut += m.amount;
   }
   return { cashIn, cashOut, net: cashIn - cashOut };
+}
+
+/** Neto por método DIGITAL (ajusta el esperado del arqueo digital). */
+export function digitalMovementsNet(movements: CashMovement[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const m of movements) {
+    if (m.method === 'CASH') continue;
+    out[m.method] = (out[m.method] ?? 0) + (m.type === 'IN' ? m.amount : -m.amount);
+  }
+  return out;
 }
