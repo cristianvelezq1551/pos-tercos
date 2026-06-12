@@ -87,6 +87,8 @@ export interface OfflineSale {
   /** Intentos de sync acumulados. Tras MAX_AUTO_SYNC_ATTEMPTS los drains
    *  automáticos la saltan — solo se reintenta manual desde la bandeja. */
   attempts?: number;
+  /** Último intento de sync (ISO) — controla el backoff entre reintentos. */
+  lastAttemptAt?: string;
   realReceiptNumber?: number;
   realTurnNumber?: number;
 }

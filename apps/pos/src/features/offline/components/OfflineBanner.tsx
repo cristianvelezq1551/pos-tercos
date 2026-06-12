@@ -14,11 +14,14 @@ export function OfflineBanner({
   status,
   pending,
   failed,
+  persistent = null,
   onReview,
 }: {
   status: ConnectivityStatus;
   pending: number;
   failed: number;
+  /** false = el navegador denegó almacenamiento persistente. */
+  persistent?: boolean | null;
   onReview: () => void;
 }) {
   if (status === 'offline') {
@@ -30,6 +33,11 @@ export function OfflineBanner({
         <CloudOff className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
         Sin conexión — vendiendo offline
         {pending > 0 ? <span className="font-bold">· {pending} en cola</span> : null}
+        {persistent === false ? (
+          <span className="font-bold text-destructive">
+            · ⚠ almacenamiento NO persistente: no cierres el navegador con ventas en cola
+          </span>
+        ) : null}
       </div>
     );
   }

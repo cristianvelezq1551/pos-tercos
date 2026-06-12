@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { logError } from '../../../lib/client-log';
 import type {
   CatalogCache,
   OfflineMeta,
@@ -58,7 +59,8 @@ async function kvGet<T>(key: string): Promise<T | null> {
   try {
     const v = await (await getDb()).get('kv', key);
     return (v as T) ?? null;
-  } catch {
+  } catch (err) {
+    logError('offline-db', err, { op: 'kvGet', key });
     return null;
   }
 }
@@ -91,7 +93,8 @@ export const offlineDb = {
   async listSales(): Promise<OfflineSale[]> {
     try {
       return await (await getDb()).getAll('offlineSales');
-    } catch {
+    } catch (err) {
+      logError('offline-db', err, { op: 'listSales' });
       return [];
     }
   },
@@ -102,14 +105,16 @@ export const offlineDb = {
       const failed = await db.countFromIndex('offlineSales', 'by-status', 'failed');
       const syncing = await db.countFromIndex('offlineSales', 'by-status', 'syncing');
       return queued + failed + syncing;
-    } catch {
+    } catch (err) {
+      logError('offline-db', err, { op: 'countPending' });
       return 0;
     }
   },
   async countFailed(): Promise<number> {
     try {
       return await (await getDb()).countFromIndex('offlineSales', 'by-status', 'failed');
-    } catch {
+    } catch (err) {
+      logError('offline-db', err, { op: 'countFailed' });
       return 0;
     }
   },
@@ -134,8 +139,15 @@ export async function requestPersistentStorage(): Promise<boolean> {
   try {
     if (!navigator.storage?.persist) return false;
     if (await navigator.storage.persisted()) return true;
-    return await navigator.storage.persist();
-  } catch {
+    const granted = await navigator.storage.persist();
+    if (!granted) {
+      logError('offline-db', 'almacenamiento persistente DENEGADO por el navegador', {
+        hint: 'la cola offline puede purgarse bajo presión de disco',
+      });
+    }
+    return granted;
+  } catch (err) {
+    logError('offline-db', err, { op: 'requestPersistentStorage' });
     return false;
   }
 }

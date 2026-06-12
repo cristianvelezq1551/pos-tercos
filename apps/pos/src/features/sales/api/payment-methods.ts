@@ -1,3 +1,4 @@
+import { logError } from '../../../lib/client-log';
 import {
   PaymentMethodSettingSchema,
   type PaymentMethod,
@@ -19,7 +20,8 @@ export async function fetchEnabledMethods(): Promise<PaymentMethod[]> {
     const rows = z.array(PaymentMethodSettingSchema).parse(await res.json());
     const methods = rows.map((r) => r.method);
     return methods.length > 0 ? methods : FALLBACK_METHODS;
-  } catch {
+  } catch (err) {
+    logError('payment-methods', err);
     return FALLBACK_METHODS;
   }
 }

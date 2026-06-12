@@ -8,6 +8,7 @@ import { SalesConsumptionService } from './sales-consumption.service';
 import { SalesController } from './sales.controller';
 import { SalesOfflineService } from './sales-offline.service';
 import { SalesEditService } from './sales-edit.service';
+import { StaleSalesSweepService } from './stale-sales-sweep.service';
 import { SalesReceiptService } from './sales-receipt.service';
 import { SalesService } from './sales.service';
 
@@ -25,6 +26,7 @@ import { SalesService } from './sales.service';
     SalesOfflineService,
     SalesReceiptService,
     SalesEditService,
+    StaleSalesSweepService,
     ReceiptIntegrityService,
   ],
   exports: [SalesService, ReceiptIntegrityService],

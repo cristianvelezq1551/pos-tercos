@@ -15,15 +15,33 @@
  * El cache se versiona con CACHE_VERSION; subirlo en un deploy invalida todo.
  */
 
-const CACHE_VERSION = 'pos-tercos-v2';
+const CACHE_VERSION = 'pos-tercos-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const NAV_CACHE = `${CACHE_VERSION}-nav`;
 const OFFLINE_URL = '/offline.html';
 
+// Pestañas del POS: se precalientan en install para que abran offline aunque
+// nunca se hayan visitado online (el fallback a '/' igual cubre, pero el
+// warm-up evita servir la shell equivocada).
+const NAV_WARMUP = ['/', '/caja', '/historial', '/turnos', '/arqueos'];
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    // Solo recursos que EXISTEN (si uno da 404, addAll rechaza y no instala).
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll([OFFLINE_URL, '/manifest.json'])),
+    Promise.all([
+      // Solo recursos que EXISTEN (si uno da 404, addAll rechaza y no instala).
+      caches.open(STATIC_CACHE).then((cache) => cache.addAll([OFFLINE_URL, '/manifest.json'])),
+      // Warm-up best-effort: una ruta protegida puede responder redirect/401 en
+      // install — se ignora (la navegación real la cachea después).
+      caches.open(NAV_CACHE).then((cache) =>
+        Promise.all(
+          NAV_WARMUP.map((path) =>
+            fetch(path)
+              .then((res) => (res && res.ok ? cache.put(path, res.clone()) : undefined))
+              .catch(() => undefined),
+          ),
+        ),
+      ),
+    ]),
   );
   self.skipWaiting();
 });

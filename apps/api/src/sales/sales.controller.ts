@@ -45,6 +45,7 @@ import {
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
 import { SalesEditService } from './sales-edit.service';
+import { StaleSalesSweepService } from './stale-sales-sweep.service';
 import { SalesOfflineService } from './sales-offline.service';
 import { SalesReceiptService } from './sales-receipt.service';
 import { SalesService } from './sales.service';
@@ -57,12 +58,20 @@ export class SalesController {
     private readonly receipts: SalesReceiptService,
     private readonly receiptIntegrity: ReceiptIntegrityService,
     private readonly edits: SalesEditService,
+    private readonly staleSweep: StaleSalesSweepService,
   ) {}
 
   /**
    * Chequeo on-demand de saltos en receipt_seq. El cron corre 4:00 AM
    * todos los días, este endpoint permite invocar manualmente (Dueño).
    */
+  /** Barrido manual de cobros abandonados (el cron corre cada 10 min). */
+  @OnlyDueno()
+  @Post('admin/sweep-stale-pending')
+  sweepStalePending(): Promise<{ canceled: number }> {
+    return this.staleSweep.sweep();
+  }
+
   @OnlyDueno()
   @Post('admin/check-receipt-gaps')
   async checkReceiptGaps(): Promise<{

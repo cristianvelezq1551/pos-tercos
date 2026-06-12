@@ -8,6 +8,17 @@ import { SalesConsumptionService } from './sales-consumption.service';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 /**
+ * Una venta offline solo puede haber ocurrido en el PASADO. Si el reloj del
+ * POS está adelantado, el revenue caería "en el futuro" y rompería reportes
+ * y cierre de caja → se rechaza (la venta queda en la bandeja de revisión
+ * hasta que corrijan la hora del dispositivo).
+ */
+const MAX_FUTURE_CLOCK_DRIFT_MS = 15 * 60 * 1000;
+
+/** Drift de precio tolerado antes de marcar en bitácora (1% por línea). */
+const PRICE_DRIFT_TOLERANCE = 0.01;
+
+/**
  * Sincronización de ventas cobradas OFFLINE (Fase B.3). Separado de
  * SalesService: el flujo no comparte estado con el cobro online, solo la
  * lógica de consumo (SalesConsumptionService).
@@ -45,6 +56,26 @@ export class SalesOfflineService {
         metadata: { endpoint: 'POST /sales/sync-offline', key: input.localId },
       });
       return toSaleDto(dup);
+    }
+
+    // Reloj del POS adelantado → paidAt en el futuro → reportes y caja rotos.
+    // Pasado lejano es legítimo (corte largo de internet); futuro no existe.
+    const soldAt = new Date(input.soldOfflineAt).getTime();
+    const driftMs = soldAt - Date.now();
+    if (driftMs > MAX_FUTURE_CLOCK_DRIFT_MS) {
+      await this.audit.log({
+        userId,
+        action: 'OFFLINE_SYNC_CLOCK_DRIFT',
+        entityType: 'sale',
+        metadata: {
+          provisionalNumber: input.provisionalNumber,
+          soldOfflineAt: input.soldOfflineAt,
+          driftMinutes: Math.round(driftMs / 60_000),
+        },
+      });
+      throw new BadRequestException(
+        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corregí la hora del dispositivo y reintentá desde la bandeja.`,
+      );
     }
 
     // Caja del día abierta (la que estaba abierta antes del corte). Si quedó una
@@ -150,6 +181,10 @@ export class SalesOfflineService {
     });
 
     const dto = toSaleDto(updated);
+    // "Gana lo cobrado offline" (decisión documentada), pero el drift de
+    // precio contra el catálogo ACTUAL queda en bitácora: si la venta se
+    // cobró con un snapshot viejo (o manipulado), el dueño lo ve.
+    await this.auditPriceDrift(input, dto.id, userId);
     await this.audit.log({
       userId,
       action: 'SALE_SYNCED_OFFLINE',
@@ -167,5 +202,57 @@ export class SalesOfflineService {
     });
     // Sin KDS ni notificaciones: la venta offline ya se entregó (entrega directa).
     return dto;
+  }
+
+  /** Compara el unitPrice cobrado offline contra el catálogo vigente. */
+  private async auditPriceDrift(
+    input: SyncOfflineSale,
+    saleId: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const productIds = Array.from(new Set(input.payload.lines.map((l) => l.productId)));
+      const products = await this.prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true,
+          name: true,
+          basePrice: true,
+          comboPrice: true,
+          isCombo: true,
+          sizes: { select: { id: true, priceModifier: true } },
+        },
+      });
+      const byId = new Map(products.map((p) => [p.id, p]));
+      const drifted: Array<{ product: string; charged: number; catalog: number }> = [];
+      for (const line of input.payload.lines) {
+        const product = byId.get(line.productId);
+        if (!product) continue;
+        let expected = Number(
+          product.isCombo && product.comboPrice !== null ? product.comboPrice : product.basePrice,
+        );
+        if (line.sizeId) {
+          const size = product.sizes.find((sz) => sz.id === line.sizeId);
+          if (size) expected += Number(size.priceModifier);
+        }
+        for (const mod of line.modifiers ?? []) {
+          expected += Number(mod.priceDelta ?? 0);
+        }
+        if (expected > 0 && Math.abs(line.unitPrice - expected) / expected > PRICE_DRIFT_TOLERANCE) {
+          drifted.push({ product: product.name, charged: line.unitPrice, catalog: expected });
+        }
+      }
+      if (drifted.length > 0) {
+        await this.audit.log({
+          userId,
+          action: 'OFFLINE_PRICE_DRIFT_DETECTED',
+          entityType: 'sale',
+          entityId: saleId,
+          metadata: { provisionalNumber: input.provisionalNumber, lines: drifted },
+        });
+      }
+    } catch {
+      // La auditoría de drift nunca bloquea el sync (la venta ya está grabada).
+    }
   }
 }

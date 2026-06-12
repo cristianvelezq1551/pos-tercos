@@ -354,6 +354,54 @@ describe('Sales E2E', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Caso 3.45: barrido de cobros abandonados
+  // ---------------------------------------------------------------------------
+  describe('POST /sales/admin/sweep-stale-pending', () => {
+    it('cancela COUNTER pendientes viejos; respeta recientes y pedidos web', async () => {
+      // Venta COUNTER vieja (45 min) → debe barrerse.
+      const oldSale = await request
+        .post('/sales')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId, quantity: 1 }] })
+        .expect(201);
+      await prisma.sale.update({
+        where: { id: oldSale.body.id as string },
+        data: { createdAt: new Date(Date.now() - 45 * 60_000) },
+      });
+      // Venta COUNTER fresca → debe quedar intacta.
+      const freshSale = await request
+        .post('/sales')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId, quantity: 1 }] })
+        .expect(201);
+
+      const res = await request
+        .post('/sales/admin/sweep-stale-pending')
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .expect(201);
+      expect(res.body.canceled).toBeGreaterThanOrEqual(1);
+
+      const swept = await prisma.sale.findUnique({
+        where: { id: oldSale.body.id as string },
+        select: { status: true },
+      });
+      expect(swept!.status).toBe('CANCELADO_NO_PAGO');
+      const fresh = await prisma.sale.findUnique({
+        where: { id: freshSale.body.id as string },
+        select: { status: true },
+      });
+      expect(fresh!.status).toBe('PENDIENTE_PAGO');
+
+      const log = await prisma.auditLog.findFirst({
+        where: { action: 'STALE_SALES_SWEPT' },
+      });
+      expect(log).toBeTruthy();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Caso 3.5: POST /sales/sync-offline (Fase B.3)
   // ---------------------------------------------------------------------------
   describe('POST /sales/sync-offline', () => {
@@ -401,6 +449,21 @@ describe('Sales E2E', () => {
       expect(sale.paymentMethod).toBe('CASH');
       // paidAt backdateado al momento real de la venta offline.
       expect(new Date(sale.paidAt).toISOString()).toBe('2026-05-24T14:00:00.000Z');
+    });
+
+    it('rechaza una venta offline con reloj adelantado (>15 min en el futuro)', async () => {
+      const body = buildBody(randomUUID());
+      body.soldOfflineAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      const res = await request
+        .post('/sales/sync-offline')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send(body)
+        .expect(400);
+      expect(res.body.message).toContain('reloj');
+      const log = await prisma.auditLog.findFirst({
+        where: { action: 'OFFLINE_SYNC_CLOCK_DRIFT' },
+      });
+      expect(log).toBeTruthy();
     });
 
     it('es idempotente por localId (reintento devuelve la misma venta)', async () => {

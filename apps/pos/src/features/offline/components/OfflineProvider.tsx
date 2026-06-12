@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { usePolling } from '../../../lib/use-polling';
 import { useConnectivity } from '../hooks/useConnectivity';
 import { cacheCatalog, cacheSession, cacheStockSnapshot } from '../lib/cache';
 import { offlineDb, requestPersistentStorage } from '../lib/db';
@@ -22,6 +23,8 @@ interface OfflineContextValue {
   pending: number;
   /** Ventas que fallaron al sincronizar (subconjunto de pending) — a revisar. */
   failed: number;
+  /** false = el navegador DENEGÓ almacenamiento persistente (cola en riesgo). */
+  persistent: boolean | null;
   /** Relee los contadores de cola desde IndexedDB. */
   refreshPending: () => void;
 }
@@ -55,19 +58,19 @@ export function OfflineProvider({
   const status = useConnectivity();
   const [pending, setPending] = useState(0);
   const [failed, setFailed] = useState(0);
+  const [persistent, setPersistent] = useState<boolean | null>(null);
 
   const refreshPending = (): void => {
     void offlineDb.countPending().then(setPending);
     void offlineDb.countFailed().then(setFailed);
   };
 
-  // Persistencia + 1er poll de cola (una vez).
+  // Persistencia: si el navegador la deniega, la cola offline puede purgarse
+  // bajo presión de disco — el banner lo hace visible al cajero.
   useEffect(() => {
-    void requestPersistentStorage();
-    refreshPending();
-    const id = setInterval(refreshPending, PENDING_POLL_MS);
-    return () => clearInterval(id);
+    void requestPersistentStorage().then(setPersistent);
   }, []);
+  usePolling(refreshPending, PENDING_POLL_MS);
 
   // Snapshot de la sesión cuando hay user (y al cambiar user/shift: apertura, etc.).
   useEffect(() => {
@@ -88,8 +91,21 @@ export function OfflineProvider({
     }
   }, [status]);
 
+  // Re-drain periódico mientras quede cola (cubre el backoff entre reintentos:
+  // el drain del evento 'online' corre una vez; los reintentos espaciados
+  // necesitan que alguien vuelva a llamar).
+  usePolling(
+    async () => {
+      if (status === 'online' && pending > 0) {
+        await drainOfflineQueue(refreshPending).catch(() => undefined);
+      }
+    },
+    30_000,
+    { enabled: status === 'online' && pending > 0, immediate: false },
+  );
+
   return (
-    <OfflineContext.Provider value={{ status, pending, failed, refreshPending }}>
+    <OfflineContext.Provider value={{ status, pending, failed, persistent, refreshPending }}>
       {children}
     </OfflineContext.Provider>
   );
@@ -98,7 +114,7 @@ export function OfflineProvider({
 /** Banda de estado offline/sincronización + acceso a la bandeja de revisión.
  *  Colocala dentro del <OfflineProvider> (ej. arriba de la columna del layout). */
 export function OfflineStatusBar() {
-  const { status, pending, failed, refreshPending } = useOffline();
+  const { status, pending, failed, persistent, refreshPending } = useOffline();
   const [trayOpen, setTrayOpen] = useState(false);
   return (
     <>
@@ -106,6 +122,7 @@ export function OfflineStatusBar() {
         status={status}
         pending={pending}
         failed={failed}
+        persistent={persistent}
         onReview={() => setTrayOpen(true)}
       />
       <OfflineReviewTray
