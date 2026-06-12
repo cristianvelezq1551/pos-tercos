@@ -18,6 +18,7 @@ import { listSales } from '../api/list';
 import { voidSale } from '../api/void';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
+import { getErrorMessage } from '../../../lib/errors';
 
 const VOIDABLE_LIMIT = 50;
 /** Solo se anula un pedido PAGADO que la cocina aún NO inició. */
@@ -61,7 +62,7 @@ export function VoidModal({
             ),
         ),
       )
-      .catch((err) => setError(err instanceof Error ? err.message : 'Error cargando ventas'))
+      .catch((err) => setError(getErrorMessage(err, 'Error cargando ventas')))
       .finally(() => setLoading(false));
   }, [open, shiftId]);
 
@@ -79,7 +80,7 @@ export function VoidModal({
       onSuccess(voided);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
   };

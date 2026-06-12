@@ -1,30 +1,16 @@
 'use client';
 
+import { getAudioContext } from '../../../lib/audio';
+
 /**
  * Aviso sonoro cuando la cocina marca un pedido LISTO (entra a "Por llamar").
  * Tono ascendente distinto al de pedidos web, para que el cajero los diferencie.
  * Web Audio API, sin asset. El AudioContext se desbloquea con los clicks del POS.
  */
-let ctx: AudioContext | null = null;
-
-function getCtx(): AudioContext | null {
-  if (typeof window === 'undefined') return null;
-  if (ctx) return ctx;
-  try {
-    const Ctor =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    ctx = Ctor ? new Ctor() : null;
-  } catch {
-    ctx = null;
-  }
-  return ctx;
-}
 
 export function playReadyChime(): void {
-  const c = getCtx();
+  const c = getAudioContext();
   if (!c) return;
-  if (c.state === 'suspended') void c.resume().catch(() => undefined);
   const now = c.currentTime;
   // Arpegio ascendente (do-mi-sol) → "pedido listo".
   const tones: Array<[number, number]> = [

@@ -8,6 +8,7 @@ import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { editSaleItems } from '../api/edit';
 import { printComanda } from '../api/print';
 import { EditSaleLineRow, type EditLine } from './EditSaleLineRow';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Edición de un pedido YA COBRADO. Si la cocina ya lo inició, las líneas de
@@ -94,7 +95,7 @@ export function EditSaleModal({
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error guardando los cambios');
+      setError(getErrorMessage(err, 'Error guardando los cambios'));
       setPending(false);
     }
   };

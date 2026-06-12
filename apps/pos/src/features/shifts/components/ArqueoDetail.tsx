@@ -7,19 +7,13 @@ import {
 import { LoadingSkeleton, Money, cn, formatDate } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { getShiftDetail } from '../api/list';
+import { PAID_STATUSES } from '../lib/sale-statuses';
 import { MethodRow, SectionRow, type MethodOrderEntry } from './ArqueoBreakdown';
+import { getErrorMessage } from '../../../lib/errors';
 
 const label = (m: string): string =>
   PAYMENT_METHOD_LABELS[m as keyof typeof PAYMENT_METHOD_LABELS] ?? m;
 
-/** Ventas que cuentan plata (excluye pendientes, canceladas sin pago y VOID). */
-const PAID_STATUSES = new Set([
-  'PAGADO',
-  'EN_PREPARACION',
-  'LISTO_DESPACHO',
-  'ENTREGADO',
-  'CANCELADO_SIN_REEMBOLSO',
-]);
 
 /**
  * Detalle de un arqueo, estilo reporte de caja: monto inicial → ingresos y
@@ -37,7 +31,7 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
         if (!cancelled) setDetail(d);
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Error');
+        if (!cancelled) setError(getErrorMessage(e, 'Error'));
       });
     return () => {
       cancelled = true;

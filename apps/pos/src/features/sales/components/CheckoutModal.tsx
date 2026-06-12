@@ -34,6 +34,7 @@ import { CashSection } from './CashSection';
 import { PaymentMethodSelector } from './PaymentMethodSelector';
 import { TransferSection } from './TransferSection';
 import { SplitPaymentSection, type SplitResult } from './split/SplitPaymentSection';
+import { getErrorMessage } from '../../../lib/errors';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
@@ -145,7 +146,7 @@ export function CheckoutModal({
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Error creando la venta');
+          setError(getErrorMessage(err, 'Error creando la venta'));
         }
       }
     };
@@ -280,7 +281,7 @@ export function CheckoutModal({
         sale: paidSale,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
   };

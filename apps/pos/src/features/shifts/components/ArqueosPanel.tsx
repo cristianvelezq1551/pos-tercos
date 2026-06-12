@@ -5,6 +5,7 @@ import { LoadingSkeleton, Money, formatDate } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { listClosedShifts } from '../api/list';
 import { ArqueoDetail } from './ArqueoDetail';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Historial de arqueos: cada cierre de caja con su resultado. Tocar una
@@ -23,7 +24,7 @@ export function ArqueosPanel() {
         if (!cancelled) setShifts(rows);
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Error cargando arqueos');
+        if (!cancelled) setError(getErrorMessage(e, 'Error cargando arqueos'));
       });
     return () => {
       cancelled = true;

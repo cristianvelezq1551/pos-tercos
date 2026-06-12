@@ -1,30 +1,16 @@
 'use client';
 
+import { getAudioContext } from '../../../lib/audio';
+
 /**
  * Beep corto para avisar al cajero que entró un pedido web. Web Audio API
  * (sin asset). El AudioContext se desbloquea con la primera interacción del
  * cajero (clicks del POS), así que para cuando entra un pedido ya suena.
  */
-let ctx: AudioContext | null = null;
-
-function getCtx(): AudioContext | null {
-  if (typeof window === 'undefined') return null;
-  if (ctx) return ctx;
-  try {
-    const Ctor =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    ctx = Ctor ? new Ctor() : null;
-  } catch {
-    ctx = null;
-  }
-  return ctx;
-}
 
 export function playWebOrderChime(): void {
-  const c = getCtx();
+  const c = getAudioContext();
   if (!c) return;
-  if (c.state === 'suspended') void c.resume().catch(() => undefined);
   const now = c.currentTime;
   // Ding-dong fuerte, repetido 2 veces para que NO pase desapercibido.
   const tones: Array<[number, number]> = [

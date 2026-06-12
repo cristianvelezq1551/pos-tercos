@@ -10,6 +10,7 @@ import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
 import { CashMovementsSection } from './CashMovementsSection';
 import { CloseShiftAction } from './CloseShiftAction';
 import { ShiftZReport } from './ShiftZReport';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Página de Caja del cajero: Z-report en vivo, stats, movimientos de
@@ -31,7 +32,7 @@ export function CajaPanel({ shift }: { shift: Shift }) {
       setSummary(computeShiftSummary(sales));
       setMovements(movs);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando la caja');
+      setError(getErrorMessage(e, 'Error cargando la caja'));
     } finally {
       setLoading(false);
     }

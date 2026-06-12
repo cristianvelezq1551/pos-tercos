@@ -4,6 +4,7 @@ import type { User } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { setOwnApprovalPin } from '../api/setPin';
+import { getErrorMessage } from '../../../lib/errors';
 
 const ROLES_WITH_PIN = new Set<User['role']>(['ADMIN_OPERATIVO', 'DUENO']);
 
@@ -43,7 +44,7 @@ export function ChangePinAction({ user }: { user: User | null }) {
         reset();
       }, 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error');
+      setError(getErrorMessage(err, 'Error'));
       setPending(false);
     }
   };

@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { changeSalePayment } from '../api/edit';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface Part {
   method: PaymentMethod;
@@ -89,7 +90,7 @@ export function ChangePaymentModal({
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error cambiando el pago');
+      setError(getErrorMessage(err, 'Error cambiando el pago'));
       setPending(false);
     }
   };

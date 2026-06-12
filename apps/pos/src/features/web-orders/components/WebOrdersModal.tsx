@@ -19,7 +19,9 @@ import { cancelWebOrder, markWebOrderReady } from '../api';
 import { useKdsLiveRefresh } from '../hooks/useKdsLiveRefresh';
 import { saleToPublicWebOrder } from '../lib/project';
 import { ConfirmWebPaymentModal } from './ConfirmWebPaymentModal';
+import { startOfTodayIso } from '../../../lib/dates';
 import { usePolling } from '../../../lib/use-polling';
+import { getErrorMessage } from '../../../lib/errors';
 
 const POLL_MS = 12_000;
 /** Solo a partir de este tiempo ofrecemos "no avisar" (actualización retroactiva). */
@@ -27,12 +29,6 @@ const STALE_MIN = 15;
 
 function minutesSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-}
-
-function startOfTodayIso(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
 }
 
 interface WebFilter {
@@ -93,7 +89,7 @@ export function WebOrdersModal({
       setOrders(all);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando pedidos web');
+      setError(getErrorMessage(e, 'Error cargando pedidos web'));
     }
   }, []);
 
@@ -225,7 +221,7 @@ function WebOrderRow({
       await fn();
       await onChanged();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
+      setErr(getErrorMessage(e, 'Error'));
       setBusy(false);
     }
   };

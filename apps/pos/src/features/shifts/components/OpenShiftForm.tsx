@@ -4,6 +4,7 @@ import { Button, FormField, Input, NumberInput } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition, type FormEvent } from 'react';
 import { openShift } from '../api/open';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function OpenShiftForm() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export function OpenShiftForm() {
         router.refresh();
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
     }
   };
 

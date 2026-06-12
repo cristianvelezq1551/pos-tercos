@@ -4,6 +4,7 @@ import { Button, Input } from '@pos-tercos/ui';
 import { useCallback, useMemo, useState } from 'react';
 import type { ReadyToCallOrder } from '@pos-tercos/types';
 import { usePolling } from '../../../lib/use-polling';
+import { getErrorMessage } from '../../../lib/errors';
 import {
   callManual,
   callSale,
@@ -53,7 +54,7 @@ export function TurnPanel({ active = true }: { active?: boolean }) {
       await action();
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error');
+      setError(getErrorMessage(e, 'Error'));
     } finally {
       setBusy(false);
     }

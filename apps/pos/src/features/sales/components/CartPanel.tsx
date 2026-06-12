@@ -12,6 +12,7 @@ import { CartLineRow } from './CartLineRow';
 import { CheckoutModal, type CheckoutSuccess } from './CheckoutModal';
 import { LastSaleBanner } from './LastSaleBanner';
 import { usePolling } from '../../../lib/use-polling';
+import { getErrorMessage } from '../../../lib/errors';
 
 const PROMO_REFRESH_MS = 60_000;
 
@@ -34,7 +35,7 @@ export function CartPanel() {
       setPromos(data);
       setPromoError(null);
     } catch (err) {
-      setPromoError(err instanceof Error ? err.message : 'Error cargando promos');
+      setPromoError(getErrorMessage(err, 'Error cargando promos'));
     }
   }, PROMO_REFRESH_MS);
 

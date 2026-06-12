@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { loginRequest } from '../api/login';
 import { POS_ALLOWED_ROLES } from '../../../lib/auth-config';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function LoginScreen() {
   const params = useSearchParams();
@@ -26,7 +27,7 @@ export function LoginScreen() {
       }
       window.location.assign(redirectAfterLogin);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
       setPending(false);
     }
   };

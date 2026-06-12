@@ -12,6 +12,7 @@ import { confirmPayment, TransferSection } from '../../sales';
 import { fetchSaleById } from '../api/get-sale';
 import { OrderItemsList } from './OrderItemsList';
 import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
+import { getErrorMessage } from '../../../lib/errors';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 /** Solo a partir de este tiempo sin cobrarse ofrecemos "no avisar". */
@@ -51,7 +52,7 @@ export function ConfirmWebPaymentModal({
     fetchSaleById(order.id)
       .then(setFullSale)
       .catch((err) =>
-        setError(err instanceof Error ? err.message : 'Error cargando la venta'),
+        setError(getErrorMessage(err, 'Error cargando la venta')),
       )
       .finally(() => setLoadingSale(false));
   }, [open, order?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -86,7 +87,7 @@ export function ConfirmWebPaymentModal({
       });
       onConfirmed(paid);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
   };

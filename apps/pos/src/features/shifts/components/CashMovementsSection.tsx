@@ -17,6 +17,7 @@ import {
 } from '../api';
 import { notifyCajaChanged } from '../lib/caja-events';
 import { CashMovementRow } from './CashMovementRow';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Lista + registro de entradas/salidas del turno (aparte de ventas), con
@@ -87,7 +88,7 @@ export function CashMovementsSection({
       onChanged?.();
       notifyCajaChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error registrando el movimiento');
+      setError(getErrorMessage(e, 'Error registrando el movimiento'));
     } finally {
       setBusy(false);
     }
@@ -103,7 +104,7 @@ export function CashMovementsSection({
       onChanged?.();
       notifyCajaChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error eliminando el movimiento');
+      setError(getErrorMessage(e, 'Error eliminando el movimiento'));
     } finally {
       setBusy(false);
     }

@@ -29,6 +29,7 @@ import { DigitalCountSection } from './DigitalCountSection';
 import { DenominationCounter } from './DenominationCounter';
 import { DifferenceWidget } from './DifferenceWidget';
 import { ShiftZReport } from './ShiftZReport';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function CloseShiftModal({
   shift,
@@ -91,7 +92,7 @@ export function CloseShiftModal({
         setMovements(movs);
       })
       .catch((err) =>
-        setError(err instanceof Error ? err.message : 'Error cargando el cierre'),
+        setError(getErrorMessage(err, 'Error cargando el cierre')),
       )
       .finally(() => setLoading(false));
   }, [open, shift?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -127,7 +128,7 @@ export function CloseShiftModal({
       });
       onClosed(closed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
   };

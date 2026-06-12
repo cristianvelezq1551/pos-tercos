@@ -16,7 +16,9 @@ import { printReceipt } from '../api/print';
 import { markKitchenReady } from '../api/kitchen';
 import { ChangePaymentModal } from './ChangePaymentModal';
 import { EditSaleModal } from './EditSaleModal';
+import { startOfTodayIso } from '../../../lib/dates';
 import { usePolling } from '../../../lib/use-polling';
+import { getErrorMessage } from '../../../lib/errors';
 import {
   ACTIVE_SALE_STATUSES,
   SALE_STATUS_MAPPING,
@@ -50,12 +52,6 @@ const FILTERS: Filter[] = [
   },
 ];
 
-function startOfTodayIso(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
 function minutesSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
 }
@@ -87,7 +83,7 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
       setSales(sorted);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando el historial');
+      setError(getErrorMessage(e, 'Error cargando el historial'));
     }
   }, []);
 

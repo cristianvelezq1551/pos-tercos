@@ -10,17 +10,12 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { getShiftDetail } from '../api/list';
+import { PAID_STATUSES } from '../lib/sale-statuses';
+import { getErrorMessage } from '../../../lib/errors';
 
 const label = (m: string): string =>
   PAYMENT_METHOD_LABELS[m as keyof typeof PAYMENT_METHOD_LABELS] ?? m;
 
-const PAID_STATUSES = new Set([
-  'PAGADO',
-  'EN_PREPARACION',
-  'LISTO_DESPACHO',
-  'ENTREGADO',
-  'CANCELADO_SIN_REEMBOLSO',
-]);
 
 /**
  * Ventas de UN método de pago dentro de una caja cerrada: cada venta con
@@ -37,7 +32,7 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
       setDetail(await getShiftDetail(shiftId));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando la caja');
+      setError(getErrorMessage(e, 'Error cargando la caja'));
     }
   }, [shiftId]);
 
