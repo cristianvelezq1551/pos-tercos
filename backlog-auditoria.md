@@ -96,6 +96,28 @@
 - [ ] ⚪ **Web — SEO** (sin sitemap/robots/OG/metadataBase → link en WhatsApp sin preview) + `hero.gif` 7.5 MB sin optimizar + `next/image`.
 - [ ] ⚪ Catches silenciosos sin log en POS (`cancelSale`, `ShiftCashBadge`); `method as never` en `CloseShiftModal:100`; reexportar `caja-events` por el barrel.
 
+## Validación detallada del cajero ONLINE + OFFLINE (2026-06-22)
+
+Auditoría doble (online/offline) verificada contra el código. **No se encontró ningún bug de pérdida de dinero ni doble-cobro** — el camino de cobro está protegido por el guard síncrono `submittingRef`, el `updateMany` condicionado a PENDIENTE_PAGO, la recomputación server-side de totales/split, y `assertStockSufficient` dentro de la tx. Idempotencia offline por `localId` confirmada (cero doble-cobro). Lógica de consumo ÚNICA online/offline (`computeConsumptionSpecs`).
+
+**Corregido (commit `83c2cf0`):**
+- [x] 🔴 **Turno duplicado bajo concurrencia** (count+1 sin lock ni unique). Índice único `(shift_id, turn_number)` + `runWithTurnRetry` en confirmPayment y syncOffline. e2e `sales-concurrency` (8 en paralelo → turnos 1..8).
+- [x] 🟠 **markDelivered TOCTOU** (filas ENTREGADO duplicadas) → `updateMany` condicionado.
+- [x] 🟠 **void TOCTOU** (revertía stock de pedido ya iniciado por KDS) → `updateMany where status=PAGADO`.
+- [x] 🟠 **Divergencia stock online/offline**: syncOffline no validaba stock → ahora audita stock negativo resultante (`OFFLINE_NEGATIVE_STOCK`); no bloquea ("gana lo cobrado offline").
+- [x] 🟡 **Catches mudos en useCheckoutFlow** (cancelSale/printComanda) → `logError`.
+
+**Diferido (documentado, no bloqueante):**
+- [ ] 🟡 **Pérdida de cola offline si el browser purga IndexedDB con `persist()` denegado** — único camino a pérdida real de dinero offline. Hoy solo se avisa (banner). **Fix posible:** bloquear cobro offline si `persist()` fue denegado, o forzar instalación PWA. Decisión de producto.
+- [ ] 🟡 **Sold-out override nunca se limpia tras éxito** (`useSoldOutToggle`) — el override pisa permanentemente el `p.soldOut` del SSR (que está congelado). **OJO:** limpiarlo a secas REVIERTE al valor viejo del SSR → el fix correcto es refetchar el producto o que `availability` cargue el `soldOut` real (no trivial).
+- [ ] 🟡 **Cobro offline en zona gris de detección** (~16-28s antes de declarar offline): si la red cae, `confirmPayment` online falla con error en vez de encolar. **Fix:** fallback automático "POST de cobro falla por red → encolar offline".
+- [ ] 🟡 **Cobro offline a ciegas sin caja válida / caja stale**: no hay gate cliente; `syncOffline` lo rechaza después → ventas a la bandeja. Plata en cajón sin registrar hasta acción manual.
+- [ ] 🟡 **OFF-N race read-modify-write** (`enqueue-sale.ts`): dos pestañas pueden imprimir el mismo OFF-N (no doble-cobro por localId). **Fix:** transacción IDB atómica para el contador.
+- [ ] 🟡 **Drift de reloj ATRASADO no se audita** (solo el adelantado >15min): `paidAt` en pasado lejano puede caer en día/caja equivocados sin señal.
+- [ ] ⚪ **Venta atascada en `syncing`** si la pestaña muere a mitad del POST (se autocura por re-drain si la pestaña sigue viva; sin reseteo de huérfanos al arranque).
+- [ ] ⚪ **Dangling PENDIENTE_PAGO** al cerrar la pestaña con el checkout abierto (comanda ya impresa) — lo cubre el sweep de 30 min; faltaría un `sendBeacon` de cancelación en `beforeunload`.
+- [ ] ⚪ Web-order confirm usa snapshot `order.total` stale + sin copy "ya cobrado/cancelado"; `stalePreviousDay` ignorado en `/caja`,`/turnos`,`/historial`; fallback del close-modal trunca a 200 ventas si `getExpectedCash` falla.
+
 ## P4 — Features de valor (post-hardening)
 
 - [ ] **Pasarela de pago online real** (Wompi/Mercado Pago/Bold) — elimina el pago manual, la fricción y los pedidos colgados. Mayor ROI de la web.
