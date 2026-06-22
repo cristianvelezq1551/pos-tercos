@@ -17,6 +17,12 @@ const POLL_INTERVAL_MS = 30_000;
 // techo evita martillar al server durante una caída larga.
 const RECONNECT_BACKOFF_MS = 3_000;
 const RECONNECT_BACKOFF_MAX_MS = 60_000;
+// El server emite un `ping` cada 20 s. Si pasan >45 s sin NINGÚN dato (ni ping
+// ni state) con la conexión "viva", el SSE quedó ZOMBIE (socket abierto a nivel
+// TCP pero el server colgado sin emitir): onerror no dispara, así que hay que
+// detectarlo por silencio y forzar la reconexión.
+const ZOMBIE_AFTER_MS = 45_000;
+const HEALTH_CHECK_MS = 15_000;
 
 export type StreamConnection = 'connecting' | 'live' | 'reconnecting';
 
@@ -55,14 +61,23 @@ export function useDisplayStream(initial: PublicDisplayState) {
     };
 
     let backoffMs = RECONNECT_BACKOFF_MS;
+    let lastActivity = Date.now();
 
     const connect = () => {
+      lastActivity = Date.now();
       es = new EventSource(`${API_PUBLIC_URL}/public-display/stream`);
       es.onopen = () => {
         backoffMs = RECONNECT_BACKOFF_MS;
+        lastActivity = Date.now();
         setConnection('live');
       };
+      // El keepalive del server llega como evento nombrado `ping` (no dispara
+      // onmessage). Lo escuchamos solo para marcar que la conexión sigue viva.
+      es.addEventListener('ping', () => {
+        lastActivity = Date.now();
+      });
       es.onmessage = (ev: MessageEvent<string>) => {
+        lastActivity = Date.now();
         try {
           const parsed = PublicDisplayStateSchema.safeParse(JSON.parse(ev.data));
           if (!parsed.success) return;
@@ -91,10 +106,23 @@ export function useDisplayStream(initial: PublicDisplayState) {
 
     connect();
 
+    // Watchdog anti-zombie: si la conexión está "viva" pero no llega nada
+    // (ni ping) en >45 s, el SSE está colgado. close() no dispara onerror, así
+    // que reconectamos a mano (fresh EventSource).
+    const healthTimer = setInterval(() => {
+      if (closed || !es) return;
+      if (Date.now() - lastActivity > ZOMBIE_AFTER_MS) {
+        setConnection('reconnecting');
+        es.close();
+        connect();
+      }
+    }, HEALTH_CHECK_MS);
+
     return () => {
       closed = true;
       if (pendingTimeout !== null) clearTimeout(pendingTimeout);
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+      clearInterval(healthTimer);
       es?.close();
     };
   }, []);

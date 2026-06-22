@@ -81,15 +81,15 @@ export class WebOrdersController {
 function buildPaymentInstructions(order: PublicWebOrder): string {
   const nequi = process.env.PAYMENT_INSTRUCTIONS_NEQUI ?? '';
   const transfer = process.env.PAYMENT_INSTRUCTIONS_TRANSFER ?? '';
-  const lines: string[] = [
-    `Total a pagar: $${order.total.toLocaleString('es-CO')}`,
-    '',
-    'Métodos disponibles:',
-  ];
-  if (nequi) lines.push(`• Nequi: ${nequi}`);
-  if (transfer) lines.push(`• Transferencia: ${transfer}`);
-  if (!nequi && !transfer) {
-    lines.push('• Configurá PAYMENT_INSTRUCTIONS_NEQUI / PAYMENT_INSTRUCTIONS_TRANSFER en API');
+  const lines: string[] = [`Total a pagar: $${order.total.toLocaleString('es-CO')}`, ''];
+  if (nequi || transfer) {
+    lines.push('Métodos disponibles:');
+    if (nequi) lines.push(`• Nequi: ${nequi}`);
+    if (transfer) lines.push(`• Transferencia: ${transfer}`);
+  } else {
+    // Sin métodos configurados: mensaje GENÉRICO al cliente (nunca exponer un
+    // texto de debug sobre env vars en el camino de pago).
+    lines.push('Te enviaremos los datos de pago por WhatsApp.');
   }
   lines.push('');
   lines.push(
