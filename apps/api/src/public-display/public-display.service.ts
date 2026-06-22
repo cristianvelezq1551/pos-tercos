@@ -38,6 +38,9 @@ export class PublicDisplayService {
   private currentTurn: number | null = null;
   private callSeq = 0;
   private rehydrated = false;
+  /** Momento del último llamado — para limpiar la pantalla al cambiar de día
+   *  (si no, mostraría el turno de ayer hasta el primer llamado de hoy). */
+  private lastCallAt: Date | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -60,6 +63,7 @@ export class PublicDisplayService {
       data: { calledAt: new Date() },
     });
     this.currentTurn = sale.turnNumber;
+    this.lastCallAt = new Date();
     this.callSeq += 1;
     this.notify();
     return this.turnResponse();
@@ -68,6 +72,7 @@ export class PublicDisplayService {
   /** Llamado manual de un número arbitrario (corrección de desfase). */
   callManual(turn: number): TurnResponse {
     this.currentTurn = turn;
+    this.lastCallAt = new Date();
     this.callSeq += 1;
     this.notify();
     return this.turnResponse();
@@ -157,6 +162,7 @@ export class PublicDisplayService {
 
   async getState(): Promise<PublicDisplayState> {
     await this.ensureRehydrated();
+    this.clearIfStaleDay();
     return {
       currentTurn: this.currentTurn,
       callSeq: this.callSeq,
@@ -166,6 +172,20 @@ export class PublicDisplayService {
 
   private turnResponse(): TurnResponse {
     return { currentTurn: this.currentTurn, callSeq: this.callSeq };
+  }
+
+  /** Si el último llamado fue ayer (o antes), limpia la pantalla. Bumpea
+   *  callSeq para que el cliente re-renderice a "—" (sin flash: hasTurn=false).
+   *  Hora local del server → TZ=America/Bogota en prod. */
+  private clearIfStaleDay(): void {
+    if (this.currentTurn === null || !this.lastCallAt) return;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    if (this.lastCallAt < startOfDay) {
+      this.currentTurn = null;
+      this.lastCallAt = null;
+      this.callSeq += 1;
+    }
   }
 
   /** Al primer acceso tras un reinicio, recupera el último turno llamado hoy
@@ -179,10 +199,11 @@ export class PublicDisplayService {
       const last = await this.prisma.sale.findFirst({
         where: { calledAt: { gte: startOfDay } },
         orderBy: { calledAt: 'desc' },
-        select: { turnNumber: true },
+        select: { turnNumber: true, calledAt: true },
       });
       if (last?.turnNumber != null) {
         this.currentTurn = last.turnNumber;
+        this.lastCallAt = last.calledAt;
       }
     } catch (err) {
       this.logger.warn(`No se pudo rehidratar el turno: ${String(err)}`);
