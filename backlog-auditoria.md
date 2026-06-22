@@ -67,10 +67,10 @@
 - [x] 🟡 **Lectura cruzada de cajas (CERRADO).** Ownership: el cajero solo ve sus cajas.
 - [x] 🟡 **Apps Next sin security headers (CERRADO).** X-Frame-Options DENY + nosniff + Referrer + HSTS en las 4 apps. *(CSP estricta pendiente — tuning por app.)*
 - [x] 🟡 **idempotency-key UUID + login throttle (CERRADO).**
-- [ ] 🟡 **Costos/recetas/proveedores visibles a cualquier rol.** `GET /inventory/stock`, `/products`, `/recipes/*expanded-cost`, `/suppliers` sin gate → COCINERO/TRABAJADOR ven `lastUnitCost`. **Fix:** gatear/strippear costo (cuidar que el POS necesita `/products` para el catálogo — como en availability).
-- [ ] 🟡 **`multer@1.4.5`** con advisories de DoS. **Fix:** subir a `multer@^2` (probar uploads).
-- [ ] 🟡 **`photoStorageKey` sin validar** → admin puede borrar/leer binarios ajenos (`types/invoices.ts:158`). **Fix:** regex de key o verificar contra DB.
-- [ ] 🟡 **SSE del turnero sin límite de conexiones.** **Fix:** `@Throttle` + cap de conexiones concurrentes.
+- [x] 🟡 **Costos visibles a cualquier rol (CERRADO 2026-06-22).** inventory/suppliers/recipes → `@AdminAccess` a nivel de clase; `/products` strippea `lastUnitCost` para no-admin (el POS no lo usa).
+- [x] 🟡 **`photoStorageKey` validado (CERRADO).** Regex `invoices/{uuid}.{ext}` en CreateFromPhoto/DiscardPhoto.
+- [x] 🟡 **SSE del turnero con `@Throttle` (CERRADO).** state 60/min, stream 30/min. *(Cap de conexiones CONCURRENTES queda como follow-up menor si hace falta.)*
+- [ ] 🟡 **`multer@1.4.5`** con advisories de DoS. **Fix:** subir a `multer@^2` — ⚠ tiene cambios de API, hay que **probar los uploads** (facturas, comprobantes, imágenes) tras migrar. No se hizo por no poder testear uploads en este entorno.
 - [ ] ⚪ Fallback `WEB_ORDER_TOKEN_SECRET`→`JWT_ACCESS_SECRET` si `NODE_ENV` mal seteado; `algorithms` no fijado en verify; PII en logs de WhatsApp.
 
 ## P2 — Bugs funcionales y robustez
