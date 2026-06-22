@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   Layers,
   LineChart,
+  MonitorPlay,
   Package,
   PackageOpen,
   Receipt,
@@ -45,6 +46,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { section: 'Operación', label: 'Inicio', href: '/', icon: LayoutDashboard, onlyDueno: true },
+  { section: 'Operación', label: 'Turnero', href: '/turnero', icon: MonitorPlay },
   { section: 'Catálogo', label: 'Productos', href: '/products', icon: ShoppingBasket },
   { section: 'Catálogo', label: 'Subproductos', href: '/subproducts', icon: Layers },
   { section: 'Catálogo', label: 'Insumos', href: '/ingredients', icon: Package },

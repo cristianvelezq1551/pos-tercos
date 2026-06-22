@@ -987,3 +987,41 @@ model PaymentMethodSetting {
 
   @@map("payment_method_settings")
 }
+
+/// Slides del B-roll del turnero — el dueño administra qué productos se muestran,
+/// sus fotos y precios (antes hardcodeados en `broll-menu.ts`). La imagen vive
+/// en storage (`imageKey`); se sirve por `GET /display/slide-image/:id` (público).
+/// Si no hay ninguno activo, el turnero cae al menú por defecto (no se rompe).
+model DisplaySlide {
+  id          String   @id @default(uuid())
+  name        String
+  /// Categoría en la pastilla roja (eyebrow), ej. "Burgers".
+  tag         String
+  /// Precio en formato de vitrina, ej. "$29K". Texto libre, no es el precio real de venta.
+  price       String
+  description String
+  imageKey    String   @map("image_key")
+  imageMime   String   @map("image_mime")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("display_slides")
+}
+
+/// Pistas de música ambiente del turnero — el dueño sube/administra los tracks.
+/// El audio vive en storage (`audioKey`); se sirve por `GET /display/track-audio/:id`.
+model DisplayTrack {
+  id        String   @id @default(uuid())
+  label     String
+  audioKey  String   @map("audio_key")
+  audioMime String   @map("audio_mime")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([isActive, sortOrder])
+  @@map("display_tracks")
+}

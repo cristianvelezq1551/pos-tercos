@@ -1,6 +1,8 @@
 'use client';
 
 import type { PublicDisplayState } from '@pos-tercos/types';
+import { useAmbientMusic } from '../hooks/useAmbientMusic';
+import { useBrollConfig } from '../hooks/useBrollConfig';
 import { useDisplayStream } from '../hooks/useDisplayStream';
 import { useAudioContext } from '../hooks/useAudioContext';
 import { useKioskGuards } from '../hooks/useKioskGuards';
@@ -16,7 +18,9 @@ import { WhiteFlashOverlay } from './WhiteFlashOverlay';
 
 export function Display({ initial }: { initial: PublicDisplayState }) {
   const { state, connection } = useDisplayStream(initial);
+  const { items, tracks } = useBrollConfig();
   useAudioContext();
+  useAmbientMusic(tracks);
   useKioskGuards();
   useWakeLock();
   useStreamWatchdog(connection);
@@ -27,7 +31,7 @@ export function Display({ initial }: { initial: PublicDisplayState }) {
     <div className="relative h-dvh w-dvw overflow-hidden bg-bg-dark text-text-white">
       {/* B-roll de marca (señalética TERCOS-WEB): marca + producto rotando +
           foto del plato. Ocupa el viewport entero como fondo. */}
-      <BrollStage trigger={state.callSeq} hasTurn={hasTurn} />
+      <BrollStage items={items} trigger={state.callSeq} hasTurn={hasTurn} />
 
       {/* Turno superpuesto — siempre visible, badge translúcido bottom-right. */}
       <TurnBadgeCircular value={state.currentTurn} trigger={state.callSeq} hasTurn={hasTurn} />

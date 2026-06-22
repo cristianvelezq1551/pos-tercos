@@ -23,6 +23,7 @@ import { KdsModule } from './kds/kds.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { DisplayModule } from './display/display.module';
 import { PublicDisplayModule } from './public-display/public-display.module';
 import { PurchaseSuggestionsModule } from './purchase-suggestions/purchase-suggestions.module';
 import { WorkersModule } from './workers/workers.module';
@@ -71,6 +72,7 @@ import { TokenVersionModule } from './auth/token-version/token-version.module';
     SalesModule,
     KdsModule,
     PublicDisplayModule,
+    DisplayModule,
     WebMenuModule,
     WebOrdersModule,
     ReportsModule,

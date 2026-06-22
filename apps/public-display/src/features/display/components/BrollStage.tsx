@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { BROLL_MENU, BROLL_SOCIAL } from '../lib/broll-menu';
+import { BROLL_SOCIAL, type BrollItem } from '../lib/broll-menu';
 
 /**
  * Fondo de marketing del turnero — réplica fiel de la señalética TERCOS-WEB
@@ -39,9 +39,11 @@ const infoEntrance = {
 };
 
 export function BrollStage({
+  items,
   trigger,
   hasTurn,
 }: {
+  items: BrollItem[];
   trigger: number;
   hasTurn: boolean;
 }) {
@@ -54,19 +56,23 @@ export function BrollStage({
     modulePausedUntil = Date.now() + TURN_PAUSE_MS;
   }, [trigger, hasTurn]);
 
+  const count = items.length;
   useEffect(() => {
+    if (count === 0) return;
     const id = setInterval(() => {
       const now = Date.now();
       if (now < modulePausedUntil) return;
       if (now - moduleLastAdvance < VIEW_DURATION_MS) return;
       moduleLastAdvance = now;
-      moduleIndex = (moduleIndex + 1) % BROLL_MENU.length;
+      moduleIndex = (moduleIndex + 1) % count;
       setIndex(moduleIndex);
     }, TICK_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [count]);
 
-  const item = BROLL_MENU[index];
+  if (count === 0) return null;
+  // El array pudo encogerse desde el último tick (config nueva) → acotar.
+  const item = items[index % count];
 
   return (
     <div className="absolute inset-0 grid grid-cols-[1fr_auto] overflow-hidden bg-black">

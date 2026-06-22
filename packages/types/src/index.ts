@@ -3,6 +3,7 @@ export * from './audit';
 export * from './auth';
 export * from './catalog';
 export * from './cogs';
+export * from './display';
 export * from './finance';
 export * from './fixed-costs';
 export * from './idempotency';

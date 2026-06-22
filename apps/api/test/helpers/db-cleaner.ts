@@ -7,6 +7,8 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 export async function cleanDb(prisma: PrismaService): Promise<void> {
   // Orden: hijos antes que padres
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE
+    display_slides,
+    display_tracks,
     idempotency_keys,
     payment_method_settings,
     sale_payments,
