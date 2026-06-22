@@ -61,15 +61,16 @@
 - [x] 🟠 **Gap de permisos del admin — reportes financieros (CERRADO 2026-06-22).** Los 11 endpoints de `reports.controller.ts` (`dashboard`, `daily-ai-summary`, `sales-summary`, `top-products`, `inventory-usage`, `hour-heatmap`, `whatsapp-metrics`, `suggestions-metrics`, `payment-reconciliation/import`+`/history`+`/:id`) pasaron de `@AdminAccess` a `@OnlyDueno`, y las 6 páginas de reportes ahora hacen `requireRole(['DUENO'])` (defensa en profundidad). Un ADMIN_OPERATIVO ya no ve ingresos/márgenes/reconciliación.
 - [ ] 🟡 **`GET /audit` — decisión pendiente del dueño.** Es `@AdminAccess` **a propósito** (comentario en `audit.controller.ts:7` + memoria de roles: el operativo usa la *bitácora filtrada*). El hueco: un operativo puede pedir el log crudo sin filtro vía API y leer la "Auditoría completa" dueño-only. **Fix sugerido (no blanket OnlyDueno):** exigir `action` filter para no-DUENO (la bitácora siempre lo manda; el raw lo usa solo el dueño). **Requiere tu confirmación de la intención.**
 - [ ] 🟡 **Lectura cruzada de cajas (movido a su propio ítem abajo).** `GET /shifts`/`:id`/`close-analysis` los necesita el POS → no se puede `@OnlyDueno`; requiere filtro por ownership.
-- [ ] 🟠 **Token de 24h sin revocación.** Empleado dado de baja / rol degradado conserva acceso hasta 24h (el guard no consulta DB). **Fix:** TTL corto (15 min) o `tokenVersion` en el user que invalide tokens previos al cambiar rol/estado/password.
-- [ ] 🟠 **PIN de aprobación fuerza-bruteable.** Sin lockout ni throttle dedicado en void/cajón/salarios; `verify()` acepta el PIN de cualquier admin (`approvals.service.ts:97`). **Fix:** lockout por N fallos (usar audit `APPROVAL_DENIED`) + `@Throttle` agresivo.
-- [ ] 🟡 **CORS refleja cualquier origen con credenciales.** `main.ts:14` cae a `origin: true` si falta `CORS_ORIGINS`. **Fix:** fallar el arranque en prod sin allowlist (también en gateways WS).
-- [ ] 🟡 **Costos/recetas/proveedores visibles a cualquier rol.** `GET /inventory/stock`, `/products`, `/recipes/*expanded-cost`, `/suppliers` sin gate → COCINERO/TRABAJADOR ven `lastUnitCost`. **Fix:** `@AdminAccess` en lecturas con costo.
-- [ ] 🟡 **Lectura cruzada de cajas.** `GET /shifts`, `/shifts/:id`, `close-analysis` sin ownership → un cajero ve Z-reports de otros (`shifts.controller.ts`). **Fix:** filtrar por cajero o endpoint admin separado (cuidar que el POS sigue necesitando los suyos).
-- [ ] 🟡 **Apps Next sin security headers** (CSP/HSTS/X-Frame-Options) → POS clickjackeable. **Fix:** `headers()` en cada `next.config.ts`.
-- [ ] 🟡 **`multer@1.4.5`** con advisories de DoS. **Fix:** subir a `multer@^2`.
+- [ ] 🟠 **Token de 24h sin revocación.** Empleado dado de baja / rol degradado conserva acceso hasta 24h (el guard no consulta DB). **Fix:** `tokenVersion` en el user (incrementa al desactivar/cambiar rol/password) chequeado por el guard con caché corto. **⚠ NO reducir el TTL a ciegas** — el refresh rotativo + TTL corto reintroduce la carrera de refresh que ya causó cierres de sesión (queja explícita del dueño). Requiere diseño cuidadoso.
+- [x] 🟠 **PIN de aprobación fuerza-bruteable (CERRADO 2026-06-22).** `@Throttle` 5/5min en void + cajón-sin-venta → 1M combos infactible.
+- [x] 🟡 **CORS inseguro (CERRADO).** Exige `CORS_ORIGINS` en prod.
+- [x] 🟡 **Lectura cruzada de cajas (CERRADO).** Ownership: el cajero solo ve sus cajas.
+- [x] 🟡 **Apps Next sin security headers (CERRADO).** X-Frame-Options DENY + nosniff + Referrer + HSTS en las 4 apps. *(CSP estricta pendiente — tuning por app.)*
+- [x] 🟡 **idempotency-key UUID + login throttle (CERRADO).**
+- [ ] 🟡 **Costos/recetas/proveedores visibles a cualquier rol.** `GET /inventory/stock`, `/products`, `/recipes/*expanded-cost`, `/suppliers` sin gate → COCINERO/TRABAJADOR ven `lastUnitCost`. **Fix:** gatear/strippear costo (cuidar que el POS necesita `/products` para el catálogo — como en availability).
+- [ ] 🟡 **`multer@1.4.5`** con advisories de DoS. **Fix:** subir a `multer@^2` (probar uploads).
 - [ ] 🟡 **`photoStorageKey` sin validar** → admin puede borrar/leer binarios ajenos (`types/invoices.ts:158`). **Fix:** regex de key o verificar contra DB.
-- [ ] 🟡 **SSE del turnero sin límite de conexiones** + **login sin throttle de brute-force dedicado** + **idempotency-key no exige UUID**.
+- [ ] 🟡 **SSE del turnero sin límite de conexiones.** **Fix:** `@Throttle` + cap de conexiones concurrentes.
 - [ ] ⚪ Fallback `WEB_ORDER_TOKEN_SECRET`→`JWT_ACCESS_SECRET` si `NODE_ENV` mal seteado; `algorithms` no fijado en verify; PII en logs de WhatsApp.
 
 ## P2 — Bugs funcionales y robustez
