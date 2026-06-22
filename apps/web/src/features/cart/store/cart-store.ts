@@ -21,6 +21,7 @@ interface CartState {
   addItem: (input: AddInput) => void;
   removeLine: (lineId: string) => void;
   updateQty: (lineId: string, qty: number) => void;
+  setItems: (items: CartLine[]) => void;
   clear: () => void;
   setHydrated: (v: boolean) => void;
 }
@@ -74,6 +75,7 @@ export const useCartStore = create<CartState>()(
             it.lineId === lineId ? { ...it, quantity: Math.max(1, Math.floor(qty || 1)) } : it,
           ),
         })),
+      setItems: (items) => set({ items }),
       clear: () => set({ items: [] }),
       setHydrated: (v) => set({ hydrated: v }),
     }),

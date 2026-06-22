@@ -10,7 +10,9 @@ import {
   useCartStore,
 } from '../../cart';
 import { createWebOrder } from '../api/create-order';
+import { useCartReconcile } from '../hooks/use-cart-reconcile';
 import { useActiveOrder } from '../store/active-order-store';
+import { CartChangesBanner } from './CartChangesBanner';
 import { OrderSummaryCard } from './OrderSummaryCard';
 import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
 import { COP } from '../../../lib/format';
@@ -28,10 +30,14 @@ export function CheckoutForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const { change, hasChanges, apply } = useCartReconcile();
+
   const subtotal = cartSubtotal(items);
   const phoneValid = /^\d{10}$/.test(phone10);
   const nameValid = name.trim().length >= 2;
-  const canSubmit = items.length > 0 && nameValid && phoneValid;
+  // No dejar pagar mientras haya cambios sin revisar (precio viejo / producto
+  // desactivado) — el cliente confirma el pedido actualizado primero.
+  const canSubmit = items.length > 0 && nameValid && phoneValid && !hasChanges;
 
   if (hydrated && items.length === 0) {
     return (
@@ -83,6 +89,8 @@ export function CheckoutForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-8">
+      {hasChanges ? <CartChangesBanner change={change} onApply={apply} /> : null}
+
       <OrderSummaryCard items={items} />
 
       <section className="flex flex-col gap-5">
