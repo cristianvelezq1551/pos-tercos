@@ -441,31 +441,13 @@ export class ShiftsService {
     // Efectivo que debe estar en el cajón: la porción CASH de cada venta
     // cobrada (sale_payments es la fuente de verdad — una cuenta dividida
     // solo aporta su parte en efectivo). Excluye VOID (reembolsado → neto 0)
-    // y CANCELADO_NO_PAGO (nunca se pagó). Incluye CANCELADO_SIN_REEMBOLSO.
-    const cashSales = await this.prisma.salePayment.aggregate({
-      where: {
-        method: 'CASH',
-        sale: {
-          shiftId,
-          status: {
-            in: [
-              'PAGADO',
-              'EN_PREPARACION',
-              'LISTO_DESPACHO',
-              'ENTREGADO',
-              'CANCELADO_SIN_REEMBOLSO',
-            ],
-          },
-        },
-      },
-      _sum: { amount: true },
-    });
-    // COP son enteros; redondeamos para evitar cualquier drift Decimal→Number.
-    const cashSalesTotal = Math.round(Number(cashSales._sum.amount ?? 0));
-    // Movimientos de efectivo del turno: entradas suman, salidas restan.
-    const { cashIn, cashOut } = await this.sumCashMovements(shiftId);
-    const expectedCash =
-      Math.round(Number(shift.openingCash)) + cashSalesTotal + cashIn - cashOut;
+    // Efectivo esperado: el MISMO cálculo autoritativo que el POS muestra al
+    // cerrar (vía getExpectedCash) → cero divergencia entre el target del
+    // cajero y la diferencia registrada.
+    const { expectedCash, cashSalesTotal, cashIn, cashOut } = await this.computeExpectedCash(
+      shiftId,
+      Number(shift.openingCash),
+    );
     const difference = Math.round(input.countedCash) - expectedCash; // (+) sobrante, (-) faltante
 
     // Arqueo DIGITAL: esperado por método (porción de cada venta en ese
@@ -620,6 +602,61 @@ export class ShiftsService {
     }
 
     return toShiftDto(closed);
+  }
+
+  /**
+   * Efectivo esperado AUTORITATIVO de una caja (apertura + ventas CASH +
+   * entradas − salidas). Única fuente para el cierre y para el target que el
+   * POS muestra al cajero → no divergen. Exige la caja OPEN (cerrada ya tiene
+   * su expectedCash congelado).
+   */
+  async getExpectedCash(shiftId: string): Promise<{
+    expectedCash: number;
+    openingCash: number;
+    cashSalesTotal: number;
+    cashIn: number;
+    cashOut: number;
+  }> {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+      select: { openingCash: true, status: true },
+    });
+    if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
+    const openingCash = Math.round(Number(shift.openingCash));
+    const r = await this.computeExpectedCash(shiftId, Number(shift.openingCash));
+    return { ...r, openingCash };
+  }
+
+  /** Cálculo puro de efectivo esperado (compartido por close + getExpectedCash). */
+  private async computeExpectedCash(
+    shiftId: string,
+    openingCash: number,
+  ): Promise<{ expectedCash: number; cashSalesTotal: number; cashIn: number; cashOut: number }> {
+    // Solo ventas que cuentan plata en efectivo: PAGADO en adelante; excluye
+    // PENDIENTE_PAGO, VOID (reembolsado) y CANCELADO_NO_PAGO. Incluye
+    // CANCELADO_SIN_REEMBOLSO (la plata quedó).
+    const cashSales = await this.prisma.salePayment.aggregate({
+      where: {
+        method: 'CASH',
+        sale: {
+          shiftId,
+          status: {
+            in: [
+              'PAGADO',
+              'EN_PREPARACION',
+              'LISTO_DESPACHO',
+              'ENTREGADO',
+              'CANCELADO_SIN_REEMBOLSO',
+            ],
+          },
+        },
+      },
+      _sum: { amount: true },
+    });
+    const cashSalesTotal = Math.round(Number(cashSales._sum.amount ?? 0));
+    const { cashIn, cashOut } = await this.sumCashMovements(shiftId);
+    const expectedCash = Math.round(openingCash) + cashSalesTotal + cashIn - cashOut;
+    return { expectedCash, cashSalesTotal, cashIn, cashOut };
   }
 
   /** Suma de movimientos de efectivo del turno (entradas y salidas), en COP. */

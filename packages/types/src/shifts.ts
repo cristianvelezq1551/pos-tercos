@@ -133,6 +133,16 @@ export const CurrentShiftStatusSchema = z.object({
 });
 export type CurrentShiftStatus = z.infer<typeof CurrentShiftStatusSchema>;
 
+/** Efectivo esperado autoritativo de una caja OPEN (target del cierre). */
+export const ExpectedCashSchema = z.object({
+  expectedCash: z.number(),
+  openingCash: z.number(),
+  cashSalesTotal: z.number(),
+  cashIn: z.number(),
+  cashOut: z.number(),
+});
+export type ExpectedCash = z.infer<typeof ExpectedCashSchema>;
+
 // ====================================================================
 // DETALLE DE SESIÓN — GET /shifts/:id/detail
 // ====================================================================

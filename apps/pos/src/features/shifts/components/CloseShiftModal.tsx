@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useOffline } from '../../offline';
 import { listSales } from '../../sales';
 import { closeShift } from '../api/close';
-import { listCashMovements } from '../api';
+import { getExpectedCash, listCashMovements } from '../api';
 import {
   cashMovementsNet,
   digitalMovementsNet,
@@ -40,6 +40,8 @@ export function CloseShiftModal({
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Esperado del server (autoritativo); cae al cálculo cliente si la red falla.
+  const [serverExpected, setServerExpected] = useState<number | null>(null);
 
   // El cierre necesita el backend (Z-report + efectivo esperado) y que NO queden
   // ventas offline en cola: si no, el esperado quedaría mal y daría descuadre
@@ -63,14 +65,18 @@ export function CloseShiftModal({
     setNotes('');
     setError(null);
     setPending(false);
+    setServerExpected(null);
     setLoading(true);
     Promise.all([
       listSales({ shiftId: shift.id, limit: 200 }),
       listCashMovements(shift.id),
+      // Esperado AUTORITATIVO del server (mismo número que usará el cierre).
+      getExpectedCash(shift.id).catch(() => null),
     ])
-      .then(([sales, movs]) => {
+      .then(([sales, movs, exp]) => {
         setSummary(computeShiftSummary(sales));
         setMovements(movs);
+        setServerExpected(exp?.expectedCash ?? null);
       })
       .catch((err) =>
         setError(getErrorMessage(err, 'Error cargando el cierre')),
@@ -82,8 +88,9 @@ export function CloseShiftModal({
   const digitalNet = useMemo(() => digitalMovementsNet(movements), [movements]);
   const expectedCash = useMemo(() => {
     if (!shift || !summary) return null;
-    return shift.openingCash + summary.cashSalesTotal + net.net;
-  }, [shift, summary, net]);
+    // Preferir el número autoritativo del server; el cálculo cliente es respaldo.
+    return serverExpected ?? shift.openingCash + summary.cashSalesTotal + net.net;
+  }, [shift, summary, net, serverExpected]);
 
   const countedNum = arqueo ? sumBreakdown(counts) : (manual ?? 0);
   const hasCount = arqueo ? Object.values(counts).some((n) => n > 0) : manual !== null;

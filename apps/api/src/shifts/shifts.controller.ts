@@ -21,6 +21,7 @@ import {
   type CloseShift,
   type CreateCashMovement,
   type CurrentShiftStatus,
+  type ExpectedCash,
   type OpenShift,
   type Shift,
   type UpdateCashMovement,
@@ -143,6 +144,17 @@ export class ShiftsController {
       throw new ForbiddenException('Solo podés ver el detalle de tu propia caja.');
     }
     return detail;
+  }
+
+  /** Efectivo esperado en vivo (target del cierre). Cajero: solo su caja. */
+  @CashierAccess()
+  @Get(':id/expected-cash')
+  async expectedCash(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ExpectedCash> {
+    await this.assertShiftOwnership(user, id);
+    return this.shifts.getExpectedCash(id);
   }
 
   @CashierAccess()
