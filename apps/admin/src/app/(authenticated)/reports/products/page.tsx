@@ -5,6 +5,7 @@ import { TopProductsTable } from '../../../../features/reports-products';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
 import type { TopProductsReport } from '@pos-tercos/types';
+import { requireRole } from '../../../../lib/guards';
 
 interface PageProps {
   searchParams: Promise<{ from?: string; to?: string; limit?: string }>;
@@ -28,6 +29,8 @@ async function loadReport(
 }
 
 export default async function ReportsProductsPage({ searchParams }: PageProps) {
+  // Reportes financieros: solo el Dueño (defensa en profundidad — el endpoint ya es @OnlyDueno).
+  await requireRole(['DUENO']);
   const sp = await searchParams;
   const result = await loadReport(sp.from, sp.to, sp.limit ?? '20');
 

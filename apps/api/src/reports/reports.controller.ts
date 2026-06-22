@@ -37,7 +37,7 @@ import {
 } from '@pos-tercos/types';
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { OnlyDueno } from '../auth/decorators/roles.decorator';
 import { CogsService } from './cogs.service';
 import { FinanceSummaryService } from './finance-summary.service';
 import { InventoryUsageService } from './inventory-usage.service';
@@ -161,23 +161,23 @@ export class ReportsController {
   // FASE 13.A — Reportes operativos / negocio
   // ==================================================================
 
-  /** Dashboard home: resumen del día en una sola query. Admin/Dueño. */
-  @AdminAccess()
+  /** Dashboard home: resumen del día en una sola query. Dueño. */
+  @OnlyDueno()
   @Get('dashboard')
   getDashboard(): Promise<DashboardSummary> {
     return this.salesReports.getDashboardSummary();
   }
 
-  /** Resumen diario en lenguaje natural (IA). On-demand. Admin/Dueño. */
-  @AdminAccess()
+  /** Resumen diario en lenguaje natural (IA). On-demand. Dueño. */
+  @OnlyDueno()
   @Get('daily-ai-summary')
   getDailyAiSummary(@Query('date') date?: string): Promise<AiSummary> {
     const day = date ? new Date(`${date}T12:00:00`) : new Date();
     return this.salesReports.getDailyAiSummary(day);
   }
 
-  /** Series temporales + breakdowns. Default: últimos 7 días. Admin/Dueño. */
-  @AdminAccess()
+  /** Series temporales + breakdowns. Default: últimos 7 días. Dueño. */
+  @OnlyDueno()
   @Get('sales-summary')
   getSalesSummary(
     @Query('from') from?: string,
@@ -192,8 +192,8 @@ export class ReportsController {
     return this.salesReports.getSalesSummary(range.from, range.to, g);
   }
 
-  /** Top productos por revenue (con costo y margen estimado). Admin/Dueño. */
-  @AdminAccess()
+  /** Top productos por revenue (con costo y margen estimado). Dueño. */
+  @OnlyDueno()
   @Get('top-products')
   getTopProducts(
     @Query('from') from?: string,
@@ -218,9 +218,9 @@ export class ReportsController {
   /**
    * Uso y mermas por insumo: consumo por ventas/producción (teórico, sale de
    * recetas) vs mermas declaradas y faltantes de conteo, valorizado.
-   * Admin/Dueño.
+   * Dueño.
    */
-  @AdminAccess()
+  @OnlyDueno()
   @Get('inventory-usage')
   getInventoryUsage(
     @Query('from') from?: string,
@@ -230,8 +230,8 @@ export class ReportsController {
     return this.inventoryUsage.getUsage(range.from, range.to);
   }
 
-  /** Heatmap día de semana × hora. Admin/Dueño. */
-  @AdminAccess()
+  /** Heatmap día de semana × hora. Dueño. */
+  @OnlyDueno()
   @Get('hour-heatmap')
   getHourHeatmap(
     @Query('from') from?: string,
@@ -241,8 +241,8 @@ export class ReportsController {
     return this.salesReports.getHourHeatmap(range.from, range.to);
   }
 
-  /** Cobertura WhatsApp por stage (FASE 9 audit log). Admin/Dueño. */
-  @AdminAccess()
+  /** Cobertura WhatsApp por stage (FASE 9 audit log). Dueño. */
+  @OnlyDueno()
   @Get('whatsapp-metrics')
   getWhatsAppMetrics(
     @Query('from') from?: string,
@@ -252,8 +252,8 @@ export class ReportsController {
     return this.salesReports.getWhatsAppMetrics(range.from, range.to);
   }
 
-  /** Métricas IA: sugerencias creadas/evaluadas/aceptadas. Admin/Dueño. */
-  @AdminAccess()
+  /** Métricas IA: sugerencias creadas/evaluadas/aceptadas. Dueño. */
+  @OnlyDueno()
   @Get('suggestions-metrics')
   getSuggestionsMetrics(
     @Query('from') from?: string,
@@ -278,7 +278,7 @@ export class ReportsController {
    * FASE 11.E + 14.D: import CSV Nequi/Bancolombia + match contra sales
    * digitales. Si `?save=true`, persiste el reporte para histórico.
    */
-  @AdminAccess()
+  @OnlyDueno()
   @Post('payment-reconciliation/import')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: MAX_CSV_BYTES } }),
@@ -307,7 +307,7 @@ export class ReportsController {
   }
 
   /** FASE 14.D: histórico de reports persistidos. */
-  @AdminAccess()
+  @OnlyDueno()
   @Get('payment-reconciliation/history')
   listSavedReconciliations(
     @Query('source') sourceRaw?: string,
@@ -323,7 +323,7 @@ export class ReportsController {
   }
 
   /** FASE 14.D: detalle de un report guardado (incluye filas). */
-  @AdminAccess()
+  @OnlyDueno()
   @Get('payment-reconciliation/history/:id')
   getSavedReconciliation(
     @Param('id', ParseUUIDPipe) id: string,

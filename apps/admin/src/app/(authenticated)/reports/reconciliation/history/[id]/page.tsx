@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../../../lib/api-server';
 import type { SavedReconciliationDetail } from '@pos-tercos/types';
 import { formatCop, formatDate } from '../../../../../../lib/format';
+import { requireRole } from '../../../../../../lib/guards';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -14,6 +15,8 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export default async function SavedReconciliationDetailPage({ params }: PageProps) {
+  // Reportes financieros: solo el Dueño (defensa en profundidad — el endpoint ya es @OnlyDueno).
+  await requireRole(['DUENO']);
   const { id } = await params;
   let detail: SavedReconciliationDetail;
   try {

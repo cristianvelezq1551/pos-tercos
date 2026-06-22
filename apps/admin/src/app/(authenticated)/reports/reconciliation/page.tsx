@@ -6,6 +6,7 @@ import {
 } from '../../../../features/reports';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import type { SavedReconciliation } from '@pos-tercos/types';
+import { requireRole } from '../../../../lib/guards';
 
 async function loadHistory(): Promise<SavedReconciliation[]> {
   try {
@@ -21,6 +22,8 @@ async function loadHistory(): Promise<SavedReconciliation[]> {
 }
 
 export default async function ReconciliationPage() {
+  // Reportes financieros: solo el Dueño (defensa en profundidad — el endpoint ya es @OnlyDueno).
+  await requireRole(['DUENO']);
   const history = await loadHistory();
   return (
     <>

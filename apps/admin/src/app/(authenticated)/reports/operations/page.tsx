@@ -1,4 +1,5 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
+import { requireRole } from '../../../../lib/guards';
 import { Activity } from 'lucide-react';
 import { RangeFilter } from '../../../../features/reports-sales';
 import {
@@ -46,6 +47,8 @@ async function loadAll(
 }
 
 export default async function ReportsOperationsPage({ searchParams }: PageProps) {
+  // Reportes financieros: solo el Dueño (defensa en profundidad — el endpoint ya es @OnlyDueno).
+  await requireRole(['DUENO']);
   const sp = await searchParams;
   const result = await loadAll(sp.from, sp.to);
 
