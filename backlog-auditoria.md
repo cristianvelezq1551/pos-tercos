@@ -75,10 +75,10 @@
 
 ## P2 — Bugs funcionales y robustez
 
-- [ ] 🟠 **Comanda impresa antes de confirmar pago** sin avisar al KDS si se cancela (`useCheckoutSale.ts:52`) → cocina prepara venta muerta. **Fix:** no imprimir hasta confirmar, o emitir cancelación al KDS.
-- [ ] 🟠 **`buildPaymentInstructions` filtra texto de debug al cliente** si faltan env `PAYMENT_INSTRUCTIONS_*` (`web-orders.controller.ts:91`). **Fix:** mensaje genérico de fallback.
-- [ ] 🟠 **Turnero — SSE zombie sin recovery.** Si el backend se cuelga sin cerrar el socket, el watchdog nunca recarga. **Fix:** escuchar el evento `ping` (keepalive 20s ya existe) y forzar reload si no llega en >45s.
-- [ ] 🟠 **Turnero — reset diario manual.** El `currentTurn` in-memory no se limpia a medianoche → muestra el turno del día anterior. **Fix:** reset automático por día/caja + verificar `TZ=America/Bogota`.
+- [x] 🟠 **Comanda → ticket de ANULACIÓN al abandonar el cobro (CERRADO 2026-06-22).** Si se cierra sin pagar y la comanda ya salió, se imprime "*** ANULAR *** DESCARTAR ESTE PEDIDO" a cocina (`?cancel=true` + audit COMANDA_CANCELLED). Respeta el arranque temprano.
+- [x] 🟠 **Texto de pago genérico (CERRADO).** Sin `PAYMENT_INSTRUCTIONS_*` el cliente ve "Te enviaremos los datos por WhatsApp", no el texto de debug.
+- [x] 🟠 **Turnero — SSE zombie (CERRADO).** Listener del `ping` + watchdog que reconecta si pasan >45s sin nada con la conexión "viva".
+- [x] 🟠 **Turnero — reset diario (CERRADO).** `getState()` limpia el turno de un día anterior (clearIfStaleDay). Requiere `TZ=America/Bogota` en prod.
 - [ ] 🟡 **Carrera de doble-cobro en POS** (`useCheckoutFlow.ts:120` lee `pending` antes de setearlo). Mitigada por idempotencia server. **Fix:** ref/functional update antes de validar.
 - [ ] 🟡 **Web — no revalida carrito vs menú al checkout** (precio viejo / producto desactivado / agotado falla opaco). **Fix:** reconciliar carrito↔menú antes de cobrar.
 - [ ] 🟡 **POS — número provisional OFF-N** colisiona si el reloj de la tablet retrocede. **Fix:** timestamp monotónico.
