@@ -121,11 +121,14 @@ export class ShiftsController {
     return this.shifts.getCurrentStatus(user.sub);
   }
 
-  /** Detalle consolidado de la sesión. Cajero: solo la suya. Admin: cualquiera. */
-  /** Asistente de cierre (IA): explica el descuadre. On-demand. */
+  /** Asistente de cierre (IA): explica el descuadre. Cajero: solo la suya. */
   @CashierAccess()
   @Get(':id/close-analysis')
-  closeAnalysis(@Param('id', ParseUUIDPipe) id: string): Promise<AiSummary> {
+  async closeAnalysis(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AiSummary> {
+    await this.assertShiftOwnership(user, id);
     return this.shifts.analyzeClose(id);
   }
 
@@ -144,22 +147,41 @@ export class ShiftsController {
 
   @CashierAccess()
   @Get(':id')
-  getById(@Param('id', ParseUUIDPipe) id: string): Promise<Shift> {
-    return this.shifts.getById(id);
+  async getById(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Shift> {
+    const shift = await this.shifts.getById(id);
+    if (!ADMIN_ROLES.has(user.role) && shift.cashierId !== user.sub) {
+      throw new ForbiddenException('Solo podés ver tu propia caja.');
+    }
+    return shift;
   }
 
   @CashierAccess()
   @Get()
   list(
+    @CurrentUser() user: JwtAccessPayload,
     @Query('cashier_id') cashierId?: string,
     @Query('status') status?: string,
     @Query('limit') limit?: string,
   ): Promise<Shift[]> {
     const parsedStatus = status ? ShiftStatusEnum.parse(status) : undefined;
+    // El cajero solo ve SUS cajas (no los Z-report de otros); admin/dueño ven todas.
+    const scopedCashier = ADMIN_ROLES.has(user.role) ? cashierId : user.sub;
     return this.shifts.list({
-      cashierId,
+      cashierId: scopedCashier,
       status: parsedStatus,
       limit: limit ? Math.min(Number(limit), 200) : undefined,
     });
+  }
+
+  /** El cajero solo opera sobre su propia caja; admin/dueño sobre cualquiera. */
+  private async assertShiftOwnership(user: JwtAccessPayload, shiftId: string): Promise<void> {
+    if (ADMIN_ROLES.has(user.role)) return;
+    const shift = await this.shifts.getById(shiftId);
+    if (shift.cashierId !== user.sub) {
+      throw new ForbiddenException('Solo podés ver tu propia caja.');
+    }
   }
 }
