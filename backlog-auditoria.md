@@ -13,7 +13,7 @@
 - [ ] 🟠 **Sweep + cap de pedidos web abandonados.** Cron que cancele `WEB_PICKUP PENDIENTE_PAGO` >2-3h + cap de pedidos abiertos por teléfono (anti-flood del drawer del POS). Hoy solo se barren los COUNTER.
 - [x] 🟠 **Fuga de inventario por endpoint público (CERRADO 2026-06-22).** `GET /products/availability` (`@Public`) devuelve `stock`/`reason` en null; el real va a `GET /products/availability/internal` (`@CashierAccess`, lo usa el POS).
 - [x] 🟠 **Backend sin helmet / CORS inseguro (CERRADO 2026-06-22).** `helmet()` + CORS exige `CORS_ORIGINS` en prod.
-- [ ] 🟡 **Apps Next sin security headers** (CSP/HSTS/X-Frame-Options) → POS clickjackeable. **Fix:** `headers()` en cada `next.config.ts`. *(movido desde P1, completa el frente de headers)*
+- [x] 🟡 **Apps Next sin security headers (CERRADO 2026-06-22).** X-Frame-Options DENY + nosniff + Referrer-Policy + HSTS en `headers()` de las 4 apps (pos/web/admin/public-display). Verificado. *(CSP estricta queda como tuning fino por app.)*
 
 ---
 
