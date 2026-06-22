@@ -33,8 +33,13 @@ describe('Availability E2E', () => {
   let aguaId: string; // reventa directa
   let soloId: string; // preparado sin receta
 
+  // La lógica de disponibilidad (stock/reason) se valida contra el endpoint
+  // INTERNO (cajero) — el público devuelve stock/reason en null por seguridad.
   const fetchAvailability = async (): Promise<Map<string, AvailabilityRow>> => {
-    const res = await request.get('/products/availability').expect(200);
+    const res = await request
+      .get('/products/availability/internal')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
     return new Map((res.body as AvailabilityRow[]).map((r) => [r.productId, r]));
   };
 
@@ -129,6 +134,18 @@ describe('Availability E2E', () => {
   afterAll(async () => {
     await cleanDb(prisma);
     await app.close();
+  });
+
+  it('el endpoint PÚBLICO no filtra stock ni motivo (solo available)', async () => {
+    // Sin auth: cualquiera en internet. No debe ver stock exacto ni "Sin Pan…".
+    const res = await request.get('/products/availability').expect(200);
+    const rows = res.body as AvailabilityRow[];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(r.stock).toBeNull();
+      expect(r.reason).toBeNull();
+      expect(typeof r.available).toBe('boolean');
+    }
   });
 
   it('preparado con insumo en 0 → no disponible, motivo nombra el insumo', async () => {

@@ -223,13 +223,16 @@ describe('Nómina E2E (workers)', () => {
   });
 
   it('no se puede marcar pagado un período que todavía no termina', async () => {
-    // El período que contiene HOY nunca está cerrado.
-    const today = ymdUtc(new Date());
+    // Un período claramente FUTURO (2 meses adelante): su cierre nunca llegó →
+    // siempre 400. Robusto a la fecha: usar "hoy" fallaba en el ÚLTIMO día de
+    // un sub-pago (ese día el período ya está cerrado).
+    const now = new Date();
+    const future = ymdUtc(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1)));
     await request
       .post(`/workers/${dailyId}/payment/paid`)
       .set('Authorization', `Bearer ${duenoToken}`)
       .set('X-Approval-Pin', PIN)
-      .field('periodStart', today)
+      .field('periodStart', future)
       .attach('proof', PNG_1PX, 'comprobante.png')
       .expect(400);
   });
