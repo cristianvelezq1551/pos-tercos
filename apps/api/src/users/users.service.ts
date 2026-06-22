@@ -15,6 +15,7 @@ import type {
 } from '@pos-tercos/types';
 import * as bcrypt from 'bcrypt';
 import { ApprovalsService } from '../approvals/approvals.service';
+import { TokenVersionService } from '../auth/token-version/token-version.service';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -27,6 +28,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly approvals: ApprovalsService,
+    private readonly tokenVersions: TokenVersionService,
   ) {}
 
   async findByEmail(email: string): Promise<DbUser | null> {
@@ -162,6 +164,12 @@ export class UsersService {
       );
     }
 
+    // Cambio de rol o desactivación → invalidar la sesión vigente (no esperar
+    // 24h a que expire el access).
+    const roleChanged = dto.role !== undefined && dto.role !== existing.role;
+    const willDeactivate = existing.active && dto.active === false;
+    const bumpToken = roleChanged || willDeactivate;
+
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
@@ -169,6 +177,7 @@ export class UsersService {
         phone: dto.phone === undefined ? undefined : dto.phone,
         role: dto.role,
         active: dto.active,
+        ...(bumpToken ? { tokenVersion: { increment: 1 } } : {}),
       },
     });
 
@@ -177,6 +186,7 @@ export class UsersService {
     if (becameInactive) {
       await this.revokeRefreshTokens(id);
     }
+    if (bumpToken) this.tokenVersions.invalidate(id);
 
     await this.audit.log({
       userId: actorId,
@@ -210,10 +220,11 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await this.prisma.user.update({
       where: { id },
-      data: { passwordHash, mustChangePwd: true },
+      data: { passwordHash, mustChangePwd: true, tokenVersion: { increment: 1 } },
     });
     // Forzar re-login con la nueva clave en todos los dispositivos.
     await this.revokeRefreshTokens(id);
+    this.tokenVersions.invalidate(id);
     await this.audit.log({
       userId: actorId,
       action: 'USER_PASSWORD_RESET',
@@ -320,9 +331,11 @@ export class UsersService {
       data: {
         terminationDate: new Date(`${dto.date}T00:00:00.000Z`),
         active: false,
+        tokenVersion: { increment: 1 },
       },
     });
     await this.revokeRefreshTokens(id);
+    this.tokenVersions.invalidate(id);
     await this.audit.log({
       userId: actorId,
       action: 'EMPLOYMENT_TERMINATED',

@@ -48,5 +48,9 @@ export const JwtAccessPayloadSchema = z.object({
   sub: z.string().uuid(),
   role: UserRoleEnum,
   email: z.string().email(),
+  /** Versión de sesión: si no coincide con users.token_version, el access fue
+   *  revocado (baja/cambio de rol/reset). Opcional para no invalidar tokens
+   *  viejos (se tratan como tv=0) al desplegar. */
+  tv: z.number().int().optional(),
 });
 export type JwtAccessPayload = z.infer<typeof JwtAccessPayloadSchema>;

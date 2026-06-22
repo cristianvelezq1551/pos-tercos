@@ -52,7 +52,7 @@ export class AuthService {
       throw new ForbiddenException('Tu usuario está inactivo. Contactá al administrador.');
     }
 
-    const accessToken = await this.signAccess(user.id, user.role, user.email);
+    const accessToken = await this.signAccess(user.id, user.role, user.email, user.tokenVersion);
     const refresh = await this.issueRefreshToken(user.id);
 
     await this.audit.log({
@@ -97,7 +97,7 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const accessToken = await this.signAccess(record.user.id, record.user.role, record.user.email);
+    const accessToken = await this.signAccess(record.user.id, record.user.role, record.user.email, record.user.tokenVersion);
     const newRefresh = await this.issueRefreshToken(record.user.id);
 
     // No se audita el refresh exitoso: pasa cada pocas horas por sesión y solo
@@ -160,19 +160,25 @@ export class AuthService {
   async mintWsToken(current: JwtAccessPayload): Promise<{ token: string }> {
     const user = await this.prisma.user.findUnique({
       where: { id: current.sub },
-      select: { id: true, role: true, email: true, active: true },
+      select: { id: true, role: true, email: true, active: true, tokenVersion: true },
     });
     if (!user || !user.active) {
       throw new UnauthorizedException('Usuario inactivo o inexistente');
     }
-    return { token: await this.signAccess(user.id, user.role, user.email) };
+    return { token: await this.signAccess(user.id, user.role, user.email, user.tokenVersion) };
   }
 
-  private async signAccess(userId: string, role: string, email: string): Promise<string> {
+  private async signAccess(
+    userId: string,
+    role: string,
+    email: string,
+    tokenVersion: number,
+  ): Promise<string> {
     const payload: JwtAccessPayload = {
       sub: userId,
       role: role as JwtAccessPayload['role'],
       email,
+      tv: tokenVersion,
     };
     return this.jwt.signAsync(payload, {
       secret: process.env.JWT_ACCESS_SECRET,

@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { JwtAccessPayloadSchema } from '@pos-tercos/types';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { TokenVersionService } from '../token-version/token-version.service';
 
 // Admin y pos usan cookies de access distintas (ver auth.controller). En dev
 // comparten host (localhost — las cookies NO distinguen puerto), así que un
@@ -22,6 +23,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
+    private readonly tokenVersions: TokenVersionService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -42,6 +44,14 @@ export class JwtAuthGuard implements CanActivate {
         secret: process.env.JWT_ACCESS_SECRET,
       });
       const payload = JwtAccessPayloadSchema.parse(decoded);
+      // Revocación de sesión: el `tv` del token debe coincidir con la versión
+      // actual del usuario. Si se desactivó / cambió de rol / reseteó password,
+      // la versión subió y el token (aunque no haya expirado) queda muerto.
+      // Tokens viejos sin `tv` se tratan como tv=0 (no rompe el deploy inicial).
+      const currentVersion = await this.tokenVersions.current(payload.sub);
+      if ((payload.tv ?? 0) !== currentVersion) {
+        throw new UnauthorizedException('Sesión revocada');
+      }
       (req as Request & { user: typeof payload }).user = payload;
       return true;
     } catch {

@@ -15,6 +15,7 @@ model User {
   phone              String?
   role               UserRole
   mustChangePwd      Boolean                 @default(true) @map("must_change_pwd")
+  tokenVersion       Int                     @default(0) @map("token_version")
   active             Boolean                 @default(true)
   /// Datos de empleo (RRHH). payType = MENSUAL (salario/mes) o DIARIO (valor/día).
   /// salaryAmount = salario mensual o valor por día según payType. La paga es

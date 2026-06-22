@@ -38,9 +38,11 @@ import { WebMenuModule } from './web-menu/web-menu.module';
 import { WebOrdersModule } from './web-orders/web-orders.module';
 import { ServerErrorAlertFilter } from './common/server-error-alert.filter';
 import { ClientLogsModule } from './client-logs/client-logs.module';
+import { TokenVersionModule } from './auth/token-version/token-version.module';
 
 @Module({
   imports: [
+    TokenVersionModule,
     ClientLogsModule,
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
