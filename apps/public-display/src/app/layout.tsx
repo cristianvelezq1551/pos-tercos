@@ -1,18 +1,19 @@
 import type { Metadata, Viewport } from 'next';
-import { Big_Shoulders, Inter } from 'next/font/google';
+import { Anton, Barlow_Semi_Condensed } from 'next/font/google';
 import './globals.css';
 
-const fontSans = Inter({
+// Tipografía de marca TERCOS-WEB: Barlow (cuerpo) + Anton (display condensado).
+const fontSans = Barlow_Semi_Condensed({
   subsets: ['latin'],
   display: 'swap',
-  weight: ['400', '500', '600', '700'],
+  weight: ['500', '600', '700'],
   variable: '--font-sans-app',
 });
 
-const fontDisplay = Big_Shoulders({
+const fontDisplay = Anton({
   subsets: ['latin'],
   display: 'swap',
-  weight: ['600', '700', '800'],
+  weight: ['400'],
   variable: '--font-display-app',
 });
 

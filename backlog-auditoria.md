@@ -59,8 +59,7 @@
 ## P1 — Permisos, auth y hardening
 
 - [x] 🟠 **Gap de permisos del admin — reportes financieros (CERRADO 2026-06-22).** Los 11 endpoints de `reports.controller.ts` (`dashboard`, `daily-ai-summary`, `sales-summary`, `top-products`, `inventory-usage`, `hour-heatmap`, `whatsapp-metrics`, `suggestions-metrics`, `payment-reconciliation/import`+`/history`+`/:id`) pasaron de `@AdminAccess` a `@OnlyDueno`, y las 6 páginas de reportes ahora hacen `requireRole(['DUENO'])` (defensa en profundidad). Un ADMIN_OPERATIVO ya no ve ingresos/márgenes/reconciliación.
-- [ ] 🟡 **`GET /audit` — decisión pendiente del dueño.** Es `@AdminAccess` **a propósito** (comentario en `audit.controller.ts:7` + memoria de roles: el operativo usa la *bitácora filtrada*). El hueco: un operativo puede pedir el log crudo sin filtro vía API y leer la "Auditoría completa" dueño-only. **Fix sugerido (no blanket OnlyDueno):** exigir `action` filter para no-DUENO (la bitácora siempre lo manda; el raw lo usa solo el dueño). **Requiere tu confirmación de la intención.**
-- [ ] 🟡 **Lectura cruzada de cajas (movido a su propio ítem abajo).** `GET /shifts`/`:id`/`close-analysis` los necesita el POS → no se puede `@OnlyDueno`; requiere filtro por ownership.
+- [x] 🟡 **`GET /audit` dueño-only (CERRADO 2026-06-22).** Decisión del dueño: el operativo NO ve la bitácora → `@OnlyDueno`.
 - [x] 🟠 **Token de 24h sin revocación (CERRADO 2026-06-22).** `users.token_version` + `tv` en el JWT; el guard compara con cache de 60s (`TokenVersionService`). Se incrementa al desactivar/cambiar rol/reset password → corte inmediato. NO se tocó el TTL (no reintroduce la carrera de refresh). e2e `auth-revocation.e2e-spec.ts` (4 casos). *Pendiente menor: el handshake WS aún no chequea tv.*
 - [x] 🟠 **PIN de aprobación fuerza-bruteable (CERRADO 2026-06-22).** `@Throttle` 5/5min en void + cajón-sin-venta → 1M combos infactible.
 - [x] 🟡 **CORS inseguro (CERRADO).** Exige `CORS_ORIGINS` en prod.
@@ -79,12 +78,12 @@
 - [x] 🟠 **Texto de pago genérico (CERRADO).** Sin `PAYMENT_INSTRUCTIONS_*` el cliente ve "Te enviaremos los datos por WhatsApp", no el texto de debug.
 - [x] 🟠 **Turnero — SSE zombie (CERRADO).** Listener del `ping` + watchdog que reconecta si pasan >45s sin nada con la conexión "viva".
 - [x] 🟠 **Turnero — reset diario (CERRADO).** `getState()` limpia el turno de un día anterior (clearIfStaleDay). Requiere `TZ=America/Bogota` en prod.
-- [ ] 🟡 **Carrera de doble-cobro en POS** (`useCheckoutFlow.ts:120` lee `pending` antes de setearlo). Mitigada por idempotencia server. **Fix:** ref/functional update antes de validar.
-- [ ] 🟡 **Web — no revalida carrito vs menú al checkout** (precio viejo / producto desactivado / agotado falla opaco). **Fix:** reconciliar carrito↔menú antes de cobrar.
-- [ ] 🟡 **POS — número provisional OFF-N** colisiona si el reloj de la tablet retrocede. **Fix:** timestamp monotónico.
-- [ ] 🟡 **`expectedCash` calculado en 3 lugares del cliente** (POS) puede divergir del server. **Fix:** que el server lo devuelva precalculado.
-- [ ] 🟡 **Turnero — B-roll con precios hardcodeados** ($32.900…) → muestra precios falsos sin redeploy. **Fix:** alimentar de `/web/menu` o config editable.
-- [ ] 🟡 **Web — sin sweep de pedidos WEB abandonados** (quedan colgados en el drawer). Cubierto por P0 (cron) en parte.
+- [x] 🟡 **Carrera de doble-cobro en POS (CERRADO 2026-06-22).** `submittingRef` (ref síncrona) reemplaza el check de `pending` en handleConfirm.
+- [x] 🟡 **Web — revalida carrito vs menú al checkout (CERRADO).** `reconcileCart` + `CartChangesBanner`: avisa precio viejo / producto desactivado y obliga a actualizar antes de pagar.
+- [x] 🟡 **POS — número OFF-N monotónico (CERRADO).** Solo resetea cuando la jornada avanza, nunca hacia atrás.
+- [x] 🟡 **`expectedCash` autoritativo del server (CERRADO).** `GET /shifts/:id/expected-cash`; el modal de cierre usa el número del server (cae al cliente solo si la red falla).
+- [x] 🟡 **Turnero — B-roll rediseñado con estética TERCOS-WEB (CERRADO 2026-06-22).** Reemplazados los 3 slides con productos/precios inventados por el B-roll real de marca (`BrollStage` + `broll-menu.ts`): marca + producto rotando sobre negro + foto del plato con Ken Burns, alimentado por el **menú curado real** del dueño (un solo lugar para editar precios — ya no hay precios sueltos por componente). Turno + flash + campana se superponen igual. Borrados Carousel/Brand/Clock/slides viejos. Build OK. *Follow-up opcional: si el dueño quiere precios en vivo desde `/web/menu`; hoy se editan en `broll-menu.ts`.*
+- [ ] 🟡 **Web — sin sweep de pedidos WEB abandonados** (quedan colgados en el drawer). Atado a WhatsApp (el cancel dispara `notify('canceled')`); va con el bloque de WhatsApp.
 
 ## P3 — Calidad: tests, observabilidad, deuda
 
