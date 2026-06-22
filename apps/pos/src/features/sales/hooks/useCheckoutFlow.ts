@@ -6,6 +6,7 @@ import {
   type Promotion,
 } from '@pos-tercos/types';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { logError } from '../../../lib/client-log';
 import { getErrorMessage } from '../../../lib/errors';
 import { useOffline } from '../../offline';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
@@ -98,10 +99,12 @@ export function useCheckoutFlow({
       // genera comanda. onClose no espera (la UI cierra al instante).
       if (comandaState === 'ok') {
         void printComanda(id, { cancel: true })
-          .catch(() => undefined)
-          .finally(() => void cancelSale(id).catch(() => undefined));
+          .catch((e) => logError('checkout.cancel-comanda', e, { saleId: id }))
+          .finally(() =>
+            void cancelSale(id).catch((e) => logError('checkout.cancel-sale', e, { saleId: id })),
+          );
       } else {
-        void cancelSale(id).catch(() => undefined);
+        void cancelSale(id).catch((e) => logError('checkout.cancel-sale', e, { saleId: id }));
       }
     }
     onClose();

@@ -429,6 +429,7 @@ model Sale {
   paidBy                        User?           @relation("SalePaidBy", fields: [paidByUserId], references: [id])
   shift                         Shift?          @relation(fields: [shiftId], references: [id])
 
+  @@unique([shiftId, turnNumber])
   @@index([status, createdAt(sort: Desc)])
   @@index([cashierId, createdAt(sort: Desc)])
   @@index([type, status, createdAt(sort: Desc)])

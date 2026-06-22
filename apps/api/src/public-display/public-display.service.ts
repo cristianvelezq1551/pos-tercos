@@ -91,10 +91,14 @@ export class PublicDisplayService {
       return;
     }
     await this.prisma.$transaction(async (tx) => {
-      await tx.sale.update({
-        where: { id: saleId },
+      // Guard transaccional: el status se condiciona DENTRO del UPDATE. Si dos
+      // entregas concurrentes pasaron el check de arriba, solo una toca count=1
+      // y escribe el log; la otra no duplica la fila ENTREGADO.
+      const res = await tx.sale.updateMany({
+        where: { id: saleId, status: 'LISTO_DESPACHO' },
         data: { status: 'ENTREGADO' },
       });
+      if (res.count === 0) return;
       await tx.saleStatusLog.create({
         data: {
           saleId,

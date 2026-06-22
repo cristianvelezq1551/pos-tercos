@@ -41,6 +41,40 @@ import { SalesConsumptionService } from './sales-consumption.service';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 const SALES_CREATE_ENDPOINT = 'POST /sales';
+// Cota alta: cada ronda de colisión deja pasar al menos un cobro (gana el índice
+// único), así que basta con ≥ ráfaga concurrente esperable. En la realidad (1
+// cajero) las colisiones son 0-1; esto cubre ráfagas grandes sin un 500.
+const MAX_TURN_RETRIES = 16;
+
+/**
+ * Verdadero solo para una colisión P2002 en el índice único de turno
+ * (shift_id, turn_number). NO matchea otras unicidades (ej. idempotency_key),
+ * para no reintentar transacciones que deben fallar por duplicado real.
+ */
+export function isTurnNumberCollision(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null || !('code' in e)) return false;
+  if ((e as { code?: string }).code !== 'P2002') return false;
+  const target = (e as { meta?: { target?: unknown } }).meta?.target;
+  const s = Array.isArray(target) ? target.join(',') : String(target ?? '');
+  return s.includes('turn_number') || s.includes('turnNumber');
+}
+
+/**
+ * Reintenta la transacción de cobro cuando dos confirmaciones concurrentes en
+ * la misma caja chocan en el índice único (shift_id, turn_number). La tx hace
+ * rollback (el status sigue PENDIENTE_PAGO), así que reintentar recomputa el
+ * turno con un count fresco — sin doble-cobro ni doble-descuento de stock.
+ */
+export async function runWithTurnRetry<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work();
+    } catch (e) {
+      if (attempt < MAX_TURN_RETRIES && isTurnNumberCollision(e)) continue;
+      throw e;
+    }
+  }
+}
 
 interface ListSalesFilter {
   status?: SaleStatus;
@@ -316,10 +350,13 @@ export class SalesService {
         notes: s.note,
       }));
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await runWithTurnRetry(() =>
+     this.prisma.$transaction(async (tx) => {
       // Turno: secuencia ÚNICA por CAJA (no global). Resetea cada vez que se
       // abre una caja nueva → cada día empieza en #1, sin importar cuántos
       // pedidos hubo ayer. Cuenta los que ya tienen turno en ESTA caja + 1.
+      // El índice único (shift_id, turn_number) + el retry de arriba garantizan
+      // que dos cobros concurrentes NO compartan el mismo turno.
       // (Fallback a "hoy" si por algún motivo no hay caja asociada.)
       let assigned: number;
       if (shiftId) {
@@ -388,7 +425,8 @@ export class SalesService {
         where: { id: saleId },
         include: includeFull(),
       });
-    });
+     }),
+    );
 
     await this.audit.log({
       userId,
@@ -528,11 +566,18 @@ export class SalesService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const sale = await tx.sale.update({
-        where: { id: saleId },
+      // Guard transaccional: el status se condiciona DENTRO del UPDATE. Si entre
+      // el check de arriba y la tx la cocina inició el pedido (PAGADO→EN_PREPARACION),
+      // count===0 y abortamos sin revertir stock de una orden ya en preparación.
+      const res = await tx.sale.updateMany({
+        where: { id: saleId, status: 'PAGADO' },
         data: { status: 'VOID', voidReason: input.reason },
-        include: includeFull(),
       });
+      if (res.count === 0) {
+        throw new BadRequestException(
+          'No se puede anular: el pedido cambió de estado (la cocina lo inició).',
+        );
+      }
       await tx.saleStatusLog.create({
         data: {
           saleId,
@@ -545,7 +590,7 @@ export class SalesService {
       if (reverseMovements.length > 0) {
         await tx.inventoryMovement.createMany({ data: reverseMovements });
       }
-      return sale;
+      return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
     });
 
     await this.audit.log({

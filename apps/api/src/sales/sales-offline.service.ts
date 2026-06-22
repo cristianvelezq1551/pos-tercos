@@ -4,7 +4,8 @@ import type { PaymentMethod, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
-import { SalesConsumptionService } from './sales-consumption.service';
+import { SalesConsumptionService, type ConsumptionSpec } from './sales-consumption.service';
+import { runWithTurnRetry } from './sales.service';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 /**
@@ -95,12 +96,15 @@ export class SalesOfflineService {
       'Offline venta',
     );
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await runWithTurnRetry(() =>
+     this.prisma.$transaction(async (tx) => {
       const [{ next }] = await tx.$queryRaw<{ next: bigint }[]>`
         SELECT nextval('receipt_seq') AS next
       `;
       const receiptNumber = next;
-      // Turno: secuencia por caja (igual que confirmPayment).
+      // Turno: secuencia por caja (igual que confirmPayment). El índice único
+      // (shift_id, turn_number) + runWithTurnRetry evitan que un sync offline
+      // y un cobro online concurrentes asignen el mismo turno.
       const assigned = await tx.sale.count({
         where: { shiftId: shift.id, turnNumber: { not: null } },
       });
@@ -178,13 +182,18 @@ export class SalesOfflineService {
         where: { id: sale.id },
         include: includeFull(),
       });
-    });
+     }),
+    );
 
     const dto = toSaleDto(updated);
     // "Gana lo cobrado offline" (decisión documentada), pero el drift de
     // precio contra el catálogo ACTUAL queda en bitácora: si la venta se
     // cobró con un snapshot viejo (o manipulado), el dueño lo ve.
     await this.auditPriceDrift(input, dto.id, userId);
+    // El online bloquea stock negativo (assertStockSufficient). El offline NO
+    // puede rechazar (la venta YA ocurrió → "gana lo cobrado offline"), pero el
+    // stock negativo resultante queda en bitácora para que el dueño lo concilie.
+    await this.auditNegativeStock(specs, dto.id, userId);
     await this.audit.log({
       userId,
       action: 'SALE_SYNCED_OFFLINE',
@@ -253,6 +262,52 @@ export class SalesOfflineService {
       }
     } catch {
       // La auditoría de drift nunca bloquea el sync (la venta ya está grabada).
+    }
+  }
+
+  /**
+   * Tras grabar los movements offline, revisa si algún stockable quedó en
+   * NEGATIVO (el online lo habría bloqueado con assertStockSufficient; el
+   * offline no puede). No revierte nada — solo lo deja en bitácora para que el
+   * dueño concilie la desincronización de stock.
+   */
+  private async auditNegativeStock(
+    specs: ConsumptionSpec[],
+    saleId: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const entities = new Map<string, { entityType: string; id: string }>();
+      for (const s of specs) {
+        const id = s.ingredientId ?? s.productId ?? s.subproductId;
+        if (id) entities.set(`${s.entityType}:${id}`, { entityType: s.entityType, id });
+      }
+      const negative: Array<{ entityType: string; entityId: string; stock: number }> = [];
+      for (const e of entities.values()) {
+        const where: Prisma.InventoryMovementWhereInput =
+          e.entityType === 'INGREDIENT'
+            ? { ingredientId: e.id }
+            : e.entityType === 'PRODUCT'
+              ? { productId: e.id }
+              : { subproductId: e.id };
+        const agg = await this.prisma.inventoryMovement.aggregate({
+          where,
+          _sum: { delta: true },
+        });
+        const stock = Number(agg._sum.delta ?? 0);
+        if (stock < 0) negative.push({ entityType: e.entityType, entityId: e.id, stock });
+      }
+      if (negative.length > 0) {
+        await this.audit.log({
+          userId,
+          action: 'OFFLINE_NEGATIVE_STOCK',
+          entityType: 'sale',
+          entityId: saleId,
+          metadata: { count: negative.length, items: negative },
+        });
+      }
+    } catch {
+      // La auditoría nunca bloquea el sync (la venta ya está grabada).
     }
   }
 }
