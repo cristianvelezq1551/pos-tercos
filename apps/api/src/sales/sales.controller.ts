@@ -12,6 +12,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { DrawerOpenResult } from '@pos-tercos/domain';
 import {
   APPROVAL_PIN_HEADER,
@@ -130,6 +131,7 @@ export class SalesController {
    * Anular venta. Requiere header X-Approval-Pin con PIN de Admin/Dueño.
    */
   @CashierAccess()
+  @Throttle({ default: { ttl: 300_000, limit: 5 } }) // anti-brute-force del PIN
   @Post(':id/void')
   voidSale(
     @CurrentUser() user: JwtAccessPayload,
@@ -294,6 +296,7 @@ export class SalesController {
    * Audit con CASH_DRAWER_OPENED_NO_SALE + APPROVAL_GRANTED.
    */
   @CashierAccess()
+  @Throttle({ default: { ttl: 300_000, limit: 5 } }) // anti-brute-force del PIN
   @Post('open-drawer/no-sale')
   openDrawerNoSale(
     @CurrentUser() user: JwtAccessPayload,

@@ -9,6 +9,20 @@ const nextConfig: NextConfig = {
     '@pos-tercos/types',
     '@pos-tercos/domain',
   ],
+  async headers() {
+    // Headers de seguridad base (sin CSP estricta — necesita tuning por app).
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

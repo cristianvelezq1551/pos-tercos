@@ -9,5 +9,5 @@ import { z } from 'zod';
  */
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
 
-export const IdempotencyKeySchema = z.string().min(8).max(128);
+export const IdempotencyKeySchema = z.string().uuid();
 export type IdempotencyKey = z.infer<typeof IdempotencyKeySchema>;
