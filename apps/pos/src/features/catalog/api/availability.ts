@@ -6,7 +6,7 @@ import {
 
 /** Disponibilidad en vivo de todos los productos (cajero la consulta en intervalos). */
 export async function fetchAvailability(): Promise<ProductAvailability[]> {
-  const res = await fetch('/api/products/availability', {
+  const res = await fetch('/api/products/availability/internal', {
     credentials: 'include',
     cache: 'no-store',
   });

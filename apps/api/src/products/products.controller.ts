@@ -54,10 +54,27 @@ export class ProductsController {
     return this.products.list({ onlyActive: onlyActive === 'true', category });
   }
 
-  /** Disponibilidad en vivo (cajero + web la consultan en intervalos). Pública. */
+  /**
+   * Disponibilidad PÚBLICA (web del cliente): solo `available`. `stock` y
+   * `reason` van en null — el stock exacto y los motivos ("Sin Pan…") son
+   * inteligencia interna y NO se exponen a internet.
+   */
   @Public()
   @Get('availability')
-  availability(): Promise<ProductAvailability[]> {
+  async availability(): Promise<ProductAvailability[]> {
+    const full = await this.products.getAvailability();
+    return full.map((r) => ({
+      productId: r.productId,
+      available: r.available,
+      stock: null,
+      reason: null,
+    }));
+  }
+
+  /** Disponibilidad INTERNA (cajero): incluye stock real y motivo. */
+  @CashierAccess()
+  @Get('availability/internal')
+  availabilityInternal(): Promise<ProductAvailability[]> {
     return this.products.getAvailability();
   }
 
