@@ -24,6 +24,9 @@ export interface ComandaData {
   }>;
   /** "REIMPRESIÓN" en re-impresiones de la comanda. */
   reprintLabel?: string | null;
+  /** true = ticket de ANULACIÓN: el cobro se abandonó tras imprimir la comanda
+   *  → la cocina debe DESCARTAR este pedido. */
+  cancelled?: boolean;
 }
 
 export function renderComandaEscPos(comanda: ComandaData): Buffer {
@@ -31,10 +34,19 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
 
   out.push(ESC_INIT);
 
-  // Encabezado: qué es y de qué pedido.
+  // Encabezado: qué es y de qué pedido. Un ticket de ANULACIÓN grita que la
+  // cocina descarte el pedido (el cobro se abandonó tras imprimir la comanda).
   out.push(ALIGN_CENTER);
   out.push(BOLD_ON);
-  out.push(latin1('*** COMANDA COCINA ***'));
+  if (comanda.cancelled) {
+    out.push(SIZE_2H_2W);
+    out.push(latin1('*** ANULAR ***'));
+    out.push(LF);
+    out.push(SIZE_NORMAL);
+    out.push(latin1('DESCARTAR ESTE PEDIDO'));
+  } else {
+    out.push(latin1('*** COMANDA COCINA ***'));
+  }
   out.push(BOLD_OFF);
   out.push(LF);
   if (comanda.reprintLabel) {

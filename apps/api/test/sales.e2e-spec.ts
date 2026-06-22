@@ -338,6 +338,21 @@ describe('Sales E2E', () => {
       expect(logs).toBe(2);
     });
 
+    it('?cancel=true emite un ticket de ANULACIÓN (cocina descarta el pedido)', async () => {
+      const res = await request
+        .get(`/sales/${saleId}/comanda-escpos?cancel=true`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      const decoded = Buffer.from(res.body.escposBase64 as string, 'base64').toString('latin1');
+      expect(decoded).toContain('ANULAR');
+      expect(decoded).toContain('DESCARTAR ESTE PEDIDO');
+      expect(decoded).not.toContain('COMANDA COCINA');
+      const cancelLogs = await prisma.auditLog.count({
+        where: { action: 'COMANDA_CANCELLED', entityId: saleId },
+      });
+      expect(cancelLogs).toBe(1);
+    });
+
     it('cancela un cobro abandonado COUNTER (PENDIENTE_PAGO → CANCELADO_NO_PAGO)', async () => {
       const res = await request
         .post(`/sales/${saleId}/cancel`)

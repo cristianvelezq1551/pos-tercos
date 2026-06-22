@@ -85,6 +85,7 @@ export class SalesReceiptService {
   async getComandaEscPos(
     saleId: string,
     userId: string,
+    cancel = false,
   ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
@@ -99,13 +100,13 @@ export class SalesReceiptService {
     const previousPrints = await this.prisma.auditLog.count({
       where: { action: 'COMANDA_PRINTED', entityType: 'sale', entityId: saleId },
     });
-    const isReprint = previousPrints > 0;
-    const comanda = buildComandaData(toSaleDto(sale), isReprint);
+    const isReprint = !cancel && previousPrints > 0;
+    const comanda = { ...buildComandaData(toSaleDto(sale), isReprint), cancelled: cancel };
     const bytes = renderComandaEscPos(comanda);
 
     await this.audit.log({
       userId,
-      action: 'COMANDA_PRINTED',
+      action: cancel ? 'COMANDA_CANCELLED' : 'COMANDA_PRINTED',
       entityType: 'sale',
       entityId: saleId,
       metadata: {

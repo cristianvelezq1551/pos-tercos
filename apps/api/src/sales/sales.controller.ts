@@ -270,8 +270,11 @@ export class SalesController {
   getComandaEscPos(
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('cancel') cancel?: string,
   ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
-    return this.receipts.getComandaEscPos(id, user.sub);
+    // ?cancel=true → ticket de ANULACIÓN (el cobro se abandonó tras imprimir
+    // la comanda; la cocina debe descartar el pedido).
+    return this.receipts.getComandaEscPos(id, user.sub, cancel === 'true');
   }
 
   /**

@@ -45,9 +45,15 @@ export async function printReceipt(
 /**
  * Imprime la COMANDA de cocina (sin precios) vía print-agent local. Se
  * dispara al COBRAR — la venta puede seguir PENDIENTE_PAGO.
+ * `cancel` → ticket de ANULACIÓN para que la cocina descarte el pedido si el
+ * cobro se abandonó tras imprimir la comanda.
  */
-export async function printComanda(saleId: string): Promise<void> {
-  const res = await fetch(`/api/sales/${saleId}/comanda-escpos`, {
+export async function printComanda(
+  saleId: string,
+  opts: { cancel?: boolean } = {},
+): Promise<void> {
+  const qs = opts.cancel ? '?cancel=true' : '';
+  const res = await fetch(`/api/sales/${saleId}/comanda-escpos${qs}`, {
     credentials: 'include',
   });
   if (!res.ok) {

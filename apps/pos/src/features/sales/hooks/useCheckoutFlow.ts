@@ -10,6 +10,7 @@ import { getErrorMessage } from '../../../lib/errors';
 import { useOffline } from '../../offline';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { cancelSale } from '../api/cancel';
+import { printComanda } from '../api/print';
 import type { SplitResult } from '../components/split/SplitPaymentSection';
 import type { CartLine } from '../lib/cart-types';
 import {
@@ -82,9 +83,22 @@ export function useCheckoutFlow({
   }, [open]);
 
   // Cerrar SIN pagar → cancelar la venta creada (no queda colgada en
-  // PENDIENTE_PAGO). La comanda impresa se retira a mano si ya salió.
+  // PENDIENTE_PAGO). Si la comanda YA salió a cocina, imprimir un ticket de
+  // ANULACIÓN para que descarten el pedido (no preparen comida muerta).
   const handleClose = () => {
-    if (sale && !paid) void cancelSale(sale.id).catch(() => {});
+    if (sale && !paid) {
+      const id = sale.id;
+      // El ticket de anulación se imprime ANTES de cancelar: el endpoint lee la
+      // venta en PENDIENTE_PAGO; si cancelSale corre primero, el status ya no
+      // genera comanda. onClose no espera (la UI cierra al instante).
+      if (comandaState === 'ok') {
+        void printComanda(id, { cancel: true })
+          .catch(() => undefined)
+          .finally(() => void cancelSale(id).catch(() => undefined));
+      } else {
+        void cancelSale(id).catch(() => undefined);
+      }
+    }
     onClose();
   };
 
