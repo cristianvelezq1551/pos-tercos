@@ -9,10 +9,52 @@
 
 ## P0 — Seguridad: antes de exponer la web a internet
 
-- [ ] 🔴 **Spam/ban de WhatsApp con teléfono ajeno.** `POST /web/orders` (público) dispara `notify('payment_instructions')` al `customerPhone` que controla el atacante (`web-orders.service.ts:58` → `notification.service.ts:61`). Riesgo de spam a costa del negocio + ban de la sesión OpenWA de producción. **Fix:** no enviar instrucciones al crear el pedido; diferirlas a cuando el cajero acepta/verifica en el POS (gate humano). + rate-limit por número/día.
-- [ ] 🟠 **Inundación de pedidos `PENDIENTE_PAGO` + throttle no fiable tras proxy.** No hay `trust proxy` en `main.ts` → el rate-limit ve la IP del proxy. No hay sweep de pedidos WEB viejos. **Fix:** `app.set('trust proxy', 1)` + cron que cancele `WEB_PICKUP PENDIENTE_PAGO` viejos + cap de pedidos abiertos por teléfono.
-- [ ] 🟠 **Fuga de inventario por endpoint público.** `GET /products/availability` (`@Public`) devuelve `stock` exacto y `reason` ("Sin Pan…") (`products.controller.ts:58`, `catalog.ts:332`). **Fix:** respuesta pública solo `{productId, available}`; `stock`/`reason` a variante `CashierAccess`.
-- [ ] 🟠 **Backend sin helmet / `nosniff`.** `helmet` ausente del `package.json` del api. Endpoints que sirven binarios subidos quedan expuestos a MIME-sniffing. **Fix:** `app.use(helmet())` + `X-Content-Type-Options: nosniff` en respuestas binarias.
+- [x] 🟠 **Inundación + throttle tras proxy (CERRADO parcial 2026-06-22).** `app.set('trust proxy', 1)` agregado → el rate-limit cuenta por IP real. **Falta** el cron que cancele `WEB_PICKUP PENDIENTE_PAGO` viejos + cap de pedidos por teléfono (queda como ítem abierto abajo).
+- [ ] 🟠 **Sweep + cap de pedidos web abandonados.** Cron que cancele `WEB_PICKUP PENDIENTE_PAGO` >2-3h + cap de pedidos abiertos por teléfono (anti-flood del drawer del POS). Hoy solo se barren los COUNTER.
+- [x] 🟠 **Fuga de inventario por endpoint público (CERRADO 2026-06-22).** `GET /products/availability` (`@Public`) devuelve `stock`/`reason` en null; el real va a `GET /products/availability/internal` (`@CashierAccess`, lo usa el POS).
+- [x] 🟠 **Backend sin helmet / CORS inseguro (CERRADO 2026-06-22).** `helmet()` + CORS exige `CORS_ORIGINS` en prod.
+- [ ] 🟡 **Apps Next sin security headers** (CSP/HSTS/X-Frame-Options) → POS clickjackeable. **Fix:** `headers()` en cada `next.config.ts`. *(movido desde P1, completa el frente de headers)*
+
+---
+
+## 🟣 WhatsApp — entrega segura (PRIORIDAD APARTE, decisión de negocio)
+
+> El mecanismo actual (OpenWA / `whatsapp-web.js` self-hosted) **puede generar
+> baneo** de tu número. Es un cliente NO oficial que automatiza una cuenta de
+> WhatsApp normal — viola los ToS de Meta. El patrón que más banea es
+> justamente el que tenemos: enviar a números que no te guardaron / nunca te
+> escribieron primero (y peor, el vector de spam deja que un atacante dispare
+> mensajes a números arbitrarios desde tu número).
+
+### La forma segura: WhatsApp Business Platform (Cloud API oficial)
+- API sancionada por Meta → no te banean por usarla como corresponde (sí puede
+  bajar tu "quality rating" si los destinatarios bloquean/reportan).
+- **Requisitos:** cuenta Meta Business + verificación de negocio (tarda días);
+  un **número dedicado** para la API (NO puede ser el mismo que usás en la app
+  de WhatsApp); **templates** pre-aprobados para los 3 mensajes (instrucciones
+  de pago, pago recibido, listo para retirar) — todos categoría **Utility**.
+- **Dos caminos:** (a) **Cloud API directo de Meta** (hosting gratis, solo pagás
+  por mensaje; más setup: portal de devs, webhooks, templates); (b) vía **BSP**
+  (Twilio, 360dialog, Gupshup, Wati): onboarding más fácil, dashboards, pero
+  agregan markup por mensaje o fee mensual.
+
+### Costo (Colombia, 2026 — pricing por mensaje desde jul-2025)
+- **Utility** (lo que enviás): ~**US$0.001/mensaje**. **Authentication** ~$0.0008.
+  **Marketing** ~$0.014. **Service** (respuestas dentro de la ventana de 24h): **gratis**.
+- Desde abr-2026 Colombia se factura en **COP**.
+- **Para este negocio:** 3 notificaciones/pedido web. 1.000 pedidos/mes × 3 =
+  3.000 mensajes × $0.001 ≈ **US$3/mes** (despreciable). Con BSP, sumar su fee.
+- **Recomendación:** Cloud API directo (más barato a este volumen). El código ya
+  abstrae el envío detrás de `WhatsAppProvider` → agregar `CloudApiWhatsAppAdapter`
+  junto a `OpenWaWhatsAppAdapter`. Bajo impacto de código.
+
+### Anti-spam (vale para CUALQUIER mecanismo — el actual crítico)
+- [ ] 🔴 **No mensajear a números no verificados desde el endpoint público.**
+  `POST /web/orders` dispara WhatsApp al `customerPhone` del atacante
+  (`web-orders.service.ts:58`). **Fix:** diferir las instrucciones a cuando el
+  cajero **acepta** el pedido en el POS (gate humano) **o** rate-limit por
+  número/día + opt-in. Incluso con la API oficial, mensajear a números que te
+  reportan baja tu quality rating.
 
 ## P1 — Permisos, auth y hardening
 
