@@ -12,14 +12,22 @@ function localDateStr(d = new Date()): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** Próximo número provisional OFF-N. Reinicia el contador en cada jornada. */
+/**
+ * Próximo número provisional OFF-N. Reinicia el contador SOLO cuando la jornada
+ * AVANZA (today > jornada guardada), nunca hacia atrás: si el reloj de la
+ * tablet retrocede cruzando medianoche, seguimos incrementando para no duplicar
+ * un OFF-N ya impreso/encolado (la unicidad real la garantiza el localId UUID,
+ * pero el número impreso no debe colisionar). La jornada guardada es siempre la
+ * fecha más avanzada vista.
+ */
 async function nextProvisionalNumber(): Promise<string> {
   const today = localDateStr();
   const meta = await offlineDb.getMeta();
-  const n = meta && meta.jornada === today ? meta.offCounter + 1 : 1;
+  const advanced = !meta || today > meta.jornada;
+  const n = advanced ? 1 : meta.offCounter + 1;
   await offlineDb.setMeta({
     offCounter: n,
-    jornada: today,
+    jornada: advanced ? today : meta.jornada,
     lastSyncAt: meta?.lastSyncAt ?? null,
   });
   return `OFF-${n}`;

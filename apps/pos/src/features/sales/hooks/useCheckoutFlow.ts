@@ -5,7 +5,7 @@ import {
   type PaymentMethod,
   type Promotion,
 } from '@pos-tercos/types';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getErrorMessage } from '../../../lib/errors';
 import { useOffline } from '../../offline';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
@@ -57,6 +57,10 @@ export function useCheckoutFlow({
   const [pending, setPending] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
   const [paid, setPaid] = useState(false);
+  // Guard SÍNCRONO contra doble-confirmación: `pending` (estado React) se
+  // actualiza async, así que dos clicks rapidísimos podían pasar el check antes
+  // de que el primero seteara pending. La ref se marca al instante.
+  const submittingRef = useRef(false);
 
   const enabledMethods = useEnabledPaymentMethods(open, offline);
   const { sale, comandaState } = useCheckoutSale({
@@ -79,6 +83,7 @@ export function useCheckoutFlow({
       setError(null);
       setPending(false);
       setPaid(false);
+      submittingRef.current = false;
     }
   }, [open]);
 
@@ -131,8 +136,9 @@ export function useCheckoutFlow({
   };
 
   const handleConfirm = async () => {
-    if (!validation.ok || pending) return;
+    if (!validation.ok || submittingRef.current) return;
     if (!splitOpen && !method) return;
+    submittingRef.current = true;
     setError(null);
     setPending(true);
     try {
@@ -157,6 +163,7 @@ export function useCheckoutFlow({
     } catch (err) {
       setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
+      submittingRef.current = false; // liberar para permitir reintento
     }
   };
 
