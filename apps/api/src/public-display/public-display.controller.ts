@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Sse } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   CallManualSchema,
   type CallManual,
@@ -20,12 +21,14 @@ export class PublicDisplayController {
 
   @Get('state')
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
   state(): Promise<PublicDisplayState> {
     return this.svc.getState();
   }
 
   @Sse('stream')
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } }) // anti-flood de conexiones SSE
   stream(): Observable<MessageEvent> {
     return this.svc.stream();
   }
