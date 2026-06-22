@@ -11,6 +11,7 @@ import { AdminAccess } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { SuppliersService } from './suppliers.service';
 
+@AdminAccess()
 @Controller('suppliers')
 export class SuppliersController {
   constructor(private readonly suppliers: SuppliersService) {}

@@ -27,6 +27,7 @@ import {
   SetSoldOutSchema,
   UpdateProductSchema,
   type CreateProduct,
+  type JwtAccessPayload,
   type Product,
   type ProductAvailability,
   type SetComboComponents,
@@ -35,6 +36,7 @@ import {
   type UpdateProduct,
 } from '@pos-tercos/types';
 import { AdminAccess, CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { detectImageMimeLoose } from '../common/image-mime';
@@ -42,16 +44,29 @@ import { ProductsService } from './products.service';
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
+const COST_ROLES = new Set(['DUENO', 'ADMIN_OPERATIVO', 'ADMIN_FINANCIERO']);
+
+/**
+ * Oculta el costo de compra a roles que no son admin/dueño. El cajero necesita
+ * el catálogo (basePrice) para vender, pero NO los costos/márgenes del negocio.
+ */
+function stripCostForRole(p: Product, role: string): Product {
+  if (COST_ROLES.has(role)) return p;
+  return { ...p, lastUnitCost: null, lastUnitCostDate: null };
+}
+
 @Controller('products')
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
   @Get()
-  list(
+  async list(
+    @CurrentUser() user: JwtAccessPayload,
     @Query('only_active') onlyActive?: string,
     @Query('category') category?: string,
   ): Promise<Product[]> {
-    return this.products.list({ onlyActive: onlyActive === 'true', category });
+    const products = await this.products.list({ onlyActive: onlyActive === 'true', category });
+    return products.map((p) => stripCostForRole(p, user.role));
   }
 
   /**
@@ -86,8 +101,11 @@ export class ProductsController {
   }
 
   @Get(':id')
-  getById(@Param('id', ParseUUIDPipe) id: string): Promise<Product> {
-    return this.products.getById(id);
+  async getById(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Product> {
+    return stripCostForRole(await this.products.getById(id), user.role);
   }
 
   /** Marca/desmarca agotado (86). Cajero o admin. */

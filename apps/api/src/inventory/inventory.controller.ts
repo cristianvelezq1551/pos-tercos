@@ -19,6 +19,7 @@ import type { JwtAccessPayload } from '@pos-tercos/types';
 import { InventoryService } from './inventory.service';
 import { StockCountsService } from './stock-counts.service';
 
+@AdminAccess()
 @Controller('inventory')
 export class InventoryController {
   constructor(

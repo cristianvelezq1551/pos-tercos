@@ -154,6 +154,15 @@ export type ConfirmInvoice = z.infer<typeof ConfirmInvoiceSchema>;
  * discard-photo si abandona). Evita borradores fantasma cuando el usuario
  * abre el modal y se va.
  */
+/**
+ * Key de storage de una foto de factura: siempre `invoices/{uuid}.{ext}`. El
+ * regex evita que un admin pase la key de OTRO recurso (otra factura, un
+ * comprobante de pago) a discard-photo (delete) o from-photo (get).
+ */
+export const PhotoStorageKeySchema = z
+  .string()
+  .regex(/^invoices\/[0-9a-f-]{36}\.[a-z0-9]{2,5}$/i, 'photoStorageKey inválida');
+
 export const ExtractInvoiceResponseSchema = z.object({
   photoStorageKey: z.string(),
   aiModelUsed: z.string(),
@@ -163,14 +172,14 @@ export type ExtractInvoiceResponse = z.infer<typeof ExtractInvoiceResponseSchema
 
 /** Crear+confirmar factura desde foto (IA) en un solo paso. */
 export const CreateFromPhotoSchema = ConfirmInvoiceSchema.extend({
-  photoStorageKey: z.string().min(1),
+  photoStorageKey: PhotoStorageKeySchema,
   aiModelUsed: z.string().min(1),
 });
 export type CreateFromPhoto = z.infer<typeof CreateFromPhotoSchema>;
 
 /** Descartar una foto subida que nunca se confirmó (limpia storage). */
 export const DiscardPhotoSchema = z.object({
-  photoStorageKey: z.string().min(1),
+  photoStorageKey: PhotoStorageKeySchema,
 });
 export type DiscardPhoto = z.infer<typeof DiscardPhotoSchema>;
 

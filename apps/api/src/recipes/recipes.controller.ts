@@ -6,10 +6,11 @@ import {
   type SetRecipeRequest,
   type SubproductCostSummary,
 } from '@pos-tercos/types';
-import { OnlyDueno } from '../auth/decorators/roles.decorator';
+import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { RecipesService } from './recipes.service';
 
+@AdminAccess()
 @Controller()
 export class RecipesController {
   constructor(private readonly recipes: RecipesService) {}
