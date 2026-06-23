@@ -9,10 +9,13 @@ import {
 } from '../../../../features/reports-operations';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
-import type {
-  HourHeatmapReport,
-  SuggestionsMetrics,
-  WhatsAppMetrics,
+import {
+  HourHeatmapReportSchema,
+  SuggestionsMetricsSchema,
+  WhatsAppMetricsSchema,
+  type HourHeatmapReport,
+  type SuggestionsMetrics,
+  type WhatsAppMetrics,
 } from '@pos-tercos/types';
 
 interface PageProps {
@@ -36,9 +39,9 @@ async function loadAll(
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   try {
     const [whatsapp, suggestions, heatmap] = await Promise.all([
-      serverFetchJson<WhatsAppMetrics>(`/reports/whatsapp-metrics${suffix}`),
-      serverFetchJson<SuggestionsMetrics>(`/reports/suggestions-metrics${suffix}`),
-      serverFetchJson<HourHeatmapReport>(`/reports/hour-heatmap${suffix}`),
+      serverFetchJson(`/reports/whatsapp-metrics${suffix}`, undefined, WhatsAppMetricsSchema),
+      serverFetchJson(`/reports/suggestions-metrics${suffix}`, undefined, SuggestionsMetricsSchema),
+      serverFetchJson(`/reports/hour-heatmap${suffix}`, undefined, HourHeatmapReportSchema),
     ]);
     return { whatsapp, suggestions, heatmap };
   } catch (err) {

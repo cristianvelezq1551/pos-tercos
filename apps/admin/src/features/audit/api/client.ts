@@ -1,21 +1,8 @@
 import { AuditLogEntrySchema, type AuditLogEntry } from '@pos-tercos/types';
 import { z } from 'zod';
+import { request } from '../../../lib/api-client';
 
 const AuditListSchema = z.array(AuditLogEntrySchema);
-
-async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T>): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: init.headers,
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
-  }
-  const json = (await res.json()) as unknown;
-  return schema.parse(json);
-}
 
 export function listAudit(filter: {
   action?: string;

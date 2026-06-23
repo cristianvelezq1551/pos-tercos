@@ -4,7 +4,7 @@ import { RangeFilter } from '../../../../features/reports-sales';
 import { UsageTable } from '../../../../features/reports-usage';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
-import type { InventoryUsageReport } from '@pos-tercos/types';
+import { InventoryUsageReportSchema, type InventoryUsageReport } from '@pos-tercos/types';
 import { requireRole } from '../../../../lib/guards';
 
 interface PageProps {
@@ -20,7 +20,7 @@ async function loadReport(
   if (to) qs.set('to', to);
   const path = `/reports/inventory-usage${qs.toString() ? `?${qs.toString()}` : ''}`;
   try {
-    return await serverFetchJson<InventoryUsageReport>(path);
+    return await serverFetchJson(path, undefined, InventoryUsageReportSchema);
   } catch (err) {
     return { error: friendlyApiError(err) };
   }

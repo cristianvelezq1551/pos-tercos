@@ -36,7 +36,31 @@ export class CogsService {
   // ordenados y los mapeamos a datos planos.
   // ==================================================================
 
-  private async runLedger(): Promise<LedgerFifo> {
+  /**
+   * Caché del ledger con TTL corto. `runLedger` se llamaba varias veces por
+   * request (y se recomputaba entero en cada request): cargar TODOS los
+   * movimientos + replay FIFO es caro. Memoizar la PROMESA además deduplica
+   * llamados concurrentes. Sin invalidación por escritura a propósito: un
+   * reporte de COGS tolera ≤ TTL de staleness (no es dato transaccional vivo).
+   */
+  private static readonly LEDGER_TTL_MS = 20_000;
+  private ledgerCache: { promise: Promise<LedgerFifo>; at: number } | null = null;
+
+  private runLedger(): Promise<LedgerFifo> {
+    const now = Date.now();
+    if (this.ledgerCache && now - this.ledgerCache.at < CogsService.LEDGER_TTL_MS) {
+      return this.ledgerCache.promise;
+    }
+    const promise = this.computeLedger();
+    this.ledgerCache = { promise, at: now };
+    // No cachear un error: si falla, limpiar para reintentar en el próximo call.
+    void promise.catch(() => {
+      if (this.ledgerCache?.promise === promise) this.ledgerCache = null;
+    });
+    return promise;
+  }
+
+  private async computeLedger(): Promise<LedgerFifo> {
     const movements = await this.prisma.inventoryMovement.findMany({
       select: {
         id: true,

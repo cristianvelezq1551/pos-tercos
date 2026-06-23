@@ -13,25 +13,9 @@ import {
   type UpdateUser,
 } from '@pos-tercos/types';
 import { z } from 'zod';
+import { request } from '../../../lib/api-client';
 
 const UserListSchema = z.array(ManagedUserSchema);
-
-async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T>): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
-  }
-  const json = (await res.json()) as unknown;
-  return schema.parse(json);
-}
 
 /** Para endpoints 204 (sin cuerpo de respuesta). */
 async function requestVoid(path: string, init: RequestInit): Promise<void> {

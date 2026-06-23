@@ -13,6 +13,7 @@ import {
   type WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import { z } from 'zod';
+import { request } from '../../../lib/api-client';
 
 const SuggestionListSchema = z.array(PurchaseSuggestionSchema);
 const SupplierListSchema = z.array(HistoricalSupplierSchema);
@@ -26,27 +27,6 @@ const EvaluateAllResultSchema = z.object({
   failed: z.number().int().nonnegative(),
 });
 export type EvaluateAllResult = z.infer<typeof EvaluateAllResultSchema>;
-
-async function request<T>(
-  path: string,
-  init: RequestInit,
-  schema: z.ZodSchema<T>,
-): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
-  }
-  const json = (await res.json()) as unknown;
-  return schema.parse(json);
-}
 
 export function listSuggestions(opts: {
   status?: string;

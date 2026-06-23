@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../../../lib/api-server';
-import type { SavedReconciliationDetail } from '@pos-tercos/types';
+import { SavedReconciliationDetailSchema, type SavedReconciliationDetail } from '@pos-tercos/types';
 import { formatCop, formatDate } from '../../../../../../lib/format';
 import { requireRole } from '../../../../../../lib/guards';
 
@@ -20,8 +20,10 @@ export default async function SavedReconciliationDetailPage({ params }: PageProp
   const { id } = await params;
   let detail: SavedReconciliationDetail;
   try {
-    detail = await serverFetchJson<SavedReconciliationDetail>(
+    detail = await serverFetchJson(
       `/reports/payment-reconciliation/history/${id}`,
+      undefined,
+      SavedReconciliationDetailSchema,
     );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound();

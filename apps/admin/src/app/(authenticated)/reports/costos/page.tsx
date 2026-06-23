@@ -1,9 +1,12 @@
 import { Container, PageHeader, Section } from '@pos-tercos/ui';
 import { Coins } from 'lucide-react';
-import type {
-  InventoryValuationReport,
-  PnlReport,
-  ProductMarginReport,
+import {
+  InventoryValuationReportSchema,
+  PnlReportSchema,
+  ProductMarginReportSchema,
+  type InventoryValuationReport,
+  type PnlReport,
+  type ProductMarginReport,
 } from '@pos-tercos/types';
 import {
   CogsPnlSummary,
@@ -24,9 +27,9 @@ interface Data {
 async function load(qs: string): Promise<Data | { error: string }> {
   try {
     const [pnl, margins, valuation] = await Promise.all([
-      serverFetchJson<PnlReport>(`/reports/cogs/pnl${qs}`),
-      serverFetchJson<ProductMarginReport>(`/reports/cogs/product-margins${qs}`),
-      serverFetchJson<InventoryValuationReport>('/reports/cogs/inventory-valuation'),
+      serverFetchJson(`/reports/cogs/pnl${qs}`, undefined, PnlReportSchema),
+      serverFetchJson(`/reports/cogs/product-margins${qs}`, undefined, ProductMarginReportSchema),
+      serverFetchJson('/reports/cogs/inventory-valuation', undefined, InventoryValuationReportSchema),
     ]);
     return { pnl, margins, valuation };
   } catch (err) {

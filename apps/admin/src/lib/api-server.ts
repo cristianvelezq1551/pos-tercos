@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import type { z } from 'zod';
 
 const API_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 const ACCESS_COOKIE = 'admin_access';
@@ -28,11 +29,22 @@ export class ApiError extends Error {
   }
 }
 
-export async function serverFetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Fetch SSR + JSON. Si se pasa `schema`, valida la respuesta con Zod (mismo
+ * contrato que los clientes de feature); sin él, castea crudo (compat hacia
+ * atrás). Pasar siempre el schema en datos sensibles (reportes) — así un cambio
+ * de contrato del backend falla fuerte en vez de romper la UI silenciosamente.
+ */
+export async function serverFetchJson<T>(
+  path: string,
+  init?: RequestInit,
+  schema?: z.ZodType<T>,
+): Promise<T> {
   const res = await serverFetch(path, init);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, body);
   }
-  return res.json() as Promise<T>;
+  const json = (await res.json()) as unknown;
+  return schema ? schema.parse(json) : (json as T);
 }

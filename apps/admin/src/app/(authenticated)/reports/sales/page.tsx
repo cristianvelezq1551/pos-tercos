@@ -6,7 +6,7 @@ import {
 } from '../../../../features/reports-sales';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
-import type { SalesSummary } from '@pos-tercos/types';
+import { SalesSummarySchema, type SalesSummary } from '@pos-tercos/types';
 import { requireRole } from '../../../../lib/guards';
 
 interface PageProps {
@@ -28,7 +28,7 @@ async function loadSummary(
   if (granularity) qs.set('granularity', granularity);
   const path = `/reports/sales-summary${qs.toString() ? `?${qs.toString()}` : ''}`;
   try {
-    return await serverFetchJson<SalesSummary>(path);
+    return await serverFetchJson(path, undefined, SalesSummarySchema);
   } catch (err) {
     return { error: friendlyApiError(err) };
   }

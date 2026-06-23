@@ -1,17 +1,20 @@
 import { Container, PageHeader, Section } from '@pos-tercos/ui';
+import { z } from 'zod';
 import { ArrowLeftRight } from 'lucide-react';
 import {
   ReconciliationHistory,
   ReconciliationView,
 } from '../../../../features/reports';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
-import type { SavedReconciliation } from '@pos-tercos/types';
+import { SavedReconciliationSchema, type SavedReconciliation } from '@pos-tercos/types';
 import { requireRole } from '../../../../lib/guards';
 
 async function loadHistory(): Promise<SavedReconciliation[]> {
   try {
-    return await serverFetchJson<SavedReconciliation[]>(
+    return await serverFetchJson(
       '/reports/payment-reconciliation/history?limit=20',
+      undefined,
+      z.array(SavedReconciliationSchema),
     );
   } catch (err) {
     if (err instanceof ApiError) {

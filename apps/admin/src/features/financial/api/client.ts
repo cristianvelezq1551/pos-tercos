@@ -8,16 +8,7 @@ import {
   type MonthlyFinancialStatement,
   type MonthlyTrend,
 } from '@pos-tercos/types';
-import { z } from 'zod';
-
-async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T>): Promise<T> {
-  const res = await fetch(`/api${path}`, { credentials: 'include', ...init });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
-  }
-  return schema.parse((await res.json()) as unknown);
-}
+import { request } from '../../../lib/api-client';
 
 export function getMonthlyStatement(year: number, month: number): Promise<MonthlyFinancialStatement> {
   return request(

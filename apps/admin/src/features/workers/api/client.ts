@@ -14,23 +14,7 @@ import {
   type PayrollPayment,
   type SetPayrollDay,
 } from '@pos-tercos/types';
-import { z } from 'zod';
-
-async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T>): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
-  }
-  return schema.parse((await res.json()) as unknown);
-}
+import { request } from '../../../lib/api-client';
 
 async function requestVoid(path: string, init: RequestInit): Promise<void> {
   const res = await fetch(`/api${path}`, { credentials: 'include', ...init });

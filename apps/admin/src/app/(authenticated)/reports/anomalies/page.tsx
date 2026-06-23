@@ -1,13 +1,14 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
+import { z } from 'zod';
 import { AlertTriangle } from 'lucide-react';
 import { AnomaliesView } from '../../../../features/reports';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { requireRole } from '../../../../lib/guards';
-import type { CashierAnomalies } from '@pos-tercos/types';
+import { CashierAnomaliesSchema, type CashierAnomalies } from '@pos-tercos/types';
 
 async function loadAnomalies(): Promise<CashierAnomalies[] | { error: string }> {
   try {
-    return await serverFetchJson<CashierAnomalies[]>('/reports/anomalies');
+    return await serverFetchJson('/reports/anomalies', undefined, z.array(CashierAnomaliesSchema));
   } catch (err) {
     if (err instanceof ApiError) {
       return { error: `Error del servidor (${err.status}) — solo el dueño puede ver este reporte.` };

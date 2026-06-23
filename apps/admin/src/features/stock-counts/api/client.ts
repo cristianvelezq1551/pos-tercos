@@ -6,25 +6,10 @@ import {
   type StockCount,
 } from '@pos-tercos/types';
 import { z } from 'zod';
+import { request } from '../../../lib/api-client';
 
 const TasksSchema = z.array(CountTaskSchema);
 const CountsSchema = z.array(StockCountSchema);
-
-async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T>): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
-  }
-  return schema.parse((await res.json()) as unknown);
-}
 
 export function fetchCountTasks(limit = 5): Promise<CountTask[]> {
   return request(`/inventory/count-tasks?limit=${limit}`, { method: 'GET' }, TasksSchema);

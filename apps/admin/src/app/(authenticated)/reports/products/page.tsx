@@ -4,7 +4,7 @@ import { RangeFilter } from '../../../../features/reports-sales';
 import { TopProductsTable } from '../../../../features/reports-products';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
-import type { TopProductsReport } from '@pos-tercos/types';
+import { TopProductsReportSchema, type TopProductsReport } from '@pos-tercos/types';
 import { requireRole } from '../../../../lib/guards';
 
 interface PageProps {
@@ -22,7 +22,7 @@ async function loadReport(
   if (limit) qs.set('limit', limit);
   const path = `/reports/top-products${qs.toString() ? `?${qs.toString()}` : ''}`;
   try {
-    return await serverFetchJson<TopProductsReport>(path);
+    return await serverFetchJson(path, undefined, TopProductsReportSchema);
   } catch (err) {
     return { error: friendlyApiError(err) };
   }
