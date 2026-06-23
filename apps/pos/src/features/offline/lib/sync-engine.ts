@@ -1,24 +1,7 @@
 import { logError } from '../../../lib/client-log';
 import { syncOfflineSale } from '../api/sync-offline';
 import { offlineDb } from './db';
-
-/**
- * Tras N intentos fallidos, el drain AUTOMÁTICO deja de insistir con esa
- * venta (probable rechazo permanente del backend: producto borrado, caja
- * stale). Sigue en la bandeja de revisión, donde el reintento MANUAL la
- * incluye siempre. Evita martillar al backend en cada reconexión.
- */
-const MAX_AUTO_SYNC_ATTEMPTS = 5;
-
-/**
- * Backoff entre reintentos automáticos de la MISMA venta: 5s, 15s, 45s,
- * 2m15s (techo 5 min). Una red 4G inestable produce timeouts en ráfaga —
- * sin esto, 5 intentos se queman en segundos y la venta queda "failed"
- * cuando solo había lag.
- */
-function backoffMs(attempts: number): number {
-  return Math.min(5_000 * 3 ** Math.max(0, attempts - 1), 5 * 60_000);
-}
+import { selectDrainable } from './drain-policy';
 
 const DRAIN_LOCK = 'pos-tercos-offline-drain';
 
@@ -63,21 +46,7 @@ async function drain(
   opts?: { includeExhausted?: boolean },
 ): Promise<void> {
   const now = Date.now();
-  const pending = (await offlineDb.listSales())
-    .filter((s) => s.status !== 'synced')
-    .filter(
-      (s) =>
-        opts?.includeExhausted ||
-        s.status !== 'failed' ||
-        (s.attempts ?? 0) < MAX_AUTO_SYNC_ATTEMPTS,
-    )
-    // Backoff por venta: respetar la espera salvo reintento manual.
-    .filter((s) => {
-      if (opts?.includeExhausted) return true;
-      const last = s.lastAttemptAt ? new Date(s.lastAttemptAt).getTime() : 0;
-      return now >= last + (s.attempts ? backoffMs(s.attempts) : 0);
-    })
-    .sort((a, b) => a.soldOfflineAt.localeCompare(b.soldOfflineAt));
+  const pending = selectDrainable(await offlineDb.listSales(), now, opts);
 
   for (const sale of pending) {
     const attempts = (sale.attempts ?? 0) + 1;
