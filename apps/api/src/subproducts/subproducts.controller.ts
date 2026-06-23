@@ -8,6 +8,7 @@ import {
   type ProductionRun,
   type RecordProduction,
   type Subproduct,
+  type SubproductProductionStatus,
   type UpdateSubproduct,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -26,6 +27,14 @@ export class SubproductsController {
   @Get()
   list(@Query('only_active') onlyActive?: string): Promise<Subproduct[]> {
     return this.subproducts.list({ onlyActive: onlyActive === 'true' });
+  }
+
+  /** Estado de producción (stock + umbral) para el KDS. Cocinero/Admin/Dueño.
+   *  Va ANTES de `:id` para que la ruta estática no caiga en el param. */
+  @KitchenAccess()
+  @Get('production-status')
+  productionStatus(): Promise<SubproductProductionStatus[]> {
+    return this.production.listProductionStatus();
   }
 
   @Get(':id')

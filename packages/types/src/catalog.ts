@@ -82,6 +82,19 @@ export const RecordProductionSchema = z.object({
 });
 export type RecordProduction = z.infer<typeof RecordProductionSchema>;
 
+/** Estado de producción de un subproducto para la pantalla de cocina (KDS):
+ *  stock actual + umbral + flag "falta producir". Accesible al cocinero. */
+export const SubproductProductionStatusSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  unit: z.string(),
+  thresholdMin: z.number().nonnegative(),
+  currentStock: z.number(),
+  /** true si hay umbral y el stock está por debajo → "falta producir". */
+  low: z.boolean(),
+});
+export type SubproductProductionStatus = z.infer<typeof SubproductProductionStatusSchema>;
+
 /** Respuesta al producir: detalle del movement creado + insumos/sub-subproductos
  *  consumidos. Cada item está discriminado por entityType para evitar confundir
  *  ingredientes con sub-subproductos. */

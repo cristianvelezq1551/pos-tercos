@@ -1,6 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { expandRecipeOneLevel } from '@pos-tercos/domain';
-import type { ProductionRun, RecordProduction } from '@pos-tercos/types';
+import type {
+  ProductionRun,
+  RecordProduction,
+  SubproductProductionStatus,
+} from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
@@ -36,12 +40,27 @@ export class ProductionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
-    // Mantenida en el constructor por consistencia con otros services y
-    // porque otros métodos futuros pueden necesitarla.
-    private readonly _inventory: InventoryService,
+    private readonly inventory: InventoryService,
     private readonly audit: AuditService,
-  ) {
-    void this._inventory;
+  ) {}
+
+  /**
+   * Estado de producción de los subproductos ACTIVOS para la pantalla del KDS:
+   * stock actual + umbral + "falta producir". Reusa el cálculo de stock de
+   * InventoryService (no duplica la lógica de groupBy de movements).
+   */
+  async listProductionStatus(): Promise<SubproductProductionStatus[]> {
+    const stockables = await this.inventory.listStockables({ onlyActive: true });
+    return stockables
+      .filter((s) => s.type === 'SUBPRODUCT')
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        unit: s.unitStock,
+        thresholdMin: s.thresholdMin,
+        currentStock: s.currentStock,
+        low: s.lowStock,
+      }));
   }
 
   async produce(
