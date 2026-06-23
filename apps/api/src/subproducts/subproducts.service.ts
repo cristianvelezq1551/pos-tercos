@@ -29,6 +29,7 @@ export class SubproductsService {
         yield: input.yield,
         unit: input.unit ?? 'unidad',
         thresholdMin: input.thresholdMin ?? 0,
+        preparationSteps: input.preparationSteps ?? [],
       },
     });
     return toSubproductDto(row);
@@ -43,6 +44,7 @@ export class SubproductsService {
         ...(input.yield !== undefined && { yield: input.yield }),
         ...(input.unit !== undefined && { unit: input.unit }),
         ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
+        ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
       },
     });
@@ -101,6 +103,7 @@ function toSubproductDto(row: DbSubproduct): Subproduct {
     yield: Number(row.yield),
     unit: row.unit,
     thresholdMin: Number(row.thresholdMin),
+    preparationSteps: row.preparationSteps,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

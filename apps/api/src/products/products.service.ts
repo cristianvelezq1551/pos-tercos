@@ -147,6 +147,7 @@ export class ProductsService {
       data: {
         name: input.name,
         description: input.description ?? null,
+        preparationSteps: input.preparationSteps ?? [],
         basePrice: input.basePrice,
         category: input.category ?? null,
         imageUrl: input.imageUrl ?? null,
@@ -211,6 +212,7 @@ export class ProductsService {
       data: {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.description !== undefined && { description: input.description }),
+        ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
         ...(input.basePrice !== undefined && { basePrice: input.basePrice }),
         ...(input.category !== undefined && { category: input.category }),
         ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
@@ -512,6 +514,7 @@ function toProductDto(row: ProductWithChildren): Product {
     id: row.id,
     name: row.name,
     description: row.description,
+    preparationSteps: row.preparationSteps,
     basePrice: Number(row.basePrice),
     category: row.category,
     imageUrl: row.imageUrl,

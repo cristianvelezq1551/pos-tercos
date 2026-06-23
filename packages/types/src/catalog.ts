@@ -46,17 +46,23 @@ export const SubproductSchema = z.object({
   unit: z.string(),
   /** Umbral mínimo de stock en `unit`. 0 = sin umbral. */
   thresholdMin: z.number().nonnegative(),
+  /** Paso a paso de preparación (biblia del cocinero). */
+  preparationSteps: z.array(z.string()),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 export type Subproduct = z.infer<typeof SubproductSchema>;
 
+/** Pasos de preparación: lista ordenada, cada paso 1-500 chars, máx 50 pasos. */
+export const PreparationStepsSchema = z.array(z.string().trim().min(1).max(500)).max(50);
+
 export const CreateSubproductSchema = z.object({
   name: z.string().min(1).max(120),
   yield: z.number().positive(),
   unit: z.string().min(1).max(20).optional(),
   thresholdMin: z.number().nonnegative().optional(),
+  preparationSteps: PreparationStepsSchema.optional(),
 });
 export type CreateSubproduct = z.infer<typeof CreateSubproductSchema>;
 
@@ -96,6 +102,63 @@ export const SubproductProductionStatusSchema = z.object({
   low: z.boolean(),
 });
 export type SubproductProductionStatus = z.infer<typeof SubproductProductionStatusSchema>;
+
+// ====================================================================
+// BIBLIA DE PRODUCTOS — recetario para el cocinero (KDS). Composición
+// (qué lleva + cantidades, desde la receta) + paso a paso editable.
+// ====================================================================
+
+/** Un ítem de la composición: un insumo o subproducto que entra a la receta. */
+export const RecipeComponentSchema = z.object({
+  type: z.enum(['INGREDIENT', 'SUBPRODUCT']),
+  id: z.string().uuid(),
+  name: z.string(),
+  /** Cantidad NETA en `unit` (sin merma). */
+  quantity: z.number(),
+  unit: z.string(),
+  /** Merma 0..1 (desperdicio esperado). 0 = sin merma. */
+  mermaPct: z.number(),
+});
+export type RecipeComponent = z.infer<typeof RecipeComponentSchema>;
+
+/** Componente de un combo: otro producto que lo integra. */
+export const ComboItemSchema = z.object({
+  productId: z.string().uuid(),
+  name: z.string(),
+  quantity: z.number(),
+});
+export type ComboItem = z.infer<typeof ComboItemSchema>;
+
+/** Una entrada de la biblia: un producto o subproducto con su receta + pasos. */
+export const RecipeBookEntrySchema = z.object({
+  kind: z.enum(['PRODUCT', 'SUBPRODUCT']),
+  id: z.string().uuid(),
+  name: z.string(),
+  /** Categoría (productos). null en subproductos. */
+  category: z.string().nullable(),
+  /** Imagen (productos). null en subproductos / sin foto. */
+  imageUrl: z.string().nullable(),
+  description: z.string().nullable(),
+  /** Solo productos: true si es combo (su composición va en `comboItems`). */
+  isCombo: z.boolean(),
+  /** Solo subproductos: cuántas unidades rinde una corrida de la receta. */
+  yield: z.number().nullable(),
+  /** Unidad del subproducto (subproductos). null en productos. */
+  unit: z.string().nullable(),
+  /** Insumos + subproductos directos de la receta. */
+  components: z.array(RecipeComponentSchema),
+  /** Solo combos: productos que lo integran. */
+  comboItems: z.array(ComboItemSchema),
+  preparationSteps: z.array(z.string()),
+});
+export type RecipeBookEntry = z.infer<typeof RecipeBookEntrySchema>;
+
+export const RecipeBookResponseSchema = z.object({
+  products: z.array(RecipeBookEntrySchema),
+  subproducts: z.array(RecipeBookEntrySchema),
+  asOf: z.string().datetime(),
+});
+export type RecipeBookResponse = z.infer<typeof RecipeBookResponseSchema>;
 
 /** Respuesta al producir: detalle del movement creado + insumos/sub-subproductos
  *  consumidos. Cada item está discriminado por entityType para evitar confundir
@@ -191,6 +254,8 @@ export const ProductSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   description: z.string().nullable(),
+  /** Paso a paso de preparación (biblia del cocinero). */
+  preparationSteps: z.array(z.string()),
   basePrice: z.number().nonnegative(),
   category: z.string().nullable(),
   imageUrl: z.string().nullable(),
@@ -231,6 +296,7 @@ export const CreateProductSchema = z
   .object({
     name: z.string().min(1).max(120),
     description: z.string().max(500).nullable().optional(),
+    preparationSteps: PreparationStepsSchema.optional(),
     basePrice: z.number().nonnegative(),
     category: z.string().max(60).nullable().optional(),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
@@ -300,6 +366,7 @@ export const UpdateProductSchema = z
   .object({
     name: z.string().min(1).max(120).optional(),
     description: z.string().max(500).nullable().optional(),
+    preparationSteps: PreparationStepsSchema.optional(),
     basePrice: z.number().nonnegative().optional(),
     category: z.string().max(60).nullable().optional(),
     imageUrl: ProductImageUrlSchema.nullable().optional(),

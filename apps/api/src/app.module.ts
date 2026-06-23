@@ -25,6 +25,7 @@ import { ProductsModule } from './products/products.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { DisplayModule } from './display/display.module';
 import { PublicDisplayModule } from './public-display/public-display.module';
+import { RecipeBookModule } from './recipe-book/recipe-book.module';
 import { PurchaseSuggestionsModule } from './purchase-suggestions/purchase-suggestions.module';
 import { WorkersModule } from './workers/workers.module';
 import { RecipesModule } from './recipes/recipes.module';
@@ -73,6 +74,7 @@ import { TokenVersionModule } from './auth/token-version/token-version.module';
     KdsModule,
     PublicDisplayModule,
     DisplayModule,
+    RecipeBookModule,
     WebMenuModule,
     WebOrdersModule,
     ReportsModule,
