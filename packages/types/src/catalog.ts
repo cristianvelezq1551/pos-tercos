@@ -88,6 +88,8 @@ export const SubproductProductionStatusSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   unit: z.string(),
+  /** Cuántas unidades produce una corrida de la receta (para mostrar "tandas"). */
+  yield: z.number().positive(),
   thresholdMin: z.number().nonnegative(),
   currentStock: z.number(),
   /** true si hay umbral y el stock está por debajo → "falta producir". */

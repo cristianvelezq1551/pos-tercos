@@ -50,13 +50,18 @@ export class ProductionService {
    * InventoryService (no duplica la lógica de groupBy de movements).
    */
   async listProductionStatus(): Promise<SubproductProductionStatus[]> {
-    const stockables = await this.inventory.listStockables({ onlyActive: true });
+    const [stockables, subs] = await Promise.all([
+      this.inventory.listStockables({ onlyActive: true }),
+      this.prisma.subproduct.findMany({ select: { id: true, yield: true } }),
+    ]);
+    const yieldById = new Map(subs.map((s) => [s.id, Number(s.yield)]));
     return stockables
       .filter((s) => s.type === 'SUBPRODUCT')
       .map((s) => ({
         id: s.id,
         name: s.name,
         unit: s.unitStock,
+        yield: yieldById.get(s.id) ?? 1,
         thresholdMin: s.thresholdMin,
         currentStock: s.currentStock,
         low: s.lowStock,

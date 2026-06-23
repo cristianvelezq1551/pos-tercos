@@ -10,8 +10,10 @@ abstract class Endpoints {
   static String kdsOrderReady(String id) => '/kds/orders/$id/ready';
 
   // Producción (inventario de subproductos)
-  static const String subproducts = '/subproducts';
-  static const String inventoryStock = '/inventory/stock';
+  // Endpoint único accesible al cocinero: subproductos activos + stock + umbral.
+  // (Antes se combinaba /subproducts + /inventory/stock, pero /inventory/stock
+  // pasó a ser admin-only en el hardening de seguridad.)
+  static const String productionStatus = '/subproducts/production-status';
   static String produceSubproduct(String id) => '/subproducts/$id/produce';
 
   // WebSocket namespace (socket.io)
