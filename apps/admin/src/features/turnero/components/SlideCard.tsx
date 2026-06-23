@@ -4,6 +4,7 @@ import type { DisplaySlide } from '@pos-tercos/types';
 import { Badge, IconButton, Switch } from '@pos-tercos/ui';
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { logError } from '../../../lib/client-log';
 import { deleteSlide, listSlides, updateSlide } from '../api/client';
 
 /** Una tarjeta de slide: miniatura + datos + activar/orden/editar/borrar. */
@@ -31,8 +32,8 @@ export function SlideCard({
     try {
       const updated = await updateSlide(slide.id, { isActive: !slide.isActive });
       onChanged(allSlides.map((s) => (s.id === slide.id ? updated : s)));
-    } catch {
-      /* el error global lo cubre el panel; acá no rompemos la grilla */
+    } catch (e) {
+      logError('turnero.slide-toggle', e, { slideId: slide.id });
     } finally {
       setBusy(false);
     }

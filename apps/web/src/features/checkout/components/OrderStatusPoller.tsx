@@ -2,6 +2,7 @@
 
 import type { PublicWebOrder } from '@pos-tercos/types';
 import { useEffect, useState } from 'react';
+import { logError } from '../../../lib/client-log';
 import { getWebOrder } from '../api/get-order';
 
 const POLL_INTERVAL_MS = 5_000;
@@ -35,8 +36,11 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
         if (cancelled) return;
         setOrder(fresh);
         setConn('live');
-      } catch {
-        if (!cancelled) setConn('reconnecting');
+      } catch (e) {
+        if (!cancelled) {
+          setConn('reconnecting');
+          logError('order-poll', e, { orderId: initial.id });
+        }
       }
     };
     // Fetch inmediato (sin esperar el primer tick de 5s) + cada vez que la

@@ -5,6 +5,7 @@ import {
   type PublicMenuProduct,
 } from '@pos-tercos/types';
 import { useEffect, useState } from 'react';
+import { logError } from '../../../lib/client-log';
 import { useCartStore } from '../../cart';
 import {
   hasReconcileChanges,
@@ -37,7 +38,7 @@ export function useCartReconcile() {
         const parsed = PublicMenuResponseSchema.safeParse(json);
         if (parsed.success) setMenu(parsed.data.products);
       })
-      .catch(() => undefined);
+      .catch((e) => logError('cart-reconcile', e));
     return () => {
       cancelled = true;
     };

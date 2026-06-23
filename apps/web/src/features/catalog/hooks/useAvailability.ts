@@ -5,6 +5,7 @@ import {
   type ProductAvailability,
 } from '@pos-tercos/types';
 import { useCallback, useEffect, useState } from 'react';
+import { logError } from '../../../lib/client-log';
 
 // El cliente web es menos crítico que el cajero; 30s es suficiente para que un
 // producto agotado se invalide sin martillar el backend con muchos clientes.
@@ -23,8 +24,9 @@ export function useAvailability(): Map<string, ProductAvailability> {
       if (parsed.success) {
         setById(new Map(parsed.data.map((r) => [r.productId, r])));
       }
-    } catch {
-      // Silencioso: mantenemos el último estado conocido.
+    } catch (e) {
+      // Mantenemos el último estado conocido, pero dejamos rastro para diagnosticar.
+      logError('availability', e);
     }
   }, []);
 

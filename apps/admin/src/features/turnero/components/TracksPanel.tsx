@@ -4,6 +4,7 @@ import type { DisplayTrack } from '@pos-tercos/types';
 import { Button, IconButton, Switch } from '@pos-tercos/ui';
 import { Music, Trash2, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { logError } from '../../../lib/client-log';
 import { createTrack, deleteTrack, listTracks, updateTrack } from '../api/client';
 
 const MAX_MB = 50;
@@ -43,8 +44,8 @@ export function TracksPanel({
     try {
       const updated = await updateTrack(t.id, { isActive: !t.isActive });
       onChange((tracks ?? []).map((x) => (x.id === t.id ? updated : x)));
-    } catch {
-      /* no romper la lista por un toggle */
+    } catch (e) {
+      logError('turnero.track-toggle', e, { trackId: t.id });
     }
   };
 

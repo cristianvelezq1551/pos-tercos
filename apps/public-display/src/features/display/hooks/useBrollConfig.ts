@@ -5,6 +5,7 @@ import {
   type DisplayTrack,
 } from '@pos-tercos/types';
 import { useEffect, useState } from 'react';
+import { logError } from '../../../lib/client-log';
 import { BROLL_MENU, type BrollItem } from '../lib/broll-menu';
 
 const REFRESH_MS = 5 * 60 * 1000; // el dueño edita en admin; propaga sin reiniciar el kiosko
@@ -44,8 +45,9 @@ export function useBrollConfig(): BrollConfig {
           items: items.length > 0 ? items : BROLL_MENU,
           tracks: parsed.data.tracks,
         });
-      } catch {
+      } catch (e) {
         // Sin red / API caída → se queda con lo último bueno (o el fallback).
+        logError('broll-config', e);
       }
     };
 
