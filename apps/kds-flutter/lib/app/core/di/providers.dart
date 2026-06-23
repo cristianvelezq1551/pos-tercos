@@ -6,7 +6,9 @@ import 'package:kds/app/core/sound/sound_service.dart';
 import 'package:kds/app/data/repositories_impl/auth_repository_impl.dart';
 import 'package:kds/app/data/repositories_impl/kds_repository_impl.dart';
 import 'package:kds/app/data/repositories_impl/production_repository_impl.dart';
+import 'package:kds/app/data/repositories_impl/recipe_book_repository_impl.dart';
 import 'package:kds/app/data/use_cases/get_kitchen_orders_use_case.dart';
+import 'package:kds/app/data/use_cases/get_recipe_book_use_case.dart';
 import 'package:kds/app/data/use_cases/list_producibles_use_case.dart';
 import 'package:kds/app/data/use_cases/login_use_case.dart';
 import 'package:kds/app/data/use_cases/produce_subproduct_use_case.dart';
@@ -15,6 +17,7 @@ import 'package:kds/app/data/use_cases/start_order_use_case.dart';
 import 'package:kds/app/domain/repositories/auth_repository.dart';
 import 'package:kds/app/domain/repositories/kds_repository.dart';
 import 'package:kds/app/domain/repositories/production_repository.dart';
+import 'package:kds/app/domain/repositories/recipe_book_repository.dart';
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
 
@@ -52,6 +55,10 @@ final productionRepositoryProvider = Provider<ProductionRepository>(
   (ref) => ProductionRepositoryImpl(http: ref.read(dioHttpProvider)),
 );
 
+final recipeBookRepositoryProvider = Provider<RecipeBookRepository>(
+  (ref) => RecipeBookRepositoryImpl(http: ref.read(dioHttpProvider)),
+);
+
 // ── Use cases ─────────────────────────────────────────────────────────────────
 
 final loginUseCaseProvider = Provider<LoginUseCase>(
@@ -80,5 +87,11 @@ final listProduciblesUseCaseProvider = Provider<ListProduciblesUseCase>(
 final produceSubproductUseCaseProvider = Provider<ProduceSubproductUseCase>(
   (ref) => ProduceSubproductUseCase(
     repository: ref.read(productionRepositoryProvider),
+  ),
+);
+
+final getRecipeBookUseCaseProvider = Provider<GetRecipeBookUseCase>(
+  (ref) => GetRecipeBookUseCase(
+    repository: ref.read(recipeBookRepositoryProvider),
   ),
 );

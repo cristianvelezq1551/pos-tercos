@@ -16,6 +16,9 @@ abstract class Endpoints {
   static const String productionStatus = '/subproducts/production-status';
   static String produceSubproduct(String id) => '/subproducts/$id/produce';
 
+  // Biblia de productos (recetario para el cocinero).
+  static const String recipeBook = '/recipe-book';
+
   // WebSocket namespace (socket.io)
   static const String kdsWsNamespace = '/ws/kds';
 }

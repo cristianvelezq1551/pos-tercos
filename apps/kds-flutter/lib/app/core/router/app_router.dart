@@ -4,6 +4,7 @@ import 'package:kds/app/core/di/providers.dart';
 import 'package:kds/app/presentation/auth/login_screen.dart';
 import 'package:kds/app/presentation/kds/board_screen.dart';
 import 'package:kds/app/presentation/production/production_screen.dart';
+import 'package:kds/app/presentation/recipe_book/recipe_book_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final storage = ref.read(secureStorageProvider);
@@ -30,6 +31,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/production',
         builder: (context, state) => const ProductionScreen(),
+      ),
+      GoRoute(
+        path: '/recipe-book',
+        builder: (context, state) => const RecipeBookScreen(),
       ),
     ],
   );

@@ -77,6 +77,11 @@ class BoardScreen extends ConsumerWidget {
           if (state is BoardData) _OrderCounter(count: state.orders.length),
           const SizedBox(width: 4),
           IconButton(
+            icon: const Icon(Icons.menu_book_rounded, color: AppTheme.primary),
+            tooltip: 'Biblia de recetas',
+            onPressed: () => context.go('/recipe-book'),
+          ),
+          IconButton(
             icon: const Icon(Icons.precision_manufacturing,
                 color: AppTheme.primary),
             tooltip: 'Producir subproductos',
