@@ -17,9 +17,35 @@ const fontDisplay = Big_Shoulders({
   adjustFontFallback: false,
 });
 
+const BUSINESS_NAME = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? 'TERCOS';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+const DESCRIPTION = `Pedí online en ${BUSINESS_NAME} y recogé en tienda. Smash burgers, burros y mac & papas.`;
+
 export const metadata: Metadata = {
-  title: 'POS Tercos — Web Pública',
-  description: 'Pedidos online — recoger en tienda',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: `${BUSINESS_NAME} — Pedí online`,
+    template: `%s · ${BUSINESS_NAME}`,
+  },
+  description: DESCRIPTION,
+  applicationName: BUSINESS_NAME,
+  keywords: ['hamburguesas', 'smash burger', 'pedidos online', 'comida rápida', BUSINESS_NAME],
+  openGraph: {
+    type: 'website',
+    siteName: BUSINESS_NAME,
+    title: `${BUSINESS_NAME} — Pedí online`,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    locale: 'es_CO',
+    images: [{ url: '/brand/wordmark-tercos-dark.png', width: 1200, height: 630, alt: BUSINESS_NAME }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${BUSINESS_NAME} — Pedí online`,
+    description: DESCRIPTION,
+    images: ['/brand/wordmark-tercos-dark.png'],
+  },
+  robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {

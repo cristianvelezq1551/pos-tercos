@@ -93,7 +93,8 @@
 - [ ] 🟡 **23 archivos >200 líneas en admin** (peores: `invoices/[id]/page.tsx` 371, `EmployeePanel` 325, `InvoiceUploader` 308) + `ProductPickerModal` 324 en web. **Fix:** partir.
 - [ ] 🟡 **Admin — inconsistencia Zod** (páginas SSR de reportes castean crudo; el resto parsea) + 12 copias del wrapper `request<T>`. **Fix:** unificar fetch + Zod en reportes.
 - [ ] 🟡 **Admin — FIFO `runLedger` sin caché** (reconstruye todo el ledger por request). **Fix:** caché TTL + invalidación en writes.
-- [ ] ⚪ **Web — SEO** (sin sitemap/robots/OG/metadataBase → link en WhatsApp sin preview) + `hero.gif` 7.5 MB sin optimizar + `next/image`.
+- [x] ⚪ **Web — SEO (CERRADO 2026-06-22).** `metadataBase` + OpenGraph + Twitter card + título con template + `robots.ts` + `sitemap.ts`. El link en WhatsApp ya muestra preview. Usa `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_BUSINESS_NAME`.
+  - [ ] ⚪ **`hero.gif` 7.2 MB sin optimizar** — pendiente: NO se puede re-encodear acá (sin ffmpeg/webp). **Fix:** re-encodear a MP4/WebM (≈10-20× menor) + poster, y cambiar `<img>` por `<video autoplay loop muted playsinline poster>` en `Hero.tsx`. Requiere tooling + el asset fuente.
 - [ ] ⚪ Catches silenciosos sin log en POS (`cancelSale`, `ShiftCashBadge`); `method as never` en `CloseShiftModal:100`; reexportar `caja-events` por el barrel.
 
 ## Validación detallada del cajero ONLINE + OFFLINE (2026-06-22)
