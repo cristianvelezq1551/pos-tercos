@@ -144,6 +144,7 @@ export function buildCreatePayload(
   return {
     name: form.name,
     description: form.description || null,
+    preparationSteps: form.preparationSteps,
     basePrice: parsed.basePrice,
     category: form.category || null,
     imageUrl: form.imageUrl || null,
@@ -177,6 +178,7 @@ export function buildUpdatePayload(
   return {
     name: form.name,
     description: form.description || null,
+    preparationSteps: form.preparationSteps,
     basePrice: parsed.basePrice,
     category: form.category || null,
     imageUrl: form.imageUrl || null,

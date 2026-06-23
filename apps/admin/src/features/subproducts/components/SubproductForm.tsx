@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Subproduct } from '@pos-tercos/types';
 import { createSubproduct, deactivateSubproduct, updateSubproduct } from '../api/client';
+import { PreparationStepsField } from '../../../components/PreparationStepsField';
 
 interface SubproductFormProps {
   initial?: Subproduct;
@@ -22,6 +23,7 @@ interface FormState {
   yield: number | null;
   unit: string;
   thresholdMin: number | null;
+  preparationSteps: string[];
   isActive: boolean;
 }
 
@@ -35,6 +37,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     yield: initial?.yield ?? null,
     unit: initial?.unit ?? 'unidad',
     thresholdMin: initial?.thresholdMin ?? null,
+    preparationSteps: initial?.preparationSteps ?? [],
     isActive: initial?.isActive ?? true,
   }));
 
@@ -56,6 +59,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           yield: form.yield,
           unit: form.unit,
           thresholdMin: form.thresholdMin ?? 0,
+          preparationSteps: form.preparationSteps,
           isActive: form.isActive,
         });
       } else {
@@ -64,6 +68,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           yield: form.yield,
           unit: form.unit,
           thresholdMin: form.thresholdMin ?? 0,
+          preparationSteps: form.preparationSteps,
         });
       }
       startTransition(() => {
@@ -149,6 +154,11 @@ export function SubproductForm({ initial }: SubproductFormProps) {
             placeholder="0"
           />
         </FormField>
+
+        <PreparationStepsField
+          value={form.preparationSteps}
+          onChange={(steps) => setForm((f) => ({ ...f, preparationSteps: steps }))}
+        />
 
         {isEdit ? (
           <Checkbox

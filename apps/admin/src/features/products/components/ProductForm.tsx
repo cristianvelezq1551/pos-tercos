@@ -39,6 +39,7 @@ function initFormState(initial?: Product): FormState {
     kind: initial ? kindFromFlags(initial) : 'simple',
     name: initial?.name ?? '',
     description: initial?.description ?? '',
+    preparationSteps: initial?.preparationSteps ?? [],
     basePrice: initial ? String(initial.basePrice) : '',
     category: initial?.category ?? '',
     imageUrl: initial?.imageUrl ?? '',

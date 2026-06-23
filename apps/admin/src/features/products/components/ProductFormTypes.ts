@@ -31,6 +31,7 @@ export interface FormState {
   kind: ProductKind;
   name: string;
   description: string;
+  preparationSteps: string[];
   basePrice: string;
   category: string;
   imageUrl: string;

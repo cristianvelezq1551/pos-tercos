@@ -1,6 +1,7 @@
 'use client';
 
 import { Input, Label, MoneyInput } from '@pos-tercos/ui';
+import { PreparationStepsField } from '../../../components/PreparationStepsField';
 import type { FormState } from './ProductFormTypes';
 
 interface ProductFormBasicFieldsProps {
@@ -38,6 +39,11 @@ export function ProductFormBasicFields({ form, setForm, pending }: ProductFormBa
           placeholder="Descripción opcional para el menú."
         />
       </div>
+
+      <PreparationStepsField
+        value={form.preparationSteps}
+        onChange={(steps) => setForm((f) => ({ ...f, preparationSteps: steps }))}
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
