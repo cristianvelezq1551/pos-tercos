@@ -836,7 +836,7 @@ Cambio arquitectónico mayor: los subproductos pasan de ser "agrupadores de rece
 - ✅ **Sub-subproductos**: si subproducto A usa subproducto B en su receta, producir A consume B de su propio stock (no expande hacia sus insumos). Producir B es operación separada.
 - ✅ **Idempotency-key** en el movement +N del subproducto. Reintentos del cliente con la misma key devuelven la tanda previa.
 - ✅ **`expandRecipeOneLevel`** en `@pos-tercos/domain` — nueva función pura que devuelve `{ ingredients: Map, subproducts: Map }` solo del primer nivel. La recursiva `expandRecipe` se preserva (la usa CogsService hasta que entre FIFO de subproductos).
-- ❌ Cocinero NO puede producir desde el admin (no tiene acceso). La pantalla de producción en KDS Flutter entra en sesión próxima.
+- ❌ Cocinero NO puede producir desde el admin (no tiene acceso). ✅ SÍ produce desde la pantalla de producción del KDS Flutter (ruta `/production`, vía `GET /subproducts/production-status` + `POST /subproducts/:id/produce`, ambos `@KitchenAccess`).
 - ❌ **Stock negativo no permitido**: producir o vender lo rechaza con 409 dentro de la tx.
 
 ### Endpoints nuevos
@@ -877,7 +877,7 @@ Esto NO afecta ingredientes (siguen con su stock histórico) ni productos direct
 ### Sesiones pendientes (post-este-cambio)
 
 - **Sesión 2 (FIFO subproductos)**: lot por producción, `runFifo` consume FIFO de subproductos, P&G correcto. Cierra la deuda temporal del WASTE-mapping.
-- **Sesión 4 (KDS Flutter producción)**: pantalla en Flutter para que el cocinero produzca desde la tablet.
+- ~~**Sesión 4 (KDS Flutter producción)**~~ ✅ HECHA: la pantalla de producción existe en `apps/kds-flutter` (`presentation/production/`, ruta `/production`, botón desde el board). Lista subproductos con stock + umbral y registra tandas. Consume `GET /subproducts/production-status` (`@KitchenAccess`, incluye `yield`) — NO `/inventory/stock` (admin-only desde el hardening de seguridad 2026-06-22).
 - **Sesión 5 (POS/web menu pulido)**: micro-copy de "Sin {subproducto}" si necesita ajuste.
 
 ---
