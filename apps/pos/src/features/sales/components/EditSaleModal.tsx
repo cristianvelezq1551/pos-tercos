@@ -34,7 +34,11 @@ export function EditSaleModal({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const kitchenStarted = sale !== null && sale.status !== 'PAGADO';
+  // Solo cuando la cocina YA tiene el pedido se congelan las líneas de
+  // preparación. PENDIENTE_PAGO y PAGADO (sin iniciar) se editan completos.
+  const kitchenStarted =
+    sale !== null &&
+    (sale.status === 'EN_PREPARACION' || sale.status === 'LISTO_DESPACHO');
   // Disponibilidad en vivo: lo agotado se ve y NO se puede agregar.
   const { byId: availability } = useAvailability();
   const isAvailable = (productId: string) => availability.get(productId)?.available !== false;
@@ -58,7 +62,9 @@ export function EditSaleModal({
           modifierNames: it.modifiers.map((m) => m.name),
           notes: it.notes ?? null,
           unitPrice: it.unitPrice,
-          locked: sale.status !== 'PAGADO' && !(resaleMap.get(it.productId) ?? false),
+          locked:
+            (sale.status === 'EN_PREPARACION' || sale.status === 'LISTO_DESPACHO') &&
+            !(resaleMap.get(it.productId) ?? false),
         })),
       );
     });

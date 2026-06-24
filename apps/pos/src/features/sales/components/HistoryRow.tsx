@@ -4,13 +4,26 @@ import type { Sale, SaleStatus } from '@pos-tercos/types';
 import { Button, Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { printReceipt } from '../api/print';
+import { cancelSale } from '../api/cancel';
 import { markKitchenReady } from '../api/kitchen';
 import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
 import { elapsedTone, isActiveSale, minutesSince } from '../lib/history-filters';
 
-/** Pedido vivo en el local: aún se puede corregir. */
-const EDITABLE_STATUSES = new Set<SaleStatus>(['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO']);
+/** Pedido vivo en el local: aún se puede corregir (incluye sin pagar). */
+const EDITABLE_STATUSES = new Set<SaleStatus>([
+  'PENDIENTE_PAGO',
+  'PAGADO',
+  'EN_PREPARACION',
+  'LISTO_DESPACHO',
+]);
 const PAYMENT_CHANGE_STATUSES = new Set<SaleStatus>([
+  'PAGADO',
+  'EN_PREPARACION',
+  'LISTO_DESPACHO',
+  'ENTREGADO',
+]);
+/** Solo desde PAGADO en adelante hay recibo para imprimir. */
+const PRINTABLE_STATUSES = new Set<SaleStatus>([
   'PAGADO',
   'EN_PREPARACION',
   'LISTO_DESPACHO',
@@ -45,6 +58,23 @@ export function HistoryRow({
     setBusy(true);
     try {
       await fn();
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (
+      !window.confirm(
+        'Eliminar este pedido sin pagar. Queda CANCELADO en el historial (auditable). ¿Continuar?',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await cancelSale(sale.id);
       await onChanged();
     } finally {
       setBusy(false);
@@ -129,21 +159,35 @@ export function HistoryRow({
               {busy ? '…' : 'Listo'}
             </Button>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleReprint}
-            disabled={reprint === 'pending'}
-            title="Reimprimir recibo"
-          >
-            {reprint === 'pending'
-              ? '…'
-              : reprint === 'ok'
-                ? '✓'
-                : reprint === 'error'
-                  ? 'Error'
-                  : 'Recibo'}
-          </Button>
+          {/* Eliminar = cancelar un pedido sin pagar (no entró a cocina). */}
+          {sale.status === 'PENDIENTE_PAGO' ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={busy}
+              onClick={() => void handleDelete()}
+              title="Eliminar pedido sin pagar"
+            >
+              {busy ? '…' : 'Eliminar'}
+            </Button>
+          ) : null}
+          {PRINTABLE_STATUSES.has(sale.status) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReprint}
+              disabled={reprint === 'pending'}
+              title="Reimprimir recibo"
+            >
+              {reprint === 'pending'
+                ? '…'
+                : reprint === 'ok'
+                  ? '✓'
+                  : reprint === 'error'
+                    ? 'Error'
+                    : 'Recibo'}
+            </Button>
+          ) : null}
         </div>
       </div>
 

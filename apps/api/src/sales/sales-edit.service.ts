@@ -29,7 +29,16 @@ import {
 import { includeFull, toSaleDto } from './sales.mappers';
 
 /** Estados donde el pedido sigue "vivo" en el local y se puede corregir. */
-const EDITABLE_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO'] as const;
+const EDITABLE_STATUSES = [
+  'PENDIENTE_PAGO',
+  'PAGADO',
+  'EN_PREPARACION',
+  'LISTO_DESPACHO',
+] as const;
+/** La cocina ya tiene el pedido: las líneas de preparación quedan congeladas. */
+const KITCHEN_STARTED_STATUSES = ['EN_PREPARACION', 'LISTO_DESPACHO'] as const;
+/** Estados donde el stock YA se descontó (editar ajusta por la diferencia). */
+const STOCK_DEDUCTED_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO'] as const;
 /** El pago se puede reclasificar mientras la caja del turno siga abierta. */
 const PAYMENT_CHANGE_STATUSES = [
   'PAGADO',
@@ -94,9 +103,14 @@ export class SalesEditService {
     ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // Regla de cocina: si el pedido YA se inició (≠ PAGADO), las líneas de
+    // Regla de cocina: si la cocina YA inició el pedido, las líneas de
     // PREPARACIÓN deben quedar idénticas — solo cambia la reventa directa.
-    if (existing.status !== 'PAGADO') {
+    // PENDIENTE_PAGO y PAGADO (sin iniciar) se editan libremente.
+    if (
+      KITCHEN_STARTED_STATUSES.includes(
+        existing.status as (typeof KITCHEN_STARTED_STATUSES)[number],
+      )
+    ) {
       const oldPrepared = this.preparedFingerprint(
         existing.items.map((it) => ({
           productId: it.productId,
@@ -145,29 +159,39 @@ export class SalesEditService {
 
     // Stock: movements por la DIFERENCIA de consumo (viejo vs nuevo). El
     // consumo ya descontado al cobrar queda intacto; acá solo se ajusta.
-    const [oldSpecs, newSpecs] = await Promise.all([
-      this.consumption.computeConsumptionSpecs(
-        existing.items.map((it) => ({
-          productId: it.productId,
-          quantity: it.quantity,
-          sizeId: it.sizeId,
-          modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
-            modifierId: m.modifierId,
-          })),
-        })),
-        `Sale ${saleId.slice(0, 8)}`,
-      ),
-      this.consumption.computeConsumptionSpecs(
-        input.items.map((it) => ({
-          productId: it.productId,
-          quantity: it.quantity,
-          sizeId: it.sizeId ?? null,
-          modifiers: it.modifiers,
-        })),
-        `Sale ${saleId.slice(0, 8)}`,
-      ),
-    ]);
-    const deltaMovements = this.consumptionDelta(oldSpecs, newSpecs, saleId, userId);
+    // PENDIENTE_PAGO aún NO descontó stock (se descuenta al confirmar el pago
+    // con los items finales) → no se generan movements al editarlo.
+    const stockWasDeducted = STOCK_DEDUCTED_STATUSES.includes(
+      existing.status as (typeof STOCK_DEDUCTED_STATUSES)[number],
+    );
+    const deltaMovements = stockWasDeducted
+      ? this.consumptionDelta(
+          ...(await Promise.all([
+            this.consumption.computeConsumptionSpecs(
+              existing.items.map((it) => ({
+                productId: it.productId,
+                quantity: it.quantity,
+                sizeId: it.sizeId,
+                modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map(
+                  (m) => ({ modifierId: m.modifierId }),
+                ),
+              })),
+              `Sale ${saleId.slice(0, 8)}`,
+            ),
+            this.consumption.computeConsumptionSpecs(
+              input.items.map((it) => ({
+                productId: it.productId,
+                quantity: it.quantity,
+                sizeId: it.sizeId ?? null,
+                modifiers: it.modifiers,
+              })),
+              `Sale ${saleId.slice(0, 8)}`,
+            ),
+          ])),
+          saleId,
+          userId,
+        )
+      : [];
 
     const updated = await runSaleTxWithRetry(() =>
      this.prisma.$transaction(async (tx) => {
@@ -245,8 +269,11 @@ export class SalesEditService {
 
     const dto = toSaleDto(updated);
     // La cocina ve el pedido actualizado al instante (mismo evento que usa
-    // el board para refrescar una card existente).
-    this.kdsGateway.emit('order.status.changed', dto);
+    // el board para refrescar una card existente). PENDIENTE_PAGO no está en
+    // el board todavía → no se emite.
+    if (existing.status !== 'PENDIENTE_PAGO') {
+      this.kdsGateway.emit('order.status.changed', dto);
+    }
     return dto;
   }
 
