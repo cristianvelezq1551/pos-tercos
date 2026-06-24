@@ -20,7 +20,12 @@ import { PaymentMethodsService } from '../payment-methods/payment-methods.servic
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { SalesConsumptionService } from './sales-consumption.service';
-import { computeLine, type ComputedSaleItem } from './sales.service';
+import {
+  computeLine,
+  runSaleTxWithRetry,
+  SALE_TX_OPTS,
+  type ComputedSaleItem,
+} from './sales.service';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 /** Estados donde el pedido sigue "vivo" en el local y se puede corregir. */
@@ -164,7 +169,8 @@ export class SalesEditService {
     ]);
     const deltaMovements = this.consumptionDelta(oldSpecs, newSpecs, saleId, userId);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await runSaleTxWithRetry(() =>
+     this.prisma.$transaction(async (tx) => {
       const res = await tx.sale.updateMany({
         // Guard TOCTOU: si la cocina avanzó el estado entre la lectura y acá,
         // abortamos (la regla de líneas bloqueadas podría haber cambiado).
@@ -219,7 +225,8 @@ export class SalesEditService {
       });
 
       return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
-    });
+     }, SALE_TX_OPTS),
+    );
 
     await this.audit.log({
       userId,

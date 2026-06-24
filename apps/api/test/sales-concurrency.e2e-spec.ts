@@ -97,4 +97,63 @@ describe('Cobro concurrente — unicidad de turno E2E', () => {
     // Sin duplicados (lo garantiza el índice único + retry).
     expect(new Set(turns).size).toBe(N);
   });
+
+  it('dos cobros del MISMO stock escaso → exactamente uno gana, sin stock negativo', async () => {
+    // Producto reventa directa con stock = 1 (alcanza para UNA sola venta).
+    const prod = await request
+      .post('/products')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Escaso Conc',
+        basePrice: 5000,
+        directResale: true,
+        unitPurchase: 'unidad',
+        unitStock: 'unidad',
+        conversionFactor: 1,
+        modifiersEnabled: false,
+      })
+      .expect(201);
+    const escasoId = prod.body.id as string;
+    await request
+      .post('/inventory/movements')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ entityType: 'PRODUCT', productId: escasoId, delta: 1, type: 'INITIAL', unitCost: 1000 })
+      .expect(201);
+
+    // Dos ventas PENDIENTE_PAGO del mismo producto (el stock se descuenta al cobrar).
+    const ids = await Promise.all(
+      [0, 1].map(async () => {
+        const r = await request
+          .post('/sales')
+          .set('Authorization', `Bearer ${token}`)
+          .set('Idempotency-Key', randomUUID())
+          .send({ type: 'COUNTER', items: [{ productId: escasoId, quantity: 1 }] })
+          .expect(201);
+        return r.body.id as string;
+      }),
+    );
+
+    // Cobrar las DOS en paralelo: solo hay stock para una.
+    const results = await Promise.all(
+      ids.map((id) =>
+        request
+          .post(`/sales/${id}/confirm-payment`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ method: 'CASH', amountReceived: 5000 }),
+      ),
+    );
+
+    const ok = results.filter((r) => r.status === 200 || r.status === 201);
+    const conflict = results.filter((r) => r.status === 409);
+    // Exactamente uno cobra; el otro recibe 409 (stock insuficiente). Nunca ambos.
+    expect(ok).toHaveLength(1);
+    expect(conflict).toHaveLength(1);
+
+    // Stock final = 0 (jamás negativo).
+    const stock = await prisma.inventoryMovement.aggregate({
+      where: { entityType: 'PRODUCT', productId: escasoId },
+      _sum: { delta: true },
+    });
+    expect(Number(stock._sum.delta ?? 0)).toBe(0);
+  });
 });

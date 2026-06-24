@@ -5,7 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import { SalesConsumptionService, type ConsumptionSpec } from './sales-consumption.service';
-import { runWithTurnRetry } from './sales.service';
+import { runSaleTxWithRetry, SALE_TX_OPTS } from './sales.service';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 /**
@@ -96,14 +96,14 @@ export class SalesOfflineService {
       'Offline venta',
     );
 
-    const updated = await runWithTurnRetry(() =>
+    const updated = await runSaleTxWithRetry(() =>
      this.prisma.$transaction(async (tx) => {
       const [{ next }] = await tx.$queryRaw<{ next: bigint }[]>`
         SELECT nextval('receipt_seq') AS next
       `;
       const receiptNumber = next;
       // Turno: secuencia por caja (igual que confirmPayment). El índice único
-      // (shift_id, turn_number) + runWithTurnRetry evitan que un sync offline
+      // (shift_id, turn_number) + runSaleTxWithRetry evitan que un sync offline
       // y un cobro online concurrentes asignen el mismo turno.
       const assigned = await tx.sale.count({
         where: { shiftId: shift.id, turnNumber: { not: null } },
@@ -182,7 +182,7 @@ export class SalesOfflineService {
         where: { id: sale.id },
         include: includeFull(),
       });
-     }),
+     }, SALE_TX_OPTS),
     );
 
     const dto = toSaleDto(updated);

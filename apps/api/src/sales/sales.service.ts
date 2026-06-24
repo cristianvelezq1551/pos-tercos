@@ -42,9 +42,21 @@ import { includeFull, toSaleDto } from './sales.mappers';
 
 const SALES_CREATE_ENDPOINT = 'POST /sales';
 // Cota alta: cada ronda de colisión deja pasar al menos un cobro (gana el índice
-// único), así que basta con ≥ ráfaga concurrente esperable. En la realidad (1
-// cajero) las colisiones son 0-1; esto cubre ráfagas grandes sin un 500.
-const MAX_TURN_RETRIES = 16;
+// único / la serialización), así que basta con ≥ ráfaga concurrente esperable.
+// En la realidad (1 cajero) las colisiones son 0-1; esto cubre ráfagas grandes
+// sin un 500.
+const MAX_SALE_TX_RETRIES = 16;
+
+/**
+ * Transacción de venta (cobro/edición/sync): isolation SERIALIZABLE para que el
+ * chequeo de stock (`assertStockSufficient`) y el descuento sean atómicos contra
+ * cualquier otra venta/producción concurrente — Postgres aborta con 40001 antes
+ * de dejar stock negativo. El timeout cubre el trabajo extra del cobro.
+ */
+export const SALE_TX_OPTS = {
+  isolationLevel: 'Serializable',
+  timeout: 15_000,
+} as const;
 
 /**
  * Verdadero solo para una colisión P2002 en el índice único de turno
@@ -59,18 +71,31 @@ export function isTurnNumberCollision(e: unknown): boolean {
   return s.includes('turn_number') || s.includes('turnNumber');
 }
 
+/** Postgres SQLSTATE 40001 (serialization_failure) → Prisma lo expone como P2034. */
+export function isSerializationFailure(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const code = (e as { code?: string }).code;
+  return code === 'P2034' || /could not serialize|deadlock detected/i.test(e.message);
+}
+
 /**
- * Reintenta la transacción de cobro cuando dos confirmaciones concurrentes en
- * la misma caja chocan en el índice único (shift_id, turn_number). La tx hace
- * rollback (el status sigue PENDIENTE_PAGO), así que reintentar recomputa el
- * turno con un count fresco — sin doble-cobro ni doble-descuento de stock.
+ * Reintenta una transacción de venta cuando aborta por (a) colisión del índice
+ * de turno, o (b) fallo de serialización Serializable (otra venta/producción
+ * tocó el mismo stock). La tx hace rollback COMPLETO, así que reintentar es
+ * seguro: el guard de status (`updateMany WHERE PENDIENTE_PAGO`) impide
+ * doble-cobro, y el turno + stock se recomputan frescos en el reintento.
  */
-export async function runWithTurnRetry<T>(work: () => Promise<T>): Promise<T> {
+export async function runSaleTxWithRetry<T>(work: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await work();
     } catch (e) {
-      if (attempt < MAX_TURN_RETRIES && isTurnNumberCollision(e)) continue;
+      if (
+        attempt < MAX_SALE_TX_RETRIES &&
+        (isTurnNumberCollision(e) || isSerializationFailure(e))
+      ) {
+        continue;
+      }
       throw e;
     }
   }
@@ -350,7 +375,7 @@ export class SalesService {
         notes: s.note,
       }));
 
-    const updated = await runWithTurnRetry(() =>
+    const updated = await runSaleTxWithRetry(() =>
      this.prisma.$transaction(async (tx) => {
       // Turno: secuencia ÚNICA por CAJA (no global). Resetea cada vez que se
       // abre una caja nueva → cada día empieza en #1, sin importar cuántos
@@ -425,7 +450,7 @@ export class SalesService {
         where: { id: saleId },
         include: includeFull(),
       });
-     }),
+     }, SALE_TX_OPTS),
     );
 
     await this.audit.log({
