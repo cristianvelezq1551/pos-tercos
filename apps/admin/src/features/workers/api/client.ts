@@ -5,14 +5,18 @@ import {
   PayrollAdjustmentSchema,
   PayrollDaySchema,
   PayrollPaymentSchema,
+  PayrollWeekPaymentSchema,
   SetPayrollDaySchema,
+  WeeklyPayrollReportSchema,
   type AddPayrollAdjustment,
   type EmployeePanel,
   type PagoReport,
   type PayrollAdjustment,
   type PayrollDay,
   type PayrollPayment,
+  type PayrollWeekPayment,
   type SetPayrollDay,
+  type WeeklyPayrollReport,
 } from '@pos-tercos/types';
 import { request } from '../../../lib/api-client';
 
@@ -77,11 +81,16 @@ export async function markPaymentPaid(
   proof: File,
   pin: string,
   note?: string,
+  split?: { cashAmount: number; bankAmount: number },
 ): Promise<PayrollPayment> {
   const fd = new FormData();
   fd.append('proof', proof);
   fd.append('periodStart', periodStart);
   if (note) fd.append('note', note);
+  if (split) {
+    fd.append('cashAmount', String(split.cashAmount));
+    fd.append('bankAmount', String(split.bankAmount));
+  }
   const res = await fetch(`/api/workers/${userId}/payment/paid`, {
     method: 'POST',
     credentials: 'include',
@@ -105,6 +114,55 @@ export function unmarkPayment(userId: string, periodStart: string, pin: string):
 /** URL del comprobante (binario). Se usa en <img src=...>. */
 export function paymentProofUrl(paymentId: string): string {
   return `/api/workers/payment/${paymentId}/proof`;
+}
+
+// --- Nómina semanal (DIARIO): abonos parciales por días ---
+
+export function getWeeklyPayroll(week?: string): Promise<WeeklyPayrollReport> {
+  const qs = week ? `?week=${week}` : '';
+  return request(`/workers/weekly${qs}`, { method: 'GET' }, WeeklyPayrollReportSchema);
+}
+
+/** Paga días seleccionados de la semana con comprobante (multipart). El pago se
+ *  reparte por bolsillo: cashAmount (efectivo) + bankAmount (cuenta) = total. */
+export async function payWeekDays(
+  input: {
+    userId: string;
+    weekStart: string;
+    days: string[];
+    cashAmount: number;
+    bankAmount: number;
+    note?: string;
+  },
+  proof: File,
+  pin: string,
+): Promise<PayrollWeekPayment> {
+  const fd = new FormData();
+  fd.append('proof', proof);
+  fd.append('payload', JSON.stringify(input));
+  const res = await fetch('/api/workers/weekly/pay', {
+    method: 'POST',
+    credentials: 'include',
+    headers: pinHeader(pin),
+    body: fd,
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `Request failed (${res.status})`);
+  }
+  return PayrollWeekPaymentSchema.parse((await res.json()) as unknown);
+}
+
+export function voidWeekPayment(paymentId: string, pin: string): Promise<void> {
+  return requestVoid(`/workers/weekly/payment/${paymentId}/void`, {
+    method: 'POST',
+    headers: pinHeader(pin),
+  });
+}
+
+/** URL del comprobante de un abono semanal (binario). */
+export function weekPaymentProofUrl(paymentId: string): string {
+  return `/api/workers/weekly/payment/${paymentId}/proof`;
 }
 
 /** ¿Hoy es sábado o domingo (TZ local del navegador)? Para DEV/QA, el bypass

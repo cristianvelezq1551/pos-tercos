@@ -6,7 +6,7 @@ function sale(over: Partial<OfflineSale> = {}): OfflineSale {
   return {
     localId: over.localId ?? 'id',
     provisionalNumber: 'OFF-1',
-    payload: { lines: [], subtotal: 0, discount: 0, total: 0, customerName: null } as OfflineSale['payload'],
+    payload: { type: 'COUNTER', lines: [], subtotal: 0, discount: 0, total: 0, customerName: null } as OfflineSale['payload'],
     payment: { method: 'CASH', amountReceived: 0, offlineVerified: false },
     soldOfflineAt: '2026-06-22T10:00:00.000Z',
     status: 'queued',

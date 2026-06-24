@@ -17,6 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   AddPayrollAdjustmentSchema,
+  PayWeekDaysSchema,
   SetPayrollDaySchema,
   type AddPayrollAdjustment,
   type EmployeePanel,
@@ -25,13 +26,17 @@ import {
   type PayrollAdjustment,
   type PayrollDay,
   type PayrollPayment,
+  type PayrollWeekPayment,
   type SetPayrollDay,
+  type WeeklyPayrollReport,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMimeLoose } from '../common/image-mime';
+import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { WorkersPaymentsService } from './workers-payments.service';
+import { WorkersWeeklyService } from './workers-weekly.service';
 import { WorkersService } from './workers.service';
 
 /** RRHH / nómina. Admin/Dueño. */
@@ -41,6 +46,7 @@ export class WorkersController {
   constructor(
     private readonly workers: WorkersService,
     private readonly payments: WorkersPaymentsService,
+    private readonly weekly: WorkersWeeklyService,
   ) {}
 
   @Get('users')
@@ -121,6 +127,8 @@ export class WorkersController {
     @CurrentUser() user: JwtAccessPayload,
     @Body('periodStart') periodStart: string | undefined,
     @Body('note') note: string | undefined,
+    @Body('cashAmount') cashAmount: string | undefined,
+    @Body('bankAmount') bankAmount: string | undefined,
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<PayrollPayment> {
     if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
@@ -138,6 +146,8 @@ export class WorkersController {
       user.sub,
       { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
       note?.trim() || undefined,
+      parseOptionalAmount(cashAmount),
+      parseOptionalAmount(bankAmount),
     );
   }
 
@@ -164,6 +174,70 @@ export class WorkersController {
     @Res() res: Response,
   ): Promise<void> {
     const { buffer, mime } = await this.payments.getPaymentProof(id);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
+  }
+
+  // ================================================================
+  // NÓMINA SEMANAL (DIARIO) — abonos parciales por días + comprobante
+  // ================================================================
+
+  /** Reporte de la semana que contiene `?week=YYYY-MM-DD` (default: hoy). */
+  @Get('weekly')
+  getWeekly(@Query('week') week?: string): Promise<WeeklyPayrollReport> {
+    const ref = week && /^\d{4}-\d{2}-\d{2}$/.test(week) ? week : new Date().toISOString().slice(0, 10);
+    return this.weekly.getWeeklyPayroll(ref);
+  }
+
+  /** Paga días seleccionados de la semana con comprobante. Solo Dueño + PIN. */
+  @OnlyDueno()
+  @Post('weekly/pay')
+  @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async payWeek(
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body('payload') payloadRaw: string | undefined,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<PayrollWeekPayment> {
+    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
+    if (!payloadRaw) throw new BadRequestException('Falta el payload del pago.');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payloadRaw);
+    } catch {
+      throw new BadRequestException('Payload inválido.');
+    }
+    const input = PayWeekDaysSchema.parse(parsed);
+    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    if (!detected) throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
+    return this.weekly.payWeekDays(
+      input,
+      { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
+      requirePin(pin),
+      user.sub,
+    );
+  }
+
+  /** Anula un abono semanal (reversa la caja si fue efectivo). Solo Dueño + PIN. */
+  @OnlyDueno()
+  @Post('weekly/payment/:id/void')
+  voidWeekPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    return this.weekly.voidWeekPayment(id, requirePin(pin), user.sub);
+  }
+
+  /** Comprobante binario de un abono semanal (Dueño). */
+  @OnlyDueno()
+  @Get('weekly/payment/:id/proof')
+  async getWeekProof(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, mime } = await this.weekly.getWeekPaymentProof(id);
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);

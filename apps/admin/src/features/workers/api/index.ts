@@ -9,4 +9,8 @@ export {
   unmarkPayment,
   paymentProofUrl,
   isPaymentDayToday,
+  getWeeklyPayroll,
+  payWeekDays,
+  voidWeekPayment,
+  weekPaymentProofUrl,
 } from './client';

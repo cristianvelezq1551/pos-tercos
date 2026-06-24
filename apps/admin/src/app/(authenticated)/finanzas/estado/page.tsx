@@ -8,6 +8,7 @@ import {
   PnlCard,
   TrendCard,
 } from '../../../../features/financial';
+import { MonthCutoffCard, getBusinessConfigServer } from '../../../../features/business-config';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { requireRole } from '../../../../lib/guards';
 import type { MonthlyFinancialStatement, MonthlyTrend } from '@pos-tercos/types';
@@ -39,6 +40,8 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
     throw err;
   }
 
+  const businessConfig = await getBusinessConfigServer();
+
   return (
     <>
       <PageHeader
@@ -55,6 +58,11 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
             <AiAnalysisCard year={year} month={month} />
           </div>
           <div className="space-y-5">
+            <MonthCutoffCard
+              monthStartDay={businessConfig.monthStartDay}
+              periodStart={statement.periodStart}
+              periodEnd={statement.periodEnd}
+            />
             <BreakEvenCard s={statement} />
             <TrendCard trend={trend} />
           </div>

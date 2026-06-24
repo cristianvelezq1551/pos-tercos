@@ -4,6 +4,7 @@ import type { Invoice } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, PinField, formatCop, isValidPin } from '@pos-tercos/ui';
 import { FileImage } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';
+import { PocketPaymentField } from '../../../components/PocketPaymentField';
 import { markInvoicePaid } from '../api/client';
 
 export function InvoiceMarkPaidDialog({
@@ -20,6 +21,8 @@ export function InvoiceMarkPaidDialog({
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');
+  const total = invoice.total ?? 0;
+  const [split, setSplit] = useState({ cashAmount: 0, bankAmount: total });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -41,6 +44,8 @@ export function InvoiceMarkPaidDialog({
       await markInvoicePaid(invoice.id, file, pin, {
         paidAt,
         note: note.trim() || undefined,
+        cashAmount: split.cashAmount,
+        bankAmount: split.bankAmount,
       });
       onSuccess();
     } catch (e) {
@@ -52,7 +57,6 @@ export function InvoiceMarkPaidDialog({
 
   const valid = file !== null && isValidPin(pin);
   const supplierLabel = invoice.supplierName ?? 'Proveedor sin nombre';
-  const total = invoice.total ?? 0;
 
   return (
     <Dialog
@@ -102,6 +106,7 @@ export function InvoiceMarkPaidDialog({
             disabled={pending}
           />
         </FormField>
+        <PocketPaymentField total={total} disabled={pending} onChange={(c, b) => setSplit({ cashAmount: c, bankAmount: b })} />
         <FormField label="Nota (opcional)">
           <Input
             type="text"

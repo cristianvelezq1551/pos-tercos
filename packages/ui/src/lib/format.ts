@@ -98,7 +98,18 @@ export type DateFormat = 'short' | 'long' | 'datetime' | 'time' | 'time-short' |
  */
 export function formatDate(value: Date | string | null | undefined, format: DateFormat = 'short'): string {
   if (value == null) return '—';
-  const d = value instanceof Date ? value : new Date(value);
+  // Una fecha-solo `YYYY-MM-DD` la parsea JS como medianoche UTC; al formatear
+  // en una zona con offset negativo (Bogotá UTC-5) retrocede un día. La
+  // interpretamos como fecha LOCAL para que "2026-06-24" muestre el 24.
+  const d =
+    value instanceof Date
+      ? value
+      : /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? (() => {
+            const [y, m, day] = value.split('-').map(Number);
+            return new Date(y, m - 1, day);
+          })()
+        : new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
 
   switch (format) {

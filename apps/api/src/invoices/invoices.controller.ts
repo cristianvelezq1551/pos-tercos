@@ -35,6 +35,7 @@ import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMime, detectImageMimeLoose } from '../common/image-mime';
+import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { InvoicesService } from './invoices.service';
@@ -239,6 +240,8 @@ export class InvoicesController {
     @CurrentUser() user: JwtAccessPayload,
     @Body('paidAt') paidAt: string | undefined,
     @Body('note') note: string | undefined,
+    @Body('cashAmount') cashAmount: string | undefined,
+    @Body('bankAmount') bankAmount: string | undefined,
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<Invoice> {
     if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
@@ -254,7 +257,12 @@ export class InvoicesController {
       requirePin(pin),
       user.sub,
       { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
-      { paidAtYmd: paidAt, note: note?.trim() || undefined },
+      {
+        paidAtYmd: paidAt,
+        note: note?.trim() || undefined,
+        cashAmount: parseOptionalAmount(cashAmount),
+        bankAmount: parseOptionalAmount(bankAmount),
+      },
     );
   }
 

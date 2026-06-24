@@ -31,6 +31,7 @@ import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMimeLoose } from '../common/image-mime';
+import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { FixedCostsService } from './fixed-costs.service';
 
@@ -96,6 +97,8 @@ export class FixedCostsController {
     @Body('paidAt') paidAt: string | undefined,
     @Body('amount') amount: string | undefined,
     @Body('note') note: string | undefined,
+    @Body('cashAmount') cashAmount: string | undefined,
+    @Body('bankAmount') bankAmount: string | undefined,
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<FinancePaidFixedCost> {
     if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
@@ -120,7 +123,13 @@ export class FixedCostsController {
       requirePin(pin),
       user.sub,
       { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
-      { paidAtYmd: paidAt, amount: amountNum, note: note?.trim() || undefined },
+      {
+        paidAtYmd: paidAt,
+        amount: amountNum,
+        note: note?.trim() || undefined,
+        cashAmount: parseOptionalAmount(cashAmount),
+        bankAmount: parseOptionalAmount(bankAmount),
+      },
     );
   }
 

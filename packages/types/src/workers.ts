@@ -187,3 +187,96 @@ export const EmployeePanelSchema = z.object({
   monthTotal: z.number(),
 });
 export type EmployeePanel = z.infer<typeof EmployeePanelSchema>;
+
+// ====================================================================
+// Nómina v6 — pago SEMANAL para empleados DIARIO con abonos parciales por
+// días seleccionados. La semana es lunes–domingo; el día de descanso se corre
+// si cae en festivo (el negocio abre y se paga). Cada abono pide comprobante.
+// Los MENSUALES siguen con el modelo quincenal de arriba.
+// ====================================================================
+
+export const PayrollWeekDayStatusEnum = z.enum(['WORKDAY', 'REST']);
+export type PayrollWeekDayStatus = z.infer<typeof PayrollWeekDayStatusEnum>;
+
+/** Un día de la semana de nómina, ya valorizado y con su estado de pago. */
+export const WeeklyPayrollDaySchema = z.object({
+  date: DateOnly,
+  /** 0=domingo … 6=sábado. */
+  weekday: z.number().int().min(0).max(6),
+  isHoliday: z.boolean(),
+  status: PayrollWeekDayStatusEnum,
+  /** Monto a pagar ese día (override gana; si no, valor/día en laborable; 0 en descanso). */
+  amount: z.number(),
+  /** true si hay una excepción manual (PayrollDay) para ese día. */
+  hasOverride: z.boolean(),
+  /** true si el día ya fue cubierto por un abono PAID. */
+  isPaid: z.boolean(),
+  /** true si el día aún no llega (no se puede pagar a futuro). */
+  isFuture: z.boolean(),
+});
+export type WeeklyPayrollDay = z.infer<typeof WeeklyPayrollDaySchema>;
+
+/** Un abono semanal registrado (con comprobante). El pago puede ser efectivo,
+ *  cuenta o mixto: `cashAmount` + `bankAmount` = `amount`. */
+export const PayrollWeekPaymentSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  weekStart: DateOnly,
+  paidDays: z.array(DateOnly),
+  amount: z.number().nonnegative(),
+  cashAmount: z.number().nonnegative(),
+  bankAmount: z.number().nonnegative(),
+  status: z.enum(['PAID', 'VOIDED']),
+  hasProof: z.boolean(),
+  note: z.string().nullable(),
+  paidAt: z.string().datetime(),
+  actorName: z.string().nullable(),
+});
+export type PayrollWeekPayment = z.infer<typeof PayrollWeekPaymentSchema>;
+
+/** Un empleado DIARIO dentro de la semana de nómina. */
+export const WeeklyPayrollEntrySchema = z.object({
+  userId: z.string().uuid(),
+  fullName: z.string(),
+  role: z.string(),
+  valuePerDay: z.number(),
+  days: z.array(WeeklyPayrollDaySchema),
+  /** Σ de días laborables/override de la semana (lo que se debe por la semana). */
+  owedTotal: z.number(),
+  /** Σ de abonos PAID de la semana. */
+  paidTotal: z.number(),
+  /** owed − paid (lo que falta abonar). */
+  remaining: z.number(),
+  /** Días ya cubiertos por algún abono (YYYY-MM-DD). */
+  paidDays: z.array(DateOnly),
+  payments: z.array(PayrollWeekPaymentSchema),
+});
+export type WeeklyPayrollEntry = z.infer<typeof WeeklyPayrollEntrySchema>;
+
+export const WeeklyPayrollReportSchema = z.object({
+  weekStart: DateOnly,
+  weekEnd: DateOnly,
+  weekLabel: z.string(),
+  /** Refs para navegar a la semana anterior/siguiente (YYYY-MM-DD). */
+  prevRef: DateOnly,
+  nextRef: DateOnly,
+  entries: z.array(WeeklyPayrollEntrySchema),
+});
+export type WeeklyPayrollReport = z.infer<typeof WeeklyPayrollReportSchema>;
+
+/** Input para registrar un abono semanal (el comprobante va aparte, multipart).
+ *  El pago se reparte por bolsillo: `cashAmount` (efectivo) + `bankAmount`
+ *  (cuenta) deben sumar el total de los días seleccionados (lo valida el
+ *  backend). Para pago simple, uno de los dos va en 0. */
+export const PayWeekDaysSchema = z.object({
+  userId: z.string().uuid(),
+  weekStart: DateOnly,
+  days: z.array(DateOnly).min(1, 'Seleccioná al menos un día'),
+  cashAmount: z.number().nonnegative(),
+  bankAmount: z.number().nonnegative(),
+  note: z.string().max(300).optional(),
+}).refine((v) => v.cashAmount + v.bankAmount > 0, {
+  message: 'El pago no puede ser 0',
+  path: ['cashAmount'],
+});
+export type PayWeekDays = z.infer<typeof PayWeekDaysSchema>;

@@ -16,6 +16,7 @@ import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { extensionForMime, mimeForExtension, type SupportedImageMime } from '../common/image-mime';
+import { resolvePocketSplit } from '../common/pocket-split';
 import { InventoryService } from '../inventory/inventory.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -793,7 +794,7 @@ export class InvoicesService {
     pin: string,
     actorId: string,
     proof: { buffer: Buffer; mime: string; ext: string },
-    opts: { paidAtYmd?: string; note?: string },
+    opts: { paidAtYmd?: string; note?: string; cashAmount?: number; bankAmount?: number },
   ): Promise<Invoice> {
     const approverId = await this.approvals.verify(pin);
     const existing = await this.prisma.invoice.findUnique({
@@ -813,6 +814,8 @@ export class InvoicesService {
       );
     }
     const paidAt = opts.paidAtYmd ? new Date(`${opts.paidAtYmd}T12:00:00.000Z`) : new Date();
+    const total = existing.total !== null ? Number(existing.total) : 0;
+    const split = resolvePocketSplit(opts.cashAmount, opts.bankAmount, total);
 
     // Sube comprobante; si ya había uno, lo borramos cuando termine el upsert.
     const stored = await this.storage.put(
@@ -833,6 +836,9 @@ export class InvoicesService {
         paymentProofKey: stored.key,
         paymentActorId: actorId,
         paymentNote: opts.note ?? null,
+        paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
+        paymentCashAmount: split.cash,
+        paymentBankAmount: split.bank,
       },
       include: includeFull(),
     });

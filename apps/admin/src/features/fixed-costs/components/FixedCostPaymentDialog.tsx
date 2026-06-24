@@ -3,6 +3,7 @@
 import { Button, Dialog, FormField, Input, PinField, formatCop, isValidPin } from '@pos-tercos/ui';
 import { FileImage } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';
+import { PocketPaymentField } from '../../../components/PocketPaymentField';
 import { markFixedCostPaid } from '../api/client';
 
 /** Diálogo de "marcar pagado" un costo fijo. El período (year, month) viene
@@ -32,6 +33,7 @@ export function FixedCostPaymentDialog({
   const [amount, setAmount] = useState<string>(String(expectedAmount));
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');
+  const [split, setSplit] = useState({ cashAmount: 0, bankAmount: expectedAmount });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -61,6 +63,8 @@ export function FixedCostPaymentDialog({
         paidAt,
         amount: amountNum,
         note: note.trim() || undefined,
+        cashAmount: split.cashAmount,
+        bankAmount: split.bankAmount,
       });
       onSuccess();
     } catch (e) {
@@ -128,6 +132,7 @@ export function FixedCostPaymentDialog({
             />
           </FormField>
         </div>
+        <PocketPaymentField total={Number(amount) || 0} disabled={pending} onChange={(c, b) => setSplit({ cashAmount: c, bankAmount: b })} />
         <FormField label="Nota (opcional)">
           <Input
             type="text"

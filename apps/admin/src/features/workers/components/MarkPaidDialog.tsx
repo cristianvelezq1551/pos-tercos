@@ -3,6 +3,7 @@
 import { Button, Dialog, FormField, Input, PinField, formatCop, isValidPin } from '@pos-tercos/ui';
 import { FileImage } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';
+import { PocketPaymentField } from '../../../components/PocketPaymentField';
 import { markPaymentPaid } from '../api/client';
 
 export function MarkPaidDialog({
@@ -24,6 +25,7 @@ export function MarkPaidDialog({
   const [preview, setPreview] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');
+  const [split, setSplit] = useState({ cashAmount: 0, bankAmount: total });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -42,7 +44,7 @@ export function MarkPaidDialog({
     setError(null);
     setPending(true);
     try {
-      await markPaymentPaid(userId, periodStart, file, pin, note.trim() || undefined);
+      await markPaymentPaid(userId, periodStart, file, pin, note.trim() || undefined, split);
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo marcar pagado.');
@@ -88,6 +90,7 @@ export function MarkPaidDialog({
             <FileImage className="h-4 w-4" /> Sin imagen seleccionada
           </div>
         )}
+        <PocketPaymentField total={total} disabled={pending} onChange={(c, b) => setSplit({ cashAmount: c, bankAmount: b })} />
         <FormField label="Nota (opcional)">
           <Input
             type="text"

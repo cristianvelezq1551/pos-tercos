@@ -1,0 +1,99 @@
+'use client';
+
+import type { PayableCommitment } from '@pos-tercos/types';
+import { Button, Dialog, FormField, Input, MoneyInput, Select, formatCop } from '@pos-tercos/ui';
+import { useState, type ChangeEvent } from 'react';
+import { payPayable } from '../api/client';
+
+type PayMode = 'EFECTIVO' | 'CUENTA' | 'MIXTO';
+
+export function PayPayableModal({
+  payable,
+  onClose,
+  onSuccess,
+}: {
+  payable: PayableCommitment;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const total = payable.amount;
+  const [mode, setMode] = useState<PayMode>('CUENTA');
+  const [cashInput, setCashInput] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [note, setNote] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const cashAmount = mode === 'EFECTIVO' ? total : mode === 'CUENTA' ? 0 : Math.min(Number(cashInput) || 0, total);
+  const bankAmount = Math.round((total - cashAmount) * 100) / 100;
+
+  const onFile = (e: ChangeEvent<HTMLInputElement>): void => setFile(e.target.files?.[0] ?? null);
+
+  const submit = async (): Promise<void> => {
+    setError(null);
+    setPending(true);
+    try {
+      await payPayable(payable.id, { cashAmount, bankAmount, note: note.trim() || undefined }, file);
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar el pago.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const mixOk = mode !== 'MIXTO' || (cashAmount > 0 && bankAmount > 0);
+
+  return (
+    <Dialog
+      open
+      onClose={pending ? () => {} : onClose}
+      title={`Pagar a ${payable.beneficiary}`}
+      description={`${payable.description} · ${formatCop(total)}`}
+      maxWidth="max-w-md"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={pending}>Cancelar</Button>
+          <Button onClick={submit} disabled={pending || !mixOk}>{pending ? 'Registrando…' : `Pagar ${formatCop(total)}`}</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <FormField label="Forma de pago" required>
+          <Select value={mode} onChange={(e) => setMode(e.target.value as PayMode)} disabled={pending}>
+            <option value="CUENTA">Cuenta (transferencia/QR)</option>
+            <option value="EFECTIVO">Efectivo</option>
+            <option value="MIXTO">Mixto (parte efectivo, parte cuenta)</option>
+          </Select>
+        </FormField>
+
+        {mode === 'MIXTO' ? (
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Efectivo">
+              <MoneyInput value={cashInput} onChange={setCashInput} disabled={pending} placeholder="0" />
+            </FormField>
+            <FormField label="Cuenta (resto)">
+              <Input value={formatCop(bankAmount)} readOnly disabled className="bg-muted/40" />
+            </FormField>
+          </div>
+        ) : null}
+
+        <FormField label="Comprobante" hint="Opcional (imagen)">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={onFile}
+            disabled={pending}
+            className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-primary"
+          />
+        </FormField>
+
+        <FormField label="Nota" hint="Opcional">
+          <Input value={note} onChange={(e) => setNote(e.target.value)} disabled={pending} maxLength={300} />
+        </FormField>
+
+        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      </div>
+    </Dialog>
+  );
+}

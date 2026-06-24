@@ -9,3 +9,4 @@ export * from './promotions';
 export * from './reconciliation';
 export * from './printer';
 export * from './whatsapp';
+export * from './payroll';

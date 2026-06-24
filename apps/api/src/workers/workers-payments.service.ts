@@ -5,6 +5,7 @@ import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
+import { resolvePocketSplit } from '../common/pocket-split';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   parseYmd,
@@ -42,6 +43,8 @@ export class WorkersPaymentsService {
     actorId: string,
     proof: { buffer: Buffer; mime: string; ext: string },
     note: string | undefined,
+    cashAmount?: number,
+    bankAmount?: number,
   ): Promise<PayrollPayment> {
     this.assertTodayIsWeekendOrThrow();
     const pago = paymentPeriodOf(parseYmd(periodStartYmd));
@@ -79,6 +82,7 @@ export class WorkersPaymentsService {
         'No hay monto a pagar en este período (días trabajados + novedades = 0). Marcarlo como pagado no tiene sentido.',
       );
     }
+    const split = resolvePocketSplit(cashAmount, bankAmount, amount);
 
     // Sube la imagen. Si había una previa, la borra (solo si la key cambió).
     const stored = await this.storage.put(`payroll/${userId}`, proof.buffer, proof.mime, proof.ext);
@@ -100,6 +104,9 @@ export class WorkersPaymentsService {
         actorId,
         proofImageKey: stored.key,
         note: note ?? null,
+        paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
+        cashAmount: split.cash,
+        bankAmount: split.bank,
       },
       update: {
         status: 'PAID',
@@ -108,6 +115,9 @@ export class WorkersPaymentsService {
         actorId,
         proofImageKey: stored.key,
         note: note ?? null,
+        paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
+        cashAmount: split.cash,
+        bankAmount: split.bank,
       },
     });
     await this.audit.log({

@@ -141,12 +141,14 @@ export async function markInvoicePaid(
   invoiceId: string,
   proof: File,
   pin: string,
-  opts: { paidAt?: string; note?: string },
+  opts: { paidAt?: string; note?: string; cashAmount?: number; bankAmount?: number },
 ): Promise<Invoice> {
   const fd = new FormData();
   fd.append('proof', proof);
   if (opts.paidAt) fd.append('paidAt', opts.paidAt);
   if (opts.note) fd.append('note', opts.note);
+  if (opts.cashAmount !== undefined) fd.append('cashAmount', String(opts.cashAmount));
+  if (opts.bankAmount !== undefined) fd.append('bankAmount', String(opts.bankAmount));
   const res = await fetch(`/api/invoices/${invoiceId}/payment/paid`, {
     method: 'POST',
     credentials: 'include',

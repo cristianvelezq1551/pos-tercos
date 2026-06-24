@@ -13,6 +13,7 @@ import type {
 } from '@pos-tercos/types';
 import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CogsService } from './cogs.service';
@@ -38,13 +39,18 @@ export class FinancialReportsService {
     private readonly fixedCosts: FixedCostsService,
     private readonly llm: LLMService,
     private readonly audit: AuditService,
+    private readonly businessConfig: BusinessConfigService,
   ) {}
 
   /** Estado financiero del mes `(year, month1)` (month1: 1-12). */
   async getMonthlyStatement(year: number, month1: number): Promise<MonthlyFinancialStatement> {
     const month0 = month1 - 1;
-    const monthStart = new Date(Date.UTC(year, month0, 1));
-    const monthEnd = new Date(Date.UTC(year, month0 + 1, 0, 23, 59, 59, 999));
+    // Ventana del "mes del negocio": arranca el día de corte configurable y
+    // termina el día anterior al corte del mes siguiente. startDay=1 reduce al
+    // mes calendario exacto (comportamiento por defecto).
+    const startDay = await this.businessConfig.getMonthStartDay();
+    const monthStart = new Date(Date.UTC(year, month0, startDay));
+    const monthEnd = new Date(Date.UTC(year, month0 + 1, startDay - 1, 23, 59, 59, 999));
 
     // P&G base del CogsService — ingresos + COGS real FIFO.
     const pnl = await this.cogs.getPnl(monthStart, monthEnd);
@@ -54,8 +60,11 @@ export class FinancialReportsService {
     const grossMarginPct = revenue > 0 ? grossMargin / revenue : 0;
 
     // Costos fijos: nómina (auto del workers) + CRUD fixed_costs.
-    const payrollAmount = await this.computePayrollForMonth(year, month0);
-    const otherCosts = await this.fixedCosts.getEffectiveForMonth(monthStart);
+    const payrollAmount = await this.computePayrollForRange(monthStart, monthEnd);
+    // Los costos fijos mensuales se anclan al mes calendario etiquetado: un
+    // cargo recurrente cuenta UNA vez por mes del negocio, sin importar el día
+    // de corte (no se prorratea por la ventana).
+    const otherCosts = await this.fixedCosts.getEffectiveForMonth(new Date(Date.UTC(year, month0, 1)));
 
     const fixedCostLines: FixedCostLine[] = [];
     if (payrollAmount > 0) {
@@ -203,11 +212,7 @@ export class FinancialReportsService {
    * días empleados; DAILY = suma de días no-descanso, aplicando overrides.
    * Las novedades cuyo lunes (periodStart) cae dentro del mes se suman.
    */
-  private async computePayrollForMonth(year: number, month0: number): Promise<number> {
-    const monthStart = new Date(Date.UTC(year, month0, 1));
-    const lastDay = new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate();
-    const monthEnd = new Date(Date.UTC(year, month0, lastDay));
-
+  private async computePayrollForRange(monthStart: Date, monthEnd: Date): Promise<number> {
     const users = await this.prisma.user.findMany({
       where: {
         payType: { not: null },

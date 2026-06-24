@@ -13,7 +13,7 @@ import {
   type UpdateUser,
 } from '@pos-tercos/types';
 import { z } from 'zod';
-import { request } from '../../../lib/api-client';
+import { request, validateInput } from '../../../lib/api-client';
 
 const UserListSchema = z.array(ManagedUserSchema);
 
@@ -38,12 +38,12 @@ export function listUsers(): Promise<ManagedUser[]> {
 }
 
 export function createUser(input: CreateUser): Promise<ManagedUser> {
-  CreateUserSchema.parse(input);
+  validateInput(CreateUserSchema, input);
   return request('/users', { method: 'POST', body: JSON.stringify(input) }, ManagedUserSchema);
 }
 
 export function updateUser(id: string, input: UpdateUser): Promise<ManagedUser> {
-  UpdateUserSchema.parse(input);
+  validateInput(UpdateUserSchema, input);
   return request(
     `/users/${id}`,
     { method: 'PATCH', body: JSON.stringify(input) },
@@ -52,7 +52,7 @@ export function updateUser(id: string, input: UpdateUser): Promise<ManagedUser> 
 }
 
 export function resetUserPassword(id: string, newPassword: string): Promise<void> {
-  ResetPasswordSchema.parse({ newPassword });
+  validateInput(ResetPasswordSchema, { newPassword });
   return requestVoid(`/users/${id}/reset-password`, {
     method: 'POST',
     body: JSON.stringify({ newPassword }),
@@ -60,7 +60,7 @@ export function resetUserPassword(id: string, newPassword: string): Promise<void
 }
 
 export function setUserPin(id: string, pin: string, password: string): Promise<void> {
-  SetUserPinSchema.parse({ pin, password });
+  validateInput(SetUserPinSchema, { pin, password });
   return requestVoid(`/users/${id}/pin`, {
     method: 'POST',
     body: JSON.stringify({ pin, password }),
@@ -77,7 +77,7 @@ export function setOwnApprovalPin(pin: string, password: string): Promise<void> 
 
 /** Cambiar salario / tipo de pago. Requiere PIN (header X-Approval-Pin). */
 export function setEmployment(id: string, input: SetEmployment, pin: string): Promise<ManagedUser> {
-  SetEmploymentSchema.parse(input);
+  validateInput(SetEmploymentSchema, input);
   return request(
     `/users/${id}/employment`,
     { method: 'POST', body: JSON.stringify(input), headers: { 'X-Approval-Pin': pin } },
@@ -92,7 +92,7 @@ export function deleteUser(id: string, pin: string): Promise<void> {
 
 /** Terminar empleo (inactiva el usuario y liquida hasta la fecha). Requiere PIN. */
 export function terminateEmployment(id: string, input: TerminateEmployment, pin: string): Promise<ManagedUser> {
-  TerminateEmploymentSchema.parse(input);
+  validateInput(TerminateEmploymentSchema, input);
   return request(
     `/users/${id}/terminate`,
     { method: 'POST', body: JSON.stringify(input), headers: { 'X-Approval-Pin': pin } },

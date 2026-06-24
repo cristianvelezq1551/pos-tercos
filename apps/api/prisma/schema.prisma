@@ -48,6 +48,7 @@ model User {
   payrollDays        PayrollDay[]
   payrollAdjustments PayrollAdjustment[]
   payrollPayments    PayrollPayment[]
+  payrollWeekPayments PayrollWeekPayment[]
   fixedCostPayments  FixedCostPayment[]      @relation("FixedCostPaymentActor")
 
   @@index([role, active])
@@ -347,6 +348,15 @@ model Invoice {
   paymentProofKey  String?       @map("payment_proof_key")
   paymentActorId   String?       @map("payment_actor_id")
   paymentNote      String?       @map("payment_note")
+  /// Bolsillo de tesorería del que salió el pago: 'EFECTIVO' | 'CUENTA'.
+  /// (legacy; hoy el reparto real vive en payment_cash_amount/bank_amount).
+  paymentPocket    String        @default("CUENTA") @map("payment_pocket")
+  /// Reparto del pago por bolsillo (permite mixto). Suman el total.
+  paymentCashAmount Decimal      @default(0) @map("payment_cash_amount") @db.Decimal(14, 2)
+  paymentBankAmount Decimal      @default(0) @map("payment_bank_amount") @db.Decimal(14, 2)
+  /// Responsable que asume este gasto (ej. Cristian / Pablo) — para el
+  /// desglose de compromisos en Tesorería. NULL = sin asignar.
+  responsible      String?
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
   items            InvoiceItem[]
@@ -751,6 +761,11 @@ model PayrollPayment {
   amount          Decimal  @db.Decimal(12, 2)
   resolvedAt      DateTime @map("resolved_at")
   actorId         String?  @map("actor_id")
+  /// Bolsillo del que salió: 'EFECTIVO' | 'CUENTA' (legacy).
+  paymentPocket   String   @default("CUENTA") @map("payment_pocket")
+  /// Reparto del pago por bolsillo (permite mixto). Suman amount.
+  cashAmount      Decimal  @default(0) @map("cash_amount") @db.Decimal(12, 2)
+  bankAmount      Decimal  @default(0) @map("bank_amount") @db.Decimal(12, 2)
   /// Clave en storage del comprobante (obligatorio si status=PAID).
   proofImageKey   String?  @map("proof_image_key")
   /// Para CANCELLED, motivo; para PAID, nota opcional.
@@ -898,6 +913,8 @@ model FixedCost {
   endedAt   DateTime?           @map("ended_at") @db.Date
   isActive  Boolean             @default(true) @map("is_active")
   notes     String?
+  /// Responsable que asume este costo (ej. Cristian / Pablo). NULL = sin asignar.
+  responsible String?
   createdAt DateTime            @default(now()) @map("created_at")
   updatedAt DateTime            @default(now()) @updatedAt @map("updated_at")
   payments  FixedCostPayment[]
@@ -925,6 +942,11 @@ model FixedCostPayment {
   paidAt        DateTime  @map("paid_at")
   proofImageKey String    @map("proof_image_key")
   actorId       String?   @map("actor_id")
+  /// Bolsillo del que salió: 'EFECTIVO' | 'CUENTA' (legacy).
+  paymentPocket String    @default("CUENTA") @map("payment_pocket")
+  /// Reparto del pago por bolsillo (permite mixto). Suman amount.
+  cashAmount    Decimal   @default(0) @map("cash_amount") @db.Decimal(14, 2)
+  bankAmount    Decimal   @default(0) @map("bank_amount") @db.Decimal(14, 2)
   note          String?
   createdAt     DateTime  @default(now()) @map("created_at")
   fixedCost     FixedCost @relation(fields: [fixedCostId], references: [id], onDelete: Cascade)
@@ -1030,4 +1052,116 @@ model DisplayTrack {
 
   @@index([isActive, sortOrder])
   @@map("display_tracks")
+}
+
+/// Pago semanal de nómina para empleados DIARIO (v6). A diferencia de
+/// `PayrollPayment` (quincenal, todo-o-nada), acá hay VARIAS filas por
+/// (empleado, semana): cada abono parcial cubre los `paidDays` que se pagan en
+/// ese momento, con comprobante obligatorio. La semana es lunes–domingo
+/// (`weekStart` = lunes). Si el pago es en efectivo, genera un CashMovement OUT
+/// en la caja abierta (`cashMovementId`/`shiftId`) para que el arqueo cuadre.
+model PayrollWeekPayment {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  weekStart      DateTime @map("week_start") @db.Date
+  /// Días cubiertos por este abono (YYYY-MM-DD[]).
+  paidDays       Json     @map("paid_days")
+  amount         Decimal  @db.Decimal(12, 2)
+  /// Forma de pago por bolsillo: cashAmount + bankAmount = amount. Permite
+  /// pago mixto (parte efectivo, parte cuenta). El método digital puntual ya
+  /// no importa para tesorería (solo efectivo vs cuenta).
+  cashAmount     Decimal  @default(0) @map("cash_amount") @db.Decimal(12, 2)
+  bankAmount     Decimal  @default(0) @map("bank_amount") @db.Decimal(12, 2)
+  /// Legacy (nullable): método único previo. Hoy se usa cashAmount/bankAmount.
+  method         String?
+  /// 'PAID' | 'VOIDED'.
+  status         String   @default("PAID")
+  proofImageKey  String   @map("proof_image_key")
+  actorId        String?  @map("actor_id")
+  /// Movimiento de caja generado por la porción en efectivo (para revertir).
+  cashMovementId String?  @map("cash_movement_id")
+  shiftId        String?  @map("shift_id")
+  note           String?
+  paidAt         DateTime @map("paid_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, weekStart])
+  @@index([weekStart])
+  @@map("payroll_week_payments")
+}
+
+/// Compromiso / cuenta por pagar a una persona (Cristian, Pablo u otro). Es la
+/// versión ad-hoc de los "gastos pendientes" del Excel: lo que el negocio le
+/// debe a alguien, fuera de facturas/costos fijos/nómina. Al pagarlo se reparte
+/// por bolsillo (efectivo/cuenta/mixto) y alimenta la Tesorería.
+model PayableCommitment {
+  id            String    @id @default(uuid())
+  /// A quién se le debe (texto libre: Cristian, Pablo, …).
+  beneficiary   String
+  description   String
+  amount        Decimal   @db.Decimal(14, 2)
+  /// 'PENDING' | 'PAID' | 'CANCELLED'.
+  status        String    @default("PENDING")
+  cashAmount    Decimal   @default(0) @map("cash_amount") @db.Decimal(14, 2)
+  bankAmount    Decimal   @default(0) @map("bank_amount") @db.Decimal(14, 2)
+  proofImageKey String?   @map("proof_image_key")
+  paidAt        DateTime? @map("paid_at")
+  actorId       String?   @map("actor_id")
+  createdById   String?   @map("created_by_id")
+  note          String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([status])
+  @@map("payable_commitments")
+}
+
+/// Tesorería — saldos iniciales de los dos bolsillos (Efectivo y Cuenta) y la
+/// fecha de corte desde la que se cuenta. Fila única "singleton" (las "celdas
+/// amarillas" del Excel). Si `anchorDate` es NULL se cuenta todo el histórico.
+model TreasuryConfig {
+  id          String    @id @default("singleton")
+  anchorDate  DateTime? @map("anchor_date") @db.Date
+  initialCash Decimal   @default(0) @map("initial_cash") @db.Decimal(14, 2)
+  initialBank Decimal   @default(0) @map("initial_bank") @db.Decimal(14, 2)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("treasury_config")
+}
+
+/// Movimiento manual de tesorería: TRANSFER = traspaso entre bolsillos (no
+/// cambia el total), ADJUSTMENT = ajuste de un bolsillo (±, para el "híbrido").
+/// Insert-only conceptual; se anula creando el compensatorio (status VOIDED).
+model TreasuryMovement {
+  id         String   @id @default(uuid())
+  /// 'TRANSFER' | 'ADJUSTMENT'.
+  kind       String
+  /// TRANSFER: bolsillo origen. 'EFECTIVO' | 'CUENTA'.
+  fromPocket String?  @map("from_pocket")
+  /// TRANSFER: bolsillo destino.
+  toPocket   String?  @map("to_pocket")
+  /// ADJUSTMENT: bolsillo afectado.
+  pocket     String?
+  /// TRANSFER: monto positivo. ADJUSTMENT: con signo (+ suma, − resta).
+  amount     Decimal  @db.Decimal(14, 2)
+  reason     String
+  status     String   @default("ACTIVE")
+  actorId    String?  @map("actor_id")
+  occurredAt DateTime @map("occurred_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([occurredAt])
+  @@map("treasury_movements")
+}
+
+/// Config global del negocio (fila única, id fijo "singleton"). `monthStartDay`
+/// (1–28) define el día en que arranca el "mes del negocio" para el estado
+/// financiero: ej. 25 = el mes va del 25 al 24 del mes siguiente. 1 = mes
+/// calendario (comportamiento por defecto).
+model BusinessConfig {
+  id            String   @id @default("singleton")
+  monthStartDay Int      @default(1) @map("month_start_day")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("business_config")
 }

@@ -62,8 +62,8 @@ describe('reconcileCart', () => {
     });
     const menu = product({
       basePrice: 20000,
-      sizes: [{ id: 's1', name: 'Grande', priceModifier: 4000 }], // subió
-      modifiers: [{ id: 'm1', name: 'Extra queso', priceDelta: 2000 }],
+      sizes: [{ id: 's1', name: 'Grande', productId: 'p1', priceModifier: 4000, sortOrder: 0 }], // subió
+      modifiers: [{ id: 'm1', name: 'Extra queso', productId: 'p1', priceDelta: 2000, recipeDelta: [] }],
     });
     const { items, change } = reconcileCart([cartLine], [menu]);
     // 20000 + 4000 (tamaño nuevo) + 2000 (mod) = 26000

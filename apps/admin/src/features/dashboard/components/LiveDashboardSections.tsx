@@ -19,12 +19,14 @@ import {
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
-const POLL_MS = 30_000;
+const POLL_MS = 15_000;
 
 /**
  * Stats del día + cocina en vivo. Se hidrata con el snapshot SSR y luego se
- * autoactualiza cada 30s vía polling al endpoint del dashboard. Soft-update:
- * no remonta las cards, solo cambia los números, para evitar parpadeos.
+ * autoactualiza cada 15s vía polling al endpoint del dashboard, MÁS un refresco
+ * inmediato al volver el foco/pestaña (así una venta del cajero aparece apenas
+ * el dueño mira la pantalla, sin esperar el próximo tick). Soft-update: no
+ * remonta las cards, solo cambia los números, para evitar parpadeos.
  */
 export function LiveDashboardSections({ initial }: { initial: DashboardSummary }) {
   const [summary, setSummary] = useState<DashboardSummary>(initial);
@@ -58,9 +60,16 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
     };
 
     const id = window.setInterval(tick, POLL_MS);
+    const onFocus = (): void => {
+      if (document.visibilityState !== 'hidden') void tick();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
     };
   }, []);
 

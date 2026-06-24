@@ -140,6 +140,24 @@ export const AuditActionEnum = z.enum([
   'STOCK_COUNT_REGISTERED',
   // El admin habilitó/deshabilitó medios de pago del POS.
   'PAYMENT_METHODS_UPDATED',
+  // El dueño cambió el día de corte del "mes del negocio".
+  'BUSINESS_CONFIG_UPDATED',
+  // Pago semanal de nómina (DIARIO) por días seleccionados, con comprobante.
+  'PAYROLL_WEEK_PAID',
+  // Reverso/anulación de un pago semanal de nómina.
+  'PAYROLL_WEEK_PAYMENT_VOIDED',
+  // Tesorería: saldos iniciales / fecha de corte.
+  'TREASURY_CONFIG_UPDATED',
+  // Tesorería: traspaso entre bolsillos.
+  'TREASURY_TRANSFER_CREATED',
+  // Tesorería: ajuste manual de un bolsillo.
+  'TREASURY_ADJUSTMENT_CREATED',
+  // Tesorería: anulación de un movimiento.
+  'TREASURY_MOVEMENT_VOIDED',
+  // Compromisos / cuentas por pagar a personas.
+  'PAYABLE_CREATED',
+  'PAYABLE_PAID',
+  'PAYABLE_CANCELLED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 

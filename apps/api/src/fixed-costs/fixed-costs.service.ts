@@ -12,6 +12,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
+import { resolvePocketSplit } from '../common/pocket-split';
 import { PrismaService } from '../prisma/prisma.service';
 
 const MONTHS_ES = [
@@ -141,7 +142,7 @@ export class FixedCostsService {
     pin: string,
     actorId: string,
     proof: { buffer: Buffer; mime: string; ext: string },
-    opts: { paidAtYmd?: string; amount?: number; note?: string },
+    opts: { paidAtYmd?: string; amount?: number; note?: string; cashAmount?: number; bankAmount?: number },
   ): Promise<FinancePaidFixedCost> {
     const approverId = await this.approvals.verify(pin);
     const cost = await this.prisma.fixedCost.findUnique({ where: { id: fixedCostId } });
@@ -154,6 +155,7 @@ export class FixedCostsService {
     }
 
     const amount = opts.amount ?? Number(cost.amount);
+    const split = resolvePocketSplit(opts.cashAmount, opts.bankAmount, amount);
     const paidAt = opts.paidAtYmd
       ? new Date(`${opts.paidAtYmd}T12:00:00.000Z`)
       : new Date();
@@ -187,6 +189,9 @@ export class FixedCostsService {
         proofImageKey: stored.key,
         actorId,
         note: opts.note ?? null,
+        paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
+        cashAmount: split.cash,
+        bankAmount: split.bank,
       },
       update: {
         amount,
@@ -194,6 +199,9 @@ export class FixedCostsService {
         proofImageKey: stored.key,
         actorId,
         note: opts.note ?? null,
+        paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
+        cashAmount: split.cash,
+        bankAmount: split.bank,
       },
     });
     await this.audit.log({

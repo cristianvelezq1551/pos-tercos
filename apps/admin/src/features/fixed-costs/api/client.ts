@@ -57,7 +57,15 @@ export async function markFixedCostPaid(
   fixedCostId: string,
   proof: File,
   pin: string,
-  body: { periodYear: number; periodMonth: number; paidAt?: string; amount?: number; note?: string },
+  body: {
+    periodYear: number;
+    periodMonth: number;
+    paidAt?: string;
+    amount?: number;
+    note?: string;
+    cashAmount?: number;
+    bankAmount?: number;
+  },
 ): Promise<FinancePaidFixedCost> {
   const fd = new FormData();
   fd.append('proof', proof);
@@ -66,6 +74,8 @@ export async function markFixedCostPaid(
   if (body.paidAt) fd.append('paidAt', body.paidAt);
   if (body.amount !== undefined) fd.append('amount', String(body.amount));
   if (body.note) fd.append('note', body.note);
+  if (body.cashAmount !== undefined) fd.append('cashAmount', String(body.cashAmount));
+  if (body.bankAmount !== undefined) fd.append('bankAmount', String(body.bankAmount));
   const res = await fetch(`/api/fixed-costs/${fixedCostId}/payment`, {
     method: 'POST',
     credentials: 'include',

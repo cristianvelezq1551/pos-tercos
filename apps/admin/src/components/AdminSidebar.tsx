@@ -7,12 +7,14 @@ import {
   Banknote,
   BarChart3,
   Box,
+  CalendarDays,
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
   Clock,
   Coins,
   CreditCard,
+  HandCoins,
   History,
   LayoutDashboard,
   Layers,
@@ -33,6 +35,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import type { UserRole } from '@pos-tercos/types';
 
 interface NavItem {
@@ -60,7 +63,22 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet, onlyDueno: true },
   { section: 'Caja', label: 'Medios de pago', href: '/medios-pago', icon: CreditCard },
   { section: 'Personal', label: 'Usuarios', href: '/users', icon: Users, onlyDueno: true },
-  { section: 'Personal', label: 'Nómina', href: '/workers/payroll', icon: Clock, onlyDueno: true },
+  { section: 'Personal', label: 'Nómina semanal', href: '/workers/semana', icon: CalendarDays, onlyDueno: true },
+  { section: 'Personal', label: 'Nómina (quincenal)', href: '/workers/payroll', icon: Clock, onlyDueno: true },
+  {
+    section: 'Finanzas',
+    label: 'Tesorería',
+    href: '/finanzas/tesoreria',
+    icon: Wallet,
+    onlyDueno: true,
+  },
+  {
+    section: 'Finanzas',
+    label: 'Compromisos por pagar',
+    href: '/finanzas/compromisos',
+    icon: HandCoins,
+    onlyDueno: true,
+  },
   {
     section: 'Finanzas',
     label: 'Pagos y cobros',
@@ -139,6 +157,13 @@ export function AdminSidebar({
   // (/inventory/movements).
   const activeHref = bestMatchHref(pathname, items);
 
+  // Trae el ítem activo a la vista: con muchas secciones queda fuera de pantalla
+  // y el dueño pierde la referencia de en qué módulo está al navegar.
+  const activeRef = useRef<HTMLAnchorElement | null>(null);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeHref]);
+
   return (
     <Sidebar>
       {/* La marca vive en el topbar — la sidebar arranca directo con las secciones. */}
@@ -151,6 +176,7 @@ export function AdminSidebar({
               return (
                 <li key={item.href}>
                   <Link
+                    ref={active ? activeRef : undefined}
                     href={item.href}
                     aria-current={active ? 'page' : undefined}
                     onClick={onNavigate}

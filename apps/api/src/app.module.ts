@@ -41,6 +41,9 @@ import { WebOrdersModule } from './web-orders/web-orders.module';
 import { ServerErrorAlertFilter } from './common/server-error-alert.filter';
 import { ClientLogsModule } from './client-logs/client-logs.module';
 import { TokenVersionModule } from './auth/token-version/token-version.module';
+import { BusinessConfigModule } from './business-config/business-config.module';
+import { TreasuryModule } from './treasury/treasury.module';
+import { PayablesModule } from './payables/payables.module';
 
 @Module({
   imports: [
@@ -50,6 +53,7 @@ import { TokenVersionModule } from './auth/token-version/token-version.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
     AuditModule,
+    BusinessConfigModule,
     StorageModule,
     LLMModule,
     PrinterModule,
@@ -81,6 +85,8 @@ import { TokenVersionModule } from './auth/token-version/token-version.module';
     PurchaseSuggestionsModule,
     WorkersModule,
     FixedCostsModule,
+    TreasuryModule,
+    PayablesModule,
   ],
   controllers: [HealthController],
   providers: [
