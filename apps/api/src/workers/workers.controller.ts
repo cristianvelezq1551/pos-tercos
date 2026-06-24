@@ -17,9 +17,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   AddPayrollAdjustmentSchema,
+  AddWeeklyAdjustmentSchema,
   PayWeekDaysSchema,
   SetPayrollDaySchema,
   type AddPayrollAdjustment,
+  type AddWeeklyAdjustment,
   type EmployeePanel,
   type JwtAccessPayload,
   type PagoReport,
@@ -52,6 +54,28 @@ export class WorkersController {
   @Get('users')
   listUsers(): Promise<Array<{ id: string; fullName: string; role: string; payType: string | null }>> {
     return this.workers.listPayrollUsers();
+  }
+
+  // Ajustes semanales (bono/descuento) — DECLARADOS ANTES de las rutas con
+  // `:userId/...` para que `weekly/adjustment` no caiga en `:userId='weekly'`.
+  /** Agrega un bono/descuento a la semana de un empleado. Solo Dueño. */
+  @OnlyDueno()
+  @Post('weekly/adjustment')
+  addWeeklyAdjustment(
+    @Body(new ZodValidationPipe(AddWeeklyAdjustmentSchema)) body: AddWeeklyAdjustment,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<PayrollAdjustment> {
+    return this.weekly.addWeeklyAdjustment(body, user.sub);
+  }
+
+  /** Elimina un bono/descuento de la semana. Solo Dueño. */
+  @OnlyDueno()
+  @Delete('weekly/adjustment/:id')
+  deleteWeeklyAdjustment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    return this.weekly.deleteWeeklyAdjustment(id, user.sub);
   }
 
   /** Pago para pagar. ?start=YYYY-MM-DD (cualquier día del pago: se ancla al

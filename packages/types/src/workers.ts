@@ -234,24 +234,43 @@ export const PayrollWeekPaymentSchema = z.object({
 });
 export type PayrollWeekPayment = z.infer<typeof PayrollWeekPaymentSchema>;
 
-/** Un empleado DIARIO dentro de la semana de nómina. */
+/** Un empleado (DIARIO o MENSUAL) dentro de la semana de nómina unificada. */
 export const WeeklyPayrollEntrySchema = z.object({
   userId: z.string().uuid(),
   fullName: z.string(),
   role: z.string(),
+  /** MENSUAL (salario/30 por día) o DIARIO (valor/día). */
+  payType: PayTypeEnum,
+  /** DIARIO: valor por día. MENSUAL: salario ÷ 30 (tarifa diaria prorrateada). */
   valuePerDay: z.number(),
   days: z.array(WeeklyPayrollDaySchema),
-  /** Σ de días laborables/override de la semana (lo que se debe por la semana). */
+  /** Σ de los días de la semana (DIARIO: laborables/override; MENSUAL: salario/30 × días empleados). */
   owedTotal: z.number(),
-  /** Σ de abonos PAID de la semana. */
+  /** Bonos (+) / descuentos (−) anclados a esta semana. */
+  adjustments: z.array(PayrollAdjustmentSchema),
+  /** Σ firmada de los ajustes. */
+  adjustmentsTotal: z.number(),
+  /** owedTotal + adjustmentsTotal = lo que se debe NETO por la semana. */
+  netOwed: z.number(),
+  /** Σ de abonos PAID de la semana (dinero realmente pagado). */
   paidTotal: z.number(),
-  /** owed − paid (lo que falta abonar). */
+  /** netOwed − paidTotal (lo que falta abonar). */
   remaining: z.number(),
-  /** Días ya cubiertos por algún abono (YYYY-MM-DD). */
+  /** Días ya cubiertos por algún abono (YYYY-MM-DD) — etiqueta de cobertura. */
   paidDays: z.array(DateOnly),
   payments: z.array(PayrollWeekPaymentSchema),
 });
 export type WeeklyPayrollEntry = z.infer<typeof WeeklyPayrollEntrySchema>;
+
+/** Agregar un bono/descuento a la semana de un empleado. */
+export const AddWeeklyAdjustmentSchema = z.object({
+  userId: z.string().uuid(),
+  weekStart: DateOnly,
+  concept: z.string().min(1).max(120),
+  amount: z.number().refine((v) => v !== 0, 'El monto no puede ser 0'),
+  note: z.string().max(300).optional(),
+});
+export type AddWeeklyAdjustment = z.infer<typeof AddWeeklyAdjustmentSchema>;
 
 export const WeeklyPayrollReportSchema = z.object({
   weekStart: DateOnly,
@@ -271,7 +290,9 @@ export type WeeklyPayrollReport = z.infer<typeof WeeklyPayrollReportSchema>;
 export const PayWeekDaysSchema = z.object({
   userId: z.string().uuid(),
   weekStart: DateOnly,
-  days: z.array(DateOnly).min(1, 'Seleccioná al menos un día'),
+  /** Días que cubre el abono (etiqueta de cobertura). El monto real lo dan
+   *  cashAmount+bankAmount; el backend valida que no supere el restante neto. */
+  days: z.array(DateOnly).default([]),
   cashAmount: z.number().nonnegative(),
   bankAmount: z.number().nonnegative(),
   note: z.string().max(300).optional(),
