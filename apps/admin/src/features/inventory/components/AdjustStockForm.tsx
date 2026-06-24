@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { Stockable } from '@pos-tercos/types';
+import { formatCop } from '../../../lib/format';
 import { createMovement } from '../api/client';
 
 interface AdjustStockFormProps {
@@ -45,6 +46,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
   const [type, setType] = useState<MovementKind>('MANUAL_ADJUSTMENT');
   const [direction, setDirection] = useState<'IN' | 'OUT'>('IN');
   const [magnitude, setMagnitude] = useState<number | null>(null);
+  const [unitCost, setUnitCost] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -55,6 +57,8 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
   }, [magnitude, direction, stockable.currentStock]);
 
   const wasteForcesNegative = type === 'WASTE';
+  // Solo las ENTRADAS positivas crean lote FIFO → solo ahí tiene sentido el costo.
+  const isEntry = !wasteForcesNegative && direction === 'IN';
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -70,7 +74,14 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
 
     setSubmitting(true);
     try {
-      const baseBody = { delta, type, notes: notes.trim() || undefined } as const;
+      const baseBody = {
+        delta,
+        type,
+        notes: notes.trim() || undefined,
+        // El costo solo aplica a entradas (base del FIFO). El backend lo ignora
+        // en salidas, pero no lo mandamos para mantener el payload limpio.
+        ...(isEntry && unitCost !== null ? { unitCost } : {}),
+      } as const;
       await createMovement(
         stockable.type === 'INGREDIENT'
           ? { entityType: 'INGREDIENT', ingredientId: stockable.id, ...baseBody }
@@ -194,6 +205,29 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
           placeholder="100"
         />
       </FormField>
+
+      {isEntry ? (
+        <FormField
+          label={`Costo por ${stockable.unitStock} (opcional)`}
+          hint={
+            unitCost === null || unitCost <= 0
+              ? 'Sin costo, este stock entra como "costo desconocido" y el COGS de lo que salga de él quedará parcial. Idealmente cargá el stock por factura (captura el costo solo).'
+              : magnitude !== null && magnitude > 0
+                ? `Costo total de esta entrada: ${formatCop(unitCost * magnitude)}`
+                : 'Costo unitario de este lote para el cálculo FIFO.'
+          }
+        >
+          <NumberInput
+            value={unitCost}
+            onChange={setUnitCost}
+            decimals={4}
+            min={0}
+            disabled={submitting}
+            prefix="$"
+            placeholder="0"
+          />
+        </FormField>
+      ) : null}
 
       <FormField label="Notas (opcional)">
         <Textarea
