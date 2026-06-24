@@ -271,10 +271,12 @@ export class SalesController {
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Query('cancel') cancel?: string,
+    @Query('variant') variant?: string,
   ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
     // ?cancel=true → ticket de ANULACIÓN (el cobro se abandonó tras imprimir
     // la comanda; la cocina debe descartar el pedido).
-    return this.receipts.getComandaEscPos(id, user.sub, cancel === 'true');
+    // ?variant=kitchen → comanda de COCINA (excluye reventa directa: bebidas).
+    return this.receipts.getComandaEscPos(id, user.sub, cancel === 'true', variant === 'kitchen' ? 'kitchen' : 'full');
   }
 
   /**

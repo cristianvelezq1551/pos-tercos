@@ -14,7 +14,7 @@ export type DbSaleWithDetail = Prisma.SaleGetPayload<{
     payments: true;
     items: {
       include: {
-        product: { select: { name: true } };
+        product: { select: { name: true; directResale: true } };
         size: { select: { name: true } };
         appliedPromotion: { select: { name: true } };
       };
@@ -29,7 +29,7 @@ export function includeFull() {
     payments: { orderBy: { createdAt: 'asc' as const } },
     items: {
       include: {
-        product: { select: { name: true } },
+        product: { select: { name: true, directResale: true } },
         size: { select: { name: true } },
         appliedPromotion: { select: { name: true } },
       },

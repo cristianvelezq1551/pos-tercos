@@ -1,17 +1,21 @@
 /**
- * Impresión del recibo desde el NAVEGADOR del mostrador, online-first con
- * respaldo offline:
- *  1) intenta los bytes ESC/POS del backend (GET /sales/:id/escpos) — camino
- *     online de siempre (con su audit y banner DUPLICADO server-side),
- *  2) si el backend está INALCANZABLE (sin conexión / 5xx) y tenemos los datos
- *     de la venta, arma el recibo y deja que el print-agent lo renderice
- *     ({receipt}) → imprime SIN depender del backend.
+ * Impresión del recibo y la comanda desde el NAVEGADOR del mostrador.
  *
- * En ambos casos los bytes salen del print-agent LOCAL (misma PC que la
- * impresora). NO usa el diálogo del navegador (eso causaba papel infinito).
+ * RUTEO MULTI-IMPRESORA: lee la config local de la terminal
+ * (features/printing) y manda cada documento a la(s) impresora(s) asignada(s)
+ * por nombre. Si NO hay config, cae al comportamiento histórico de una sola
+ * impresora (la del .env del print-agent).
+ *
+ * Recibo: online-first (bytes ESC/POS del backend) con respaldo offline (el
+ * print-agent lo renderiza desde los datos de la venta). Comanda de cocina
+ * excluye reventa directa (bebidas) vía ?variant=kitchen.
+ *
+ * Los bytes siempre salen del print-agent LOCAL (misma PC que la impresora).
+ * NO usa el diálogo del navegador (causaba papel infinito).
  */
 import type { Sale } from '@pos-tercos/types';
 import { buildReceiptDataInput, type ReceiptDataInput } from '../lib/build-receipt-data';
+import { printersForDoc } from '../../printing/lib/printer-config';
 
 const AGENT_URL =
   process.env.NEXT_PUBLIC_PRINT_AGENT_URL ?? 'http://localhost:9120';
@@ -27,9 +31,10 @@ export async function printReceipt(
   saleId: string,
   opts: PrintOptions = {},
 ): Promise<void> {
+  const targets = printersForDoc('factura');
   const escposBase64 = await tryBackendBytes(saleId);
   if (escposBase64) {
-    await sendToAgent({ escposBase64 });
+    await sendToTargets({ escposBase64 }, targets);
     return;
   }
   // Backend inalcanzable → respaldo offline con los datos que tenemos.
@@ -39,31 +44,50 @@ export async function printReceipt(
     );
   }
   const receipt = buildReceiptDataInput(opts.fallback, { reprint: opts.reprint });
-  await sendToAgent({ receipt });
+  await sendToTargets({ receipt }, targets);
 }
 
 /**
- * Imprime la COMANDA de cocina (sin precios) vía print-agent local. Se
- * dispara al COBRAR — la venta puede seguir PENDIENTE_PAGO.
- * `cancel` → ticket de ANULACIÓN para que la cocina descarte el pedido si el
- * cobro se abandonó tras imprimir la comanda.
+ * Imprime la COMANDA vía print-agent local. Se dispara al COBRAR (la venta
+ * puede seguir PENDIENTE_PAGO). Rutea:
+ *  - impresoras "comanda-cocina" → variante sin bebidas (reventa directa),
+ *  - impresoras "comanda-completa" → variante con todo.
+ * `cancel` → ticket de ANULACIÓN para que la cocina descarte el pedido.
+ * Sin config: una sola comanda completa a la impresora por defecto (histórico).
  */
 export async function printComanda(
   saleId: string,
   opts: { cancel?: boolean } = {},
 ): Promise<void> {
-  const qs = opts.cancel ? '?cancel=true' : '';
-  const res = await fetch(`/api/sales/${saleId}/comanda-escpos${qs}`, {
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(
-      `No se pudo generar la comanda (${res.status})${text ? `: ${text.slice(0, 150)}` : ''}`,
-    );
+  const kitchen = printersForDoc('comanda-cocina');
+  const full = printersForDoc('comanda-completa');
+
+  // Sin config de comandas → comportamiento histórico (una impresora default).
+  if (kitchen.length === 0 && full.length === 0) {
+    const { escposBase64 } = await fetchComanda(saleId, { cancel: opts.cancel });
+    await sendToTargets({ escposBase64 }, []);
+    return;
   }
-  const { escposBase64 } = (await res.json()) as { escposBase64: string };
-  await sendToAgent({ escposBase64 });
+
+  if (kitchen.length > 0) {
+    const { escposBase64, itemCount } = await fetchComanda(saleId, {
+      cancel: opts.cancel,
+      variant: 'kitchen',
+    });
+    // No imprimir comanda de cocina vacía (pedido solo de bebidas), salvo que
+    // sea un ticket de anulación (la cocina igual debe enterarse).
+    if (itemCount > 0 || opts.cancel) {
+      await sendToTargets({ escposBase64 }, kitchen);
+    }
+  }
+
+  if (full.length > 0) {
+    const { escposBase64 } = await fetchComanda(saleId, {
+      cancel: opts.cancel,
+      variant: 'full',
+    });
+    await sendToTargets({ escposBase64 }, full);
+  }
 }
 
 /**
@@ -72,13 +96,35 @@ export async function printComanda(
  * offline (B.2): el recibo lleva el número provisional OFF-N.
  */
 export async function printReceiptData(receipt: ReceiptDataInput): Promise<void> {
-  await sendToAgent({ receipt });
+  await sendToTargets({ receipt }, printersForDoc('factura'));
+}
+
+/** Pide los bytes de la comanda al backend (variante opcional). */
+async function fetchComanda(
+  saleId: string,
+  opts: { cancel?: boolean; variant?: 'kitchen' | 'full' },
+): Promise<{ escposBase64: string; itemCount: number }> {
+  const params = new URLSearchParams();
+  if (opts.cancel) params.set('cancel', 'true');
+  if (opts.variant) params.set('variant', opts.variant);
+  const qs = params.toString();
+  const res = await fetch(`/api/sales/${saleId}/comanda-escpos${qs ? `?${qs}` : ''}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `No se pudo generar la comanda (${res.status})${text ? `: ${text.slice(0, 150)}` : ''}`,
+    );
+  }
+  const data = (await res.json()) as { escposBase64: string; itemCount?: number };
+  return { escposBase64: data.escposBase64, itemCount: data.itemCount ?? 1 };
 }
 
 /**
- * Pide los bytes al backend. Devuelve null SOLO si el backend está inalcanzable
- * (fetch falla o 5xx) → ahí entra el respaldo offline. Un 4xx (backend que
- * RECHAZA, ej. status inválido) se propaga como error: no lo enmascaramos.
+ * Pide los bytes del recibo al backend. Devuelve null SOLO si el backend está
+ * inalcanzable (fetch falla o 5xx) → ahí entra el respaldo offline. Un 4xx
+ * (backend que RECHAZA) se propaga como error.
  */
 async function tryBackendBytes(saleId: string): Promise<string | null> {
   let res: Response;
@@ -100,8 +146,26 @@ async function tryBackendBytes(saleId: string): Promise<string | null> {
   );
 }
 
+type PrintPayload = { escposBase64: string } | { receipt: ReceiptDataInput };
+
+/**
+ * Manda el documento a cada impresora destino. Si `targets` está vacío,
+ * imprime una vez SIN destino → el agent usa la impresora de su .env
+ * (comportamiento de una sola impresora, retrocompatible).
+ */
+async function sendToTargets(body: PrintPayload, targets: string[]): Promise<void> {
+  if (targets.length === 0) {
+    await sendToAgent(body);
+    return;
+  }
+  // Secuencial: comparten el spooler local; en serie evita choques raros.
+  for (const printer of targets) {
+    await sendToAgent({ ...body, printer });
+  }
+}
+
 async function sendToAgent(
-  body: { escposBase64: string } | { receipt: ReceiptDataInput },
+  body: PrintPayload & { printer?: string },
 ): Promise<void> {
   let agentRes: Response;
   try {

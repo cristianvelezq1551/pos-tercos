@@ -86,7 +86,13 @@ export class SalesReceiptService {
     saleId: string,
     userId: string,
     cancel = false,
-  ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
+    variant: 'kitchen' | 'full' = 'full',
+  ): Promise<{
+    escposBase64: string;
+    receiptNumber: number;
+    reprint: boolean;
+    itemCount: number;
+  }> {
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
       include: includeFull(),
@@ -97,11 +103,18 @@ export class SalesReceiptService {
         `Sale en status ${sale.status} no genera comanda.`,
       );
     }
+    // Comanda de cocina: excluye reventa directa (bebidas/snacks que no se
+    // preparan). La comanda completa (cajero) lleva todo.
+    const scoped =
+      variant === 'kitchen'
+        ? { ...sale, items: sale.items.filter((it) => !it.product?.directResale) }
+        : sale;
+
     const previousPrints = await this.prisma.auditLog.count({
       where: { action: 'COMANDA_PRINTED', entityType: 'sale', entityId: saleId },
     });
     const isReprint = !cancel && previousPrints > 0;
-    const comanda = { ...buildComandaData(toSaleDto(sale), isReprint), cancelled: cancel };
+    const comanda = { ...buildComandaData(toSaleDto(scoped), isReprint), cancelled: cancel };
     const bytes = renderComandaEscPos(comanda);
 
     await this.audit.log({
@@ -112,6 +125,7 @@ export class SalesReceiptService {
       metadata: {
         receiptNumber: Number(sale.receiptNumber),
         reprint: isReprint,
+        variant,
       },
     });
 
@@ -119,6 +133,7 @@ export class SalesReceiptService {
       escposBase64: bytes.toString('base64'),
       receiptNumber: Number(sale.receiptNumber),
       reprint: isReprint,
+      itemCount: scoped.items.length,
     };
   }
 

@@ -42,7 +42,7 @@ function loadEnv(): void {
 loadEnv();
 
 import { renderReceiptEscPos, type ReceiptData } from '@pos-tercos/domain';
-import { sendBytes, kickDrawer } from './printer-driver';
+import { sendBytes, kickDrawer, listPrinters } from './printer-driver';
 
 /**
  * Print Agent — servicio Node local que corre en la Raspberry Pi del
@@ -107,10 +107,17 @@ const PrintBodySchema = z
   .object({
     escposBase64: z.string().min(1).optional(),
     receipt: ReceiptInputSchema.optional(),
+    // Impresora destino (nombre Windows). El POS rutea cada documento a la
+    // impresora asignada; si falta, el agent usa la del .env.
+    printer: z.string().min(1).nullable().optional(),
   })
   .refine((b) => Boolean(b.escposBase64) || Boolean(b.receipt), {
     message: 'Falta escposBase64 o receipt',
   });
+
+const DrawerBodySchema = z
+  .object({ printer: z.string().min(1).nullable().optional() })
+  .optional();
 
 /** Datos del negocio para el recibo offline — del .env del agent (misma PC). */
 function businessFromEnv(): ReceiptData['business'] {
@@ -168,6 +175,13 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // Lista de impresoras disponibles → el POS arma la config de ruteo.
+    if (req.method === 'GET' && req.url === '/printers') {
+      const list = await listPrinters();
+      json(res, 200, list);
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/print') {
       console.log('[print-agent] /print recibido…');
       const body = await readBody(req);
@@ -184,15 +198,21 @@ const server = createServer(async (req, res) => {
             ...parsed.data.receipt!,
             business: businessFromEnv(),
           });
-      await sendBytes(bytes);
+      await sendBytes(bytes, parsed.data.printer ?? null);
       const mode = parsed.data.escposBase64 ? 'bytes' : 'receipt';
-      console.log(`[print-agent] ✓ impreso (${bytes.length} bytes, modo ${mode})`);
+      const dest = parsed.data.printer ?? '(.env)';
+      console.log(
+        `[print-agent] ✓ impreso (${bytes.length} bytes, modo ${mode}, impresora ${dest})`,
+      );
       json(res, 200, { ok: true, bytesSent: bytes.length });
       return;
     }
 
     if (req.method === 'POST' && req.url === '/drawer-open') {
-      await kickDrawer();
+      const body = await readBody(req);
+      const parsed = DrawerBodySchema.safeParse(body ? JSON.parse(body) : undefined);
+      const printer = parsed.success ? (parsed.data?.printer ?? null) : null;
+      await kickDrawer(printer);
       json(res, 200, { ok: true });
       return;
     }

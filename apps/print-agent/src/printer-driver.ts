@@ -43,8 +43,24 @@ function readConfig() {
   };
 }
 
-export async function sendBytes(bytes: Buffer): Promise<void> {
+/**
+ * Imprime bytes ESC/POS. `targetPrinter` (opcional) elige una impresora de
+ * Windows por nombre — así un solo agent maneja VARIAS impresoras (cocina +
+ * cajero) instaladas en la misma PC. Si no se pasa, usa la del `.env`
+ * (comportamiento histórico de una sola impresora).
+ */
+export async function sendBytes(
+  bytes: Buffer,
+  targetPrinter?: string | null,
+): Promise<void> {
   const cfg = readConfig();
+
+  // Impresora destino explícita (Windows): el POS rutea cada documento a la
+  // impresora asignada por nombre. Tiene prioridad sobre el .env.
+  if (process.platform === 'win32' && targetPrinter) {
+    await writeWindowsRaw(targetPrinter, bytes);
+    return;
+  }
 
   // Modo 1: Windows spooler RAW (recomendado en el mostrador).
   if (process.platform === 'win32' && cfg.printerName) {
@@ -83,8 +99,59 @@ export async function sendBytes(bytes: Buffer): Promise<void> {
   );
 }
 
-export async function kickDrawer(): Promise<void> {
-  await sendBytes(DRAWER_KICK);
+export async function kickDrawer(targetPrinter?: string | null): Promise<void> {
+  await sendBytes(DRAWER_KICK, targetPrinter);
+}
+
+/**
+ * Lista las impresoras disponibles para que el POS arme su configuración de
+ * ruteo (qué imprime cada una). En Windows usa el spooler (Get-Printer); en
+ * otras plataformas devuelve lo que haya en el `.env` como única opción.
+ */
+export async function listPrinters(): Promise<{
+  printers: string[];
+  defaultPrinter: string | null;
+  platform: string;
+}> {
+  const cfg = readConfig();
+  if (process.platform === 'win32') {
+    const names = await listWindowsPrinters();
+    return { printers: names, defaultPrinter: cfg.printerName, platform: 'win32' };
+  }
+  // Dev / Linux-Pi: la impresora del .env (si hay) es la única conocida.
+  const fallback = cfg.printerName ?? cfg.device;
+  return {
+    printers: fallback ? [fallback] : [],
+    defaultPrinter: fallback,
+    platform: process.platform,
+  };
+}
+
+async function listWindowsPrinters(): Promise<string[]> {
+  return new Promise((res) => {
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        'Get-Printer | Select-Object -ExpandProperty Name',
+      ],
+      { windowsHide: true, timeout: 10000 },
+      (err, stdout) => {
+        if (err) {
+          console.log(`[print-agent] no se pudo listar impresoras: ${err.message}`);
+          res([]);
+          return;
+        }
+        const names = stdout
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        res(names);
+      },
+    );
+  });
 }
 
 // ====================================================================

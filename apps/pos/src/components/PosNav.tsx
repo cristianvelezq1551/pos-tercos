@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, BellRing, History, UtensilsCrossed, Wallet } from 'lucide-react';
+import { Archive, BellRing, History, Settings, UtensilsCrossed, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -10,6 +10,7 @@ const TABS = [
   { href: '/historial', label: 'Historial', icon: History },
   { href: '/caja', label: 'Caja', icon: Wallet },
   { href: '/arqueos', label: 'Arqueos', icon: Archive },
+  { href: '/configuracion', label: 'Config', icon: Settings },
 ] as const;
 
 /**
