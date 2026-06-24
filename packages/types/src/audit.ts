@@ -35,6 +35,7 @@ export const AuditActionEnum = z.enum([
   'SALE_CREATED',
   'SALE_PAID',
   'SALE_VOIDED',
+  'SALE_REFUNDED',
   'SALE_STATUS_CHANGED',
   'SALE_SYNCED_OFFLINE',
   'OFFLINE_SYNC_DISCREPANCY',

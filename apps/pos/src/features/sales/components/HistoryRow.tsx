@@ -29,6 +29,12 @@ const PRINTABLE_STATUSES = new Set<SaleStatus>([
   'LISTO_DESPACHO',
   'ENTREGADO',
 ]);
+/** Reembolso: pedido que la cocina YA tomó (o ya se entregó). */
+const REFUNDABLE_STATUSES = new Set<SaleStatus>([
+  'EN_PREPARACION',
+  'LISTO_DESPACHO',
+  'ENTREGADO',
+]);
 
 function methodLabel(method: string): string {
   return method === 'CASH' ? 'Efectivo' : method === 'TRANSFER' ? 'Transferencia' : method;
@@ -39,11 +45,13 @@ export function HistoryRow({
   onChanged,
   onEdit,
   onChangePayment,
+  onRefund,
 }: {
   sale: Sale;
   onChanged: () => Promise<void> | void;
   onEdit: () => void;
   onChangePayment: () => void;
+  onRefund: () => void;
 }) {
   const [reprint, setReprint] = useState<'idle' | 'pending' | 'ok' | 'error'>(
     'idle',
@@ -157,6 +165,17 @@ export function HistoryRow({
               title="Marcar listo"
             >
               {busy ? '…' : 'Listo'}
+            </Button>
+          ) : null}
+          {/* Reembolso = devolver un pedido que la cocina ya tomó (pérdida). */}
+          {REFUNDABLE_STATUSES.has(sale.status) ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onRefund}
+              title="Reembolsar (la cocina ya preparó)"
+            >
+              Reembolsar
             </Button>
           ) : null}
           {/* Eliminar = cancelar un pedido sin pagar (no entró a cocina). */}

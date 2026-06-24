@@ -148,6 +148,27 @@ export class SalesController {
   }
 
   /**
+   * Reembolsa un pedido que la cocina YA inició (EN_PREPARACION/LISTO/ENTREGADO).
+   * No revierte stock (la comida se consumió); requiere X-Approval-Pin.
+   */
+  @CashierAccess()
+  @Throttle({ default: { ttl: 300_000, limit: 5 } })
+  @Post(':id/refund')
+  refundSale(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers(APPROVAL_PIN_HEADER) approvalPin: string | undefined,
+    @Body(new ZodValidationPipe(VoidSaleSchema)) body: VoidSale,
+  ): Promise<Sale> {
+    if (!approvalPin) {
+      throw new ForbiddenException(
+        `Header ${APPROVAL_PIN_HEADER} requerido para reembolsar venta.`,
+      );
+    }
+    return this.sales.refund(id, body, user.sub, approvalPin);
+  }
+
+  /**
    * Edita los productos de un pedido ya cobrado. Si la cocina ya lo inició,
    * solo se pueden cambiar líneas de reventa directa (ej. bebidas).
    */

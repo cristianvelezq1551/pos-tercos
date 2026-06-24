@@ -31,6 +31,7 @@ const ACTION_LABELS: Record<string, string> = {
   SALE_CREATED: 'Creó venta',
   SALE_PAID: 'Cobró venta',
   SALE_VOIDED: 'Anuló venta',
+  SALE_REFUNDED: 'Reembolsó venta',
   SALE_STATUS_CHANGED: 'Cambió estado de venta',
   SALE_SYNCED_OFFLINE: 'Sincronizó venta offline',
   OFFLINE_SYNC_DISCREPANCY: 'Descuadre al sincronizar offline',

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../api/list';
 import { ChangePaymentModal } from './ChangePaymentModal';
 import { EditSaleModal } from './EditSaleModal';
+import { RefundModal } from './RefundModal';
 import { HistoryRow } from './HistoryRow';
 import { startOfTodayIso } from '../../../lib/dates';
 import { usePolling } from '../../../lib/use-polling';
@@ -31,6 +32,7 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
   const [filterKey, setFilterKey] = useState('todos');
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [payingSale, setPayingSale] = useState<Sale | null>(null);
+  const [refundingSale, setRefundingSale] = useState<Sale | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -128,6 +130,7 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
                 onChanged={refresh}
                 onEdit={() => setEditingSale(s)}
                 onChangePayment={() => setPayingSale(s)}
+                onRefund={() => setRefundingSale(s)}
               />
             ))}
           </ul>
@@ -145,6 +148,12 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
         open={payingSale !== null}
         onClose={() => setPayingSale(null)}
         onSaved={() => void refresh()}
+      />
+      <RefundModal
+        sale={refundingSale}
+        open={refundingSale !== null}
+        onClose={() => setRefundingSale(null)}
+        onRefunded={() => void refresh()}
       />
     </div>
   );

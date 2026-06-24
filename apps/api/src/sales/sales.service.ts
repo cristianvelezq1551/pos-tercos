@@ -658,6 +658,104 @@ export class SalesService {
   }
 
   // ==================================================================
+  // REFUND (reembolso de un pedido que la cocina YA inició)
+  // ==================================================================
+
+  /**
+   * Reembolsa un pedido que la cocina ya tomó (EN_PREPARACION / LISTO_DESPACHO
+   * / ENTREGADO). Requiere PIN de Admin/Dueño. A diferencia del void:
+   *  - NO revierte stock: la comida ya se preparó/entregó → es una pérdida.
+   *  - El pedido pasa a VOID (se excluye de ingresos y del arqueo) → la plata
+   *    devuelta al cliente queda reflejada (el cajero entrega el efectivo /
+   *    reversa la transferencia; el esperado de caja ya no la incluye).
+   * Para anular un PAGADO que la cocina aún NO inició, se usa `void`.
+   */
+  async refund(
+    saleId: string,
+    input: VoidSale,
+    cashierId: string,
+    approverPin: string,
+  ): Promise<Sale> {
+    const approverId = await this.approvals.verify(approverPin).catch(async (err) => {
+      await this.audit.log({
+        userId: cashierId,
+        action: 'APPROVAL_DENIED',
+        entityType: 'sale',
+        entityId: saleId,
+        metadata: { reason: 'refund', message: err instanceof Error ? err.message : 'invalid pin' },
+      });
+      throw err instanceof ForbiddenException ? err : new ForbiddenException('PIN inválido');
+    });
+
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { id: true, status: true, type: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    const REFUNDABLE = ['EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
+    if (!REFUNDABLE.includes(existing.status as (typeof REFUNDABLE)[number])) {
+      throw new BadRequestException(
+        existing.status === 'PAGADO'
+          ? 'La cocina aún no inició este pedido — usá "Anular" (revierte el stock).'
+          : `No se puede reembolsar en estado ${existing.status}.`,
+      );
+    }
+
+    const oldStatus = existing.status;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.sale.updateMany({
+        where: { id: saleId, status: oldStatus },
+        data: { status: 'VOID', voidReason: `Reembolso: ${input.reason}` },
+      });
+      if (res.count === 0) {
+        throw new BadRequestException('El pedido cambió de estado — recargá e intentá de nuevo.');
+      }
+      await tx.saleStatusLog.create({
+        data: {
+          saleId,
+          statusFrom: oldStatus,
+          statusTo: 'VOID',
+          userId: cashierId,
+          notes: `reembolso: ${input.reason}`,
+        },
+      });
+      return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
+    });
+
+    await this.audit.log({
+      userId: cashierId,
+      action: 'SALE_REFUNDED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: { reason: input.reason, approverId, oldStatus },
+    });
+    await this.audit.log({
+      userId: approverId,
+      action: 'APPROVAL_GRANTED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: { reason: 'refund', cashierId },
+    });
+
+    const dto = toSaleDto(updated);
+    void this.ownerNotifications.alert(
+      'sale_voided',
+      buildVoidAlertMessage({
+        businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+        cashierName: dto.cashierName ?? null,
+        receiptNumber: dto.receiptNumber,
+        turnNumber: dto.turnNumber,
+        total: dto.total,
+        reason: `REEMBOLSO — ${input.reason}`,
+      }),
+      { saleId, receiptNumber: dto.receiptNumber, refund: true },
+    );
+    // Estaba en la cola/board de cocina → avisar al KDS para sacarlo.
+    this.kdsGateway.emit('order.status.changed', dto);
+    return dto;
+  }
+
+  // ==================================================================
   // CANCEL WEB ORDER (pedido web nunca pagado)
   // ==================================================================
 

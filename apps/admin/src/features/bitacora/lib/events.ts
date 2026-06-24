@@ -16,7 +16,7 @@ const CAJA: AuditAction[] = [
   'CASH_MOVEMENT_IN',
   'CASH_MOVEMENT_OUT',
 ];
-const ANULACIONES: AuditAction[] = ['SALE_VOIDED'];
+const ANULACIONES: AuditAction[] = ['SALE_VOIDED', 'SALE_REFUNDED'];
 const CAJON: AuditAction[] = ['CASH_DRAWER_OPENED', 'CASH_DRAWER_OPENED_NO_SALE'];
 const APROBACIONES: AuditAction[] = ['APPROVAL_GRANTED', 'APPROVAL_DENIED', 'APPROVAL_PIN_SET'];
 const SESIONES: AuditAction[] = ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED', 'AUTH_LOGOUT'];
@@ -93,6 +93,12 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
     case 'SALE_VOIDED':
       return {
         label: 'Anuló venta',
+        detail: `${m.reason ? `Motivo: ${String(m.reason)}` : 'Sin motivo'}${m.oldStatus ? ` · estado previo: ${String(m.oldStatus)}` : ''}`,
+        tone: 'danger',
+      };
+    case 'SALE_REFUNDED':
+      return {
+        label: 'Reembolsó venta',
         detail: `${m.reason ? `Motivo: ${String(m.reason)}` : 'Sin motivo'}${m.oldStatus ? ` · estado previo: ${String(m.oldStatus)}` : ''}`,
         tone: 'danger',
       };
