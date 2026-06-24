@@ -1116,6 +1116,30 @@ model PayableCommitment {
   @@map("payable_commitments")
 }
 
+model CortesiaRequest {
+  id            String    @id @default(uuid())
+  /// 'PENDING' | 'APPROVED' | 'REJECTED'.
+  status        String    @default("PENDING")
+  /// Pedido que acompañó la cortesía (contexto); null si fue un regalo suelto.
+  saleId        String?   @map("sale_id")
+  productId     String    @map("product_id")
+  sizeId        String?   @map("size_id")
+  quantity      Int
+  reason        String
+  /// COGS snapshot (costo real estimado del producto regalado).
+  costAmount    Decimal?  @map("cost_amount") @db.Decimal(14, 2)
+  /// Precio de venta de referencia (lo que se habría cobrado).
+  salePrice     Decimal   @map("sale_price") @db.Decimal(14, 2)
+  requestedById String    @map("requested_by_id")
+  resolvedById  String?   @map("resolved_by_id")
+  resolvedAt    DateTime? @map("resolved_at")
+  resolverNote  String?   @map("resolver_note")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@map("cortesia_requests")
+}
+
 /// Tesorería — saldos iniciales de los dos bolsillos (Efectivo y Cuenta) y la
 /// fecha de corte desde la que se cuenta. Fila única "singleton" (las "celdas
 /// amarillas" del Excel). Si `anchorDate` es NULL se cuenta todo el histórico.

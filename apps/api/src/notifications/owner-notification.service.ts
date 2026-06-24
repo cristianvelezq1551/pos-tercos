@@ -8,6 +8,7 @@ export type OwnerAlertKind =
   | 'sale_voided'
   | 'drawer_no_sale'
   | 'cost_increase'
+  | 'cortesia_request'
   | 'server_error';
 
 /**

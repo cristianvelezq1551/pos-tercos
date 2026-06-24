@@ -11,6 +11,7 @@ import { useCartStore } from '../store/cart-store';
 import { CartLineRow } from './CartLineRow';
 import { CheckoutModal, type CheckoutSuccess } from './CheckoutModal';
 import { LastSaleBanner } from './LastSaleBanner';
+import { CortesiaModal } from '../../cortesias';
 import { usePolling } from '../../../lib/use-polling';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -28,6 +29,7 @@ export function CartPanel() {
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [cortesiaOpen, setCortesiaOpen] = useState(false);
 
   usePolling(async () => {
     try {
@@ -72,11 +74,16 @@ export function CartPanel() {
             {items.length} ítem{items.length === 1 ? '' : 's'}
           </span>
         </h2>
-        {items.length > 0 ? (
-          <Button variant="ghost" size="sm" onClick={clear}>
-            Vaciar
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setCortesiaOpen(true)}>
+            Cortesía
           </Button>
-        ) : null}
+          {items.length > 0 ? (
+            <Button variant="ghost" size="sm" onClick={clear}>
+              Vaciar
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto">
@@ -157,6 +164,12 @@ export function CartPanel() {
         promos={promos}
         onClose={() => setCheckoutOpen(false)}
         onSuccess={handleCheckoutSuccess}
+      />
+
+      <CortesiaModal
+        open={cortesiaOpen}
+        onClose={() => setCortesiaOpen(false)}
+        onDone={() => undefined}
       />
     </aside>
   );

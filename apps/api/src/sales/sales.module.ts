@@ -29,6 +29,6 @@ import { SalesService } from './sales.service';
     StaleSalesSweepService,
     ReceiptIntegrityService,
   ],
-  exports: [SalesService, ReceiptIntegrityService],
+  exports: [SalesService, ReceiptIntegrityService, SalesConsumptionService],
 })
 export class SalesModule {}

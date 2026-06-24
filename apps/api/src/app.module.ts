@@ -44,6 +44,7 @@ import { TokenVersionModule } from './auth/token-version/token-version.module';
 import { BusinessConfigModule } from './business-config/business-config.module';
 import { TreasuryModule } from './treasury/treasury.module';
 import { PayablesModule } from './payables/payables.module';
+import { CortesiasModule } from './cortesias/cortesias.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { PayablesModule } from './payables/payables.module';
     FixedCostsModule,
     TreasuryModule,
     PayablesModule,
+    CortesiasModule,
   ],
   controllers: [HealthController],
   providers: [
