@@ -126,7 +126,37 @@ Auditoría doble (online/offline) verificada contra el código. **No se encontr�
 - [ ] **Auto-86 predictivo en el POS** ("al ritmo actual el pan se acaba en ~45 min").
 - [ ] **Dueño conversacional por WhatsApp** (responder "¿cuánto va hoy?" con el LLM + endpoints de reportes).
 - [ ] **Anti-fraude en vivo** (correlacionar ediciones de pago + anulaciones + cajón sin venta en la misma hora).
-- [ ] **KDS Flutter — pantalla de producción** (el cocinero registra tandas desde la tablet; hoy solo desde admin).
+- [x] **KDS Flutter — pantalla de producción (CERRADA 2026-06-22)** — el cocinero registra tandas desde la tablet (`/production`, vía `/subproducts/production-status` + `/produce`).
+- [x] **KDS Flutter — biblia de recetas (HECHA 2026-06-22)** — composición (qué lleva + cantidades) + paso a paso editable, ruta `/recipe-book`.
+
+---
+
+## Auditoría integral (2026-06-24) — hallazgos nuevos
+
+Auditoría completa verificada contra código (3 exploradores: backend / frontends / Flutter+packages+integración). **Veredicto: sistema feature-complete y maduro para 1 punto de venta single-instance. 0 TODO/FIXME reales. FIFO de subproductos CERRADO** (`packages/domain/src/cost-fifo/run-ledger.ts`).
+
+### 🔴 Bloqueante de deploy
+- [ ] **KDS Flutter sin URL de producción** — `app_config.dart:12` tiene hardcodeada la IP LAN `192.168.1.4:3001`; un APK release sin `--dart-define=API_URL=` apunta a la red local. **Wirear antes de compilar el APK de prod.**
+
+### 🟠 Huecos funcionales acotados (verificados)
+- [ ] **`purchase-suggestions` ignora subproductos** — solo arma claves `INGREDIENT:`/`PRODUCT:` (`purchase-suggestions.service.ts:126-132`); un subproducto bajo umbral nunca alerta "falta producir" por esta vía.
+- [ ] **Factura por foto no persiste la extracción IA** (`invoices.service.ts:201` guarda `{}`) → se pierde la trazabilidad de lo que leyó la IA.
+- [ ] **`web-menu` no filtra agotados** — devuelve todos los activos; el "Agotado" lo calcula el cliente por otro endpoint.
+- [ ] **Audio del B-roll sin validación magic-byte** (`display-content.controller.ts`) — confía en el mimetype declarado (las imágenes sí validan).
+
+### 🟡 Deuda técnica (verificada)
+- [ ] **Drift TS↔Dart sin guard** — modelos del KDS Flutter a mano + enums con fallback silencioso; cambio de contrato del backend falla en silencio. **Riesgo latente más serio a mediano plazo** (considerar contract test / fixtures compartidos).
+- [ ] **Rol fantasma `ADMIN_FINANCIERO`** — referenciado en `products.controller.ts:47` y `shifts.controller.ts:36` pero NO existe en el enum `UserRole`. Código muerto latente.
+- [ ] **`receipt-integrity` cron sin try/catch** (`receipt-integrity.service.ts:38-40`) — único cron que puede lanzar al scheduler.
+- [ ] **Código muerto KDS**: `presentation/modules/` y `presentation/router/` (dirs vacíos legacy, borrables).
+- [ ] **Catches mudos en admin** (`InvoiceUploader.tsx:83` + varios `serverFetchJson().catch(()=>[])`) sin `logError`.
+- [ ] **Tests faltantes load-bearing en `domain`**: `common/money.ts`, `matching/similarity.ts`, `recipe/expand-recipe-one-level.ts`.
+- [ ] **`Combobox` (select con búsqueda) inexistente** en `packages/ui` (`select.tsx:7`).
+
+### ⚪ Hardening / single-instance
+- [ ] **Estado in-memory no escala a multi-instancia** (turnero, throttle de alertas, idempotencia de notificaciones) — OK para 1 instancia, documentar el límite.
+- [ ] **`TZ=America/Bogota` sin enforcement** — reset turnero / digest 21:30 / promos / buckets de reportes dependen de la hora local; validar en `assertRequiredEnv`.
+- [ ] **print-agent**: `dist/.env` committeado (verificar que no sea secreto real), `/drawer-open` sin auth por default, stub muerto `escpos-usb.d.ts`. **Puerto real 9120** (CLAUDE.md decía 9100 — corregido).
 
 ---
 

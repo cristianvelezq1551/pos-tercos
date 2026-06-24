@@ -290,8 +290,10 @@ apps/api/src/notifications/
 
 ---
 
-## 5. Schema DB (30 tablas + 12 enums + 1 sequence)
+## 5. Schema DB (37 modelos + 13 enums + 1 sequence)
 
+> **Conteo real a 2026-06-24 (auditoría): 37 models / 13 enums.** La lista numerada de abajo quedó en la v2 (30/12) y NO refleja las tablas agregadas después: `stock_counts`, `sale_payments`, `payment_method_settings`, `display_slides`, `display_tracks`, `fixed_costs` + `fixed_cost_payments`, y el módulo de nómina (`payroll_days` / `payroll_adjustments` / `payroll_payments`, que reemplazaron `worker_attendance` / `worker_commissions`). Columnas nuevas no listadas: `products.preparation_steps` + `subproducts.preparation_steps` (biblia), `sales`/`shifts` varios (tips, arqueo digital). Enums: `PaymentMethod` ganó `CARD`; `PayType` reemplazó `WorkerCommissionType`. ⚠️ El rol `ADMIN_FINANCIERO` se referencia en código (`products`/`shifts` controllers) pero NO existe en el enum `UserRole` (deuda).
+>
 > Actualizado en reorientación v2 (2026-05-22). Eliminados: `RepartidorAvailability`, `WEB_DELIVERY` de `SaleType`, 5 estados de delivery de `SaleStatus`. Agregada: tabla `whatsapp_messages`.
 >
 > **Cajero v2.1 (2026-05-23) — ver §7.v3.** Nuevas: tabla `cash_movements`, enum `CashMovementType`. Columnas nuevas: `products.sold_out`, `sales.void_reason`, `shifts.cash_count_breakdown`. Migraciones `20260522190000_product_sold_out`, `20260523120000_sale_void_reason`, `20260523150000_cash_movements_and_arqueo`.
@@ -429,7 +431,7 @@ _(ninguno — FASE 4 cerrada)_
 ### WhatsApp automático (v2 — reemplaza FASE 9 wa.me)
 - **NO existe** `POST /sales/:id/whatsapp-clicked` — eliminado en v2.
 - Las 3 notificaciones se disparan automáticamente desde el backend (ver sec 4.10). Métricas de cobertura quedan en tabla `whatsapp_messages` (`status='sent'`), no en `audit_log`.
-- `GET /reports/whatsapp-metrics` sigue disponible pero puede necesitar ajuste para leer de `whatsapp_messages` en lugar del audit `WHATSAPP_LINK_OPENED` (deuda menor).
+- `GET /reports/whatsapp-metrics` ✅ ya lee de `whatsapp_messages` (la "deuda menor" de leer del audit `WHATSAPP_LINK_OPENED` está cerrada — ver `sales-reports.service.ts`).
 
 ### Promociones (FASE 5.C + 12.B)
 - `GET /promotions[?only_active=true]` — Cajero+ leen para tachados POS; Admin/Dueño escriben.
@@ -876,7 +878,7 @@ Esto NO afecta ingredientes (siguen con su stock histórico) ni productos direct
 
 ### Sesiones pendientes (post-este-cambio)
 
-- **Sesión 2 (FIFO subproductos)**: lot por producción, `runFifo` consume FIFO de subproductos, P&G correcto. Cierra la deuda temporal del WASTE-mapping.
+- ~~**Sesión 2 (FIFO subproductos)**~~ ✅ HECHA: `packages/domain/src/cost-fifo/run-ledger.ts` (`runLedgerFifo`, 13 tests) procesa subproductos como entidad con cola FIFO propia; las tandas de producción se materializan como lote con `unitCost = sum(insumos)/qty`; sub-subproductos propagan; PRODUCTION NO se cuenta como merma. La deuda del WASTE-mapping está cerrada. *(Nota: `production.service.ts` aún persiste `unit_cost: null` en el movement +N y tiene un comentario stale "entra en sesión próxima" — el costeo se deriva en el ledger, no de esa columna; corregir el comentario.)*
 - ~~**Sesión 4 (KDS Flutter producción)**~~ ✅ HECHA: la pantalla de producción existe en `apps/kds-flutter` (`presentation/production/`, ruta `/production`, botón desde el board). Lista subproductos con stock + umbral y registra tandas. Consume `GET /subproducts/production-status` (`@KitchenAccess`, incluye `yield`) — NO `/inventory/stock` (admin-only desde el hardening de seguridad 2026-06-22).
 - **Sesión 5 (POS/web menu pulido)**: micro-copy de "Sin {subproducto}" si necesita ajuste.
 
@@ -1468,7 +1470,7 @@ Implementación en `main` (commits `ee4a9f3 1bba4ea 990c9a3 44ed21b`):
   - `renderReceiptEscPos(receipt)` puro en `@pos-tercos/domain` retorna Buffer con secuencia ESC/POS para Epson TM-T20III (init, alignment, bold, double-height totals, partial cut). Latin1 encoding para acentos.
   - `DRAWER_KICK` constant para abrir cajón conectado al RJ-11.
   - 7 tests Vitest. Total domain: 37/37 pass.
-  - Nuevo app `apps/print-agent`: HTTP server Node nativo en puerto 9100. Endpoints `/print` (body `{escposBase64}`), `/drawer-open`, `/health`. Auth opcional `X-Agent-Secret`. Driver con fallback a disco cuando `PRINTER_DEVICE` no está set (modo dev).
+  - Nuevo app `apps/print-agent`: HTTP server Node nativo en puerto **9120** (el código usa 9120 — `main.ts`; el 9100 original chocaba con Flutter DevTools). Endpoints `/print` (body `{escposBase64}` XOR `{receipt}`), `/drawer-open`, `/health`. Auth opcional `X-Agent-Secret`. Driver 4-modos (Windows spooler / USB libusb / device file / dump a disco en dev).
   - `EscPosPrinterAdapter` + `EscPosCashDrawerAdapter` en `apps/api/src/adapters/`: POSTean al print-agent. Backup HTML del recibo persiste igual que LocalFs (sirve como fallback si agent caído).
   - Factory lazy en `PrinterModule` y `CashDrawerModule`: `PRINTER_PROVIDER=escpos` activa ambos. Default `local`.
 
@@ -1600,7 +1602,7 @@ pnpm lint          # eslint funcional (sin ignoreDuringBuilds)
 - API: `JWT_*`, `WEB_ORDER_TOKEN_SECRET`, `ANTHROPIC_API_KEY`, `STORAGE_PROVIDER=r2` + `R2_*`, `PRINTER_PROVIDER=escpos` + `PRINT_AGENT_URL/SECRET`, `OWNER_WHATSAPP_PHONE`, `BUSINESS_NAME`, `BUSINESS_ADDRESS_SHORT`, `PAYMENT_INSTRUCTIONS_NEQUI/TRANSFER`, `OPENWA_URL`, `OPENWA_API_KEY`, `OPENWA_SESSION_ID`.
 - Frontends Next.js: `JWT_ACCESS_SECRET` (POS edge middleware), `API_INTERNAL_URL`, `NEXT_PUBLIC_API_WS_URL`.
 - KDS Flutter: `API_BASE_URL`, `WS_URL` en `app_config.dart` (compiladas en el build).
-- Print Agent (Pi): `PRINTER_DEVICE=/dev/usb/lp0`, `PRINT_AGENT_PORT=9100`, `PRINT_AGENT_SECRET` (matches API).
+- Print Agent (Pi): `PRINTER_DEVICE=/dev/usb/lp0`, `PRINT_AGENT_PORT=9120`, `PRINT_AGENT_SECRET` (matches API).
 - **Eliminadas en v2:** `MAPBOX_TOKEN`, `RESTAURANT_LAT/LNG`, `DELIVERY_RADIUS_KM`, `NEXT_PUBLIC_MAPBOX_TOKEN`, `NEXT_PUBLIC_BUSINESS_NAME/ADDRESS_SHORT` (ahora solo server-side sin `NEXT_PUBLIC_`).
 
 **Operación día a día (post-launch):**
