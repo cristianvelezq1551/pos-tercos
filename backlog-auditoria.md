@@ -135,6 +135,12 @@ Auditoría doble (online/offline) verificada contra el código. **No se encontr�
 
 Auditoría completa verificada contra código (3 exploradores: backend / frontends / Flutter+packages+integración). **Veredicto: sistema feature-complete y maduro para 1 punto de venta single-instance. 0 TODO/FIXME reales. FIFO de subproductos CERRADO** (`packages/domain/src/cost-fifo/run-ledger.ts`).
 
+### Auditoría profunda de costeo FIFO + arrastre de inventario (2026-06-24)
+Verificado: precio dinámico por lote (cada compra guarda su costo real; FIFO consume oldest-first a su precio), derivación del costo de subproductos producidos, atribución exacta por venta, 3 modos de venta (reventa directa / preparado / sin control de stock), unidades consistentes (insumo en `unitRecipe`, reventa en `unitStock`). **Stock y FIFO usan los MISMOS movimientos → no puede haber desincronización de cantidad.** Dos huecos detectados y **CERRADOS**:
+- [x] 🟠 **D1 — descuento de stock concurrencia-safe (CERRADO, commit `46f24ba`).** El cobro corría en Read Committed → dos ventas concurrentes del mismo insumo podían dejar stock negativo. Ahora confirmPayment + syncOffline + edición de venta corren en **Serializable con retry** (`runSaleTxWithRetry` + `SALE_TX_OPTS`). e2e: dos cobros del mismo stock escaso → exactamente uno gana, stock final 0. **108/108.**
+- [x] 🟡 **G1 — costo en ajuste/INITIAL de stock (CERRADO, commit `f44d513`).** El form de ajuste no capturaba costo → stock inicial/manual entraba "desconocido". Ahora hay campo "Costo por unidad" en entradas positivas → FIFO lo valoriza. Smoke: INITIAL 1000g @ $5 → valor $5.000, unknownQty 0.
+- [ ] ⚪ **Limitación documentada (no bug):** el margen POR PRODUCTO se re-expande con la receta/flag ACTUAL; cambiar la receta o el tipo (preparado↔reventa) de un producto DESPUÉS de venderlo desalinea el split histórico por producto (el P&G total y el stock siguen correctos). Resto: ajustes/mermas manuales aún pueden dejar negativo (D3, operador-driven) y offline gana lo cobrado (D2, auditado).
+
 ### 🔴 Bloqueante de deploy
 - [ ] **KDS Flutter sin URL de producción** — `app_config.dart:12` tiene hardcodeada la IP LAN `192.168.1.4:3001`; un APK release sin `--dart-define=API_URL=` apunta a la red local. **Wirear antes de compilar el APK de prod.**
 
