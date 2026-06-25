@@ -47,3 +47,8 @@ export async function ackCortesia(id: string): Promise<void> {
 export function isUnseenObserved(c: CortesiaRequest): boolean {
   return c.status === 'REJECTED' && !c.seenByRequester;
 }
+
+/** Cortesía resuelta (autorizada u observada) que el cajero aún no vio. */
+export function isUnseenResolved(c: CortesiaRequest): boolean {
+  return (c.status === 'APPROVED' || c.status === 'REJECTED') && !c.seenByRequester;
+}

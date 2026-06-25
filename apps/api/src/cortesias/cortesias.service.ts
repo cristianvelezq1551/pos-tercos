@@ -163,8 +163,9 @@ export class CortesiasService {
         resolvedById: userId,
         resolvedAt: new Date(),
         resolverNote: note ?? null,
-        // Autorizada no es novedad para el cajero; observada sí avisa hasta acuse.
-        seenByRequester: status === 'APPROVED',
+        // Toda resolución es novedad para el cajero: el POS le muestra un toast.
+        // El acuse lo da el toast (autorizada: auto; observada: explícito).
+        seenByRequester: false,
       },
     });
     await this.audit.log({
