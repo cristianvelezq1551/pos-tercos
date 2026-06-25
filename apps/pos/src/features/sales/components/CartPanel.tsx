@@ -11,8 +11,7 @@ import { useCartStore } from '../store/cart-store';
 import { CartLineRow } from './CartLineRow';
 import { CheckoutModal, type CheckoutSuccess } from './CheckoutModal';
 import { LastSaleBanner } from './LastSaleBanner';
-import { CortesiaModal, LineCortesiaModal } from '../../cortesias';
-import type { CartLine } from '../lib/cart-types';
+import { OrderCortesiaModal } from '../../cortesias';
 import { usePolling } from '../../../lib/use-polling';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -31,18 +30,12 @@ export function CartPanel() {
   const [promoError, setPromoError] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [cortesiaOpen, setCortesiaOpen] = useState(false);
-  const [compingLine, setCompingLine] = useState<CartLine | null>(null);
   const [cortesiaMsg, setCortesiaMsg] = useState<string | null>(null);
 
-  const handleComped = (qty: number) => {
-    const l = compingLine;
-    if (!l) return;
-    if (qty >= l.quantity) removeLine(l.lineId);
-    else updateQty(l.lineId, l.quantity - qty);
-    setCortesiaMsg(
-      `Cortesía registrada (${qty}× ${l.productName}) · queda Sin revisar`,
-    );
-    setCompingLine(null);
+  const handleCortesiaDone = () => {
+    clear();
+    setCortesiaOpen(false);
+    setCortesiaMsg('Pedido marcado como cortesía · queda Sin revisar');
   };
 
   usePolling(async () => {
@@ -88,16 +81,16 @@ export function CartPanel() {
             {items.length} ítem{items.length === 1 ? '' : 's'}
           </span>
         </h2>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => setCortesiaOpen(true)}>
-            Cortesía suelta
-          </Button>
-          {items.length > 0 ? (
+        {items.length > 0 ? (
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => setCortesiaOpen(true)}>
+              Cortesía
+            </Button>
             <Button variant="ghost" size="sm" onClick={clear}>
               Vaciar
             </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </header>
 
       {cortesiaMsg ? (
@@ -139,7 +132,6 @@ export function CartPanel() {
                   onQty={(qty) => updateQty(line.lineId, qty)}
                   onRemove={() => removeLine(line.lineId)}
                   onNotes={(notes) => setNotes(line.lineId, notes)}
-                  onCortesia={() => setCompingLine(line)}
                 />
               );
             })}
@@ -195,17 +187,11 @@ export function CartPanel() {
         onSuccess={handleCheckoutSuccess}
       />
 
-      <CortesiaModal
+      <OrderCortesiaModal
+        items={items}
         open={cortesiaOpen}
         onClose={() => setCortesiaOpen(false)}
-        onDone={() => undefined}
-      />
-
-      <LineCortesiaModal
-        line={compingLine}
-        open={compingLine !== null}
-        onClose={() => setCompingLine(null)}
-        onComped={handleComped}
+        onDone={handleCortesiaDone}
       />
     </aside>
   );

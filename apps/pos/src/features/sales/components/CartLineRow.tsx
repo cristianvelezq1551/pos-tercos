@@ -1,7 +1,7 @@
 'use client';
 
 import { IconButton, Money, cn } from '@pos-tercos/ui';
-import { Gift, Minus, Plus, X } from 'lucide-react';
+import { Minus, Plus, X } from 'lucide-react';
 import type { CartLine } from '../lib/cart-types';
 
 export function CartLineRow({
@@ -13,7 +13,6 @@ export function CartLineRow({
   onQty,
   onRemove,
   onNotes,
-  onCortesia,
 }: {
   line: CartLine;
   lineSubtotal: number;
@@ -23,7 +22,6 @@ export function CartLineRow({
   onQty: (qty: number) => void;
   onRemove: () => void;
   onNotes: (notes: string) => void;
-  onCortesia: () => void;
 }) {
   const description = [line.size?.name, ...line.modifiers.map((m) => m.name)]
     .filter(Boolean)
@@ -41,27 +39,15 @@ export function CartLineRow({
             <Money amount={line.unitPrice} size="xs" weight="normal" className="text-current" /> c/u
           </p>
         </div>
-        <div className="flex shrink-0 items-center">
-          <IconButton
-            aria-label="Marcar como cortesía"
-            title="Cortesía (regalar esta línea)"
-            variant="ghost"
-            size="sm"
-            onClick={onCortesia}
-            className="text-ink-400 hover:text-primary"
-          >
-            <Gift className="h-4 w-4" strokeWidth={1.75} />
-          </IconButton>
-          <IconButton
-            aria-label="Quitar línea"
-            variant="ghost"
-            size="sm"
-            onClick={onRemove}
-            className="-mr-1 text-ink-400 hover:text-destructive"
-          >
-            <X className="h-4 w-4" strokeWidth={1.75} />
-          </IconButton>
-        </div>
+        <IconButton
+          aria-label="Quitar línea"
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          className="-mr-1 text-ink-400 hover:text-destructive"
+        >
+          <X className="h-4 w-4" strokeWidth={1.75} />
+        </IconButton>
       </div>
       <div className="mt-2 flex items-center justify-between">
         <div className="inline-flex items-center rounded-lg border border-border">

@@ -1,5 +1,4 @@
-export { CortesiaModal } from './components/CortesiaModal';
-export { LineCortesiaModal } from './components/LineCortesiaModal';
+export { OrderCortesiaModal } from './components/OrderCortesiaModal';
 export { CortesiasList } from './components/CortesiasList';
 export { CortesiaNotifier } from './components/CortesiaNotifier';
 export { CortesiaWatchProvider, useCortesiaWatch } from './components/CortesiaWatchProvider';
