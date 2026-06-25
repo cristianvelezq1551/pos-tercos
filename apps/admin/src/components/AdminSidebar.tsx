@@ -38,7 +38,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import type { UserRole } from '@pos-tercos/types';
 import { useNavProgress } from './nav-progress';
-import { useCortesiaPendingCount } from '../features/cortesias';
+import { useCortesiaPendingCount } from '../features/cortesias/hooks/usePendingCount';
 
 interface NavItem {
   label: string;
