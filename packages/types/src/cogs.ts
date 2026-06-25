@@ -16,6 +16,8 @@ export const PnlReportSchema = z.object({
   grossMarginPct: z.number().nullable(),
   /** Merma valorizada (al costo real del lote consumido) en el período. */
   wasteCost: z.number(),
+  /** Cortesías valorizadas a FIFO (producto regalado) en el período. */
+  cortesiaCost: z.number(),
   salesCount: z.number().int().nonnegative(),
   /** Unidades de insumo consumidas sin costo conocido (termómetro de datos). */
   cogsUnknownQty: z.number(),

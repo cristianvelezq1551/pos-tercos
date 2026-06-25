@@ -87,14 +87,11 @@ export class FinancialReportsService {
     }
     const totalFixed = round(fixedCostLines.reduce((a, l) => a + l.monthlyAmount, 0));
 
-    // Cortesías AUTORIZADAS dadas en la ventana, valuadas a costo (COGS snapshot).
-    // Es producto regalado → pérdida real que baja el neto. Las pendientes y
-    // rechazadas NO cuentan (rechazar revierte el stock; pendiente aún se revisa).
-    const cortesias = await this.prisma.cortesiaRequest.aggregate({
-      _sum: { costAmount: true },
-      where: { status: 'APPROVED', createdAt: { gte: monthStart, lte: monthEnd } },
-    });
-    const cortesiasCost = round(Number(cortesias._sum.costAmount ?? 0));
+    // Cortesías: producto regalado → pérdida real que baja el neto. Se valúa a
+    // COSTO FIFO (mismo libro que el COGS) tomando el consumo que se materializa
+    // al APROBAR la cortesía. Las pendientes y rechazadas no descuentan stock,
+    // así que naturalmente no aparecen acá.
+    const cortesiasCost = round(pnl.cortesiaCost);
 
     const netResult = round(grossMargin - totalFixed - cortesiasCost);
 

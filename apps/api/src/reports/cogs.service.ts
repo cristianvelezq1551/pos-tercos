@@ -134,6 +134,9 @@ export class CogsService {
     const wasteCost = ledger.waste
       .filter((w) => w.createdAt >= fromIso && w.createdAt <= toIso)
       .reduce((s, w) => s + w.cost, 0);
+    const cortesiaCost = ledger.cortesia
+      .filter((c) => c.createdAt >= fromIso && c.createdAt <= toIso)
+      .reduce((s, c) => s + c.cost, 0);
 
     const grossMargin = revenue - cogs;
     return {
@@ -144,6 +147,7 @@ export class CogsService {
       grossMargin: round(grossMargin),
       grossMarginPct: revenue > 0 ? Math.round((grossMargin / revenue) * 10000) / 10000 : null,
       wasteCost: round(wasteCost),
+      cortesiaCost: round(cortesiaCost),
       salesCount: sales.length,
       cogsUnknownQty: Math.round(unknownQty * 10000) / 10000,
     };

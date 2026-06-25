@@ -80,7 +80,32 @@ describe('runLedgerFifo · consumo básico', () => {
     ]);
     expect(r.saleIngredientCost.size).toBe(0);
     expect(r.waste).toHaveLength(0);
+    expect(r.cortesia).toHaveLength(0);
     expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(6);
+  });
+
+  it('cortesía: consumo a costo FIFO en su bucket, NO en COGS de venta ni merma', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 50 }),
+      mov({ delta: 5, unitCost: 80 }),
+      // cortesía aprobada consume 3 (cruza lotes): 3×50 = 150
+      mov({ delta: -3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor1' }),
+    ]);
+    expect(r.cortesia).toHaveLength(1);
+    expect(r.cortesia[0]!.cost).toBe(150);
+    expect(r.cortesia[0]!.unknownQty).toBe(0);
+    expect(r.saleIngredientCost.size).toBe(0); // no es venta
+    expect(r.waste).toHaveLength(0); // no es merma
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(12); // 15 − 3
+  });
+
+  it('cortesía sin stock suficiente → unknownQty (nunca asume $0)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1, unitCost: 50 }),
+      mov({ delta: -3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor1' }),
+    ]);
+    expect(r.cortesia[0]!.cost).toBe(50);
+    expect(r.cortesia[0]!.unknownQty).toBe(2);
   });
 });
 

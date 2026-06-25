@@ -106,8 +106,8 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
               </div>
 
               <div className="flex items-center gap-3 border-t border-border pt-2 text-xs text-muted-foreground">
-                <span>
-                  Costo:{' '}
+                <span title="Estimado; el costo real (FIFO) se contabiliza al autorizar">
+                  Costo est.:{' '}
                   {c.costAmount !== null ? (
                     <Money amount={c.costAmount} className="text-xs" weight="semibold" />
                   ) : (

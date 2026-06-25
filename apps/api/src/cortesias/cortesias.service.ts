@@ -33,7 +33,9 @@ export class CortesiasService {
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    // COGS snapshot (costo real estimado, mismo cálculo que expanded-cost).
+    // Costo de referencia para mostrar (estimado expanded-cost). El costo REAL
+    // que pega al estado financiero se calcula a FIFO cuando se APRUEBA (al
+    // materializarse el consumo). Solicitar NO descuenta stock.
     const cost = await this.recipes
       .expandedCost(input.productId, input.sizeId ?? undefined)
       .catch(() => null);
@@ -42,50 +44,18 @@ export class CortesiasService {
     const unitPrice = Number(product.basePrice ?? 0) || Number(product.comboPrice ?? 0);
     const salePrice = roundMoney(unitPrice * input.quantity);
 
-    // El producto regalado consume stock igual que una venta (un nivel).
-    const specs = await this.consumption.computeConsumptionSpecs(
-      [
-        {
-          productId: input.productId,
-          quantity: input.quantity,
-          sizeId: input.sizeId ?? null,
-          modifiers: [],
-        },
-      ],
-      'Cortesía',
-    );
-
-    const created = await this.prisma.$transaction(async (tx) => {
-      const req = await tx.cortesiaRequest.create({
-        data: {
-          status: 'PENDING',
-          saleId: input.saleId ?? null,
-          productId: input.productId,
-          sizeId: input.sizeId ?? null,
-          quantity: input.quantity,
-          reason: input.reason,
-          costAmount,
-          salePrice,
-          requestedById: userId,
-        },
-      });
-      const movements: Prisma.InventoryMovementCreateManyInput[] = specs.map((s) => ({
-        entityType: s.entityType,
-        ingredientId: s.ingredientId ?? null,
-        productId: s.productId ?? null,
-        subproductId: s.subproductId ?? null,
-        delta: s.delta,
-        type: 'MANUAL_ADJUSTMENT',
-        sourceType: 'cortesia',
-        sourceId: req.id,
-        userId,
-        notes: `Cortesía: ${input.reason}`.slice(0, 200),
-      }));
-      if (movements.length > 0) {
-        await this.consumption.assertStockSufficient(tx, movements);
-        await tx.inventoryMovement.createMany({ data: movements });
-      }
-      return req;
+    const created = await this.prisma.cortesiaRequest.create({
+      data: {
+        status: 'PENDING',
+        saleId: input.saleId ?? null,
+        productId: input.productId,
+        sizeId: input.sizeId ?? null,
+        quantity: input.quantity,
+        reason: input.reason,
+        costAmount,
+        salePrice,
+        requestedById: userId,
+      },
     });
 
     await this.audit.log({
@@ -157,33 +127,41 @@ export class CortesiasService {
       throw new BadRequestException(`La cortesía ya fue ${existing.status === 'APPROVED' ? 'aprobada' : 'rechazada'}.`);
     }
 
-    // Rechazar = no fue una cortesía real → revertir el stock que se descontó al
-    // crearla (movimientos compensatorios, insert-only). Autorizar deja el
-    // consumo (el producto se regaló de verdad) y se contabiliza el costo.
-    const reverseMovements: Prisma.InventoryMovementCreateManyInput[] = [];
-    if (status === 'REJECTED') {
-      const originals = await this.prisma.inventoryMovement.findMany({
-        where: { sourceType: 'cortesia', sourceId: id },
-      });
-      for (const o of originals) {
-        reverseMovements.push({
-          entityType: o.entityType,
-          ingredientId: o.ingredientId,
-          productId: o.productId,
-          subproductId: o.subproductId,
-          delta: Number(o.delta) * -1,
-          type: 'MANUAL_ADJUSTMENT',
-          sourceType: 'cortesia',
-          sourceId: id,
-          userId,
-          notes: 'Reverso de cortesía rechazada',
-        });
-      }
+    // AUTORIZAR = la cortesía es real → recién acá se descuenta el stock (un
+    // nivel, igual que una venta). El ledger FIFO lo valúa a costo y lo lleva a
+    // su bucket de cortesías. RECHAZAR no toca stock (nunca se descontó).
+    let movements: Prisma.InventoryMovementCreateManyInput[] = [];
+    if (status === 'APPROVED') {
+      const specs = await this.consumption.computeConsumptionSpecs(
+        [
+          {
+            productId: existing.productId,
+            quantity: existing.quantity,
+            sizeId: existing.sizeId ?? null,
+            modifiers: [],
+          },
+        ],
+        'Cortesía',
+      );
+      movements = specs.map((s) => ({
+        entityType: s.entityType,
+        ingredientId: s.ingredientId ?? null,
+        productId: s.productId ?? null,
+        subproductId: s.subproductId ?? null,
+        delta: s.delta,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'cortesia',
+        sourceId: id,
+        userId,
+        notes: `Cortesía: ${existing.reason}`.slice(0, 200),
+      }));
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (reverseMovements.length > 0) {
-        await tx.inventoryMovement.createMany({ data: reverseMovements });
+      if (movements.length > 0) {
+        // No bloqueamos por stock: el producto ya se entregó; el FIFO valúa lo
+        // que haya y marca el resto como costo desconocido (nunca asume $0).
+        await tx.inventoryMovement.createMany({ data: movements });
       }
       return tx.cortesiaRequest.update({
         where: { id },
@@ -206,7 +184,7 @@ export class CortesiasService {
       metadata: {
         costAmount: existing.costAmount ? Number(existing.costAmount) : null,
         note: note ?? null,
-        movementsReversed: reverseMovements.length,
+        movementsCreated: movements.length,
       },
     });
     return (await this.toDtos([updated]))[0]!;

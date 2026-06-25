@@ -58,6 +58,8 @@ export interface LedgerFifo {
   saleSubproductCost: Map<string, Map<string, CostQty>>;
   /** Mermas valorizadas con timestamp (no incluye consumos PRODUCTION). */
   waste: { createdAt: string; cost: number; unknownQty: number }[];
+  /** Cortesías valorizadas a FIFO con timestamp (consumo sourceType='cortesia'). */
+  cortesia: { createdAt: string; cost: number; unknownQty: number }[];
   /** Lotes restantes por stockable: `${entityType}:${id}` → valor/cantidad. */
   remaining: Map<string, { qty: number; value: number; unknownQty: number }>;
   /** Lotes restantes DETALLADOS (orden FIFO: más viejo primero) por stockable.
@@ -123,6 +125,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     saleProductCost: new Map(),
     saleSubproductCost: new Map(),
     waste: [],
+    cortesia: [],
     remaining: new Map(),
     remainingLots: new Map(),
   };
@@ -298,8 +301,12 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       attributeToSale(m.entityType, stockableId, m.sourceId, cost, -delta, unknownQty);
     } else if (m.type === 'WASTE') {
       out.waste.push({ createdAt: iso, cost, unknownQty });
+    } else if (m.sourceType === 'cortesia') {
+      // Cortesía AUTORIZADA: producto regalado → costo FIFO real (no es venta
+      // ni merma; se reporta aparte en el estado financiero).
+      out.cortesia.push({ createdAt: iso, cost, unknownQty });
     }
-    // MANUAL_ADJUSTMENT- no se atribuye (sale del libro y listo).
+    // Otro MANUAL_ADJUSTMENT- no se atribuye (sale del libro y listo).
   }
 
   // Construir remaining + remainingLots a partir del estado final de cada cola.
