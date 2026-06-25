@@ -1,45 +1,34 @@
 'use client';
 
-import type { CortesiaRequest } from '@pos-tercos/types';
 import { Button, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
-import { usePolling } from '../../../lib/use-polling';
-import { ackCortesia, isUnseenResolved, listMyCortesias } from '../api/client';
+import { ackCortesia, isUnseenResolved } from '../api/client';
+import { useCortesiaWatch } from './CortesiaWatchProvider';
 
 const AUTO_DISMISS_MS = 7_000;
 
 /**
- * Aviso proactivo al cajero cuando el dueño resuelve una cortesía. Polling
- * (~15s) — sin socket. Autorizada: toast verde que se va solo (auto-acuse).
- * Observada: toast rojo que queda hasta que el cajero toca "Entendido".
- * Montado en el layout → avisa en cualquier pantalla del POS.
+ * Aviso al cajero cuando el dueño resuelve una cortesía. Lee del watcher
+ * compartido (no poolea por su cuenta). Autorizada: toast verde que se va solo
+ * (auto-acuse). Observada: toast rojo que queda hasta "Entendido".
  */
 export function CortesiaNotifier() {
-  const [items, setItems] = useState<CortesiaRequest[]>([]);
+  const { items, refresh } = useCortesiaWatch();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
-  const refresh = useCallback(async () => {
-    try {
-      const all = await listMyCortesias();
-      setItems(all.filter(isUnseenResolved));
-    } catch {
-      // sin red: no romper.
-    }
-  }, []);
+  const dismiss = useCallback(
+    (id: string) => {
+      setDismissed((prev) => new Set(prev).add(id));
+      void ackCortesia(id)
+        .then(refresh)
+        .catch(() => undefined);
+    },
+    [refresh],
+  );
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  usePolling(refresh, 15_000, { enabled: true, immediate: false });
+  const visible = items.filter((c) => isUnseenResolved(c) && !dismissed.has(c.id));
 
-  const dismiss = useCallback((id: string) => {
-    setDismissed((prev) => new Set(prev).add(id));
-    void ackCortesia(id).catch(() => undefined);
-  }, []);
-
-  const visible = items.filter((c) => !dismissed.has(c.id));
-
-  // Auto-acuse de las autorizadas tras unos segundos (no requieren acción).
+  // Auto-acuse de las autorizadas (no requieren acción del cajero).
   const approvedKey = visible
     .filter((c) => c.status === 'APPROVED')
     .map((c) => c.id)

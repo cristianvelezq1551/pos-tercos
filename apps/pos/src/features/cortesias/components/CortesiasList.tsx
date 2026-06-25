@@ -1,29 +1,19 @@
 'use client';
 
-import type { CortesiaRequest } from '@pos-tercos/types';
 import { Button, EmptyState, Money, cn, formatDate } from '@pos-tercos/ui';
-import { useCallback, useEffect, useState } from 'react';
-import { usePolling } from '../../../lib/use-polling';
-import { ackCortesia, isUnseenObserved, listMyCortesias } from '../api/client';
+import { useEffect, useState } from 'react';
+import { ackCortesia, isUnseenObserved } from '../api/client';
 import { CORTESIA_STATUS_LABEL, CORTESIA_STATUS_TONE } from '../lib/status';
+import { useCortesiaWatch } from './CortesiaWatchProvider';
 
-/** Cortesías del cajero con su estado. Las "Observadas" se acusan acá. */
+/** Cortesías del cajero con su estado. Lee del watcher; refresca al abrir. */
 export function CortesiasList({ active }: { active: boolean }) {
-  const [rows, setRows] = useState<CortesiaRequest[]>([]);
+  const { items: rows, refresh } = useCortesiaWatch();
   const [busyId, setBusyId] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      setRows(await listMyCortesias());
-    } catch {
-      // sin red: dejar lo último cargado.
-    }
-  }, []);
 
   useEffect(() => {
     if (active) void refresh();
   }, [active, refresh]);
-  usePolling(refresh, 10_000, { enabled: active, immediate: false });
 
   const ack = async (id: string) => {
     setBusyId(id);

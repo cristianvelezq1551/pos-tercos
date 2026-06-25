@@ -6,6 +6,7 @@ import {
   type CreateCortesia,
 } from '@pos-tercos/types';
 import { z } from 'zod';
+import { notifyCortesiaActivity } from '../lib/cortesia-events';
 
 const ListSchema = z.array(CortesiaRequestSchema);
 
@@ -21,7 +22,10 @@ export async function createCortesia(input: CreateCortesia): Promise<CortesiaReq
     const body = (await res.json().catch(() => null)) as { message?: string } | null;
     throw new Error(body?.message ?? `Error ${res.status}`);
   }
-  return CortesiaRequestSchema.parse(await res.json());
+  const created = CortesiaRequestSchema.parse(await res.json());
+  // Hay una cortesía en vuelo → el watcher empieza a vigilar su resolución.
+  notifyCortesiaActivity();
+  return created;
 }
 
 /** Cortesías del cajero actual (con su estado). */
