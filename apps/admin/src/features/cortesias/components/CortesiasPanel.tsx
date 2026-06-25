@@ -1,14 +1,14 @@
 'use client';
 
 import type { CortesiaRequest, CortesiaStatus } from '@pos-tercos/types';
-import { Badge, Button, Card, EmptyState, Money, cn, formatDate } from '@pos-tercos/ui';
+import { Badge, Button, Card, EmptyState, Input, Money, cn, formatDate } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { approveCortesia, listCortesias, rejectCortesia } from '../api/client';
 
 const TABS: { key: string; label: string; status?: CortesiaStatus }[] = [
-  { key: 'PENDING', label: 'Pendientes', status: 'PENDING' },
-  { key: 'APPROVED', label: 'Aprobadas', status: 'APPROVED' },
-  { key: 'REJECTED', label: 'Rechazadas', status: 'REJECTED' },
+  { key: 'PENDING', label: 'Sin revisar', status: 'PENDING' },
+  { key: 'APPROVED', label: 'Autorizadas', status: 'APPROVED' },
+  { key: 'REJECTED', label: 'Observadas', status: 'REJECTED' },
   { key: 'ALL', label: 'Todas' },
 ];
 
@@ -18,14 +18,15 @@ const STATUS_TONE: Record<CortesiaStatus, 'warning' | 'success' | 'danger'> = {
   REJECTED: 'danger',
 };
 const STATUS_LABEL: Record<CortesiaStatus, string> = {
-  PENDING: 'Pendiente',
-  APPROVED: 'Aprobada',
-  REJECTED: 'Rechazada',
+  PENDING: 'Sin revisar',
+  APPROVED: 'Autorizada',
+  REJECTED: 'Observada',
 };
 
 export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
   const [tab, setTab] = useState('PENDING');
   const [rows, setRows] = useState<CortesiaRequest[]>(initial);
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -44,10 +45,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
   }, [tab, refresh]);
 
   const resolve = async (id: string, action: 'approve' | 'reject') => {
-    const note =
-      action === 'reject'
-        ? (window.prompt('Motivo del rechazo (opcional):') ?? undefined)
-        : undefined;
+    const note = notes[id]?.trim() || undefined;
     setBusyId(id);
     try {
       if (action === 'approve') await approveCortesia(id, note);
@@ -87,7 +85,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
       ) : null}
 
       {rows.length === 0 ? (
-        <EmptyState title="Sin solicitudes en este filtro" size="sm" />
+        <EmptyState title="Sin cortesías en este filtro" size="sm" />
       ) : (
         <ul className="space-y-2">
           {rows.map((c) => (
@@ -98,30 +96,39 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
                     {c.quantity}× {c.productName ?? 'Producto'}
                     {c.sizeName ? ` · ${c.sizeName}` : ''}
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {c.reason}
-                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{c.reason}</p>
                   <p className="mt-1 text-[0.6875rem] text-muted-foreground">
                     {c.requestedByName ?? 'Cajero'} · {formatDate(c.createdAt, 'datetime')}
-                    {c.resolvedByName ? ` · resuelta por ${c.resolvedByName}` : ''}
+                    {c.resolvedByName ? ` · revisada por ${c.resolvedByName}` : ''}
                   </p>
                 </div>
                 <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
               </div>
 
-              <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-xs">
-                <span className="text-muted-foreground">
+              <div className="flex items-center gap-3 border-t border-border pt-2 text-xs text-muted-foreground">
+                <span>
                   Costo:{' '}
                   {c.costAmount !== null ? (
                     <Money amount={c.costAmount} className="text-xs" weight="semibold" />
                   ) : (
-                    <span className="text-muted-foreground">s/d</span>
+                    <span>s/d</span>
                   )}
-                  <span className="ml-2">
-                    Precio venta: <Money amount={c.salePrice} className="text-xs" />
-                  </span>
                 </span>
-                {c.status === 'PENDING' ? (
+                <span>
+                  Precio venta: <Money amount={c.salePrice} className="text-xs" />
+                </span>
+              </div>
+
+              {c.status === 'PENDING' ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    type="text"
+                    value={notes[c.id] ?? ''}
+                    onChange={(e) => setNotes((p) => ({ ...p, [c.id]: e.target.value }))}
+                    placeholder="Nota (opcional, sobre todo al observar)"
+                    maxLength={200}
+                    className="flex-1"
+                  />
                   <span className="flex gap-1.5">
                     <Button
                       size="sm"
@@ -129,19 +136,14 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
                       disabled={busyId === c.id}
                       onClick={() => void resolve(c.id, 'reject')}
                     >
-                      Rechazar
+                      Observar
                     </Button>
-                    <Button
-                      size="sm"
-                      disabled={busyId === c.id}
-                      onClick={() => void resolve(c.id, 'approve')}
-                    >
-                      {busyId === c.id ? '…' : 'Aprobar'}
+                    <Button size="sm" disabled={busyId === c.id} onClick={() => void resolve(c.id, 'approve')}>
+                      {busyId === c.id ? '…' : 'Autorizar'}
                     </Button>
                   </span>
-                ) : null}
-              </div>
-              {c.resolverNote ? (
+                </div>
+              ) : c.resolverNote ? (
                 <p className="text-[0.6875rem] text-muted-foreground">Nota: {c.resolverNote}</p>
               ) : null}
             </Card>

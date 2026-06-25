@@ -20,7 +20,10 @@ Schema de salida (estricto):
       "quantity": number,
       "unit": string,
       "unitPrice": number,
-      "total": number
+      "total": number,
+      "packUnits": number | null,
+      "packSizePerUnit": number | null,
+      "packSizeMeasure": string | null
     }
   ],
   "warnings": string[]
@@ -30,11 +33,30 @@ Reglas:
 - Los montos van en COP sin separadores: 18000, no "18.000" ni "$18,000".
 - Si una factura tiene NIT con dígito de verificación tipo "900.123.456-7", devolvé el string completo en supplierNit.
 - Cada item DEBE tener: descripción tal como aparece, cantidad numérica > 0, unidad ("kg","lt","unidad","caja","docena","g","ml"), precio unitario sin formato, y total = quantity * unitPrice (verificá que coincida; si difiere, agregá un warning).
+- DESGLOSE DE EMPAQUE: muchas líneas describen el contenido del empaque, ej. "FILETE 150 g X 10 U" = cada unidad de compra trae 10 sub-unidades de 150 g; "CAJA X 24", "BULTO 25 KG", "x12 und". Cuando la descripción lo indique, llená:
+    · packUnits = sub-unidades por unidad de compra (10 en "X 10 U", 24 en "CAJA X 24", 12 en "x12"). Si no hay cantidad de sub-unidades, null.
+    · packSizePerUnit = tamaño de cada sub-unidad (150 en "150 g", 25 en "25 KG"). Si no aplica, null.
+    · packSizeMeasure = la medida de esa sub-unidad ("g","ml","kg","und"). Si no aplica, null.
+  IMPORTANTE: \`quantity\` SIGUE siendo el número de unidades de COMPRA de la línea (los paquetes/cajas), NO las sub-unidades. El empaque va aparte en estos 3 campos. Si la línea no tiene info de empaque, dejá los 3 en null.
 - Si la factura tiene productos repetidos en distintas líneas, mantené las líneas separadas (no combines).
 - Si NO podés leer un valor numérico crítico, dejá el campo como null y agregá una entrada en warnings.
 - NO inventes datos. Es preferible warnings y nulls que data falsa.`;
 
 export const INVOICE_EXTRACTION_USER = `Esta es la foto de una factura. Devolveme el JSON estructurado según el schema indicado.`;
+
+/**
+ * Normaliza los items crudos del LLM antes del Zod parse: garantiza que cada
+ * item tenga las claves de empaque (packUnits/packSizePerUnit/packSizeMeasure)
+ * en null si el modelo las omitió. Los valores presentes ganan sobre el default.
+ */
+export function normalizeExtractedItems(items: unknown): unknown {
+  if (!Array.isArray(items)) return items;
+  return items.map((it) =>
+    it && typeof it === 'object'
+      ? { packUnits: null, packSizePerUnit: null, packSizeMeasure: null, ...(it as object) }
+      : it,
+  );
+}
 
 // ====================================================================
 // Purchase suggestion evaluation (FASE 12.D)

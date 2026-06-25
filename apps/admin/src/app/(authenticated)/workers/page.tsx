@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
 export default function WorkersIndexRedirect() {
-  redirect('/workers/payroll');
+  redirect('/workers/semana');
 }

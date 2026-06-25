@@ -9,6 +9,7 @@ import {
   type RecipeGraph,
 } from '@pos-tercos/domain';
 import type {
+  FifoLotsResponse,
   InventoryValuationReport,
   PnlReport,
   ProductMargin,
@@ -75,7 +76,10 @@ export class CogsService {
         productId: true,
         subproductId: true,
       },
-      orderBy: { createdAt: 'asc' },
+      // `id` como desempate secundario: con createdAt idéntico (mismo ms),
+      // Postgres no garantiza orden → el FIFO sería no-determinista entre
+      // corridas. Con el id el replay es 100% reproducible.
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
     const plain: LedgerMovement[] = movements.map((m) => ({
       id: m.id,
@@ -191,6 +195,25 @@ export class CogsService {
     };
   }
 
+  /** Lotes FIFO restantes por stockable (orden de consumo). Solo lectura: para
+   *  mostrar "tu inventario rinde N porciones a $X, M a $Y" en el editor de
+   *  receta, sin tocar el costeo. */
+  async getFifoLots(): Promise<FifoLotsResponse> {
+    const ledger = await this.runLedger();
+    const entities: FifoLotsResponse['entities'] = [];
+    for (const [key, lots] of ledger.remainingLots) {
+      const sep = key.indexOf(':');
+      const entityType = key.slice(0, sep) as 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT';
+      const entityId = key.slice(sep + 1);
+      entities.push({
+        entityType,
+        entityId,
+        lots: lots.map((l) => ({ qty: Math.round(l.qty * 10000) / 10000, unitCost: l.unitCost })),
+      });
+    }
+    return { entities };
+  }
+
   // ==================================================================
   // Margen real por producto (split proporcional exacto por venta)
   // ==================================================================
@@ -258,7 +281,13 @@ export class CogsService {
       const subCost = ledger.saleSubproductCost.get(sale.id);
       const unitOf = (m: Map<string, CostQty> | undefined, id: string): number => {
         const e = m?.get(id);
-        return e && e.qty > 0 ? e.cost / e.qty : 0;
+        if (!e) return 0;
+        // Costo por unidad CONOCIDA: `cost` es solo la porción con costo, así que
+        // se divide por las unidades conocidas (qty − unknownQty), NO por el total
+        // (eso diluía el costo conocido sobre unidades sin costo y subestimaba el
+        // COGS de las filas parciales). La fila se marca `partial` aparte.
+        const knownQty = e.qty - e.unknownQty;
+        return knownQty > 0 ? e.cost / knownQty : 0;
       };
       const partialOf = (m: Map<string, CostQty> | undefined, id: string): boolean =>
         (m?.get(id)?.unknownQty ?? 0) > 0;

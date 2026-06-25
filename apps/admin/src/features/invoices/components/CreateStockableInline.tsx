@@ -16,6 +16,10 @@ interface CreateStockableInlineProps {
   /** Unidad declarada en la línea de factura (kg, caja, etc.). Usada para
    *  validar coherencia con unitPurchase del nuevo stockable (FASE 4 ajustes 2.11). */
   invoiceUnit: string;
+  /** Desglose de empaque detectado por la IA (ej. "150 g X 10 U" → 10 / 150 / "g"). */
+  packUnits?: number | null;
+  packSizePerUnit?: number | null;
+  packSizeMeasure?: string | null;
   onCreated: (item: Stockable) => void;
   onCancel: () => void;
 }
@@ -25,6 +29,9 @@ export function CreateStockableInline({
   defaultUnitPurchase,
   invoiceUnitCost,
   invoiceUnit,
+  packUnits,
+  packSizePerUnit,
+  packSizeMeasure,
   onCreated,
   onCancel,
 }: CreateStockableInlineProps) {
@@ -118,6 +125,44 @@ export function CreateStockableInline({
       </p>
 
       <StockableTypeSelector value={type} onChange={setType} disabled={submitting} />
+
+      {packUnits ? (
+        <div className="space-y-2 rounded-md border border-blue-500/20 bg-blue-500/5 p-2.5">
+          <p className="text-[11px] text-blue-300">
+            📦 La IA detectó que <strong>1 {unitPurchase || invoiceUnit} = {packUnits}
+            {packSizePerUnit ? ` × ${packSizePerUnit} ${packSizeMeasure ?? ''}`.trimEnd() : ' unidades'}</strong>.
+            Elegí cómo trackearlo:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={submitting}
+              onClick={() => {
+                setUnitStock('unidad');
+                setConversionFactor(String(packUnits));
+              }}
+            >
+              Por unidad (1 {unitPurchase || invoiceUnit} = {packUnits} u)
+            </Button>
+            {packSizePerUnit && packSizeMeasure ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={submitting}
+                onClick={() => {
+                  setUnitStock(packSizeMeasure);
+                  setConversionFactor(String(packUnits * packSizePerUnit));
+                }}
+              >
+                Por peso (1 {unitPurchase || invoiceUnit} = {packUnits * packSizePerUnit} {packSizeMeasure})
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className="space-y-1.5">

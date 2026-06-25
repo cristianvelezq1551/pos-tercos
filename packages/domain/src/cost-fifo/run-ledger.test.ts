@@ -160,3 +160,26 @@ describe('runLedgerFifo · remaining', () => {
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 8, value: 160, unknownQty: 0 });
   });
 });
+
+describe('runLedgerFifo · producción con costo mixto (parcial)', () => {
+  it('preserva el costo conocido cuando un insumo no tiene costo (no lo descarta)', () => {
+    const r = runLedgerFifo([
+      // pollo sin costo (INITIAL), pimienta con costo
+      mov({ delta: 100, type: 'INITIAL', unitCost: null, ingredientId: 'pollo' }),
+      mov({ delta: 10, type: 'PURCHASE', unitCost: 8.5, ingredientId: 'pimienta' }),
+      // tanda de producción p1: consume 100 pollo + 10 pimienta → 1 subproducto
+      mov({ delta: -100, type: 'PRODUCTION', sourceType: 'production', sourceId: 'p1', ingredientId: 'pollo' }),
+      mov({ delta: -10, type: 'PRODUCTION', sourceType: 'production', sourceId: 'p1', ingredientId: 'pimienta' }),
+      mov({ delta: 1, type: 'PRODUCTION', sourceType: 'production', sourceId: 'p1', entityType: 'SUBPRODUCT', subproductId: 'sub' }),
+      // vender el subproducto entero
+      mov({ delta: -1, type: 'SALE', sourceId: 'sale1', entityType: 'SUBPRODUCT', subproductId: 'sub' }),
+    ]);
+    const cq = r.saleSubproductCost.get('sale1')?.get('sub');
+    expect(cq).toBeDefined();
+    // El costo conocido de la pimienta ($85) se preserva (antes el lote entero
+    // quedaba null → $0, subestimando el COGS).
+    expect(cq!.cost).toBeCloseTo(85, 0);
+    // El pollo sin costo sigue propagándose como desconocido (NUNCA se asume $0).
+    expect(cq!.unknownQty).toBeGreaterThan(0);
+  });
+});

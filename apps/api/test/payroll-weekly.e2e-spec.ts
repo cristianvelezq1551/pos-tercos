@@ -110,4 +110,99 @@ describe('Nómina semanal unificada E2E', () => {
     expect(reverted.adjustments).toHaveLength(0);
     expect(reverted.netOwed).toBe(reverted.owedTotal);
   });
+
+  it('un abono semanal aparece en /finanzas (paidPayroll) y baja el pendiente del cash-flow', async () => {
+    // /finanzas ahora lee los abonos SEMANALES (payrollWeekPayment), no las
+    // quincenas. El abono se paga 100% por cuenta (sin caja abierta).
+    await request
+      .post('/approvals/pin')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pin: '135790', password: 'dev12345' })
+      .expect((res) => {
+        if (res.status >= 300) throw new Error(`PIN setup falló: ${res.status} ${JSON.stringify(res.body)}`);
+      });
+
+    const wk = await getWeek();
+    // El abono cae con paidAt = ahora → consultamos /finanzas del mes actual.
+    const now = new Date();
+    const ym = `year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`;
+    const pendingOf = (body: { pendingPayroll: Array<{ userId: string; total: number }> }): number =>
+      body.pendingPayroll.filter((p) => p.userId === dailyId).reduce((a, p) => a + p.total, 0);
+
+    const before = await request.get(`/reports/finance-summary?${ym}`).set('Authorization', `Bearer ${token}`).expect(200);
+    const pendingBefore = pendingOf(before.body);
+
+    const ABONO = 60_000;
+    // 1×1 PNG válido (magic bytes correctos para detectImageMimeLoose).
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
+      'base64',
+    );
+    const payRes = await request
+      .post('/workers/weekly/pay')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Approval-Pin', '135790')
+      .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: ABONO }))
+      .attach('proof', png, 'proof.png')
+      .expect(201);
+    expect(payRes.body.amount).toBe(ABONO);
+
+    const after = await request.get(`/reports/finance-summary?${ym}`).set('Authorization', `Bearer ${token}`).expect(200);
+    const paid = (after.body.paidPayroll as Array<{ userId: string; amount: number }>).filter((p) => p.userId === dailyId);
+    expect(paid.some((p) => p.amount === ABONO)).toBe(true);
+    // La semana pagada baja su restante → el pendiente del cash-flow cae el abono.
+    expect(pendingOf(after.body)).toBe(pendingBefore - ABONO);
+  });
+
+  it('part-time DIARIO: los días de descanso del trabajador no se pagan', async () => {
+    const hash = await bcrypt.hash('dev12345', 10);
+    const pt = await prisma.user.create({
+      data: {
+        email: 'parttime-wk@test.local', fullName: 'Pepe PartTime', role: 'TRABAJADOR',
+        passwordHash: hash, mustChangePwd: false, active: true,
+        payType: 'DAILY', salaryAmount: 60_000, hireDate: new Date(Date.UTC(2020, 0, 1)),
+        restDaysOfWeek: [0, 6], // descansa sábado y domingo
+      },
+    });
+    const entry = (await getWeek()).entries.find((e) => e.userId === pt.id)!;
+    expect(entry).toBeDefined();
+    const rest = entry.days.filter((d) => d.weekday === 0 || d.weekday === 6);
+    const work = entry.days.filter((d) => d.weekday !== 0 && d.weekday !== 6);
+    expect(rest.length).toBeGreaterThan(0);
+    expect(rest.every((d) => d.amount === 0 && d.status === 'REST')).toBe(true);
+    expect(work.every((d) => d.amount === 60_000)).toBe(true);
+    expect(entry.owedTotal).toBe(work.length * 60_000);
+  });
+
+  it('editar el valor de un día (llegada tarde / ausencia) cambia el adeudo y se revierte', async () => {
+    const entry = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    const target = entry.days.find((d) => d.amount === 60_000 && !d.isPaid && !d.isFuture)!;
+    expect(target).toBeDefined();
+    const owedBefore = entry.owedTotal;
+
+    // Llegada tarde: el día vale 20.000 en vez de 60.000.
+    await request
+      .post(`/workers/${dailyId}/day`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Approval-Pin', '135790')
+      .send({ workDate: target.date, amount: 20_000, note: 'llegó tarde' })
+      .expect(201);
+
+    const edited = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    const dayEdited = edited.days.find((d) => d.date === target.date)!;
+    expect(dayEdited.amount).toBe(20_000);
+    expect(dayEdited.hasOverride).toBe(true);
+    expect(edited.owedTotal).toBe(owedBefore - 40_000);
+
+    // Quitar la excepción → vuelve al valor/día.
+    await request
+      .delete(`/workers/${dailyId}/day?date=${target.date}`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Approval-Pin', '135790')
+      .expect(200);
+
+    const reverted = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    expect(reverted.days.find((d) => d.date === target.date)!.amount).toBe(60_000);
+    expect(reverted.owedTotal).toBe(owedBefore);
+  });
 });

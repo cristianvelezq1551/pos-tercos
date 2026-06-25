@@ -11,7 +11,6 @@ import {
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
-  Clock,
   Coins,
   CreditCard,
   HandCoins,
@@ -38,6 +37,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import type { UserRole } from '@pos-tercos/types';
+import { useNavProgress } from './nav-progress';
+import { useCortesiaPendingCount } from '../features/cortesias';
 
 interface NavItem {
   label: string;
@@ -65,8 +66,7 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet, onlyDueno: true },
   { section: 'Caja', label: 'Medios de pago', href: '/medios-pago', icon: CreditCard },
   { section: 'Personal', label: 'Usuarios', href: '/users', icon: Users, onlyDueno: true },
-  { section: 'Personal', label: 'Nómina semanal', href: '/workers/semana', icon: CalendarDays, onlyDueno: true },
-  { section: 'Personal', label: 'Nómina (quincenal)', href: '/workers/payroll', icon: Clock, onlyDueno: true },
+  { section: 'Personal', label: 'Nómina', href: '/workers/semana', icon: CalendarDays, onlyDueno: true },
   {
     section: 'Finanzas',
     label: 'Tesorería',
@@ -152,12 +152,20 @@ export function AdminSidebar({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const pendingCortesias = useCortesiaPendingCount();
   const items = NAV_ITEMS.filter((i) => !i.onlyDueno || role === 'DUENO');
   const sections = Array.from(new Set(items.map((i) => i.section)));
   // Solo UN item activo: el que mejor matchea (prefijo más largo). Evita que
   // "Existencias" (/inventory) se prenda cuando estás en "Movimientos"
   // (/inventory/movements).
   const activeHref = bestMatchHref(pathname, items);
+
+  // Resaltado óptimista: las páginas hacen SSR bloqueante (fetch a la API) antes
+  // de commitear la ruta, así que `usePathname()` tarda en cambiar. Sin esto el
+  // ítem no se prende al instante y el clic "parece" no haber entrado. El estado
+  // pendiente vive en el contexto (compartido con el esqueleto del contenido).
+  const { pendingHref, startNav } = useNavProgress();
+  const highlightHref = pendingHref ?? activeHref;
 
   // Trae el ítem activo a la vista: con muchas secciones queda fuera de pantalla
   // y el dueño pierde la referencia de en qué módulo está al navegar.
@@ -173,7 +181,8 @@ export function AdminSidebar({
         {sections.map((section) => (
           <Sidebar.Section key={section} title={section}>
             {items.filter((i) => i.section === section).map((item) => {
-              const active = item.href === activeHref;
+              const active = item.href === highlightHref;
+              const pending = item.href === pendingHref;
               const Icon = item.icon;
               return (
                 <li key={item.href}>
@@ -181,11 +190,20 @@ export function AdminSidebar({
                     ref={active ? activeRef : undefined}
                     href={item.href}
                     aria-current={active ? 'page' : undefined}
-                    onClick={onNavigate}
+                    aria-busy={pending || undefined}
+                    onClick={() => {
+                      if (item.href !== activeHref) startNav(item.href);
+                      onNavigate?.();
+                    }}
                     className={sidebarLinkClass(active)}
                   >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {item.href === '/solicitudes' && pendingCortesias > 0 ? (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[0.625rem] font-bold text-primary-foreground">
+                        {pendingCortesias}
+                      </span>
+                    ) : null}
                   </Link>
                 </li>
               );

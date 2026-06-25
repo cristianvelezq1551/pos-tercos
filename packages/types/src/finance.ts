@@ -17,9 +17,31 @@ export const FinanceMoneyFlowSchema = z.object({
   payroll: z.number(),
   invoices: z.number(),
   fixedCosts: z.number(),
+  /** Compromisos por pagar (deudas puntuales a terceros). */
+  payables: z.number(),
   total: z.number(),
 });
 export type FinanceMoneyFlow = z.infer<typeof FinanceMoneyFlowSchema>;
+
+/** Compromiso por pagar pendiente (deuda a un tercero). */
+export const FinancePendingPayableSchema = z.object({
+  id: z.string().uuid(),
+  beneficiary: z.string(),
+  description: z.string(),
+  amount: z.number(),
+});
+export type FinancePendingPayable = z.infer<typeof FinancePendingPayableSchema>;
+
+/** Compromiso por pagar ya pagado este mes. */
+export const FinancePaidPayableSchema = z.object({
+  id: z.string().uuid(),
+  beneficiary: z.string(),
+  description: z.string(),
+  amount: z.number(),
+  paidAt: z.string().datetime(),
+  hasProof: z.boolean(),
+});
+export type FinancePaidPayable = z.infer<typeof FinancePaidPayableSchema>;
 
 /** Línea de un sub-pago de nómina pendiente por pagar. */
 export const FinancePendingPayrollSchema = z.object({
@@ -135,9 +157,11 @@ export const FinanceSummarySchema = z.object({
   pendingPayroll: z.array(FinancePendingPayrollSchema),
   pendingInvoices: z.array(FinancePendingInvoiceSchema),
   pendingFixedCosts: z.array(FinancePendingFixedCostSchema),
+  pendingPayables: z.array(FinancePendingPayableSchema),
   /** Detalle de lo pagado este mes (ordenado por paidAt DESC). */
   paidPayroll: z.array(FinancePaidPayrollSchema),
   paidInvoices: z.array(FinancePaidInvoiceSchema),
   paidFixedCosts: z.array(FinancePaidFixedCostSchema),
+  paidPayables: z.array(FinancePaidPayableSchema),
 });
 export type FinanceSummary = z.infer<typeof FinanceSummarySchema>;

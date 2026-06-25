@@ -41,19 +41,29 @@ type DbInvoiceWithDetail = Prisma.InvoiceGetPayload<{
 }>;
 
 /**
- * Convierte cantidad declarada en factura (en unit_purchase) a la unit
- * de stock usando conversionFactor. Si la unidad declarada coincide con
- * la unit de stock, no convierte (factor=1 implícito).
+ * Convierte cantidad declarada en factura a la unidad BASE de stock.
  *
- * Ejemplo: factura dice "5 kg" de pollo, stock se mide en "g", factor=1000
- *   → 5 * 1000 = 5000 g a sumar al stock.
+ * Prioridad:
+ *  1. `baseFactor` (verificado en la UI al confirmar, asistido por IA): unidades
+ *     base por 1 unidad de la línea → stockQty = quantity × baseFactor. Es la
+ *     fuente de verdad porque captura la conversión EXACTA de ESTA compra,
+ *     aunque venga en una unidad distinta a la por defecto del insumo.
+ *  2. Si la unidad declarada coincide con la unidad de stock → quantity (factor 1).
+ *  3. Si no → quantity × conversionFactor (default del insumo).
+ *
+ * Ejemplo: "5 unidad" donde 1 unidad = 1500 g (pack 10×150) → baseFactor=1500
+ *   → 5 × 1500 = 7500 g. Costo FIFO = total / 7500 (= $/g exacto).
  */
 function computeStockQty(opts: {
   quantity: number;
   invoiceUnit: string;
   stockUnit: string;
   conversionFactor: number;
+  baseFactor?: number;
 }): number {
+  if (opts.baseFactor != null && opts.baseFactor > 0) {
+    return opts.quantity * opts.baseFactor;
+  }
   if (opts.invoiceUnit.toLowerCase() === opts.stockUnit.toLowerCase()) {
     return opts.quantity;
   }
@@ -61,13 +71,40 @@ function computeStockQty(opts: {
 }
 
 /**
- * Costo por unidad de stock para FIFO: total de la línea (cantidad × precio en
- * unidad de compra) dividido por las unidades de stock recibidas. Null si no se
- * puede calcular (delta 0).
+ * Costo por unidad de stock para FIFO: el TOTAL real de la línea (lo que la
+ * factura efectivamente cobró por ese ítem) dividido por las unidades de stock
+ * recibidas. Usa `lineTotal`, NO `quantity × unitPrice`, porque una línea puede
+ * traer descuento o IVA incluido (`total ≠ quantity × unitPrice`); el FIFO debe
+ * costear lo que se PAGÓ. Coincide con lo que la UI le muestra al operador
+ * (total ÷ unidades base). Null si no se puede calcular (delta 0).
  */
-function stockUnitCost(quantity: number, unitPrice: number, stockQty: number): number | null {
+function stockUnitCost(lineTotal: number, stockQty: number): number | null {
   if (stockQty <= 0) return null;
-  return Math.round(((quantity * unitPrice) / stockQty) * 10000) / 10000;
+  return Math.round((lineTotal / stockQty) * 10000) / 10000;
+}
+
+/**
+ * Costo por unidad de COMPRA del insumo/producto, consistente con la conversión
+ * REAL de la línea. = costo por unidad base × conversionFactor.
+ *
+ * Clave: el `unitPrice` de la factura está en la unidad de la LÍNEA (ej. $39.750
+ * por paquete), que no siempre es la unidad de compra del insumo (Kg). Si la
+ * compra entró con `baseFactor` (paquete de 1.500 g), este helper re-escala:
+ *   perBase = $39.750/1.500 g = $26,5/g  →  ×1000 = $26.500/Kg  (no $39.750/Kg).
+ * Así `lastUnitCost` queda fiel y el costo de productos/subproductos no se infla.
+ */
+function purchaseUnitCost(opts: {
+  quantity: number;
+  lineTotal: number;
+  invoiceUnit: string;
+  stockUnit: string;
+  conversionFactor: number;
+  baseFactor?: number;
+}): number {
+  const stockQty = computeStockQty(opts);
+  const perBase = stockUnitCost(opts.lineTotal, stockQty);
+  if (perBase === null) return opts.lineTotal;
+  return Math.round(perBase * opts.conversionFactor * 10000) / 10000;
 }
 
 @Injectable()
@@ -387,6 +424,7 @@ export class InvoicesService {
             invoiceUnit: item.unit,
             stockUnit: ing.unitRecipe,
             conversionFactor: Number(ing.conversionFactor),
+            baseFactor: item.baseFactor,
           });
           await tx.inventoryMovement.create({
             data: {
@@ -394,7 +432,7 @@ export class InvoicesService {
               ingredientId: item.ingredientId as string,
               delta: stockQty,
               // Costo por unidad de stock = total de la línea / unidades recibidas.
-              unitCost: stockUnitCost(item.quantity, item.unitPrice, stockQty),
+              unitCost: stockUnitCost(item.total, stockQty),
               type: 'PURCHASE',
               sourceType: 'invoice',
               sourceId: id,
@@ -410,13 +448,14 @@ export class InvoicesService {
             invoiceUnit: item.unit,
             stockUnit: prod.unitStock ?? 'unidad',
             conversionFactor: prod.conversionFactor !== null ? Number(prod.conversionFactor) : 1,
+            baseFactor: item.baseFactor,
           });
           await tx.inventoryMovement.create({
             data: {
               entityType: 'PRODUCT',
               productId: item.productId as string,
               delta: stockQty,
-              unitCost: stockUnitCost(item.quantity, item.unitPrice, stockQty),
+              unitCost: stockUnitCost(item.total, stockQty),
               type: 'PURCHASE',
               sourceType: 'invoice',
               sourceId: id,
@@ -454,11 +493,22 @@ export class InvoicesService {
 
           // FASE 4 ajustes 2.2: actualizar lastUnitCost del ingrediente
           // (espejo de la actualización del producto direct-resale).
-          // En unitPurchase del ingrediente, igual que el campo en products.
+          // En unitPurchase del ingrediente — re-escalado por la conversión real
+          // de la compra (ver purchaseUnitCost) para no inflar el costo.
+          const ingForCost = ingredients.find((i) => i.id === item.ingredientId);
           await tx.ingredient.update({
             where: { id: item.ingredientId as string },
             data: {
-              lastUnitCost: item.unitPrice,
+              lastUnitCost: ingForCost
+                ? purchaseUnitCost({
+                    quantity: item.quantity,
+                    lineTotal: item.total,
+                    invoiceUnit: item.unit,
+                    stockUnit: ingForCost.unitRecipe,
+                    conversionFactor: Number(ingForCost.conversionFactor),
+                    baseFactor: item.baseFactor,
+                  })
+                : item.unitPrice,
               lastUnitCostDate: new Date(),
             },
           });
@@ -485,11 +535,22 @@ export class InvoicesService {
           });
 
           // 5. Actualizar lastUnitCost del producto (para display rápido
-          //    de margen vs basePrice).
+          //    de margen vs basePrice) — re-escalado por la conversión real.
+          const prodForCost = products.find((p) => p.id === item.productId);
           await tx.product.update({
             where: { id: item.productId as string },
             data: {
-              lastUnitCost: item.unitPrice,
+              lastUnitCost: prodForCost
+                ? purchaseUnitCost({
+                    quantity: item.quantity,
+                    lineTotal: item.total,
+                    invoiceUnit: item.unit,
+                    stockUnit: prodForCost.unitStock ?? 'unidad',
+                    conversionFactor:
+                      prodForCost.conversionFactor !== null ? Number(prodForCost.conversionFactor) : 1,
+                    baseFactor: item.baseFactor,
+                  })
+                : item.unitPrice,
               lastUnitCostDate: new Date(),
             },
           });
@@ -596,6 +657,11 @@ export class InvoicesService {
         unit: it.unit,
         unitPrice: Number(it.unitPrice),
         total: Number(it.total),
+        // El desglose de empaque no se persiste en invoice_items (solo se usa al
+        // crear el insumo). En un clon ya no aplica.
+        packUnits: null,
+        packSizePerUnit: null,
+        packSizeMeasure: null,
       })),
       warnings: [`Clonado de factura ${sourceShort}. Revisá cantidades y precios antes de confirmar.`],
     };

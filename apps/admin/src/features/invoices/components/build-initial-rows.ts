@@ -60,6 +60,9 @@ export function buildInitialRows(draft: InvoiceDraftResponse, stockables: Stocka
       unitPrice: item.unitPrice,
       total: item.total,
       suggestion,
+      packUnits: item.packUnits,
+      packSizePerUnit: item.packSizePerUnit,
+      packSizeMeasure: item.packSizeMeasure,
     };
   });
 }

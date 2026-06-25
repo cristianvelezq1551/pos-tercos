@@ -82,6 +82,7 @@ export function validateInvoice(input: ValidateInvoiceInput): Validation {
 
   const items: ConfirmInvoiceItem[] = rows.map((r) => {
     const sel = r.selection!;
+    const baseFactor = r.baseFactor != null && r.baseFactor > 0 ? r.baseFactor : undefined;
     return sel.entityType === 'INGREDIENT'
       ? {
           entityType: 'INGREDIENT',
@@ -91,6 +92,7 @@ export function validateInvoice(input: ValidateInvoiceInput): Validation {
           unit: r.unit.trim(),
           unitPrice: r.unitPrice,
           total: r.total,
+          baseFactor,
         }
       : {
           entityType: 'PRODUCT',
@@ -100,6 +102,7 @@ export function validateInvoice(input: ValidateInvoiceInput): Validation {
           unit: r.unit.trim(),
           unitPrice: r.unitPrice,
           total: r.total,
+          baseFactor,
         };
   });
 

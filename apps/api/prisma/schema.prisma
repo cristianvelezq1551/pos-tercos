@@ -1134,6 +1134,8 @@ model CortesiaRequest {
   resolvedById  String?   @map("resolved_by_id")
   resolvedAt    DateTime? @map("resolved_at")
   resolverNote  String?   @map("resolver_note")
+  /// El cajero ya vio el resultado (acusa una cortesía "Observada").
+  seenByRequester Boolean @default(false) @map("seen_by_requester")
   createdAt     DateTime  @default(now()) @map("created_at")
 
   @@index([status, createdAt])

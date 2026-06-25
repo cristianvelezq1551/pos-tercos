@@ -20,6 +20,7 @@ import {
   type FinancialAnalysis,
   type HourHeatmapReport,
   type InventoryUsageReport,
+  type FifoLotsResponse,
   type InventoryValuationReport,
   type JwtAccessPayload,
   type MonthlyFinancialStatement,
@@ -37,7 +38,7 @@ import {
 } from '@pos-tercos/types';
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { OnlyDueno } from '../auth/decorators/roles.decorator';
+import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { CogsService } from './cogs.service';
 import { FinanceSummaryService } from './finance-summary.service';
 import { InventoryUsageService } from './inventory-usage.service';
@@ -155,6 +156,14 @@ export class ReportsController {
   @Get('cogs/inventory-valuation')
   getInventoryValuation(): Promise<InventoryValuationReport> {
     return this.cogs.getInventoryValuation();
+  }
+
+  /** Lotes FIFO restantes por stockable — para el desglose de rendimiento en el
+   *  editor de receta ("tu inventario rinde N porciones a $X"). Admin/Dueño. */
+  @AdminAccess()
+  @Get('cogs/fifo-lots')
+  getFifoLots(): Promise<FifoLotsResponse> {
+    return this.cogs.getFifoLots();
   }
 
   // ==================================================================

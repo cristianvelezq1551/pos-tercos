@@ -113,6 +113,30 @@ export class CortesiasService {
     return this.toDtos(rows);
   }
 
+  /** Cortesías del cajero (para que vea el estado y acuse las observadas). */
+  async listMine(userId: string): Promise<CortesiaRequest[]> {
+    const rows = await this.prisma.cortesiaRequest.findMany({
+      where: { requestedById: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return this.toDtos(rows);
+  }
+
+  /** El cajero acusa una cortesía observada (deja de avisar). */
+  async ack(id: string, userId: string): Promise<CortesiaRequest> {
+    const existing = await this.prisma.cortesiaRequest.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Cortesía no encontrada');
+    if (existing.requestedById !== userId) {
+      throw new BadRequestException('Solo quien la registró puede marcarla vista.');
+    }
+    const updated = await this.prisma.cortesiaRequest.update({
+      where: { id },
+      data: { seenByRequester: true },
+    });
+    return (await this.toDtos([updated]))[0]!;
+  }
+
   approve(id: string, userId: string, note?: string): Promise<CortesiaRequest> {
     return this.resolve(id, 'APPROVED', userId, note);
   }
@@ -134,7 +158,14 @@ export class CortesiasService {
     }
     const updated = await this.prisma.cortesiaRequest.update({
       where: { id },
-      data: { status, resolvedById: userId, resolvedAt: new Date(), resolverNote: note ?? null },
+      data: {
+        status,
+        resolvedById: userId,
+        resolvedAt: new Date(),
+        resolverNote: note ?? null,
+        // Autorizada no es novedad para el cajero; observada sí avisa hasta acuse.
+        seenByRequester: status === 'APPROVED',
+      },
     });
     await this.audit.log({
       userId,
@@ -181,6 +212,7 @@ export class CortesiasService {
       resolvedByName: r.resolvedById ? (userName.get(r.resolvedById) ?? null) : null,
       resolvedAt: r.resolvedAt?.toISOString() ?? null,
       resolverNote: r.resolverNote,
+      seenByRequester: r.seenByRequester,
       createdAt: r.createdAt.toISOString(),
     }));
   }

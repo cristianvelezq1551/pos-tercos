@@ -19,7 +19,7 @@ export function PaidPayrollCard({ rows }: { rows: FinancePaidPayroll[] }) {
           {rows.map((r) => (
             <li key={r.paymentId} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
               <Link
-                href={`/workers/${r.userId}`}
+                href={`/workers/semana?week=${r.periodStart}`}
                 className="min-w-0 hover:underline"
               >
                 <p className="truncate text-sm font-medium text-foreground">{r.userName}</p>

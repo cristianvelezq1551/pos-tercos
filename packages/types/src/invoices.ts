@@ -18,6 +18,16 @@ export const ExtractedInvoiceItemSchema = z.object({
   unit: z.string().min(1).max(40),
   unitPrice: z.number().nonnegative(),
   total: z.number().nonnegative(),
+  // --- Desglose de empaque (cuando la descripción lo indica, ej. "150 g X 10 U") ---
+  // Sub-unidades por unidad de compra (10 en "X 10 U"); sirve para sugerir el
+  // conversionFactor al crear el insumo. Requeridos como `number|null` (sin
+  // .catch/.default para no divergir input/output del DTO compartido); los
+  // adapters LLM rellenan null si la IA omite el campo.
+  packUnits: z.number().positive().nullable(),
+  // Tamaño de cada sub-unidad (150 en "150 g").
+  packSizePerUnit: z.number().positive().nullable(),
+  // Medida de la sub-unidad ("g", "ml", "kg"…).
+  packSizeMeasure: z.string().min(1).max(20).nullable(),
 });
 export type ExtractedInvoiceItem = z.infer<typeof ExtractedInvoiceItemSchema>;
 
@@ -118,6 +128,12 @@ export const ConfirmInvoiceItemSchema = z
     unit: z.string().min(1).max(40),
     unitPrice: z.number().nonnegative(),
     total: z.number().nonnegative(),
+    /** Conversión a la unidad BASE del insumo para ESTA compra: cuántas
+     *  unidades base hay en 1 unidad de la línea. stockQty = quantity ×
+     *  baseFactor. Si se omite, el backend usa el conversionFactor del insumo.
+     *  Garantiza FIFO exacto cuando la compra viene en una unidad distinta a la
+     *  por defecto (ej. "paquete 10×150 g" vs el insumo configurado en kg). */
+    baseFactor: z.number().positive().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.entityType === 'INGREDIENT' && !data.ingredientId) {

@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Put } from '@nestjs/common
 import {
   SetRecipeRequestSchema,
   type ExpandedCostResponse,
+  type ProductCostSummary,
   type RecipeResponse,
   type SetRecipeRequest,
   type SubproductCostSummary,
@@ -59,6 +60,13 @@ export class RecipesController {
     @Body(new ZodValidationPipe(SetRecipeRequestSchema)) body: SetRecipeRequest,
   ): Promise<RecipeResponse> {
     return this.recipes.setSizeRecipe(id, sizeId, body.edges);
+  }
+
+  // Costo de TODOS los productos en una request (batch) — reemplaza el N+1 de
+  // pedir `expanded-cost` por producto en la tabla del admin.
+  @Get('product-costs')
+  productCosts(): Promise<ProductCostSummary[]> {
+    return this.recipes.listProductCosts();
   }
 
   @Get('products/:id/expanded-cost')

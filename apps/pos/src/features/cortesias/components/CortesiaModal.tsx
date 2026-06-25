@@ -27,6 +27,7 @@ export function CortesiaModal({
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -35,6 +36,7 @@ export function CortesiaModal({
     setReason('');
     setError(null);
     setPending(false);
+    setDone(false);
     void fetchActiveProducts().then(setProducts).catch(() => setProducts([]));
   }, [open]);
 
@@ -48,7 +50,8 @@ export function CortesiaModal({
     try {
       await createCortesia({ productId, quantity, reason: reason.trim() });
       onDone();
-      onClose();
+      setDone(true);
+      setPending(false);
     } catch (err) {
       setError(getErrorMessage(err, 'No se pudo registrar la cortesía'));
       setPending(false);
@@ -60,19 +63,32 @@ export function CortesiaModal({
       open={open}
       onClose={pending ? () => {} : onClose}
       title="Cortesía"
-      description="Regalo de un producto. Descuenta stock y queda pendiente de confirmación del admin."
+      description="Regalo de un producto. Descuenta stock y queda registrada para que el dueño la revise."
       maxWidth="max-w-md"
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button onClick={() => void handleConfirm()} disabled={!canConfirm}>
-            {pending ? 'Registrando…' : 'Registrar cortesía'}
-          </Button>
-        </>
+        done ? (
+          <Button onClick={onClose}>Cerrar</Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void handleConfirm()} disabled={!canConfirm}>
+              {pending ? 'Registrando…' : 'Registrar cortesía'}
+            </Button>
+          </>
+        )
       }
     >
+      {done ? (
+        <div className="space-y-2 rounded-lg border border-success-border bg-success-bg px-4 py-5 text-center">
+          <p className="text-sm font-semibold text-success">✓ Cortesía registrada</p>
+          <p className="text-xs text-muted-foreground">
+            Queda <strong>Sin revisar</strong>. El dueño la revisa; vas a ver el
+            resultado en Historial → Cortesías.
+          </p>
+        </div>
+      ) : (
       <div className="space-y-4">
         <FormField label="Producto">
           <Select value={productId} onChange={(e) => setProductId(e.target.value)}>
@@ -113,6 +129,7 @@ export function CortesiaModal({
           </p>
         ) : null}
       </div>
+      )}
     </Dialog>
   );
 }

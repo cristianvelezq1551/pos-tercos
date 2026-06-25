@@ -1,17 +1,15 @@
 'use client';
 
-import type { WeeklyPayrollDay, WeeklyPayrollEntry } from '@pos-tercos/types';
-import { Button, Card, Money, cn } from '@pos-tercos/ui';
+import type { WeeklyPayrollEntry } from '@pos-tercos/types';
+import { Badge, Button, Card, Money, cn } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { roleLabel } from '../lib/format';
+import { EmployeeActions } from './EmployeeActions';
 import { PayWeekModal } from './PayWeekModal';
+import { WeekDayGrid, isSelectable } from './WeekDayGrid';
 import { WeekPaymentsList } from './WeekPaymentsList';
-
-const WEEKDAY = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-
-const isSelectable = (d: WeeklyPayrollDay): boolean =>
-  d.amount > 0 && !d.isPaid && !d.isFuture;
+import { WeeklyAdjustments } from './WeeklyAdjustments';
 
 export function EmployeeWeekCard({
   entry,
@@ -45,17 +43,33 @@ export function EmployeeWeekCard({
     <Card className="px-5 py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <p className="font-display text-base font-bold tracking-tight text-foreground">
-            {entry.fullName}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="font-display text-base font-bold tracking-tight text-foreground">
+              {entry.fullName}
+            </p>
+            <Badge tone={entry.payType === 'MONTHLY' ? 'info' : 'neutral'} size="sm">
+              {entry.payType === 'MONTHLY' ? 'Mensual' : 'Diario'}
+            </Badge>
+          </div>
           <p className="text-xs text-muted-foreground">
             {roleLabel(entry.role)} · <Money amount={entry.valuePerDay} size="xs" />/día
+            {entry.payType === 'MONTHLY' ? ' (prorrateado)' : ''}
           </p>
         </div>
         <div className="text-right text-xs">
           <p className="text-muted-foreground">
-            Semana: <Money amount={entry.owedTotal} size="xs" weight="medium" /> · Pagado{' '}
-            <Money amount={entry.paidTotal} size="xs" weight="medium" />
+            Días: <Money amount={entry.owedTotal} size="xs" weight="medium" />
+            {entry.adjustmentsTotal !== 0 ? (
+              <>
+                {' · Ajustes: '}
+                <Money amount={entry.adjustmentsTotal} size="xs" weight="medium" />
+                {' · Neto: '}
+                <Money amount={entry.netOwed} size="xs" weight="semibold" />
+              </>
+            ) : null}
+          </p>
+          <p className="text-muted-foreground">
+            Pagado: <Money amount={entry.paidTotal} size="xs" weight="medium" />
           </p>
           <p className={cn('font-semibold', entry.remaining > 0 ? 'text-warning' : 'text-success')}>
             {entry.remaining > 0 ? (
@@ -69,11 +83,18 @@ export function EmployeeWeekCard({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-7 gap-1.5">
-        {entry.days.map((d) => (
-          <DayChip key={d.date} day={d} selected={selected.has(d.date)} onToggle={() => toggle(d.date)} />
-        ))}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        {entry.terminationDate ? (
+          <Badge tone="warning" size="sm">Empleo terminado</Badge>
+        ) : (
+          <span />
+        )}
+        <EmployeeActions entry={entry} />
       </div>
+
+      <WeekDayGrid entry={entry} selected={selected} onToggle={toggle} />
+
+      <WeeklyAdjustments userId={entry.userId} weekStart={weekStart} adjustments={entry.adjustments} />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button
@@ -90,14 +111,17 @@ export function EmployeeWeekCard({
           </Button>
         ) : null}
         <span className="flex-1" />
-        <Button size="sm" onClick={() => setPayOpen(true)} disabled={selected.size === 0}>
-          Pagar {selected.size > 0 ? `${selected.size} día${selected.size > 1 ? 's' : ''}` : ''}
+        <Button size="sm" onClick={() => setPayOpen(true)} disabled={entry.remaining <= 0}>
           {selected.size > 0 ? (
             <>
-              {' · '}
-              <Money amount={selectedTotal} size="xs" weight="bold" />
+              Pagar {selected.size} día{selected.size > 1 ? 's' : ''} ·{' '}
+              <Money amount={Math.min(selectedTotal, entry.remaining)} size="xs" weight="bold" />
             </>
-          ) : null}
+          ) : (
+            <>
+              Abonar · <Money amount={entry.remaining} size="xs" weight="bold" />
+            </>
+          )}
         </Button>
       </div>
 
@@ -109,7 +133,8 @@ export function EmployeeWeekCard({
           workerName={entry.fullName}
           weekStart={weekStart}
           days={Array.from(selected).sort()}
-          total={selectedTotal}
+          suggested={selected.size > 0 ? Math.min(selectedTotal, entry.remaining) : entry.remaining}
+          remaining={entry.remaining}
           onClose={() => setPayOpen(false)}
           onSuccess={() => {
             setPayOpen(false);
@@ -119,56 +144,5 @@ export function EmployeeWeekCard({
         />
       ) : null}
     </Card>
-  );
-}
-
-function DayChip({
-  day,
-  selected,
-  onToggle,
-}: {
-  day: WeeklyPayrollDay;
-  selected: boolean;
-  onToggle: () => void;
-}) {
-  const selectable = isSelectable(day);
-  const label = WEEKDAY[day.weekday];
-  const dayNum = Number(day.date.slice(8, 10));
-
-  let tone = 'border-border bg-muted/30 text-muted-foreground';
-  let bottom: React.ReactNode = day.status === 'REST' ? 'Descanso' : '—';
-  if (day.isPaid) {
-    tone = 'border-success/40 bg-success/10 text-success';
-    bottom = 'Pagado';
-  } else if (selectable) {
-    tone = selected
-      ? 'border-primary bg-primary/15 text-foreground ring-1 ring-primary'
-      : 'border-border bg-card text-foreground hover:border-primary/60';
-    bottom = <Money amount={day.amount} size="xs" />;
-  } else if (day.isFuture && day.status === 'WORKDAY') {
-    bottom = 'Por venir';
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={selectable ? onToggle : undefined}
-      disabled={!selectable}
-      className={cn(
-        'flex flex-col items-center rounded-lg border px-1 py-2 text-center transition-colors',
-        tone,
-        !selectable && 'cursor-default',
-      )}
-      aria-pressed={selected}
-    >
-      <span className="text-[0.625rem] font-semibold uppercase tracking-wide">{label}</span>
-      <span className="text-sm font-bold tabular-nums">{dayNum}</span>
-      {day.isHoliday ? (
-        <span className="mt-0.5 rounded-full bg-amber-500/15 px-1 text-[0.5625rem] font-semibold text-amber-500">
-          Festivo
-        </span>
-      ) : null}
-      <span className="mt-0.5 text-[0.625rem] leading-tight">{bottom}</span>
-    </button>
   );
 }

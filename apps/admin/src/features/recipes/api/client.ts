@@ -1,7 +1,9 @@
 import {
   ExpandedCostResponseSchema,
+  FifoLotsResponseSchema,
   RecipeResponseSchema,
   type ExpandedCostResponse,
+  type FifoLotsResponse,
   type RecipeEdgeInput,
   type RecipeResponse,
 } from '@pos-tercos/types';
@@ -80,6 +82,11 @@ export function setSizeRecipe(
 
 export function getExpandedCost(id: string): Promise<ExpandedCostResponse> {
   return request(`/products/${id}/expanded-cost`, { method: 'GET' }, ExpandedCostResponseSchema);
+}
+
+/** Lotes FIFO restantes por stockable — para el rendimiento por lote en el editor. */
+export function getFifoLots(): Promise<FifoLotsResponse> {
+  return request('/reports/cogs/fifo-lots', { method: 'GET' }, FifoLotsResponseSchema);
 }
 
 export function getSubproductExpandedCost(id: string): Promise<ExpandedCostResponse> {

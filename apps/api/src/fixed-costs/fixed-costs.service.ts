@@ -106,19 +106,21 @@ export class FixedCostsService {
   }
 
   /**
-   * Costos fijos efectivos para un mes específico. Mensual = monto tal cual.
-   * Anual = monto ÷ 12. Filtra por vigencia (startedAt/endedAt) y activos.
-   * El mes se identifica por su PRIMER día (`monthStart`).
+   * Costos fijos activos cuya vigencia (startedAt/endedAt) se cruza con la
+   * ventana [windowStart, windowEnd]. Se usa con la ventana del "mes del
+   * negocio" (21–20, etc.) del estado financiero — NO el mes calendario — para
+   * que la vigencia coincida con el período que muestra la pantalla. Mensual =
+   * monto tal cual; Anual = ÷12. El monto NO se prorratea: cuenta UNA vez por
+   * ventana.
    */
-  async getEffectiveForMonth(monthStart: Date): Promise<
+  async getEffectiveForWindow(windowStart: Date, windowEnd: Date): Promise<
     Array<{ id: string; name: string; category: string; monthlyAmount: number }>
   > {
-    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0));
     const rows = await this.prisma.fixedCost.findMany({
       where: {
         isActive: true,
-        OR: [{ startedAt: null }, { startedAt: { lte: monthEnd } }],
-        AND: [{ OR: [{ endedAt: null }, { endedAt: { gte: monthStart } }] }],
+        OR: [{ startedAt: null }, { startedAt: { lte: windowEnd } }],
+        AND: [{ OR: [{ endedAt: null }, { endedAt: { gte: windowStart } }] }],
       },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });

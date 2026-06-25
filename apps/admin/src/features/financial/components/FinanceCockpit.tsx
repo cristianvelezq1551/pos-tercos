@@ -6,9 +6,11 @@ import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { PaidFixedCostsCard } from './PaidFixedCostsCard';
 import { PaidInvoicesCard } from './PaidInvoicesCard';
+import { PaidPayablesCard } from './PaidPayablesCard';
 import { PaidPayrollCard } from './PaidPayrollCard';
 import { PendingFixedCostsCard } from './PendingFixedCostsCard';
 import { PendingInvoicesCard } from './PendingInvoicesCard';
+import { PendingPayablesCard } from './PendingPayablesCard';
 import { PendingPayrollCard } from './PendingPayrollCard';
 
 /**
@@ -37,13 +39,13 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
         <StatCard
           label="Pagado este mes"
           value={<Money amount={summary.paid.total} size="2xl" weight="bold" />}
-          hint={`Nómina ${formatCop(summary.paid.payroll)} · Proveedores ${formatCop(summary.paid.invoices)} · Fijos ${formatCop(summary.paid.fixedCosts)}`}
+          hint={`Nómina ${formatCop(summary.paid.payroll)} · Proveedores ${formatCop(summary.paid.invoices)} · Fijos ${formatCop(summary.paid.fixedCosts)} · Compromisos ${formatCop(summary.paid.payables)}`}
           icon={<ArrowDownRight className="h-4 w-4" />}
         />
         <StatCard
           label="Pendiente por pagar"
           value={<Money amount={summary.pending.total} size="2xl" weight="bold" />}
-          hint={`Nómina ${formatCop(summary.pending.payroll)} · Proveedores ${formatCop(summary.pending.invoices)} · Fijos ${formatCop(summary.pending.fixedCosts)}`}
+          hint={`Nómina ${formatCop(summary.pending.payroll)} · Proveedores ${formatCop(summary.pending.invoices)} · Fijos ${formatCop(summary.pending.fixedCosts)} · Compromisos ${formatCop(summary.pending.payables)}`}
           tone={summary.pending.total > 0 ? 'warning' : 'neutral'}
         />
         <StatCard
@@ -70,10 +72,11 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
           atrasado de meses anteriores también aparece acá.
         </p>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <PendingPayrollCard rows={summary.pendingPayroll} />
           <PendingInvoicesCard rows={summary.pendingInvoices} />
           <PendingFixedCostsCard rows={summary.pendingFixedCosts} onChanged={refresh} />
+          <PendingPayablesCard rows={summary.pendingPayables} />
         </div>
       </section>
 
@@ -88,10 +91,11 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
           </span>
         </header>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <PaidPayrollCard rows={summary.paidPayroll} />
           <PaidInvoicesCard rows={summary.paidInvoices} />
           <PaidFixedCostsCard rows={summary.paidFixedCosts} />
+          <PaidPayablesCard rows={summary.paidPayables} />
         </div>
       </section>
     </div>

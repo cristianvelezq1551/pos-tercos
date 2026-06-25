@@ -5,7 +5,7 @@ import { ProductsTable } from '../../../features/products';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import { getCurrentUserServer } from '../../../features/auth/server';
-import type { ExpandedCostResponse, Product } from '@pos-tercos/types';
+import type { Product, ProductCostSummary } from '@pos-tercos/types';
 
 async function loadProducts(): Promise<Product[] | { error: string }> {
   try {
@@ -15,30 +15,23 @@ async function loadProducts(): Promise<Product[] | { error: string }> {
   }
 }
 
-async function loadCostsByProductId(
-  products: Product[],
-): Promise<Map<string, ExpandedCostResponse>> {
-  const map = new Map<string, ExpandedCostResponse>();
-  await Promise.all(
-    products.map(async (p) => {
-      try {
-        const cost = await serverFetchJson<ExpandedCostResponse>(
-          `/products/${p.id}/expanded-cost`,
-        );
-        map.set(p.id, cost);
-      } catch {
-        // omit — UI fallback
-      }
-    }),
-  );
-  return map;
+// Costos de TODOS los productos en una sola request (batch) — antes era un N+1
+// que pedía `/products/:id/expanded-cost` por cada producto y demoraba la página.
+async function loadCostsByProductId(): Promise<Map<string, ProductCostSummary>> {
+  try {
+    const costs = await serverFetchJson<ProductCostSummary[]>('/product-costs');
+    return new Map(costs.map((c) => [c.productId, c]));
+  } catch {
+    return new Map(); // sin costos → la tabla cae a su fallback
+  }
 }
 
 export default async function ProductsPage() {
-  const [result, user] = await Promise.all([loadProducts(), getCurrentUserServer()]);
-  const costsById = Array.isArray(result)
-    ? await loadCostsByProductId(result)
-    : new Map<string, ExpandedCostResponse>();
+  const [result, user, costsById] = await Promise.all([
+    loadProducts(),
+    getCurrentUserServer(),
+    loadCostsByProductId(),
+  ]);
 
   return (
     <>

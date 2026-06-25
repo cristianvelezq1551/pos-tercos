@@ -5,6 +5,7 @@ import { AppShell, Drawer } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminTopbar } from './AdminTopbar';
+import { MainSkeletonGate, NavProgressProvider } from './nav-progress';
 
 interface AdminShellProps {
   user: User | null;
@@ -23,13 +24,13 @@ export function AdminShell({ user, children }: AdminShellProps) {
   const [navOpen, setNavOpen] = useState(false);
 
   return (
-    <>
+    <NavProgressProvider>
       <AppShell
         topbar={<AdminTopbar user={user} onMenuClick={() => setNavOpen(true)} />}
         sidebar={<AdminSidebar role={user?.role} />}
         mainClassName="overflow-y-auto"
       >
-        {children}
+        <MainSkeletonGate>{children}</MainSkeletonGate>
       </AppShell>
 
       <Drawer
@@ -41,6 +42,6 @@ export function AdminShell({ user, children }: AdminShellProps) {
       >
         <AdminSidebar role={user?.role} onNavigate={() => setNavOpen(false)} />
       </Drawer>
-    </>
+    </NavProgressProvider>
   );
 }

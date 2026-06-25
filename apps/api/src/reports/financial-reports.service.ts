@@ -61,10 +61,10 @@ export class FinancialReportsService {
 
     // Costos fijos: nómina (auto del workers) + CRUD fixed_costs.
     const payrollAmount = await this.computePayrollForRange(monthStart, monthEnd);
-    // Los costos fijos mensuales se anclan al mes calendario etiquetado: un
-    // cargo recurrente cuenta UNA vez por mes del negocio, sin importar el día
-    // de corte (no se prorratea por la ventana).
-    const otherCosts = await this.fixedCosts.getEffectiveForMonth(new Date(Date.UTC(year, month0, 1)));
+    // Vigencia de los costos fijos contra la MISMA ventana del negocio que el
+    // resto del estado (ingresos/COGS/nómina) — no el mes calendario. El monto
+    // no se prorratea: cuenta UNA vez por ventana.
+    const otherCosts = await this.fixedCosts.getEffectiveForWindow(monthStart, monthEnd);
 
     const fixedCostLines: FixedCostLine[] = [];
     if (payrollAmount > 0) {

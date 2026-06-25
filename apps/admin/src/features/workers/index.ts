@@ -1,3 +1,2 @@
-export { PaymentTable } from './components/PaymentTable';
-export { EmployeePanel } from './components/EmployeePanel';
+export { WeeklyPayrollView } from './components/WeeklyPayrollView';
 export * from './api';

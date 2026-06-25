@@ -60,6 +60,10 @@ export interface LedgerFifo {
   waste: { createdAt: string; cost: number; unknownQty: number }[];
   /** Lotes restantes por stockable: `${entityType}:${id}` → valor/cantidad. */
   remaining: Map<string, { qty: number; value: number; unknownQty: number }>;
+  /** Lotes restantes DETALLADOS (orden FIFO: más viejo primero) por stockable.
+   *  `${entityType}:${id}` → [{qty, unitCost}]. Para mostrar "tu inventario
+   *  rinde N porciones a $X, M a $Y" sin tocar el costeo. */
+  remainingLots: Map<string, { qty: number; unitCost: number | null }[]>;
 }
 
 interface Lot {
@@ -120,6 +124,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     saleSubproductCost: new Map(),
     waste: [],
     remaining: new Map(),
+    remainingLots: new Map(),
   };
 
   const targetMap = (et: LedgerEntityType): Map<string, Map<string, CostQty>> => {
@@ -186,26 +191,45 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       // 1. Consumir insumos / sub-subproductos.
       let totalCost = 0;
       let totalUnknownQty = 0;
+      let totalConsumedQty = 0;
       for (const c of e.consumes) {
         const cKey = keyOf(c);
         if (!cKey) continue;
         const { cost, unknownQty } = consumeFifo(cKey, Math.abs(c.delta));
         totalCost += cost;
         totalUnknownQty += unknownQty;
+        totalConsumedQty += Math.abs(c.delta);
       }
-      // 2. Crear lote del +N con costo unitario derivado.
+      // 2. Crear el/los lote(s) del +N con costo derivado de los insumos.
       const posKey = keyOf(e.produces);
       const posQty = e.produces.delta;
       if (posKey && posQty > 0) {
-        // Con unknownQty en consumos, el costo del lote queda null
-        // (no asumimos $0). Igual entra al stock como reserva sin costo.
-        const lotUnitCost = totalUnknownQty > 0 ? null : roundCost(totalCost / posQty);
-        addLot(posKey, {
-          movementId: e.produces.id,
-          qty: posQty,
-          unitCost: lotUnitCost,
-          createdAt: e.produces.createdAt.toISOString(),
-        });
+        const iso = e.produces.createdAt.toISOString();
+        if (totalUnknownQty <= 0) {
+          // Todo el insumo tenía costo → lote con costo conocido.
+          addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: roundCost(totalCost / posQty), createdAt: iso });
+        } else if (totalCost <= 0) {
+          // Ningún insumo tenía costo → lote desconocido (NUNCA asumimos $0).
+          addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: null, createdAt: iso });
+        } else {
+          // PARCIAL: algunos insumos con costo, otros sin. NO se descarta el
+          // costo conocido (eso subestimaba el COGS). Se prorratea la fracción
+          // de insumo SIN costo a las unidades producidas: esa porción entra
+          // como lote sin costo (unknownQty) y el resto lleva TODO el costo
+          // conocido (su value = totalCost, así el agregado queda exacto).
+          const unknownFrac = Math.min(1, totalUnknownQty / totalConsumedQty);
+          const unknownQ = roundCost(posQty * unknownFrac);
+          const knownQ = roundCost(posQty - unknownQ);
+          if (knownQ <= 0) {
+            // Borde de redondeo: el costo conocido es marginal → repartir sobre todo.
+            addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: roundCost(totalCost / posQty), createdAt: iso });
+          } else {
+            addLot(posKey, { movementId: e.produces.id, qty: knownQ, unitCost: roundCost(totalCost / knownQ), createdAt: iso });
+            if (unknownQ > 0) {
+              addLot(posKey, { movementId: e.produces.id, qty: unknownQ, unitCost: null, createdAt: iso });
+            }
+          }
+        }
       }
       continue;
     }
@@ -278,21 +302,25 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     // MANUAL_ADJUSTMENT- no se atribuye (sale del libro y listo).
   }
 
-  // Construir remaining a partir del estado final de cada cola.
+  // Construir remaining + remainingLots a partir del estado final de cada cola.
   for (const [key, q] of queues) {
     let value = 0;
     let unknownQty = 0;
     let qty = 0;
+    const lots: { qty: number; unitCost: number | null }[] = [];
     for (const l of q) {
+      if (l.qty <= 0) continue;
       qty += l.qty;
       if (l.unitCost === null) unknownQty += l.qty;
       else value += l.qty * l.unitCost;
+      lots.push({ qty: roundCost(l.qty), unitCost: l.unitCost });
     }
     out.remaining.set(key, {
       qty: roundCost(qty),
       value: roundCost(value),
       unknownQty: roundCost(unknownQty),
     });
+    if (lots.length > 0) out.remainingLots.set(key, lots);
   }
   return out;
 }

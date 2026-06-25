@@ -8,6 +8,9 @@ import { ChangePaymentModal } from './ChangePaymentModal';
 import { EditSaleModal } from './EditSaleModal';
 import { RefundModal } from './RefundModal';
 import { HistoryRow } from './HistoryRow';
+import { CortesiasList, useUnseenCortesias } from '../../cortesias';
+
+const CORTESIAS_KEY = '__cortesias__';
 import { startOfTodayIso } from '../../../lib/dates';
 import { usePolling } from '../../../lib/use-polling';
 import { getErrorMessage } from '../../../lib/errors';
@@ -33,6 +36,8 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [payingSale, setPayingSale] = useState<Sale | null>(null);
   const [refundingSale, setRefundingSale] = useState<Sale | null>(null);
+  const unseenCortesias = useUnseenCortesias();
+  const cortesiasView = filterKey === CORTESIAS_KEY;
 
   const refresh = useCallback(async () => {
     try {
@@ -100,9 +105,26 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setFilterKey(CORTESIAS_KEY)}
+          className={cn(
+            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.6875rem] font-semibold transition-colors',
+            cortesiasView
+              ? 'border-primary bg-primary/15 text-primary'
+              : 'border-border text-muted-foreground hover:bg-muted/40',
+          )}
+        >
+          <span>Cortesías</span>
+          {unseenCortesias > 0 ? (
+            <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.625rem] font-bold text-destructive-foreground">
+              {unseenCortesias}
+            </span>
+          ) : null}
+        </button>
       </div>
 
-      {slowCount > 0 ? (
+      {slowCount > 0 && !cortesiasView ? (
         <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs font-medium text-warning">
           ⚠ {slowCount} pedido{slowCount === 1 ? '' : 's'} llevan más de{' '}
           {SLOW_ORDER_THRESHOLD_MIN} min sin completarse.
@@ -110,7 +132,9 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
-        {loading && sales.length === 0 ? (
+        {cortesiasView ? (
+          <CortesiasList active={active} />
+        ) : loading && sales.length === 0 ? (
           <LoadingSkeleton shape="table-row" count={6} />
         ) : error ? (
           <p

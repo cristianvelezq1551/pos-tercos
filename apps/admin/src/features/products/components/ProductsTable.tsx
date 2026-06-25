@@ -1,4 +1,4 @@
-import type { ExpandedCostResponse, Product, UserRole } from '@pos-tercos/types';
+import type { Product, ProductCostSummary, UserRole } from '@pos-tercos/types';
 import {
   Badge,
   Button,
@@ -14,9 +14,9 @@ import { DeleteProductAction } from './DeleteProductAction';
 
 interface ProductsTableProps {
   products: Product[];
-  /** Costos pre-calculados por productId (FASE 4 ajustes 2.2). Si no
+  /** Costos pre-calculados por productId (batch `/product-costs`). Si no
    *  está, fallback a lastUnitCost para direct-resale. */
-  costsById?: Map<string, ExpandedCostResponse>;
+  costsById?: Map<string, ProductCostSummary>;
   /** Rol del usuario actual. Solo Dueño puede modificar receta o eliminar. */
   userRole?: UserRole;
 }

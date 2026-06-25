@@ -81,6 +81,9 @@ function synthesizeExtraction(invoice: Invoice): ExtractedInvoice {
       unit: it.unit,
       unitPrice: it.unitPrice,
       total: it.total,
+      packUnits: null,
+      packSizePerUnit: null,
+      packSizeMeasure: null,
     })),
     warnings:
       (invoice.items?.length ?? 0) === 0

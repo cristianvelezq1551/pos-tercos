@@ -89,7 +89,9 @@ export function TopProductsTable({ report }: TopProductsTableProps) {
         </tbody>
       </table>
       <div className="border-t border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-        Costo estimado a partir de la receta directa (sin desglosar subproductos).
+        Costo <strong>estimado</strong> con el último precio de compra (lastUnitCost), desglosando
+        recetas y subproductos. Es una referencia rápida — para el costo real por lote consultá{' '}
+        <a href="/reports/costos" className="underline hover:text-foreground">Costos y margen real</a> (FIFO).
         Los productos sin costo registrado muestran "—".
       </div>
     </div>

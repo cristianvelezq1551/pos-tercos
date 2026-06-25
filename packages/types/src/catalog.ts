@@ -521,11 +521,28 @@ export const ComboComponentCostSchema = z.object({
 });
 export type ComboComponentCost = z.infer<typeof ComboComponentCostSchema>;
 
+/** Componente DIRECTO (un nivel) de la receta: insumo o subproducto que se
+ *  consume tal cual al vender 1 unidad — espeja cómo el FIFO descuenta. Para
+ *  productos con subproductos, acá aparece el SUBPRODUCTO (no sus insumos
+ *  profundos), a diferencia de `totals` que aplana hasta insumos. */
+export const DirectRecipeComponentSchema = z.object({
+  entityType: z.enum(['INGREDIENT', 'SUBPRODUCT']),
+  id: z.string().uuid(),
+  name: z.string(),
+  /** Unidad base (unitRecipe del insumo / unit del subproducto). */
+  unitRecipe: z.string(),
+  /** Cantidad bruta por 1 unidad del producto/subproducto (un nivel, con merma). */
+  totalQuantity: z.number(),
+});
+export type DirectRecipeComponent = z.infer<typeof DirectRecipeComponentSchema>;
+
 export const ExpandedCostResponseSchema = z.object({
   productId: z.string().uuid(),
   /** 'product' | 'combo' — para que la UI sepa cómo renderear. */
   kind: z.enum(['product', 'combo']),
   totals: z.array(ExpandedIngredientUsageSchema),
+  /** Componentes DIRECTOS (un nivel) — para el rendimiento FIFO por componente. */
+  directComponents: z.array(DirectRecipeComponentSchema),
   /** Solo poblado cuando kind='combo'. Vacío para productos. */
   components: z.array(ComboComponentCostSchema),
   /** Costo total estimado del producto. Null si falta info en algún componente/ingrediente. */
@@ -542,3 +559,13 @@ export const SubproductCostSummarySchema = z.object({
   totalCost: z.number().nullable(),
 });
 export type SubproductCostSummary = z.infer<typeof SubproductCostSummarySchema>;
+
+/** Costo por unidad de cada producto (resumen batch para la tabla de productos, sin N+1). */
+export const ProductCostSummarySchema = z.object({
+  productId: z.string().uuid(),
+  /** Costo estimado por 1 unidad. Null si falta costo de algún insumo/componente. */
+  totalCost: z.number().nullable(),
+  /** Motivos por los que el costo quedó incompleto (insumos sin costo, etc.). */
+  missingReasons: z.array(z.string()),
+});
+export type ProductCostSummary = z.infer<typeof ProductCostSummarySchema>;

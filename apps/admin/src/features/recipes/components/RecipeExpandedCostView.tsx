@@ -1,11 +1,13 @@
-import type { ExpandedCostResponse } from '@pos-tercos/types';
+import type { ExpandedCostResponse, FifoLotsResponse } from '@pos-tercos/types';
 import { formatCop } from '@pos-tercos/ui';
+import { FifoYieldBreakdown } from './FifoYieldBreakdown';
 import { Th, Td, formatRecipeNumber } from './RecipeTablePrimitives';
 
 interface RecipeExpandedCostViewProps {
   cost: ExpandedCostResponse | null;
   error: string | null;
   isDirty: boolean;
+  fifoLots?: FifoLotsResponse | null;
 }
 
 // Un costo más viejo que esto se marca como potencialmente desactualizado.
@@ -26,7 +28,7 @@ function staleTitle(iso: string | null): string {
     : `Último costo hace ${d} días — puede estar desactualizado`;
 }
 
-export function RecipeExpandedCostView({ cost, error, isDirty }: RecipeExpandedCostViewProps) {
+export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: RecipeExpandedCostViewProps) {
   if (isDirty) {
     return (
       <section className="rounded-lg border border-warning-border bg-warning-bg/30 p-4">
@@ -160,6 +162,8 @@ export function RecipeExpandedCostView({ cost, error, isDirty }: RecipeExpandedC
           estar desactualizados.
         </p>
       )}
+
+      <FifoYieldBreakdown directComponents={cost.directComponents} fifoLots={fifoLots ?? null} />
     </section>
   );
 }

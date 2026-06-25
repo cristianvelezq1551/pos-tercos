@@ -1,16 +1,8 @@
 export {
-  getPaymentPeriod,
-  getEmployeePanel,
-  setPayrollDay,
-  deletePayrollDay,
-  addAdjustment,
-  deleteAdjustment,
-  markPaymentPaid,
-  unmarkPayment,
-  paymentProofUrl,
-  isPaymentDayToday,
   getWeeklyPayroll,
   payWeekDays,
   voidWeekPayment,
   weekPaymentProofUrl,
+  addWeeklyAdjustment,
+  deleteWeeklyAdjustment,
 } from './client';

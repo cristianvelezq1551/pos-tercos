@@ -184,6 +184,92 @@ describe('Invoices E2E', () => {
       expect(Number(ingredient!.lastUnitCost)).toBe(UNIT_PRICE);
     });
 
+    it('baseFactor convierte exacto a la unidad base (FIFO correcto aunque la unidad difiera)', async () => {
+      // Compra "FILETE 150 g X 10 U": 5 paquetes, 1 paquete = 1500 g (10×150).
+      // El insumo está configurado en kg→g, pero esta compra viene en "unidad":
+      // baseFactor garantiza que entren 7.500 g (no 5.000 por el factor default).
+      const QUANTITY = 5;
+      const UNIT_PRICE = 39750;
+      const TOTAL = 198750;
+      const BASE_FACTOR = 1500;
+
+      await request
+        .post(`/invoices/${draftInvoiceId}/confirm`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({
+          supplierNit: '900123456-1',
+          supplierName: 'Proveedor Test Invoice',
+          invoiceNumber: 'F-PACK',
+          total: TOTAL,
+          items: [
+            {
+              entityType: 'INGREDIENT',
+              ingredientId,
+              descriptionRaw: 'FILETE 150 g X 10 U',
+              quantity: QUANTITY,
+              unit: 'unidad',
+              unitPrice: UNIT_PRICE,
+              total: TOTAL,
+              baseFactor: BASE_FACTOR,
+            },
+          ],
+        })
+        .expect(201);
+
+      const movement = await prisma.inventoryMovement.findFirst({
+        where: { entityType: 'INGREDIENT', ingredientId, type: 'PURCHASE' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(Number(movement!.delta)).toBe(QUANTITY * BASE_FACTOR); // 7.500 g
+      // Costo por unidad base = total / gramos recibidos = $26,5/g exacto.
+      expect(Number(movement!.unitCost)).toBeCloseTo(TOTAL / (QUANTITY * BASE_FACTOR), 4);
+
+      // lastUnitCost se re-escala a la unidad de compra (Kg): $26,5/g × 1000 =
+      // $26.500/Kg, NO el $39.750 crudo de la línea (eso inflaba el costo de los
+      // subproductos). conversionFactor del insumo = 1000 (kg→g).
+      const ing = await prisma.ingredient.findUnique({ where: { id: ingredientId } });
+      expect(Number(ing!.lastUnitCost)).toBeCloseTo(
+        (TOTAL / (QUANTITY * BASE_FACTOR)) * Number(ing!.conversionFactor),
+        2,
+      );
+    });
+
+    it('costea con el TOTAL de la línea, no quantity×unitPrice (descuento/IVA por línea)', async () => {
+      // Línea con descuento: total $9.000 ≠ quantity×unitPrice ($10.000). El FIFO
+      // debe costear lo que se PAGÓ ($9.000), no la reconstrucción quantity×precio.
+      await request
+        .post(`/invoices/${draftInvoiceId}/confirm`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({
+          supplierNit: '900123456-1',
+          supplierName: 'Proveedor Test Invoice',
+          invoiceNumber: 'F-DESC',
+          total: 9000,
+          items: [
+            {
+              entityType: 'INGREDIENT',
+              ingredientId,
+              descriptionRaw: 'Harina con descuento',
+              quantity: 10,
+              unit: 'kg',
+              unitPrice: 1000,
+              total: 9000, // 10% dto: ≠ 10 × 1000
+            },
+          ],
+        })
+        .expect(201);
+
+      const m = await prisma.inventoryMovement.findFirst({
+        where: { entityType: 'INGREDIENT', ingredientId, type: 'PURCHASE' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(Number(m!.delta)).toBe(10000); // 10 kg × 1000 g/kg
+      // costo por g = total / gramos = 9000/10000 = $0,9/g  (NO 10000/10000 = $1,0)
+      expect(Number(m!.unitCost)).toBeCloseTo(0.9, 4);
+      const ing = await prisma.ingredient.findUnique({ where: { id: ingredientId } });
+      expect(Number(ing!.lastUnitCost)).toBeCloseTo(900, 2); // $0,9/g × 1000 = $900/kg
+    });
+
     it('rechaza confirmar una invoice ya confirmada', async () => {
       // Primero confirmar
       await request

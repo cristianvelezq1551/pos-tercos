@@ -13,6 +13,7 @@ import type { SaleStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { WorkersWeeklyService } from '../workers/workers-weekly.service';
 import { WorkersService } from '../workers/workers.service';
 
 const SINGLETON = 'singleton';
@@ -31,6 +32,7 @@ export class TreasuryService {
     private readonly audit: AuditService,
     private readonly fixedCosts: FixedCostsService,
     private readonly workers: WorkersService,
+    private readonly workersWeekly: WorkersWeeklyService,
   ) {}
 
   // --- Config ---
@@ -256,7 +258,7 @@ export class TreasuryService {
         select: { total: true, responsible: true },
       }),
       this.fixedCosts.getPendingPayments(now),
-      this.workers.getPendingPayments(now),
+      this.workersWeekly.getPendingPayments(now),
       this.prisma.payableCommitment.findMany({
         where: { status: 'PENDING' },
         select: { beneficiary: true, amount: true },

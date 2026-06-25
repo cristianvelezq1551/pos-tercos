@@ -37,6 +37,7 @@ export const CortesiaRequestSchema = z.object({
   resolvedByName: z.string().nullable(),
   resolvedAt: z.string().nullable(),
   resolverNote: z.string().nullable(),
+  seenByRequester: z.boolean(),
   createdAt: z.string(),
 });
 export type CortesiaRequest = z.infer<typeof CortesiaRequestSchema>;

@@ -337,3 +337,28 @@ export const InventoryUsageReportSchema = z.object({
   unknownCostCount: z.number().int().nonnegative(),
 });
 export type InventoryUsageReport = z.infer<typeof InventoryUsageReportSchema>;
+
+// ====================================================================
+// LOTES FIFO RESTANTES — para mostrar "tu inventario rinde N porciones a $X"
+// en el editor de receta. Solo lectura; no afecta el costeo.
+// ====================================================================
+
+export const FifoLotSchema = z.object({
+  qty: z.number(),
+  /** Costo por unidad base del lote. Null = lote sin costo conocido. */
+  unitCost: z.number().nullable(),
+});
+export type FifoLot = z.infer<typeof FifoLotSchema>;
+
+export const FifoEntityLotsSchema = z.object({
+  entityType: z.enum(['INGREDIENT', 'PRODUCT', 'SUBPRODUCT']),
+  entityId: z.string().uuid(),
+  /** Lotes en orden FIFO: el más viejo (que se consume primero) primero. */
+  lots: z.array(FifoLotSchema),
+});
+export type FifoEntityLots = z.infer<typeof FifoEntityLotsSchema>;
+
+export const FifoLotsResponseSchema = z.object({
+  entities: z.array(FifoEntityLotsSchema),
+});
+export type FifoLotsResponse = z.infer<typeof FifoLotsResponseSchema>;

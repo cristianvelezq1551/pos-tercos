@@ -1,20 +1,10 @@
-import { Container, LoadingSkeleton } from '@pos-tercos/ui';
+import { RouteSkeleton } from '../../components/RouteSkeleton';
 
 /**
- * Estado de carga a nivel de ruta: mientras un Server Component hace su fetch,
- * Next muestra esto en lugar de congelar la página anterior. La topbar/sidebar
- * (layout) permanecen.
+ * Estado de carga a nivel de ruta (primer ingreso a la app o recarga dura). El
+ * cambio ENTRE módulos lo cubre `MainSkeletonGate` en el cliente, porque el
+ * Suspense de `loading.tsx` no se re-dispara al navegar dentro del mismo layout.
  */
 export default function Loading() {
-  return (
-    <Container size="7xl" padY="md">
-      <div className="space-y-6">
-        <LoadingSkeleton shape="text" width="40%" height="1.75rem" />
-        <LoadingSkeleton shape="text" width="65%" />
-        <div className="rounded-lg border border-border bg-card p-4">
-          <LoadingSkeleton shape="table-row" count={8} />
-        </div>
-      </div>
-    </Container>
-  );
+  return <RouteSkeleton />;
 }

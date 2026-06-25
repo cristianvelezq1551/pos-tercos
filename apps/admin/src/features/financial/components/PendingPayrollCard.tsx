@@ -20,7 +20,7 @@ export function PendingPayrollCard({ rows }: { rows: FinancePendingPayroll[] }) 
           {rows.map((r) => (
             <li key={`${r.userId}-${r.periodStart}`} className="py-2 first:pt-0 last:pb-0">
               <Link
-                href={`/workers/${r.userId}`}
+                href={`/workers/semana?week=${r.periodStart}`}
                 className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 -mx-2 hover:bg-muted/40"
               >
                 <div className="min-w-0">

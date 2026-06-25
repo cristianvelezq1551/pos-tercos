@@ -16,18 +16,13 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
-  AddPayrollAdjustmentSchema,
   AddWeeklyAdjustmentSchema,
   PayWeekDaysSchema,
   SetPayrollDaySchema,
-  type AddPayrollAdjustment,
   type AddWeeklyAdjustment,
-  type EmployeePanel,
   type JwtAccessPayload,
-  type PagoReport,
   type PayrollAdjustment,
   type PayrollDay,
-  type PayrollPayment,
   type PayrollWeekPayment,
   type SetPayrollDay,
   type WeeklyPayrollReport,
@@ -35,19 +30,16 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMimeLoose } from '../common/image-mime';
-import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { WorkersPaymentsService } from './workers-payments.service';
 import { WorkersWeeklyService } from './workers-weekly.service';
 import { WorkersService } from './workers.service';
 
-/** RRHH / nómina. Admin/Dueño. */
+/** RRHH / nómina unificada SEMANAL. Admin/Dueño. */
 @Controller('workers')
 @AdminAccess()
 export class WorkersController {
   constructor(
     private readonly workers: WorkersService,
-    private readonly payments: WorkersPaymentsService,
     private readonly weekly: WorkersWeeklyService,
   ) {}
 
@@ -55,6 +47,10 @@ export class WorkersController {
   listUsers(): Promise<Array<{ id: string; fullName: string; role: string; payType: string | null }>> {
     return this.workers.listPayrollUsers();
   }
+
+  // ================================================================
+  // NÓMINA SEMANAL — adeudo por semana + abonos parciales con comprobante
+  // ================================================================
 
   // Ajustes semanales (bono/descuento) — DECLARADOS ANTES de las rutas con
   // `:userId/...` para que `weekly/adjustment` no caiga en `:userId='weekly'`.
@@ -77,135 +73,6 @@ export class WorkersController {
   ): Promise<void> {
     return this.weekly.deleteWeeklyAdjustment(id, user.sub);
   }
-
-  /** Pago para pagar. ?start=YYYY-MM-DD (cualquier día del pago: se ancla al
-   *  inicio = día 1, 8, 16 o 23 del mes); por defecto el pago actual. */
-  @Get('period')
-  getPaymentPeriod(@Query('start') start?: string): Promise<PagoReport> {
-    return this.workers.getPaymentPeriod(start ?? new Date().toISOString().slice(0, 10));
-  }
-
-  /** Panel mensual de un empleado. ?year=&month= (1-12); por defecto mes actual. */
-  @Get('panel/:userId')
-  getPanel(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Query('year') year?: string,
-    @Query('month') month?: string,
-  ): Promise<EmployeePanel> {
-    const now = new Date();
-    const y = year ? Number(year) : now.getFullYear();
-    const m = month ? Number(month) : now.getMonth() + 1;
-    return this.workers.getEmployeePanel(userId, y, m);
-  }
-
-  @Post(':userId/day')
-  setDay(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Headers('x-approval-pin') pin: string | undefined,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(SetPayrollDaySchema)) body: SetPayrollDay,
-  ): Promise<PayrollDay> {
-    return this.workers.setPayrollDay(userId, body, requirePin(pin), user.sub);
-  }
-
-  @Delete(':userId/day')
-  deleteDay(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Query('date') date: string,
-    @Headers('x-approval-pin') pin: string | undefined,
-    @CurrentUser() user: JwtAccessPayload,
-  ): Promise<void> {
-    return this.workers.deletePayrollDay(userId, date, requirePin(pin), user.sub);
-  }
-
-  @Post(':userId/adjustment')
-  addAdjustment(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Headers('x-approval-pin') pin: string | undefined,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(AddPayrollAdjustmentSchema)) body: AddPayrollAdjustment,
-  ): Promise<PayrollAdjustment> {
-    return this.workers.addAdjustment(userId, body, requirePin(pin), user.sub);
-  }
-
-  @Delete('adjustment/:id')
-  deleteAdjustment(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Headers('x-approval-pin') pin: string | undefined,
-    @CurrentUser() user: JwtAccessPayload,
-  ): Promise<void> {
-    return this.workers.deleteAdjustment(id, requirePin(pin), user.sub);
-  }
-
-  // ================================================================
-  // CONTROL DE PAGOS (solo Dueño)
-  // ================================================================
-
-  /** Marca PAGADO con comprobante (imagen). Solo Dueño + PIN. Sat/Sun. */
-  @OnlyDueno()
-  @Post(':userId/payment/paid')
-  @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: 5 * 1024 * 1024 } }))
-  async markPaid(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Headers('x-approval-pin') pin: string | undefined,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body('periodStart') periodStart: string | undefined,
-    @Body('note') note: string | undefined,
-    @Body('cashAmount') cashAmount: string | undefined,
-    @Body('bankAmount') bankAmount: string | undefined,
-    @UploadedFile() file: Express.Multer.File | undefined,
-  ): Promise<PayrollPayment> {
-    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
-    if (!periodStart || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) {
-      throw new BadRequestException('periodStart (YYYY-MM-DD) requerido.');
-    }
-    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
-    if (!detected) {
-      throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
-    }
-    return this.payments.markPaymentPaid(
-      userId,
-      periodStart,
-      requirePin(pin),
-      user.sub,
-      { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
-      note?.trim() || undefined,
-      parseOptionalAmount(cashAmount),
-      parseOptionalAmount(bankAmount),
-    );
-  }
-
-  /** Desmarca (borra el registro y la imagen). Solo Dueño + PIN. */
-  @OnlyDueno()
-  @Delete(':userId/payment')
-  unmarkPayment(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Query('period') periodStart: string,
-    @Headers('x-approval-pin') pin: string | undefined,
-    @CurrentUser() user: JwtAccessPayload,
-  ): Promise<void> {
-    if (!periodStart || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) {
-      throw new BadRequestException('?period=YYYY-MM-DD requerido.');
-    }
-    return this.payments.unmarkPayment(userId, periodStart, requirePin(pin), user.sub);
-  }
-
-  /** Comprobante binario (Dueño). */
-  @OnlyDueno()
-  @Get('payment/:id/proof')
-  async getProof(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Res() res: Response,
-  ): Promise<void> {
-    const { buffer, mime } = await this.payments.getPaymentProof(id);
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'private, max-age=60');
-    res.send(buffer);
-  }
-
-  // ================================================================
-  // NÓMINA SEMANAL (DIARIO) — abonos parciales por días + comprobante
-  // ================================================================
 
   /** Reporte de la semana que contiene `?week=YYYY-MM-DD` (default: hoy). */
   @Get('weekly')
@@ -265,6 +132,39 @@ export class WorkersController {
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);
+  }
+
+  // ----------------------------------------------------------------
+  // Excepciones de día (DIARIO): llegada tarde, ausencia, monto distinto.
+  // DECLARADAS al final — las rutas `:userId/...` son param routes y deben ir
+  // DESPUÉS de las estáticas `weekly/...` para no shadowearlas.
+  // ----------------------------------------------------------------
+
+  /** Setea/edita el valor de un día de un DIARIO. Solo Dueño + PIN. */
+  @OnlyDueno()
+  @Post(':userId/day')
+  setDay(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(SetPayrollDaySchema)) body: SetPayrollDay,
+  ): Promise<PayrollDay> {
+    return this.weekly.setPayrollDay(userId, body, requirePin(pin), user.sub);
+  }
+
+  /** Borra la excepción de un día (vuelve al valor por defecto). Solo Dueño + PIN. */
+  @OnlyDueno()
+  @Delete(':userId/day')
+  deleteDay(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Query('date') date: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('?date=YYYY-MM-DD requerido.');
+    }
+    return this.weekly.deletePayrollDay(userId, date, requirePin(pin), user.sub);
   }
 }
 

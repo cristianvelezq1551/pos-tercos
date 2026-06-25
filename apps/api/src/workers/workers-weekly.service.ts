@@ -8,9 +8,13 @@ import {
 } from '@pos-tercos/domain';
 import type {
   AddWeeklyAdjustment,
+  FinancePaidPayroll,
+  FinancePendingPayroll,
   PayrollAdjustment,
+  PayrollDay,
   PayWeekDays,
   PayrollWeekPayment,
+  SetPayrollDay,
   WeeklyPayrollDay,
   WeeklyPayrollEntry,
   WeeklyPayrollReport,
@@ -65,6 +69,7 @@ export class WorkersWeeklyService {
         salaryAmount: true,
         hireDate: true,
         terminationDate: true,
+        restDaysOfWeek: true,
       },
       orderBy: { fullName: 'asc' },
     });
@@ -84,6 +89,67 @@ export class WorkersWeeklyService {
     };
   }
 
+  // ==================================================================
+  // CASH-FLOW HELPERS — usados por FinanceSummaryService (/finanzas).
+  // Nómina unificada SEMANAL: el "pendiente" es el restante (neto − abonado)
+  // de cada semana YA CERRADA; el "pagado" son los abonos reales (PAID) en el
+  // rango. Reemplaza el cálculo quincenal (que no veía los abonos semanales).
+  // ==================================================================
+
+  /** Restante por pagar de cada semana cerrada (fin ≤ asOf) con saldo > 0.
+   *  Acotado a `lookbackWeeks` semanas hacia atrás (admin-only, negocio chico). */
+  async getPendingPayments(
+    asOf: Date = todayUtc(),
+    lookbackWeeks = PENDING_LOOKBACK_WEEKS,
+  ): Promise<FinancePendingPayroll[]> {
+    const out: FinancePendingPayroll[] = [];
+    let week = payrollWeekFor(asOf);
+    for (let i = 0; i < lookbackWeeks; i++) {
+      // Solo semanas ya cerradas: el adeudo es definitivo (la semana en curso
+      // todavía acumula días y se ve en la pantalla de nómina, no acá).
+      if (parseYmd(week.weekEnd).getTime() <= asOf.getTime()) {
+        const report = await this.getWeeklyPayroll(week.weekStart);
+        for (const e of report.entries) {
+          if (e.remaining > 0.01) {
+            out.push({
+              userId: e.userId,
+              userName: e.fullName,
+              periodStart: week.weekStart,
+              periodLabel: week.weekLabel,
+              total: e.remaining,
+            });
+          }
+        }
+      }
+      week = payrollWeekFor(parseYmd(prevWeekRef(week)));
+    }
+    // Más viejo primero (más urgente).
+    out.sort((a, b) => a.periodStart.localeCompare(b.periodStart) || a.userName.localeCompare(b.userName));
+    return out;
+  }
+
+  /** Abonos semanales PAID con paidAt en [from, to]. */
+  async getPaidPaymentsInRange(from: Date, to: Date): Promise<FinancePaidPayroll[]> {
+    const rows = await this.prisma.payrollWeekPayment.findMany({
+      where: { status: 'PAID', paidAt: { gte: from, lte: to } },
+      orderBy: { paidAt: 'desc' },
+      include: { user: { select: { fullName: true } } },
+    });
+    return rows.map((r) => {
+      const week = payrollWeekFor(r.weekStart);
+      return {
+        paymentId: r.id,
+        userId: r.userId,
+        userName: r.user.fullName,
+        periodStart: ymd(r.weekStart),
+        periodLabel: week.weekLabel,
+        amount: Number(r.amount),
+        paidAt: r.paidAt.toISOString(),
+        hasProof: r.proofImageKey !== null,
+      };
+    });
+  }
+
   private async buildEntry(
     u: {
       id: string;
@@ -93,6 +159,7 @@ export class WorkersWeeklyService {
       salaryAmount: { toString(): string } | null;
       hireDate: Date | null;
       terminationDate: Date | null;
+      restDaysOfWeek: number[];
     },
     week: PayrollWeek,
   ): Promise<WeeklyPayrollEntry> {
@@ -155,20 +222,28 @@ export class WorkersWeeklyService {
         };
       });
     } else {
-      // DIARIO: solo los días operativos (mar–dom); el override gana; descanso = 0.
+      // DIARIO: el override gana; los días de descanso del TRABAJADOR no se
+      // pagan (part-time que no trabaja toda la semana); el resto = valor/día.
+      // Excepción: un FESTIVO se paga aunque caiga en un día de descanso del
+      // trabajador — el negocio abre en festivos y el trabajador asiste (ej. un
+      // trabajador de fin de semana cobra el lunes festivo). Si no asistió, el
+      // dueño lo pone en 0 con una excepción de día.
+      const restSet = new Set(u.restDaysOfWeek);
       days = week.days.map((d) => {
         const employed = employedOn(d.date);
         const ov = ovMap.get(d.date);
         const hasOverride = ov !== undefined;
+        const isWorkerRest = restSet.has(d.weekday) && !d.isHoliday;
         let amount: number;
         if (!employed) amount = 0;
         else if (hasOverride) amount = ov;
+        else if (isWorkerRest) amount = 0;
         else amount = d.status === 'WORKDAY' ? salary : 0;
         return {
           date: d.date,
           weekday: d.weekday,
           isHoliday: d.isHoliday,
-          status: d.status,
+          status: isWorkerRest && !hasOverride ? 'REST' : d.status,
           amount: round2(amount),
           hasOverride,
           isPaid: paidSet.has(d.date),
@@ -188,6 +263,10 @@ export class WorkersWeeklyService {
       fullName: u.fullName,
       role: u.role,
       payType: u.payType ?? 'DAILY',
+      salaryAmount: u.salaryAmount === null ? null : Number(u.salaryAmount),
+      hireDate: u.hireDate ? u.hireDate.toISOString() : null,
+      terminationDate: u.terminationDate ? u.terminationDate.toISOString() : null,
+      restDaysOfWeek: u.restDaysOfWeek,
       valuePerDay: round2(valuePerDay),
       days,
       owedTotal,
@@ -237,6 +316,7 @@ export class WorkersWeeklyService {
         salaryAmount: user.salaryAmount,
         hireDate: user.hireDate,
         terminationDate: user.terminationDate,
+        restDaysOfWeek: user.restDaysOfWeek,
       },
       week,
     );
@@ -408,6 +488,51 @@ export class WorkersWeeklyService {
     };
   }
 
+  /** Setea/edita el valor de UN día de un DIARIO (llegada tarde, ausencia $0,
+   *  monto distinto). El cálculo semanal aplica el override (gana sobre el
+   *  valor/día y sobre el descanso). Solo Dueño + PIN. */
+  async setPayrollDay(userId: string, input: SetPayrollDay, pin: string, actorId: string): Promise<PayrollDay> {
+    const approverId = await this.approvals.verify(pin);
+    const user = await this.workers.getEmploymentUser(userId);
+    if (user.payType !== 'DAILY') {
+      throw new BadRequestException('Solo los empleados con pago DIARIO tienen días editables.');
+    }
+    const workDate = parseYmd(input.workDate);
+    const row = await this.prisma.payrollDay.upsert({
+      where: { userId_workDate: { userId, workDate } },
+      create: { userId, workDate, amount: input.amount, note: input.note ?? null, createdById: actorId },
+      update: { amount: input.amount, note: input.note ?? null },
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'PAYROLL_DAY_SET',
+      entityType: 'payroll_day',
+      entityId: row.id,
+      metadata: { approverId, workerId: userId, workDate: input.workDate, amount: input.amount },
+    });
+    return {
+      id: row.id,
+      userId: row.userId,
+      workDate: ymd(row.workDate),
+      amount: Number(row.amount),
+      note: row.note,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  /** Borra la excepción de un día (vuelve al valor por defecto). Solo Dueño + PIN. */
+  async deletePayrollDay(userId: string, workDateYmd: string, pin: string, actorId: string): Promise<void> {
+    const approverId = await this.approvals.verify(pin);
+    const workDate = parseYmd(workDateYmd);
+    await this.prisma.payrollDay.deleteMany({ where: { userId, workDate } });
+    await this.audit.log({
+      userId: actorId,
+      action: 'PAYROLL_DAY_SET',
+      entityType: 'payroll_day',
+      metadata: { approverId, workerId: userId, workDate: workDateYmd, removed: true },
+    });
+  }
+
   /** Elimina un bono/descuento de la semana. */
   async deleteWeeklyAdjustment(adjustmentId: string, actorId: string): Promise<void> {
     const row = await this.prisma.payrollAdjustment.findUnique({ where: { id: adjustmentId } });
@@ -462,6 +587,10 @@ export class WorkersWeeklyService {
     };
   }
 }
+
+/** Ventana de semanas hacia atrás que el cash-flow considera "pendiente".
+ *  Acota el costo (admin-only) sin esconder atrasos recientes (~4 meses). */
+const PENDING_LOOKBACK_WEEKS = 16;
 
 /** Cantidad de días del mes calendario al que pertenece la fecha YYYY-MM-DD.
  *  Para prorratear MENSUAL: salario/díasDelMes por día → mes completo = salario. */

@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import type {
   FinanceMoneyFlow,
   FinancePaidInvoice,
+  FinancePaidPayable,
   FinancePendingInvoice,
+  FinancePendingPayable,
   FinanceSummary,
 } from '@pos-tercos/types';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { WorkersService } from '../workers/workers.service';
+import { WorkersWeeklyService } from '../workers/workers-weekly.service';
 
 const MONTHS_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -32,7 +34,7 @@ const MONTHS_ES = [
 export class FinanceSummaryService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly workers: WorkersService,
+    private readonly workers: WorkersWeeklyService,
     private readonly fixedCosts: FixedCostsService,
   ) {}
 
@@ -52,6 +54,8 @@ export class FinanceSummaryService {
       paidInvoiceRows,
       pendingFixedCosts,
       paidFixedCosts,
+      pendingPayableRows,
+      paidPayableRows,
     ] = await Promise.all([
       this.prisma.sale.aggregate({
         where: {
@@ -91,6 +95,18 @@ export class FinanceSummaryService {
       }),
       this.fixedCosts.getPendingPayments(asOfForPending),
       this.fixedCosts.getPaidPaymentsInRange(monthStart, monthEnd),
+      // Compromisos por pagar: pendientes = TODOS los PENDING (deuda global,
+      // no se filtra por mes); pagados = los PAID con paidAt en el mes.
+      this.prisma.payableCommitment.findMany({
+        where: { status: 'PENDING' },
+        select: { id: true, beneficiary: true, description: true, amount: true, createdAt: true },
+        orderBy: [{ createdAt: 'asc' }],
+      }),
+      this.prisma.payableCommitment.findMany({
+        where: { status: 'PAID', paidAt: { gte: monthStart, lte: monthEnd } },
+        select: { id: true, beneficiary: true, description: true, amount: true, paidAt: true, proofImageKey: true },
+        orderBy: [{ paidAt: 'desc' }],
+      }),
     ]);
 
     const revenue = Number(revenueAgg._sum.total ?? 0);
@@ -112,24 +128,43 @@ export class FinanceSummaryService {
       hasProof: r.paymentProofKey !== null,
     }));
 
+    const pendingPayables: FinancePendingPayable[] = pendingPayableRows.map((r) => ({
+      id: r.id,
+      beneficiary: r.beneficiary,
+      description: r.description,
+      amount: Number(r.amount),
+    }));
+    const paidPayables: FinancePaidPayable[] = paidPayableRows.map((r) => ({
+      id: r.id,
+      beneficiary: r.beneficiary,
+      description: r.description,
+      amount: Number(r.amount),
+      paidAt: (r.paidAt as Date).toISOString(),
+      hasProof: r.proofImageKey !== null,
+    }));
+
     const pendingPayrollTotal = round(pendingPayroll.reduce((a, p) => a + p.total, 0));
     const pendingInvoicesTotal = round(pendingInvoices.reduce((a, p) => a + p.total, 0));
     const pendingFixedCostsTotal = round(pendingFixedCosts.reduce((a, p) => a + p.amount, 0));
+    const pendingPayablesTotal = round(pendingPayables.reduce((a, p) => a + p.amount, 0));
     const paidPayrollTotal = round(paidPayroll.reduce((a, p) => a + p.amount, 0));
     const paidInvoicesTotal = round(paidInvoices.reduce((a, p) => a + p.total, 0));
     const paidFixedCostsTotal = round(paidFixedCosts.reduce((a, p) => a + p.amount, 0));
+    const paidPayablesTotal = round(paidPayables.reduce((a, p) => a + p.amount, 0));
 
     const paid: FinanceMoneyFlow = {
       payroll: paidPayrollTotal,
       invoices: paidInvoicesTotal,
       fixedCosts: paidFixedCostsTotal,
-      total: round(paidPayrollTotal + paidInvoicesTotal + paidFixedCostsTotal),
+      payables: paidPayablesTotal,
+      total: round(paidPayrollTotal + paidInvoicesTotal + paidFixedCostsTotal + paidPayablesTotal),
     };
     const pending: FinanceMoneyFlow = {
       payroll: pendingPayrollTotal,
       invoices: pendingInvoicesTotal,
       fixedCosts: pendingFixedCostsTotal,
-      total: round(pendingPayrollTotal + pendingInvoicesTotal + pendingFixedCostsTotal),
+      payables: pendingPayablesTotal,
+      total: round(pendingPayrollTotal + pendingInvoicesTotal + pendingFixedCostsTotal + pendingPayablesTotal),
     };
     const netCash = round(revenue - paid.total);
 
@@ -146,9 +181,11 @@ export class FinanceSummaryService {
       pendingPayroll,
       pendingInvoices,
       pendingFixedCosts,
+      pendingPayables,
       paidPayroll,
       paidInvoices,
       paidFixedCosts,
+      paidPayables,
     };
   }
 }

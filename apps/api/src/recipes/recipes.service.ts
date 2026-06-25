@@ -3,6 +3,7 @@ import {
   computeComboCost,
   computeProductCost,
   expandRecipe,
+  expandRecipeOneLevel,
   RecipeCycleError,
   RecipeMissingNodeError,
   type IngredientCostMap,
@@ -12,7 +13,9 @@ import {
 } from '@pos-tercos/domain';
 import type {
   ComboComponentCost,
+  DirectRecipeComponent,
   ExpandedCostResponse,
+  ProductCostSummary,
   RecipeEdge,
   RecipeEdgeInput,
   RecipeResponse,
@@ -246,6 +249,32 @@ export class RecipesService {
     };
   }
 
+  /** Componentes DIRECTOS (un nivel) de una receta — insumos + subproductos que
+   *  se consumen tal cual por 1 unidad. Espeja cómo el FIFO descuenta al vender. */
+  private directComponentsOf(
+    recipe: { graph: RecipeGraph; root: ParentRef } | null,
+    multiplier: number,
+  ): DirectRecipeComponent[] {
+    if (!recipe) return [];
+    const ol = expandRecipeOneLevel(recipe.graph, recipe.root, multiplier);
+    return [
+      ...Array.from(ol.ingredients.values()).map((i) => ({
+        entityType: 'INGREDIENT' as const,
+        id: i.ingredientId,
+        name: i.name,
+        unitRecipe: i.unitRecipe,
+        totalQuantity: i.totalQuantity,
+      })),
+      ...Array.from(ol.subproducts.values()).map((s) => ({
+        entityType: 'SUBPRODUCT' as const,
+        id: s.subproductId,
+        name: s.name,
+        unitRecipe: s.unit,
+        totalQuantity: s.totalQuantity,
+      })),
+    ];
+  }
+
   async expandedCost(productId: string, sizeId?: string): Promise<ExpandedCostResponse> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
@@ -340,6 +369,7 @@ export class RecipesService {
           productId,
           kind: 'combo',
           totals: [],
+          directComponents: [],
           components: comboResult.components.map((c) => ({
             productId: c.productId,
             productName: c.productName,
@@ -395,6 +425,7 @@ export class RecipesService {
             lastUnitCostDate: ingredientCostDates.get(e.ingredientId) ?? null,
           };
         }),
+        directComponents: this.directComponentsOf(recipe, 1),
         components: [],
         totalCost: r.totalCost,
         missingReasons: r.missingReasons,
@@ -415,6 +446,99 @@ export class RecipesService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Costo por unidad de TODOS los productos en una sola pasada: carga el grafo
+   * completo + los costos de insumos UNA vez y computa cada producto en memoria.
+   * Reemplaza el N+1 de pedir `expanded-cost` por producto en la tabla del admin.
+   * Sólo costo base (sin variantes de tamaño), que es lo que muestra la lista.
+   */
+  async listProductCosts(): Promise<ProductCostSummary[]> {
+    const [products, allIngredients, graph] = await Promise.all([
+      this.prisma.product.findMany({ include: { comboComponents: true } }),
+      this.prisma.ingredient.findMany({
+        select: { id: true, lastUnitCost: true, conversionFactor: true },
+      }),
+      this.loadFullGraph(),
+    ]);
+    const ingredientCosts: IngredientCostMap = new Map(
+      allIngredients.map((i) => [
+        i.id,
+        i.lastUnitCost !== null && Number(i.conversionFactor) > 0
+          ? Number(i.lastUnitCost) / Number(i.conversionFactor)
+          : null,
+      ]),
+    );
+    const productById = new Map(products.map((p) => [p.id, p]));
+
+    // Mismo cálculo que `expandedCost` pero sobre el grafo ya cargado (sin hit a DB).
+    const costOf = (p: (typeof products)[number]) =>
+      computeProductCost({
+        product: {
+          id: p.id,
+          name: p.name,
+          directResale: p.directResale,
+          lastUnitCost: p.lastUnitCost !== null ? Number(p.lastUnitCost) : null,
+          conversionFactor:
+            p.conversionFactor !== null ? Number(p.conversionFactor) : null,
+          isCombo: p.isCombo,
+        },
+        recipe: p.directResale
+          ? null
+          : { graph, root: { kind: 'product' as const, id: p.id } },
+        ingredientCosts,
+      });
+
+    return products.map((product) => {
+      try {
+        if (product.isCombo) {
+          const components = product.comboComponents.map((cc) => {
+            const comp = productById.get(cc.productId);
+            if (!comp) {
+              return {
+                productId: cc.productId,
+                productName: '(eliminado)',
+                quantity: cc.quantity,
+                unitCost: null,
+                missingReason: `Componente productId=${cc.productId} no existe`,
+              };
+            }
+            const r = costOf(comp);
+            return {
+              productId: comp.id,
+              productName: comp.name,
+              quantity: cc.quantity,
+              unitCost: r.totalCost,
+              missingReason:
+                r.totalCost === null ? r.missingReasons.join(' · ') : null,
+            };
+          });
+          const combo = computeComboCost({ components });
+          return {
+            productId: product.id,
+            totalCost: combo.totalCost,
+            missingReasons: combo.missingReasons,
+          };
+        }
+        const r = costOf(product);
+        return {
+          productId: product.id,
+          totalCost: r.totalCost,
+          missingReasons: r.missingReasons,
+        };
+      } catch (err) {
+        return {
+          productId: product.id,
+          totalCost: null,
+          missingReasons: [
+            err instanceof RecipeCycleError
+              ? 'La receta tiene un ciclo'
+              : 'No se pudo calcular el costo',
+          ],
+        };
+      }
+    });
   }
 
   /**
@@ -478,6 +602,7 @@ export class RecipesService {
         productId: subproductId,
         kind: 'product',
         totals,
+        directComponents: this.directComponentsOf({ graph, root }, yieldN > 0 ? 1 / yieldN : 1),
         components: [],
         totalCost: allKnown ? round(total) : null,
         missingReasons: missing,

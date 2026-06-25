@@ -11,19 +11,25 @@ export function PayWeekModal({
   workerName,
   weekStart,
   days,
-  total,
+  suggested,
+  remaining,
   onClose,
   onSuccess,
 }: {
   userId: string;
   workerName: string;
   weekStart: string;
+  /** Días que cubre el abono (etiqueta). Puede ir vacío (abono al neto). */
   days: string[];
-  total: number;
+  /** Monto sugerido (días seleccionados o restante). */
+  suggested: number;
+  /** Tope: no se puede abonar más que esto (días + ajustes − abonado). */
+  remaining: number;
   onClose: () => void;
   onSuccess: () => void;
 }) {
   const [mode, setMode] = useState<PayMode>('EFECTIVO');
+  const [amountInput, setAmountInput] = useState(String(Math.round(suggested)));
   const [cashInput, setCashInput] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -31,6 +37,9 @@ export function PayWeekModal({
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  const total = Math.round((Number(amountInput) || 0) * 100) / 100;
+  const overRemaining = total > remaining + 0.01;
 
   // Reparto por bolsillo según el modo.
   const cashAmount =
@@ -62,14 +71,14 @@ export function PayWeekModal({
   };
 
   const mixOk = mode !== 'MIXTO' || (cashAmount > 0 && bankAmount > 0);
-  const valid = file !== null && isValidPin(pin) && days.length > 0 && mixOk;
+  const valid = file !== null && isValidPin(pin) && total > 0 && !overRemaining && mixOk;
 
   return (
     <Dialog
       open
       onClose={pending ? () => {} : onClose}
-      title={`Pagar ${days.length} día${days.length > 1 ? 's' : ''} · ${workerName}`}
-      description={`Total: ${formatCop(total)}. La porción en efectivo sale de la caja abierta; queda con comprobante.`}
+      title={`Abonar a ${workerName}`}
+      description={`Restante de la semana: ${formatCop(remaining)}. La porción en efectivo sale de la caja abierta; queda con comprobante.`}
       maxWidth="max-w-md"
       footer={
         <>
@@ -83,9 +92,34 @@ export function PayWeekModal({
       }
     >
       <div className="space-y-4">
-        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          Días: <strong className="text-foreground">{days.map((d) => d.slice(8, 10)).join(', ')}</strong> · Semana del {weekStart}
-        </div>
+        {days.length > 0 ? (
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Cubre los días: <strong className="text-foreground">{days.map((d) => d.slice(8, 10)).join(', ')}</strong> · Semana del {weekStart}
+          </div>
+        ) : null}
+
+        <FormField
+          label="Monto a abonar"
+          hint={
+            overRemaining
+              ? `No puede superar el restante (${formatCop(remaining)}).`
+              : 'Podés ajustarlo (incluir bonos, abono parcial, etc.).'
+          }
+          required
+        >
+          <div className="flex gap-2">
+            <MoneyInput value={amountInput} onChange={setAmountInput} disabled={pending} />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setAmountInput(String(Math.round(remaining)))}
+              disabled={pending}
+            >
+              Todo (${formatCop(remaining)})
+            </Button>
+          </div>
+        </FormField>
 
         <FormField label="Forma de pago" required>
           <Select value={mode} onChange={(e) => setMode(e.target.value as PayMode)} disabled={pending}>

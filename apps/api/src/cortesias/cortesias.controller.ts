@@ -28,6 +28,23 @@ export class CortesiasController {
     return this.cortesias.create(body, user.sub);
   }
 
+  /** Cortesías del cajero actual (estado + novedades para acusar). */
+  @CashierAccess()
+  @Get('mine')
+  listMine(@CurrentUser() user: JwtAccessPayload): Promise<CortesiaRequest[]> {
+    return this.cortesias.listMine(user.sub);
+  }
+
+  /** El cajero marca como vista una cortesía observada. */
+  @CashierAccess()
+  @Post(':id/ack')
+  ack(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CortesiaRequest> {
+    return this.cortesias.ack(id, user.sub);
+  }
+
   /** Panel de Solicitudes (admin/dueño). status CSV opcional. */
   @AdminAccess()
   @Get()

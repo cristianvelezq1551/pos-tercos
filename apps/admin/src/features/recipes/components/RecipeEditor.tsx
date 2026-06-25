@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import type {
   ExpandedCostResponse,
+  FifoLotsResponse,
   Ingredient,
   RecipeEdgeInput,
   RecipeResponse,
@@ -12,6 +13,7 @@ import type {
 } from '@pos-tercos/types';
 import {
   getExpandedCost,
+  getFifoLots,
   getSizeExpandedCost,
   getSubproductExpandedCost,
   setProductRecipe,
@@ -75,6 +77,7 @@ export function RecipeEditor({
   const [savingState, setSavingState] = useState<'idle' | 'saving'>('idle');
   const [expandedCost, setExpandedCost] = useState<ExpandedCostResponse | null>(null);
   const [expandedCostError, setExpandedCostError] = useState<string | null>(null);
+  const [fifoLots, setFifoLots] = useState<FifoLotsResponse | null>(null);
 
   // Add-row form
   const [addType, setAddType] = useState<'ingredient' | 'subproduct'>('ingredient');
@@ -118,6 +121,14 @@ export function RecipeEditor({
           setExpandedCost(null);
           setExpandedCostError(err instanceof Error ? err.message : 'Error');
         }
+      });
+    // Lotes FIFO (best-effort): solo para el rendimiento por lote, no bloquea el costo.
+    getFifoLots()
+      .then((lots) => {
+        if (!cancelled) setFifoLots(lots);
+      })
+      .catch(() => {
+        if (!cancelled) setFifoLots(null);
       });
     return () => {
       cancelled = true;
@@ -254,6 +265,7 @@ export function RecipeEditor({
           cost={expandedCost}
           error={expandedCostError}
           isDirty={isDirty}
+          fifoLots={fifoLots}
         />
       )}
     </div>

@@ -1,20 +1,9 @@
 import { z } from 'zod';
 import { PayTypeEnum } from './users';
 
-// ====================================================================
-// Nómina v5 — pago mensual o diario, liquidación por PAGOS: 2 quincenas
-// × 2 sub-pagos = 4 pagos fijos por mes. Cero cards "fantasma" del
-// calendario; cada pago vive dentro de su mes.
-//
-//   Pago 1 de Q1: días 1–7
-//   Pago 2 de Q1: días 8–15
-//   Pago 1 de Q2: días 16–22
-//   Pago 2 de Q2: días 23–fin del mes
-// ====================================================================
-
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)');
 
-// --- Día de pago (trabajador DIARIO) ---
+// --- Excepción de un día (trabajador DIARIO): llegada tarde, ausencia, monto distinto ---
 
 export const PayrollDaySchema = z.object({
   id: z.string().uuid(),
@@ -26,8 +15,9 @@ export const PayrollDaySchema = z.object({
 });
 export type PayrollDay = z.infer<typeof PayrollDaySchema>;
 
-/** EXCEPCIÓN de un día: monto 0 = no asistió, o un monto distinto al valor/día.
- *  Sin excepción el día paga el valor por defecto (o 0 si es descanso cíclico). */
+/** Setea/edita el valor de UN día (monto 0 = ausencia; un monto < valor/día =
+ *  llegada tarde, etc.). Sin excepción el día paga el valor por defecto (o 0 si
+ *  es descanso del trabajador). */
 export const SetPayrollDaySchema = z.object({
   workDate: DateOnly,
   amount: z.number().nonnegative(),
@@ -35,12 +25,12 @@ export const SetPayrollDaySchema = z.object({
 });
 export type SetPayrollDay = z.infer<typeof SetPayrollDaySchema>;
 
-// --- Novedad de PAGO (bono, regalo, horas extra, descuento) ---
+// --- Novedad de la semana (bono, regalo, horas extra, descuento) ---
 
 export const PayrollAdjustmentSchema = z.object({
   id: z.string().uuid(),
   userId: z.string().uuid(),
-  /** YYYY-MM-DD = inicio del pago (uno de {día 1, 8, 16, 23} del mes). */
+  /** YYYY-MM-DD = inicio de la semana de nómina a la que se ancla. */
   periodStart: z.string(),
   concept: z.string(),
   amount: z.number(), // + suma (bono) / − resta (descuento)
@@ -49,150 +39,12 @@ export const PayrollAdjustmentSchema = z.object({
 });
 export type PayrollAdjustment = z.infer<typeof PayrollAdjustmentSchema>;
 
-export const AddPayrollAdjustmentSchema = z.object({
-  /** Cualquier día del pago al que se agrega; el backend lo ancla al inicio. */
-  periodStart: DateOnly,
-  concept: z.string().min(1).max(120),
-  amount: z.number().refine((v) => v !== 0, 'El monto no puede ser 0'),
-  note: z.string().max(300).optional(),
-});
-export type AddPayrollAdjustment = z.infer<typeof AddPayrollAdjustmentSchema>;
-
-// --- Control de pago (marcar pagado/cancelado con comprobante; solo Dueño) ---
-
-export const PayrollPaymentStatusEnum = z.enum(['PAID', 'CANCELLED']);
-export type PayrollPaymentStatus = z.infer<typeof PayrollPaymentStatusEnum>;
-
-export const PayrollPaymentSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  periodStart: z.string(),
-  status: PayrollPaymentStatusEnum,
-  /** Snapshot del total al momento de marcar (sin auto-update). */
-  amount: z.number().nonnegative(),
-  resolvedAt: z.string().datetime(),
-  actorName: z.string().nullable(),
-  /** True si hay imagen de comprobante (siempre true para PAID). */
-  hasProof: z.boolean(),
-  note: z.string().nullable(),
-});
-export type PayrollPayment = z.infer<typeof PayrollPaymentSchema>;
-
-// --- Pago (lista para pagar este pago a TODOS los empleados) ---
-
-export const PagoEntrySchema = z.object({
-  userId: z.string().uuid(),
-  userFullName: z.string(),
-  userRole: z.string(),
-  payType: PayTypeEnum.nullable(),
-  salaryAmount: z.number().nullable(),
-  hireDate: z.string().datetime().nullable(),
-  terminationDate: z.string().datetime().nullable(),
-  /** Días calendario empleado dentro del pago (para proración mensual). */
-  daysEmployed: z.number().int().nonnegative(),
-  /** Días con pago registrado (DAILY: excluye descansos cíclicos). */
-  daysWorked: z.number().int().nonnegative(),
-  /** Base del pago. MONTHLY = salario/4 (prorrateado por días empleados);
-   *  DAILY = suma de días no-descanso (con overrides). */
-  base: z.number(),
-  adjustmentsTotal: z.number(),
-  total: z.number(),
-  /** Reparto SUGERIDO de propinas del período (proporcional a días
-   *  trabajados). Es efectivo aparte — NO suma al total a pagar. */
-  tipsShare: z.number(),
-  /** Marca de PAGADO/CANCELADO (con comprobante), si existe. */
-  payment: PayrollPaymentSchema.nullable(),
-});
-export type PagoEntry = z.infer<typeof PagoEntrySchema>;
-
-export const PagoReportSchema = z.object({
-  periodStart: z.string(),   // inicio del pago (día 1/8/16/23 del mes)
-  periodEnd: z.string(),     // último día del pago
-  periodLabel: z.string(),   // "Pago 2 · 8–15 jun 2026 · Q1"
-  /** 1 = Quincena 1 (días 1–15); 2 = Quincena 2 (días 16–fin). */
-  quincena: z.number().int().min(1).max(2),
-  /** 1 = primer sub-pago de la quincena; 2 = segundo. */
-  pago: z.number().int().min(1).max(2),
-  entries: z.array(PagoEntrySchema),
-  totalPay: z.number(),
-  /** Propinas recaudadas en el período (suma de cierres de caja). */
-  tipsTotal: z.number(),
-});
-export type PagoReport = z.infer<typeof PagoReportSchema>;
-
-// --- Día del mes ya calculado (modalidad DIARIA) ---
-
-export const PanelDaySchema = z.object({
-  workDate: z.string(), // YYYY-MM-DD
-  amount: z.number(),
-  isDefault: z.boolean(),
-  isAbsence: z.boolean(),
-  /** true = día de descanso cíclico (DOW ∈ user.restDaysOfWeek). */
-  isRest: z.boolean(),
-  isFuture: z.boolean(),
-  note: z.string().nullable(),
-  overrideId: z.string().uuid().nullable(),
-});
-export type PanelDay = z.infer<typeof PanelDaySchema>;
-
-// --- Panel mensual por empleado: 2 quincenas × 2 pagos = 4 pagos siempre ---
-
-export const PanelPagoSchema = z.object({
-  periodStart: z.string(),   // YYYY-MM-DD
-  periodEnd: z.string(),
-  /** "Parte 1 · 1–7 jun 2026 · Quincena 1" — NO son semanas Mon-Sun;
-   *  son sub-pagos quincenales fijos (4 por mes, total = salario). */
-  label: z.string(),
-  /** 1 = primera parte de la quincena; 2 = segunda. */
-  pago: z.number().int().min(1).max(2),
-  base: z.number(),
-  daysEmployed: z.number().int().nonnegative(),
-  daysWorked: z.number().int().nonnegative(),
-  adjustments: z.array(PayrollAdjustmentSchema),
-  adjustmentsTotal: z.number(),
-  total: z.number(),
-  /** Marca de PAGADO/CANCELADO (con comprobante), si existe. */
-  payment: PayrollPaymentSchema.nullable(),
-});
-export type PanelPago = z.infer<typeof PanelPagoSchema>;
-
-export const PanelQuincenaSchema = z.object({
-  /** 1 (días 1–15) o 2 (días 16–fin). */
-  quincena: z.number().int().min(1).max(2),
-  /** "Quincena 1 · 1–15 jun" */
-  label: z.string(),
-  /** Exactamente 2 sub-pagos en orden. */
-  pagos: z.tuple([PanelPagoSchema, PanelPagoSchema]),
-  subtotal: z.number(),
-});
-export type PanelQuincena = z.infer<typeof PanelQuincenaSchema>;
-
-export const EmployeePanelSchema = z.object({
-  userId: z.string().uuid(),
-  userFullName: z.string(),
-  userRole: z.string(),
-  payType: PayTypeEnum.nullable(),
-  salaryAmount: z.number().nullable(),
-  hireDate: z.string().datetime().nullable(),
-  terminationDate: z.string().datetime().nullable(),
-  /** Días de descanso cíclicos del trabajador (0=domingo … 6=sábado). */
-  restDaysOfWeek: z.array(z.number().int().min(0).max(6)),
-  year: z.number().int(),
-  month: z.number().int(),
-  monthLabel: z.string(),
-  /** Exactamente 2 quincenas; cada una con 2 pagos. */
-  quincenas: z.tuple([PanelQuincenaSchema, PanelQuincenaSchema]),
-  /** Calendario de días del mes (solo modalidad diaria). */
-  days: z.array(PanelDaySchema),
-  monthTotal: z.number(),
-});
-export type EmployeePanel = z.infer<typeof EmployeePanelSchema>;
-
 // ====================================================================
-// Nómina v6 — pago SEMANAL para empleados DIARIO con abonos parciales por
-// días seleccionados. La semana es lunes–domingo; el día de descanso se corre
-// si cae en festivo (el negocio abre y se paga). Cada abono pide comprobante.
-// Los MENSUALES siguen con el modelo quincenal de arriba.
+// Nómina unificada SEMANAL — MENSUALES (salario prorrateado por día) y
+// DIARIOS (valor/día) se pagan por semana con abonos parciales. La semana es
+// la corrida de días laborables entre descansos (el negocio cierra los lunes;
+// el descanso se corre al martes si el lunes es festivo). Cada abono pide
+// comprobante; bonos/descuentos se anclan a la semana y mueven el neto.
 // ====================================================================
 
 export const PayrollWeekDayStatusEnum = z.enum(['WORKDAY', 'REST']);
@@ -241,6 +93,15 @@ export const WeeklyPayrollEntrySchema = z.object({
   role: z.string(),
   /** MENSUAL (salario/30 por día) o DIARIO (valor/día). */
   payType: PayTypeEnum,
+  /** Salario configurado (MENSUAL: mensual; DIARIO: valor/día). Para editarlo. */
+  salaryAmount: z.number().nullable(),
+  /** Fecha de ingreso (ISO) — para el diálogo de salario. */
+  hireDate: z.string().datetime().nullable(),
+  /** Fecha de terminación de empleo (ISO), si el contrato terminó. */
+  terminationDate: z.string().datetime().nullable(),
+  /** Días de descanso del trabajador (0=domingo … 6=sábado). DIARIO no paga
+   *  esos días; sirve para los part-time que no trabajan toda la semana. */
+  restDaysOfWeek: z.array(z.number().int().min(0).max(6)),
   /** DIARIO: valor por día. MENSUAL: salario ÷ 30 (tarifa diaria prorrateada). */
   valuePerDay: z.number(),
   days: z.array(WeeklyPayrollDaySchema),
