@@ -1,12 +1,24 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { roundMoney } from '@pos-tercos/domain';
-import type { CortesiaRequest, CortesiaStatus, CreateCortesia } from '@pos-tercos/types';
+import type {
+  CortesiaGivenSummary,
+  CortesiaRequest,
+  CortesiaStatus,
+  CreateCortesia,
+} from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
+import { CogsService } from '../reports/cogs.service';
 import { SalesConsumptionService } from '../sales/sales-consumption.service';
+
+const MONTHS_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
 
 type Row = Prisma.CortesiaRequestGetPayload<object>;
 
@@ -24,7 +36,33 @@ export class CortesiasService {
     private readonly recipes: RecipesService,
     private readonly consumption: SalesConsumptionService,
     private readonly ownerNotifications: OwnerNotificationService,
+    private readonly cogs: CogsService,
+    private readonly businessConfig: BusinessConfigService,
   ) {}
+
+  /**
+   * Total dado en cortesías del mes de NEGOCIO — costo FIFO, idéntico a la
+   * línea "Cortesías" del estado financiero (misma ventana, misma valuación).
+   */
+  async givenSummaryForMonth(year: number, month1: number): Promise<CortesiaGivenSummary> {
+    const month0 = month1 - 1;
+    const startDay = await this.businessConfig.getMonthStartDay();
+    const monthStart = new Date(Date.UTC(year, month0, startDay));
+    const monthEnd = new Date(Date.UTC(year, month0 + 1, startDay - 1, 23, 59, 59, 999));
+    const [pnl, count] = await Promise.all([
+      this.cogs.getPnl(monthStart, monthEnd),
+      this.prisma.cortesiaRequest.count({
+        where: { status: 'APPROVED', resolvedAt: { gte: monthStart, lte: monthEnd } },
+      }),
+    ]);
+    return {
+      year,
+      month: month1,
+      monthLabel: `${MONTHS_ES[month0]} ${year}`,
+      total: pnl.cortesiaCost,
+      count,
+    };
+  }
 
   async create(input: CreateCortesia, userId: string): Promise<CortesiaRequest> {
     const product = await this.prisma.product.findUnique({

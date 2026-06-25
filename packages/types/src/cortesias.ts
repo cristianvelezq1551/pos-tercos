@@ -41,3 +41,14 @@ export const CortesiaRequestSchema = z.object({
   createdAt: z.string(),
 });
 export type CortesiaRequest = z.infer<typeof CortesiaRequestSchema>;
+
+/** Total dado en cortesías (autorizadas) del mes — costo FIFO, igual al P&G. */
+export const CortesiaGivenSummarySchema = z.object({
+  year: z.number().int(),
+  month: z.number().int(),
+  monthLabel: z.string(),
+  /** Costo FIFO de las cortesías autorizadas cuya aprobación cae en la ventana. */
+  total: z.number(),
+  count: z.number().int().nonnegative(),
+});
+export type CortesiaGivenSummary = z.infer<typeof CortesiaGivenSummarySchema>;

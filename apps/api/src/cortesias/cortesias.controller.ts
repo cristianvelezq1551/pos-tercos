@@ -3,6 +3,7 @@ import {
   CortesiaStatusEnum,
   CreateCortesiaSchema,
   ResolveCortesiaSchema,
+  type CortesiaGivenSummary,
   type CortesiaRequest,
   type CortesiaStatus,
   type CreateCortesia,
@@ -43,6 +44,19 @@ export class CortesiasController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<CortesiaRequest> {
     return this.cortesias.ack(id, user.sub);
+  }
+
+  /** Total dado en cortesías (autorizadas) del mes — FIFO, igual al P&G. */
+  @AdminAccess()
+  @Get('given-summary')
+  givenSummary(
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ): Promise<CortesiaGivenSummary> {
+    const now = new Date();
+    const y = year ? Number(year) : now.getUTCFullYear();
+    const m = month ? Number(month) : now.getUTCMonth() + 1;
+    return this.cortesias.givenSummaryForMonth(y, m);
   }
 
   /** Panel de Solicitudes (admin/dueño). status CSV opcional. */

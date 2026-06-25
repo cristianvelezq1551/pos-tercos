@@ -3,7 +3,7 @@
 import type { CortesiaRequest, CortesiaStatus } from '@pos-tercos/types';
 import { Badge, Button, Card, EmptyState, Input, Money, cn, formatCop, formatDate } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
-import { approveCortesia, listCortesias, rejectCortesia } from '../api/client';
+import { approveCortesia, getCortesiaGivenSummary, listCortesias, rejectCortesia } from '../api/client';
 
 const TABS: { key: string; label: string; status?: CortesiaStatus }[] = [
   { key: 'PENDING', label: 'Sin revisar', status: 'PENDING' },
@@ -29,7 +29,11 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [monthTotal, setMonthTotal] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
+  const [monthTotal, setMonthTotal] = useState<{ count: number; total: number; monthLabel: string }>({
+    count: 0,
+    total: 0,
+    monthLabel: '',
+  });
 
   const refresh = useCallback(async (key: string) => {
     const status = TABS.find((t) => t.key === key)?.status;
@@ -41,20 +45,12 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
     }
   }, []);
 
-  // KPI: total dado en cortesías (autorizadas) este mes. Estimado (el costo FIFO
-  // exacto vive en el estado financiero).
+  // KPI: total dado en cortesías (autorizadas) del mes — MISMO costo FIFO que la
+  // línea "Cortesías" del estado financiero (misma ventana, misma valuación).
   const loadSummary = useCallback(async () => {
     try {
-      const approved = await listCortesias('APPROVED');
-      const now = new Date();
-      const inMonth = approved.filter((c) => {
-        const d = new Date(c.createdAt);
-        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-      });
-      setMonthTotal({
-        count: inMonth.length,
-        total: inMonth.reduce((a, c) => a + (c.costAmount ?? 0), 0),
-      });
+      const s = await getCortesiaGivenSummary();
+      setMonthTotal({ count: s.count, total: s.total, monthLabel: s.monthLabel });
     } catch {
       // sin red: dejar el KPI como está.
     }
@@ -86,14 +82,16 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
     <div className="space-y-4">
       <Card className="flex items-center justify-between gap-3 p-4">
         <div>
-          <p className="caps text-[0.625rem] text-muted-foreground">Dado en cortesías · este mes</p>
+          <p className="caps text-[0.625rem] text-muted-foreground">
+            Dado en cortesías · {monthTotal.monthLabel || 'este mes'}
+          </p>
           <p className="mt-0.5 font-display text-2xl font-bold tabular-nums text-foreground">
             {formatCop(monthTotal.total)}
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground">
           <p>{monthTotal.count} autorizada{monthTotal.count === 1 ? '' : 's'}</p>
-          <p className="mt-0.5">estimado · el costo FIFO va en Estado financiero</p>
+          <p className="mt-0.5">costo FIFO · coincide con Estado financiero</p>
         </div>
       </Card>
 
