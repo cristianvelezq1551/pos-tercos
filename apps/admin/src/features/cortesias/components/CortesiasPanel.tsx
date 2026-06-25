@@ -8,7 +8,7 @@ import { approveCortesia, listCortesias, rejectCortesia } from '../api/client';
 const TABS: { key: string; label: string; status?: CortesiaStatus }[] = [
   { key: 'PENDING', label: 'Sin revisar', status: 'PENDING' },
   { key: 'APPROVED', label: 'Autorizadas', status: 'APPROVED' },
-  { key: 'REJECTED', label: 'Observadas', status: 'REJECTED' },
+  { key: 'REJECTED', label: 'Rechazadas', status: 'REJECTED' },
   { key: 'ALL', label: 'Todas' },
 ];
 
@@ -20,7 +20,7 @@ const STATUS_TONE: Record<CortesiaStatus, 'warning' | 'success' | 'danger'> = {
 const STATUS_LABEL: Record<CortesiaStatus, string> = {
   PENDING: 'Sin revisar',
   APPROVED: 'Autorizada',
-  REJECTED: 'Observada',
+  REJECTED: 'Rechazada',
 };
 
 export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
@@ -125,7 +125,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
                     type="text"
                     value={notes[c.id] ?? ''}
                     onChange={(e) => setNotes((p) => ({ ...p, [c.id]: e.target.value }))}
-                    placeholder="Nota (opcional, sobre todo al observar)"
+                    placeholder="Nota (opcional, sobre todo al rechazar)"
                     maxLength={200}
                     className="flex-1"
                   />
@@ -136,7 +136,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
                       disabled={busyId === c.id}
                       onClick={() => void resolve(c.id, 'reject')}
                     >
-                      Observar
+                      Rechazar
                     </Button>
                     <Button size="sm" disabled={busyId === c.id} onClick={() => void resolve(c.id, 'approve')}>
                       {busyId === c.id ? '…' : 'Autorizar'}

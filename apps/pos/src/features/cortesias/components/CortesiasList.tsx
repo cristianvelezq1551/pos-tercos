@@ -65,14 +65,14 @@ export function CortesiasList({ active }: { active: boolean }) {
 
             {c.status === 'REJECTED' && c.resolverNote ? (
               <p className="mt-2 rounded-md bg-destructive/10 px-2.5 py-1.5 text-[0.6875rem] leading-snug text-destructive">
-                <span className="font-semibold">Observación del dueño:</span> {c.resolverNote}
+                <span className="font-semibold">Motivo del rechazo:</span> {c.resolverNote}
               </p>
             ) : null}
 
             {novelty ? (
               <div className="mt-2 flex items-center justify-between gap-2">
                 <span className="text-[0.6875rem] font-medium text-destructive">
-                  El dueño observó esta cortesía.
+                  El dueño rechazó esta cortesía.
                 </span>
                 <Button size="sm" variant="outline" disabled={busyId === c.id} onClick={() => void ack(c.id)}>
                   {busyId === c.id ? '…' : 'Marcar visto'}

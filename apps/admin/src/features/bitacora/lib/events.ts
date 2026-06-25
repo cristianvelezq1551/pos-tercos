@@ -21,6 +21,11 @@ const CAJON: AuditAction[] = ['CASH_DRAWER_OPENED', 'CASH_DRAWER_OPENED_NO_SALE'
 const APROBACIONES: AuditAction[] = ['APPROVAL_GRANTED', 'APPROVAL_DENIED', 'APPROVAL_PIN_SET'];
 const SESIONES: AuditAction[] = ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED', 'AUTH_LOGOUT'];
 const COCINA: AuditAction[] = ['KDS_ORDER_DELAYED'];
+const CORTESIAS: AuditAction[] = [
+  'CORTESIA_REQUESTED',
+  'CORTESIA_APPROVED',
+  'CORTESIA_REJECTED',
+];
 const PERSONAL: AuditAction[] = [
   'USER_SALARY_CHANGED',
   'EMPLOYMENT_TERMINATED',
@@ -30,9 +35,10 @@ const PERSONAL: AuditAction[] = [
 ];
 
 export const BITACORA_GROUPS: BitacoraGroup[] = [
-  { key: 'todo', label: 'Todo', actions: [...CAJA, ...ANULACIONES, ...CAJON, ...APROBACIONES, ...SESIONES, ...PERSONAL, ...COCINA] },
+  { key: 'todo', label: 'Todo', actions: [...CAJA, ...ANULACIONES, ...CORTESIAS, ...CAJON, ...APROBACIONES, ...SESIONES, ...PERSONAL, ...COCINA] },
   { key: 'caja', label: 'Caja', actions: CAJA },
   { key: 'anulaciones', label: 'Anulaciones', actions: ANULACIONES },
+  { key: 'cortesias', label: 'Cortesías', actions: CORTESIAS },
   { key: 'cajon', label: 'Cajón', actions: CAJON },
   { key: 'aprobaciones', label: 'Aprobaciones', actions: APROBACIONES },
   { key: 'sesiones', label: 'Sesiones', actions: SESIONES },
@@ -100,6 +106,24 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
       return {
         label: 'Reembolsó venta',
         detail: `${m.reason ? `Motivo: ${String(m.reason)}` : 'Sin motivo'}${m.oldStatus ? ` · estado previo: ${String(m.oldStatus)}` : ''}`,
+        tone: 'danger',
+      };
+    case 'CORTESIA_REQUESTED':
+      return {
+        label: 'Registró cortesía',
+        detail: `${m.quantity ? `${String(m.quantity)}× ` : ''}${m.reason ? String(m.reason) : ''}${m.costAmount != null ? ` · costo ${cop(m.costAmount)}` : ''}`.trim() || null,
+        tone: 'warning',
+      };
+    case 'CORTESIA_APPROVED':
+      return {
+        label: 'Autorizó cortesía',
+        detail: `${m.costAmount != null ? `Costo ${cop(m.costAmount)}` : ''}${m.note ? ` · ${String(m.note)}` : ''}`.trim() || null,
+        tone: 'success',
+      };
+    case 'CORTESIA_REJECTED':
+      return {
+        label: 'Rechazó cortesía',
+        detail: m.note ? `Motivo: ${String(m.note)}` : null,
         tone: 'danger',
       };
     case 'CASH_DRAWER_OPENED':

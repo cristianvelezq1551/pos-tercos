@@ -4,7 +4,7 @@ import type { CortesiaStatus } from '@pos-tercos/types';
 export const CORTESIA_STATUS_LABEL: Record<CortesiaStatus, string> = {
   PENDING: 'Sin revisar',
   APPROVED: 'Autorizada',
-  REJECTED: 'Observada',
+  REJECTED: 'Rechazada',
 };
 
 export const CORTESIA_STATUS_TONE: Record<CortesiaStatus, string> = {

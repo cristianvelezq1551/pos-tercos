@@ -42,7 +42,7 @@ export function CortesiaNotifier() {
   if (visible.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[min(92vw,22rem)] flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex w-[min(92vw,22rem)] flex-col gap-2">
       {visible.map((c) => {
         const approved = c.status === 'APPROVED';
         return (
@@ -50,23 +50,26 @@ export function CortesiaNotifier() {
             key={c.id}
             role="status"
             className={cn(
-              'pointer-events-auto rounded-lg border px-3 py-2.5 shadow-lg',
-              approved
-                ? 'border-success-border bg-success-bg text-success'
-                : 'border-destructive/40 bg-destructive/10 text-destructive',
+              'pointer-events-auto rounded-lg border-l-4 bg-card px-3 py-2.5 shadow-xl ring-1 ring-border',
+              approved ? 'border-l-success' : 'border-l-destructive',
             )}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-sm font-semibold">
-                  {approved ? '✓ Cortesía autorizada' : '⚠ Cortesía observada'}
+                <p
+                  className={cn(
+                    'text-sm font-bold',
+                    approved ? 'text-success' : 'text-destructive',
+                  )}
+                >
+                  {approved ? '✓ Cortesía autorizada' : '✕ Cortesía rechazada'}
                 </p>
-                <p className="mt-0.5 text-xs opacity-90">
+                <p className="mt-0.5 text-xs text-foreground">
                   {c.quantity}× {c.productName ?? 'Producto'}
                   {c.sizeName ? ` · ${c.sizeName}` : ''}
                 </p>
                 {!approved && c.resolverNote ? (
-                  <p className="mt-1 text-[0.6875rem] opacity-90">“{c.resolverNote}”</p>
+                  <p className="mt-1 text-[0.6875rem] text-muted-foreground">“{c.resolverNote}”</p>
                 ) : null}
               </div>
               {!approved ? (
@@ -77,7 +80,7 @@ export function CortesiaNotifier() {
                 <button
                   type="button"
                   onClick={() => dismiss(c.id)}
-                  className="text-sm font-semibold opacity-70 hover:opacity-100"
+                  className="text-sm font-semibold text-muted-foreground hover:text-foreground"
                   aria-label="Cerrar"
                 >
                   ✕
