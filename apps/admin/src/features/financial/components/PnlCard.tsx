@@ -4,6 +4,8 @@ import { formatCop } from '@pos-tercos/ui';
 export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
   const netPositive = s.netResult >= 0;
   const grossPct = (s.grossMarginPct * 100).toFixed(1);
+  const recurring = s.fixedCosts.filter((c) => !c.isOneTime);
+  const oneTime = s.fixedCosts.filter((c) => c.isOneTime);
 
   return (
     <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
@@ -21,24 +23,18 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         />
       </div>
 
-      {/* Bloque costos fijos */}
+      {/* Bloque costos fijos (recurrentes) */}
       <div className="space-y-1.5 text-sm">
-        <p className="caps text-[0.625rem] text-muted-foreground">Costos y gastos fijos</p>
-        {s.fixedCosts.length === 0 ? (
+        <p className="caps text-[0.625rem] text-muted-foreground">Costos fijos (recurrentes)</p>
+        {recurring.length === 0 ? (
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            Aún no tienes costos fijos cargados. Crealos en Finanzas → Costos fijos para que este reporte
-            sea preciso.
+            Aún no tienes costos fijos cargados. Crealos en Finanzas → Costos y gastos para que este
+            reporte sea preciso.
           </p>
         ) : (
           <ul className="space-y-1">
-            {s.fixedCosts.map((c, idx) => (
-              <li key={`${c.fixedCostId ?? 'payroll'}-${idx}`} className="flex justify-between gap-2 text-foreground">
-                <span className="min-w-0 truncate">
-                  {c.name}
-                  <span className="ml-1 text-xs text-muted-foreground">· {c.category}</span>
-                </span>
-                <span className="tabular-nums text-muted-foreground">−{formatCop(c.monthlyAmount)}</span>
-              </li>
+            {recurring.map((c, idx) => (
+              <CostLi key={`${c.fixedCostId ?? 'payroll'}-${idx}`} name={c.name} category={c.category} amount={c.monthlyAmount} />
             ))}
           </ul>
         )}
@@ -46,7 +42,21 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         <Row label="Total costos fijos" value={`−${formatCop(s.totalFixed)}`} strong />
       </div>
 
-      {/* Cortesías: producto regalado (autorizado), valuado a costo. */}
+      {/* Bloque gastos únicos / excepcionales del mes */}
+      {oneTime.length > 0 ? (
+        <div className="space-y-1.5 text-sm">
+          <p className="caps text-[0.625rem] text-muted-foreground">Gastos únicos del mes</p>
+          <ul className="space-y-1">
+            {oneTime.map((c, idx) => (
+              <CostLi key={`${c.fixedCostId ?? 'one'}-${idx}`} name={c.name} category={c.category} amount={c.monthlyAmount} />
+            ))}
+          </ul>
+          <div className="my-2 border-t border-border" />
+          <Row label="Total gastos únicos" value={`−${formatCop(s.oneTimeCost)}`} strong />
+        </div>
+      ) : null}
+
+      {/* Cortesías: producto regalado (autorizado), valuado a costo FIFO. */}
       {s.cortesiasCost > 0 ? (
         <div className="space-y-1.5 text-sm">
           <Row
@@ -74,11 +84,23 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         </p>
         <p className={`mt-1 text-xs ${netPositive ? 'text-success/80' : 'text-destructive/80'}`}>
           {netPositive
-            ? 'El negocio cubrió todos los costos (incluidas cortesías) y dejó ganancia.'
-            : 'El mes cerró en pérdida: las ventas no alcanzaron a cubrir COGS + costos fijos + cortesías.'}
+            ? 'El negocio cubrió todos los costos (fijos, gastos únicos y cortesías) y dejó ganancia.'
+            : 'El mes cerró en pérdida: las ventas no alcanzaron a cubrir COGS + costos fijos + gastos únicos + cortesías.'}
         </p>
       </div>
     </div>
+  );
+}
+
+function CostLi({ name, category, amount }: { name: string; category: string; amount: number }) {
+  return (
+    <li className="flex justify-between gap-2 text-foreground">
+      <span className="min-w-0 truncate">
+        {name}
+        <span className="ml-1 text-xs text-muted-foreground">· {category}</span>
+      </span>
+      <span className="tabular-nums text-muted-foreground">−{formatCop(amount)}</span>
+    </li>
   );
 }
 

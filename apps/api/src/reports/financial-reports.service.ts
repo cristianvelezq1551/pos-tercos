@@ -74,6 +74,7 @@ export class FinancialReportsService {
         category: 'Nómina',
         monthlyAmount: round(payrollAmount),
         isPayroll: true,
+        isOneTime: false,
       });
     }
     for (const c of otherCosts) {
@@ -83,9 +84,17 @@ export class FinancialReportsService {
         category: c.category,
         monthlyAmount: round(c.monthlyAmount),
         isPayroll: false,
+        isOneTime: c.isOneTime,
       });
     }
-    const totalFixed = round(fixedCostLines.reduce((a, l) => a + l.monthlyAmount, 0));
+    // Recurrentes (nómina + mensuales/anuales) vs puntuales (gastos únicos): el
+    // estado de resultados los separa. El break-even usa SOLO los recurrentes.
+    const totalFixed = round(
+      fixedCostLines.filter((l) => !l.isOneTime).reduce((a, l) => a + l.monthlyAmount, 0),
+    );
+    const oneTimeCost = round(
+      fixedCostLines.filter((l) => l.isOneTime).reduce((a, l) => a + l.monthlyAmount, 0),
+    );
 
     // Cortesías: producto regalado → pérdida real que baja el neto. Se valúa a
     // COSTO FIFO (mismo libro que el COGS) tomando el consumo que se materializa
@@ -93,7 +102,7 @@ export class FinancialReportsService {
     // así que naturalmente no aparecen acá.
     const cortesiasCost = round(pnl.cortesiaCost);
 
-    const netResult = round(grossMargin - totalFixed - cortesiasCost);
+    const netResult = round(grossMargin - totalFixed - oneTimeCost - cortesiasCost);
 
     // Break-even = costos fijos / margen bruto %. Solo válido si hay margen %.
     let breakEven: number | null = null;
@@ -115,6 +124,7 @@ export class FinancialReportsService {
       grossMarginPct: round4(grossMarginPct),
       fixedCosts: fixedCostLines,
       totalFixed,
+      oneTimeCost,
       cortesiasCost,
       netResult,
       breakEven,

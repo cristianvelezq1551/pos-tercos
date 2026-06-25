@@ -128,7 +128,7 @@ export class FixedCostsService {
    * ventana.
    */
   async getEffectiveForWindow(windowStart: Date, windowEnd: Date): Promise<
-    Array<{ id: string; name: string; category: string; monthlyAmount: number }>
+    Array<{ id: string; name: string; category: string; monthlyAmount: number; isOneTime: boolean }>
   > {
     const rows = await this.prisma.fixedCost.findMany({
       where: {
@@ -143,6 +143,7 @@ export class FixedCostsService {
       name: r.name,
       category: r.category,
       monthlyAmount: r.frequency === 'ANNUAL' ? Number(r.amount) / 12 : Number(r.amount),
+      isOneTime: r.frequency === 'ONE_TIME',
     }));
   }
 

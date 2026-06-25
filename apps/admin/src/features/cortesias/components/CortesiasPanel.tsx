@@ -1,7 +1,7 @@
 'use client';
 
 import type { CortesiaRequest, CortesiaStatus } from '@pos-tercos/types';
-import { Badge, Button, Card, EmptyState, Input, Money, cn, formatDate } from '@pos-tercos/ui';
+import { Badge, Button, Card, EmptyState, Input, Money, cn, formatCop, formatDate } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { approveCortesia, listCortesias, rejectCortesia } from '../api/client';
 
@@ -29,6 +29,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [monthTotal, setMonthTotal] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
 
   const refresh = useCallback(async (key: string) => {
     const status = TABS.find((t) => t.key === key)?.status;
@@ -40,9 +41,32 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
     }
   }, []);
 
+  // KPI: total dado en cortesías (autorizadas) este mes. Estimado (el costo FIFO
+  // exacto vive en el estado financiero).
+  const loadSummary = useCallback(async () => {
+    try {
+      const approved = await listCortesias('APPROVED');
+      const now = new Date();
+      const inMonth = approved.filter((c) => {
+        const d = new Date(c.createdAt);
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      });
+      setMonthTotal({
+        count: inMonth.length,
+        total: inMonth.reduce((a, c) => a + (c.costAmount ?? 0), 0),
+      });
+    } catch {
+      // sin red: dejar el KPI como está.
+    }
+  }, []);
+
   useEffect(() => {
     void refresh(tab);
   }, [tab, refresh]);
+
+  useEffect(() => {
+    void loadSummary();
+  }, [loadSummary]);
 
   const resolve = async (id: string, action: 'approve' | 'reject') => {
     const note = notes[id]?.trim() || undefined;
@@ -50,7 +74,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
     try {
       if (action === 'approve') await approveCortesia(id, note);
       else await rejectCortesia(id, note);
-      await refresh(tab);
+      await Promise.all([refresh(tab), loadSummary()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error resolviendo la cortesía');
     } finally {
@@ -60,6 +84,19 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
 
   return (
     <div className="space-y-4">
+      <Card className="flex items-center justify-between gap-3 p-4">
+        <div>
+          <p className="caps text-[0.625rem] text-muted-foreground">Dado en cortesías · este mes</p>
+          <p className="mt-0.5 font-display text-2xl font-bold tabular-nums text-foreground">
+            {formatCop(monthTotal.total)}
+          </p>
+        </div>
+        <div className="text-right text-xs text-muted-foreground">
+          <p>{monthTotal.count} autorizada{monthTotal.count === 1 ? '' : 's'}</p>
+          <p className="mt-0.5">estimado · el costo FIFO va en Estado financiero</p>
+        </div>
+      </Card>
+
       <div className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
           <button

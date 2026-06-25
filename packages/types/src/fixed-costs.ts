@@ -78,7 +78,7 @@ export type UpdateFixedCost = z.infer<typeof UpdateFixedCostSchema>;
 // ESTADO FINANCIERO MENSUAL — P&G + break-even + tendencia
 // ====================================================================
 
-/** Una línea de costo fijo del mes (ya prorrateado si era anual). */
+/** Una línea de costo/gasto del mes (ya prorrateado si era anual). */
 export const FixedCostLineSchema = z.object({
   fixedCostId: z.string().uuid().nullable(),
   name: z.string(),
@@ -87,6 +87,8 @@ export const FixedCostLineSchema = z.object({
   monthlyAmount: z.number(),
   /** `true` si este renglón viene del módulo de Nómina (auto). */
   isPayroll: z.boolean(),
+  /** `true` si es un gasto PUNTUAL (no recurrente) → grupo aparte en el P&G. */
+  isOneTime: z.boolean(),
 });
 export type FixedCostLine = z.infer<typeof FixedCostLineSchema>;
 
@@ -101,9 +103,13 @@ export const MonthlyFinancialStatementSchema = z.object({
   grossMargin: z.number(),
   /** grossMargin / revenue. 0 si revenue=0. */
   grossMarginPct: z.number(),
+  /** Costos/gastos del mes (recurrentes + puntuales); separá por `isOneTime`. */
   fixedCosts: z.array(FixedCostLineSchema),
+  /** Total de costos RECURRENTES (nómina + mensuales/anuales). Sin puntuales. */
   totalFixed: z.number(),
-  /** Costo (a COGS) de las cortesías AUTORIZADas dadas en el período. */
+  /** Total de gastos PUNTUALES/excepcionales del mes (reparaciones, etc.). */
+  oneTimeCost: z.number(),
+  /** Costo (a COGS FIFO) de las cortesías autorizadas dadas en el período. */
   cortesiasCost: z.number(),
   netResult: z.number(),
   /** Ventas necesarias para cubrir todo (≈ totalFixed / grossMarginPct). null si no se puede calcular. */
