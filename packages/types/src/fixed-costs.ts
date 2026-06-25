@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
-/** MENSUAL = se aplica tal cual cada mes; ANUAL = se prorratea ÷12 al mes. */
-export const FixedCostFrequencyEnum = z.enum(['MONTHLY', 'ANNUAL']);
+/**
+ * MENSUAL = se aplica tal cual cada mes; ANUAL = se prorratea ÷12 al mes;
+ * PUNTUAL (ONE_TIME) = gasto único (ej. reparación), cuenta una vez en el mes
+ * de su fecha (`startedAt`).
+ */
+export const FixedCostFrequencyEnum = z.enum(['MONTHLY', 'ANNUAL', 'ONE_TIME']);
 export type FixedCostFrequency = z.infer<typeof FixedCostFrequencyEnum>;
 
 /** Categorías sugeridas (cliente puede igual escribir libre). */
@@ -36,7 +40,7 @@ export type FixedCost = z.infer<typeof FixedCostSchema>;
 
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha YYYY-MM-DD');
 
-export const CreateFixedCostSchema = z.object({
+const FixedCostBaseSchema = z.object({
   name: z.string().min(1).max(120),
   amount: z.number().nonnegative(),
   frequency: FixedCostFrequencyEnum,
@@ -45,11 +49,29 @@ export const CreateFixedCostSchema = z.object({
   endedAt: DateOnly.nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
 });
+
+/** Un gasto puntual necesita la fecha (define en qué mes pega al P&G). */
+const requireDateForOneTime = (
+  v: { frequency: FixedCostFrequency; startedAt?: string | null },
+  ctx: z.RefinementCtx,
+): void => {
+  if (v.frequency === 'ONE_TIME' && !v.startedAt) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['startedAt'],
+      message: 'Un gasto puntual requiere la fecha del gasto.',
+    });
+  }
+};
+
+export const CreateFixedCostSchema = FixedCostBaseSchema.superRefine(requireDateForOneTime);
 export type CreateFixedCost = z.infer<typeof CreateFixedCostSchema>;
 
-export const UpdateFixedCostSchema = CreateFixedCostSchema.partial().extend({
-  isActive: z.boolean().optional(),
-});
+export const UpdateFixedCostSchema = FixedCostBaseSchema.partial()
+  .extend({ isActive: z.boolean().optional() })
+  .superRefine((v, ctx) => {
+    if (v.frequency !== undefined) requireDateForOneTime(v as never, ctx);
+  });
 export type UpdateFixedCost = z.infer<typeof UpdateFixedCostSchema>;
 
 // ====================================================================

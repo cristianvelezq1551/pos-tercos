@@ -5,6 +5,7 @@ import type {
   FinancePaidFixedCost,
   FinancePendingFixedCost,
   FixedCost,
+  FixedCostFrequency,
   UpdateFixedCost,
 } from '@pos-tercos/types';
 import type { FixedCost as DbFixedCost, Prisma } from '@prisma/client';
@@ -43,14 +44,23 @@ export class FixedCostsService {
   }
 
   async create(input: CreateFixedCost, actorId: string): Promise<FixedCost> {
+    // Puntual: la vigencia es UN solo día (su fecha) → endedAt = startedAt, así
+    // getEffectiveForWindow lo cuenta solo en el mes de esa fecha.
+    const startedAt = input.startedAt ? parseYmd(input.startedAt) : null;
+    const endedAt =
+      input.frequency === 'ONE_TIME'
+        ? startedAt
+        : input.endedAt
+          ? parseYmd(input.endedAt)
+          : null;
     const row = await this.prisma.fixedCost.create({
       data: {
         name: input.name,
         amount: input.amount,
         frequency: input.frequency,
         category: input.category,
-        startedAt: input.startedAt ? parseYmd(input.startedAt) : null,
-        endedAt: input.endedAt ? parseYmd(input.endedAt) : null,
+        startedAt,
+        endedAt,
         notes: input.notes ?? null,
       },
     });
@@ -66,23 +76,27 @@ export class FixedCostsService {
 
   async update(id: string, input: UpdateFixedCost, actorId: string): Promise<FixedCost> {
     const before = await this.getById(id);
-    const row = await this.prisma.fixedCost.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.amount !== undefined && { amount: input.amount }),
-        ...(input.frequency !== undefined && { frequency: input.frequency }),
-        ...(input.category !== undefined && { category: input.category }),
-        ...(input.startedAt !== undefined && {
-          startedAt: input.startedAt ? parseYmd(input.startedAt) : null,
-        }),
-        ...(input.endedAt !== undefined && {
-          endedAt: input.endedAt ? parseYmd(input.endedAt) : null,
-        }),
-        ...(input.notes !== undefined && { notes: input.notes }),
-        ...(input.isActive !== undefined && { isActive: input.isActive }),
-      },
-    });
+    const data: Prisma.FixedCostUpdateInput = {
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.amount !== undefined && { amount: input.amount }),
+      ...(input.frequency !== undefined && { frequency: input.frequency }),
+      ...(input.category !== undefined && { category: input.category }),
+      ...(input.startedAt !== undefined && {
+        startedAt: input.startedAt ? parseYmd(input.startedAt) : null,
+      }),
+      ...(input.endedAt !== undefined && {
+        endedAt: input.endedAt ? parseYmd(input.endedAt) : null,
+      }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+    };
+    // Puntual: forzar endedAt = startedAt (vigencia de un día) según el estado final.
+    const finalFreq = input.frequency ?? before.frequency;
+    if (finalFreq === 'ONE_TIME') {
+      const finalStarted = input.startedAt !== undefined ? input.startedAt : before.startedAt;
+      data.endedAt = finalStarted ? parseYmd(finalStarted) : null;
+    }
+    const row = await this.prisma.fixedCost.update({ where: { id }, data });
     await this.audit.log({
       userId: actorId,
       action: 'FIXED_COST_UPDATED',
@@ -379,6 +393,17 @@ function enumeratePeriodsForCost(
   const effectiveEnd = cost.endedAt && cost.endedAt < asOf ? cost.endedAt : asOf;
   if (effectiveStart > effectiveEnd) return result;
 
+  // PUNTUAL: un único período = el mes de su fecha, si cae en el rango.
+  if (cost.frequency === 'ONE_TIME') {
+    if (!cost.startedAt) return result;
+    if (cost.startedAt < earliestStart || cost.startedAt > asOf) return result;
+    result.push({
+      year: cost.startedAt.getUTCFullYear(),
+      month: cost.startedAt.getUTCMonth() + 1,
+    });
+    return result;
+  }
+
   if (cost.frequency === 'MONTHLY') {
     let y = effectiveStart.getUTCFullYear();
     let m = effectiveStart.getUTCMonth() + 1; // 1-12
@@ -398,8 +423,8 @@ function enumeratePeriodsForCost(
   return result;
 }
 
-/** "Arriendo · mayo 2026" (MONTHLY) o "Tasa DIAN · 2026" (ANNUAL). */
-function periodLabel(name: string, frequency: 'MONTHLY' | 'ANNUAL', year: number, month: number): string {
+/** "Arriendo · mayo 2026" (MONTHLY/PUNTUAL) o "Tasa DIAN · 2026" (ANNUAL). */
+function periodLabel(name: string, frequency: FixedCostFrequency, year: number, month: number): string {
   if (frequency === 'ANNUAL') return `${name} · ${year}`;
   return `${name} · ${MONTHS_ES[month - 1]} ${year}`;
 }

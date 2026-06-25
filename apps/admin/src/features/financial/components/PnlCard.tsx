@@ -23,7 +23,7 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
 
       {/* Bloque costos fijos */}
       <div className="space-y-1.5 text-sm">
-        <p className="caps text-[0.625rem] text-muted-foreground">Costos fijos</p>
+        <p className="caps text-[0.625rem] text-muted-foreground">Costos y gastos fijos</p>
         {s.fixedCosts.length === 0 ? (
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
             Aún no tienes costos fijos cargados. Crealos en Finanzas → Costos fijos para que este reporte

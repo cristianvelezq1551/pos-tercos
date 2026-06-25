@@ -27,7 +27,12 @@ export function FixedCostFormDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = name.trim().length > 0 && Number(amount) > 0 && !pending;
+  const isOneTime = frequency === 'ONE_TIME';
+  const canSubmit =
+    name.trim().length > 0 &&
+    Number(amount) > 0 &&
+    (!isOneTime || startedAt.length > 0) &&
+    !pending;
 
   const handleSave = async (): Promise<void> => {
     setError(null);
@@ -59,8 +64,8 @@ export function FixedCostFormDialog({
     <Dialog
       open
       onClose={onClose}
-      title={isEdit ? `Editar "${initial?.name}"` : 'Nuevo costo fijo'}
-      description="El monto entra en el estado financiero mensual. Si es ANUAL se prorratea ÷12."
+      title={isEdit ? `Editar "${initial?.name}"` : 'Nuevo costo o gasto'}
+      description="Entra al estado financiero. Mensual = cada mes; Anual = ÷12; Puntual = una vez, en su fecha (ej. una reparación)."
       maxWidth="max-w-md"
       footer={
         <>
@@ -94,6 +99,7 @@ export function FixedCostFormDialog({
             >
               <option value="MONTHLY">Mensual</option>
               <option value="ANNUAL">Anual (se prorratea ÷12)</option>
+              <option value="ONE_TIME">Puntual (gasto único)</option>
             </Select>
           </FormField>
         </div>
@@ -106,14 +112,20 @@ export function FixedCostFormDialog({
             ))}
           </Select>
         </FormField>
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Vigente desde" hint="Opcional">
+        {isOneTime ? (
+          <FormField label="Fecha del gasto" required hint="Define en qué mes pega al estado financiero">
             <Input type="date" value={startedAt} onChange={(e) => setStartedAt(e.target.value)} disabled={pending} />
           </FormField>
-          <FormField label="Vigente hasta" hint="Opcional">
-            <Input type="date" value={endedAt} onChange={(e) => setEndedAt(e.target.value)} disabled={pending} />
-          </FormField>
-        </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Vigente desde" hint="Opcional">
+              <Input type="date" value={startedAt} onChange={(e) => setStartedAt(e.target.value)} disabled={pending} />
+            </FormField>
+            <FormField label="Vigente hasta" hint="Opcional">
+              <Input type="date" value={endedAt} onChange={(e) => setEndedAt(e.target.value)} disabled={pending} />
+            </FormField>
+          </div>
+        )}
         <FormField label="Notas" hint="Opcional">
           <Input value={notes} onChange={(e) => setNotes(e.target.value)} disabled={pending} />
         </FormField>

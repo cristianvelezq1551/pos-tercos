@@ -926,6 +926,7 @@ model FixedCost {
 enum FixedCostFrequency {
   MONTHLY
   ANNUAL
+  ONE_TIME
 }
 
 /// Pagos efectivos de costos fijos. Un registro = un costo fijo × (año, mes).

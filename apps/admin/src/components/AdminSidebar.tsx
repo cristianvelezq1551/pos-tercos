@@ -97,7 +97,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     section: 'Finanzas',
-    label: 'Costos fijos',
+    label: 'Costos y gastos',
     href: '/finanzas/costos-fijos',
     icon: Coins,
     onlyDueno: true,

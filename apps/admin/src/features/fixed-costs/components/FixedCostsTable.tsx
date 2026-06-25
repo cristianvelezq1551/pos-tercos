@@ -35,7 +35,11 @@ export function FixedCostsTable({
       header: 'Frecuencia',
       cell: (c) => (
         <Badge tone="neutral" size="sm">
-          {c.frequency === 'MONTHLY' ? 'Mensual' : 'Anual'}
+          {c.frequency === 'MONTHLY'
+            ? 'Mensual'
+            : c.frequency === 'ANNUAL'
+              ? 'Anual'
+              : `Puntual${c.startedAt ? ` · ${c.startedAt}` : ''}`}
         </Badge>
       ),
     },
