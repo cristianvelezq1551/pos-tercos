@@ -96,11 +96,10 @@ export class FinancialReportsService {
       fixedCostLines.filter((l) => l.isOneTime).reduce((a, l) => a + l.monthlyAmount, 0),
     );
 
-    // Cortesías: producto regalado → pérdida real que baja el neto. Se valúa a
-    // COSTO FIFO (mismo libro que el COGS) tomando el consumo que se materializa
-    // al APROBAR la cortesía. Las pendientes y rechazadas no descuentan stock,
-    // así que naturalmente no aparecen acá.
-    const cortesiasCost = round(pnl.cortesiaCost);
+    // Cortesías: producto regalado → pérdida real que baja el neto. Costo FIFO
+    // atado a las solicitudes AUTORIZADAS de la ventana (fuente única, también
+    // usada por el KPI de Solicitudes → ambos coinciden siempre).
+    const { total: cortesiasCost } = await this.cogs.getApprovedCortesiaCost(monthStart, monthEnd);
 
     const netResult = round(grossMargin - totalFixed - oneTimeCost - cortesiasCost);
 

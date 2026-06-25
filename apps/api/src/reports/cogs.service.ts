@@ -103,6 +103,25 @@ export class CogsService {
     return ledger.cortesiaCostBySource;
   }
 
+  /**
+   * Costo FIFO de las cortesías AUTORIZADAS resueltas en [from, to]. Atado a las
+   * solicitudes reales (no a movimientos sueltos del ledger): inmune a datos
+   * huérfanos de modelos previos. Es la fuente ÚNICA del costo de cortesías para
+   * el estado financiero y el KPI de Solicitudes → siempre coinciden.
+   */
+  async getApprovedCortesiaCost(from: Date, to: Date): Promise<{ total: number; count: number }> {
+    const [ledger, approved] = await Promise.all([
+      this.runLedger(),
+      this.prisma.cortesiaRequest.findMany({
+        where: { status: 'APPROVED', resolvedAt: { gte: from, lte: to } },
+        select: { id: true },
+      }),
+    ]);
+    let total = 0;
+    for (const r of approved) total += ledger.cortesiaCostBySource.get(r.id)?.cost ?? 0;
+    return { total: round(total), count: approved.length };
+  }
+
   // ==================================================================
   // P&L del período
   // ==================================================================

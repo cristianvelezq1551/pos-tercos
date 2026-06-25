@@ -49,17 +49,13 @@ export class CortesiasService {
     const startDay = await this.businessConfig.getMonthStartDay();
     const monthStart = new Date(Date.UTC(year, month0, startDay));
     const monthEnd = new Date(Date.UTC(year, month0 + 1, startDay - 1, 23, 59, 59, 999));
-    const [pnl, count] = await Promise.all([
-      this.cogs.getPnl(monthStart, monthEnd),
-      this.prisma.cortesiaRequest.count({
-        where: { status: 'APPROVED', resolvedAt: { gte: monthStart, lte: monthEnd } },
-      }),
-    ]);
+    // Misma fuente que el estado financiero → el KPI y el P&G coinciden siempre.
+    const { total, count } = await this.cogs.getApprovedCortesiaCost(monthStart, monthEnd);
     return {
       year,
       month: month1,
       monthLabel: `${MONTHS_ES[month0]} ${year}`,
-      total: pnl.cortesiaCost,
+      total,
       count,
     };
   }
