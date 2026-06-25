@@ -156,24 +156,58 @@ export class CortesiasService {
     if (existing.status !== 'PENDING') {
       throw new BadRequestException(`La cortesía ya fue ${existing.status === 'APPROVED' ? 'aprobada' : 'rechazada'}.`);
     }
-    const updated = await this.prisma.cortesiaRequest.update({
-      where: { id },
-      data: {
-        status,
-        resolvedById: userId,
-        resolvedAt: new Date(),
-        resolverNote: note ?? null,
-        // Toda resolución es novedad para el cajero: el POS le muestra un toast.
-        // El acuse lo da el toast (autorizada: auto; observada: explícito).
-        seenByRequester: false,
-      },
+
+    // Rechazar = no fue una cortesía real → revertir el stock que se descontó al
+    // crearla (movimientos compensatorios, insert-only). Autorizar deja el
+    // consumo (el producto se regaló de verdad) y se contabiliza el costo.
+    const reverseMovements: Prisma.InventoryMovementCreateManyInput[] = [];
+    if (status === 'REJECTED') {
+      const originals = await this.prisma.inventoryMovement.findMany({
+        where: { sourceType: 'cortesia', sourceId: id },
+      });
+      for (const o of originals) {
+        reverseMovements.push({
+          entityType: o.entityType,
+          ingredientId: o.ingredientId,
+          productId: o.productId,
+          subproductId: o.subproductId,
+          delta: Number(o.delta) * -1,
+          type: 'MANUAL_ADJUSTMENT',
+          sourceType: 'cortesia',
+          sourceId: id,
+          userId,
+          notes: 'Reverso de cortesía rechazada',
+        });
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (reverseMovements.length > 0) {
+        await tx.inventoryMovement.createMany({ data: reverseMovements });
+      }
+      return tx.cortesiaRequest.update({
+        where: { id },
+        data: {
+          status,
+          resolvedById: userId,
+          resolvedAt: new Date(),
+          resolverNote: note ?? null,
+          // Toda resolución es novedad para el cajero: el POS le muestra un toast.
+          // El acuse lo da el toast (autorizada: auto; observada: explícito).
+          seenByRequester: false,
+        },
+      });
     });
     await this.audit.log({
       userId,
       action: status === 'APPROVED' ? 'CORTESIA_APPROVED' : 'CORTESIA_REJECTED',
       entityType: 'cortesia',
       entityId: id,
-      metadata: { costAmount: existing.costAmount ? Number(existing.costAmount) : null, note: note ?? null },
+      metadata: {
+        costAmount: existing.costAmount ? Number(existing.costAmount) : null,
+        note: note ?? null,
+        movementsReversed: reverseMovements.length,
+      },
     });
     return (await this.toDtos([updated]))[0]!;
   }

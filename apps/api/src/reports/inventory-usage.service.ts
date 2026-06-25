@@ -28,7 +28,10 @@ export class InventoryUsageService {
   async getUsage(from: Date, to: Date): Promise<InventoryUsageReport> {
     const grouped = await this.prisma.inventoryMovement.groupBy({
       by: ['entityType', 'ingredientId', 'productId', 'subproductId', 'type'],
-      where: { createdAt: { gte: from, lte: to } },
+      // Las cortesías NO son merma ni faltante: su costo se contabiliza en el
+      // estado financiero. Se excluyen para que "Uso y mermas" sea pura
+      // pérdida operativa (mermas + faltantes + ajustes reales).
+      where: { createdAt: { gte: from, lte: to }, sourceType: { not: 'cortesia' } },
       _sum: { delta: true },
     });
 

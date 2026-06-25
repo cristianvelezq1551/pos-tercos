@@ -46,6 +46,17 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         <Row label="Total costos fijos" value={`−${formatCop(s.totalFixed)}`} strong />
       </div>
 
+      {/* Cortesías: producto regalado (autorizado), valuado a costo. */}
+      {s.cortesiasCost > 0 ? (
+        <div className="space-y-1.5 text-sm">
+          <Row
+            label="− Cortesías (producto regalado, a costo)"
+            value={`−${formatCop(s.cortesiasCost)}`}
+            muted
+          />
+        </div>
+      ) : null}
+
       {/* Resultado neto: el banner grande verde/rojo */}
       <div
         className={`rounded-xl border p-4 ${
@@ -63,8 +74,8 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         </p>
         <p className={`mt-1 text-xs ${netPositive ? 'text-success/80' : 'text-destructive/80'}`}>
           {netPositive
-            ? 'El negocio cubrió todos los costos y dejó ganancia.'
-            : 'El mes cerró en pérdida: las ventas no alcanzaron a cubrir COGS + costos fijos.'}
+            ? 'El negocio cubrió todos los costos (incluidas cortesías) y dejó ganancia.'
+            : 'El mes cerró en pérdida: las ventas no alcanzaron a cubrir COGS + costos fijos + cortesías.'}
         </p>
       </div>
     </div>

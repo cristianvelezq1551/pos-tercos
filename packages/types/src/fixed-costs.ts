@@ -81,6 +81,8 @@ export const MonthlyFinancialStatementSchema = z.object({
   grossMarginPct: z.number(),
   fixedCosts: z.array(FixedCostLineSchema),
   totalFixed: z.number(),
+  /** Costo (a COGS) de las cortesías AUTORIZADas dadas en el período. */
+  cortesiasCost: z.number(),
   netResult: z.number(),
   /** Ventas necesarias para cubrir todo (≈ totalFixed / grossMarginPct). null si no se puede calcular. */
   breakEven: z.number().nullable(),

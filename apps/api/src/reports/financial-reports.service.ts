@@ -86,7 +86,17 @@ export class FinancialReportsService {
       });
     }
     const totalFixed = round(fixedCostLines.reduce((a, l) => a + l.monthlyAmount, 0));
-    const netResult = round(grossMargin - totalFixed);
+
+    // Cortesías AUTORIZADAS dadas en la ventana, valuadas a costo (COGS snapshot).
+    // Es producto regalado → pérdida real que baja el neto. Las pendientes y
+    // rechazadas NO cuentan (rechazar revierte el stock; pendiente aún se revisa).
+    const cortesias = await this.prisma.cortesiaRequest.aggregate({
+      _sum: { costAmount: true },
+      where: { status: 'APPROVED', createdAt: { gte: monthStart, lte: monthEnd } },
+    });
+    const cortesiasCost = round(Number(cortesias._sum.costAmount ?? 0));
+
+    const netResult = round(grossMargin - totalFixed - cortesiasCost);
 
     // Break-even = costos fijos / margen bruto %. Solo válido si hay margen %.
     let breakEven: number | null = null;
@@ -108,6 +118,7 @@ export class FinancialReportsService {
       grossMarginPct: round4(grossMarginPct),
       fixedCosts: fixedCostLines,
       totalFixed,
+      cortesiasCost,
       netResult,
       breakEven,
       breakEvenCoverage: breakEvenCoverage === null ? null : round4(breakEvenCoverage),
