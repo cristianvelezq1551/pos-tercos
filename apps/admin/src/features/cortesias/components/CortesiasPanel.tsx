@@ -141,14 +141,25 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
               </div>
 
               <div className="flex items-center gap-3 border-t border-border pt-2 text-xs text-muted-foreground">
-                <span title="Estimado; el costo real (FIFO) se contabiliza al autorizar">
-                  Costo est.:{' '}
-                  {c.costAmount !== null ? (
-                    <Money amount={c.costAmount} className="text-xs" weight="semibold" />
-                  ) : (
-                    <span>s/d</span>
-                  )}
-                </span>
+                {c.status === 'APPROVED' ? (
+                  <span title="Costo real FIFO — el mismo del estado financiero">
+                    Costo (FIFO):{' '}
+                    {c.fifoCost != null ? (
+                      <Money amount={c.fifoCost} className="text-xs" weight="semibold" />
+                    ) : (
+                      <span>s/d</span>
+                    )}
+                  </span>
+                ) : c.status === 'PENDING' ? (
+                  <span title="Estimado; el costo real (FIFO) se fija al autorizar">
+                    ≈ Costo est.:{' '}
+                    {c.costAmount !== null ? (
+                      <Money amount={c.costAmount} className="text-xs" />
+                    ) : (
+                      <span>s/d</span>
+                    )}
+                  </span>
+                ) : null}
                 <span>
                   Precio venta: <Money amount={c.salePrice} className="text-xs" />
                 </span>

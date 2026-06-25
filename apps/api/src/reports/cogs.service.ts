@@ -97,6 +97,12 @@ export class CogsService {
     return runLedgerFifo(plain);
   }
 
+  /** Costo FIFO real por solicitud de cortesía (sourceId → costo). Cacheado. */
+  async getCortesiaCostBySource(): Promise<Map<string, { cost: number; unknownQty: number }>> {
+    const ledger = await this.runLedger();
+    return ledger.cortesiaCostBySource;
+  }
+
   // ==================================================================
   // P&L del período
   // ==================================================================

@@ -29,7 +29,10 @@ export const CortesiaRequestSchema = z.object({
   sizeName: z.string().nullable(),
   quantity: z.number(),
   reason: z.string(),
+  /** Costo estimado al solicitar (referencia; preview de pendientes). */
   costAmount: z.number().nullable(),
+  /** Costo FIFO REAL (solo autorizadas; null si pendiente/rechazada o s/d). */
+  fifoCost: z.number().nullable().optional(),
   salePrice: z.number(),
   requestedById: z.string(),
   requestedByName: z.string().nullable(),

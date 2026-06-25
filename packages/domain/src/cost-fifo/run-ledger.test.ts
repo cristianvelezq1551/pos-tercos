@@ -94,9 +94,21 @@ describe('runLedgerFifo · consumo básico', () => {
     expect(r.cortesia).toHaveLength(1);
     expect(r.cortesia[0]!.cost).toBe(150);
     expect(r.cortesia[0]!.unknownQty).toBe(0);
+    expect(r.cortesiaCostBySource.get('cor1')).toEqual({ cost: 150, unknownQty: 0 });
     expect(r.saleIngredientCost.size).toBe(0); // no es venta
     expect(r.waste).toHaveLength(0); // no es merma
     expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(12); // 15 − 3
+  });
+
+  it('cortesía: el costo por solicitud suma todos sus movimientos (insumos + sub)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100, ingredientId: 'pan' }),
+      mov({ delta: 10, unitCost: 200, entityType: 'SUBPRODUCT', subproductId: 'carne' }),
+      // una cortesía consume 1 pan + 1 carne (mismo sourceId)
+      mov({ delta: -1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor9', ingredientId: 'pan' }),
+      mov({ delta: -1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor9', entityType: 'SUBPRODUCT', subproductId: 'carne' }),
+    ]);
+    expect(r.cortesiaCostBySource.get('cor9')).toEqual({ cost: 300, unknownQty: 0 });
   });
 
   it('cortesía sin stock suficiente → unknownQty (nunca asume $0)', () => {

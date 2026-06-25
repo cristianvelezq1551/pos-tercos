@@ -60,6 +60,8 @@ export interface LedgerFifo {
   waste: { createdAt: string; cost: number; unknownQty: number }[];
   /** Cortesías valorizadas a FIFO con timestamp (consumo sourceType='cortesia'). */
   cortesia: { createdAt: string; cost: number; unknownQty: number }[];
+  /** Costo FIFO por solicitud de cortesía: sourceId → costo total + unknownQty. */
+  cortesiaCostBySource: Map<string, { cost: number; unknownQty: number }>;
   /** Lotes restantes por stockable: `${entityType}:${id}` → valor/cantidad. */
   remaining: Map<string, { qty: number; value: number; unknownQty: number }>;
   /** Lotes restantes DETALLADOS (orden FIFO: más viejo primero) por stockable.
@@ -126,6 +128,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     saleSubproductCost: new Map(),
     waste: [],
     cortesia: [],
+    cortesiaCostBySource: new Map(),
     remaining: new Map(),
     remainingLots: new Map(),
   };
@@ -305,6 +308,12 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       // Cortesía AUTORIZADA: producto regalado → costo FIFO real (no es venta
       // ni merma; se reporta aparte en el estado financiero).
       out.cortesia.push({ createdAt: iso, cost, unknownQty });
+      if (m.sourceId) {
+        const prev = out.cortesiaCostBySource.get(m.sourceId) ?? { cost: 0, unknownQty: 0 };
+        prev.cost = roundCost(prev.cost + cost);
+        prev.unknownQty = roundCost(prev.unknownQty + unknownQty);
+        out.cortesiaCostBySource.set(m.sourceId, prev);
+      }
     }
     // Otro MANUAL_ADJUSTMENT- no se atribuye (sale del libro y listo).
   }

@@ -118,7 +118,15 @@ export class CortesiasService {
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
-    return this.toDtos(rows);
+    const out = await this.toDtos(rows);
+    // Las autorizadas muestran su COSTO FIFO REAL (mismo libro que el P&G).
+    if (out.some((c) => c.status === 'APPROVED')) {
+      const bySource = await this.cogs.getCortesiaCostBySource();
+      for (const c of out) {
+        if (c.status === 'APPROVED') c.fifoCost = bySource.get(c.id)?.cost ?? null;
+      }
+    }
+    return out;
   }
 
   /** Cortesías del cajero (para que vea el estado y acuse las observadas). */
