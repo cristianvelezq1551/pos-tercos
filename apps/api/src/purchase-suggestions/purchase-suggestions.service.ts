@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { buildPurchaseSuggestionUserPrompt, type WhatsAppProvider } from '@pos-tercos/domain';
+import { buildPurchaseSuggestionUserPrompt, roundMoney, type WhatsAppProvider } from '@pos-tercos/domain';
 import type {
   HistoricalSupplier,
   PurchaseSuggestion,
@@ -718,10 +718,6 @@ function computeSuggestedQty(
   // Redondear al entero superior — no se compran fracciones de caja/bolsa.
   // Mínimo 1 (la sugerencia tiene sentido si hay déficit).
   return Math.max(Math.ceil(purchaseQty), 1);
-}
-
-function roundMoney(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 function includeFull() {

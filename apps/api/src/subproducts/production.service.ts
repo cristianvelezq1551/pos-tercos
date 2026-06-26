@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { expandRecipeOneLevel, roundsToZeroAt4 } from '@pos-tercos/domain';
+import { expandRecipeOneLevel, roundCost, roundsToZeroAt4 } from '@pos-tercos/domain';
 import type {
   ProductionRun,
   RecordProduction,
@@ -337,8 +337,9 @@ export class ProductionService {
   }
 }
 
+/** Redondeo de costo (4 dec) — delega al canónico del dominio. */
 function round4(n: number): number {
-  return Math.round(n * 10000) / 10000;
+  return roundCost(n);
 }
 
 /** Postgres SQLSTATE 40001 (serialization_failure) lo expone Prisma con `code='P2034'`. */

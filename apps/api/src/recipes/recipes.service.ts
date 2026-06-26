@@ -4,6 +4,7 @@ import {
   computeProductCost,
   expandRecipe,
   expandRecipeOneLevel,
+  roundCost,
   RecipeCycleError,
   RecipeMissingNodeError,
   type IngredientCostMap,
@@ -809,8 +810,9 @@ export class RecipesService {
   }
 }
 
+/** Redondeo de costo (4 dec) — delega al canónico del dominio. */
 function round(n: number): number {
-  return Math.round(n * 10000) / 10000;
+  return roundCost(n);
 }
 
 function toRecipeEdgeDto(row: DbRecipeEdge): RecipeEdge {

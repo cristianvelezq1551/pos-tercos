@@ -25,10 +25,12 @@ export class EscPosCashDrawerAdapter implements CashDrawerProvider {
     };
     if (this.agentSecret) headers['X-Agent-Secret'] = this.agentSecret;
 
+    // Timeout: una Pi/túnel half-open no debe colgar el request del cajero.
     const res = await fetch(`${this.agentUrl}/drawer-open`, {
       method: 'POST',
       headers,
       body: '{}',
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');

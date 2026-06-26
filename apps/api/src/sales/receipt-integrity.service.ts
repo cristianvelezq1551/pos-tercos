@@ -36,7 +36,12 @@ export class ReceiptIntegrityService {
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
   async detectGapsScheduled(): Promise<void> {
-    await this.detectGaps();
+    try {
+      await this.detectGaps();
+    } catch (err) {
+      // El cron no debe propagar (detectGaps sigue lanzando para el endpoint manual).
+      this.logger.error('detectGaps (cron) falló', err as Error);
+    }
   }
 
   /**

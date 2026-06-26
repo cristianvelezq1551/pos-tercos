@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { LLMInvoiceExtractionResult, StorageProvider } from '@pos-tercos/domain';
-import { buildCostIncreaseAlertMessage, type CostIncreaseItem } from '@pos-tercos/domain';
+import { buildCostIncreaseAlertMessage, roundCost, type CostIncreaseItem } from '@pos-tercos/domain';
 import {
   ExtractedInvoiceSchema,
   type ConfirmInvoice,
@@ -80,7 +80,7 @@ function computeStockQty(opts: {
  */
 function stockUnitCost(lineTotal: number, stockQty: number): number | null {
   if (stockQty <= 0) return null;
-  return Math.round((lineTotal / stockQty) * 10000) / 10000;
+  return roundCost(lineTotal / stockQty);
 }
 
 /**
@@ -104,7 +104,7 @@ function purchaseUnitCost(opts: {
   const stockQty = computeStockQty(opts);
   const perBase = stockUnitCost(opts.lineTotal, stockQty);
   if (perBase === null) return opts.lineTotal;
-  return Math.round(perBase * opts.conversionFactor * 10000) / 10000;
+  return roundCost(perBase * opts.conversionFactor);
 }
 
 @Injectable()
@@ -136,6 +136,15 @@ export class InvoicesService {
    * Cron: domingo 5:00 AM (después de los crons diarios).
    */
   @Cron(CronExpression.EVERY_WEEK)
+  async sweepOrphanInvoiceFilesScheduled(): Promise<void> {
+    try {
+      await this.sweepOrphanInvoiceFiles();
+    } catch (err) {
+      // El cron no debe propagar (el método sigue lanzando para el endpoint manual).
+      this.logger.error('sweepOrphanInvoiceFiles (cron) falló', err as Error);
+    }
+  }
+
   async sweepOrphanInvoiceFiles(): Promise<{
     storageKeys: number;
     referencedKeys: number;

@@ -46,6 +46,10 @@ export class R2StorageAdapter implements StorageProvider {
       endpoint,
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: true,
+      // Timeouts: una conexión half-open a R2 no debe colgar el upload de
+      // factura/comprobante indefinidamente. maxAttempts da un reintento corto.
+      requestHandler: { requestTimeout: 15000, connectionTimeout: 5000 },
+      maxAttempts: 3,
     });
   }
 

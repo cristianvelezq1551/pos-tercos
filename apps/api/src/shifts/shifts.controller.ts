@@ -70,11 +70,14 @@ export class ShiftsController {
   /** Registra una entrada/salida de efectivo en la caja (aparte de ventas). */
   @CashierAccess()
   @Post(':id/cash-movements')
-  addCashMovement(
+  async addCashMovement(
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(CreateCashMovementSchema)) body: CreateCashMovement,
   ): Promise<CashMovement> {
+    // Antifraude: un cajero solo ajusta el efectivo de SU caja (el egreso baja el
+    // expectedCash y podría enmascarar un faltante). El dueño puede sobre cualquiera.
+    await this.assertShiftOwnership(user, id);
     return this.shifts.addCashMovement(id, body, user.sub);
   }
 
@@ -87,23 +90,25 @@ export class ShiftsController {
   /** Corrige un movimiento mal registrado (solo con la caja abierta). */
   @CashierAccess()
   @Patch(':id/cash-movements/:movementId')
-  updateCashMovement(
+  async updateCashMovement(
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('movementId', ParseUUIDPipe) movementId: string,
     @Body(new ZodValidationPipe(UpdateCashMovementSchema)) body: UpdateCashMovement,
   ): Promise<CashMovement> {
+    await this.assertShiftOwnership(user, id);
     return this.shifts.updateCashMovement(id, movementId, body, user.sub);
   }
 
   /** Elimina un movimiento mal registrado (solo con la caja abierta). */
   @CashierAccess()
   @Delete(':id/cash-movements/:movementId')
-  deleteCashMovement(
+  async deleteCashMovement(
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('movementId', ParseUUIDPipe) movementId: string,
   ): Promise<void> {
+    await this.assertShiftOwnership(user, id);
     return this.shifts.deleteCashMovement(id, movementId, user.sub);
   }
 

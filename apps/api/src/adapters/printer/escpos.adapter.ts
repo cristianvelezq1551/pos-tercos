@@ -74,10 +74,14 @@ export class EscPosPrinterAdapter implements PrinterProvider {
     };
     if (this.agentSecret) headers['X-Agent-Secret'] = this.agentSecret;
 
+    // Timeout: el print-agent corre en una Pi por túnel; si el enlace queda
+    // half-open, sin esto el fetch espera el default de Node y CUELGA el request
+    // del cajero en pleno mostrador. El caller degrada al backup HTML.
     const res = await fetch(`${this.agentUrl}/print`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ escposBase64: bytes.toString('base64') }),
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');

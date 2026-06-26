@@ -97,12 +97,18 @@ export class IdempotencyService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async purgeExpired(): Promise<number> {
-    const result = await this.prisma.idempotencyKey.deleteMany({
-      where: { expiresAt: { lte: new Date() } },
-    });
-    if (result.count > 0) {
-      this.logger.log(`Purged ${result.count} expired idempotency keys`);
+    try {
+      const result = await this.prisma.idempotencyKey.deleteMany({
+        where: { expiresAt: { lte: new Date() } },
+      });
+      if (result.count > 0) {
+        this.logger.log(`Purged ${result.count} expired idempotency keys`);
+      }
+      return result.count;
+    } catch (err) {
+      // Un fallo del cron no debe volverse unhandledRejection.
+      this.logger.error('purgeExpired falló', err as Error);
+      return 0;
     }
-    return result.count;
   }
 }
