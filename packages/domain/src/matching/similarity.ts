@@ -16,7 +16,11 @@ export function similarity(query: string, candidate: string): number {
   if (!a || !b) return 0;
 
   if (a === b) return 1;
-  if (a.includes(b) || b.includes(a)) return 0.85;
+  // Bonus de substring SOLO si lo contenido tiene ≥3 chars: un token de 1-2
+  // letras ("sa") es substring de demasiadas cosas ("salsa") → match falso 0.85.
+  if (Math.min(a.length, b.length) >= 3 && (a.includes(b) || b.includes(a))) {
+    return 0.85;
+  }
 
   const tokensA = a.split(' ').filter(Boolean);
   const tokensB = b.split(' ').filter(Boolean);

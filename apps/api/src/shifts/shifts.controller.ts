@@ -29,11 +29,19 @@ import {
 } from '@pos-tercos/types';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess, CashierAccess } from '../auth/decorators/roles.decorator';
+import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ShiftsService } from './shifts.service';
 
-const ADMIN_ROLES = new Set(['ADMIN_OPERATIVO', 'ADMIN_FINANCIERO', 'DUENO']);
+// La supervisión de cajas AJENAS (ver los Z-report de otro cajero, reabrir una
+// caja cerrada) es SOLO del Dueño. Un cajero solo VE su propia caja. Decisión
+// 2026-06-25.
+const OVERSIGHT_ROLES = new Set(['DUENO']);
+
+// CERRAR la caja del día (incluso si la abrió otro) sí lo puede hacer el
+// encargado operativo: en la práctica es quien hace el cierre. No le da lectura
+// de Z-reports ajenos ni reopen. Decisión 2026-06-25.
+const CLOSE_ANY_ROLES = new Set(['ADMIN_OPERATIVO', 'DUENO']);
 
 @Controller('shifts')
 export class ShiftsController {
@@ -56,7 +64,7 @@ export class ShiftsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(CloseShiftSchema)) body: CloseShift,
   ): Promise<Shift> {
-    return this.shifts.close(id, body, user.sub, ADMIN_ROLES.has(user.role));
+    return this.shifts.close(id, body, user.sub, CLOSE_ANY_ROLES.has(user.role));
   }
 
   /** Registra una entrada/salida de efectivo en la caja (aparte de ventas). */
@@ -99,8 +107,8 @@ export class ShiftsController {
     return this.shifts.deleteCashMovement(id, movementId, user.sub);
   }
 
-  /** Reabre una caja cerrada por error (admin/dueño). Conserva la sesión del día. */
-  @AdminAccess()
+  /** Reabre una caja cerrada por error (solo Dueño). Conserva la sesión del día. */
+  @OnlyDueno()
   @Post(':id/reopen')
   reopen(
     @CurrentUser() user: JwtAccessPayload,
@@ -140,7 +148,7 @@ export class ShiftsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ShiftSessionDetail> {
     const detail = await this.shifts.getSessionDetail(id);
-    if (!ADMIN_ROLES.has(user.role) && detail.shift.cashierId !== user.sub) {
+    if (!OVERSIGHT_ROLES.has(user.role) && detail.shift.cashierId !== user.sub) {
       throw new ForbiddenException('Solo podés ver el detalle de tu propia caja.');
     }
     return detail;
@@ -164,7 +172,7 @@ export class ShiftsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Shift> {
     const shift = await this.shifts.getById(id);
-    if (!ADMIN_ROLES.has(user.role) && shift.cashierId !== user.sub) {
+    if (!OVERSIGHT_ROLES.has(user.role) && shift.cashierId !== user.sub) {
       throw new ForbiddenException('Solo podés ver tu propia caja.');
     }
     return shift;
@@ -179,8 +187,8 @@ export class ShiftsController {
     @Query('limit') limit?: string,
   ): Promise<Shift[]> {
     const parsedStatus = status ? ShiftStatusEnum.parse(status) : undefined;
-    // El cajero solo ve SUS cajas (no los Z-report de otros); admin/dueño ven todas.
-    const scopedCashier = ADMIN_ROLES.has(user.role) ? cashierId : user.sub;
+    // El cajero solo ve SUS cajas (no los Z-report de otros); solo el Dueño ve todas.
+    const scopedCashier = OVERSIGHT_ROLES.has(user.role) ? cashierId : user.sub;
     return this.shifts.list({
       cashierId: scopedCashier,
       status: parsedStatus,
@@ -188,9 +196,9 @@ export class ShiftsController {
     });
   }
 
-  /** El cajero solo opera sobre su propia caja; admin/dueño sobre cualquiera. */
+  /** El cajero solo opera sobre su propia caja; solo el Dueño sobre cualquiera. */
   private async assertShiftOwnership(user: JwtAccessPayload, shiftId: string): Promise<void> {
-    if (ADMIN_ROLES.has(user.role)) return;
+    if (OVERSIGHT_ROLES.has(user.role)) return;
     const shift = await this.shifts.getById(shiftId);
     if (shift.cashierId !== user.sub) {
       throw new ForbiddenException('Solo podés ver tu propia caja.');

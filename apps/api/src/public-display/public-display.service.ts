@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, type OnModuleDestroy } from '@nestjs/common';
 import type {
   PublicDisplayOrderItem,
   PublicDisplayState,
@@ -13,6 +13,7 @@ import {
   interval,
   map,
   merge,
+  share,
   Subject,
   switchMap,
   type Observable,
@@ -29,9 +30,22 @@ type SaleItemRow = {
 };
 
 @Injectable()
-export class PublicDisplayService {
+export class PublicDisplayService implements OnModuleDestroy {
   private readonly logger = new Logger(PublicDisplayService.name);
   private readonly notifications = new Subject<void>();
+
+  /**
+   * Stream de actualizaciones COMPARTIDO: cada `notify()` recalcula `getState()`
+   * UNA sola vez y multicast a todos los kioskos/pestañas conectados. Antes cada
+   * suscriptor tenía su propio `switchMap` → un notify pegaba a la DB N veces (una
+   * por conexión). `share()` (refCount) colapsa eso a O(eventos). Sin replay: un
+   * nuevo suscriptor recibe el snapshot inicial por su cuenta y se engancha a los
+   * updates desde ahí (no recibe un update viejo duplicado).
+   */
+  private readonly updates$ = this.notifications.pipe(
+    switchMap(() => from(this.getState())),
+    share(),
+  );
 
   /** Estado en vivo del llamado. `seq` es monotónico → re-flashea aunque el
    *  número no cambie (re-llamado). Se rehidrata del último calledAt al boot. */
@@ -228,15 +242,17 @@ export class PublicDisplayService {
    */
   stream(): Observable<MessageEvent> {
     const initial$ = defer(() => from(this.getState()));
-    const updates$ = this.notifications.pipe(
-      switchMap(() => from(this.getState())),
-    );
-    const data$ = concat(initial$, updates$).pipe(
+    const data$ = concat(initial$, this.updates$).pipe(
       map((state) => ({ data: state }) as MessageEvent),
     );
     const keepalive$ = interval(20_000).pipe(
       map(() => ({ type: 'ping', data: '' }) as MessageEvent),
     );
     return merge(data$, keepalive$);
+  }
+
+  /** Completa el Subject al apagar el módulo (evita suscriptores colgados en HMR/tests). */
+  onModuleDestroy(): void {
+    this.notifications.complete();
   }
 }

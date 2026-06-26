@@ -47,15 +47,11 @@ function atUtcMidnight(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-const holidayCache = new Map<number, Set<string>>();
+// Sin caché a nivel de módulo: `domain` es de funciones PURAS (sin estado
+// compartido mutable). `colombianHolidays(y)` es pura y barata; isHoliday se
+// llama O(6) veces por semana → recomputar es despreciable.
 function isHoliday(d: Date): boolean {
-  const y = d.getUTCFullYear();
-  let s = holidayCache.get(y);
-  if (!s) {
-    s = colombianHolidays(y);
-    holidayCache.set(y, s);
-  }
-  return s.has(ymd(d));
+  return colombianHolidays(d.getUTCFullYear()).has(ymd(d));
 }
 
 /** Lunes (UTC) de la semana ISO de `date`. */

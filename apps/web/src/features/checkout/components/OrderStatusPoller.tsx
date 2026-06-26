@@ -35,7 +35,9 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
         const fresh = await getWebOrder(initial.id, token);
         if (cancelled) return;
         setOrder(fresh);
-        setConn('live');
+        // Si ya llegó a un estado terminal, el effect se va a desmontar el
+        // interval en el próximo render; marcamos 'stopped' sin pasar por 'live'.
+        setConn(isTerminal(fresh.status) ? 'stopped' : 'live');
       } catch (e) {
         if (!cancelled) {
           setConn('reconnecting');

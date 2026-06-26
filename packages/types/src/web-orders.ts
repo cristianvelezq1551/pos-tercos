@@ -16,11 +16,12 @@ export type WebOrderType = z.infer<typeof WebOrderTypeEnum>;
  *
  * Reglas:
  *  - WEB_PICKUP requiere customerName + customerPhone (solo recoger en local).
- *  - phone: ^\+57\d{10}$ (Colombia E.164 sin espacios). Backend rechaza otros.
+ *  - phone: ^\+573\d{9}$ (móvil colombiano E.164: +57 + 3XXXXXXXXX). El celular
+ *    es el canal de WhatsApp del pedido, así que rechazamos fijos/imposibles.
  */
 const PhoneSchema = z
   .string()
-  .regex(/^\+57\d{10}$/, 'phone debe ser E.164 colombiano (+57XXXXXXXXXX)');
+  .regex(/^\+573\d{9}$/, 'phone debe ser un celular colombiano (+573XXXXXXXXX)');
 
 export const CreateWebOrderSchema = z
   .object({

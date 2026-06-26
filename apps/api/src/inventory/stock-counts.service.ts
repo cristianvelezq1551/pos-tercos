@@ -13,6 +13,16 @@ import { InventoryService } from './inventory.service';
 /** Diferencia mínima (en unidad de stock) que genera ajuste. Por debajo es ruido de báscula. */
 const COUNT_EPSILON = 0.0001;
 
+/** Reintentos cuando Postgres aborta la tx Serializable por conflicto (40001). */
+const MAX_COUNT_RETRIES = 3;
+
+/** Postgres SQLSTATE 40001 (serialization_failure) → Prisma lo expone como P2034. */
+function isSerializationFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: string }).code;
+  return code === 'P2034' || /could not serialize|deadlock detected/i.test(err.message);
+}
+
 /**
  * Conteo físico ciclado. La idea: contar POCOS ítems por día, rotando, para
  * que todo el inventario pase por un conteo real cada semana. El ledger es
@@ -89,42 +99,7 @@ export class StockCountsService {
     // Valida existencia + activo (lanza NotFound/BadRequest del inventory).
     const stockable = await this.inventory.getStockableById(input.entityType, entityId);
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const ledgerQty = await this.ledgerStock(tx, input.entityType, entityId);
-      const difference = input.countedQty - ledgerQty;
-
-      const count = await tx.stockCount.create({
-        data: {
-          entityType: input.entityType,
-          ingredientId: input.ingredientId ?? null,
-          productId: input.productId ?? null,
-          subproductId: input.subproductId ?? null,
-          countedQty: input.countedQty,
-          ledgerQty,
-          difference,
-          userId,
-          notes: input.notes ?? null,
-        },
-      });
-
-      if (Math.abs(difference) > COUNT_EPSILON) {
-        await tx.inventoryMovement.create({
-          data: {
-            entityType: input.entityType,
-            ingredientId: input.ingredientId ?? null,
-            productId: input.productId ?? null,
-            subproductId: input.subproductId ?? null,
-            delta: difference,
-            type: 'MANUAL_ADJUSTMENT',
-            sourceType: 'stock_count',
-            sourceId: count.id,
-            userId,
-            notes: `Conteo físico: contado ${input.countedQty}, ledger ${ledgerQty}${input.notes ? ` · ${input.notes}` : ''}`,
-          },
-        });
-      }
-      return count;
-    });
+    const created = await this.registerWithRetry(input, entityId, userId);
 
     await this.audit.log({
       userId,
@@ -155,6 +130,65 @@ export class StockCountsService {
       notes: created.notes,
       createdAt: created.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * Lee el ledger y crea el ajuste compensatorio bajo isolation SERIALIZABLE,
+   * reintentando si Postgres aborta por conflicto. Así una venta/producción
+   * concurrente entre la lectura del ledger y la escritura del ajuste no deja
+   * el ajuste calculado sobre un stock viejo (corrige el bug del docstring).
+   */
+  private async registerWithRetry(
+    input: CreateStockCount,
+    entityId: string,
+    userId: string,
+  ): Promise<Prisma.StockCountGetPayload<object>> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const ledgerQty = await this.ledgerStock(tx, input.entityType, entityId);
+            const difference = input.countedQty - ledgerQty;
+
+            const count = await tx.stockCount.create({
+              data: {
+                entityType: input.entityType,
+                ingredientId: input.ingredientId ?? null,
+                productId: input.productId ?? null,
+                subproductId: input.subproductId ?? null,
+                countedQty: input.countedQty,
+                ledgerQty,
+                difference,
+                userId,
+                notes: input.notes ?? null,
+              },
+            });
+
+            if (Math.abs(difference) > COUNT_EPSILON) {
+              await tx.inventoryMovement.create({
+                data: {
+                  entityType: input.entityType,
+                  ingredientId: input.ingredientId ?? null,
+                  productId: input.productId ?? null,
+                  subproductId: input.subproductId ?? null,
+                  delta: difference,
+                  type: 'MANUAL_ADJUSTMENT',
+                  sourceType: 'stock_count',
+                  sourceId: count.id,
+                  userId,
+                  notes: `Conteo físico: contado ${input.countedQty}, ledger ${ledgerQty}${input.notes ? ` · ${input.notes}` : ''}`,
+                },
+              });
+            }
+            return count;
+          },
+          { isolationLevel: 'Serializable', timeout: 10_000 },
+        );
+      } catch (err) {
+        if (attempt < MAX_COUNT_RETRIES && isSerializationFailure(err)) continue;
+        throw err;
+      }
+    }
   }
 
   /** Historial de conteos (para la sección inferior de la página). */

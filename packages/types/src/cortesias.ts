@@ -53,5 +53,8 @@ export const CortesiaGivenSummarySchema = z.object({
   /** Costo FIFO de las cortesías autorizadas cuya aprobación cae en la ventana. */
   total: z.number(),
   count: z.number().int().nonnegative(),
+  /** true si alguna cortesía no tenía lote FIFO al aprobar → el total puede estar
+   *  subestimado. */
+  partial: z.boolean(),
 });
 export type CortesiaGivenSummary = z.infer<typeof CortesiaGivenSummarySchema>;

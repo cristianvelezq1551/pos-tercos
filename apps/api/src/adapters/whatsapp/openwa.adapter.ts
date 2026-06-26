@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import type { WhatsAppProvider, WhatsAppSendResult } from '@pos-tercos/domain';
 
+/** Corta el fetch si el gateway no responde — un socket colgado no debe fijar el worker. */
+const SEND_TIMEOUT_MS = 10_000;
+
 /**
  * Envía mensajes vía OpenWA (gateway self-hosted, whatsapp-web.js).
  * `POST {OPENWA_URL}/api/sessions/{OPENWA_SESSION_ID}/messages/send-text`
@@ -41,6 +44,7 @@ export class OpenWaWhatsAppAdapter implements WhatsAppProvider {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': this.apiKey },
           body: JSON.stringify({ chatId, text }),
+          signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         },
       );
       if (!res.ok) {

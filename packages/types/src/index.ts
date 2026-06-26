@@ -22,6 +22,7 @@ export * from './shifts';
 export * from './suppliers';
 export * from './treasury';
 export * from './users';
+export * from './web-hero';
 export * from './web-menu';
 export * from './web-orders';
 export * from './workers';

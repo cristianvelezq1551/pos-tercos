@@ -186,6 +186,47 @@ describe('runLedgerFifo · producción (cruce de stockables)', () => {
   });
 });
 
+describe('runLedgerFifo · desempate por timestamp idéntico (causalidad)', () => {
+  // Dos transacciones distintas (producción vs venta/compra) pueden caer en el
+  // MISMO milisegundo (now() de Postgres). El orden en el array entonces lo
+  // decide el UUID (arbitrario). El replay debe respetar la causalidad física:
+  // las ENTRADAS y las PRODUCCIONES materializan stock ANTES de que un consumo
+  // del mismo instante lo tome. Sin esto, una venta podía costear contra un lote
+  // inexistente → unknownQty espurio.
+
+  it('venta en el MISMO ms que su producción: la venta ve el lote producido', () => {
+    const T0 = new Date(2026, 5, 1, 10, 0, 0); // compra del insumo, antes
+    const T = new Date(2026, 5, 1, 12, 0, 0); // producción + venta, mismo instante
+    const PROD = { sourceType: 'production', sourceId: 'runX' };
+    // La VENTA aparece ANTES que la producción en el array (peor caso de UUID).
+    const r = runLedgerFifo([
+      mov({ delta: 1000, unitCost: 2, createdAt: T0 }),
+      mov({ delta: -2, type: 'SALE', sourceId: 'sale1', entityType: 'SUBPRODUCT', createdAt: T }),
+      mov({ delta: -500, type: 'PRODUCTION', ...PROD, createdAt: T }),
+      mov({ delta: 10, type: 'PRODUCTION', entityType: 'SUBPRODUCT', ...PROD, createdAt: T }),
+    ]);
+    // 2 uds × ($1000/10) = $200, nada desconocido.
+    expect(r.saleSubproductCost.get('sale1')?.get('sub1')).toEqual({
+      cost: 200,
+      qty: 2,
+      unknownQty: 0,
+    });
+  });
+
+  it('compra del insumo en el MISMO ms que la producción que lo consume', () => {
+    const T = new Date(2026, 5, 1, 12, 0, 0);
+    const PROD = { sourceType: 'production', sourceId: 'runY' };
+    // La PRODUCCIÓN aparece ANTES que la compra en el array (peor caso).
+    const r = runLedgerFifo([
+      mov({ delta: -500, type: 'PRODUCTION', ...PROD, createdAt: T }),
+      mov({ delta: 10, type: 'PRODUCTION', entityType: 'SUBPRODUCT', ...PROD, createdAt: T }),
+      mov({ delta: 1000, unitCost: 2, createdAt: T }),
+    ]);
+    // El lote producido toma el costo del insumo comprado en el mismo instante.
+    expect(r.remaining.get('SUBPRODUCT:sub1')).toEqual({ qty: 10, value: 1000, unknownQty: 0 });
+  });
+});
+
 describe('runLedgerFifo · remaining', () => {
   it('valoriza lo que queda por lote', () => {
     const r = runLedgerFifo([

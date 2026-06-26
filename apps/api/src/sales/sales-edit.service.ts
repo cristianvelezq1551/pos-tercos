@@ -332,6 +332,24 @@ export class SalesEditService {
       parts.length === 1 ? (parts[0]!.method as PaymentMethod) : null;
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Re-validar DENTRO de la tx: entre la lectura inicial y acá el estado o
+      // la caja pudieron cambiar (otra request). Sin esto, se reescribirían los
+      // pagos de una venta cuya caja ya cerró → arqueo cerrado descuadrado.
+      const fresh = await tx.sale.findUnique({
+        where: { id: saleId },
+        select: { status: true, shift: { select: { status: true } } },
+      });
+      if (!fresh) throw new NotFoundException(`Sale ${saleId} not found`);
+      if (
+        !PAYMENT_CHANGE_STATUSES.includes(
+          fresh.status as (typeof PAYMENT_CHANGE_STATUSES)[number],
+        ) ||
+        (fresh.shift && fresh.shift.status !== 'OPEN')
+      ) {
+        throw new BadRequestException(
+          'El estado de la venta o la caja cambió — recargá e intentá de nuevo.',
+        );
+      }
       await tx.salePayment.deleteMany({ where: { saleId } });
       await tx.salePayment.createMany({
         data: parts.map((p) => ({

@@ -70,7 +70,9 @@ function computeLineDiscount(
   switch (promo.type) {
     case 'PERCENT_OFF': {
       if (promo.discountPct === undefined || promo.discountPct <= 0) return 0;
-      return input.lineSubtotal * promo.discountPct;
+      // Cap defensivo: con pct válido (≤1) es no-op; protege de lineTotal
+      // negativo si llegara un discountPct corrupto > 1.
+      return Math.min(input.lineSubtotal * promo.discountPct, input.lineSubtotal);
     }
     case 'FIXED_OFF': {
       if (promo.discountFixed === undefined || promo.discountFixed <= 0) return 0;
@@ -94,7 +96,9 @@ function computeLineDiscount(
       const completeSets = Math.floor(input.quantity / setSize);
       const freeUnits = completeSets * promo.bogoGetQty;
       const unitPrice = input.lineSubtotal / input.quantity;
-      return freeUnits * unitPrice;
+      // Cap defensivo: con datos válidos freeUnits < quantity (es no-op);
+      // protege de lineTotal negativo ante quantity/lineSubtotal inconsistentes.
+      return Math.min(freeUnits * unitPrice, input.lineSubtotal);
     }
     case 'COMBO_OFF': {
       // Solo aplica si la línea es de un combo. El llamador setea isCombo.

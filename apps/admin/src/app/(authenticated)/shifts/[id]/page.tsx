@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { ShiftSessionDetailView } from '../../../../features/shifts';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
+import { requireRole } from '../../../../lib/guards';
 import type { ShiftSessionDetail } from '@pos-tercos/types';
 
 async function loadDetail(
@@ -23,6 +24,7 @@ export default async function ShiftDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireRole(['DUENO']);
   const { id } = await params;
   const result = await loadDetail(id);
 

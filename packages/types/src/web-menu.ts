@@ -1,12 +1,22 @@
 import { z } from 'zod';
-import {
-  ProductModifierSchema,
-  ProductSizeSchema,
-} from './catalog';
+import { ProductSizeSchema } from './catalog';
 
 // ====================================================================
 // WEB MENU — endpoint público para el menú online (FASE 7)
 // ====================================================================
+
+/**
+ * Modificador expuesto públicamente. NO incluye `recipeDelta`: la composición
+ * de receta (qué insumos/subproductos consume el modificador) es información
+ * interna del negocio y nunca debe viajar en el menú público.
+ */
+export const PublicMenuModifierSchema = z.object({
+  id: z.string().uuid(),
+  productId: z.string().uuid(),
+  name: z.string(),
+  priceDelta: z.number(),
+});
+export type PublicMenuModifier = z.infer<typeof PublicMenuModifierSchema>;
 
 /**
  * Subset SAFE del producto para exponer públicamente. Excluye:
@@ -14,6 +24,7 @@ import {
  *  - thresholdMin (info de inventario)
  *  - createdAt / updatedAt (irrelevante para el cliente)
  *  - directResale flag (interno)
+ *  - recipeDelta de los modificadores (composición de receta interna)
  *
  * Incluye: nombre, descripción, precio venta, categoría, imageUrl, sizes,
  * modifiers (si modifiersEnabled).
@@ -29,7 +40,7 @@ export const PublicMenuProductSchema = z.object({
   isCombo: z.boolean(),
   comboPrice: z.number().nullable(),
   sizes: z.array(ProductSizeSchema).default([]),
-  modifiers: z.array(ProductModifierSchema).default([]),
+  modifiers: z.array(PublicMenuModifierSchema).default([]),
 });
 export type PublicMenuProduct = z.infer<typeof PublicMenuProductSchema>;
 

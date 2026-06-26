@@ -273,12 +273,18 @@ export class ShiftsService {
     if (shift.status !== 'CLOSED') {
       throw new BadRequestException('Solo se reabre una caja CERRADA.');
     }
-    const openElsewhere = await this.prisma.shift.findFirst({
-      where: { cashierId: shift.cashierId, status: 'OPEN' },
-      select: { id: true },
+    // Caja ÚNICA por negocio: si ya hay CUALQUIER caja abierta (de este cajero o
+    // de otro), reabrir crearía dos OPEN simultáneas → ventas/turnos repartidos
+    // entre dos cajas y arqueo descuadrado. Hay que cerrar la abierta primero.
+    const openAnywhere = await this.prisma.shift.findFirst({
+      where: { status: 'OPEN' },
+      select: { id: true, cashier: { select: { fullName: true } } },
     });
-    if (openElsewhere) {
-      throw new ConflictException('El cajero ya tiene una caja abierta.');
+    if (openAnywhere) {
+      const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
+      throw new ConflictException(
+        `Ya hay una caja abierta por ${who}. Cerrala antes de reabrir esta — solo puede haber una caja abierta en el negocio.`,
+      );
     }
     const row = await this.prisma.shift.update({
       where: { id: shiftId },

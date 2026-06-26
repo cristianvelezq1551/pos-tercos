@@ -137,3 +137,123 @@ describe('COGS FIFO (e2e HTTP)', () => {
     expect(pollo.value).toBe(16000);
   });
 });
+
+/**
+ * Reembolso post-preparación: el pedido pasa a VOID pero el stock NO se revierte
+ * (la comida ya se hizo). El P&G debe contabilizar ese costo como pérdida real
+ * (`refundCost`) en vez de evaporarlo — antes del fix, el costo desaparecía y la
+ * rentabilidad quedaba sobreestimada. App fresca → caché del ledger limpio.
+ */
+describe('COGS refund post-preparación (e2e HTTP)', () => {
+  let ctx: AppContext;
+  let token: string;
+  let duenoId: string;
+  let polloId: string;
+  let burgerId: string;
+  const PIN = '246802';
+
+  beforeAll(async () => {
+    ctx = await bootstrapApp();
+    const hash = await bcrypt.hash('dev12345', 10);
+    const dueno = await ctx.prisma.user.upsert({
+      where: { email: 'dueno-refund@test.local' },
+      update: {},
+      create: {
+        email: 'dueno-refund@test.local',
+        fullName: 'Dueño Refund',
+        role: 'DUENO',
+        passwordHash: hash,
+        mustChangePwd: false,
+        active: true,
+      },
+    });
+    duenoId = dueno.id;
+    token = await loginAs(ctx.request, 'dueno-refund@test.local');
+    await ctx.request
+      .post('/approvals/pin')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pin: PIN, password: 'dev12345' })
+      .expect((res) => {
+        if (res.status >= 300) throw new Error(`PIN setup failed: ${res.status}`);
+      });
+  });
+
+  afterAll(async () => {
+    await cleanDb(ctx.prisma);
+    await ctx.app.close();
+  });
+
+  const auth = <T extends { set: (k: string, v: string) => T }>(r: T): T =>
+    r.set('Authorization', `Bearer ${token}`);
+
+  it('contabiliza el costo FIFO del pedido reembolsado como pérdida (no lo evapora)', async () => {
+    // Insumo + producto con receta (1 burger = 600 g de pollo @ $10/g).
+    polloId = (
+      await auth(ctx.request.post('/ingredients'))
+        .send({ name: 'Pollo refund', unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000, thresholdMin: 0 })
+        .expect(201)
+    ).body.id;
+    burgerId = (
+      await auth(ctx.request.post('/products')).send({ name: 'Burger refund', basePrice: 9000 }).expect(201)
+    ).body.id;
+    await auth(ctx.request.put(`/products/${burgerId}/recipe`))
+      .send({ edges: [{ childType: 'ingredient', childId: polloId, quantityNeta: 600, mermaPct: 0 }] })
+      .expect(200);
+
+    // Compra 1 kg @ $10.000 → $10/g.
+    const draft = await ctx.prisma.invoice.create({ data: { uploadedById: duenoId } });
+    await auth(ctx.request.post(`/invoices/${draft.id}/confirm`))
+      .send({
+        supplierNit: '900123456-7',
+        supplierName: 'Proveedor refund',
+        total: 10000,
+        items: [
+          { entityType: 'INGREDIENT', ingredientId: polloId, descriptionRaw: 'Pollo', quantity: 1, unit: 'kg', unitPrice: 10000, total: 10000 },
+        ],
+      })
+      .expect(201);
+
+    // Vender 1 burger y cobrar (600 g @ $10 = $6.000 de costo, $9.000 de ingreso).
+    await auth(ctx.request.post('/shifts/open')).send({ openingCash: 0 }).expect(201);
+    const created = await auth(ctx.request.post('/sales'))
+      .set('Idempotency-Key', randomUUID())
+      .send({ type: 'COUNTER', items: [{ productId: burgerId, quantity: 1 }] })
+      .expect(201);
+    const saleId = created.body.id as string;
+    await auth(ctx.request.post(`/sales/${saleId}/confirm-payment`))
+      .send({ method: 'CASH', amountReceived: 9000 })
+      .expect(201);
+
+    // La cocina lo inicia (PAGADO → EN_PREPARACION) → ya no es anulable, solo reembolsable.
+    await auth(ctx.request.post(`/kds/orders/${saleId}/start`)).expect(200);
+
+    // Reembolsar con PIN: pasa a VOID, NO revierte stock.
+    await auth(ctx.request.post(`/sales/${saleId}/refund`))
+      .set('x-approval-pin', PIN)
+      .send({ reason: 'cliente devolvió el pedido' })
+      .expect(201);
+
+    // El stock NO se revirtió: se consumieron 600 g, quedan 400 g.
+    const val = (await auth(ctx.request.get('/reports/cogs/inventory-valuation')).expect(200)).body;
+    const pollo = val.items.find((i: { id: string }) => i.id === polloId);
+    expect(pollo.qty).toBe(400);
+
+    // P&G: la venta está excluida de ingresos (VOID) PERO su costo FIFO se
+    // reporta como `refundCost` (pérdida real). Sin el fix, refundCost no existía
+    // y los $6.000 se evaporaban.
+    const pnl = (await auth(ctx.request.get('/reports/cogs/pnl')).expect(200)).body;
+    expect(pnl.revenue).toBe(0);
+    expect(pnl.cogs).toBe(0);
+    expect(pnl.refundCost).toBe(6000);
+
+    // El estado financiero mensual resta el reembolso del neto.
+    const now = new Date();
+    const stmt = (
+      await auth(
+        ctx.request.get(`/reports/financial/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`),
+      ).expect(200)
+    ).body;
+    expect(stmt.refundCost).toBe(6000);
+    expect(stmt.netResult).toBeLessThanOrEqual(-6000);
+  });
+});

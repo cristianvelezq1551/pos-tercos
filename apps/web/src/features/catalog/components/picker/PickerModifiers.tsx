@@ -1,6 +1,6 @@
 'use client';
 
-import type { ProductModifier } from '@pos-tercos/types';
+import type { PublicMenuModifier } from '@pos-tercos/types';
 import { COP } from '../../../../lib/format';
 
 /** Lista de extras (checkboxes), solo si el producto los habilita. */
@@ -9,7 +9,7 @@ export function PickerModifiers({
   selected,
   onToggle,
 }: {
-  modifiers: ProductModifier[];
+  modifiers: PublicMenuModifier[];
   selected: Set<string>;
   onToggle: (id: string) => void;
 }) {

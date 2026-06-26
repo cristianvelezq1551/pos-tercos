@@ -7,7 +7,7 @@ import {
 } from '../../../../features/financial';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { requireRole } from '../../../../lib/guards';
-import type { FinanceSummary } from '@pos-tercos/types';
+import { FinanceSummarySchema, type FinanceSummary } from '@pos-tercos/types';
 
 interface PageProps {
   searchParams: Promise<{ year?: string; month?: string }>;
@@ -31,6 +31,8 @@ export default async function FinancePagosPage({ searchParams }: PageProps) {
   try {
     summary = await serverFetchJson<FinanceSummary>(
       `/reports/finance-summary?year=${year}&month=${month}`,
+      undefined,
+      FinanceSummarySchema,
     );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound();

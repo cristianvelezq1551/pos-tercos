@@ -73,9 +73,9 @@ export class WebOrdersController {
     return { ...order, paymentInstructions: buildPaymentInstructions(order) };
   }
 
-  // Flujo cajero-driven: el cliente nunca afirma pago. El cajero acepta
-  // el pedido (POST /sales/:id/accept → instrucciones por WhatsApp/OpenWA),
-  // verifica el comprobante y confirma desde POS (/sales/:id/confirm-payment).
+  // Flujo cajero-driven: el cliente nunca afirma pago. Las instrucciones de pago
+  // salen automáticamente al crear el pedido (WhatsApp/OpenWA); el cajero verifica
+  // el comprobante y confirma desde el POS (/sales/:id/confirm-payment).
 }
 
 function buildPaymentInstructions(order: PublicWebOrder): string {

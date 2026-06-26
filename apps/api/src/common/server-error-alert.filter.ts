@@ -31,16 +31,18 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
     if (status >= 500) {
       const req = host.switchToHttp().getRequest<Request>();
       const message = exception instanceof Error ? exception.message : String(exception);
-      const signature = `${req?.method ?? '?'} ${req?.url ?? '?'} :: ${message.slice(0, 80)}`;
+      const signature = `${req?.method ?? '?'} ${normalizePath(req?.url)} :: ${message.slice(0, 80)}`;
 
       this.alertLogger.error(
         `5xx en ${signature}`,
         exception instanceof Error ? exception.stack : undefined,
       );
 
+      const now = Date.now();
+      this.prune(now);
       const last = this.lastAlertAt.get(signature) ?? 0;
-      if (Date.now() - last >= ALERT_THROTTLE_MS) {
-        this.lastAlertAt.set(signature, Date.now());
+      if (now - last >= ALERT_THROTTLE_MS) {
+        this.lastAlertAt.set(signature, now);
         void this.ownerNotifications.alert(
           'server_error',
           `[${process.env.BUSINESS_NAME ?? 'Tercos'}] 🔴 Error del sistema\n\n${signature}\n\nSi se repite, revisá los logs del servidor.`,
@@ -52,4 +54,25 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
     // La respuesta HTTP sale igual que siempre (filtro default de Nest).
     super.catch(exception, host);
   }
+
+  /** Borra firmas más viejas que la ventana de throttle: el Map no crece. */
+  private prune(now: number): void {
+    for (const [sig, at] of this.lastAlertAt) {
+      if (now - at >= ALERT_THROTTLE_MS) this.lastAlertAt.delete(sig);
+    }
+  }
+}
+
+/**
+ * Colapsa la URL al PATRÓN de ruta para que la firma no explote por params:
+ * quita el query string y reemplaza UUIDs y segmentos numéricos por `:id`.
+ * Sin esto, cada URL distinta (UUIDs, paginación, un scanner) deja una entrada
+ * permanente en el Map de throttle → fuga de memoria.
+ */
+function normalizePath(url: string | undefined): string {
+  if (!url) return '?';
+  const path = url.split('?')[0] ?? url;
+  return path
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/:id')
+    .replace(/\/\d+/g, '/:id');
 }

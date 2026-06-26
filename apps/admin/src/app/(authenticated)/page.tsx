@@ -15,11 +15,15 @@ import { ApiError, serverFetchJson } from '../../lib/api-server';
 import { DailyAiSummaryCard } from '../../features/ai-insights';
 import { getCurrentUserServer } from '../../features/auth/server';
 import { LiveDashboardSections } from '../../features/dashboard/components/LiveDashboardSections';
-import type { DashboardSummary } from '@pos-tercos/types';
+import { DashboardSummarySchema, type DashboardSummary } from '@pos-tercos/types';
 
 async function loadDashboard(): Promise<DashboardSummary | null> {
   try {
-    return await serverFetchJson<DashboardSummary>('/reports/dashboard');
+    return await serverFetchJson<DashboardSummary>(
+      '/reports/dashboard',
+      undefined,
+      DashboardSummarySchema,
+    );
   } catch (err) {
     if (err instanceof ApiError) {
       console.error('[dashboard] api error', err.status, err.body);

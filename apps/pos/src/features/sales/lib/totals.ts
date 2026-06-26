@@ -1,4 +1,4 @@
-import { applyPromotion, type PromotionDef } from '@pos-tercos/domain';
+import { applyPromotion, roundMoney, type PromotionDef } from '@pos-tercos/domain';
 import type { Promotion } from '@pos-tercos/types';
 import type { CartLine } from './cart-types';
 
@@ -49,7 +49,7 @@ export function computeCartTotals(
   let discount = 0;
 
   const lines: CartLineTotals[] = items.map((it) => {
-    const lineSubtotal = round(it.unitPrice * it.quantity);
+    const lineSubtotal = roundMoney(it.unitPrice * it.quantity);
     const { appliedPromotionId, lineDiscount } = applyPromotion(
       {
         productId: it.productId,
@@ -62,7 +62,7 @@ export function computeCartTotals(
       },
       defs,
     );
-    const lineTotal = round(lineSubtotal - lineDiscount);
+    const lineTotal = roundMoney(lineSubtotal - lineDiscount);
     subtotal += lineSubtotal;
     discount += lineDiscount;
     return {
@@ -79,12 +79,8 @@ export function computeCartTotals(
 
   return {
     lines,
-    subtotal: round(subtotal),
-    discount: round(discount),
-    total: round(subtotal - discount),
+    subtotal: roundMoney(subtotal),
+    discount: roundMoney(discount),
+    total: roundMoney(subtotal - discount),
   };
-}
-
-function round(n: number): number {
-  return Math.round(n * 100) / 100;
 }

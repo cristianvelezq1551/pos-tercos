@@ -39,6 +39,7 @@ interface ListFilter {
 @Injectable()
 export class PurchaseSuggestionsService {
   private readonly logger = new Logger(PurchaseSuggestionsService.name);
+  private scanning = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -59,6 +60,14 @@ export class PurchaseSuggestionsService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async runScanScheduled(): Promise<void> {
+    // Guard de re-entrada: un scan lento (loop por stockable + create + audit)
+    // no debe solaparse con el siguiente tick y duplicar trabajo sobre un
+    // snapshot de dedupe ya viejo.
+    if (this.scanning) {
+      this.logger.warn('scan anterior aún en curso — se omite este tick');
+      return;
+    }
+    this.scanning = true;
     try {
       await this.runScan(null);
     } catch (e) {
@@ -67,6 +76,8 @@ export class PurchaseSuggestionsService {
         `Scan cron failed: ${(e as Error).message}`,
         (e as Error).stack,
       );
+    } finally {
+      this.scanning = false;
     }
   }
 

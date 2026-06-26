@@ -111,6 +111,12 @@ export const MonthlyFinancialStatementSchema = z.object({
   oneTimeCost: z.number(),
   /** Costo (a COGS FIFO) de las cortesías autorizadas dadas en el período. */
   cortesiasCost: z.number(),
+  /** true si alguna cortesía se valuó sin lote FIFO disponible → la pérdida real
+   *  por cortesías puede estar subestimada (mostrar aviso). */
+  cortesiasCostPartial: z.boolean(),
+  /** Costo (a COGS FIFO) de los pedidos reembolsados en el período: la comida se
+   *  preparó pero se devolvió la plata → pérdida real que baja el neto. */
+  refundCost: z.number(),
   netResult: z.number(),
   /** Ventas necesarias para cubrir todo (≈ totalFixed / grossMarginPct). null si no se puede calcular. */
   breakEven: z.number().nullable(),

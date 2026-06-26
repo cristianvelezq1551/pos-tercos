@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ProductAvailabilityResponseSchema,
   PublicMenuResponseSchema,
   type PublicMenuProduct,
 } from '@pos-tercos/types';
@@ -13,7 +14,7 @@ import {
   type CartReconcileChange,
 } from '../../cart/lib/reconcile';
 
-const EMPTY: CartReconcileChange = { removed: [], repriced: [] };
+const EMPTY: CartReconcileChange = { removed: [], unavailable: [], repriced: [] };
 
 /**
  * Al entrar al checkout, contrasta el carrito persistido contra el menú actual.
@@ -27,7 +28,7 @@ export function useCartReconcile() {
   const hydrated = useCartStore((s) => s.hydrated);
 
   const [menu, setMenu] = useState<PublicMenuProduct[] | null>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
+  const [unavailableIds, setUnavailableIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +40,20 @@ export function useCartReconcile() {
         if (parsed.success) setMenu(parsed.data.products);
       })
       .catch((e) => logError('cart-reconcile', e));
+    // Disponibilidad en vivo: un agotado debe quitarse del carrito ANTES de
+    // pagar (si no, el backend lo rechaza con un 409 opaco). Best-effort.
+    void fetch('/api/products/availability', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled || !json) return;
+        const parsed = ProductAvailabilityResponseSchema.safeParse(json);
+        if (parsed.success) {
+          setUnavailableIds(
+            new Set(parsed.data.filter((r) => !r.available).map((r) => r.productId)),
+          );
+        }
+      })
+      .catch((e) => logError('cart-reconcile-availability', e));
     return () => {
       cancelled = true;
     };
@@ -49,12 +64,14 @@ export function useCartReconcile() {
     return { change: EMPTY, hasChanges: false, apply: () => {} };
   }
 
-  const { items: reconciled, change } = reconcileCart(items, menu);
-  const hasChanges = !acknowledged && hasReconcileChanges(change);
+  const { items: reconciled, change } = reconcileCart(items, menu, unavailableIds);
+  // No usamos un flag "acknowledged": al aplicar, el carrito queda igual al menú
+  // y `change` se recalcula vacío en el siguiente render. Si el menú cambia otra
+  // vez, el banner reaparece (un flag persistente lo silenciaría para siempre).
+  const hasChanges = hasReconcileChanges(change);
 
   const apply = () => {
     setItems(reconciled);
-    setAcknowledged(true);
   };
 
   return { change, hasChanges, apply };

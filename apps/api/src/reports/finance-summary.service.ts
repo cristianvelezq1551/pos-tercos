@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  FinanceMoneyFlow,
-  FinancePaidInvoice,
-  FinancePaidPayable,
-  FinancePendingInvoice,
-  FinancePendingPayable,
-  FinanceSummary,
+import {
+  NON_REVENUE_SALE_STATUSES,
+  type FinanceMoneyFlow,
+  type FinancePaidInvoice,
+  type FinancePaidPayable,
+  type FinancePendingInvoice,
+  type FinancePendingPayable,
+  type FinanceSummary,
 } from '@pos-tercos/types';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkersWeeklyService } from '../workers/workers-weekly.service';
@@ -36,12 +38,16 @@ export class FinanceSummaryService {
     private readonly prisma: PrismaService,
     private readonly workers: WorkersWeeklyService,
     private readonly fixedCosts: FixedCostsService,
+    private readonly businessConfig: BusinessConfigService,
   ) {}
 
   async getMonthlySummary(year: number, month1: number): Promise<FinanceSummary> {
     const month0 = month1 - 1;
-    const monthStart = new Date(Date.UTC(year, month0, 1, 0, 0, 0, 0));
-    const monthEnd = new Date(Date.UTC(year, month0 + 1, 0, 23, 59, 59, 999));
+    // Misma ventana del "mes del negocio" (hora local, fuente única en
+    // BusinessConfigService) que el P&G accrual, para que "Ingresos del mes"
+    // coincida entre /finanzas/pagos y /finanzas/estado.
+    const { from: monthStart, to: monthEnd } =
+      await this.businessConfig.getBusinessMonthWindow(year, month1);
 
     const now = new Date();
     const asOfForPending = now < monthEnd ? now : monthEnd;
@@ -60,7 +66,7 @@ export class FinanceSummaryService {
       this.prisma.sale.aggregate({
         where: {
           paidAt: { gte: monthStart, lte: monthEnd },
-          status: { notIn: ['PENDIENTE_PAGO', 'CANCELADO_NO_PAGO', 'VOID'] },
+          status: { notIn: [...NON_REVENUE_SALE_STATUSES] },
         },
         _sum: { total: true },
       }),

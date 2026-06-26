@@ -54,8 +54,8 @@ export class CortesiasController {
     @Query('month') month?: string,
   ): Promise<CortesiaGivenSummary> {
     const now = new Date();
-    const y = year ? Number(year) : now.getUTCFullYear();
-    const m = month ? Number(month) : now.getUTCMonth() + 1;
+    const y = year ? Number(year) : now.getFullYear();
+    const m = month ? Number(month) : now.getMonth() + 1;
     return this.cortesias.givenSummaryForMonth(y, m);
   }
 

@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react';
@@ -61,8 +62,12 @@ export function CortesiaWatchProvider({ children }: { children: ReactNode }) {
   // Polling SOLO mientras haya algo en vuelo; al resolverse y acusarse, se apaga.
   usePolling(refresh, 12_000, { enabled: hasInFlight, immediate: false });
 
+  // Memoizado: el provider re-renderiza en cada tick de polling (12s); sin memo
+  // el value cambia de identidad y re-renderiza todos los consumidores.
+  const value = useMemo(() => ({ items, refresh }), [items, refresh]);
+
   return (
-    <CortesiaWatchContext.Provider value={{ items, refresh }}>
+    <CortesiaWatchContext.Provider value={value}>
       {children}
     </CortesiaWatchContext.Provider>
   );

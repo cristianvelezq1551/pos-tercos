@@ -36,6 +36,7 @@ import { ShiftsModule } from './shifts/shifts.module';
 import { SubproductsModule } from './subproducts/subproducts.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { UsersModule } from './users/users.module';
+import { WebHeroModule } from './web-hero/web-hero.module';
 import { WebMenuModule } from './web-menu/web-menu.module';
 import { WebOrdersModule } from './web-orders/web-orders.module';
 import { ServerErrorAlertFilter } from './common/server-error-alert.filter';
@@ -80,6 +81,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     PublicDisplayModule,
     DisplayModule,
     RecipeBookModule,
+    WebHeroModule,
     WebMenuModule,
     WebOrdersModule,
     ReportsModule,

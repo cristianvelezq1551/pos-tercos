@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { KdsGateway } from '../src/kds/kds.gateway';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 
@@ -107,5 +108,59 @@ describe('Revocación de sesión (tokenVersion) E2E', () => {
 
     // El token sigue vivo (no se invalidó por un cambio cosmético).
     await request.get('/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
+  });
+
+  // ---------------------------------------------------------------------------
+  // La revocación también corta los WebSockets (no solo el plano HTTP): un
+  // socket abierto con token de usuario dado de baja NO debe sobrevivir 24h.
+  // ---------------------------------------------------------------------------
+  describe('Revocación en WebSocket (KdsGateway)', () => {
+    type FakeSocket = {
+      handshake: { headers: Record<string, string>; auth: Record<string, string> };
+      data: Record<string, unknown>;
+      emit: jest.Mock;
+      disconnect: jest.Mock;
+      join: jest.Mock;
+    };
+    const fakeSocket = (token: string): FakeSocket => ({
+      handshake: { headers: {}, auth: { token } },
+      data: {},
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+      join: jest.fn().mockResolvedValue(undefined),
+    });
+
+    it('acepta la conexión con un token válido y rol permitido', async () => {
+      const gateway = app.get(KdsGateway);
+      const sock = fakeSocket(duenoToken);
+      await gateway.handleConnection(sock as unknown as Parameters<typeof gateway.handleConnection>[0]);
+      expect(sock.disconnect).not.toHaveBeenCalled();
+      expect(sock.join).toHaveBeenCalled();
+      expect(sock.data.userId).toBeTruthy();
+    });
+
+    it('corta la conexión cuando el usuario fue desactivado (sesión revocada)', async () => {
+      const id = await makeUser('rev-ws@test.local', 'CAJERO');
+      const token = await loginAs(request, 'rev-ws@test.local');
+
+      // El token conecta ANTES de desactivar.
+      const gateway = app.get(KdsGateway);
+      const before = fakeSocket(token);
+      await gateway.handleConnection(before as unknown as Parameters<typeof gateway.handleConnection>[0]);
+      expect(before.disconnect).not.toHaveBeenCalled();
+
+      // El dueño lo desactiva (sube tokenVersion + invalida cache).
+      await request
+        .patch(`/users/${id}`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({ active: false })
+        .expect(200);
+
+      // El MISMO token ya no conecta por WS.
+      const after = fakeSocket(token);
+      await gateway.handleConnection(after as unknown as Parameters<typeof gateway.handleConnection>[0]);
+      expect(after.disconnect).toHaveBeenCalled();
+      expect(after.join).not.toHaveBeenCalled();
+    });
   });
 });

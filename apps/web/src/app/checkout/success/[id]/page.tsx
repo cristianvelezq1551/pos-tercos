@@ -22,31 +22,34 @@ export default async function CheckoutSuccessPage({
 
   if (!token) {
     return (
-      <div className="min-h-dvh bg-background text-foreground">
-        <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
-          >
-            <ArrowLeft className="h-4 w-4" strokeWidth={2} />
-            Volver al menú
-          </Link>
-        </header>
-        <main className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
-          <h1 className="font-display text-2xl font-bold text-foreground">
-            Falta el token de tu pedido
-          </h1>
-          <p className="max-w-md text-sm text-muted-foreground">
-            La URL del pedido necesita el parámetro <code>?token=</code>. Si la perdiste,
-            contacta al local.
-          </p>
-        </main>
-      </div>
+      <MessageScreen
+        title="Falta el token de tu pedido"
+        description="La URL del pedido necesita el parámetro ?token=. Si la perdiste, contacta al local por WhatsApp."
+      />
     );
   }
 
-  const order = await getWebOrderServer(id, token);
-  if (!order) notFound();
+  const result = await getWebOrderServer(id, token);
+
+  if (!result.ok) {
+    if (result.reason === 'not_found') notFound();
+    if (result.reason === 'expired') {
+      return (
+        <MessageScreen
+          title="Tu enlace ya no es válido"
+          description="El enlace de seguimiento dura 24 horas. Si tu pedido es reciente, contacta al local por WhatsApp y te ayudamos con el estado."
+        />
+      );
+    }
+    return (
+      <MessageScreen
+        title="No pudimos cargar tu pedido"
+        description="Tuvimos un problema momentáneo. Recargá la página en unos segundos; si sigue fallando, contacta al local por WhatsApp."
+      />
+    );
+  }
+
+  const order = result.order;
 
   // El backend (GET /web/orders/:id) es la única fuente de las instrucciones
   // de pago. Sobrevive a reload / device distinto / share del URL sin que el
@@ -74,6 +77,32 @@ export default async function CheckoutSuccessPage({
         paymentInstructions={instructions}
         businessName={BUSINESS_NAME}
       />
+    </div>
+  );
+}
+
+function MessageScreen({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
+        >
+          <ArrowLeft className="h-4 w-4" strokeWidth={2} />
+          Volver al menú
+        </Link>
+      </header>
+      <main className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
+        <h1 className="font-display text-2xl font-bold text-foreground">{title}</h1>
+        <p className="max-w-md text-sm text-muted-foreground">{description}</p>
+      </main>
     </div>
   );
 }

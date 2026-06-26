@@ -14,17 +14,15 @@ import {
   type WebOrderEventName,
 } from '@pos-tercos/types';
 import type { Server, Socket } from 'socket.io';
+import { TokenVersionService } from '../auth/token-version/token-version.service';
+import { wsCorsOrigin } from '../common/ws-cors';
 
 const ALLOWED_ROLES = new Set(['CAJERO', 'ADMIN_OPERATIVO', 'DUENO']);
 const ACCESS_COOKIE = 'pos_access';
 
 @WebSocketGateway({
   namespace: POS_NAMESPACE,
-  cors: {
-    origin: (_origin: string | undefined, cb: (err: Error | null, allow: boolean) => void) =>
-      cb(null, true),
-    credentials: true,
-  },
+  cors: { origin: wsCorsOrigin(), credentials: true },
 })
 export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(PosGateway.name);
@@ -32,7 +30,10 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly tokenVersions: TokenVersionService,
+  ) {}
 
   async handleConnection(client: Socket): Promise<void> {
     const token = this.extractToken(client);
@@ -40,7 +41,7 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.deny(client, 'no token');
       return;
     }
-    let payload: { role?: string; sub?: string };
+    let payload: { role?: string; sub?: string; tv?: number };
     try {
       payload = await this.jwt.verifyAsync(token, {
         secret: process.env.JWT_ACCESS_SECRET,
@@ -51,6 +52,18 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     if (!payload.role || !ALLOWED_ROLES.has(payload.role)) {
       this.deny(client, `role ${payload.role ?? 'unknown'} not allowed`);
+      return;
+    }
+    // Revocación de sesión (igual que el JwtAuthGuard HTTP): un socket abierto
+    // con token de usuario dado de baja / con rol cambiado debe cortarse, no
+    // sobrevivir hasta la expiración del access (24h).
+    if (!payload.sub) {
+      this.deny(client, 'no sub');
+      return;
+    }
+    const currentVersion = await this.tokenVersions.current(payload.sub);
+    if ((payload.tv ?? 0) !== currentVersion) {
+      this.deny(client, 'session revoked');
       return;
     }
     client.data.userId = payload.sub;

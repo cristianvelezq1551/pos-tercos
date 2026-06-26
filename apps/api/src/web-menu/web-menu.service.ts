@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { ModifierRecipeDeltaSchema } from '@pos-tercos/types';
 import type { PublicMenuProduct, PublicMenuResponse } from '@pos-tercos/types';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -7,7 +6,28 @@ import { PrismaService } from '../prisma/prisma.service';
 export class WebMenuService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Caché con TTL: el menú público lo pega internet en cada visita y cambia muy
+   * rara vez. Tolera ≤ TTL de staleness. Memoiza la PROMESA → deduplica ráfagas
+   * concurrentes. No toca costeo (subset SAFE sin costos).
+   */
+  private static readonly MENU_TTL_MS = 30_000;
+  private cache: { promise: Promise<PublicMenuResponse>; at: number } | null = null;
+
   async list(): Promise<PublicMenuResponse> {
+    const now = Date.now();
+    if (this.cache && now - this.cache.at < WebMenuService.MENU_TTL_MS) {
+      return this.cache.promise;
+    }
+    const promise = this.loadMenu();
+    this.cache = { promise, at: now };
+    void promise.catch(() => {
+      if (this.cache?.promise === promise) this.cache = null;
+    });
+    return promise;
+  }
+
+  private async loadMenu(): Promise<PublicMenuResponse> {
     const rows = await this.prisma.product.findMany({
       where: { isActive: true },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
@@ -39,7 +59,6 @@ export class WebMenuService {
         productId: m.productId,
         name: m.name,
         priceDelta: Number(m.priceDelta),
-        recipeDelta: ModifierRecipeDeltaSchema.catch([]).parse(m.recipeDelta),
       })),
     }));
 

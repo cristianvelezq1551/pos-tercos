@@ -2,7 +2,7 @@
 
 import type { HistoricalSupplier, PurchaseSuggestion } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, Select, formatCop } from '@pos-tercos/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { listSuggestionSuppliers, sendToSupplier } from '../api';
 
 interface Props {
@@ -23,6 +23,15 @@ export function SendToSupplierDialog({ suggestion, onClose, onSuccess }: Props) 
   const [note, setNote] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Limpia el timer de éxito diferido si el diálogo se desmonta antes de disparar
+  // (evita llamar onSuccess sobre un componente ya desmontado).
+  useEffect(() => {
+    return () => {
+      if (successTimer.current) clearTimeout(successTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     listSuggestionSuppliers(suggestion.id)
@@ -55,7 +64,7 @@ export function SendToSupplierDialog({ suggestion, onClose, onSuccess }: Props) 
         // El backend ya marcó la sugerencia ACCEPTED igual; mostramos error pero no bloqueamos.
         setError(`Marcada como aceptada, pero el envío de WhatsApp falló: ${r?.reason ?? 'desconocido'}.`);
         // Igual notificamos éxito de la decisión.
-        setTimeout(onSuccess, 1500);
+        successTimer.current = setTimeout(onSuccess, 1500);
         return;
       }
       onSuccess();

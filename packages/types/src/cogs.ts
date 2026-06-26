@@ -18,6 +18,12 @@ export const PnlReportSchema = z.object({
   wasteCost: z.number(),
   /** Cortesías valorizadas a FIFO (producto regalado) en el período. */
   cortesiaCost: z.number(),
+  /**
+   * Costo FIFO de los pedidos REEMBOLSADOS en el período (VOID con stock NO
+   * revertido: la comida ya se preparó). Pérdida real que el void normal no
+   * tiene. Se reporta aparte para que el neto la reste explícitamente.
+   */
+  refundCost: z.number(),
   salesCount: z.number().int().nonnegative(),
   /** Unidades de insumo consumidas sin costo conocido (termómetro de datos). */
   cogsUnknownQty: z.number(),

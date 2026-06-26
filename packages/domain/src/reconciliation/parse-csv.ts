@@ -107,35 +107,42 @@ export function splitCsvLine(line: string, delimiter: string): string[] {
  */
 export function parseMoneyCo(raw: string): number | null {
   const cleaned = raw.replace(/[^\d.,-]/g, '');
-  if (!cleaned || cleaned === '-' ) return null;
+  if (!cleaned || cleaned === '-') return null;
 
-  const lastDot = cleaned.lastIndexOf('.');
-  const lastComma = cleaned.lastIndexOf(',');
+  // Signo: '-' al inicio O al final ("45.000-" es débito en muchos extractos
+  // bancarios). Un '-' en el medio = basura → null.
+  const negative = cleaned.startsWith('-') || cleaned.endsWith('-');
+  const body = cleaned.replace(/^-/, '').replace(/-$/, '');
+  if (!body || body.includes('-')) return null;
+
+  const lastDot = body.lastIndexOf('.');
+  const lastComma = body.lastIndexOf(',');
 
   let normalized: string;
   if (lastDot !== -1 && lastComma !== -1) {
     const decimalSep = lastDot > lastComma ? '.' : ',';
     const thousandsSep = decimalSep === '.' ? ',' : '.';
-    normalized = cleaned.split(thousandsSep).join('');
+    normalized = body.split(thousandsSep).join('');
     if (decimalSep === ',') normalized = normalized.replace(',', '.');
   } else if (lastDot !== -1 || lastComma !== -1) {
     const sep = lastDot !== -1 ? '.' : ',';
     const idx = Math.max(lastDot, lastComma);
-    const digitsAfter = cleaned.length - idx - 1;
-    const occurrences = cleaned.split(sep).length - 1;
+    const digitsAfter = body.length - idx - 1;
+    const occurrences = body.split(sep).length - 1;
     // Varias apariciones del mismo separador = siempre miles ("1.234.567").
     // Una sola con exactamente 3 dígitos detrás = miles ("45.000").
     if (occurrences > 1 || digitsAfter === 3) {
-      normalized = cleaned.split(sep).join('');
+      normalized = body.split(sep).join('');
     } else {
-      normalized = sep === ',' ? cleaned.replace(',', '.') : cleaned;
+      normalized = sep === ',' ? body.replace(',', '.') : body;
     }
   } else {
-    normalized = cleaned;
+    normalized = body;
   }
 
   const n = Number(normalized);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  return negative ? -n : n;
 }
 
 /** ISO, YYYY-MM-DD o DD/MM/YYYY (con hora opcional). */

@@ -3,6 +3,7 @@ import { Wallet } from 'lucide-react';
 import { ShiftsTable } from '../../../features/shifts';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
+import { requireRole } from '../../../lib/guards';
 import type { Shift } from '@pos-tercos/types';
 
 async function loadShifts(): Promise<Shift[] | { error: string }> {
@@ -14,6 +15,7 @@ async function loadShifts(): Promise<Shift[] | { error: string }> {
 }
 
 export default async function ShiftsPage() {
+  await requireRole(['DUENO']);
   const result = await loadShifts();
 
   return (

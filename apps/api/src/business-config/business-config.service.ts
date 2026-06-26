@@ -30,6 +30,31 @@ export class BusinessConfigService {
     return (await this.get()).monthStartDay;
   }
 
+  /**
+   * Ventana del "mes del negocio" `(year, month1)` (month1: 1-12) en HORA LOCAL
+   * del servidor. En prod el server corre `TZ=America/Bogota` → la ventana queda
+   * anclada a medianoche de Bogotá, IDÉNTICA a la convención de `parseDateRange`
+   * (reports.controller) que usan /reports/sales y el resto del tablero.
+   *
+   * ⚠️ NO usar `Date.UTC(...)` acá: una venta cobrada a las 22:00 Bogotá se guarda
+   * en UTC (03:00 del día siguiente) y con límites UTC caería en otro día/mes →
+   * `/finanzas/estado` y `/reports/sales` mostrarían ingresos distintos para el
+   * mismo período. Esta es la fuente ÚNICA de la ventana mensual para que
+   * estado, pagos y cortesías coincidan entre sí y con el resto de reportes.
+   *
+   * startDay=1 (default) ⇒ mes calendario exacto.
+   */
+  async getBusinessMonthWindow(
+    year: number,
+    month1: number,
+  ): Promise<{ from: Date; to: Date }> {
+    const month0 = month1 - 1;
+    const startDay = await this.getMonthStartDay();
+    const from = new Date(year, month0, startDay, 0, 0, 0, 0);
+    const to = new Date(year, month0 + 1, startDay - 1, 23, 59, 59, 999);
+    return { from, to };
+  }
+
   async update(input: UpdateBusinessConfig, actorId: string): Promise<BusinessConfig> {
     const before = await this.get();
     const row = await this.prisma.businessConfig.upsert({

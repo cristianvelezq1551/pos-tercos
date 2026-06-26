@@ -38,6 +38,17 @@ export function CartChangesBanner({
         </div>
       ) : null}
 
+      {change.unavailable.length > 0 ? (
+        <div>
+          <p className="font-medium">Agotados ahora (se quitan):</p>
+          <ul className="ml-4 list-disc">
+            {change.unavailable.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {change.repriced.length > 0 ? (
         <div>
           <p className="font-medium">Cambiaron de precio:</p>

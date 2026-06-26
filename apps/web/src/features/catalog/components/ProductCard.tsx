@@ -4,6 +4,7 @@ import type { PublicMenuProduct } from '@pos-tercos/types';
 import { cn } from '@pos-tercos/ui';
 import { Plus } from 'lucide-react';
 import { COP } from '../../../lib/format';
+import { displayBasePrice } from '../../../lib/menu-price';
 
 export function ProductCard({
   product,
@@ -67,7 +68,7 @@ export function ProductCard({
 
         <div className="mt-1 flex items-center justify-between gap-3 sm:mt-3">
           <span className="text-sm font-bold tabular-nums text-foreground sm:order-2 sm:text-base sm:text-primary">
-            {COP.format(product.basePrice)}
+            {COP.format(displayBasePrice(product))}
           </span>
           {unavailable ? (
             <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">

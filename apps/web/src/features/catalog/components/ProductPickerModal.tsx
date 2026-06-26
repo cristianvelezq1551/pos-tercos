@@ -1,12 +1,13 @@
 'use client';
 
 import type {
-  ProductModifier,
   ProductSize,
+  PublicMenuModifier,
   PublicMenuProduct,
 } from '@pos-tercos/types';
 import { useEffect, useMemo, useState } from 'react';
 import { COP } from '../../../lib/format';
+import { displayBasePrice } from '../../../lib/menu-price';
 import { PickerHeader } from './picker/PickerHeader';
 import { PickerModifiers } from './picker/PickerModifiers';
 import { PickerNotes } from './picker/PickerNotes';
@@ -18,7 +19,7 @@ export interface PickerSelection {
   productName: string;
   imageUrl: string | null;
   size: ProductSize | null;
-  modifiers: ProductModifier[];
+  modifiers: PublicMenuModifier[];
   quantity: number;
   unitPrice: number;
   notes?: string;
@@ -85,7 +86,7 @@ export function ProductPickerModal({
     if (!product) return 0;
     const sizeMod = selectedSize?.priceModifier ?? 0;
     const modSum = selectedModifiers.reduce((acc, m) => acc + m.priceDelta, 0);
-    return product.basePrice + sizeMod + modSum;
+    return displayBasePrice(product) + sizeMod + modSum;
   }, [product, selectedSize, selectedModifiers]);
 
   if (!open || !product) return null;
@@ -151,7 +152,7 @@ export function ProductPickerModal({
           </div>
 
           <p className="text-2xl font-bold tabular-nums text-foreground">
-            {COP.format(product.basePrice)}
+            {COP.format(displayBasePrice(product))}
           </p>
 
           <div className="h-px w-full bg-border" />

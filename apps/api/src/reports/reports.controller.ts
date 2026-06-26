@@ -75,8 +75,8 @@ export class ReportsController {
     @Query('month') monthStr?: string,
   ): Promise<FinanceSummary> {
     const now = new Date();
-    const year = yearStr ? Number.parseInt(yearStr, 10) : now.getUTCFullYear();
-    const month1 = monthStr ? Number.parseInt(monthStr, 10) : now.getUTCMonth() + 1;
+    const year = yearStr ? Number.parseInt(yearStr, 10) : now.getFullYear();
+    const month1 = monthStr ? Number.parseInt(monthStr, 10) : now.getMonth() + 1;
     if (!Number.isFinite(year) || year < 2000 || year > 2100) {
       throw new BadRequestException('year inválido.');
     }
@@ -97,8 +97,8 @@ export class ReportsController {
     @Query('month') month?: string,
   ): Promise<MonthlyFinancialStatement> {
     const now = new Date();
-    const y = year ? Number(year) : now.getUTCFullYear();
-    const m = month ? Number(month) : now.getUTCMonth() + 1;
+    const y = year ? Number(year) : now.getFullYear();
+    const m = month ? Number(month) : now.getMonth() + 1;
     return this.financial.getMonthlyStatement(y, m);
   }
 
@@ -123,8 +123,8 @@ export class ReportsController {
     @Query('month') month?: string,
   ): Promise<FinancialAnalysis> {
     const now = new Date();
-    const y = year ? Number(year) : now.getUTCFullYear();
-    const m = month ? Number(month) : now.getUTCMonth() + 1;
+    const y = year ? Number(year) : now.getFullYear();
+    const m = month ? Number(month) : now.getMonth() + 1;
     return this.financial.analyze(y, m, user.sub);
   }
 

@@ -12,7 +12,7 @@ import {
   roundMoney,
   type PromotionDef,
 } from '@pos-tercos/domain';
-import { DIGITAL_PAYMENT_METHODS } from '@pos-tercos/types';
+import { DIGITAL_PAYMENT_METHODS, REFUND_VOID_REASON_PREFIX } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -705,7 +705,7 @@ export class SalesService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const res = await tx.sale.updateMany({
         where: { id: saleId, status: oldStatus },
-        data: { status: 'VOID', voidReason: `Reembolso: ${input.reason}` },
+        data: { status: 'VOID', voidReason: `${REFUND_VOID_REASON_PREFIX} ${input.reason}` },
       });
       if (res.count === 0) {
         throw new BadRequestException('El pedido cambió de estado — recargá e intentá de nuevo.');

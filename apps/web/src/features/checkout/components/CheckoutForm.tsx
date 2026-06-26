@@ -33,7 +33,9 @@ export function CheckoutForm() {
   const { change, hasChanges, apply } = useCartReconcile();
 
   const subtotal = cartSubtotal(items);
-  const phoneValid = /^\d{10}$/.test(phone10);
+  // Celular colombiano: 10 dígitos que empiezan en 3 (los móviles). Es el canal
+  // de WhatsApp del pedido, por eso no aceptamos fijos ni números imposibles.
+  const phoneValid = /^3\d{9}$/.test(phone10);
   const nameValid = name.trim().length >= 2;
   // No dejar pagar mientras haya cambios sin revisar (precio viejo / producto
   // desactivado) — el cliente confirma el pedido actualizado primero.
@@ -109,7 +111,7 @@ export function CheckoutForm() {
           label="Celular (Colombia)"
           error={
             phone10.length > 0 && !phoneValid
-              ? 'Ingresa los 10 dígitos del celular.'
+              ? 'Ingresa un celular válido (10 dígitos, empieza en 3).'
               : undefined
           }
           required

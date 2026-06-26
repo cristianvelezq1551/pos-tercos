@@ -31,7 +31,17 @@ export class InventoryUsageService {
       // Las cortesías NO son merma ni faltante: su costo se contabiliza en el
       // estado financiero. Se excluyen para que "Uso y mermas" sea pura
       // pérdida operativa (mermas + faltantes + ajustes reales).
-      where: { createdAt: { gte: from, lte: to }, sourceType: { not: 'cortesia' } },
+      //
+      // ⚠️ Gotcha Prisma: `{ not: 'cortesia' }` se traduce a SQL
+      // `source_type <> 'cortesia'`, que es NULL (no TRUE) para filas con
+      // source_type NULL → las EXCLUÍA. Las mermas/ajustes manuales (creados por
+      // `createMovement`) tienen source_type NULL, así que el reporte se comía
+      // TODAS las mermas declaradas a mano. El OR explícito incluye los NULL y
+      // excluye solo las cortesías reales.
+      where: {
+        createdAt: { gte: from, lte: to },
+        OR: [{ sourceType: null }, { sourceType: { not: 'cortesia' } }],
+      },
       _sum: { delta: true },
     });
 

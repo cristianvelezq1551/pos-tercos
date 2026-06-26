@@ -46,17 +46,21 @@ export class CortesiasService {
    */
   async givenSummaryForMonth(year: number, month1: number): Promise<CortesiaGivenSummary> {
     const month0 = month1 - 1;
-    const startDay = await this.businessConfig.getMonthStartDay();
-    const monthStart = new Date(Date.UTC(year, month0, startDay));
-    const monthEnd = new Date(Date.UTC(year, month0 + 1, startDay - 1, 23, 59, 59, 999));
-    // Misma fuente que el estado financiero → el KPI y el P&G coinciden siempre.
-    const { total, count } = await this.cogs.getApprovedCortesiaCost(monthStart, monthEnd);
+    // Misma ventana (hora local, fuente única en BusinessConfigService) que el
+    // estado financiero → el KPI y el P&G coinciden siempre.
+    const { from: monthStart, to: monthEnd } =
+      await this.businessConfig.getBusinessMonthWindow(year, month1);
+    const { total, count, unknownQty } = await this.cogs.getApprovedCortesiaCost(
+      monthStart,
+      monthEnd,
+    );
     return {
       year,
       month: month1,
       monthLabel: `${MONTHS_ES[month0]} ${year}`,
       total,
       count,
+      partial: unknownQty > 0,
     };
   }
 
@@ -66,6 +70,16 @@ export class CortesiasService {
       select: { id: true, name: true, basePrice: true, comboPrice: true },
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
+
+    // Si se ata a una venta, verificá que exista — así el audit trail nunca
+    // apunta a un saleId fantasma.
+    if (input.saleId) {
+      const sale = await this.prisma.sale.findUnique({
+        where: { id: input.saleId },
+        select: { id: true },
+      });
+      if (!sale) throw new NotFoundException('Venta no encontrada');
+    }
 
     // Costo de referencia para mostrar (estimado expanded-cost). El costo REAL
     // que pega al estado financiero se calcula a FIFO cuando se APRUEBA (al
@@ -200,13 +214,11 @@ export class CortesiasService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (movements.length > 0) {
-        // No bloqueamos por stock: el producto ya se entregó; el FIFO valúa lo
-        // que haya y marca el resto como costo desconocido (nunca asume $0).
-        await tx.inventoryMovement.createMany({ data: movements });
-      }
-      return tx.cortesiaRequest.update({
-        where: { id },
+      // Guard atómico contra TOCTOU: el claim solo prospera si SIGUE en PENDING.
+      // Dos aprobaciones concurrentes (dos tabs / reintento) competían por pasar
+      // el chequeo de afuera y ambas descontaban stock + reconocían COGS doble.
+      const claim = await tx.cortesiaRequest.updateMany({
+        where: { id, status: 'PENDING' },
         data: {
           status,
           resolvedById: userId,
@@ -217,6 +229,17 @@ export class CortesiasService {
           seenByRequester: false,
         },
       });
+      if (claim.count === 0) {
+        // Otro resolvió la cortesía entre nuestra lectura y el claim → abortamos
+        // (rollback de cualquier movement) para no duplicar el descuento.
+        throw new BadRequestException('La cortesía ya fue resuelta.');
+      }
+      if (movements.length > 0) {
+        // No bloqueamos por stock: el producto ya se entregó; el FIFO valúa lo
+        // que haya y marca el resto como costo desconocido (nunca asume $0).
+        await tx.inventoryMovement.createMany({ data: movements });
+      }
+      return tx.cortesiaRequest.findUniqueOrThrow({ where: { id } });
     });
     await this.audit.log({
       userId,

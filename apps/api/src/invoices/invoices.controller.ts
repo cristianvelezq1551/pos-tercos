@@ -57,6 +57,9 @@ export class InvoicesController {
     return this.invoices.sweepOrphanInvoiceFiles();
   }
 
+  // Las facturas exponen costos de compra, IVA y proveedores → inteligencia
+  // de costos. Solo Admin/Dueño las leen (el cajero/cocinero NO).
+  @AdminAccess()
   @Get()
   list(
     @Query('status') status?: string,
@@ -70,6 +73,7 @@ export class InvoicesController {
     });
   }
 
+  @AdminAccess()
   @Get(':id')
   getById(@Param('id', ParseUUIDPipe) id: string): Promise<Invoice> {
     return this.invoices.getById(id);
@@ -79,6 +83,7 @@ export class InvoicesController {
    * Devuelve la extracción IA original guardada en aiExtractionJson.
    * Útil para reanudar drafts cuyos items aún no se confirmaron.
    */
+  @AdminAccess()
   @Get(':id/raw-extraction')
   async getRawExtraction(
     @Param('id', ParseUUIDPipe) id: string,

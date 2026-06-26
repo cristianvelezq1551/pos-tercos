@@ -44,7 +44,10 @@ import { ProductsService } from './products.service';
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
-const COST_ROLES = new Set(['DUENO', 'ADMIN_OPERATIVO', 'ADMIN_FINANCIERO']);
+// Roles que ven el costo de compra. Debe contener SOLO valores reales del enum
+// UserRole (CAJERO/COCINERO/ADMIN_OPERATIVO/DUENO/TRABAJADOR) — no agregar roles
+// inexistentes: un gate sobre un rol que nadie puede tener nunca se activa.
+const COST_ROLES = new Set(['DUENO', 'ADMIN_OPERATIVO']);
 
 /**
  * Oculta el costo de compra a roles que no son admin/dueño. El cajero necesita

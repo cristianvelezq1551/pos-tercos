@@ -4,15 +4,16 @@ import { EmptyState } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
 import { WebFooter } from '../components/WebFooter';
 import { Hero } from '../components/Hero';
+import { HeroCarousel, getHeroServer } from '../features/hero';
 import { CategoryMosaic } from '../components/CategoryMosaic';
 import { MobileTabBar } from '../components/MobileTabBar';
 import { ActiveOrderBanner } from '../features/checkout';
 
-// Siempre fresco: el menú refleja al instante los cambios del admin.
+// Siempre fresco: el menú y la publicidad reflejan al instante los cambios del admin.
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const menu = await getMenuServer();
+  const [menu, hero] = await Promise.all([getMenuServer(), getHeroServer()]);
   const hasMenu = menu.products.length > 0;
 
   return (
@@ -20,7 +21,7 @@ export default async function Home() {
       <WebTopbar transparent />
       <ActiveOrderBanner />
       <main className="flex-1">
-        <Hero />
+        {hero.slides.length > 0 ? <HeroCarousel slides={hero.slides} /> : <Hero />}
         {hasMenu ? (
           <>
             <CategoryMosaic categories={menu.categories} />

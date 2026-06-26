@@ -1,10 +1,12 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { ClipboardList } from 'lucide-react';
 import { BitacoraView } from '../../../features/bitacora';
+import { requireRole } from '../../../lib/guards';
 
 export const dynamic = 'force-dynamic';
 
-export default function BitacoraPage() {
+export default async function BitacoraPage() {
+  await requireRole(['DUENO']);
   return (
     <>
       <PageHeader

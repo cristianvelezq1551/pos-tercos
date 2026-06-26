@@ -23,8 +23,9 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
     <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
       <h2 className="font-display text-lg font-bold text-foreground">Punto de equilibrio</h2>
       <p className="text-sm text-muted-foreground">
-        Es el nivel de ventas que necesita el mes para cubrir COGS + costos fijos. Por debajo, pierdes;
-        por encima, ganas.
+        Es el nivel de ventas que necesita el mes para cubrir COGS + costos fijos recurrentes. No
+        incluye gastos puntuales ni cortesías (esos pueden dejar el mes en rojo aunque llegues al
+        equilibrio).
       </p>
 
       <div className="space-y-2">
@@ -47,7 +48,7 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
         <p className="text-xs text-muted-foreground">
           Cobertura: <strong className={covered ? 'text-success' : 'text-warning'}>{pct}%</strong>
           {covered ? (
-            <> · ya cubre todos los costos.</>
+            <> · ya cubre COGS + costos fijos recurrentes.</>
           ) : (
             <>
               {' '}

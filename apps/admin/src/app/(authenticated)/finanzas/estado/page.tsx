@@ -11,7 +11,12 @@ import {
 import { MonthCutoffCard, getBusinessConfigServer } from '../../../../features/business-config';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { requireRole } from '../../../../lib/guards';
-import type { MonthlyFinancialStatement, MonthlyTrend } from '@pos-tercos/types';
+import {
+  MonthlyFinancialStatementSchema,
+  MonthlyTrendSchema,
+  type MonthlyFinancialStatement,
+  type MonthlyTrend,
+} from '@pos-tercos/types';
 
 interface PageProps {
   searchParams: Promise<{ year?: string; month?: string }>;
@@ -30,9 +35,13 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
     [statement, trend] = await Promise.all([
       serverFetchJson<MonthlyFinancialStatement>(
         `/reports/financial/monthly?year=${year}&month=${month}`,
+        undefined,
+        MonthlyFinancialStatementSchema,
       ),
       serverFetchJson<MonthlyTrend>(
         `/reports/financial/trend?months=6&year=${year}&month=${month}`,
+        undefined,
+        MonthlyTrendSchema,
       ),
     ]);
   } catch (err) {

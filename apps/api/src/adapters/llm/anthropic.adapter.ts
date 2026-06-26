@@ -32,7 +32,9 @@ export class AnthropicLLMAdapter implements LLMProvider {
       if (!apiKey) {
         throw new Error('ANTHROPIC_API_KEY is not set');
       }
-      this.client = new Anthropic({ apiKey });
+      // Timeout acotado: el default del SDK (10 min) colgaría un worker si la
+      // API no responde. La extracción de facturas (visión) es lo más lento.
+      this.client = new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 });
     }
     return this.client;
   }

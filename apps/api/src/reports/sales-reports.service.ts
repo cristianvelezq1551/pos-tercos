@@ -4,15 +4,16 @@ import {
   buildDailySummaryUserPrompt,
   type DailySummaryInput,
 } from '@pos-tercos/domain';
-import type {
-  AiSummary,
-  DashboardSummary,
-  HourHeatmapReport,
-  SalesGranularity,
-  SalesSummary,
-  SuggestionsMetrics,
-  TopProductsReport,
-  WhatsAppMetrics,
+import {
+  NON_REVENUE_SALE_STATUSES,
+  type AiSummary,
+  type DashboardSummary,
+  type HourHeatmapReport,
+  type SalesGranularity,
+  type SalesSummary,
+  type SuggestionsMetrics,
+  type TopProductsReport,
+  type WhatsAppMetrics,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
@@ -223,43 +224,38 @@ export class SalesReportsService {
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // Costo unitario via RecipesService.expandedCost — cálculo recursivo
-    // real (incluye subproducts, no la aproximación de FASE 13.A).
-    // N+1 controlado: limit ≤ 100, endpoint admin-only no en hot path.
-    const result = await Promise.all(
-      grouped.map(async (g) => {
-        const product = productMap.get(g.productId);
-        const productName = product?.name ?? '(producto eliminado)';
-        const quantity = Number(g._sum.quantity ?? 0);
-        const revenue = Number(g._sum.lineTotal ?? 0);
-
-        let estCostPerUnit: number | null = null;
-        if (product) {
-          try {
-            const cost = await this.recipes.expandedCost(g.productId);
-            estCostPerUnit = cost.totalCost;
-          } catch (e) {
-            this.logger.warn(
-              `expandedCost failed for ${g.productId}: ${(e as Error).message}`,
-            );
-          }
-        }
-        const estCost =
-          estCostPerUnit !== null ? estCostPerUnit * quantity : null;
-        const estMargin = estCost !== null ? revenue - estCost : null;
-        const estMarginPct =
-          estMargin !== null && revenue > 0 ? estMargin / revenue : null;
-        return {
-          productId: g.productId,
-          productName,
-          quantity,
-          revenue: round(revenue),
-          estCost: estCost === null ? null : round(estCost),
-          estMargin: estMargin === null ? null : round(estMargin),
-          estMarginPct: estMarginPct === null ? null : round4(estMarginPct),
-        };
-      }),
+    // Costo unitario recursivo real (incluye subproducts/combos). Antes se
+    // llamaba `expandedCost(id)` por producto → cada llamada recargaba el grafo
+    // completo (N+1 de grafos). `listProductCosts()` carga el grafo UNA vez y
+    // computa todos los costos en memoria con la MISMA función pura
+    // (computeProductCost/computeComboCost) → costo idéntico por producto
+    // (verificado número-a-número sobre el catálogo). Cero cambio de costeo.
+    const costByProduct = new Map(
+      (await this.recipes.listProductCosts()).map((c) => [c.productId, c.totalCost]),
     );
+
+    const result = grouped.map((g) => {
+      const product = productMap.get(g.productId);
+      const productName = product?.name ?? '(producto eliminado)';
+      const quantity = Number(g._sum.quantity ?? 0);
+      const revenue = Number(g._sum.lineTotal ?? 0);
+
+      const estCostPerUnit = product ? (costByProduct.get(g.productId) ?? null) : null;
+      const estCost =
+        estCostPerUnit !== null ? estCostPerUnit * quantity : null;
+      const estMargin = estCost !== null ? revenue - estCost : null;
+      const estMarginPct =
+        estMargin !== null && revenue > 0 ? estMargin / revenue : null;
+      return {
+        productId: g.productId,
+        productName,
+        quantity,
+        revenue: round(revenue),
+        estCost: estCost === null ? null : round(estCost),
+        estMargin: estMargin === null ? null : round(estMargin),
+        estMarginPct: estMarginPct === null ? null : round4(estMarginPct),
+      };
+    });
 
     return {
       periodFrom: toDayBucket(from),
@@ -531,7 +527,8 @@ function paidSalesWhere(from: Date, to: Date): Prisma.SaleWhereInput {
   return {
     paidAt: { gte: from, lte: to, not: null },
     status: {
-      notIn: ['PENDIENTE_PAGO', 'CANCELADO_NO_PAGO', 'VOID'],
+      // CANCELADO_SIN_REEMBOLSO sí cuenta como ingreso (no está en la lista).
+      notIn: [...NON_REVENUE_SALE_STATUSES],
     },
   };
 }

@@ -3,8 +3,10 @@
 import type { Shift, User } from '@pos-tercos/types';
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react';
@@ -60,10 +62,10 @@ export function OfflineProvider({
   const [failed, setFailed] = useState(0);
   const [persistent, setPersistent] = useState<boolean | null>(null);
 
-  const refreshPending = (): void => {
+  const refreshPending = useCallback((): void => {
     void offlineDb.countPending().then(setPending);
     void offlineDb.countFailed().then(setFailed);
-  };
+  }, []);
 
   // Persistencia: si el navegador la deniega, la cola offline puede purgarse
   // bajo presión de disco — el banner lo hace visible al cajero.
@@ -89,7 +91,7 @@ export function OfflineProvider({
         .catch(() => undefined)
         .then(() => cacheStockSnapshot().catch(() => undefined));
     }
-  }, [status]);
+  }, [status, refreshPending]);
 
   // Re-drain periódico mientras quede cola (cubre el backoff entre reintentos:
   // el drain del evento 'online' corre una vez; los reintentos espaciados
@@ -104,10 +106,16 @@ export function OfflineProvider({
     { enabled: status === 'online' && pending > 0, immediate: false },
   );
 
+  // Memoizado: este provider envuelve todo el POS y re-renderiza en cada tick de
+  // polling (10s). Sin memo, el value cambia de identidad y fuerza re-render de
+  // todos los consumidores de useOffline() aunque su slice no haya cambiado.
+  const value = useMemo(
+    () => ({ status, pending, failed, persistent, refreshPending }),
+    [status, pending, failed, persistent, refreshPending],
+  );
+
   return (
-    <OfflineContext.Provider value={{ status, pending, failed, persistent, refreshPending }}>
-      {children}
-    </OfflineContext.Provider>
+    <OfflineContext.Provider value={value}>{children}</OfflineContext.Provider>
   );
 }
 

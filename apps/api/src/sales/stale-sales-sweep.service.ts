@@ -21,6 +21,7 @@ const STALE_AFTER_MINUTES = 30;
 @Injectable()
 export class StaleSalesSweepService {
   private readonly logger = new Logger(StaleSalesSweepService.name);
+  private running = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -29,11 +30,20 @@ export class StaleSalesSweepService {
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async sweepScheduled(): Promise<void> {
+    // Guard de re-entrada: si un barrido lento todavía corre, no lo solapamos
+    // (@nestjs/schedule no lo impide solo).
+    if (this.running) {
+      this.logger.warn('sweep anterior aún en curso — se omite este tick');
+      return;
+    }
+    this.running = true;
     try {
       await this.sweep();
     } catch (err) {
       // El cron nunca debe tumbar el proceso por un barrido fallido.
       this.logger.error(`sweep de pendientes huérfanas falló: ${String(err)}`);
+    } finally {
+      this.running = false;
     }
   }
 

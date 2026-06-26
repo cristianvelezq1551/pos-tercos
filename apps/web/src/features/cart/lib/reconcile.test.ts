@@ -63,7 +63,7 @@ describe('reconcileCart', () => {
     const menu = product({
       basePrice: 20000,
       sizes: [{ id: 's1', name: 'Grande', productId: 'p1', priceModifier: 4000, sortOrder: 0 }], // subió
-      modifiers: [{ id: 'm1', name: 'Extra queso', productId: 'p1', priceDelta: 2000, recipeDelta: [] }],
+      modifiers: [{ id: 'm1', name: 'Extra queso', productId: 'p1', priceDelta: 2000 }],
     });
     const { items, change } = reconcileCart([cartLine], [menu]);
     // 20000 + 4000 (tamaño nuevo) + 2000 (mod) = 26000
@@ -76,6 +76,42 @@ describe('reconcileCart', () => {
     const combo = product({ id: 'c1', name: 'Combo', isCombo: true, comboPrice: 28000, basePrice: 0 });
     const { items } = reconcileCart([cartLine], [combo]);
     expect(items[0].unitPrice).toBe(28000);
+  });
+
+  it('producto agotado (availability) → se quita y se reporta en unavailable', () => {
+    const { items, change } = reconcileCart(
+      [line()],
+      [product()],
+      new Set(['p1']),
+    );
+    expect(items).toHaveLength(0);
+    expect(change.unavailable).toEqual(['Burger']);
+    expect(change.removed).toEqual([]);
+    expect(hasReconcileChanges(change)).toBe(true);
+  });
+
+  it('tamaño elegido ya no existe → se quita (no repricea opaco que falla en submit)', () => {
+    const cartLine = line({
+      unitPrice: 23000,
+      size: { id: 's1', name: 'Grande', priceModifier: 3000 },
+    });
+    // El menú ya no ofrece el tamaño s1 (el dueño cambió las opciones).
+    const menu = product({ basePrice: 20000, sizes: [] });
+    const { items, change } = reconcileCart([cartLine], [menu]);
+    expect(items).toHaveLength(0);
+    expect(change.removed).toEqual(['Burger']);
+    expect(change.repriced).toEqual([]);
+  });
+
+  it('modificador elegido ya no existe → se quita', () => {
+    const cartLine = line({
+      unitPrice: 22000,
+      modifiers: [{ id: 'm1', name: 'Extra queso', priceDelta: 2000 }],
+    });
+    const menu = product({ basePrice: 20000, modifiers: [] });
+    const { items, change } = reconcileCart([cartLine], [menu]);
+    expect(items).toHaveLength(0);
+    expect(change.removed).toEqual(['Burger']);
   });
 
   it('reporta removed y repriced juntos en un carrito mixto', () => {

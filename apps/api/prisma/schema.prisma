@@ -929,6 +929,13 @@ enum FixedCostFrequency {
   ONE_TIME
 }
 
+/// Tipo de medio de una pieza de publicidad del storefront web.
+/// Fase 1 solo usa IMAGE; VIDEO queda reservado para la fase 2.
+enum HeroMediaType {
+  IMAGE
+  VIDEO
+}
+
 /// Pagos efectivos de costos fijos. Un registro = un costo fijo × (año, mes).
 /// Para MONTHLY hay un período por mes; para ANNUAL el módulo usa
 /// period_month=1 por convención (el pago anual cubre todo el año).
@@ -1053,6 +1060,26 @@ model DisplayTrack {
 
   @@index([isActive, sortOrder])
   @@map("display_tracks")
+}
+
+/// Piezas de publicidad del storefront web (encima del menú) — el dueño las
+/// administra desde `/publicidad`. El medio vive en storage (`mediaKey`); se
+/// sirve por `GET /web-hero/media/:id` (público). `linkUrl` es a dónde lleva al
+/// tocar (interno o externo); null = no clickeable. Si no hay ninguno activo,
+/// la web cae a su hero estático (no se rompe). Fase 1 solo IMAGE.
+model WebHeroSlide {
+  id        String        @id @default(uuid())
+  mediaType HeroMediaType @default(IMAGE) @map("media_type")
+  mediaKey  String        @map("media_key")
+  mediaMime String        @map("media_mime")
+  linkUrl   String?       @map("link_url")
+  sortOrder Int           @default(0) @map("sort_order")
+  isActive  Boolean       @default(true) @map("is_active")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("web_hero_slides")
 }
 
 /// Pago semanal de nómina para empleados DIARIO (v6). A diferencia de

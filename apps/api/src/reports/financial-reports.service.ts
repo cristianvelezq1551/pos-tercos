@@ -45,12 +45,10 @@ export class FinancialReportsService {
   /** Estado financiero del mes `(year, month1)` (month1: 1-12). */
   async getMonthlyStatement(year: number, month1: number): Promise<MonthlyFinancialStatement> {
     const month0 = month1 - 1;
-    // Ventana del "mes del negocio": arranca el día de corte configurable y
-    // termina el día anterior al corte del mes siguiente. startDay=1 reduce al
-    // mes calendario exacto (comportamiento por defecto).
-    const startDay = await this.businessConfig.getMonthStartDay();
-    const monthStart = new Date(Date.UTC(year, month0, startDay));
-    const monthEnd = new Date(Date.UTC(year, month0 + 1, startDay - 1, 23, 59, 59, 999));
+    // Ventana del "mes del negocio" en hora local (fuente única, ver
+    // BusinessConfigService.getBusinessMonthWindow). startDay=1 ⇒ mes calendario.
+    const { from: monthStart, to: monthEnd } =
+      await this.businessConfig.getBusinessMonthWindow(year, month1);
 
     // P&G base del CogsService — ingresos + COGS real FIFO.
     const pnl = await this.cogs.getPnl(monthStart, monthEnd);
@@ -99,9 +97,16 @@ export class FinancialReportsService {
     // Cortesías: producto regalado → pérdida real que baja el neto. Costo FIFO
     // atado a las solicitudes AUTORIZADAS de la ventana (fuente única, también
     // usada por el KPI de Solicitudes → ambos coinciden siempre).
-    const { total: cortesiasCost } = await this.cogs.getApprovedCortesiaCost(monthStart, monthEnd);
+    const { total: cortesiasCost, unknownQty: cortesiasUnknownQty } =
+      await this.cogs.getApprovedCortesiaCost(monthStart, monthEnd);
 
-    const netResult = round(grossMargin - totalFixed - oneTimeCost - cortesiasCost);
+    // Reembolsos: comida preparada cuya plata se devolvió → pérdida real (el
+    // void normal no la tiene porque revierte stock). pnl.refundCost ya la trae.
+    const refundCost = pnl.refundCost;
+
+    const netResult = round(
+      grossMargin - totalFixed - oneTimeCost - cortesiasCost - refundCost,
+    );
 
     // Break-even = costos fijos / margen bruto %. Solo válido si hay margen %.
     let breakEven: number | null = null;
@@ -125,6 +130,8 @@ export class FinancialReportsService {
       totalFixed,
       oneTimeCost,
       cortesiasCost,
+      cortesiasCostPartial: cortesiasUnknownQty > 0,
+      refundCost: round(refundCost),
       netResult,
       breakEven,
       breakEvenCoverage: breakEvenCoverage === null ? null : round4(breakEvenCoverage),
@@ -133,32 +140,36 @@ export class FinancialReportsService {
 
   /** Tendencia de los últimos `n` meses incluyendo el actual. */
   async getMonthlyTrend(n: number, refYear?: number, refMonth1?: number): Promise<MonthlyTrend> {
+    // Hora local (TZ del server = Bogotá en prod): el "mes actual" debe ser el de
+    // Bogotá, no UTC (a las 22:00 del 31 UTC ya sería el mes siguiente).
     const ref = refYear !== undefined && refMonth1 !== undefined
       ? { year: refYear, month0: refMonth1 - 1 }
       : (() => {
           const now = new Date();
-          return { year: now.getUTCFullYear(), month0: now.getUTCMonth() };
+          return { year: now.getFullYear(), month0: now.getMonth() };
         })();
 
     const months: Array<{ year: number; month1: number }> = [];
     for (let i = n - 1; i >= 0; i--) {
-      const d = new Date(Date.UTC(ref.year, ref.month0 - i, 1));
-      months.push({ year: d.getUTCFullYear(), month1: d.getUTCMonth() + 1 });
+      const d = new Date(ref.year, ref.month0 - i, 1);
+      months.push({ year: d.getFullYear(), month1: d.getMonth() + 1 });
     }
 
-    const points: MonthlyTrendPoint[] = [];
-    for (const m of months) {
-      const s = await this.getMonthlyStatement(m.year, m.month1);
-      points.push({
-        year: s.year,
-        month: s.month,
-        monthLabel: s.monthLabel,
-        revenue: s.revenue,
-        cogs: s.cogs,
-        totalFixed: s.totalFixed,
-        netResult: s.netResult,
-      });
-    }
+    // En paralelo: cada statement es independiente y comparte el caché del
+    // ledger FIFO (la primera corrida lo computa, las demás reusan la promesa).
+    // `Promise.all` preserva el orden del array → trend idéntico, sin serializar.
+    const statements = await Promise.all(
+      months.map((m) => this.getMonthlyStatement(m.year, m.month1)),
+    );
+    const points: MonthlyTrendPoint[] = statements.map((s) => ({
+      year: s.year,
+      month: s.month,
+      monthLabel: s.monthLabel,
+      revenue: s.revenue,
+      cogs: s.cogs,
+      totalFixed: s.totalFixed,
+      netResult: s.netResult,
+    }));
     return { points };
   }
 

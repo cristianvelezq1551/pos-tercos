@@ -21,7 +21,9 @@ import { roundCost } from '../common/money';
  * de A queda parcialmente desconocido (unknownQty; nunca asumimos $0).
  *
  * PRE-CONDICIÓN: `movements` ordenados por createdAt ASC (el orden de
- * inserción desempata timestamps iguales).
+ * inserción —por id— desempata timestamps iguales dentro de una misma fase).
+ * Para timestamps EXACTAMENTE iguales entre fases distintas, el replay aplica
+ * un desempate causal: entradas → producciones → consumos (ver `phaseOf`).
  */
 
 export type LedgerEntityType = 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT';
@@ -115,8 +117,22 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       events.push({ kind: 'single', ts: m.createdAt, m });
     }
   }
-  // Estable por createdAt. Las producciones ya están atómicas.
-  events.sort((a, b) => a.ts.getTime() - b.ts.getTime());
+  // Orden cronológico con DESEMPATE CAUSAL para timestamps idénticos (dos
+  // transacciones distintas — producción vs venta/compra — pueden caer en el
+  // mismo ms de now()). En un empate, el stock debe materializarse antes de
+  // consumirse: ENTRADAS (0) → PRODUCCIONES (1) → CONSUMOS (2). Así una venta
+  // del mismo instante ve el lote recién producido, y una producción ve el
+  // insumo recién comprado. Sort estable → dentro de la misma fase se conserva
+  // el orden de inserción (por id), preservando el comportamiento previo cuando
+  // los timestamps son distintos.
+  const phaseOf = (e: Event): number => {
+    if (e.kind === 'production') return 1;
+    return e.m.delta > 0 ? 0 : 2;
+  };
+  events.sort((a, b) => {
+    const dt = a.ts.getTime() - b.ts.getTime();
+    return dt !== 0 ? dt : phaseOf(a) - phaseOf(b);
+  });
 
   const queues = new Map<string, Lot[]>();
   // Para revertir consumo de venta al anular: key = `${saleId}:${stockableKey}`.

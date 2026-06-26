@@ -1,13 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type {
-  CreateAdjustment,
-  CreateTransfer,
-  Pocket,
-  PocketBreakdown,
-  TreasuryConfig,
-  TreasuryMovement,
-  TreasurySummary,
-  UpdateTreasuryConfig,
+import {
+  NON_REVENUE_SALE_STATUSES,
+  type CreateAdjustment,
+  type CreateTransfer,
+  type Pocket,
+  type PocketBreakdown,
+  type TreasuryConfig,
+  type TreasuryMovement,
+  type TreasurySummary,
+  type UpdateTreasuryConfig,
 } from '@pos-tercos/types';
 import type { SaleStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -17,7 +18,8 @@ import { WorkersWeeklyService } from '../workers/workers-weekly.service';
 import { WorkersService } from '../workers/workers.service';
 
 const SINGLETON = 'singleton';
-const EXCLUDED_SALE_STATUS: SaleStatus[] = ['PENDIENTE_PAGO', 'CANCELADO_NO_PAGO', 'VOID'];
+// CANCELADO_SIN_REEMBOLSO sí cuenta como ingreso (no está en la lista canónica).
+const EXCLUDED_SALE_STATUS: SaleStatus[] = [...NON_REVENUE_SALE_STATUSES];
 
 /**
  * Tesorería — control de caja de dos bolsillos (Efectivo y Cuenta). Deriva los

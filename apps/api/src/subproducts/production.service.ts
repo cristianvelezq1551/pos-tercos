@@ -28,10 +28,11 @@ import { RecipesService } from '../recipes/recipes.service';
  *
  * Sólo Cocinero/Admin/Dueño (gate en controller).
  *
- * Nota FIFO: la columna `unit_cost` del movement +N queda en NULL en esta
- * sesión. El costeo real de subproductos (lot por producción) entra en
- * sesión próxima — hasta entonces, el COGS de productos que usan
- * subproductos queda aproximado (ignora la producción).
+ * Nota FIFO: la columna `unit_cost` del movement +N queda en NULL A PROPÓSITO.
+ * El costo del lote producido NO se persiste en esa columna: se DERIVA en el
+ * ledger FIFO (`runLedgerFifo`) como suma de los insumos consumidos / cantidad
+ * producida, en el instante del replay. Persistir un costo acá sería redundante
+ * y podría desincronizarse del ledger (única fuente de verdad del COGS).
  */
 @Injectable()
 export class ProductionService {
@@ -89,8 +90,15 @@ export class ProductionService {
       );
     }
 
+    // La key es OBLIGATORIA: sin ella un doble-tap crea dos tandas que
+    // consumen insumos por duplicado (la tx Serializable evita stock negativo,
+    // NO la doble-producción). Es un POST crítico que muta stock.
+    if (!input.idempotencyKey) {
+      throw new BadRequestException('Falta idempotencyKey para registrar la producción.');
+    }
+
     // Idempotencia anticipada: si ya se procesó esta key, devolver el run previo.
-    if (input.idempotencyKey) {
+    {
       const prev = await this.prisma.inventoryMovement.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
         select: { sourceId: true },

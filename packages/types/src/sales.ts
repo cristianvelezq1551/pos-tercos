@@ -19,6 +19,34 @@ export const SaleStatusEnum = z.enum([
 ]);
 export type SaleStatus = z.infer<typeof SaleStatusEnum>;
 
+/**
+ * Estados que NO cuentan como ingreso ni consumen COGS en reportes/P&G:
+ *  - PENDIENTE_PAGO: nunca se cobró.
+ *  - CANCELADO_NO_PAGO: pedido web rechazado, jamás se pagó.
+ *  - VOID: venta anulada (stock revertido).
+ *
+ * `CANCELADO_SIN_REEMBOLSO` SÍ es ingreso a propósito: la plata se quedó en el
+ * negocio aunque el pedido se canceló (decisión 2026-06-25). Por eso NO está acá.
+ *
+ * Fuente ÚNICA de verdad: consumida por CogsService y SalesReportsService para
+ * que no haya dos listas que puedan divergir.
+ */
+export const NON_REVENUE_SALE_STATUSES = [
+  'PENDIENTE_PAGO',
+  'CANCELADO_NO_PAGO',
+  'VOID',
+] as const satisfies readonly SaleStatus[];
+
+/**
+ * Prefijo del `voidReason` cuando un VOID proviene de un REEMBOLSO (la cocina ya
+ * preparó/entregó → el stock NO se revierte: el insumo se gastó). A diferencia
+ * del void normal (stock revertido, costo neto 0 en el ledger), el reembolso es
+ * una pérdida real: su COGS debe contabilizarse en el P&G aunque la venta esté
+ * excluida de ingresos. `SalesService.refund` lo escribe; `CogsService.getPnl`
+ * lo lee para valorizar la pérdida. Fuente única para que no diverjan.
+ */
+export const REFUND_VOID_REASON_PREFIX = 'Reembolso:';
+
 export const PaymentMethodEnum = z.enum([
   'CASH',
   'CARD',

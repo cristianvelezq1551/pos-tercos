@@ -92,12 +92,20 @@ export class KdsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.sale.update({
-        where: { id: saleId },
+      // Update condicionado por status: si otra request ya transicionó la venta
+      // entre nuestra lectura y acá, count===0 → abortamos (evita doble emit,
+      // doble pickup_ready y doble KDS_ORDER_DELAYED).
+      const claim = await tx.sale.updateMany({
+        where: { id: saleId, status: from },
         // readyAt sella el momento en que entra a la cola del cajero (ordena
         // la cola "listos por llamar").
         data: { status: to, ...(to === 'LISTO_DESPACHO' ? { readyAt: new Date() } : {}) },
       });
+      if (claim.count === 0) {
+        throw new BadRequestException(
+          `La venta ya no está en ${from} (otra acción la transicionó). Refrescá el tablero.`,
+        );
+      }
       await tx.saleStatusLog.create({
         data: { saleId, statusFrom: from, statusTo: to, userId },
       });

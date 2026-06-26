@@ -25,9 +25,17 @@ describe('parseMoneyCo', () => {
     expect(parseMoneyCo('45,5')).toBe(45.5);
   });
 
+  it('signo: menos al inicio o al final (débito bancario)', () => {
+    expect(parseMoneyCo('-45.000')).toBe(-45000);
+    expect(parseMoneyCo('45.000-')).toBe(-45000); // formato débito "trailing minus"
+    expect(parseMoneyCo('-45.000,50')).toBe(-45000.5);
+  });
+
   it('basura → null', () => {
     expect(parseMoneyCo('')).toBeNull();
     expect(parseMoneyCo('N/A')).toBeNull();
+    expect(parseMoneyCo('-')).toBeNull();
+    expect(parseMoneyCo('1-2')).toBeNull(); // menos en el medio = malformado
   });
 });
 

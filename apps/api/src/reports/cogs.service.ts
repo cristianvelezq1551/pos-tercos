@@ -8,17 +8,20 @@ import {
   type ParentRef,
   type RecipeGraph,
 } from '@pos-tercos/domain';
-import type {
-  FifoLotsResponse,
-  InventoryValuationReport,
-  PnlReport,
-  ProductMargin,
-  ProductMarginReport,
+import {
+  NON_REVENUE_SALE_STATUSES,
+  REFUND_VOID_REASON_PREFIX,
+  type FifoLotsResponse,
+  type InventoryValuationReport,
+  type PnlReport,
+  type ProductMargin,
+  type ProductMarginReport,
 } from '@pos-tercos/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
-const EXCLUDED_STATUSES = ['PENDIENTE_PAGO', 'CANCELADO_NO_PAGO', 'VOID'] as const;
+// Fuente única en @pos-tercos/types: CANCELADO_SIN_REEMBOLSO sí es ingreso (no está acá).
+const EXCLUDED_STATUSES = NON_REVENUE_SALE_STATUSES;
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -109,7 +112,10 @@ export class CogsService {
    * huérfanos de modelos previos. Es la fuente ÚNICA del costo de cortesías para
    * el estado financiero y el KPI de Solicitudes → siempre coinciden.
    */
-  async getApprovedCortesiaCost(from: Date, to: Date): Promise<{ total: number; count: number }> {
+  async getApprovedCortesiaCost(
+    from: Date,
+    to: Date,
+  ): Promise<{ total: number; count: number; unknownQty: number }> {
     const [ledger, approved] = await Promise.all([
       this.runLedger(),
       this.prisma.cortesiaRequest.findMany({
@@ -118,20 +124,52 @@ export class CogsService {
       }),
     ]);
     let total = 0;
-    for (const r of approved) total += ledger.cortesiaCostBySource.get(r.id)?.cost ?? 0;
-    return { total: round(total), count: approved.length };
+    let unknownQty = 0;
+    for (const r of approved) {
+      const entry = ledger.cortesiaCostBySource.get(r.id);
+      total += entry?.cost ?? 0;
+      // FIFO sin lote disponible al aprobar → costo desconocido. Lo arrastramos
+      // para avisar que la pérdida real puede estar subestimada.
+      unknownQty += entry?.unknownQty ?? 0;
+    }
+    return { total: round(total), count: approved.length, unknownQty: round(unknownQty) };
   }
 
   // ==================================================================
   // P&L del período
   // ==================================================================
 
+  /** Suma el costo FIFO atribuido a una venta (insumos + reventa + subproductos). */
+  private saleCost(ledger: LedgerFifo, saleId: string): { cost: number; unknownQty: number } {
+    let cost = 0;
+    let unknownQty = 0;
+    for (const m of [ledger.saleIngredientCost, ledger.saleProductCost, ledger.saleSubproductCost]) {
+      for (const e of m.get(saleId)?.values() ?? []) {
+        cost += e.cost;
+        unknownQty += e.unknownQty;
+      }
+    }
+    return { cost, unknownQty };
+  }
+
   async getPnl(from: Date, to: Date): Promise<PnlReport> {
-    const [ledger, sales] = await Promise.all([
+    const [ledger, sales, refunded] = await Promise.all([
       this.runLedger(),
       this.prisma.sale.findMany({
         where: { paidAt: { gte: from, lte: to }, status: { notIn: [...EXCLUDED_STATUSES] } },
         select: { id: true, total: true },
+      }),
+      // Reembolsos del período: VOID con stock NO revertido (la comida ya se
+      // preparó). Su costo FIFO quedó en el ledger pero la venta está excluida
+      // de ingresos → si no se suma aparte, el costo del plato regalado se
+      // evapora del P&G. Atribuido por paidAt (cuando se consumió el stock).
+      this.prisma.sale.findMany({
+        where: {
+          paidAt: { gte: from, lte: to },
+          status: 'VOID',
+          voidReason: { startsWith: REFUND_VOID_REASON_PREFIX },
+        },
+        select: { id: true },
       }),
     ]);
 
@@ -140,18 +178,17 @@ export class CogsService {
     let unknownQty = 0;
     for (const s of sales) {
       revenue += Number(s.total);
-      for (const e of ledger.saleIngredientCost.get(s.id)?.values() ?? []) {
-        cogs += e.cost;
-        unknownQty += e.unknownQty;
-      }
-      for (const e of ledger.saleProductCost.get(s.id)?.values() ?? []) {
-        cogs += e.cost;
-        unknownQty += e.unknownQty;
-      }
-      for (const e of ledger.saleSubproductCost.get(s.id)?.values() ?? []) {
-        cogs += e.cost;
-        unknownQty += e.unknownQty;
-      }
+      const c = this.saleCost(ledger, s.id);
+      cogs += c.cost;
+      unknownQty += c.unknownQty;
+    }
+
+    let refundCost = 0;
+    let refundUnknownQty = 0;
+    for (const s of refunded) {
+      const c = this.saleCost(ledger, s.id);
+      refundCost += c.cost;
+      refundUnknownQty += c.unknownQty;
     }
 
     const fromIso = from.toISOString();
@@ -173,8 +210,9 @@ export class CogsService {
       grossMarginPct: revenue > 0 ? Math.round((grossMargin / revenue) * 10000) / 10000 : null,
       wasteCost: round(wasteCost),
       cortesiaCost: round(cortesiaCost),
+      refundCost: round(refundCost),
       salesCount: sales.length,
-      cogsUnknownQty: Math.round(unknownQty * 10000) / 10000,
+      cogsUnknownQty: Math.round((unknownQty + refundUnknownQty) * 10000) / 10000,
     };
   }
 

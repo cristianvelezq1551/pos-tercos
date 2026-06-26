@@ -408,4 +408,61 @@ describe('Shifts E2E', () => {
       expect(isNullish).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Reabrir caja respeta la invariante "caja única del negocio".
+  // ---------------------------------------------------------------------------
+  describe('Reopen no crea una segunda caja OPEN', () => {
+    let cashierXId: string;
+    let cashierYId: string;
+    let closedShiftId: string;
+    let openShiftId: string;
+
+    beforeAll(async () => {
+      const hash = await bcrypt.hash('dev12345', 10);
+      const x = await prisma.user.create({
+        data: { email: 'cajero-x@test.local', fullName: 'Cajero X', role: 'CAJERO', passwordHash: hash, mustChangePwd: false, active: true },
+      });
+      const y = await prisma.user.create({
+        data: { email: 'cajero-y@test.local', fullName: 'Cajero Y', role: 'CAJERO', passwordHash: hash, mustChangePwd: false, active: true },
+      });
+      cashierXId = x.id;
+      cashierYId = y.id;
+      // Caja A (cajero X) CERRADA + caja B (cajero Y) ABIERTA → escenario donde
+      // el viejo check (por cashierId) dejaba reabrir A y quedaban dos OPEN.
+      const closed = await prisma.shift.create({
+        data: {
+          cashierId: cashierXId,
+          openingCash: 0,
+          status: 'CLOSED',
+          openedAt: new Date(Date.now() - 36 * 60 * 60 * 1000),
+          closedAt: new Date(Date.now() - 30 * 60 * 60 * 1000),
+        },
+      });
+      closedShiftId = closed.id;
+      const open = await prisma.shift.create({
+        data: { cashierId: cashierYId, openingCash: 0, status: 'OPEN' },
+      });
+      openShiftId = open.id;
+    });
+
+    it('rechaza reabrir A mientras B (de otro cajero) está abierta → 409', async () => {
+      await request
+        .post(`/shifts/${closedShiftId}/reopen`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .expect(409);
+    });
+
+    it('permite reabrir A una vez que B se cierra', async () => {
+      await prisma.shift.update({ where: { id: openShiftId }, data: { status: 'CLOSED', closedAt: new Date() } });
+      const res = await request
+        .post(`/shifts/${closedShiftId}/reopen`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .expect(201);
+      expect(res.body.status).toBe('OPEN');
+      // No quedan dos OPEN: exactamente una.
+      const openCount = await prisma.shift.count({ where: { status: 'OPEN' } });
+      expect(openCount).toBe(1);
+    });
+  });
 });

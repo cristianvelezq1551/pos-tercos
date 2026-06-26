@@ -57,11 +57,28 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
       ) : null}
 
       {/* Cortesías: producto regalado (autorizado), valuado a costo FIFO. */}
-      {s.cortesiasCost > 0 ? (
+      {s.cortesiasCost > 0 || s.cortesiasCostPartial ? (
         <div className="space-y-1.5 text-sm">
           <Row
             label="− Cortesías (producto regalado, a costo)"
             value={`−${formatCop(s.cortesiasCost)}`}
+            muted
+          />
+          {s.cortesiasCostPartial ? (
+            <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+              Algunas cortesías se regalaron sin stock costeado a FIFO, así que esta pérdida puede
+              estar subestimada.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Reembolsos: comida preparada cuya plata se devolvió, valuada a costo FIFO. */}
+      {s.refundCost > 0 ? (
+        <div className="space-y-1.5 text-sm">
+          <Row
+            label="− Reembolsos (comida preparada, a costo)"
+            value={`−${formatCop(s.refundCost)}`}
             muted
           />
         </div>
