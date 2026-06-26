@@ -11,6 +11,7 @@
  */
 
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -152,6 +153,16 @@ describe('Treasury E2E', () => {
     const list = await request.get('/treasury/movements').set(auth(duenoToken)).expect(200);
     const voided = (list.body as Array<{ id: string; status: string }>).find((m) => m.id === movementId);
     expect(voided?.status).toBe('VOIDED');
+  });
+
+  it('idempotencia: dos transfers con la misma key NO duplican el movimiento', async () => {
+    const key = randomUUID();
+    const body = { fromPocket: 'EFECTIVO', toPocket: 'CUENTA', amount: 1_234, reason: 'idem-transfer-test' };
+    const a = await request.post('/treasury/transfer').set(auth(duenoToken)).set('Idempotency-Key', key).send(body).expect(201);
+    const b = await request.post('/treasury/transfer').set(auth(duenoToken)).set('Idempotency-Key', key).send(body).expect(201);
+    expect(b.body.id).toBe(a.body.id); // misma respuesta cacheada (no un 2do movimiento)
+    const movs = await prisma.treasuryMovement.findMany({ where: { reason: 'idem-transfer-test' } });
+    expect(movs).toHaveLength(1);
   });
 
   it('anular dos veces es idempotente (no rompe)', async () => {

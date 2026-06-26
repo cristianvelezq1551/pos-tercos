@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { roundMoney } from '@pos-tercos/domain';
 import {
   NON_REVENUE_SALE_STATUSES,
   type CreateAdjustment,
@@ -12,6 +13,7 @@ import {
 } from '@pos-tercos/types';
 import type { SaleStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkersWeeklyService } from '../workers/workers-weekly.service';
@@ -35,6 +37,7 @@ export class TreasuryService {
     private readonly fixedCosts: FixedCostsService,
     private readonly workers: WorkersService,
     private readonly workersWeekly: WorkersWeeklyService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   // --- Config ---
@@ -94,9 +97,19 @@ export class TreasuryService {
     return rows.map((r) => this.toMovementDto(r, actorNames.get(r.actorId ?? '') ?? null));
   }
 
-  async createTransfer(input: CreateTransfer, actorId: string): Promise<TreasuryMovement> {
+  async createTransfer(
+    input: CreateTransfer,
+    actorId: string,
+    idempotencyKey?: string,
+  ): Promise<TreasuryMovement> {
     if (input.fromPocket === input.toPocket) {
       throw new BadRequestException('El origen y el destino deben ser distintos.');
+    }
+    // Idempotencia: un retry de red con la misma key devuelve el traspaso ya
+    // creado en vez de duplicar el movimiento (que sumaría doble al panel).
+    if (idempotencyKey) {
+      const cached = await this.idempotency.findCached<TreasuryMovement>(idempotencyKey, 'treasury/transfer');
+      if (cached) return cached.body;
     }
     const row = await this.prisma.treasuryMovement.create({
       data: {
@@ -116,10 +129,22 @@ export class TreasuryService {
       entityId: row.id,
       metadata: { from: input.fromPocket, to: input.toPocket, amount: input.amount, reason: input.reason },
     });
-    return this.toMovementDto(row, null);
+    const dto = this.toMovementDto(row, null);
+    if (idempotencyKey) {
+      await this.idempotency.cache({ key: idempotencyKey, endpoint: 'treasury/transfer', body: dto, statusCode: 201, userId: actorId });
+    }
+    return dto;
   }
 
-  async createAdjustment(input: CreateAdjustment, actorId: string): Promise<TreasuryMovement> {
+  async createAdjustment(
+    input: CreateAdjustment,
+    actorId: string,
+    idempotencyKey?: string,
+  ): Promise<TreasuryMovement> {
+    if (idempotencyKey) {
+      const cached = await this.idempotency.findCached<TreasuryMovement>(idempotencyKey, 'treasury/adjustment');
+      if (cached) return cached.body;
+    }
     const row = await this.prisma.treasuryMovement.create({
       data: {
         kind: 'ADJUSTMENT',
@@ -137,7 +162,11 @@ export class TreasuryService {
       entityId: row.id,
       metadata: { pocket: input.pocket, amount: input.amount, reason: input.reason },
     });
-    return this.toMovementDto(row, null);
+    const dto = this.toMovementDto(row, null);
+    if (idempotencyKey) {
+      await this.idempotency.cache({ key: idempotencyKey, endpoint: 'treasury/adjustment', body: dto, statusCode: 201, userId: actorId });
+    }
+    return dto;
   }
 
   async voidMovement(id: string, actorId: string): Promise<void> {
@@ -344,6 +373,7 @@ function breakdown(
 function parseYmd(s: string): Date {
   return new Date(`${s}T00:00:00.000Z`);
 }
+/** Redondeo COP (2 dec) — delega al canónico del dominio (single source of truth). */
 function round(n: number): number {
-  return Math.round(n * 100) / 100;
+  return roundMoney(n);
 }

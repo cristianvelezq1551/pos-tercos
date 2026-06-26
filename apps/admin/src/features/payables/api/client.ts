@@ -26,7 +26,12 @@ export async function payPayable(
   const fd = new FormData();
   fd.append('payload', JSON.stringify(input));
   if (proof) fd.append('proof', proof);
-  const res = await fetch(`/api/payables/${id}/pay`, { method: 'POST', credentials: 'include', body: fd });
+  const res = await fetch(`/api/payables/${id}/pay`, {
+    method: 'POST',
+    credentials: 'include',
+    body: fd,
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+  });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(body.message ?? `Request failed (${res.status})`);

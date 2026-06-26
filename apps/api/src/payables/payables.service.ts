@@ -1,9 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { StorageProvider } from '@pos-tercos/domain';
+import { roundMoney, type StorageProvider } from '@pos-tercos/domain';
 import type { CreatePayable, PayPayable, PayableCommitment, PayableStatus } from '@pos-tercos/types';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
+import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -17,6 +18,7 @@ export class PayablesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   async list(status?: PayableStatus): Promise<PayableCommitment[]> {
@@ -51,14 +53,22 @@ export class PayablesService {
     input: PayPayable,
     proof: { buffer: Buffer; mime: string; ext: string } | null,
     actorId: string,
+    idempotencyKey?: string,
   ): Promise<PayableCommitment> {
+    // Idempotencia: un retry de red con la misma key devuelve el pago ya hecho
+    // sin re-desembolsar ni re-subir el comprobante.
+    const endpoint = `payables/${id}/pay`;
+    if (idempotencyKey) {
+      const cached = await this.idempotency.findCached<PayableCommitment>(idempotencyKey, endpoint);
+      if (cached) return cached.body;
+    }
     const row = await this.prisma.payableCommitment.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Compromiso no encontrado.');
     if (row.status !== 'PENDING') throw new BadRequestException('El compromiso ya no está pendiente.');
 
     const amount = Number(row.amount);
-    const cash = round2(input.cashAmount);
-    const bank = round2(input.bankAmount);
+    const cash = roundMoney(input.cashAmount);
+    const bank = roundMoney(input.bankAmount);
     if (cash < 0 || bank < 0) throw new BadRequestException('Los montos no pueden ser negativos.');
     if (Math.abs(cash + bank - amount) > 0.01) {
       throw new BadRequestException(
@@ -98,7 +108,11 @@ export class PayablesService {
       entityId: id,
       metadata: { beneficiary: row.beneficiary, amount, cashAmount: cash, bankAmount: bank },
     });
-    return this.toDto(updated);
+    const dto = this.toDto(updated);
+    if (idempotencyKey) {
+      await this.idempotency.cache({ key: idempotencyKey, endpoint, body: dto, statusCode: 201, userId: actorId });
+    }
+    return dto;
   }
 
   async cancel(id: string, actorId: string): Promise<void> {
@@ -159,8 +173,4 @@ export class PayablesService {
       createdAt: row.createdAt.toISOString(),
     };
   }
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

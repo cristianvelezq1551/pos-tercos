@@ -24,9 +24,9 @@ type Row = Prisma.CortesiaRequestGetPayload<object>;
 
 /**
  * Cortesías: un producto regalado (línea de un pedido o suelto). El cajero la
- * SOLICITA — el stock se descuenta al instante (el producto ya se entregó) y
- * queda PENDING. Un admin/dueño la confirma o rechaza en el panel de
- * Solicitudes. El gasto a costo (COGS) se reconoce sobre las APROBADAS.
+ * SOLICITA y queda PENDING (sin tocar stock). Un admin/dueño la APRUEBA —recién
+ * ahí se descuenta el stock a costo FIFO— o la rechaza (no toca stock) en el
+ * panel de Solicitudes. El gasto a costo (COGS) se reconoce sobre las APROBADAS.
  */
 @Injectable()
 export class CortesiasService {

@@ -184,6 +184,14 @@ describe('runLedgerFifo · edición de pedidos (ajustes de consumo)', () => {
     });
     // Quedan 11: 1@10 + 2@20 (devueltos al frente) + 8@20.
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 11, value: 210, unknownQty: 0 });
+    // El DESGLOSE por lote (lo que muestra /cogs/fifo-lots) queda en orden FIFO
+    // correcto: el lote viejo ($10) primero, luego los de $20. Antes del fix una
+    // edición corrompía este desglose (devolvía de más).
+    expect(r.remainingLots.get('INGREDIENT:ing1')).toEqual([
+      { qty: 1, unitCost: 10 },
+      { qty: 2, unitCost: 20 },
+      { qty: 8, unitCost: 20 },
+    ]);
   });
 
   it('CRÍTICO: editar-y-luego-anular deja la venta en cero y el stock íntegro', () => {

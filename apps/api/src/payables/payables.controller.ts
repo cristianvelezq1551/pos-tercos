@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Post,
@@ -15,6 +16,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   CreatePayableSchema,
+  IDEMPOTENCY_HEADER,
+  IdempotencyKeySchema,
   PayPayableSchema,
   PayableStatusEnum,
   type CreatePayable,
@@ -55,6 +58,7 @@ export class PayablesController {
     @CurrentUser() user: JwtAccessPayload,
     @Body('payload') payloadRaw: string | undefined,
     @UploadedFile() file: Express.Multer.File | undefined,
+    @Headers(IDEMPOTENCY_HEADER) idemKey?: string,
   ): Promise<PayableCommitment> {
     if (!payloadRaw) throw new BadRequestException('Falta el payload del pago.');
     let parsed: unknown;
@@ -70,7 +74,8 @@ export class PayablesController {
       if (!detected) throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
       proof = { buffer: file.buffer, mime: detected.mime, ext: detected.ext };
     }
-    return this.payables.pay(id, input, proof, user.sub);
+    const idempotencyKey = idemKey && IdempotencyKeySchema.safeParse(idemKey).success ? idemKey : undefined;
+    return this.payables.pay(id, input, proof, user.sub, idempotencyKey);
   }
 
   @Post(':id/cancel')

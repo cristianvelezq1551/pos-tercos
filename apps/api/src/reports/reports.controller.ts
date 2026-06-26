@@ -158,8 +158,11 @@ export class ReportsController {
     return this.cogs.getInventoryValuation();
   }
 
-  /** Lotes FIFO restantes por stockable — para el desglose de rendimiento en el
-   *  editor de receta ("tu inventario rinde N porciones a $X"). Admin/Dueño. */
+  /** Lotes FIFO restantes por stockable — para el desglose de rendimiento y
+   *  costo por lote de cada insumo/subproducto en el editor de receta ("tu
+   *  inventario rinde N porciones a $X"). `@AdminAccess` es DELIBERADO: el admin
+   *  operativo necesita ver los costos por lote para gestionar recetas (a
+   *  diferencia del resto de reportes financieros que son Dueño-only). */
   @AdminAccess()
   @Get('cogs/fifo-lots')
   getFifoLots(): Promise<FifoLotsResponse> {

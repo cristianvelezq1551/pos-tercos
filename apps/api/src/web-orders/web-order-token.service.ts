@@ -27,6 +27,13 @@ export class WebOrderTokenService {
     if (explicit && explicit.length > 0) {
       this.secret = explicit;
     } else {
+      // En PROD el secret propio es OBLIGATORIO: caer a JWT_ACCESS_SECRET acopla
+      // dos dominios de firma (sesión vs token público) — si uno se filtra, caen
+      // ambos. El fallback solo se permite en dev. (assertRequiredEnv ya lo exige
+      // al arranque; este throw es la defensa redundante en el propio servicio.)
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('WEB_ORDER_TOKEN_SECRET es obligatorio en producción (sin fallback).');
+      }
       const fallback = process.env.JWT_ACCESS_SECRET;
       if (!fallback) {
         throw new Error(

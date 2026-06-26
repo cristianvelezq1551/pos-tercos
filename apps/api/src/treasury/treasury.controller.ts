@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import {
   CreateAdjustmentSchema,
   CreateTransferSchema,
+  IDEMPOTENCY_HEADER,
+  IdempotencyKeySchema,
   UpdateTreasuryConfigSchema,
   type CreateAdjustment,
   type CreateTransfer,
@@ -15,6 +17,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TreasuryService } from './treasury.service';
+
+/** Valida (si vino) el header Idempotency-Key; undefined si ausente. */
+function parseIdemKey(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return IdempotencyKeySchema.safeParse(raw).success ? raw : undefined;
+}
 
 /** Tesorería — control de caja de dos bolsillos. Dueño-only. */
 @Controller('treasury')
@@ -50,16 +58,18 @@ export class TreasuryController {
   createTransfer(
     @Body(new ZodValidationPipe(CreateTransferSchema)) body: CreateTransfer,
     @CurrentUser() actor: JwtAccessPayload,
+    @Headers(IDEMPOTENCY_HEADER) idemKey?: string,
   ): Promise<TreasuryMovement> {
-    return this.treasury.createTransfer(body, actor.sub);
+    return this.treasury.createTransfer(body, actor.sub, parseIdemKey(idemKey));
   }
 
   @Post('adjustment')
   createAdjustment(
     @Body(new ZodValidationPipe(CreateAdjustmentSchema)) body: CreateAdjustment,
     @CurrentUser() actor: JwtAccessPayload,
+    @Headers(IDEMPOTENCY_HEADER) idemKey?: string,
   ): Promise<TreasuryMovement> {
-    return this.treasury.createAdjustment(body, actor.sub);
+    return this.treasury.createAdjustment(body, actor.sub, parseIdemKey(idemKey));
   }
 
   @Post('movements/:id/void')

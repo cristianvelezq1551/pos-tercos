@@ -7,6 +7,7 @@
  */
 
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -100,6 +101,22 @@ describe('Payables E2E', () => {
       .set(auth(duenoToken))
       .field('payload', JSON.stringify({ cashAmount: 0, bankAmount: 10_000 }))
       .expect(400);
+  });
+
+  it('idempotencia: pagar dos veces con la misma key devuelve el mismo pago (no re-desembolsa)', async () => {
+    const id = await createPayable(25_000);
+    const key = randomUUID();
+    const pay = () =>
+      request
+        .post(`/payables/${id}/pay`)
+        .set(auth(duenoToken))
+        .set('Idempotency-Key', key)
+        .field('payload', JSON.stringify({ cashAmount: 0, bankAmount: 25_000 }))
+        .expect(201);
+    const a = await pay();
+    const b = await pay(); // retry con la MISMA key → respuesta cacheada, no un 2do pago
+    expect(b.body.id).toBe(a.body.id);
+    expect(b.body.status).toBe('PAID');
   });
 
   it('cancela un compromiso PENDING', async () => {

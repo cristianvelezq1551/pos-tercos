@@ -1,8 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+// Redondeo canónico del dominio (2 decimales, montos COP cobrados/abonados).
+import { roundMoney as round2 } from '@pos-tercos/domain';
 
 /**
  * Resuelve el reparto de un pago por bolsillo (efectivo/cuenta). Si no se

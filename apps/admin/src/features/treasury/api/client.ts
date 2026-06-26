@@ -36,12 +36,20 @@ export function listTreasuryMovements(): Promise<TreasuryMovement[]> {
 
 export function createTransfer(input: CreateTransfer): Promise<TreasuryMovement> {
   validateInput(CreateTransferSchema, input);
-  return request('/treasury/transfer', { method: 'POST', body: JSON.stringify(input) }, TreasuryMovementSchema);
+  return request(
+    '/treasury/transfer',
+    { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': crypto.randomUUID() } },
+    TreasuryMovementSchema,
+  );
 }
 
 export function createAdjustment(input: CreateAdjustment): Promise<TreasuryMovement> {
   validateInput(CreateAdjustmentSchema, input);
-  return request('/treasury/adjustment', { method: 'POST', body: JSON.stringify(input) }, TreasuryMovementSchema);
+  return request(
+    '/treasury/adjustment',
+    { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': crypto.randomUUID() } },
+    TreasuryMovementSchema,
+  );
 }
 
 export async function voidTreasuryMovement(id: string): Promise<void> {
