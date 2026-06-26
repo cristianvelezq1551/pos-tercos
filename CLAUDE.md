@@ -185,7 +185,7 @@ Razón: insumos y productos `directResale=true` (ej. botellas de gaseosa, snacks
 
 **`expandRecipe`** en `@pos-tercos/domain`:
 - Pura, sin IO.
-- Detección de ciclos (`RecipeCycleError`) + `MAX_DEPTH = 10`.
+- Detección de ciclos (`RecipeCycleError`) + `MAX_DEPTH = 32`.
 - Aplica `quantityNeta / (1 - mermaPct) / yield` recursivamente.
 - Retorna `Map<ingredientId, totalQuantityInUnitRecipe>`.
 
@@ -290,9 +290,9 @@ apps/api/src/notifications/
 
 ---
 
-## 5. Schema DB (37 modelos + 13 enums + 1 sequence)
+## 5. Schema DB (44 modelos + 14 enums + 1 sequence)
 
-> **Conteo real a 2026-06-24 (auditoría): 37 models / 13 enums.** La lista numerada de abajo quedó en la v2 (30/12) y NO refleja las tablas agregadas después: `stock_counts`, `sale_payments`, `payment_method_settings`, `display_slides`, `display_tracks`, `fixed_costs` + `fixed_cost_payments`, y el módulo de nómina (`payroll_days` / `payroll_adjustments` / `payroll_payments`, que reemplazaron `worker_attendance` / `worker_commissions`). Columnas nuevas no listadas: `products.preparation_steps` + `subproducts.preparation_steps` (biblia), `sales`/`shifts` varios (tips, arqueo digital). Enums: `PaymentMethod` ganó `CARD`; `PayType` reemplazó `WorkerCommissionType`. ⚠️ El rol `ADMIN_FINANCIERO` se referencia en código (`products`/`shifts` controllers) pero NO existe en el enum `UserRole` (deuda).
+> **Conteo real a 2026-06-26 (auditoría): 44 models / 14 enums.** La lista numerada de abajo quedó en la v2 (30/12) y NO refleja las tablas agregadas después: `stock_counts`, `sale_payments`, `payment_method_settings`, `display_slides`, `display_tracks`, `fixed_costs` + `fixed_cost_payments`, el módulo de nómina (`payroll_days` / `payroll_adjustments` / `payroll_payments`, que reemplazaron `worker_attendance` / `worker_commissions`), y la capa financiera reciente (tesorería, cortesías, payables, web-hero). Columnas nuevas no listadas: `products.preparation_steps` + `subproducts.preparation_steps` (biblia), `sales`/`shifts` varios (tips, arqueo digital). Enums: `PaymentMethod` ganó `CARD`; `PayType` reemplazó `WorkerCommissionType`. ✅ El rol `ADMIN_FINANCIERO` que se citaba como deuda YA NO se referencia en código (0 ocurrencias); el enum `UserRole` es coherente.
 >
 > Actualizado en reorientación v2 (2026-05-22). Eliminados: `RepartidorAvailability`, `WEB_DELIVERY` de `SaleType`, 5 estados de delivery de `SaleStatus`. Agregada: tabla `whatsapp_messages`.
 >
@@ -1005,7 +1005,7 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 - **Backup**: `.github/workflows/db-backup.yml` — pg_dump -Fc nocturno → R2 con verificación (`pg_restore --list`) y retención 30 días. Restore drill documentado en deploy.md §7. Secrets de GitHub pendientes de configurar al crear la DB de prod.
 - **Alertas**: `ServerErrorAlertFilter` (APP_FILTER global, hereda BaseExceptionFilter) — 5xx inesperado → log con stack + WhatsApp al dueño (throttle 10 min por firma). `POST /client-logs` (Throttle 30/min) recibe los errores best-effort del POS (`logError` reporta con throttle local 10/min). Uptime externo: registrar `/healthz` en UptimeRobot (deploy.md §8).
 - **Sesión muerta**: SessionKeeper → dos 401 consecutivos del refresh = redirect a /login.
-- **Regla cumplida**: TODOS los componentes del POS <200 líneas (mayor: 199). Helpers comunes en `apps/pos/src/lib/` (`errors.ts getErrorMessage`, `dates.ts startOfTodayIso`, `audio.ts getAudioContext`) y `features/shifts/lib/sale-statuses.ts` (`PAID_STATUSES`) — no re-duplicar.
+- **Regla <200 líneas (mayormente cumplida)**: 3 componentes la exceden tras features posteriores y están pendientes de partir — `HistoryRow.tsx` (262), `CartPanel.tsx` (220), `EditSaleModal.tsx` (204). El resto del POS cumple. Helpers comunes en `apps/pos/src/lib/` (`errors.ts getErrorMessage`, `dates.ts startOfTodayIso`, `audio.ts getAudioContext`) y `features/shifts/lib/sale-statuses.ts` (`PAID_STATUSES`) — no re-duplicar.
 - **Smoke navegador**: `apps/pos/e2e/smoke.spec.ts` (Playwright, chromium) — login→vender→cobrar→cerrar caja contra los dev servers corriendo (`pnpm -F @pos-tercos/pos test:e2e-ui`); setup/teardown por API maneja la caja única (reabre con dueño) y deja la caja OPEN al final. Es smoke LOCAL, no corre en CI.
 
 ### Tests POS (Vitest — `pnpm -F @pos-tercos/pos test`)
