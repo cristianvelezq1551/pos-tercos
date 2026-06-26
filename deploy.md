@@ -16,6 +16,68 @@
 
 ---
 
+## 0. Checklist BLOQUEANTE de inauguración (go / no-go)
+
+> **No abrir el local a producción hasta tildar TODOS estos puntos.** Salen de
+> las auditorías de prod-readiness (2026-06). Cada uno tiene su detalle en la
+> sección referenciada.
+
+### 0.1 Operacional (obligatorio el día 1)
+
+- [ ] **Cold-start de subproductos** — antes de abrir, producir todas las tandas
+      en `/subproducts` (o KDS `/production`). Si no, todo producto preparado
+      sale **"Agotado"** y el cobro lo rechaza con 409. Ver §6.bis. 🔴
+- [ ] **Usuario dueño con password fuerte** — NO correr `prisma db seed` en prod
+      (crea 5 usuarios con `dev12345`/`mustChangePwd:false`). Crear el dueño a
+      mano con password fuerte. Ver §0.4. 🔴
+- [ ] **Railway en 1 réplica fija** (sin autoscale) — hay estado in-memory
+      (turnero, throttle, SSE, rooms WS) que asume single-instance. 🔴
+- [ ] **Healthcheck de Railway = `/healthz`** (NO `/health`, que da 404). 🟠
+- [ ] **`pg_dump` manual + simulacro de restore** justo antes del primer
+      `migrate deploy` con datos reales (el backup automático es nocturno; no
+      cubre el instante de la migración). Ver §7. 🟠
+- [ ] **Secrets de GitHub del backup** configurados (`RAILWAY_DB_URL`, `R2_*`) +
+      una corrida `workflow_dispatch` de prueba. Ver §7. 🟠
+- [ ] **Proveedor de WhatsApp definido** — existe un adapter Kapso (Cloud API)
+      con prioridad sobre OpenWA; setear las vars del que se use. Ver §1.2. 🟠
+
+### 0.2 Endurecimiento pre-prod (recomendado fuerte)
+
+- [ ] **Bump de dependencias con CVE production-facing**: `next` (SSRF/DoS,
+      ≥15.5.16) y `multer` (DoS, ≥2.2.0 — es el path de subida de facturas).
+      `pnpm audit --prod` reporta 16 high. 🟠
+- [ ] **print-agent: auth obligatoria + CORS allowlist** — hoy `PRINT_AGENT_SECRET`
+      es opcional (acepta todo) y CORS `*`: cualquier web que el operador visite
+      puede abrir el cajón monedero. Exigir el secreto en prod. 🟠
+- [ ] **Timeouts de red**: `fetch` al print-agent y al R2 sin timeout cuelgan el
+      request del cajero si la Pi/túnel/R2 queda half-open. Agregar
+      `AbortSignal.timeout`. 🟠
+- [ ] **Alerta on-failure del backup** — el cron de backup falla en silencio;
+      agregar notificación si falla (hoy solo se descubre al necesitar restore). 🟠
+- [ ] **UptimeRobot sobre `/healthz`** — el canal de alerta de 5xx viaja por
+      WhatsApp (el servicio que más probablemente cae); un monitor externo
+      independiente es la red de seguridad real. Ver §8. 🟠
+
+### 0.3 Deuda de escala (no bloquea el día 1; resolver antes de ~6 meses)
+
+- [ ] **Replay FIFO + índice `paidAt`** — los reportes (`/finanzas`, dashboard)
+      hacen replay de TODA la tabla `inventory_movements` en cada request, con un
+      bug O(n²) en el agrupado de producciones, sobre el mismo event loop que
+      cobra. A ~1 año de datos congela el POS al abrir finanzas. Plan: snapshot
+      FIFO con fecha de corte + `@@index([paidAt])` + pre-agrupar tandas.
+- [ ] **Retención** de `audit_log` / `sale_status_log` (insert-only sin purga).
+
+### 0.4 Crear el usuario dueño en prod (sin seed)
+
+```bash
+# Conectado al Postgres de Railway, con un hash bcrypt de la password real:
+#   node -e "console.log(require('bcrypt').hashSync('TU_PASSWORD_FUERTE', 10))"
+INSERT INTO users (id, email, full_name, role, password_hash, must_change_pwd, active, created_at, updated_at)
+VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcrypt>', false, true, now(), now());
+```
+
+---
+
 ## 1. Backend en Railway
 
 ### 1.1 Crear servicios
