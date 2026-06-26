@@ -38,13 +38,17 @@ import { detectImageMime, detectImageMimeLoose } from '../common/image-mime';
 import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
+import { InvoicePaymentsService } from './invoice-payments.service';
 import { InvoicesService } from './invoices.service';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 @Controller('invoices')
 export class InvoicesController {
-  constructor(private readonly invoices: InvoicesService) {}
+  constructor(
+    private readonly invoices: InvoicesService,
+    private readonly invoicePayments: InvoicePaymentsService,
+  ) {}
 
   /** FASE 15.A — sweep manual de huérfanos. El cron corre semanal. */
   @OnlyDueno()
@@ -257,7 +261,7 @@ export class InvoicesController {
     if (paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(paidAt)) {
       throw new BadRequestException('paidAt debe ser YYYY-MM-DD.');
     }
-    return this.invoices.markPaymentPaid(
+    return this.invoicePayments.markPaymentPaid(
       id,
       requirePin(pin),
       user.sub,
@@ -279,7 +283,7 @@ export class InvoicesController {
     @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
   ): Promise<Invoice> {
-    return this.invoices.unmarkPayment(id, requirePin(pin), user.sub);
+    return this.invoicePayments.unmarkPayment(id, requirePin(pin), user.sub);
   }
 
   /** Comprobante de transferencia al proveedor (binario). Dueño. */
@@ -289,7 +293,7 @@ export class InvoicesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Res() res: Response,
   ): Promise<void> {
-    const { buffer, mime } = await this.invoices.getPaymentProof(id);
+    const { buffer, mime } = await this.invoicePayments.getPaymentProof(id);
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);

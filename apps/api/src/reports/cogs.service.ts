@@ -47,7 +47,10 @@ export class CogsService {
    * llamados concurrentes. Sin invalidación por escritura a propósito: un
    * reporte de COGS tolera ≤ TTL de staleness (no es dato transaccional vivo).
    */
-  private static readonly LEDGER_TTL_MS = 20_000;
+  // 60s: el replay (O(n) tras quitar el O(n²) de tandas) sigue siendo caro a
+  // escala; un reporte financiero tolera 1 min de staleness sin problema. El KPI
+  // de cortesías y el estado mensual leen la MISMA caché → siguen coincidiendo.
+  private static readonly LEDGER_TTL_MS = 60_000;
   private ledgerCache: { promise: Promise<LedgerFifo>; at: number } | null = null;
 
   private runLedger(): Promise<LedgerFifo> {

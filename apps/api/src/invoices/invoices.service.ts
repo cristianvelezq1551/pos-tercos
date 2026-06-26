@@ -8,37 +8,21 @@ import {
   type ExtractedInvoice,
   type ExtractInvoiceResponse,
   type Invoice,
-  type InvoiceItem,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
-import { extensionForMime, mimeForExtension, type SupportedImageMime } from '../common/image-mime';
-import { resolvePocketSplit } from '../common/pocket-split';
+import { extensionForMime, type SupportedImageMime } from '../common/image-mime';
 import { InventoryService } from '../inventory/inventory.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SuppliersService } from '../suppliers/suppliers.service';
+import { includeFull, toInvoiceDto } from './invoices.mappers';
 
 /** Suba de costo (vs último conocido) que dispara alerta WhatsApp al dueño. */
 const COST_INCREASE_ALERT_PCT = 0.15;
-import { SuppliersService } from '../suppliers/suppliers.service';
-
-type DbInvoiceWithDetail = Prisma.InvoiceGetPayload<{
-  include: {
-    supplier: { select: { name: true } };
-    uploadedBy: { select: { fullName: true } };
-    confirmedBy: { select: { fullName: true } };
-    paymentActor: { select: { fullName: true } };
-    items: {
-      include: {
-        ingredient: { select: { name: true } };
-        product: { select: { name: true } };
-      };
-    };
-  };
-}>;
 
 /**
  * Convierte cantidad declarada en factura a la unidad BASE de stock.
@@ -858,145 +842,6 @@ export class InvoicesService {
     });
   }
 
-  // ==================================================================
-  // CONTROL DE PAGO A PROVEEDORES (solo Dueño + PIN)
-  // ==================================================================
-
-  /** Marca una factura confirmada como PAGADA con comprobante de transferencia.
-   *  Espeja el patrón de `WorkersService.markPaymentPaid`. */
-  async markPaymentPaid(
-    invoiceId: string,
-    pin: string,
-    actorId: string,
-    proof: { buffer: Buffer; mime: string; ext: string },
-    opts: { paidAtYmd?: string; note?: string; cashAmount?: number; bankAmount?: number },
-  ): Promise<Invoice> {
-    const approverId = await this.approvals.verify(pin);
-    const existing = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-      select: {
-        id: true,
-        status: true,
-        total: true,
-        paymentStatus: true,
-        paymentProofKey: true,
-      },
-    });
-    if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
-    if (existing.status !== 'CONFIRMED') {
-      throw new BadRequestException(
-        'Solo se pueden marcar pagadas las facturas CONFIRMADAS.',
-      );
-    }
-    // Fast-path: si ya está pagada, no re-procesar (evita sobrescribir el
-    // reparto por bolsillo → Tesorería subcontaría el efectivo en silencio).
-    if (existing.paymentStatus === 'PAID') {
-      throw new BadRequestException('La factura ya está marcada como pagada.');
-    }
-    const paidAt = opts.paidAtYmd ? new Date(`${opts.paidAtYmd}T12:00:00.000Z`) : new Date();
-    const total = existing.total !== null ? Number(existing.total) : 0;
-    const split = resolvePocketSplit(opts.cashAmount, opts.bankAmount, total);
-
-    // Sube comprobante; si ya había uno, lo borramos cuando termine el upsert.
-    const stored = await this.storage.put(
-      `invoice-payments/${invoiceId}`,
-      proof.buffer,
-      proof.mime,
-      proof.ext,
-    );
-    if (existing.paymentProofKey && existing.paymentProofKey !== stored.key) {
-      await this.storage.delete(existing.paymentProofKey).catch(() => undefined);
-    }
-
-    // Claim atómico condicionado al estado: si un re-POST concurrente (doble-click
-    // / retry de un upload lento / 2do dispositivo) corre a la par, solo uno
-    // transiciona a PAID. El WHERE acepta PENDING o null (facturas legacy
-    // confirmadas antes del módulo de pago), nunca PAID.
-    const claim = await this.prisma.invoice.updateMany({
-      where: { id: invoiceId, OR: [{ paymentStatus: 'PENDING' }, { paymentStatus: null }] },
-      data: {
-        paymentStatus: 'PAID',
-        paidAt,
-        paymentProofKey: stored.key,
-        paymentActorId: actorId,
-        paymentNote: opts.note ?? null,
-        paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
-        paymentCashAmount: split.cash,
-        paymentBankAmount: split.bank,
-      },
-    });
-    if (claim.count === 0) {
-      throw new BadRequestException('La factura cambió de estado (se pagó en paralelo). Recargá.');
-    }
-    const updated = await this.prisma.invoice.findUniqueOrThrow({
-      where: { id: invoiceId },
-      include: includeFull(),
-    });
-
-    await this.audit.log({
-      userId: actorId,
-      action: 'INVOICE_PAYMENT_MARKED',
-      entityType: 'invoice',
-      entityId: invoiceId,
-      metadata: {
-        approverId,
-        total: existing.total !== null ? Number(existing.total) : null,
-        paidAt: paidAt.toISOString(),
-        proofImageKey: stored.key,
-      },
-    });
-    return toInvoiceDto(updated);
-  }
-
-  /** Revierte el pago: borra el registro y la imagen, vuelve a PENDING. */
-  async unmarkPayment(invoiceId: string, pin: string, actorId: string): Promise<Invoice> {
-    const approverId = await this.approvals.verify(pin);
-    const existing = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-      select: { id: true, status: true, paymentStatus: true, paymentProofKey: true },
-    });
-    if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
-    if (existing.status !== 'CONFIRMED') {
-      throw new BadRequestException('Solo aplica a facturas confirmadas.');
-    }
-    if (existing.paymentProofKey) {
-      await this.storage.delete(existing.paymentProofKey).catch(() => undefined);
-    }
-    const updated = await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        paymentStatus: 'PENDING',
-        paidAt: null,
-        paymentProofKey: null,
-        paymentActorId: null,
-        paymentNote: null,
-      },
-      include: includeFull(),
-    });
-    await this.audit.log({
-      userId: actorId,
-      action: 'INVOICE_PAYMENT_UNMARKED',
-      entityType: 'invoice',
-      entityId: invoiceId,
-      metadata: { approverId, prevStatus: existing.paymentStatus },
-    });
-    return toInvoiceDto(updated);
-  }
-
-  /** Lee el comprobante de pago al proveedor. */
-  async getPaymentProof(invoiceId: string): Promise<{ buffer: Buffer; mime: string }> {
-    const row = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-      select: { paymentProofKey: true },
-    });
-    if (!row?.paymentProofKey) {
-      throw new NotFoundException('Comprobante no encontrado.');
-    }
-    const buffer = await this.storage.get(row.paymentProofKey);
-    const ext = row.paymentProofKey.split('.').pop() ?? '';
-    return { buffer, mime: mimeForExtension(ext) };
-  }
-
   async reject(id: string, userId: string, reason?: string): Promise<Invoice> {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
@@ -1020,72 +865,4 @@ export class InvoicesService {
     });
     return toInvoiceDto(updated);
   }
-}
-
-function includeFull() {
-  return {
-    supplier: { select: { name: true } },
-    uploadedBy: { select: { fullName: true } },
-    confirmedBy: { select: { fullName: true } },
-    paymentActor: { select: { fullName: true } },
-    items: {
-      include: {
-        ingredient: { select: { name: true } },
-        product: { select: { name: true } },
-      },
-      orderBy: { sortOrder: 'asc' },
-    },
-  } satisfies Prisma.InvoiceInclude;
-}
-
-function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
-  const items: InvoiceItem[] = row.items.map((it) => ({
-    id: it.id,
-    invoiceId: it.invoiceId,
-    // Las facturas solo refieren INGREDIENT o PRODUCT (subproductos no se
-    // compran, se producen). El cast narrowing aquí es seguro porque la app
-    // nunca crea invoice_items con entityType='SUBPRODUCT'.
-    entityType: it.entityType as 'INGREDIENT' | 'PRODUCT' | null,
-    ingredientId: it.ingredientId,
-    productId: it.productId,
-    itemName:
-      it.entityType === 'INGREDIENT'
-        ? (it.ingredient?.name ?? null)
-        : it.entityType === 'PRODUCT'
-          ? (it.product?.name ?? null)
-          : null,
-    descriptionRaw: it.descriptionRaw,
-    quantity: Number(it.quantity),
-    unit: it.unit,
-    unitPrice: Number(it.unitPrice),
-    total: Number(it.total),
-    sortOrder: it.sortOrder,
-  }));
-  const paymentStatus = row.paymentStatus as 'PENDING' | 'PAID' | null;
-  return {
-    id: row.id,
-    supplierId: row.supplierId,
-    supplierName: row.supplier?.name ?? null,
-    invoiceNumber: row.invoiceNumber,
-    total: row.total !== null ? Number(row.total) : null,
-    iva: row.iva !== null ? Number(row.iva) : null,
-    photoStorageKey: row.photoStorageKey,
-    aiModelUsed: row.aiModelUsed,
-    status: row.status,
-    uploadedById: row.uploadedById,
-    uploadedByName: row.uploadedBy?.fullName ?? null,
-    confirmedById: row.confirmedById,
-    confirmedByName: row.confirmedBy?.fullName ?? null,
-    confirmedAt: row.confirmedAt?.toISOString() ?? null,
-    notes: row.notes,
-    paymentStatus,
-    paidAt: row.paidAt?.toISOString() ?? null,
-    hasPaymentProof: row.paymentProofKey !== null,
-    paymentActorId: row.paymentActorId,
-    paymentActorName: row.paymentActor?.fullName ?? null,
-    paymentNote: row.paymentNote,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    items,
-  };
 }
