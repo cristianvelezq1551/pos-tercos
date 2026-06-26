@@ -239,6 +239,50 @@ describe('Sales Edit E2E', () => {
     });
   });
 
+  describe('Edición + anulación: integridad FIFO del stock', () => {
+    const PIN = '778899';
+
+    it('editar (quitar) y luego anular restaura el stock por el NETO consumido', async () => {
+      // PIN de aprobación del dueño (requerido para anular).
+      await request
+        .post('/approvals/pin')
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({ pin: PIN, password: 'dev12345' })
+        .expect((r) => {
+          if (r.status >= 300) throw new Error(`PIN setup falló: ${r.status} ${JSON.stringify(r.body)}`);
+        });
+
+      const stock0 = await gaseosaStock();
+      const sale = await createPaidSale([{ productId: gaseosaId, quantity: 3 }]); // consume 3
+      expect(await gaseosaStock()).toBe(stock0 - 3);
+
+      // Edición: quitar 2 (queda 1) → devuelve 2. Neto consumido = 1.
+      await request
+        .patch(`/sales/${sale.id}/items`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ items: [{ productId: gaseosaId, quantity: 1 }] })
+        .expect(200);
+      expect(await gaseosaStock()).toBe(stock0 - 1);
+
+      // Anular: reverso del NETO consumido (1) → stock 100% restaurado.
+      await request
+        .post(`/sales/${sale.id}/void`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .set('X-Approval-Pin', PIN)
+        .send({ reason: 'prueba edición + anulación' })
+        .expect(201);
+      expect(await gaseosaStock()).toBe(stock0);
+
+      // El void emite UN reverso por stockable = neto consumido (no uno por cada
+      // movement): así el ledger FIFO netea a cero sin reversos parciales sueltos.
+      const reversos = await prisma.inventoryMovement.findMany({
+        where: { productId: gaseosaId, sourceId: sale.id, notes: { startsWith: 'Reverso de void' } },
+      });
+      expect(reversos).toHaveLength(1);
+      expect(Number(reversos[0]!.delta)).toBe(1);
+    });
+  });
+
   describe('PATCH /sales/:id/payment', () => {
     it('reclasifica CASH → TRANSFER (corrige descuadres)', async () => {
       const sale = await createPaidSale([{ productId: gaseosaId, quantity: 2 }], 'CASH');

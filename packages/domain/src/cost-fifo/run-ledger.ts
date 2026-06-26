@@ -263,39 +263,62 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     const delta = m.delta;
     const iso = m.createdAt.toISOString();
 
-    // Reversión de venta (anulación): SALE con delta > 0.
+    // Reverso de consumo de venta (anulación o ajuste de edición): SALE con
+    // delta > 0. Devuelve EXACTAMENTE `delta` unidades de los draws pendientes
+    // de la venta —lo más recién consumido primero (reverso FIFO)—, reduce el
+    // registro de draws y atribuye el costo negativo SOLO de lo devuelto.
+    //
+    // Antes devolvía TODOS los draws sin importar `delta` y borraba el registro:
+    // correcto para una anulación total, pero corrompía una edición parcial
+    // (devolvía de más) y dejaba al void sin draws para revertir. El void emite
+    // UN reverso por stockable = neto consumido, así que `delta` nunca excede
+    // los draws pendientes en el flujo normal (el cap es defensa ante el borde
+    // unknownQty, igual que antes).
     if (m.type === 'SALE' && delta > 0) {
       const drawKey = `${m.sourceId ?? ''}:${key}`;
       const draws = drawsBySource.get(drawKey) ?? [];
+      let toReturn = delta;
       let returnedCost = 0;
       let returnedUnknown = 0;
       let returnedQty = 0;
-      // Re-inyectar al FRENTE en orden inverso (más viejos primero).
-      const q = queues.get(key) ?? [];
-      for (let i = draws.length - 1; i >= 0; i--) {
+      // Lotes a re-inyectar, en orden [más reciente … más viejo].
+      const returnedLots: Lot[] = [];
+      for (let i = draws.length - 1; i >= 0 && toReturn > 0; i--) {
         const d = draws[i]!;
-        q.unshift({
+        const ret = Math.min(d.qty, toReturn);
+        if (ret <= 0) continue;
+        returnedLots.push({
           movementId: d.movementId,
-          qty: d.qty,
+          qty: ret,
           unitCost: d.unitCost,
           createdAt: d.createdAt,
         });
-        returnedQty += d.qty;
-        if (d.unitCost === null) returnedUnknown += d.qty;
-        else returnedCost += d.qty * d.unitCost;
+        returnedQty += ret;
+        if (d.unitCost === null) returnedUnknown += ret;
+        else returnedCost += ret * d.unitCost;
+        d.qty -= ret;
+        toReturn -= ret;
       }
+      // Descartar los draws ya agotados (desde el final) y actualizar el registro.
+      while (draws.length > 0 && draws[draws.length - 1]!.qty <= 0) draws.pop();
+      if (draws.length === 0) drawsBySource.delete(drawKey);
+      else drawsBySource.set(drawKey, draws);
+      // Re-inyectar al FRENTE: unshift en orden [más reciente … más viejo] deja
+      // el más viejo primero en la cola (lo devuelto se consumió del frente, así
+      // que es más viejo que el resto → preserva FIFO).
+      const q = queues.get(key) ?? [];
+      for (const lot of returnedLots) q.unshift(lot);
       queues.set(key, q);
-      drawsBySource.delete(drawKey);
-      // Atribuir el reverso (cost negativo) a la misma venta original.
-      if (m.sourceId) {
+      // Atribuir el reverso a la venta: cantidad y costo NEGATIVOS (un-consume).
+      if (m.sourceId && returnedQty > 0) {
         const stockableId = key.slice(key.indexOf(':') + 1);
         attributeToSale(
           m.entityType,
           stockableId,
           m.sourceId,
           -roundCost(returnedCost),
-          returnedQty,
-          returnedUnknown,
+          -returnedQty,
+          -returnedUnknown,
         );
       }
       continue;
@@ -315,7 +338,14 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     // Consumo (SALE, WASTE, MANUAL_ADJUSTMENT-).
     const { cost, unknownQty, draws } = consumeFifo(key, -delta);
     if (m.type === 'SALE' && m.sourceId) {
-      drawsBySource.set(`${m.sourceId}:${key}`, draws);
+      // ACUMULAR los draws de este consumo (no sobrescribir): una venta puede
+      // consumir el mismo stockable más de una vez (cobro inicial + ajuste por
+      // edición que agrega producto). Sobrescribir perdía los draws previos →
+      // el void no podía revertir el consumo completo.
+      const drawKey = `${m.sourceId}:${key}`;
+      const acc = drawsBySource.get(drawKey) ?? [];
+      for (const d of draws) acc.push(d);
+      drawsBySource.set(drawKey, acc);
       const stockableId = key.slice(key.indexOf(':') + 1);
       attributeToSale(m.entityType, stockableId, m.sourceId, cost, -delta, unknownQty);
     } else if (m.type === 'WASTE') {

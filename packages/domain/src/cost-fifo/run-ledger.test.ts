@@ -138,6 +138,79 @@ describe('runLedgerFifo · anulaciones', () => {
   });
 });
 
+describe('runLedgerFifo · edición de pedidos (ajustes de consumo)', () => {
+  // editItems crea movements SALE con el MISMO sourceId que el cobro: delta
+  // negativo si se agrega producto (consume más), positivo si se quita (devuelve).
+
+  it('edición que AGREGA producto: acumula el consumo (no pierde el cobro inicial)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 20, unitCost: 5 }),
+      mov({ delta: -10, type: 'SALE', sourceId: 'sale1' }), // cobro: consume 10
+      mov({ delta: -5, type: 'SALE', sourceId: 'sale1' }), // edición: agrega → consume 5 más
+    ]);
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({
+      cost: 75, // 15 × $5
+      qty: 15,
+      unknownQty: 0,
+    });
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 5, value: 25, unknownQty: 0 });
+  });
+
+  it('edición que QUITA producto: devuelve solo lo editado (no todo el consumo)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 20, unitCost: 5 }),
+      mov({ delta: -10, type: 'SALE', sourceId: 'sale1' }), // cobro: consume 10
+      mov({ delta: 3, type: 'SALE', sourceId: 'sale1' }), // edición: quita 3 → devuelve 3
+    ]);
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({
+      cost: 35, // 7 × $5
+      qty: 7,
+      unknownQty: 0,
+    });
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 13, value: 65, unknownQty: 0 });
+  });
+
+  it('quita producto devolviendo el lote MÁS RECIENTE primero (reverso FIFO)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 6, unitCost: 10 }), // L1 viejo
+      mov({ delta: 10, unitCost: 20 }), // L2 nuevo
+      mov({ delta: -8, type: 'SALE', sourceId: 'sale1' }), // consume 6@10 + 2@20 = 100
+      mov({ delta: 3, type: 'SALE', sourceId: 'sale1' }), // devuelve 3: 2@20 + 1@10 = 50
+    ]);
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({
+      cost: 50, // 100 − 50
+      qty: 5,
+      unknownQty: 0,
+    });
+    // Quedan 11: 1@10 + 2@20 (devueltos al frente) + 8@20.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 11, value: 210, unknownQty: 0 });
+  });
+
+  it('CRÍTICO: editar-y-luego-anular deja la venta en cero y el stock íntegro', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 20, unitCost: 5 }),
+      mov({ delta: -10, type: 'SALE', sourceId: 'sale1' }), // cobro: consume 10
+      mov({ delta: 3, type: 'SALE', sourceId: 'sale1' }), // edición: quita 3 (neto 7)
+      mov({ delta: 7, type: 'SALE', sourceId: 'sale1' }), // void: reverso del NETO consumido (7)
+      mov({ delta: -10, type: 'SALE', sourceId: 'sale2' }), // otra venta: como si la 1ra nunca pasó
+    ]);
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({ cost: 0, qty: 0, unknownQty: 0 });
+    expect(r.saleIngredientCost.get('sale2')?.get('ing1')).toEqual({ cost: 50, qty: 10, unknownQty: 0 });
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 50, unknownQty: 0 });
+  });
+
+  it('agregar-y-luego-anular: el void revierte el consumo COMPLETO (cobro + edición)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 20, unitCost: 5 }),
+      mov({ delta: -10, type: 'SALE', sourceId: 'sale1' }), // cobro: consume 10
+      mov({ delta: -5, type: 'SALE', sourceId: 'sale1' }), // edición: agrega 5 (neto 15)
+      mov({ delta: 15, type: 'SALE', sourceId: 'sale1' }), // void: reverso del neto (15)
+    ]);
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({ cost: 0, qty: 0, unknownQty: 0 });
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 20, value: 100, unknownQty: 0 });
+  });
+});
+
 describe('runLedgerFifo · producción (cruce de stockables)', () => {
   const PROD = { sourceType: 'production', sourceId: 'run1' };
 

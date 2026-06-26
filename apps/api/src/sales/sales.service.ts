@@ -10,6 +10,7 @@ import {
   applyPromotion,
   buildVoidAlertMessage,
   roundMoney,
+  roundsToZeroAt4,
   type PromotionDef,
 } from '@pos-tercos/domain';
 import { DIGITAL_PAYMENT_METHODS, REFUND_VOID_REASON_PREFIX } from '@pos-tercos/types';
@@ -594,26 +595,44 @@ export class SalesService {
         },
       });
       // El pedido estaba PAGADO → descontó stock al cobrarse. Se revierte con
-      // movements compensatorios (insert-only, delta opuesto, type=SALE). La
-      // lectura va DENTRO de la tx, DESPUÉS del UPDATE: así incluye cualquier
-      // ajuste de un editItems que se haya serializado antes (evita dejar un
-      // delta de stock colgado sin neutralizar).
+      // movements compensatorios (insert-only, type=SALE). La lectura va DENTRO
+      // de la tx, DESPUÉS del UPDATE: así incluye cualquier ajuste de un
+      // editItems que se haya serializado antes.
+      //
+      // Se emite UN reverso por stockable = NETO consumido (suma de TODOS los
+      // movements SALE de la venta: cobro + ajustes de edición), no uno por cada
+      // movement. Razón: el ledger FIFO devuelve `delta` unidades por reverso; si
+      // se revirtiera cada movement por separado (ej. +10 del cobro y −3 de una
+      // edición), el reverso parcial quedaría descoordinado y el costo/stock del
+      // FIFO no netearía a cero. El neto (+7) lo resuelve de una.
       const originals = await tx.inventoryMovement.findMany({
         where: { sourceType: 'sale', sourceId: saleId, type: 'SALE' },
       });
-      const reverseMovements: Prisma.InventoryMovementCreateManyInput[] = originals.map(
-        (orig) => ({
-          entityType: orig.entityType,
-          ingredientId: orig.ingredientId,
-          productId: orig.productId,
-          subproductId: orig.subproductId,
-          delta: Number(orig.delta) * -1,
-          type: 'SALE',
-          sourceType: 'sale',
-          sourceId: saleId,
-          userId: cashierId,
-          notes: `Reverso de void · ${input.reason.slice(0, 100)}`,
-        }),
+      const netByStockable = new Map<string, Prisma.InventoryMovementCreateManyInput>();
+      for (const orig of originals) {
+        const k = `${orig.entityType}:${orig.ingredientId ?? ''}:${orig.productId ?? ''}:${orig.subproductId ?? ''}`;
+        const cur = netByStockable.get(k);
+        if (cur) {
+          cur.delta = Number(cur.delta) - Number(orig.delta);
+        } else {
+          netByStockable.set(k, {
+            entityType: orig.entityType,
+            ingredientId: orig.ingredientId,
+            productId: orig.productId,
+            subproductId: orig.subproductId,
+            delta: -Number(orig.delta),
+            type: 'SALE',
+            sourceType: 'sale',
+            sourceId: saleId,
+            userId: cashierId,
+            notes: `Reverso de void · ${input.reason.slice(0, 100)}`,
+          });
+        }
+      }
+      // Descartar netos que redondean a 0 (consumido y luego ya devuelto por una
+      // edición): un delta=0 violaría el CHECK `delta <> 0`.
+      const reverseMovements = [...netByStockable.values()].filter(
+        (m) => !roundsToZeroAt4(Number(m.delta)),
       );
       if (reverseMovements.length > 0) {
         await tx.inventoryMovement.createMany({ data: reverseMovements });
