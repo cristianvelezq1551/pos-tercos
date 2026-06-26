@@ -154,6 +154,41 @@ describe('Nómina semanal unificada E2E', () => {
     expect(pendingOf(after.body)).toBe(pendingBefore - ABONO);
   });
 
+  it('rechaza un abono que supera lo que falta de la semana (anti doble-abono)', async () => {
+    await request
+      .post('/approvals/pin')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pin: '135790', password: 'dev12345' })
+      .expect((r) => {
+        if (r.status >= 300) throw new Error(`PIN: ${r.status}`);
+      });
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
+      'base64',
+    );
+    const wk = await getWeek();
+    const luis = wk.entries.find((e) => e.userId === dailyId)!;
+    // Pagar TODO lo que falta (banco, sin caja).
+    if (luis.remaining > 0) {
+      await request
+        .post('/workers/weekly/pay')
+        .set('Authorization', `Bearer ${token}`)
+        .set('X-Approval-Pin', '135790')
+        .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: luis.remaining }))
+        .attach('proof', png, 'p.png')
+        .expect(201);
+    }
+    // Un abono adicional sobre una semana ya saldada → rechazado por el recompute
+    // dentro de la tx (antes el check usaba un `remaining` leído fuera → doble-abono).
+    await request
+      .post('/workers/weekly/pay')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Approval-Pin', '135790')
+      .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: 1_000 }))
+      .attach('proof', png, 'p.png')
+      .expect(400);
+  });
+
   it('part-time DIARIO: los días de descanso del trabajador no se pagan', async () => {
     const hash = await bcrypt.hash('dev12345', 10);
     const pt = await prisma.user.create({

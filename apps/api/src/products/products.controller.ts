@@ -18,6 +18,7 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import type { OfflineAvailabilitySnapshot } from '@pos-tercos/domain';
 import type { Response } from 'express';
 import {
@@ -78,6 +79,7 @@ export class ProductsController {
    * inteligencia interna y NO se exponen a internet.
    */
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get('availability')
   async availability(): Promise<ProductAvailability[]> {
     const full = await this.products.getAvailability();
@@ -196,6 +198,7 @@ export class ProductsController {
   }
 
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
   @Get('images/:filename')
   async getImage(
     @Param('filename') filename: string,

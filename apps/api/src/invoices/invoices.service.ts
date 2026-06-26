@@ -879,6 +879,11 @@ export class InvoicesService {
         'Solo se pueden marcar pagadas las facturas CONFIRMADAS.',
       );
     }
+    // Fast-path: si ya está pagada, no re-procesar (evita sobrescribir el
+    // reparto por bolsillo → Tesorería subcontaría el efectivo en silencio).
+    if (existing.paymentStatus === 'PAID') {
+      throw new BadRequestException('La factura ya está marcada como pagada.');
+    }
     const paidAt = opts.paidAtYmd ? new Date(`${opts.paidAtYmd}T12:00:00.000Z`) : new Date();
     const total = existing.total !== null ? Number(existing.total) : 0;
     const split = resolvePocketSplit(opts.cashAmount, opts.bankAmount, total);
@@ -894,8 +899,12 @@ export class InvoicesService {
       await this.storage.delete(existing.paymentProofKey).catch(() => undefined);
     }
 
-    const updated = await this.prisma.invoice.update({
-      where: { id: invoiceId },
+    // Claim atómico condicionado al estado: si un re-POST concurrente (doble-click
+    // / retry de un upload lento / 2do dispositivo) corre a la par, solo uno
+    // transiciona a PAID. El WHERE acepta PENDING o null (facturas legacy
+    // confirmadas antes del módulo de pago), nunca PAID.
+    const claim = await this.prisma.invoice.updateMany({
+      where: { id: invoiceId, OR: [{ paymentStatus: 'PENDING' }, { paymentStatus: null }] },
       data: {
         paymentStatus: 'PAID',
         paidAt,
@@ -906,6 +915,12 @@ export class InvoicesService {
         paymentCashAmount: split.cash,
         paymentBankAmount: split.bank,
       },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException('La factura cambió de estado (se pagó en paralelo). Recargá.');
+    }
+    const updated = await this.prisma.invoice.findUniqueOrThrow({
+      where: { id: invoiceId },
       include: includeFull(),
     });
 

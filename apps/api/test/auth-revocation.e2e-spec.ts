@@ -110,6 +110,24 @@ describe('Revocación de sesión (tokenVersion) E2E', () => {
     await request.get('/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
   });
 
+  it('dos refresh concurrentes con el MISMO token: solo uno rota, el otro es 401', async () => {
+    await makeUser('rev-refresh@test.local');
+    const login = await request
+      .post('/auth/login')
+      .send({ email: 'rev-refresh@test.local', password: 'dev12345' })
+      .expect(200);
+    const setCookies = login.headers['set-cookie'] as unknown as string[];
+    const refreshCookie = setCookies.find((c) => c.startsWith('pos_refresh='))!.split(';')[0];
+
+    // Dos rotaciones simultáneas del mismo refresh token (doble pestaña / retry).
+    // El revoke atómico (updateMany WHERE revokedAt IS NULL) hace que solo una
+    // emita un par nuevo; la otra recibe 401 — sin esto, ambas emitían un par válido.
+    const doRefresh = () => request.post('/auth/refresh').set('Cookie', refreshCookie);
+    const [a, b] = await Promise.all([doRefresh(), doRefresh()]);
+    const statuses = [a.status, b.status].sort((x, y) => x - y);
+    expect(statuses).toEqual([200, 401]);
+  });
+
   // ---------------------------------------------------------------------------
   // La revocación también corta los WebSockets (no solo el plano HTTP): un
   // socket abierto con token de usuario dado de baja NO debe sobrevivir 24h.

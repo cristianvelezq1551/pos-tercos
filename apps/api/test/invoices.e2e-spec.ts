@@ -453,4 +453,58 @@ describe('Invoices E2E', () => {
       expect(Array.isArray(res.body)).toBe(true);
     });
   });
+
+  describe('POST /invoices/:id/payment/paid — idempotencia', () => {
+    const PNG = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
+      'base64',
+    );
+    let invId: string;
+
+    beforeAll(async () => {
+      const draft = await prisma.invoice.create({
+        data: {
+          status: 'PENDING_REVIEW',
+          aiModelUsed: 'test-mock',
+          aiExtractionJson: { supplierName: 'Prov Pay', total: 50000, items: [], warnings: [] },
+          uploadedById: duenoUserId,
+        },
+      });
+      await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({
+          supplierNit: '900999999-1',
+          supplierName: 'Prov Pay',
+          invoiceNumber: 'F-PAY-IDEM',
+          total: 50000,
+          items: [
+            { entityType: 'INGREDIENT', ingredientId, descriptionRaw: 'Harina', quantity: 5, unit: 'kg', unitPrice: 10000, total: 50000 },
+          ],
+        })
+        .expect(201);
+      invId = draft.id;
+      await request
+        .post('/approvals/pin')
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({ pin: '246810', password: 'dev12345' })
+        .expect((r) => {
+          if (r.status >= 300) throw new Error(`PIN: ${r.status} ${JSON.stringify(r.body)}`);
+        });
+    });
+
+    it('no se puede marcar pagada dos veces (guard de paymentStatus → no re-desembolsa)', async () => {
+      const pay = () =>
+        request
+          .post(`/invoices/${invId}/payment/paid`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .set('x-approval-pin', '246810')
+          .field('cashAmount', '0')
+          .field('bankAmount', '50000')
+          .attach('proof', PNG, 'p.png');
+      await pay().expect(201);
+      // El re-POST (doble-click / retry) NO sobrescribe el reparto por bolsillo.
+      await pay().expect(400);
+    });
+  });
 });

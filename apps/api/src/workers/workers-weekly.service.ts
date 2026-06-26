@@ -36,6 +36,15 @@ import { WorkersService } from './workers.service';
  * abono pide comprobante y, si tiene parte en efectivo, genera un CashMovement
  * OUT en la caja abierta para que el arqueo cuadre.
  */
+
+/** Reintentos ante conflicto Serializable (40001 → P2034) en el pago de semana. */
+const MAX_WEEK_PAY_RETRIES = 3;
+function isSerializationFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: string }).code;
+  return code === 'P2034' || /could not serialize|deadlock detected/i.test(err.message);
+}
+
 @Injectable()
 export class WorkersWeeklyService {
   constructor(
@@ -346,9 +355,12 @@ export class WorkersWeeklyService {
       );
     }
 
-    // Caja: la porción en efectivo sale del cajón → exige caja abierta.
-    let cashMovementId: string | null = null;
-    let shiftId: string | null = null;
+    // Comprobante: subir ANTES de la tx (sin side-effect de DB; si la tx falla,
+    // nada queda commiteado y la key es determinística por usuario → se pisa).
+    const stored = await this.storage.put(`payroll-week/${user.id}`, proof.buffer, proof.mime, proof.ext);
+
+    // Si hay efectivo, la caja debe estar abierta (el egreso sale del cajón).
+    let openShiftId: string | null = null;
     if (cashAmount > 0) {
       const shift = await this.shifts.getCurrent(actorId);
       if (!shift) {
@@ -356,45 +368,90 @@ export class WorkersWeeklyService {
           'Para pagar nómina en efectivo debe haber una caja abierta (el egreso sale del cajón).',
         );
       }
-      const mv = await this.shifts.addCashMovement(
-        shift.id,
-        {
-          type: 'OUT',
-          method: 'CASH',
-          amount: cashAmount,
-          reason: `Nómina ${user.fullName} · semana ${input.weekStart}`,
-        },
-        actorId,
-      );
-      cashMovementId = mv.id;
-      shiftId = shift.id;
+      openShiftId = shift.id;
     }
 
-    const stored = await this.storage.put(`payroll-week/${user.id}`, proof.buffer, proof.mime, proof.ext);
+    // Tx SERIALIZABLE con retry: recomputa lo ya abonado de la semana DENTRO de
+    // la tx (anti doble-abono concurrente — antes el check usaba un `remaining`
+    // leído fuera de la tx) y crea el egreso de caja + la fila de pago JUNTOS
+    // (atómico: si algo falla NO queda un egreso fantasma del cajón). El
+    // reason del egreso queda atado al pago.
+    const weekStartDate = parseYmd(week.weekStart);
+    const reason = `Nómina ${user.fullName} · semana ${input.weekStart}`;
+    let result: { rowId: string; cashMovementId: string | null; shiftId: string | null } | null = null;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_WEEK_PAY_RETRIES; attempt++) {
+      try {
+        result = await this.prisma.$transaction(
+          async (tx) => {
+            const paidAgg = await tx.payrollWeekPayment.aggregate({
+              where: { userId: user.id, weekStart: weekStartDate, status: { not: 'VOIDED' } },
+              _sum: { amount: true },
+            });
+            const remainingNow = round2(entry.netOwed - round2(Number(paidAgg._sum.amount ?? 0)));
+            if (amount > remainingNow + 0.01) {
+              throw new BadRequestException(
+                `El abono (${amount}) supera lo que falta de la semana (${remainingNow}).`,
+              );
+            }
+            let cashMovementId: string | null = null;
+            let shiftId: string | null = null;
+            if (cashAmount > 0 && openShiftId) {
+              const sh = await tx.shift.findUnique({ where: { id: openShiftId }, select: { status: true } });
+              if (!sh || sh.status !== 'OPEN') {
+                throw new BadRequestException('La caja se cerró; reabrila para pagar nómina en efectivo.');
+              }
+              const mv = await tx.cashMovement.create({
+                data: { shiftId: openShiftId, type: 'OUT', method: 'CASH', amount: cashAmount, reason, userId: actorId },
+              });
+              cashMovementId = mv.id;
+              shiftId = openShiftId;
+            }
+            const row = await tx.payrollWeekPayment.create({
+              data: {
+                userId: user.id,
+                weekStart: weekStartDate,
+                paidDays: uniqueDays.sort(),
+                amount,
+                cashAmount,
+                bankAmount,
+                status: 'PAID',
+                proofImageKey: stored.key,
+                actorId,
+                cashMovementId,
+                shiftId,
+                note: input.note ?? null,
+                paidAt: new Date(),
+              },
+            });
+            return { rowId: row.id, cashMovementId, shiftId };
+          },
+          { isolationLevel: 'Serializable', timeout: 10_000 },
+        );
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (isSerializationFailure(e) && attempt < MAX_WEEK_PAY_RETRIES) continue;
+        throw e;
+      }
+    }
+    if (!result) throw lastErr ?? new Error('payWeekDays falló');
 
-    const row = await this.prisma.payrollWeekPayment.create({
-      data: {
-        userId: user.id,
-        weekStart: parseYmd(week.weekStart),
-        paidDays: uniqueDays.sort(),
-        amount,
-        cashAmount,
-        bankAmount,
-        status: 'PAID',
-        proofImageKey: stored.key,
-        actorId,
-        cashMovementId,
-        shiftId,
-        note: input.note ?? null,
-        paidAt: new Date(),
-      },
-    });
-
+    // Audits (best-effort, fuera de la tx).
+    if (result.cashMovementId && result.shiftId) {
+      await this.audit.log({
+        userId: actorId,
+        action: 'CASH_MOVEMENT_OUT',
+        entityType: 'shift',
+        entityId: result.shiftId,
+        metadata: { amount: cashAmount, reason, method: 'CASH' },
+      });
+    }
     await this.audit.log({
       userId: actorId,
       action: 'PAYROLL_WEEK_PAID',
       entityType: 'payroll_week_payment',
-      entityId: row.id,
+      entityId: result.rowId,
       metadata: {
         approverId,
         workerId: user.id,
@@ -403,12 +460,13 @@ export class WorkersWeeklyService {
         amount,
         cashAmount,
         bankAmount,
-        cashMovementId,
+        cashMovementId: result.cashMovementId,
       },
     });
 
+    const created = await this.prisma.payrollWeekPayment.findUniqueOrThrow({ where: { id: result.rowId } });
     const actorName = (await this.workers.fetchActorNames([actorId])).get(actorId) ?? null;
-    return this.toWeekPaymentDto(row, actorName);
+    return this.toWeekPaymentDto(created, actorName);
   }
 
   /** Anula un abono (marca VOIDED + reversa el egreso de caja si fue efectivo). */
@@ -418,29 +476,54 @@ export class WorkersWeeklyService {
     if (!row) throw new NotFoundException('Abono no encontrado.');
     if (row.status === 'VOIDED') return; // idempotente
 
-    // Reversa de caja: los movimientos son insert-only, así que compensamos con
-    // un IN por la porción en efectivo en la caja abierta (si la hay).
+    // El abono tuvo porción en efectivo → la reversa devuelve esa plata al cajón.
+    // Si NO hay caja abierta, NO se puede reintegrar el efectivo: antes el código
+    // marcaba VOIDED igual y la plata nunca volvía al arqueo (faltante permanente).
+    // Ahora se exige caja abierta cuando hay efectivo que reintegrar.
     const cashPortion = Number(row.cashAmount);
-    if (row.cashMovementId && cashPortion > 0) {
+    const needsCashReversal = Boolean(row.cashMovementId) && cashPortion > 0;
+    let openShiftId: string | null = null;
+    if (needsCashReversal) {
       const shift = await this.shifts.getCurrent(actorId);
-      if (shift) {
-        await this.shifts.addCashMovement(
-          shift.id,
-          {
-            type: 'IN',
-            method: 'CASH',
-            amount: cashPortion,
-            reason: `Reversa nómina · abono ${row.id.slice(0, 8)}`,
-          },
-          actorId,
+      if (!shift) {
+        throw new BadRequestException(
+          'Para anular un abono pagado en efectivo debe haber una caja abierta (el reintegro vuelve al cajón).',
         );
       }
+      openShiftId = shift.id;
     }
 
-    await this.prisma.payrollWeekPayment.update({
-      where: { id: paymentId },
-      data: { status: 'VOIDED' },
+    // Atómico: el claim por status='PAID' previene doble-void; el IN compensatorio
+    // y el cambio de estado van en la MISMA tx (o ambos, o ninguno).
+    const reason = `Reversa nómina · abono ${row.id.slice(0, 8)}`;
+    const didVoid = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.payrollWeekPayment.updateMany({
+        where: { id: paymentId, status: 'PAID' },
+        data: { status: 'VOIDED' },
+      });
+      if (claim.count === 0) return false; // ya anulado en paralelo → idempotente
+      if (needsCashReversal && openShiftId) {
+        const sh = await tx.shift.findUnique({ where: { id: openShiftId }, select: { status: true } });
+        if (!sh || sh.status !== 'OPEN') {
+          throw new BadRequestException('La caja se cerró; reabrila para anular el abono en efectivo.');
+        }
+        await tx.cashMovement.create({
+          data: { shiftId: openShiftId, type: 'IN', method: 'CASH', amount: cashPortion, reason, userId: actorId },
+        });
+      }
+      return true;
     });
+    if (!didVoid) return;
+
+    if (needsCashReversal && openShiftId) {
+      await this.audit.log({
+        userId: actorId,
+        action: 'CASH_MOVEMENT_IN',
+        entityType: 'shift',
+        entityId: openShiftId,
+        metadata: { amount: cashPortion, reason, method: 'CASH' },
+      });
+    }
     await this.audit.log({
       userId: actorId,
       action: 'PAYROLL_WEEK_PAYMENT_VOIDED',

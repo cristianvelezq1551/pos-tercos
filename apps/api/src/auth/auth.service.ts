@@ -91,11 +91,23 @@ export class AuthService {
       throw new UnauthorizedException('User inactive');
     }
 
-    // Rotate: revoke current, issue new pair
-    await this.prisma.refreshToken.update({
-      where: { id: record.id },
+    // Rotate: revoca el token actual de forma ATÓMICA y emite un par nuevo SOLO
+    // si este revoke ganó. Sin la condición `revokedAt: null`, dos refresh
+    // concurrentes con el mismo token (doble pestaña / retry de red del
+    // SessionKeeper) emitían DOS pares válidos de un solo token → rompía la
+    // rotación. Ahora el perdedor recibe 401 (el token ya se consumió).
+    const rotated = await this.prisma.refreshToken.updateMany({
+      where: { id: record.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (rotated.count === 0) {
+      await this.audit.log({
+        userId: record.userId,
+        action: 'AUTH_REFRESH_FAILED',
+        metadata: { reason: 'already_rotated' },
+      });
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
 
     const accessToken = await this.signAccess(record.user.id, record.user.role, record.user.email, record.user.tokenVersion);
     const newRefresh = await this.issueRefreshToken(record.user.id);
