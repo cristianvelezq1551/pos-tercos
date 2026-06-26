@@ -61,6 +61,12 @@ jobs:
       - name: Generar Prisma Client
         run: pnpm -F @pos-tercos/api prisma:generate
 
+      # Los e2e resuelven @pos-tercos/{types,domain} a dist/ (moduleNameMapper).
+      # Construirlos explícito acá hace que el paso e2e no dependa del orden de
+      # los otros pasos (antes solo existían como efecto colateral de turbo).
+      - name: Build packages compartidos
+        run: pnpm --filter @pos-tercos/types --filter @pos-tercos/domain build
+
       - name: Typecheck
         run: pnpm typecheck
 
