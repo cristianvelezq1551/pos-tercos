@@ -452,6 +452,8 @@ model Sale {
   @@index([type, status, createdAt(sort: Desc)])
   @@index([shiftId])
   @@index([status, readyAt])
+  /// Reportes financieros (P&G, dashboard, COGS) filtran por rango de paidAt.
+  @@index([paidAt])
   @@map("sales")
 }
 

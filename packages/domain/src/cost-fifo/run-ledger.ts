@@ -98,6 +98,19 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     return id ? `${m.entityType}:${id}` : null;
   };
 
+  // Pre-agrupar las tandas de producción en UNA pasada O(n). Antes se hacía un
+  // `movements.filter(...)` de la tabla entera por CADA tanda → O(producciones×n),
+  // cuadrático: con meses de datos el replay congelaba el event loop (que es el
+  // mismo que cobra las ventas).
+  const productionBatches = new Map<string, LedgerMovement[]>();
+  for (const m of movements) {
+    if (m.sourceType === 'production' && m.sourceId) {
+      const arr = productionBatches.get(m.sourceId);
+      if (arr) arr.push(m);
+      else productionBatches.set(m.sourceId, [m]);
+    }
+  }
+
   // Eventos: cada tanda de producción es UN evento atómico (sus movements
   // se procesan juntos para computar el lot cost del +N).
   const productionSeen = new Set<string>();
@@ -106,9 +119,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     if (m.sourceType === 'production' && m.sourceId) {
       if (productionSeen.has(m.sourceId)) continue;
       productionSeen.add(m.sourceId);
-      const batch = movements.filter(
-        (x) => x.sourceType === 'production' && x.sourceId === m.sourceId,
-      );
+      const batch = productionBatches.get(m.sourceId)!;
       const produces = batch.find((x) => x.delta > 0);
       const consumes = batch.filter((x) => x.delta < 0);
       if (!produces) continue; // batch malformado, ignorar
