@@ -66,8 +66,17 @@ export class LocalFilesystemStorageAdapter implements StorageProvider {
   }
 }
 
+/**
+ * Neutraliza path traversal descartando segmentos `.`/`..`/vacíos (no por
+ * reemplazo de substring, que dejaba pasar `foo/../../bar` → `foo///bar`). Una
+ * key válida es `prefix/uuid.ext`, que queda intacta. Defensa en profundidad:
+ * hoy las keys son UUID server-side, pero esto blinda el sink igual.
+ */
 function sanitize(s: string): string {
-  return s.replace(/\.\.+/g, '').replace(/^\/+/, '');
+  return s
+    .split('/')
+    .filter((seg) => seg !== '' && seg !== '.' && seg !== '..')
+    .join('/');
 }
 
 function stripDotPrefix(ext: string): string {

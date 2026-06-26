@@ -250,7 +250,7 @@ export class ReportsController {
     return this.salesReports.getHourHeatmap(range.from, range.to);
   }
 
-  /** Cobertura WhatsApp por stage (FASE 9 audit log). Dueño. */
+  /** Cobertura WhatsApp por stage (lee de whatsapp_messages, status='sent'). Dueño. */
   @OnlyDueno()
   @Get('whatsapp-metrics')
   getWhatsAppMetrics(

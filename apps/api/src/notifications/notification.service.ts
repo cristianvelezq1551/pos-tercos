@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   buildNotificationMessage,
   type WhatsAppNotificationStage,
@@ -7,6 +8,9 @@ import {
 } from '@pos-tercos/domain';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { PrismaService } from '../prisma/prisma.service';
+
+/** Días de retención de los registros de envío de WhatsApp (PII en claro). */
+const WHATSAPP_RETENTION_DAYS = 90;
 
 /**
  * Envía notificaciones WhatsApp al cliente vía OpenWA en las transiciones
@@ -45,6 +49,17 @@ export class NotificationService {
       if (!sale || sale.type !== 'WEB_PICKUP' || !sale.customerPhone) return;
       if (this.alreadySent(sale, stage)) return;
 
+      // Claim atómico del flag ANTES de enviar: si dos notify() concurrentes
+      // entran para el mismo (sale, stage) — reintento de red + sweep, doble
+      // disparo — solo uno gana el updateMany condicionado; el otro sale sin
+      // reenviar. Previene el doble mensaje al cliente. Si el envío falla
+      // después, se libera el flag para permitir reintento.
+      const claim = await this.prisma.sale.updateMany({
+        where: { id: sale.id, ...this.flagPatch(stage, false) },
+        data: this.flagPatch(stage, true),
+      });
+      if (claim.count === 0) return;
+
       const snapshot: WhatsAppSaleSnapshot = {
         receiptNumber: Number(sale.receiptNumber),
         customerName: sale.customerName,
@@ -58,7 +73,15 @@ export class NotificationService {
           stage === 'payment_instructions' ? this.paymentInstructions() : null,
       });
 
-      const result = await this.wa.sendText(sale.customerPhone, text);
+      let result: Awaited<ReturnType<WhatsAppProvider['sendText']>>;
+      try {
+        result = await this.wa.sendText(sale.customerPhone, text);
+      } catch (err) {
+        // El provider lanzó: liberar el claim para que un reintento futuro
+        // pueda volver a enviar, y propagar al catch externo (log + no-throw).
+        await this.releaseFlag(sale.id, stage);
+        throw err;
+      }
 
       await this.prisma.whatsAppMessage.create({
         data: {
@@ -72,12 +95,8 @@ export class NotificationService {
         },
       });
 
-      if (result.ok) {
-        await this.prisma.sale.update({
-          where: { id: sale.id },
-          data: this.flagData(stage),
-        });
-      } else {
+      if (!result.ok) {
+        await this.releaseFlag(sale.id, stage);
         this.logger.warn(`WhatsApp ${stage} falló (sale ${sale.id}): ${result.error}`);
       }
     } catch (err) {
@@ -108,16 +127,45 @@ export class NotificationService {
     }
   }
 
-  private flagData(stage: WhatsAppNotificationStage) {
+  /** Patch del flag notified_* del stage, con el valor dado (claim=true, release=false). */
+  private flagPatch(stage: WhatsAppNotificationStage, value: boolean) {
     switch (stage) {
       case 'payment_instructions':
-        return { notified_payment_instructions: true };
+        return { notified_payment_instructions: value };
       case 'payment_received':
-        return { notified_payment_received: true };
+        return { notified_payment_received: value };
       case 'pickup_ready':
-        return { notified_ready_for_pickup: true };
+        return { notified_ready_for_pickup: value };
       case 'canceled':
-        return { notified_canceled: true };
+        return { notified_canceled: value };
+    }
+  }
+
+  /** Libera el claim del flag para permitir un reintento posterior tras un fallo de envío. */
+  private async releaseFlag(saleId: string, stage: WhatsAppNotificationStage): Promise<void> {
+    await this.prisma.sale.update({
+      where: { id: saleId },
+      data: this.flagPatch(stage, false),
+    });
+  }
+
+  /**
+   * Retención de PII: los mensajes guardan teléfono + cuerpo (nombre/total del
+   * cliente) en claro. Se purgan a los 90 días — auditoría de envíos a corto
+   * plazo sin acumular datos personales indefinidamente (Ley 1581 Habeas Data).
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async purgeOldMessages(): Promise<void> {
+    const cutoff = new Date(Date.now() - WHATSAPP_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    try {
+      const { count } = await this.prisma.whatsAppMessage.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      if (count > 0) this.logger.log(`Purgados ${count} whatsapp_messages > ${WHATSAPP_RETENTION_DAYS}d`);
+    } catch (err) {
+      this.logger.error(
+        `purgeOldMessages error: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

@@ -1,1 +1,1 @@
-export { roundCost, roundMoney } from './money';
+export { roundCost, roundMoney, roundsToZeroAt4 } from './money';

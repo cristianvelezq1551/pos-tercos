@@ -395,15 +395,17 @@ model InvoiceItem {
 
 /// Header de venta. Solo COUNTER (mostrador) y WEB_PICKUP (recoger en local).
 ///
-/// receipt_number tiene default `nextval('receipt_seq')` aplicado vía
-/// migration manual. La sequence garantiza monotonicidad incluso si
-/// hay rollback de transacción.
+/// receipt_number usa la sequence `receipt_seq` (creada en la migración
+/// 20260427220551). El default se declara con dbgenerated para que el
+/// schema NO drifte a IDENTITY/autoincrement: un `migrate dev` desde cero
+/// debe conservar la sequence (SalesService pide nextval('receipt_seq')
+/// explícito). La sequence garantiza monotonicidad incluso con rollback.
 ///
 /// idempotency_key permite que el POS reintente POST /sales sin duplicar.
 /// El campo es UNIQUE pero opcional (web orders no lo usan).
 model Sale {
   id                            String          @id @default(uuid())
-  receiptNumber                 BigInt          @unique @default(autoincrement()) @map("receipt_number")
+  receiptNumber                 BigInt          @unique @default(dbgenerated("nextval('receipt_seq'::regclass)")) @map("receipt_number")
   type                          SaleType
   status                        SaleStatus      @default(PENDIENTE_PAGO)
   /// Turno mostrado al cliente. Se asigna al PAGAR (no al crear): secuencia

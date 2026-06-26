@@ -22,6 +22,11 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
+  // Tope al body JSON: los endpoints públicos (POST /web/orders) aceptan
+  // payloads sin que un cliente pueda inflar memoria/CPU del parser. Las cargas
+  // de factura van por Multer (multipart, su propio límite de 10MB), no por acá.
+  app.useBodyParser('json', { limit: '256kb' });
+
   // CORS: en prod EXIGIMOS allowlist explícita. Reflejar cualquier origen con
   // credenciales (origin:true) sería CSRF/robo de sesión cross-site.
   const corsOrigins = (process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean);

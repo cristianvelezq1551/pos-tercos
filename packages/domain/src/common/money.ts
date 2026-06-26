@@ -20,3 +20,12 @@ export function roundMoney(n: number): number {
 export function roundCost(n: number): number {
   return Math.round(n * 10000) / 10000;
 }
+
+/**
+ * True si la cantidad redondea a 0 en Decimal(_,4) (la escala de los movements
+ * de inventario). Un consumo despreciable que persistiría como delta=0 violaría
+ * el CHECK `delta <> 0` y abortaría toda la tx; conviene descartarlo antes.
+ */
+export function roundsToZeroAt4(n: number): boolean {
+  return roundCost(n) === 0;
+}

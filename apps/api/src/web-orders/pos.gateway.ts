@@ -80,12 +80,19 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /** Emite evento a todos los POS conectados en la room pos.web-orders. */
   emit(event: WebOrderEventName, order: PublicWebOrder): void {
-    const payload: WebOrderEvent = {
-      event,
-      order,
-      emittedAt: new Date().toISOString(),
-    };
-    this.server.to(POS_WEB_ORDERS_ROOM).emit(event, payload);
+    // Corre DESPUÉS del commit: nunca debe tumbar la request (el caller es
+    // fire-and-forget). Si el server no está listo o socket.io falla, logueamos.
+    if (!this.server) return;
+    try {
+      const payload: WebOrderEvent = {
+        event,
+        order,
+        emittedAt: new Date().toISOString(),
+      };
+      this.server.to(POS_WEB_ORDERS_ROOM).emit(event, payload);
+    } catch (err) {
+      this.logger.warn(`POS emit '${event}' falló: ${(err as Error).message}`);
+    }
   }
 
   private extractToken(client: Socket): string | null {

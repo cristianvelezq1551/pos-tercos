@@ -149,8 +149,16 @@ function required(name: string): string {
   return v;
 }
 
+/**
+ * Neutraliza path traversal descartando segmentos `.`/`..`/vacíos (no por
+ * reemplazo de substring, que dejaba pasar `foo/../../bar`). Las keys de R2 son
+ * UUID server-side; esto blinda el sink ante una key futura derivada de input.
+ */
 function sanitize(s: string): string {
-  return s.replace(/\.\.+/g, '').replace(/^\/+/, '');
+  return s
+    .split('/')
+    .filter((seg) => seg !== '' && seg !== '.' && seg !== '..')
+    .join('/');
 }
 
 function stripDotPrefix(ext: string): string {

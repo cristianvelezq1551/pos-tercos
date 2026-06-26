@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { expandRecipeOneLevel } from '@pos-tercos/domain';
+import { expandRecipeOneLevel, roundsToZeroAt4 } from '@pos-tercos/domain';
 import type {
   ProductionRun,
   RecordProduction,
@@ -128,7 +128,10 @@ export class ProductionService {
     const ingredientIds = [...expansion.ingredients.keys()];
     const subproductIds = [...expansion.subproducts.keys()];
 
-    // Datos para los movements: pre-armados, se insertan en una sola tx.
+    // Datos para los movements: pre-armados, se insertan en una sola tx. Las
+    // líneas de consumo cuyo delta redondea a 0 en Decimal(14,4) se descartan:
+    // un delta=0 viola el CHECK `delta <> 0` y abortaría toda la producción con
+    // un error opaco de Postgres (un consumo despreciable no aporta nada).
     const movementsData: Prisma.InventoryMovementCreateManyInput[] = [
       {
         entityType: 'SUBPRODUCT',
@@ -142,28 +145,32 @@ export class ProductionService {
         idempotencyKey: input.idempotencyKey ?? null,
         notes,
       },
-      ...[...expansion.ingredients].map(([ingId, item]) => ({
-        entityType: 'INGREDIENT' as const,
-        ingredientId: ingId,
-        delta: -item.totalQuantity,
-        unitCost: null,
-        type: 'PRODUCTION' as const,
-        sourceType: 'production',
-        sourceId: runId,
-        userId: actorId,
-        notes: consumeNote,
-      })),
-      ...[...expansion.subproducts].map(([childSubId, item]) => ({
-        entityType: 'SUBPRODUCT' as const,
-        subproductId: childSubId,
-        delta: -item.totalQuantity,
-        unitCost: null,
-        type: 'PRODUCTION' as const,
-        sourceType: 'production',
-        sourceId: runId,
-        userId: actorId,
-        notes: consumeNote,
-      })),
+      ...[...expansion.ingredients]
+        .filter(([, item]) => !roundsToZeroAt4(item.totalQuantity))
+        .map(([ingId, item]) => ({
+          entityType: 'INGREDIENT' as const,
+          ingredientId: ingId,
+          delta: -item.totalQuantity,
+          unitCost: null,
+          type: 'PRODUCTION' as const,
+          sourceType: 'production',
+          sourceId: runId,
+          userId: actorId,
+          notes: consumeNote,
+        })),
+      ...[...expansion.subproducts]
+        .filter(([, item]) => !roundsToZeroAt4(item.totalQuantity))
+        .map(([childSubId, item]) => ({
+          entityType: 'SUBPRODUCT' as const,
+          subproductId: childSubId,
+          delta: -item.totalQuantity,
+          unitCost: null,
+          type: 'PRODUCTION' as const,
+          sourceType: 'production',
+          sourceId: runId,
+          userId: actorId,
+          notes: consumeNote,
+        })),
     ];
 
     // Transacción SERIALIZABLE con reintentos: la validación de stock va DENTRO

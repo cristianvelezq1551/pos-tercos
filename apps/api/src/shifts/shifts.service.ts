@@ -34,6 +34,15 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 const DISCREPANCY_THRESHOLD_COP = 5_000;
 
+/**
+ * Clave del advisory lock que serializa apertura/reapertura de caja. El check
+ * "¿ya hay una caja OPEN?" + el create/update no son atómicos por sí solos
+ * (TOCTOU): dos aperturas concurrentes podrían crear DOS cajas OPEN, rompiendo
+ * la invariante de caja única. Tomar este lock transaccional fuerza que solo
+ * una corra el check a la vez; la segunda ve la caja ya creada y es rechazada.
+ */
+const SHIFT_OPEN_LOCK_KEY = 911_025;
+
 type DbShiftWithCashier = Prisma.ShiftGetPayload<{
   include: { cashier: { select: { fullName: true } } };
 }>;
@@ -134,45 +143,50 @@ export class ShiftsService {
    * la sesión del día; todo el flujo de ventas de ese día va a esa caja.
    */
   async open(input: OpenShift, cashierId: string): Promise<Shift> {
-    // ¿Ya hay una caja ABIERTA (de cualquiera)? → no se abre otra.
-    const openAnywhere = await this.prisma.shift.findFirst({
-      where: { status: 'OPEN' },
-      select: { id: true, openedAt: true, cashier: { select: { fullName: true } } },
-      orderBy: { openedAt: 'desc' },
-    });
-    if (openAnywhere) {
-      const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
-      const sameDay = openAnywhere.openedAt >= this.startOfToday();
-      throw new ConflictException(
-        sameDay
-          ? `Ya hay una caja abierta por ${who}. Solo puede haber una caja abierta en el negocio.`
-          : `Hay una caja abierta por ${who} desde ${formatOpenedAt(openAnywhere.openedAt)} (día anterior). Hay que cerrarla antes de abrir la de hoy.`,
-      );
-    }
+    const created = await this.prisma.$transaction(async (tx) => {
+      // Serializa el check+create contra aperturas concurrentes (TOCTOU).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SHIFT_OPEN_LOCK_KEY})`;
 
-    // UNA caja por día calendario: si hoy ya hubo una (cerrada), no se abre otra.
-    // Si se cerró por error, el admin la reabre (no se crea una segunda).
-    const startOfDay = this.startOfToday();
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-    const todays = await this.prisma.shift.findFirst({
-      where: { openedAt: { gte: startOfDay, lte: endOfDay } },
-      select: { id: true },
-    });
-    if (todays) {
-      throw new ConflictException(
-        'La caja de hoy ya fue cerrada. No se abre una segunda el mismo día — si fue un error, pedí al admin que la reabra.',
-      );
-    }
+      // ¿Ya hay una caja ABIERTA (de cualquiera)? → no se abre otra.
+      const openAnywhere = await tx.shift.findFirst({
+        where: { status: 'OPEN' },
+        select: { id: true, openedAt: true, cashier: { select: { fullName: true } } },
+        orderBy: { openedAt: 'desc' },
+      });
+      if (openAnywhere) {
+        const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
+        const sameDay = openAnywhere.openedAt >= this.startOfToday();
+        throw new ConflictException(
+          sameDay
+            ? `Ya hay una caja abierta por ${who}. Solo puede haber una caja abierta en el negocio.`
+            : `Hay una caja abierta por ${who} desde ${formatOpenedAt(openAnywhere.openedAt)} (día anterior). Hay que cerrarla antes de abrir la de hoy.`,
+        );
+      }
 
-    const created = await this.prisma.shift.create({
-      data: {
-        cashierId,
-        openingCash: input.openingCash,
-        notes: input.notes ?? null,
-        status: 'OPEN',
-      },
-      include: { cashier: { select: { fullName: true } } },
+      // UNA caja por día calendario: si hoy ya hubo una (cerrada), no se abre otra.
+      // Si se cerró por error, el admin la reabre (no se crea una segunda).
+      const startOfDay = this.startOfToday();
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+      const todays = await tx.shift.findFirst({
+        where: { openedAt: { gte: startOfDay, lte: endOfDay } },
+        select: { id: true },
+      });
+      if (todays) {
+        throw new ConflictException(
+          'La caja de hoy ya fue cerrada. No se abre una segunda el mismo día — si fue un error, pedí al admin que la reabra.',
+        );
+      }
+
+      return tx.shift.create({
+        data: {
+          cashierId,
+          openingCash: input.openingCash,
+          notes: input.notes ?? null,
+          status: 'OPEN',
+        },
+        include: { cashier: { select: { fullName: true } } },
+      });
     });
 
     await this.audit.log({
@@ -265,44 +279,51 @@ export class ShiftsService {
    * Mantiene la MISMA sesión del día (no crea otra).
    */
   async reopen(shiftId: string, adminId: string): Promise<Shift> {
-    const shift = await this.prisma.shift.findUnique({
-      where: { id: shiftId },
-      select: { id: true, status: true, cashierId: true },
-    });
-    if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
-    if (shift.status !== 'CLOSED') {
-      throw new BadRequestException('Solo se reabre una caja CERRADA.');
-    }
-    // Caja ÚNICA por negocio: si ya hay CUALQUIER caja abierta (de este cajero o
-    // de otro), reabrir crearía dos OPEN simultáneas → ventas/turnos repartidos
-    // entre dos cajas y arqueo descuadrado. Hay que cerrar la abierta primero.
-    const openAnywhere = await this.prisma.shift.findFirst({
-      where: { status: 'OPEN' },
-      select: { id: true, cashier: { select: { fullName: true } } },
-    });
-    if (openAnywhere) {
-      const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
-      throw new ConflictException(
-        `Ya hay una caja abierta por ${who}. Cerrala antes de reabrir esta — solo puede haber una caja abierta en el negocio.`,
-      );
-    }
-    const row = await this.prisma.shift.update({
-      where: { id: shiftId },
-      data: {
-        status: 'OPEN',
-        closedAt: null,
-        expectedCash: null,
-        countedCash: null,
-        difference: null,
-      },
-      include: { cashier: { select: { fullName: true } } },
+    const { row, cashierId } = await this.prisma.$transaction(async (tx) => {
+      // Mismo lock que open(): serializa contra una apertura/reapertura
+      // concurrente para no terminar con dos cajas OPEN.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SHIFT_OPEN_LOCK_KEY})`;
+
+      const shift = await tx.shift.findUnique({
+        where: { id: shiftId },
+        select: { id: true, status: true, cashierId: true },
+      });
+      if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
+      if (shift.status !== 'CLOSED') {
+        throw new BadRequestException('Solo se reabre una caja CERRADA.');
+      }
+      // Caja ÚNICA por negocio: si ya hay CUALQUIER caja abierta (de este cajero o
+      // de otro), reabrir crearía dos OPEN simultáneas → ventas/turnos repartidos
+      // entre dos cajas y arqueo descuadrado. Hay que cerrar la abierta primero.
+      const openAnywhere = await tx.shift.findFirst({
+        where: { status: 'OPEN' },
+        select: { id: true, cashier: { select: { fullName: true } } },
+      });
+      if (openAnywhere) {
+        const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
+        throw new ConflictException(
+          `Ya hay una caja abierta por ${who}. Cerrala antes de reabrir esta — solo puede haber una caja abierta en el negocio.`,
+        );
+      }
+      const updated = await tx.shift.update({
+        where: { id: shiftId },
+        data: {
+          status: 'OPEN',
+          closedAt: null,
+          expectedCash: null,
+          countedCash: null,
+          difference: null,
+        },
+        include: { cashier: { select: { fullName: true } } },
+      });
+      return { row: updated, cashierId: shift.cashierId };
     });
     await this.audit.log({
       userId: adminId,
       action: 'SHIFT_REOPENED',
       entityType: 'shift',
       entityId: shiftId,
-      metadata: { cashierId: shift.cashierId },
+      metadata: { cashierId },
     });
     return toShiftDto(row);
   }

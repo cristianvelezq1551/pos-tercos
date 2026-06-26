@@ -567,33 +567,14 @@ export class SalesService {
     }
 
     const oldStatus = existing.status;
-    // El pedido estaba PAGADO → descontó stock al cobrarse. Se revierte con
-    // movements compensatorios (insert-only, delta opuesto, type=SALE).
-    const reverseMovements: Prisma.InventoryMovementCreateManyInput[] = [];
-    {
-      const originals = await this.prisma.inventoryMovement.findMany({
-        where: { sourceType: 'sale', sourceId: saleId, type: 'SALE' },
-      });
-      for (const orig of originals) {
-        reverseMovements.push({
-          entityType: orig.entityType,
-          ingredientId: orig.ingredientId,
-          productId: orig.productId,
-          subproductId: orig.subproductId,
-          delta: Number(orig.delta) * -1,
-          type: 'SALE',
-          sourceType: 'sale',
-          sourceId: saleId,
-          userId: cashierId,
-          notes: `Reverso de void · ${input.reason.slice(0, 100)}`,
-        });
-      }
-    }
+    let reversedCount = 0;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       // Guard transaccional: el status se condiciona DENTRO del UPDATE. Si entre
       // el check de arriba y la tx la cocina inició el pedido (PAGADO→EN_PREPARACION),
       // count===0 y abortamos sin revertir stock de una orden ya en preparación.
+      // El UPDATE toma el lock de la fila sale → serializa contra un editItems
+      // concurrente que ajustaría stock de la misma venta.
       const res = await tx.sale.updateMany({
         where: { id: saleId, status: 'PAGADO' },
         data: { status: 'VOID', voidReason: input.reason },
@@ -612,9 +593,32 @@ export class SalesService {
           notes: `void: ${input.reason}`,
         },
       });
+      // El pedido estaba PAGADO → descontó stock al cobrarse. Se revierte con
+      // movements compensatorios (insert-only, delta opuesto, type=SALE). La
+      // lectura va DENTRO de la tx, DESPUÉS del UPDATE: así incluye cualquier
+      // ajuste de un editItems que se haya serializado antes (evita dejar un
+      // delta de stock colgado sin neutralizar).
+      const originals = await tx.inventoryMovement.findMany({
+        where: { sourceType: 'sale', sourceId: saleId, type: 'SALE' },
+      });
+      const reverseMovements: Prisma.InventoryMovementCreateManyInput[] = originals.map(
+        (orig) => ({
+          entityType: orig.entityType,
+          ingredientId: orig.ingredientId,
+          productId: orig.productId,
+          subproductId: orig.subproductId,
+          delta: Number(orig.delta) * -1,
+          type: 'SALE',
+          sourceType: 'sale',
+          sourceId: saleId,
+          userId: cashierId,
+          notes: `Reverso de void · ${input.reason.slice(0, 100)}`,
+        }),
+      );
       if (reverseMovements.length > 0) {
         await tx.inventoryMovement.createMany({ data: reverseMovements });
       }
+      reversedCount = reverseMovements.length;
       return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
     });
 
@@ -627,7 +631,7 @@ export class SalesService {
         reason: input.reason,
         approverId,
         oldStatus,
-        movementsReversed: reverseMovements.length,
+        movementsReversed: reversedCount,
       },
     });
     await this.audit.log({

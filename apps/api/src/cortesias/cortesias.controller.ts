@@ -19,7 +19,7 @@ import { CortesiasService } from './cortesias.service';
 export class CortesiasController {
   constructor(private readonly cortesias: CortesiasService) {}
 
-  /** El cajero solicita una cortesía (descuenta stock; queda PENDING). */
+  /** El cajero solicita una cortesía (queda PENDING; el stock se descuenta al aprobar). */
   @CashierAccess()
   @Post()
   create(

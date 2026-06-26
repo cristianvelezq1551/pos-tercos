@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { roundMoney } from '@pos-tercos/domain';
+import { roundMoney, roundsToZeroAt4 } from '@pos-tercos/domain';
 import type {
   CortesiaGivenSummary,
   CortesiaRequest,
@@ -199,18 +199,22 @@ export class CortesiasService {
         ],
         'Cortesía',
       );
-      movements = specs.map((s) => ({
-        entityType: s.entityType,
-        ingredientId: s.ingredientId ?? null,
-        productId: s.productId ?? null,
-        subproductId: s.subproductId ?? null,
-        delta: s.delta,
-        type: 'MANUAL_ADJUSTMENT',
-        sourceType: 'cortesia',
-        sourceId: id,
-        userId,
-        notes: `Cortesía: ${existing.reason}`.slice(0, 200),
-      }));
+      // Descartar consumos que redondean a 0 en Decimal(_,4): un delta=0 viola
+      // el CHECK `delta <> 0` y abortaría toda la aprobación con un error opaco.
+      movements = specs
+        .filter((s) => !roundsToZeroAt4(s.delta))
+        .map((s) => ({
+          entityType: s.entityType,
+          ingredientId: s.ingredientId ?? null,
+          productId: s.productId ?? null,
+          subproductId: s.subproductId ?? null,
+          delta: s.delta,
+          type: 'MANUAL_ADJUSTMENT',
+          sourceType: 'cortesia',
+          sourceId: id,
+          userId,
+          notes: `Cortesía: ${existing.reason}`.slice(0, 200),
+        }));
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
