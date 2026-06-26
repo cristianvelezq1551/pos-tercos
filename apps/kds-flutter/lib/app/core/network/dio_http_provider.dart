@@ -14,16 +14,20 @@ import 'package:kds/app/core/network/failure.dart';
 /// - Ante un 401, refresca el access token contra `/auth/refresh` (single-flight)
 ///   y reintenta el request original de forma transparente.
 class DioHttpProvider {
-  DioHttpProvider({required FlutterSecureStorage storage})
+  /// [dio] es un seam de test: en producción se omite y se crea el cliente real.
+  /// Los tests inyectan un Dio con un HttpClientAdapter falso para controlar las
+  /// respuestas (401→refresh→retry, single-flight) sin red.
+  DioHttpProvider({required FlutterSecureStorage storage, Dio? dio})
       : _storage = storage,
-        _dio = Dio(
-          BaseOptions(
-            baseUrl: AppConfig.baseUrl,
-            connectTimeout: Duration(seconds: AppConfig.connectTimeoutSec),
-            receiveTimeout: Duration(seconds: AppConfig.receiveTimeoutSec),
-            headers: {'Content-Type': 'application/json'},
-          ),
-        ) {
+        _dio = dio ??
+            Dio(
+              BaseOptions(
+                baseUrl: AppConfig.baseUrl,
+                connectTimeout: Duration(seconds: AppConfig.connectTimeoutSec),
+                receiveTimeout: Duration(seconds: AppConfig.receiveTimeoutSec),
+                headers: {'Content-Type': 'application/json'},
+              ),
+            ) {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onResponse: (response, handler) async {
