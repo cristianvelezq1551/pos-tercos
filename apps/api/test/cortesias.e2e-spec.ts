@@ -122,6 +122,13 @@ describe('Cortesías E2E', () => {
     await request.post(`/cortesias/${id}/reject`).set(auth(duenoToken)).send({}).expect(400);
   });
 
+  it('la DB rechaza un status fuera del enum (garantía nativa, no solo la app)', async () => {
+    const id = await createCortesia(1, 'Estado inválido');
+    await expect(
+      prisma.$executeRawUnsafe(`UPDATE cortesia_requests SET status = 'INVALIDO' WHERE id = '${id}'`),
+    ).rejects.toThrow();
+  });
+
   it('el resumen del mes cuenta las cortesías aprobadas', async () => {
     const now = new Date();
     const res = await request

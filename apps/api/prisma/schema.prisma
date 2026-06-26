@@ -938,6 +938,34 @@ enum HeroMediaType {
   VIDEO
 }
 
+/// Bolsillo de tesorería: efectivo en caja vs. plata en cuenta bancaria.
+enum Pocket {
+  EFECTIVO
+  CUENTA
+}
+
+enum TreasuryMovementKind {
+  TRANSFER
+  ADJUSTMENT
+}
+
+enum TreasuryMovementStatus {
+  ACTIVE
+  VOIDED
+}
+
+enum PayableStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum CortesiaStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 /// Pagos efectivos de costos fijos. Un registro = un costo fijo × (año, mes).
 /// Para MONTHLY hay un período por mes; para ANNUAL el módulo usa
 /// period_month=1 por convención (el pago anual cubre todo el año).
@@ -1130,10 +1158,9 @@ model PayableCommitment {
   /// A quién se le debe (texto libre: Cristian, Pablo, …).
   beneficiary   String
   description   String
-  amount        Decimal   @db.Decimal(14, 2)
-  /// 'PENDING' | 'PAID' | 'CANCELLED'.
-  status        String    @default("PENDING")
-  cashAmount    Decimal   @default(0) @map("cash_amount") @db.Decimal(14, 2)
+  amount        Decimal       @db.Decimal(14, 2)
+  status        PayableStatus @default(PENDING)
+  cashAmount    Decimal       @default(0) @map("cash_amount") @db.Decimal(14, 2)
   bankAmount    Decimal   @default(0) @map("bank_amount") @db.Decimal(14, 2)
   proofImageKey String?   @map("proof_image_key")
   paidAt        DateTime? @map("paid_at")
@@ -1147,9 +1174,8 @@ model PayableCommitment {
 }
 
 model CortesiaRequest {
-  id            String    @id @default(uuid())
-  /// 'PENDING' | 'APPROVED' | 'REJECTED'.
-  status        String    @default("PENDING")
+  id            String         @id @default(uuid())
+  status        CortesiaStatus @default(PENDING)
   /// Pedido que acompañó la cortesía (contexto); null si fue un regalo suelto.
   saleId        String?   @map("sale_id")
   productId     String    @map("product_id")
@@ -1189,20 +1215,19 @@ model TreasuryConfig {
 /// cambia el total), ADJUSTMENT = ajuste de un bolsillo (±, para el "híbrido").
 /// Insert-only conceptual; se anula creando el compensatorio (status VOIDED).
 model TreasuryMovement {
-  id         String   @id @default(uuid())
-  /// 'TRANSFER' | 'ADJUSTMENT'.
-  kind       String
-  /// TRANSFER: bolsillo origen. 'EFECTIVO' | 'CUENTA'.
-  fromPocket String?  @map("from_pocket")
+  id         String                 @id @default(uuid())
+  kind       TreasuryMovementKind
+  /// TRANSFER: bolsillo origen.
+  fromPocket Pocket?                @map("from_pocket")
   /// TRANSFER: bolsillo destino.
-  toPocket   String?  @map("to_pocket")
+  toPocket   Pocket?                @map("to_pocket")
   /// ADJUSTMENT: bolsillo afectado.
-  pocket     String?
+  pocket     Pocket?
   /// TRANSFER: monto positivo. ADJUSTMENT: con signo (+ suma, − resta).
-  amount     Decimal  @db.Decimal(14, 2)
+  amount     Decimal                @db.Decimal(14, 2)
   reason     String
-  status     String   @default("ACTIVE")
-  actorId    String?  @map("actor_id")
+  status     TreasuryMovementStatus @default(ACTIVE)
+  actorId    String?                @map("actor_id")
   occurredAt DateTime @map("occurred_at")
   createdAt  DateTime @default(now()) @map("created_at")
 

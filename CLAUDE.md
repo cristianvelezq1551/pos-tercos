@@ -290,9 +290,9 @@ apps/api/src/notifications/
 
 ---
 
-## 5. Schema DB (44 modelos + 14 enums + 1 sequence)
+## 5. Schema DB (44 modelos + 19 enums + 1 sequence)
 
-> **Conteo real a 2026-06-26 (auditoría): 44 models / 14 enums.** La lista numerada de abajo quedó en la v2 (30/12) y NO refleja las tablas agregadas después: `stock_counts`, `sale_payments`, `payment_method_settings`, `display_slides`, `display_tracks`, `fixed_costs` + `fixed_cost_payments`, el módulo de nómina (`payroll_days` / `payroll_adjustments` / `payroll_payments`, que reemplazaron `worker_attendance` / `worker_commissions`), y la capa financiera reciente (tesorería, cortesías, payables, web-hero). Columnas nuevas no listadas: `products.preparation_steps` + `subproducts.preparation_steps` (biblia), `sales`/`shifts` varios (tips, arqueo digital). Enums: `PaymentMethod` ganó `CARD`; `PayType` reemplazó `WorkerCommissionType`. ✅ El rol `ADMIN_FINANCIERO` que se citaba como deuda YA NO se referencia en código (0 ocurrencias); el enum `UserRole` es coherente.
+> **Conteo real a 2026-06-26 (auditoría): 44 models / 19 enums.** La lista numerada de abajo quedó en la v2 (30/12) y NO refleja las tablas agregadas después: `stock_counts`, `sale_payments`, `payment_method_settings`, `display_slides`, `display_tracks`, `fixed_costs` + `fixed_cost_payments`, el módulo de nómina (`payroll_days` / `payroll_adjustments` / `payroll_payments`, que reemplazaron `worker_attendance` / `worker_commissions`), y la capa financiera reciente (tesorería, cortesías, payables, web-hero). Columnas nuevas no listadas: `products.preparation_steps` + `subproducts.preparation_steps` (biblia), `sales`/`shifts` varios (tips, arqueo digital). Enums: `PaymentMethod` ganó `CARD`; `PayType` reemplazó `WorkerCommissionType`. ✅ El rol `ADMIN_FINANCIERO` que se citaba como deuda YA NO se referencia en código (0 ocurrencias); el enum `UserRole` es coherente.
 >
 > Actualizado en reorientación v2 (2026-05-22). Eliminados: `RepartidorAvailability`, `WEB_DELIVERY` de `SaleType`, 5 estados de delivery de `SaleStatus`. Agregada: tabla `whatsapp_messages`.
 >

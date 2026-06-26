@@ -165,6 +165,21 @@ describe('Treasury E2E', () => {
     expect(movs).toHaveLength(1);
   });
 
+  it('la DB rechaza un bolsillo/estado fuera del enum (garantía nativa)', async () => {
+    const created = await request
+      .post('/treasury/adjustment')
+      .set(auth(duenoToken))
+      .send({ pocket: 'EFECTIVO', amount: 100, reason: 'enum-test' })
+      .expect(201);
+    const id = created.body.id as string;
+    await expect(
+      prisma.$executeRawUnsafe(`UPDATE treasury_movements SET pocket = 'BILLETERA' WHERE id = '${id}'`),
+    ).rejects.toThrow();
+    await expect(
+      prisma.$executeRawUnsafe(`UPDATE treasury_movements SET status = 'BORRADO' WHERE id = '${id}'`),
+    ).rejects.toThrow();
+  });
+
   it('anular dos veces es idempotente (no rompe)', async () => {
     const created = await request
       .post('/treasury/adjustment')
