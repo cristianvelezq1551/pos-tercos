@@ -793,6 +793,16 @@ export class SalesService {
       select: { type: true, status: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    // Idempotente: si ya quedó CANCELADO_NO_PAGO (ej. el cleanup del POS cancela
+    // una venta huérfana y handleClose la cancela de nuevo), devolver la venta
+    // sin error — el estado final deseado ya está. Evita un 400 ruidoso.
+    if (existing.status === 'CANCELADO_NO_PAGO') {
+      const already = await this.prisma.sale.findUniqueOrThrow({
+        where: { id: saleId },
+        include: includeFull(),
+      });
+      return toSaleDto(already);
+    }
     if (existing.status !== 'PENDIENTE_PAGO') {
       throw new BadRequestException(
         `No se puede cancelar: el pedido está en ${existing.status}.`,

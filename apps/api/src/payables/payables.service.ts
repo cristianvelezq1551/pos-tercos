@@ -72,8 +72,11 @@ export class PayablesService {
       proofImageKey = stored.key;
     }
 
-    const updated = await this.prisma.payableCommitment.update({
-      where: { id },
+    // Claim atómico condicionado al estado: dos pagos concurrentes (doble-click /
+    // retry) NO pueden ambos desembolsar — el status va en el WHERE, solo uno
+    // gana. El check de arriba es el fast-path; este updateMany es la garantía.
+    const claim = await this.prisma.payableCommitment.updateMany({
+      where: { id, status: 'PENDING' },
       data: {
         status: 'PAID',
         cashAmount: cash,
@@ -84,6 +87,10 @@ export class PayablesService {
         note: input.note ?? row.note,
       },
     });
+    if (claim.count === 0) {
+      throw new BadRequestException('El compromiso ya no está pendiente (se pagó o canceló en paralelo).');
+    }
+    const updated = await this.prisma.payableCommitment.findUniqueOrThrow({ where: { id } });
     await this.audit.log({
       userId: actorId,
       action: 'PAYABLE_PAID',
@@ -99,7 +106,15 @@ export class PayablesService {
     if (!row) throw new NotFoundException('Compromiso no encontrado.');
     if (row.status === 'CANCELLED') return;
     if (row.status === 'PAID') throw new BadRequestException('No se puede cancelar un compromiso ya pagado.');
-    await this.prisma.payableCommitment.update({ where: { id }, data: { status: 'CANCELLED' } });
+    // Guard atómico: si un pago concurrente lo dejó PAID entre el check y acá,
+    // count===0 → no lo pisamos con CANCELLED (la plata ya salió).
+    const claim = await this.prisma.payableCommitment.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: 'CANCELLED' },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException('El compromiso cambió de estado (se pagó en paralelo). Recargá.');
+    }
     await this.audit.log({
       userId: actorId,
       action: 'PAYABLE_CANCELLED',

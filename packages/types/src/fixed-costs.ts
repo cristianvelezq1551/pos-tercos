@@ -100,6 +100,10 @@ export const MonthlyFinancialStatementSchema = z.object({
   periodEnd: z.string(), // YYYY-MM-DD
   revenue: z.number(),
   cogs: z.number(),
+  /** true si parte del COGS/refund se valuó sin lote FIFO (cold-start / factura
+   *  faltante) → el costo está SUBESTIMADO y la utilidad neta sobreestimada.
+   *  Mostrar aviso de "COGS parcial" para que el dueño no lea una ganancia falsa. */
+  cogsPartial: z.boolean(),
   grossMargin: z.number(),
   /** grossMargin / revenue. 0 si revenue=0. */
   grossMarginPct: z.number(),

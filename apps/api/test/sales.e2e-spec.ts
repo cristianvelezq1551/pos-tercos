@@ -360,11 +360,14 @@ describe('Sales E2E', () => {
         .expect(200);
       expect(res.body.status).toBe('CANCELADO_NO_PAGO');
 
-      // Una venta ya pagada NO se puede cancelar por esta vía.
-      await request
+      // Re-cancelar es IDEMPOTENTE: el cleanup del POS puede llamar cancel dos
+      // veces sobre la misma venta huérfana → devuelve la venta ya cancelada sin
+      // error (200), no un 400 ruidoso.
+      const again = await request
         .post(`/sales/${saleId}/cancel`)
         .set('Authorization', `Bearer ${cajeroToken}`)
-        .expect(400);
+        .expect(200);
+      expect(again.body.status).toBe('CANCELADO_NO_PAGO');
     });
   });
 

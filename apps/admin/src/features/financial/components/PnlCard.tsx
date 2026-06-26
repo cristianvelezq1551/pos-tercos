@@ -15,6 +15,12 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
       <div className="space-y-1.5 text-sm">
         <Row label="Ingresos del mes" value={formatCop(s.revenue)} />
         <Row label="− COGS (costo real FIFO)" value={`−${formatCop(s.cogs)}`} muted />
+        {s.cogsPartial ? (
+          <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+            Parte del costo se vendió sin lote costeado a FIFO (cargá las facturas de compra). El
+            COGS está subestimado y la ganancia mostrada es mayor a la real.
+          </p>
+        ) : null}
         <div className="my-2 border-t border-border" />
         <Row
           label="Margen bruto"

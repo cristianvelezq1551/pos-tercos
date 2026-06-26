@@ -135,6 +135,17 @@ describe('COGS FIFO (e2e HTTP)', () => {
     const pollo = val.items.find((i: { id: string }) => i.id === polloId);
     expect(pollo.qty).toBe(800);
     expect(pollo.value).toBe(16000);
+
+    // 8. El estado financiero mensual marca cogsPartial=false (todo costeado a
+    // FIFO). El flag avisa al dueño cuando el COGS está subestimado por falta de
+    // factura → no debe activarse en este escenario completamente costeado.
+    const now = new Date();
+    const stmt = (
+      await auth(
+        ctx.request.get(`/reports/financial/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`),
+      ).expect(200)
+    ).body;
+    expect(stmt.cogsPartial).toBe(false);
   });
 });
 

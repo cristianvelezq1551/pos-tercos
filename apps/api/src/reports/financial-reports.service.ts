@@ -124,6 +124,7 @@ export class FinancialReportsService {
       periodEnd: ymd(monthEnd),
       revenue: round(revenue),
       cogs: round(cogs),
+      cogsPartial: pnl.cogsUnknownQty > 0,
       grossMargin: round(grossMargin),
       grossMarginPct: round4(grossMarginPct),
       fixedCosts: fixedCostLines,
