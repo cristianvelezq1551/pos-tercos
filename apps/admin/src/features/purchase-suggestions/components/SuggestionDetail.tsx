@@ -64,10 +64,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
           <Row
             label="Tipo"
             value={
-              <StockableTypeBadge
-                type={suggestion.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
-                size="sm"
-              />
+              <StockableTypeBadge type={suggestion.entityType} size="sm" />
             }
           />
           <Row

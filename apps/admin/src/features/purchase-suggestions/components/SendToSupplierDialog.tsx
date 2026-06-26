@@ -34,13 +34,20 @@ export function SendToSupplierDialog({ suggestion, onClose, onSuccess }: Props) 
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     listSuggestionSuppliers(suggestion.id)
       .then((res) => {
+        if (cancelled) return;
         setSuppliers(res);
         const last = res.find((s) => s.isLast) ?? res[0];
         if (last) setSupplierId(last.supplierId);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'No se pudieron cargar los proveedores.'));
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudieron cargar los proveedores.');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [suggestion.id]);
 
   const selected = useMemo(

@@ -500,9 +500,6 @@ importers:
 
   packages/ui:
     dependencies:
-      '@pos-tercos/types':
-        specifier: workspace:*
-        version: link:../types
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

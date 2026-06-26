@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { getDashboardSummary } from '../api/client';
 
 const POLL_MS = 15_000;
 
@@ -43,12 +44,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
     let cancelled = false;
     const tick = async (): Promise<void> => {
       try {
-        const res = await fetch('/api/reports/dashboard', { credentials: 'include', cache: 'no-store' });
-        if (!res.ok) {
-          if (!cancelled) setStale(true);
-          return;
-        }
-        const data = (await res.json()) as DashboardSummary;
+        const data = await getDashboardSummary();
         if (!cancelled) {
           setSummary(data);
           setUpdatedAt(new Date());

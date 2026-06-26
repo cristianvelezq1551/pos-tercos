@@ -96,7 +96,6 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
             netPositive ? 'text-success' : 'text-destructive'
           }`}
         >
-          {netPositive ? '' : ''}
           {formatCop(s.netResult)}
         </p>
         <p className={`mt-1 text-xs ${netPositive ? 'text-success/80' : 'text-destructive/80'}`}>

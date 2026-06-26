@@ -8,7 +8,9 @@ import {
   amountsFromUnits,
   equalSplitAmounts,
   explodeUnits,
+  rederiveUnits,
   totalChange,
+  unitsSignature,
   validateSplit,
   type SplitMode,
   type SplitPart,
@@ -49,6 +51,17 @@ export function SplitPaymentSection({
   const [count, setCount] = useState(2);
   const [units, setUnits] = useState<SplitUnit[]>(() => explodeUnits(totals));
   const [parts, setParts] = useState<SplitPart[]>([]);
+
+  // Si el carrito o una promo cambian (p. ej. el refresh de promos de 60s)
+  // mientras la cuenta dividida está abierta, re-derivar las unidades con los
+  // precios nuevos preservando las asignaciones. Sin esto, `units` quedaba con
+  // precios viejos y en modo "por productos" los montos no sumaban el total.
+  const sig = unitsSignature(totals);
+  useEffect(() => {
+    setUnits((prev) => rederiveUnits(totals, prev));
+    // `sig` resume el contenido de `totals`; no depender de la referencia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
 
   // Montos derivados según el modo (en 'amounts' la edición es manual).
   useEffect(() => {

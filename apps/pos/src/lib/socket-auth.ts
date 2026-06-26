@@ -13,8 +13,12 @@ const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
  * sin esto, una reconexión horas después usa el token muerto y el socket
  * queda rechazado en silencio.
  *
+ * - `disconnect`: fuerza un refresh inmediato. socket.io espera
+ *   `reconnectionDelay` (~1s) antes del primer `reconnect_attempt`, así que el
+ *   fetch async del token suele completar ANTES → la primera reconexión ya sale
+ *   con credencial fresca (sin gastar un intento fallido con el token viejo).
  * - `reconnect_attempt`: refresca el token (throttled) y lo inyecta en
- *   `socket.auth` ANTES de que socket.io reintente el handshake.
+ *   `socket.auth` por si el refresh de `disconnect` aún no terminó.
  * - `connect_error` / `auth.error`: fuerza un refresh inmediato para que el
  *   PRÓXIMO intento ya salga con credencial nueva.
  *
@@ -42,14 +46,17 @@ export function keepSocketAuthFresh(socket: Socket): () => void {
     }
   };
 
+  const onDisconnect = () => void refresh(true);
   const onReconnectAttempt = () => void refresh();
   const onAuthFailure = () => void refresh(true);
 
+  socket.on('disconnect', onDisconnect);
   socket.io.on('reconnect_attempt', onReconnectAttempt);
   socket.on('connect_error', onAuthFailure);
   socket.on('auth.error', onAuthFailure);
 
   return () => {
+    socket.off('disconnect', onDisconnect);
     socket.io.off('reconnect_attempt', onReconnectAttempt);
     socket.off('connect_error', onAuthFailure);
     socket.off('auth.error', onAuthFailure);

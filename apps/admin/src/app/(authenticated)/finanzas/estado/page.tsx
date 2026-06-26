@@ -25,9 +25,11 @@ interface PageProps {
 export default async function FinancialStatementPage({ searchParams }: PageProps) {
   await requireRole(['DUENO']);
   const sp = await searchParams;
+  // Hora local del server (TZ=America/Bogota en prod) — NO UTC: con getUTC* el
+  // default saltaba al mes siguiente al final del mes después de las 19:00 Bogotá.
   const now = new Date();
-  const year = sp.year ? Number(sp.year) : now.getUTCFullYear();
-  const month = sp.month ? Number(sp.month) : now.getUTCMonth() + 1;
+  const year = sp.year ? Number(sp.year) : now.getFullYear();
+  const month = sp.month ? Number(sp.month) : now.getMonth() + 1;
 
   let statement: MonthlyFinancialStatement;
   let trend: MonthlyTrend;

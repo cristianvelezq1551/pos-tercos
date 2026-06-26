@@ -13,12 +13,16 @@ export function TreasuryMovements({ movements }: { movements: TreasuryMovement[]
   const router = useRouter();
   const [modal, setModal] = useState<'transfer' | 'adjustment' | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const onVoid = async (id: string): Promise<void> => {
     setBusy(id);
+    setError(null);
     try {
       await voidTreasuryMovement(id);
       router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo anular el movimiento.');
     } finally {
       setBusy(null);
     }
@@ -60,7 +64,7 @@ export function TreasuryMovements({ movements }: { movements: TreasuryMovement[]
                       ? `${POCKET_LABELS[m.fromPocket!]} → ${POCKET_LABELS[m.toPocket!]}`
                       : `Ajuste ${POCKET_LABELS[m.pocket!]}`}
                   </span>
-                  <Money amount={m.kind === 'TRANSFER' ? m.amount : m.amount} size="sm" weight="bold" />
+                  <Money amount={m.amount} size="sm" weight="bold" />
                   <span className="text-muted-foreground">{m.reason}</span>
                   <span className="text-xs text-muted-foreground">{formatDate(m.occurredAt, 'datetime')}</span>
                   {voided ? <span className="text-xs font-semibold text-destructive">ANULADO</span> : null}
@@ -79,6 +83,7 @@ export function TreasuryMovements({ movements }: { movements: TreasuryMovement[]
               );
             })}
           </ul>
+          {error ? <p className="mt-2 text-xs text-destructive" role="alert">{error}</p> : null}
         </Card>
       )}
 

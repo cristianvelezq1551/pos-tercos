@@ -12,6 +12,9 @@ export function LogoutButton() {
 
   const handleClick = async () => {
     await logoutRequest();
+    // Limpiar la shell SSR cacheada por el SW (lleva datos de este cajero) para
+    // que el próximo usuario no la vea offline.
+    navigator.serviceWorker?.controller?.postMessage('clear-nav-cache');
     startTransition(() => {
       router.replace('/login');
       router.refresh();

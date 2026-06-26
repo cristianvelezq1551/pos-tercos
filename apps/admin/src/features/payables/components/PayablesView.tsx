@@ -12,6 +12,21 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
   const pending = payables.filter((p) => p.status === 'PENDING');
   const history = payables.filter((p) => p.status !== 'PENDING');
   const [paying, setPaying] = useState<PayableCommitment | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const onCancel = async (id: string): Promise<void> => {
+    setCancelling(id);
+    setError(null);
+    try {
+      await cancelPayable(id);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cancelar el compromiso.');
+    } finally {
+      setCancelling(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -32,14 +47,16 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
                   <Button size="sm" onClick={() => setPaying(p)}>Pagar</Button>
                   <button
                     type="button"
-                    onClick={async () => { await cancelPayable(p.id); router.refresh(); }}
-                    className="text-xs text-destructive hover:underline"
+                    onClick={() => onCancel(p.id)}
+                    disabled={cancelling === p.id}
+                    className="text-xs text-destructive hover:underline disabled:opacity-50"
                   >
-                    Cancelar
+                    {cancelling === p.id ? 'Cancelando…' : 'Cancelar'}
                   </button>
                 </li>
               ))}
             </ul>
+            {error ? <p className="mt-2 text-xs text-destructive" role="alert">{error}</p> : null}
           </Card>
         )}
       </Section>

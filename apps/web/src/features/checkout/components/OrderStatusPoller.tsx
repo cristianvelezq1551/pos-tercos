@@ -24,20 +24,34 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
   const [order, setOrder] = useState<PublicWebOrder>(initial);
   const [conn, setConn] = useState<OrderConnState>('live');
 
+  // Deps SOLO [initial.id, token]: el interval se crea UNA vez y se detiene
+  // solo cuando el status entra a terminal (clear interno), no en cada
+  // transición. Antes dependía de order.status → cada cambio (PENDIENTE→PAGADO
+  // →EN_PREP→LISTO) reiniciaba el interval y disparaba un tick redundante.
   useEffect(() => {
-    if (isTerminal(order.status)) {
+    if (isTerminal(initial.status)) {
       setConn('stopped');
       return;
     }
     let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
     const tick = async () => {
       try {
         const fresh = await getWebOrder(initial.id, token);
         if (cancelled) return;
         setOrder(fresh);
-        // Si ya llegó a un estado terminal, el effect se va a desmontar el
-        // interval en el próximo render; marcamos 'stopped' sin pasar por 'live'.
-        setConn(isTerminal(fresh.status) ? 'stopped' : 'live');
+        if (isTerminal(fresh.status)) {
+          setConn('stopped');
+          stop();
+        } else {
+          setConn('live');
+        }
       } catch (e) {
         if (!cancelled) {
           setConn('reconnecting');
@@ -54,14 +68,16 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
-    const id = setInterval(tick, POLL_INTERVAL_MS);
+    timer = setInterval(tick, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      stop();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [initial.id, token, order.status]);
+    // initial.status solo se lee para el guard inicial y es estable (initial es
+    // el snapshot SSR, nunca se actualiza) → no reinicia el interval.
+  }, [initial.id, initial.status, token]);
 
   return { order, conn };
 }

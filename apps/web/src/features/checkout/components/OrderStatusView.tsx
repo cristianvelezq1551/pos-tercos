@@ -127,11 +127,16 @@ export function OrderStatusView({
         saleId: initial.id,
         token,
         receiptNumber: order.receiptNumber,
+        // Usar la fecha REAL del backend (no Date.now()): al abrir la URL de
+        // seguimiento en otro dispositivo sin la orden persistida, el TTL de 24h
+        // debe contarse desde la creación real, no desde "ahora".
         createdAt:
-          active?.saleId === initial.id ? active.createdAt : Date.now(),
+          active?.saleId === initial.id
+            ? active.createdAt
+            : new Date(order.createdAt).getTime(),
       });
     }
-  }, [order.status, initial.id, token, order.receiptNumber]);
+  }, [order.status, order.createdAt, initial.id, token, order.receiptNumber]);
 
   const showPayment = order.status === 'PENDIENTE_PAGO';
   const showPickupBanner = order.status === 'LISTO_DESPACHO';

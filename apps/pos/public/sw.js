@@ -59,6 +59,15 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Al cerrar sesión el cliente pide limpiar el cache de navegaciones: la shell
+// SSR cacheada lleva datos del usuario anterior (caja, historial). Sin esto, el
+// próximo cajero podría ver offline la shell del turno previo.
+self.addEventListener('message', (event) => {
+  if (event.data === 'clear-nav-cache') {
+    event.waitUntil(caches.delete(NAV_CACHE));
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;

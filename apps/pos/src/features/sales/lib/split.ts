@@ -61,6 +61,29 @@ export function explodeUnits(totals: CartTotalsResult): SplitUnit[] {
   return units;
 }
 
+/**
+ * Firma estable del contenido de `totals` relevante para el split por
+ * productos (líneas + cantidad + total con promo). Sirve para detectar cambios
+ * REALES del carrito/promo sin re-ejecutar por cada cambio de referencia.
+ */
+export function unitsSignature(totals: CartTotalsResult): string {
+  return totals.lines.map((l) => `${l.lineId}:${l.quantity}:${l.lineTotal}`).join('|');
+}
+
+/**
+ * Re-deriva las unidades desde `totals` preservando la asignación (assignedTo)
+ * de las unidades previas que sigan existiendo (misma key). Se usa cuando el
+ * carrito o una promo cambian mientras la cuenta dividida por productos está
+ * abierta: los precios se actualizan sin perder a quién se asignó cada unidad.
+ */
+export function rederiveUnits(totals: CartTotalsResult, prev: readonly SplitUnit[]): SplitUnit[] {
+  const prevByKey = new Map(prev.map((u) => [u.key, u.assignedTo]));
+  return explodeUnits(totals).map((u) => ({
+    ...u,
+    assignedTo: prevByKey.get(u.key) ?? u.assignedTo,
+  }));
+}
+
 /** Re-deriva los montos de las partes desde las unidades asignadas. */
 export function amountsFromUnits(units: readonly SplitUnit[], parts: number): number[] {
   const out = Array.from({ length: parts }, () => 0);
