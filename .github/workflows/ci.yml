@@ -78,3 +78,28 @@ jobs:
 
       - name: Tests e2e (API + Postgres)
         run: pnpm -F @pos-tercos/api test:e2e
+
+  # KDS Flutter: corre aparte (necesita el SDK de Flutter, no Node). Antes sus
+  # 47 tests solo se corrían a mano → podía regresar sin que nadie lo notara.
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/kds-flutter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Instalar dependencias
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test
