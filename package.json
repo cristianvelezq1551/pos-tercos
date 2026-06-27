@@ -36,6 +36,16 @@
       "sharp",
       "unrs-resolver",
       "usb"
-    ]
+    ],
+    "//overrides": "Fuerza versiones parcheadas de deps TRANSITIVAS con CVE (no podemos esperar a que el padre actualice). Todas son bumps dentro del mismo major → bajo riesgo. Ver `pnpm audit --prod`.",
+    "overrides": {
+      "tar@<7.5.11": ">=7.5.11",
+      "ws@<8.21.0": ">=8.21.0",
+      "form-data@<4.0.6": ">=4.0.6",
+      "postcss@<8.5.10": ">=8.5.10",
+      "qs@<6.15.2": ">=6.15.2",
+      "multer@<2.2.0": ">=2.2.0",
+      "@babel/core@<7.29.6": ">=7.29.6"
+    }
   }
 }
