@@ -3,7 +3,9 @@ import {
   amountsFromUnits,
   equalSplitAmounts,
   explodeUnits,
+  rederiveUnits,
   totalChange,
+  unitsSignature,
   validateSplit,
   type SplitPart,
 } from './split';
@@ -87,6 +89,43 @@ describe('explodeUnits / amountsFromUnits', () => {
     units[0]!.assignedTo = 99;
     const amounts = amountsFromUnits(units, 2);
     expect(amounts[1]).toBeGreaterThanOrEqual(units[0]!.amount);
+  });
+
+  // Regresión del bug "split por productos con precios viejos": cuando entra/sale
+  // una promo (cambia lineTotal) con la cuenta dividida abierta, las unidades
+  // deben re-derivarse con el precio nuevo SIN perder a quién se asignaron.
+  it('rederiveUnits actualiza precios y PRESERVA las asignaciones por key', () => {
+    const prev = explodeUnits(totals);
+    prev.forEach((u) => (u.assignedTo = 2)); // todas a la persona 2
+
+    const cheaper: CartTotalsResult = {
+      ...totals,
+      lines: [{ ...totals.lines[0]!, lineTotal: 20_000 }, totals.lines[1]!],
+      total: 25_000,
+    };
+    const next = rederiveUnits(cheaper, prev);
+
+    expect(next.reduce((a, u) => a + u.amount, 0)).toBe(25_000); // precio nuevo
+    expect(next.every((u) => u.assignedTo === 2)).toBe(true); // asignación preservada
+  });
+
+  it('rederiveUnits: una unidad nueva (key no vista) cae a la persona 1', () => {
+    const prev = explodeUnits(totals).map((u) => ({ ...u, assignedTo: 2 }));
+    const withExtra: CartTotalsResult = {
+      ...totals,
+      lines: [...totals.lines, { lineId: 'c', productName: 'Papas', quantity: 1, unitPrice: 6_000, lineSubtotal: 6_000, appliedPromotionId: null, lineDiscount: 0, lineTotal: 6_000 }],
+      total: 40_000,
+    };
+    const next = rederiveUnits(withExtra, prev);
+    const papas = next.find((u) => u.key.startsWith('c:'))!;
+    expect(papas.assignedTo).toBe(1); // default para la unidad nueva
+  });
+
+  it('unitsSignature cambia solo cuando cambia el contenido (no la referencia)', () => {
+    const sig = unitsSignature(totals);
+    expect(unitsSignature({ ...totals, lines: [...totals.lines] })).toBe(sig); // misma data → misma firma
+    const promoChanged = { ...totals, lines: [{ ...totals.lines[0]!, lineTotal: 28_000 }, totals.lines[1]!] };
+    expect(unitsSignature(promoChanged)).not.toBe(sig); // cambió el lineTotal → firma distinta
   });
 });
 
