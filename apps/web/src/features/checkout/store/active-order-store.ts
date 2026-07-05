@@ -50,6 +50,10 @@ export function isOrderExpired(order: ActiveOrder | null): boolean {
 }
 
 const TERMINAL_STATUSES = new Set([
+  // LISTO_DESPACHO es el estado FINAL del pedido web ("listo para retirar"):
+  // limpia la orden activa del localStorage para que el banner no la muestre
+  // como "en curso" indefinidamente. Debe coincidir con isTerminal() del poller.
+  'LISTO_DESPACHO',
   'ENTREGADO',
   'CANCELADO_NO_PAGO',
   'CANCELADO_SIN_REEMBOLSO',

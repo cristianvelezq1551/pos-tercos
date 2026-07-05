@@ -1,12 +1,9 @@
 'use client';
 
-import {
-  ProductAvailabilityResponseSchema,
-  PublicMenuResponseSchema,
-  type PublicMenuProduct,
-} from '@pos-tercos/types';
+import { type PublicMenuProduct } from '@pos-tercos/types';
 import { useEffect, useState } from 'react';
 import { logError } from '../../../lib/client-log';
+import { fetchAvailability, fetchPublicMenu } from '../../catalog';
 import { useCartStore } from '../../cart';
 import {
   hasReconcileChanges,
@@ -32,26 +29,19 @@ export function useCartReconcile() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch('/api/web/menu', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (cancelled || !json) return;
-        const parsed = PublicMenuResponseSchema.safeParse(json);
-        if (parsed.success) setMenu(parsed.data.products);
+    void fetchPublicMenu()
+      .then((products) => {
+        if (!cancelled && products) setMenu(products);
       })
       .catch((e) => logError('cart-reconcile', e));
     // Disponibilidad en vivo: un agotado debe quitarse del carrito ANTES de
     // pagar (si no, el backend lo rechaza con un 409 opaco). Best-effort.
-    void fetch('/api/products/availability', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (cancelled || !json) return;
-        const parsed = ProductAvailabilityResponseSchema.safeParse(json);
-        if (parsed.success) {
-          setUnavailableIds(
-            new Set(parsed.data.filter((r) => !r.available).map((r) => r.productId)),
-          );
-        }
+    void fetchAvailability()
+      .then((rows) => {
+        if (cancelled || !rows) return;
+        setUnavailableIds(
+          new Set(rows.filter((r) => !r.available).map((r) => r.productId)),
+        );
       })
       .catch((e) => logError('cart-reconcile-availability', e));
     return () => {

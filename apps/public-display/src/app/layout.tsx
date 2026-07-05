@@ -18,8 +18,8 @@ const fontDisplay = Anton({
 });
 
 export const metadata: Metadata = {
-  title: 'POS Tercos — Pantalla Pública',
-  description: 'Display read-only del turno actual + próximos en fila',
+  title: 'POS Tercos — Pantalla del local',
+  description: 'Pantalla read-only de productos, publicidad y música del local',
 };
 
 export const viewport: Viewport = {

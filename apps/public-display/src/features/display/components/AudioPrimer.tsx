@@ -45,7 +45,7 @@ export function AudioPrimer() {
     window.addEventListener('touchstart', dismiss, { once: true });
 
     // Auto-dismiss SIEMPRE a los 8s, haya o no gesture. En un kiosko sin touch
-    // el chime puede quedar mudo, pero el overlay NUNCA debe tapar el turnero.
+    // la música puede quedar muda, pero el overlay NUNCA debe tapar la pantalla.
     const auto = setTimeout(() => {
       const ctx = getAudioContext();
       if (ctx && ctx.state === 'suspended') {

@@ -5,3 +5,4 @@ export {
   type PickerSelection,
 } from './components/ProductPickerModal';
 export { getMenuServer } from './server';
+export { fetchPublicMenu, fetchAvailability } from './api/client';

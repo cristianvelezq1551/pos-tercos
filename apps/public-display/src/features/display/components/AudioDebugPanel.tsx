@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { getAudioContextState } from '../hooks/useAudioContext';
-import { getLastChimeError } from '../hooks/useTurnChime';
 
 /**
- * Visible solo con `?debug=audio`. Muestra el estado del AudioContext +
- * último error del chime. Pensado para enchufar la URL en un TV específico
- * y diagnosticar por qué no suena.
+ * Visible solo con `?debug=audio`. Muestra el estado del AudioContext.
+ * Pensado para enchufar la URL en un TV específico y diagnosticar por qué
+ * no suena la música ambiente.
  */
 export function AudioDebugPanel() {
   const [enabled, setEnabled] = useState(false);
@@ -28,7 +27,6 @@ export function AudioDebugPanel() {
   if (!enabled) return null;
 
   const ctxState = getAudioContextState();
-  const lastErr = getLastChimeError();
   const userAgent =
     typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a';
 
@@ -46,9 +44,6 @@ export function AudioDebugPanel() {
       </div>
       <div>
         Primed (post-gesture): <b>{String(ctxState.primed)}</b>
-      </div>
-      <div className="mt-2">
-        Last chime error: <b>{lastErr ?? 'none'}</b>
       </div>
       <div className="mt-2 break-all opacity-60">UA: {userAgent}</div>
     </div>

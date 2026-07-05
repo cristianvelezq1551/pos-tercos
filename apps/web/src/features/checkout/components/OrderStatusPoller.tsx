@@ -11,8 +11,8 @@ export type OrderConnState = 'live' | 'reconnecting' | 'stopped';
 
 /**
  * Polling cada 5s del estado de la orden. Detiene el polling cuando el
- * status entra a un terminal/no-cocina state (ENTREGADO, CANCELADO_*, VOID)
- * — el cliente puede recargar manualmente.
+ * status entra a un estado terminal (LISTO_DESPACHO, ENTREGADO, CANCELADO_*,
+ * VOID) — el cliente puede recargar manualmente.
  *
  * Razones para POLL en vez de SSE:
  *  - Ya hay rate-limit (120/60s para GET) y polling cada 5s = 12/min, OK.
@@ -84,6 +84,10 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
 
 function isTerminal(status: string): boolean {
   return [
+    // El pedido web termina en LISTO_DESPACHO ("listo para retirar"): es el
+    // estado final del flujo (sin cocina ni seguimiento de entrega). ENTREGADO
+    // queda por compatibilidad con pedidos históricos.
+    'LISTO_DESPACHO',
     'ENTREGADO',
     'CANCELADO_NO_PAGO',
     'CANCELADO_SIN_REEMBOLSO',

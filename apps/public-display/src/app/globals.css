@@ -3,7 +3,7 @@
 @source '../../../../packages/brand/src/**/*.{ts,tsx}';
 
 /* ─────────────────────────────────────────────────────────────────
- * POS TERCOS · Pantalla pública (turnero)
+ * POS TERCOS · Pantalla del local (productos + publicidad + música)
  * Tokens scopeados desde el .pen `webTurno`. Esta app NO usa los
  * tokens generales de packages/ui/styles/tokens.css — su estética
  * es marketing-first, no admin/POS.
@@ -19,7 +19,6 @@
   --color-text-white: #ffffff;
   --color-text-muted: #d7d2c8;
   --color-text-dim: #666666;
-  --color-turn-glow: rgb(225 27 34 / 0.25);
 
   --font-sans:
     var(--font-sans-app), 'Barlow Semi Condensed', ui-sans-serif, system-ui,
@@ -74,68 +73,5 @@ svg {
   .tabular {
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
-  }
-
-  /* ── Glow del turno ─────────────────────────────────────── */
-  .turn-badge {
-    box-shadow:
-      0 0 30px rgb(255 59 48 / 0.25),
-      0 0 60px rgb(255 59 48 / 0.1),
-      inset 0 0 30px rgb(255 59 48 / 0.05);
-  }
-  .turn-badge-active {
-    box-shadow:
-      0 0 40px rgb(255 59 48 / 0.5),
-      0 0 80px rgb(255 59 48 / 0.25),
-      0 0 120px rgb(255 59 48 / 0.1),
-      inset 0 0 40px rgb(255 59 48 / 0.1);
-  }
-
-  @keyframes ring-pulse {
-    0%,
-    100% {
-      transform: scale(1);
-      opacity: 0.6;
-    }
-    50% {
-      transform: scale(1.3);
-      opacity: 0;
-    }
-  }
-
-  @keyframes text-glow {
-    0%,
-    100% {
-      text-shadow:
-        0 0 20px rgb(255 59 48 / 0.3),
-        0 0 40px rgb(255 59 48 / 0.15);
-    }
-    50% {
-      text-shadow:
-        0 0 30px rgb(255 59 48 / 0.6),
-        0 0 60px rgb(255 59 48 / 0.3),
-        0 0 90px rgb(255 59 48 / 0.15);
-    }
-  }
-
-  .turn-text-glow {
-    animation: text-glow 2.5s ease-in-out infinite;
-  }
-
-  @keyframes ken-burns-in {
-    0% {
-      transform: scale(1);
-    }
-    100% {
-      transform: scale(1.06);
-    }
-  }
-  @keyframes ken-burns-out {
-    0% {
-      transform: scale(1.06);
-    }
-    100% {
-      transform: scale(1);
-    }
   }
 }

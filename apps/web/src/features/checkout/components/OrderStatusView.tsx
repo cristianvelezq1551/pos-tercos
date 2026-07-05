@@ -165,19 +165,16 @@ export function OrderStatusView({
         ) : null}
       </div>
 
-      {order.turnNumber !== null &&
-      (order.status === 'PAGADO' ||
-        order.status === 'EN_PREPARACION' ||
-        order.status === 'LISTO_DESPACHO') ? (
+      {order.status === 'PAGADO' || order.status === 'LISTO_DESPACHO' ? (
         <div className="w-full max-w-[420px] rounded-xl border-2 border-[#16A34A] bg-[#16A34A]/10 px-6 py-4 text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Tu turno
+            Tu pedido
           </p>
           <p className="font-display text-5xl font-extrabold leading-none text-foreground">
-            {order.turnNumber}
+            #{order.receiptNumber}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Mira la pantalla del local — te llamamos por este número.
+            Te avisamos por WhatsApp cuando esté listo para retirar.
           </p>
         </div>
       ) : null}
@@ -189,11 +186,8 @@ export function OrderStatusView({
       {showPickupBanner ? (
         <div className="w-full max-w-[420px] rounded-xl border border-[#16A34A] bg-[#16A34A]/10 p-4 text-center">
           <p className="text-sm text-foreground">
-            Acércate al mostrador con tu turno{' '}
-            <strong className="text-[#16A34A]">
-              #{order.turnNumber ?? order.receiptNumber}
-            </strong>
-            .
+            Acércate al mostrador con tu pedido{' '}
+            <strong className="text-[#16A34A]">#{order.receiptNumber}</strong>.
           </p>
         </div>
       ) : null}

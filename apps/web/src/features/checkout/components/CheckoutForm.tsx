@@ -12,6 +12,7 @@ import {
 import { createWebOrder } from '../api/create-order';
 import { useCartReconcile } from '../hooks/use-cart-reconcile';
 import { useActiveOrder } from '../store/active-order-store';
+import { randomUUID } from '../../../lib/uuid';
 import { CartChangesBanner } from './CartChangesBanner';
 import { OrderSummaryCard } from './OrderSummaryCard';
 import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
@@ -62,7 +63,7 @@ export function CheckoutForm() {
     setError(null);
     setPending(true);
     try {
-      const idempotencyKey = crypto.randomUUID();
+      const idempotencyKey = randomUUID();
       const result = await createWebOrder(
         {
           type: 'WEB_PICKUP',

@@ -2,13 +2,14 @@
 
 import type { DisplayTrack } from '@pos-tercos/types';
 import { useEffect, useRef } from 'react';
+import { logError } from '../../../lib/client-log';
 
 /**
  * Reproduce las pistas de música ambiente configuradas por el dueño, en bucle,
  * una tras otra. El autoplay del browser/kiosko exige un gesto previo: se
  * intenta arrancar de una y, si lo bloquean, se reintenta en el primer
- * pointer/touch/key (los mismos gestos que desbloquean la campana). Si no hay
- * pistas, no hace nada (el turnero ya tiene su chime de llamado).
+ * pointer/touch/key (los mismos gestos que desbloquean el audio). Si no hay
+ * pistas configuradas, no hace nada.
  */
 export function useAmbientMusic(tracks: DisplayTrack[]): void {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -41,8 +42,14 @@ export function useAmbientMusic(tracks: DisplayTrack[]): void {
       playCurrent();
     };
 
-    // Si una pista falla (404, formato), pasar a la siguiente sin trabarse.
-    const onError = () => window.setTimeout(next, 2000);
+    // Si una pista falla (404, formato), registrar y pasar a la siguiente sin
+    // trabarse (config rota que el dueño debe corregir en /turnero).
+    const onError = () => {
+      logError('ambient-music', audio.error ?? new Error('audio error'), {
+        src: audio.currentSrc,
+      });
+      window.setTimeout(next, 2000);
+    };
 
     audio.addEventListener('ended', next);
     audio.addEventListener('error', onError);

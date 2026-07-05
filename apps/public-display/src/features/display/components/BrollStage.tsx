@@ -6,23 +6,21 @@ import { useEffect, useState } from 'react';
 import { BROLL_SOCIAL, type BrollItem } from '../lib/broll-menu';
 
 /**
- * Fondo de marketing del turnero — réplica fiel de la señalética TERCOS-WEB
- * (`index.html`): columna izquierda con marca + producto + redes sobre negro,
- * columna derecha con la foto del plato a alto completo con Ken Burns.
+ * Fondo de marketing de la pantalla del local — réplica fiel de la señalética
+ * TERCOS-WEB (`index.html`): columna izquierda con marca + producto + redes
+ * sobre negro, columna derecha con la foto del plato a alto completo con Ken
+ * Burns.
  *
- * Rota un producto a la vez del menú real (`broll-menu.ts`). El turno + flash
- * + campana se superponen encima (ver `Display`).
+ * Rota un producto a la vez del menú real (`broll-menu.ts`).
  */
 
 const VIEW_DURATION_MS = 8_000;
-const TURN_PAUSE_MS = 5_000;
 const TICK_MS = 500;
 
 // Estado del ciclo a nivel MÓDULO — sobrevive a re-mounts (Strict Mode, HMR,
-// re-render del padre cuando cambia el turno). Mismo patrón que el Carousel viejo.
+// re-render del padre). Mismo patrón que el Carousel viejo.
 let moduleIndex = 0;
 let moduleLastAdvance = Date.now();
-let modulePausedUntil = 0;
 
 const infoEntrance = {
   hidden: { opacity: 0, y: 26, filter: 'blur(4px)' },
@@ -38,30 +36,14 @@ const infoEntrance = {
   }),
 };
 
-export function BrollStage({
-  items,
-  trigger,
-  hasTurn,
-}: {
-  items: BrollItem[];
-  trigger: number;
-  hasTurn: boolean;
-}) {
+export function BrollStage({ items }: { items: BrollItem[] }) {
   const [index, setIndex] = useState(moduleIndex);
-
-  // Pausa la rotación ante un llamado real (callSeq sube + hay turno), para que
-  // el cliente alcance a leer su número sin que el plato cambie debajo.
-  useEffect(() => {
-    if (!hasTurn) return;
-    modulePausedUntil = Date.now() + TURN_PAUSE_MS;
-  }, [trigger, hasTurn]);
 
   const count = items.length;
   useEffect(() => {
     if (count === 0) return;
     const id = setInterval(() => {
       const now = Date.now();
-      if (now < modulePausedUntil) return;
       if (now - moduleLastAdvance < VIEW_DURATION_MS) return;
       moduleLastAdvance = now;
       moduleIndex = (moduleIndex + 1) % count;

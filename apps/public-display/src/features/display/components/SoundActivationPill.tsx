@@ -6,7 +6,7 @@ import { getAudioContext, getAudioContextState } from '../hooks/useAudioContext'
 /**
  * Píldora no intrusiva (esquina) que aparece SOLO si el AudioContext está
  * bloqueado (autoplay policy del browser/kiosko). Un toque lo desbloquea para
- * toda la sesión → la campana de turno vuelve a sonar. Si el audio ya está
+ * toda la sesión → la música ambiente vuelve a sonar. Si el audio ya está
  * `running`, no se muestra nada.
  */
 export function SoundActivationPill() {
@@ -53,7 +53,7 @@ export function SoundActivationPill() {
       onClick={activate}
       className="fixed bottom-4 left-4 z-[160] flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-md ring-1 ring-white/20 transition-colors hover:bg-white/20"
     >
-      <span aria-hidden className="text-base">🔔</span>
+      <span aria-hidden className="text-base">🔊</span>
       Activar sonido
     </button>
   );

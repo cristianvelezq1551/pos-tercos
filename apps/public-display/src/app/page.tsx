@@ -1,10 +1,9 @@
 import { Display } from '../features/display';
-import { getInitialDisplayState } from '../features/display/server';
 
-// Sin cache: siempre fresco al primer render. El SSE se encarga del live.
+// Sin cache: el contenido (B-roll + música) se refresca client-side via
+// useBrollConfig (consulta /api/display/broll cada 5 min).
 export const dynamic = 'force-dynamic';
 
-export default async function PublicDisplayPage() {
-  const initial = await getInitialDisplayState();
-  return <Display initial={initial} />;
+export default function PublicDisplayPage() {
+  return <Display />;
 }
