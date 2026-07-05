@@ -10,9 +10,9 @@ En 3 transiciones de un pedido **WEB_PICKUP** el backend envía un mensaje:
 
 | Disparador | Endpoint / hook | Mensaje al cliente |
 |---|---|---|
-| Cajero presiona **"Aceptar"** en el drawer del POS | `POST /sales/:id/accept` | Instrucciones de pago (Nequi/transferencia) + pedir comprobante |
-| Cajero **confirma el pago** | hook en `POST /sales/:id/confirm-payment` | "Pago confirmado ✅, ya está en cocina" |
-| Cocina marca **listo** | hook en `POST /kds/orders/:id/ready` | "Listo para retirar en {dirección}" |
+| Cliente **crea el pedido** web | `POST /web/orders` (`WebOrdersService.create`) | Instrucciones de pago (Nequi/transferencia) + pedir comprobante |
+| Cajero **confirma el pago** | hook en `POST /sales/:id/confirm-payment` | "Pago confirmado ✅, ya lo preparamos" |
+| Cajero marca **listo para retirar** | hook en `POST /sales/:id/mark-ready` | "Listo para retirar en {dirección}" |
 
 - Idempotente: cada envío setea un flag `notified_*` en `sales`; no se reenvía.
 - Cada envío se registra en la tabla `whatsapp_messages` (status `sent`/`failed`).

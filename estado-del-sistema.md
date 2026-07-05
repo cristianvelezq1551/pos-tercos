@@ -2,6 +2,7 @@
 
 > **Generado: 2026-06-10** (rama `refactor/v2-reorientacion`, tras la sesión de auditoría §7.v5 de CLAUDE.md).
 > Documenta qué hace y cómo funciona cada módulo de cada app, su estado real verificado contra el código, y el inventario de trabajo pendiente.
+> ⚠️ **2026-06-27 (CLAUDE.md §7.v10): turnero + KDS ELIMINADOS.** Lo que este doc lista como `kds` / `public-display` (turnero) / POS feature `turn` es **histórico**: hoy COUNTER termina en PAGADO, el pedido web se marca "listo" desde el POS (`/sales/:id/mark-ready`), `public-display` es solo productos+publicidad+música, y no hay app de cocina.
 > ⚠️ Varios docs de planificación de la raíz (`fase5e-y-pendientes.md`, `fase4-ajustes-pendientes.md`, `implementation-plan.md`) describen como "pendiente" trabajo que **ya está hecho** — ver §10. La fuente canónica de estado sigue siendo `CLAUDE.md`.
 
 ---

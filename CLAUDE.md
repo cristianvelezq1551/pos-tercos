@@ -46,13 +46,14 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 |---|---|---|---|
 | API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 + 14 + 15 backend ✅ + WS-1/2/3/4 v2 ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes (ventas/productos/operación) / promos / sugerencias IA / RRHH | FASE 0-4 + 11 + 12 + 13 + 14 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA (manifest + SW offline) — venta + drawer pedidos web + cierre turno + cambiar PIN | FASE 5.E + 7.E + 11 + 15.D UI ✅ |
-| KDS Cocina | `apps/kds-flutter` | Flutter (tablet Android) — comanda cocina, Clean Architecture (Riverpod + Freezed + Dio + GoRouter) | WS-3 ✅ |
-| Pantalla Pública | `apps/public-display` | Next.js + SSE — turnero kiosko (sin auth) | FASE 6.D + rediseño ✅ |
+| POS Cajero | `apps/pos` | Next.js PWA (manifest + SW offline) — venta + drawer pedidos web (con "Marcar listo") + cierre turno | FASE 5.E + 7.E + 11 + 15.D UI ✅ |
+| Pantalla del local | `apps/public-display` | Next.js — kiosko de **productos + publicidad + música** (B-roll, sin auth, **sin turnos**) | §7.v10 |
+| Cocina | `apps/cocina` | Next.js (responsive, puerto 3006, cookies `cocina_*`) — biblia + producción + inventario de cocina (merma + conteo ciego) + incidencias + checklist | §7.v11 ✅ |
 | Web Pública | `apps/web` | Next.js — menú + checkout WEB_PICKUP + status tracking | FASE 7.C-D UI ✅ |
 | Print Agent | `apps/print-agent` | Node service local — ESC/POS + cajón monedero | FASE 15.C ✅ |
 
-> **Eliminados en reorientación v2:** `apps/kds` (Next.js KDS), `apps/repa` (repartidor). No existen en este branch.
+> **Eliminados en reorientación v2:** `apps/kds` (Next.js KDS), `apps/repa` (repartidor).
+> **Eliminados en §7.v10 (2026-06-27):** `apps/kds-flutter` (KDS Flutter) + turnero. La app de cocina futura será **web** (a construir); su backend de producción/biblia/inventario sigue vivo.
 
 ### Packages compartidos
 
@@ -101,7 +102,7 @@ apps/api/src/<dominio>/
 **Reglas backend:**
 - ❌ NUNCA `PrismaService` en controller. Solo en service.
 - ❌ NUNCA lógica de negocio en controller.
-- ❌ NUNCA acceder a entidades de otro dominio directamente con Prisma — pedirle al `<X>Service` inyectado.
+- ❌ NUNCA acceder a entidades de otro dominio directamente con Prisma — pedirle al `<X>Service` inyectado. **Excepción documentada:** los servicios **agregadores de reportes/finanzas** (`reports/*`, `treasury`) leen tablas de varios dominios en una sola pasada (P&G, COGS FIFO cronológico, reconciliación, dashboard). Son read-only y por naturaleza cross-entidad; envolver cada lectura en su `<X>Service` agregaría N llamadas sin valor. Estos módulos PUEDEN usar Prisma cross-dominio para LECTURA; las ESCRITURAS siguen yendo por el service dueño.
 - ❌ NUNCA mezclar adapters externos con lógica de dominio (van en `apps/api/src/adapters/<provider>/` detrás de interfaces de `@pos-tercos/domain`).
 - ✅ SIEMPRE validar input con Zod en controller (pipe propio).
 - ✅ SIEMPRE retornar DTOs explícitos, nunca entidades Prisma crudas.
@@ -238,6 +239,8 @@ Inyectado vía token `STORAGE_PROVIDER` en `StorageModule.@Global()`.
 
 ### 4.10 WhatsApp automático vía OpenWA (decisión 2026-05-22, reorientación v2)
 
+> **ACTUALIZACIÓN 2026-07-05 — KAPSO (Cloud API oficial de Meta) reemplaza a OpenWA; código COMPLETO (Fases A+B).** El envío va por Kapso (Meta Business Partner, su API espeja la Cloud API) para eliminar el riesgo de baneo de OpenWA. Mismo puerto `WhatsAppProvider` (+ `sendTemplate?` opcional): factory por prioridad `KAPSO_*` → `OPENWA_*` → mock, con **fail-fast al boot si la config queda parcial**. Templates business-initiated en `packages/domain/src/whatsapp/templates.ts` (5: los 4 stages del cliente + `alerta_negocio` del dueño; `sanitizeTemplateParam` aplana saltos de línea que Meta rechaza en variables) — se activan con `WHATSAPP_TEMPLATES_ENABLED=true` + `WHATSAPP_TEMPLATE_LANG` (apagado = texto libre → sandbox/dev/OpenWA intactos). **Para el go-live solo falta lo operativo** (chip +57 dedicado, registrar número y 5 templates, env vars) — derrotero en `kapso-setup.md`. Lo de abajo (stages, idempotencia por flags `notified_*`, tabla `whatsapp_messages`) sigue vigente sin cambios.
+>
 > **ATENCIÓN — Esta sección reemplaza completamente la decisión anterior de wa.me (2026-05-04).** El flujo wa.me manual (FASE 9 en `main`) fue descartado y reemplazado por envío automático desde el backend.
 
 **Arquitectura actual (commit `e739ef2`):**
@@ -263,8 +266,8 @@ apps/api/src/notifications/
 | Stage | `notified_*` flag en Sale | Trigger | Mensaje |
 |---|---|---|---|
 | `payment_instructions` | `notified_payment_instructions` | `WebOrdersService.create` (al crear el pedido web) | Instrucciones de pago Nequi/transfer + "enviá comprobante" |
-| `payment_received` | `notified_payment_received` | `SalesService.confirmPayment` | "Pago verificado, ya en cocina" |
-| `pickup_ready` | `notified_ready_for_pickup` | `KdsService.ready` | "Listo para retirar" + dirección |
+| `payment_received` | `notified_payment_received` | `SalesService.confirmPayment` | "Pago verificado, ya en preparación" |
+| `pickup_ready` | `notified_ready_for_pickup` | `SalesService.markWebReady` (`POST /sales/:id/mark-ready`, cajero "Marcar listo") | "Listo para retirar" + dirección |
 | `canceled` | `notified_canceled` | `SalesService.cancelWebOrder` (cajero rechaza) | "Tu pedido fue cancelado" |
 
 **Reglas duras:**
@@ -1013,11 +1016,107 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 
 ---
 
+## 7.v10 Eliminación de turnero + KDS (2026-06-27)
+
+> **Decisión del dueño:** se eliminan por completo **el turnero** (llamado de turnos, pantalla de turno, campana, flash, SSE de estado) y **el KDS** (display de cocina). La app de cocina futura será **web** (no Flutter) y se construirá después; consumirá los endpoints de producción/biblia/inventario que **siguen vivos**. Verificado: typecheck 12/12, lint 0, unit (domain 135 + pos 39 + api 19).
+
+### Nuevo ciclo de vida de la venta
+- **COUNTER (mostrador): termina en `PAGADO`.** No hay estados de cocina. El recibo imprime el **# de recibo** (no "TU TURNO").
+- **WEB_PICKUP:** `PENDIENTE_PAGO → PAGADO → LISTO_DESPACHO` (terminal). El cajero marca **"Marcar listo para retirar"** desde el modal de Pedidos web → `POST /sales/:id/mark-ready` (`SalesService.markWebReady`, TOCTOU-safe) → dispara el WhatsApp `pickup_ready`. **Listo = fin** (no hay "Entregar"/ENTREGADO en el flujo web nuevo).
+
+### Eliminado
+- **Backend:** módulos `apps/api/src/kds/` y `apps/api/src/public-display/` (borrados). En `app.module.ts` desregistrados. `SalesService`/`SalesEditService` ya no inyectan `KdsGateway`. Endpoints `/kds/*` y `/public-display/*` **no existen**. `KdsService.ready` reemplazado por `SalesService.markWebReady`. La asignación de `turnNumber` se quitó de `confirmPayment` + `syncOffline`.
+- **Tipos:** `packages/types/src/kds.ts` y `public-display.ts` borrados. `turnNumber` quitado de `SaleSchema`, `ShiftSessionOrderSchema`, `PublicWebOrderSchema`. `ReceiptData`/`ComandaData` (domain) sin `turnNumber` (el ESC/POS imprime `PEDIDO #recibo`; offline imprime el provisional `OFF-N`).
+- **App Flutter:** `apps/kds-flutter/` **borrada** (1.5G) + su job `flutter` en `.github/workflows/ci.yml`.
+- **POS:** `features/turn/` borrado (TurnPanel, ReadyChimeWatcher, ManualCallSection, ready-chime), ruta `/turnos` y su tab en `PosNav`. `useKdsLiveRefresh` + `sales/api/kitchen.ts` borrados (usaban `/ws/kds`). El historial muestra `#recibo` (no "Turno N").
+- **TV (public-display app):** capa de turno borrada (`useDisplayStream`, `TurnBadgeCircular`, `WhiteFlashOverlay`, `useTurnChime`, `useStreamWatchdog`, `server.ts`, CSS `.turn-*`). El SSE `/public-display/stream` ya no se consume.
+
+### Conservado (NO tocar pensando que es del turnero)
+- **TV sigue viva** mostrando **productos + publicidad + música**: `BrollStage` (carrusel B-roll), `useBrollConfig` (consulta `/api/display/broll` cada 5 min), `useAmbientMusic`, kiosk guards, wake lock. El módulo `apps/api/src/display/` (B-roll/música configurable por el dueño en `/turnero` admin) queda intacto.
+- **Pedidos web** (`/ws/pos` `PosGateway`, `features/web-orders`) siguen vivos. Única acción de cocina del cajero: "Marcar listo".
+- Rol `COCINERO` + `@KitchenAccess` + endpoints de producción (`/subproducts/:id/produce`, `/subproducts/production-status`) + biblia (`/recipe-book`) + inventario **siguen vivos** para la futura app web de cocina.
+- **DB sin migración:** columnas `sales.turn_number`/`ready_at`/`called_at` + enums `EN_PREPARACION`/`LISTO_DESPACHO`/`ENTREGADO` quedan **dormidos** (git es el archivo; cero riesgo de migración). El audit action `KDS_ORDER_DELAYED` se conserva para leer histórico (nunca se emite de nuevo).
+
+### Tests e2e ajustados
+- `sales-edit.e2e-spec.ts` + `cogs.e2e-spec.ts`: el estado se fuerza vía `prisma.sale.update({status})` (antes lo manejaban los endpoints `/kds/*` borrados). `sales-concurrency.e2e-spec.ts`: la unicidad se valida sobre `receiptNumber` (no `turnNumber`). `auth-revocation.e2e-spec.ts`: el test de revocación WS apunta a `PosGateway` (el `KdsGateway` ya no existe).
+
+---
+
+## 7.v11 App de cocina (`apps/cocina`) — 2026-06-27
+
+> La app de cocina que §7.v10 dejó pendiente, ahora **construida** (web, responsive). Reemplaza conceptualmente al KDS Flutter borrado, pero NO es un display de pedidos (hay comanda física impresa): es la herramienta del cocinero para recetas, producción e inventario. Verificado: typecheck 13/13, lint 0, e2e 165/165 (21 suites, +11 kitchen), 5 builds Next.
+
+### Backend nuevo — módulo `kitchen` (`apps/api/src/kitchen/`, `@KitchenAccess`)
+- `GET /kitchen/stock` — todos los stockables de cocina (insumo+subproducto+reventa), **cantidades sin costos** (`Stockable[]`, que no expone `lastUnitCost`). Reusa `InventoryService.listStockables`.
+- `POST /kitchen/waste` — registra **merma** (movement WASTE negativo, motivo obligatorio) vía `InventoryService.createMovement`. El cocinero NUNCA hace ajustes arbitrarios ni recepción (eso entra por facturas en admin — decisión del dueño).
+- `POST /kitchen/count` — **conteo físico ciego** (batch): reusa `StockCountsService.register` por ítem; devuelve `{counted, adjusted}` SIN revelar lo esperado.
+- `GET/POST /kitchen/incidents` + `POST /kitchen/incidents/:id/resolve` (`@AdminAccess`) — bitácora de incidencias del cocinero para el dueño.
+- `GET /kitchen/checklist?type=OPEN|CLOSE` + `POST /kitchen/checklist/complete` — checklist apertura/cierre (una rutina por `(type, día local)`). Ítems los administra el admin: `GET/POST /kitchen/checklist/items` + `PATCH /kitchen/checklist/items/:id` (`@AdminAccess`).
+- Reusa lo existente: `/recipe-book` (biblia), `/subproducts/production-status` + `/produce` (producción), `/ingredients`.
+- **DB nueva** (migración `20260627160000_kitchen_module`): tablas `kitchen_incidents`, `checklist_items`, `checklist_completions` + enums `KitchenIncidentCategory`, `ChecklistType`. FK a usuario relation-less (nombre resuelto en el service vía `UsersService.namesByIds`). Audit actions nuevos: `KITCHEN_INCIDENT_LOGGED/RESOLVED`, `KITCHEN_CHECKLIST_COMPLETED`, `CHECKLIST_ITEM_CREATED/UPDATED`. ⚠️ `cleanDb` (e2e) trunca las 3 tablas nuevas.
+
+### App `apps/cocina` (Next.js 15, responsive, puerto 3006)
+- Aislamiento de cookies `cocina_*` (middleware sanea `admin_*`/`pos_*`) + `X-Client-App: cocina`. El backend `auth.controller` ganó el 3er app `cocina` en `COOKIE_NAMES`/`resolveApp`. Gate de rol = `@KitchenAccess` (COCINERO/ADMIN_OPERATIVO/DUENO).
+- Secciones: **Biblia** (`/biblia`, solo lectura), **Producción** (`/produccion`), **Inventario** (`/inventario`: stock + merma + conteo ciego), **Incidencias** (`/incidencias`), **Checklist** (`/checklist`). Home = launcher.
+- Admin: ruta `/cocina` (incidencias + administrar ítems del checklist) + item en el sidebar (sección Operación).
+
+### Decisiones cerradas (NO re-discutir)
+- Biblia **solo lectura** (el admin cura recetas/pasos). Recepción de insumos **NO** la hace el cocinero (rompería FIFO/COGS). Stock visible al cocinero **sin costos**. Conteo **ciego** (la pantalla de conteo no pre-llena lo esperado; el cocinero igual ve stock en la pestaña Stock — aceptable para 1 cocinero). Extras incluidos: bitácora de incidencias + checklist. PEPS/caducidad de lotes quedó para fase 2.
+
+---
+
+## 7.v12 Bloque de ventas 2026-07 — cuentas abiertas, descuento manual, panel de pedidos (2026-07-05)
+
+> Cierra los ajustes #1/#2/#3/#5b/#8 y TODOS los bugs de la auditoría 2026-07 (B1-B9) +
+> la limitación FIFO de la reversa de cortesías. Doc de traspaso: `AUDITORIA-Y-AJUSTES-2026-07.md`.
+> Verificado: typecheck 13/13, domain 151, POS 40, e2e 22 suites/177, lint limpio.
+> Migración: `20260705100000_open_tabs_and_manual_discounts`.
+
+### Cuentas abiertas (#3)
+- `sales.is_open_tab` — venta COUNTER que vive en PENDIENTE_PAGO indefinidamente (cliente conocido). `CreateSale.openTab` exige `customerName`. **Exenta del sweep** de abandonadas.
+- **Comanda incremental**: `sale_items.sent_to_kitchen_qty/_at`. `POST /sales/:id/send-to-kitchen` estampa lo pendiente y devuelve ambas variantes de comanda ESC/POS SOLO con lo nuevo (tanda 2+ rotulada "ADICIÓN"). `editItems` preserva lo enviado por huella de línea. Quitar una línea ya enviada NO imprime corrección (aviso de voz — limitación documentada).
+- Cobro: mismo `confirm-payment`; si la caja original cerró, `resolvePaymentShift` re-cuelga la venta de la caja abierta del que cobra. Al pagar, la comanda solo lleva lo pendiente (`sendTabToKitchen`), no re-imprime.
+- POS: input **Cliente** (#1) + botones **Descuento**/**Cuenta** en el carrito (`CartMetaControls`); **`OrdersPanel`** (#2, izquierda ≥lg): cuentas abiertas (Cobrar / Agregar-editar / A cocina con badge de pendientes / Cancelar) + últimos pedidos del día. Evento global `pos:orders-changed`.
+- **#8**: la comanda de ANULACIÓN (render `cancelled`, número gigante) se dispara al anular una venta pagada (VoidModal) y al cancelar una cuenta abierta con tandas enviadas.
+
+### Descuento manual (#5b)
+- Por LÍNEA (`sale_items.manual_discount_kind/value`; el monto vive en `line_discount` con `appliedPromotionId=null`) y SOBRE EL TOTAL (`sales.order_discount_kind/value/amount`). FIJO y PORCENTAJE. CHECKs defensivos en DB.
+- **EXCLUYENTE con promociones**: cualquier descuento manual desactiva el motor de promos para TODA la venta (server y POS espejan la regla vía `manualDiscountAmount` en `@pos-tercos/domain/common/manual-discount.ts` — puro, testeado).
+- `discount_total = Σ line_discount + order_discount_amount` (CHECK `sales_total_coherent` intacto → recibos y reportes sin cambios).
+- Sin aprobación pero: motivo obligatorio (`discount_reason`), audit `SALE_MANUAL_DISCOUNT`, alerta WhatsApp al dueño (kind `manual_discount`).
+- Split "por productos" deshabilitado si hay descuento sobre el total; descuentos manuales NO disponibles offline (el payload de sync no los representa).
+
+### Fixes de auditoría (B1-B9, todos cerrados)
+- **B1**: `confirmPayment` re-lee items/total DENTRO de la tx SERIALIZABLE (edición concurrente → 400, nunca cobra snapshot stale).
+- **B2**: `editItems` lee TODO dentro del closure de `runSaleTxWithRetry` (un retry recomputa deltas frescos; antes duplicaba ajustes de stock).
+- **B3**: P2002 de `idempotency_key` → devuelve la venta ganadora (`isIdempotencyKeyConflict`).
+- **B4**: la tx del cobro re-verifica que la caja destino siga OPEN.
+- **B5**: `syncOffline` valida consistencia aritmética del payload (400 a la bandeja); método deshabilitado → audit `OFFLINE_SYNC_DISCREPANCY`.
+- **B6**: venta offline de otro día → audit `OFFLINE_SYNC_DISCREPANCY {kind:'cross_day_shift'}` (no bloquea).
+- **B8**: catches de auditoría offline loguean con `Logger.error` (ya no mudos).
+- **B9**: `GET /sales` con from/to/limit inválidos → 400.
+
+### FIFO — reversa de cortesía con base de costo real
+- `runLedgerFifo` registra los draws de cada cortesía (`sourceType='cortesia'`) y los movimientos `cortesia_reversal` (delta>0) devuelven las unidades con su costo ORIGINAL (reverso FIFO, helper `returnDraws` compartido con el void de ventas) + netean `cortesia`/`cortesiaCostBySource`. Sin lotes fantasma (el faltante NO se re-inyecta — el replay cubre toda la historia).
+
+### Auditoría §1.C completa (2026-07-05) — fixes posteriores
+> Pasada de auditoría con 6 agentes (FIFO, reportes, dinero, inventario/crons, código muerto, frontends). Detalle completo en `AUDITORIA-Y-AJUSTES-2026-07.md §1.C`. Verificado: typecheck 13/13, domain 154, POS 40, e2e 22 suites/179, lint limpio. Lo clave:
+- **`ShiftsService.close()` es tx SERIALIZABLE** + advisory lock + guard `WHERE OPEN` + retry — un cobro concurrente al cierre ya no descuadra el arqueo (SSI aborta a uno).
+- **Void/reembolso con la caja de la venta CERRADA** registra la devolución como `cash_movements OUT` (por parte de pago, method-aware) en la caja ABIERTA actual; sin caja abierta se bloquea. (`resolveRefundMovementShift`/`createRefundMovements` en sales.service.)
+- **Reconciliación CSV**: la ventana de `unmatched_sale` es por días CALENDARIO (antes toda venta de la tarde del último día del extracto escapaba del flag).
+- **`getTopProducts`/`getProductMargins` prorratean `orderDiscountAmount`** (#5b) — revenue concilia con `sale.total`/P&G. `voidCount` del summary por `paidAt`.
+- **FIFO**: tanda sin consumos → lote `unitCost=null` (nunca $0); batch malformado aplica sus consumos; sin lotes fantasma en reversa de cortesía.
+- **Scan de sugerencias**: guard `scanning` compartido entre cron y endpoint manual (evita PENDING duplicadas).
+- **Admin/cocina**: doble-submit arreglado en IngredientForm/SubproductForm (`submitting` cubre la red) + `portionSize > 0`; blob leak de SlideEditModal; errores visibles en IncidentsPanel/IncidenciasView/ChecklistItemsPanel; barrels de dashboard/kitchen-admin; borrados `pos/DayHistoryModal.tsx` y `cocina/lib/api-server.ts` (huérfanos).
+- Decisiones aceptadas sin cambio (documentadas en el doc de auditoría): grossMargin no resta waste/cortesía (líneas separadas del P&G), margen por producto usa receta vigente (aproximación), byMethod.count = pagos, endpoints de trigger manual sin caller de UI se conservan.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
 
-> La rama activa es `refactor/v2-reorientacion`. Los commits de `main` son historial válido de FASES 0-15. Los commits v2 están documentados en sec 7.v2.
+> La rama activa es `chore/remove-turnero-kds` (eliminación turnero/KDS §7.v10, ~170 commits sobre `main`, aún sin mergear — el rollback es de toda la rama, no de un commit). La rama de la reorientación v2 fue `refactor/v2-reorientacion`. Los commits de `main` son historial válido de FASES 0-15. Los commits v2 están documentados en sec 7.v2.
 
 ### Commits en `main` (92, base v1)
 
@@ -1603,7 +1702,7 @@ pnpm lint          # eslint funcional (sin ignoreDuringBuilds)
 - Frontends Next.js: `JWT_ACCESS_SECRET` (POS edge middleware), `API_INTERNAL_URL`, `NEXT_PUBLIC_API_WS_URL`.
 - KDS Flutter: `API_BASE_URL`, `WS_URL` en `app_config.dart` (compiladas en el build).
 - Print Agent (Pi): `PRINTER_DEVICE=/dev/usb/lp0`, `PRINT_AGENT_PORT=9120`, `PRINT_AGENT_SECRET` (matches API).
-- **Eliminadas en v2:** `MAPBOX_TOKEN`, `RESTAURANT_LAT/LNG`, `DELIVERY_RADIUS_KM`, `NEXT_PUBLIC_MAPBOX_TOKEN`, `NEXT_PUBLIC_BUSINESS_NAME/ADDRESS_SHORT` (ahora solo server-side sin `NEXT_PUBLIC_`).
+- **Eliminadas en v2:** `MAPBOX_TOKEN`, `RESTAURANT_LAT/LNG`, `DELIVERY_RADIUS_KM`, `NEXT_PUBLIC_MAPBOX_TOKEN`. (`NEXT_PUBLIC_BUSINESS_NAME` SIGUE viva en apps/web — layout y checkout la usan; `NEXT_PUBLIC_SITE_URL` también es de apps/web para SEO).
 
 **Operación día a día (post-launch):**
 - Backup automático nocturno (GH Actions → R2).
@@ -1611,7 +1710,7 @@ pnpm lint          # eslint funcional (sin ignoreDuringBuilds)
 - Audit log en `/audit` accesible solo para Dueño.
 - Dashboard `/` admin: revenue del día + WoW% + pedidos pendientes + stock crítico.
 - Sugerencias IA (`/purchase-suggestions`) — el cron horario detecta low-stock; el Dueño revisa, evalúa con IA si quiere y acepta/rechaza.
-- WhatsApp automático vía OpenWA — el backend envía solo. Las instrucciones de pago salen al crear el pedido web; "pago recibido" y "listo para retirar" se disparan en `confirmPayment` y `KdsService.ready`. El cajero solo confirma el pago (`POST /sales/:id/confirm-payment`) cuando valida el comprobante.
+- WhatsApp automático vía OpenWA — el backend envía solo. Las instrucciones de pago salen al crear el pedido web; "pago recibido" se dispara en `confirmPayment`; "listo para retirar" lo dispara el cajero con "Marcar listo" (`POST /sales/:id/mark-ready` → `SalesService.markWebReady`). El cajero confirma el pago (`POST /sales/:id/confirm-payment`) cuando valida el comprobante.
 
 **FASE 10 (repartidor): DESCARTADA.** No hay plans de delivery propio en v1.
 

@@ -1,7 +1,7 @@
 # Probar el backend sin abrir las apps
 
 Cómo verificar el flujo de **venta web + notificaciones WhatsApp** usando solo la
-API + `curl`, sin levantar admin / POS / KDS. Útil para smoke tests rápidos.
+API + `curl`, sin levantar admin / POS. Útil para smoke tests rápidos.
 
 ## Requisitos
 
@@ -53,11 +53,11 @@ SID=$(python3 -c "import json;print(json.load(open('/tmp/order.json'))['order'][
 TOTAL=$(python3 -c "import json;print(json.load(open('/tmp/order.json'))['order']['total'])")
 echo "pedido $SID · total $TOTAL"
 
-# El cajero confirma el pago cuando valida el comprobante (única acción suya)
+# El cajero confirma el pago cuando valida el comprobante
 curl -s -X POST $API/sales/$SID/confirm-payment -H "$AUTH" -H 'Content-Type: application/json' \
   -d "{\"method\":\"CASH\",\"amountReceived\":$TOTAL}" -o /dev/null -w "  confirmar → HTTP %{http_code}\n"  # 📲 pago recibido
-curl -s -X POST $API/kds/orders/$SID/start -H "$AUTH" -o /dev/null -w "  cocina inicia → HTTP %{http_code}\n"
-curl -s -X POST $API/kds/orders/$SID/ready -H "$AUTH" -o /dev/null -w "  marcar listo → HTTP %{http_code}\n"  # 📲 listo para retirar
+# El cajero marca "listo para retirar" (solo WEB_PICKUP, desde PAGADO)
+curl -s -X POST $API/sales/$SID/mark-ready -H "$AUTH" -o /dev/null -w "  marcar listo → HTTP %{http_code}\n"  # 📲 listo para retirar
 ```
 
 ## 3. Ver las notificaciones

@@ -54,3 +54,6 @@ _legacy
 # Playwright (smoke e2e POS)
 playwright-report/
 test-results/
+
+# artefactos locales de prueba
+apps/print-agent/prueba.zip

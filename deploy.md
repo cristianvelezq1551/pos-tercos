@@ -2,15 +2,23 @@
 
 > **Quién lo lee:** vos (dueño / dev) cuando arme la prod por primera
 > vez. Doc self-contained — todo lo que el deploy necesita está acá.
-> Refleja la reorientación v2: sin delivery/Mapbox, KDS en Flutter,
+> Refleja la reorientación v2: sin delivery/Mapbox,
 > WhatsApp automático vía OpenWA, print-agent en :9120.
+>
+> ⚠️ **Actualización 2026-06-27 (CLAUDE.md §7.v10): turnero + KDS ELIMINADOS.**
+> NO hay app de cocina (la `apps/kds-flutter` se borró; la futura será web, a
+> construir). NO hay turnero. La pantalla `apps/public-display` queda SOLO como
+> kiosko de **productos + publicidad + música** (sin turnos). COUNTER termina en
+> PAGADO; el cajero marca los pedidos WEB como "listo" desde el POS. Las
+> secciones §2.2 (KDS Flutter), §6 paso 5-6 (KDS/turnero) y la nota de TZ de
+> reset de turnos quedan **obsoletas** — ignorarlas.
 >
 > **Pre-requisitos cumplidos** (ver `pendientes-externos-y-deploy.md`):
 > - Cuenta Cloudflare R2 + bucket `pos-tercos-prod`.
 > - Cuentas Railway + Vercel + Cloudflare DNS.
 > - Gateway OpenWA self-hosted (VPS o máquina local) con número de
 >   WhatsApp propio del negocio — ver `openwa-setup.md`.
-> - Hardware local: tablet/PC POS, tablet Android para KDS (Flutter APK),
+> - Hardware local: tablet/PC POS, tablet/TV para la pantalla del local,
 >   Raspberry Pi o mini-PC para Print Agent, impresora Epson TM-T20III
 >   + cajón monedero RJ-11.
 
@@ -25,13 +33,13 @@
 ### 0.1 Operacional (obligatorio el día 1)
 
 - [ ] **Cold-start de subproductos** — antes de abrir, producir todas las tandas
-      en `/subproducts` (o KDS `/production`). Si no, todo producto preparado
-      sale **"Agotado"** y el cobro lo rechaza con 409. Ver §6.bis. 🔴
+      en admin `/subproducts`. Si no, todo producto preparado sale
+      **"Agotado"** y el cobro lo rechaza con 409. Ver §6.bis. 🔴
 - [ ] **Usuario dueño con password fuerte** — NO correr `prisma db seed` en prod
       (crea 5 usuarios con `dev12345`/`mustChangePwd:false`). Crear el dueño a
       mano con password fuerte. Ver §0.4. 🔴
 - [ ] **Railway en 1 réplica fija** (sin autoscale) — hay estado in-memory
-      (turnero, throttle, SSE, rooms WS) que asume single-instance. 🔴
+      (throttle, rooms WS de pedidos web `/ws/pos`) que asume single-instance. 🔴
 - [ ] **Healthcheck de Railway = `/healthz`** (NO `/health`, que da 404). 🟠
 - [ ] **`pg_dump` manual + simulacro de restore** justo antes del primer
       `migrate deploy` con datos reales (el backup automático es nocturno; no
@@ -100,15 +108,22 @@ VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcryp
 ### 1.2 Variables de entorno (api)
 
 > El API valida al ARRANQUE (`apps/api/src/common/assert-env.ts`) que
-> existan `DATABASE_URL`, `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET`
-> siempre, y `WEB_ORDER_TOKEN_SECRET` cuando `NODE_ENV=production`.
-> Si falta alguna, el proceso muere al boot con mensaje claro.
+> existan `DATABASE_URL` y `JWT_ACCESS_SECRET` siempre, y en producción
+> además `WEB_ORDER_TOKEN_SECRET`, `CORS_ORIGINS` y `STORAGE_PROVIDER`.
+> Si falta alguna, el proceso muere al boot con mensaje claro. Además
+> WARNea al boot si faltan `OWNER_WHATSAPP_PHONE`, `PRINTER_PROVIDER`,
+> `TZ` o `KAPSO_*` (features que morirían en silencio).
+> (`JWT_REFRESH_SECRET` NO se valida: los refresh tokens son opacos
+> SHA-256, no JWT — igual conviene setearla si algún módulo la usa a futuro.)
 
 **Runtime:**
 - `NODE_ENV=production`
-- `TZ=America/Bogota` — **obligatoria**: el reset diario de turnos y los
-  crons (digest 21:30, purga idempotency 3 AM, gap-check 4 AM, scan de
-  sugerencias horario) usan hora local del server.
+- `TZ=America/Bogota` — **obligatoria**: los crons (digest 21:30, purga
+  idempotency 3 AM, gap-check 4 AM, scan de sugerencias horario, sweep de
+  ventas stale) usan hora local del server.
+- `CORS_ORIGINS=https://pos.tercos.co,https://admin.tercos.co,https://tercos.co,https://tv.tercos.co,https://cocina.tercos.co`
+  — **obligatoria en prod** (lista separada por comas de los orígenes de los
+  frontends; sin ella el boot CRASHEA a propósito).
 
 **Database:**
 - `DATABASE_URL=${{Postgres.DATABASE_URL}}` (Railway internal)
@@ -132,21 +147,28 @@ VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcryp
 - `R2_BUCKET=pos-tercos-prod`
 - `R2_PUBLIC_URL_BASE=https://media.tercos.co` (opcional, custom domain CF)
 
-**WhatsApp automático (OpenWA self-hosted — ver `openwa-setup.md`):**
-- `OPENWA_URL=https://<gateway-openwa>` — URL del gateway
-- `OPENWA_API_KEY=...` — API key del gateway
-- `OPENWA_SESSION_ID=tercos` — ID de sesión
+**WhatsApp automático — KAPSO (Cloud API oficial; derrotero en `kapso-setup.md`):**
+- `KAPSO_API_KEY=...` — API key de producción de Kapso
+- `KAPSO_PHONE_NUMBER_ID=...` — phone number id del número de producción
+- `WHATSAPP_TEMPLATES_ENABLED=true` — recién cuando los 5 templates estén APROBADOS en Meta
+- `WHATSAPP_TEMPLATE_LANG=es` — o `es_CO` según el language code aprobado
 - `OWNER_WHATSAPP_PHONE=+57XXXXXXXXXX` — E.164; recibe el **digest
   diario 21:30** y las **alertas antifraude** (descuadre de caja, etc.)
 
-> Sin las 3 vars `OPENWA_*` el backend instancia `MockWhatsAppAdapter`
-> (loggea, no envía). En prod TIENEN que estar las 3 para que salgan
-> las notificaciones al cliente y al dueño.
+> El factory elige por prioridad `KAPSO_*` → `OPENWA_*` → Mock, y CRASHEA al
+> boot si una config queda PARCIAL. Sin ninguna, instancia
+> `MockWhatsAppAdapter` (loggea, no envía) — en prod tienen que estar las
+> `KAPSO_*`. Las `OPENWA_*` son el camino LEGACY (riesgo de baneo,
+> `openwa-setup.md`): no setearlas en prod nueva; si existen de antes,
+> borrarlas al activar Kapso.
 
 **Negocio (mensajes WhatsApp + recibos):**
 - `BUSINESS_NAME=Tercos`
 - `BUSINESS_ADDRESS=Cra 43A # 11-12, Medellín` (recibo impreso)
 - `BUSINESS_ADDRESS_SHORT=Cra 43A # 11-12` (mensaje "listo para retirar")
+- `BUSINESS_NIT=901.234.567-8` — **sin ella el recibo imprime un NIT
+  placeholder falso** (`900.000.000-0`)
+- `BUSINESS_PHONE=+57...` (pie del recibo, opcional)
 
 **Pagos (instrucciones que recibe el cliente web por WhatsApp):**
 - `PAYMENT_INSTRUCTIONS_NEQUI=3001234567`
@@ -201,24 +223,27 @@ Build settings (cada uno):
 
 **Web pública:**
 - `NEXT_PUBLIC_BUSINESS_NAME=Tercos`
+- `NEXT_PUBLIC_SITE_URL=https://tercos.co` — **sin ella robots/sitemap/OG
+  apuntan a localhost** (SEO roto en silencio)
 - `NEXT_PUBLIC_INSTAGRAM_URL=...` (opcional, footer)
 - `NEXT_PUBLIC_TIKTOK_URL=...` (opcional, footer)
 
-**Pantalla pública:**
-- `NEXT_PUBLIC_API_URL=https://api.tercos.co` (el browser abre el
-  `EventSource` SSE directo contra el API)
+**Pantalla del local (public-display):**
+- `API_INTERNAL_URL=https://api.tercos.co` (el rewrite `/api/*` proxia el
+  contenido del B-roll: `/api/display/broll`, imágenes y música). NO usa SSE
+  ni turnos — solo muestra productos + publicidad + música.
 
-### 2.2 KDS Flutter (tablet Android)
+### 2.2 App de cocina (`apps/cocina`) — VIVA (§7.v11, construida 2026-06-27)
 
-No va en Vercel. Se compila APK y se instala directo en la tablet:
+> Este apartado decía "eliminada" — eso era el KDS Flutter (§7.v10). La app
+> WEB de cocina existe y se despliega como 5º frontend en Vercel.
 
-1. Editar `apps/kds-flutter/lib/app/core/config/app_config.dart`:
-   - `API_BASE_URL=https://api.tercos.co`
-   - `WS_URL=wss://api.tercos.co` (namespace `/ws/kds`)
-   Las URLs quedan **compiladas en el build**.
-2. `cd apps/kds-flutter && flutter build apk --release`
-3. Instalar el APK en la tablet de cocina (sideload o MDM).
-4. Login con el user `cocinero` de prod.
+- Proyecto Vercel `tercos-cocina` (mismo patrón que admin/pos), dominio
+  `cocina.tercos.co`.
+- Env vars: `API_INTERNAL_URL=https://api.tercos.co` +
+  `JWT_ACCESS_SECRET` (mismo valor que el API — middleware Edge).
+- Cookies `cocina_*` aisladas; roles COCINERO/ADMIN_OPERATIVO/DUENO.
+- Recordar incluir su origen en `CORS_ORIGINS` del API.
 
 ---
 
@@ -313,7 +338,7 @@ A    media.tercos.co     → R2 custom domain (CF Workers)
 A    printer.tercos.co   → CF Tunnel al host del agent (si se usa esa opción)
 ```
 
-> No existe `kds.tercos.co` — el KDS es app Flutter nativa en la tablet.
+> No existe `kds.tercos.co` — no hay app de cocina (eliminada en §7.v10).
 
 SSL: "Full (strict)" en CF. Vercel y Railway entregan certs válidos.
 
@@ -360,22 +385,21 @@ Desde la última edición de este doc (que listaba 4 pendientes de FASE
 3. Login en `admin.tercos.co` con un user real (cambiar contraseñas de
    seed antes).
 4. **Venta COUNTER**: abrir caja en `pos.tercos.co` (efectivo de
-   apertura) → vender un producto → cobrar CASH → la venta recibe
-   **turno** (#1 de la caja) y el recibo sale por el print-agent
-   (papel + cajón abre).
-5. **KDS**: la orden aparece en la tablet Flutter → "Iniciar" →
-   "Marcar listo" → entra a la cola "Por llamar" del POS (campana).
-6. **Turnero**: llamar el turno desde el POS → `display.tercos.co`
-   muestra el número con flash + campana. Marcar entregado.
-7. **Pedido web**: hacer pedido en `tercos.co` → el cliente recibe
+   apertura) → vender un producto → cobrar CASH → la venta queda en
+   **PAGADO** (estado terminal de mostrador) y el recibo sale por el
+   print-agent (papel + cajón abre) con el **# de recibo**.
+5. **Pantalla del local**: `display.tercos.co` muestra el carrusel de
+   productos + publicidad + música (sin turnos).
+6. **Pedido web**: hacer pedido en `tercos.co` → el cliente recibe
    **automáticamente** las instrucciones de pago por WhatsApp (OpenWA;
    verificar fila `sent` en `whatsapp_messages`) → el pedido aparece en
    el modal de pedidos web del POS.
-8. **Confirmar pago** del pedido web en el POS → WhatsApp "pago
-   recibido" automático → orden entra al KDS → "Marcar listo" →
+7. **Confirmar pago** del pedido web en el POS → WhatsApp "pago
+   recibido" automático → **"Marcar listo para retirar"** en el modal →
    WhatsApp "listo para retirar" automático → el tracking en
-   `tercos.co/checkout/success/[id]?token=` refleja cada estado.
-9. **Conteo físico**: en admin `/inventory/counts` crear un conteo de
+   `tercos.co/checkout/success/[id]?token=` refleja cada estado
+   (termina en LISTO_DESPACHO).
+8. **Conteo físico**: en admin `/inventory/counts` crear un conteo de
    un insumo → verificar que el ajuste compensatorio aparece en
    `/inventory/movements`.
 10. **Digest del dueño**: `POST https://api.tercos.co/reports/admin/send-daily-digest`

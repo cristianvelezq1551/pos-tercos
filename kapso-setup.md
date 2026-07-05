@@ -16,10 +16,49 @@
 
 | Fase | Qué | Estado |
 |---|---|---|
-| **A** | Adapter Kapso + cableado del factory (drop-in, mismo `sendText`) | ✅ HECHO |
-| **B** | Templates para mensajes business-initiated (`sendTemplate`) | ⏳ Codear cuando haya número |
+| **A** | Adapter Kapso + cableado del factory (drop-in, mismo `sendText`) | ✅ HECHO (auditada 2026-07-05: config parcial `KAPSO_*`/`OPENWA_*` ahora es fail-fast al boot, no mock silencioso; documentada la semántica `sent`=aceptado-por-API) |
+| **B** | Templates para mensajes business-initiated (`sendTemplate`) | ✅ **HECHO (2026-07-05)** — `templates.ts` en domain (5 builders + sanitizer, testeados), `sendTemplate` en Kapso+Mock, branch en NotificationService y OwnerNotificationService. Se activa con `WHATSAPP_TEMPLATES_ENABLED=true` (apagado = texto libre, sandbox sigue igual) |
 | **C** | Bandeja de entrada para responder al cliente (inbox web) | ⏳ Usar la de Kapso (cero código) |
-| **PROD** | Registro del número + env vars en Railway + go-live | ⏳ Derrotero abajo |
+| **PROD** | Registro del número + env vars en Railway + go-live | ⏳ Derrotero abajo — **solo queda lo que necesita el NÚMERO físico** |
+
+---
+
+## ✅ CHECKLIST GO-LIVE (paso a paso, 2026-07-05)
+
+> **No queda nada que programar (Fases A+B codeadas y verificadas).** Esto es TODO lo que
+> falta para producción, en orden. Detalle de cada paso en el derrotero de abajo.
+
+**Prueba ya mismo, sin número (sandbox — Paso 0):**
+- [ ] Cuenta free en kapso.com → copiar `API key` + `phone number id` del **sandbox**.
+- [ ] Unir tu celular al sandbox (mandar el código por WhatsApp al número sandbox).
+- [ ] En `apps/api/.env.local`: `KAPSO_API_KEY` + `KAPSO_PHONE_NUMBER_ID` → el log de la API
+      debe decir `Using KapsoWhatsAppAdapter`.
+- [ ] Pedido web con tu teléfono → llegan los 4 avisos reales del flujo (texto libre).
+
+**Producción (cuando esté el número):**
+- [ ] **1. Chip prepago +57 nuevo y dedicado** — se usa UNA vez para el código de
+      verificación y se guarda. NO abrirle WhatsApp normal. *(Paso 1)*
+- [ ] **2. Registrar el número en Kapso** (embedded signup de Meta; sin verificación de
+      negocio alcanza al arranque: ~250 conversaciones/día). Configurar perfil del negocio
+      y anotar el `phone number id` de producción. *(Paso 2)*
+- [ ] **3. Registrar los 5 templates utility (idioma `es`)** con los nombres EXACTOS
+      cableados en el código: `payment_instructions`, `payment_received`, `pickup_ready`,
+      `order_canceled`, `alerta_negocio`. Cuerpos exactos en el Paso 3. Aprobación:
+      minutos a horas. Anotar el language code aprobado.
+- [ ] **4. Env vars en Railway** *(Paso 6)*:
+      `KAPSO_API_KEY` (prod) · `KAPSO_PHONE_NUMBER_ID` (prod) ·
+      `WHATSAPP_TEMPLATES_ENABLED=true` (recién con los 5 templates APROBADOS) ·
+      `WHATSAPP_TEMPLATE_LANG=es` (o `es_CO` según aprobación) · **borrar las `OPENWA_*`**.
+      Confirmar que ya existen `BUSINESS_NAME`, `BUSINESS_ADDRESS_SHORT`,
+      `PAYMENT_INSTRUCTIONS_NEQUI/TRANSFER`, `OWNER_WHATSAPP_PHONE`.
+- [ ] **5. Redeploy + smoke de 9 pasos** *(Paso 7)*: pedido real → 4 templates al cliente +
+      `alerta_negocio` al dueño + `whatsapp_messages.status='sent'` + respuestas visibles
+      en la bandeja web de Kapso.
+- [ ] **6. Operación**: responder clientes SIEMPRE desde la bandeja web de Kapso (no desde
+      un celular); vigilar el quality rating *(Paso 8)*.
+
+**Costo esperado:** Kapso $0 (free tier 2.000 msgs/mes) + Meta ~$0.0008 por template
+utility en Colombia ≈ **$1–5 USD/mes**.
 
 ---
 
@@ -62,7 +101,7 @@
 |---|---|---|
 | `payment_instructions` | Cliente crea pedido web | Template `payment_instructions` |
 | `payment_received` | Cajero confirma pago | Template `payment_received` |
-| `pickup_ready` | Cocina marca listo | Template `pickup_ready` |
+| `pickup_ready` | Cajero marca "listo para retirar" (`/sales/:id/mark-ready`) | Template `pickup_ready` |
 | `canceled` | Cajero rechaza pedido no pagado | Template `order_canceled` |
 
 → **Registrar los 4 templates utility.** La ventana de 24h no se usa para la salida
@@ -156,41 +195,38 @@ Hola {{1}}, tu pedido #{{2}} ya está listo para retirar. Te esperamos en {{4}}.
 Hola {{1}}, lamentablemente tu pedido #{{2}} en {{3}} fue cancelado.
 Si creés que es un error o querés volver a pedir, escribinos por este chat.
 ```
-Variables: `1=nombre`, `2=recibo`, `3=negocio`.
 
+**Template `alerta_negocio`** (5º — alertas internas al DUEÑO: descuadres, anulaciones,
+descuentos, digest) — `1=texto de la alerta` (el backend lo aplana a una línea):
+```
+🔔 {{1}}
+```
+
+- ⚠️ Los NOMBRES y el ORDEN de variables de arriba están **cableados en el código**
+  (`packages/domain/src/whatsapp/templates.ts` → `WHATSAPP_TEMPLATE_NAMES`). Registrarlos
+  EXACTAMENTE así; si Meta obliga a cambiar un nombre, actualizar esa constante.
 - Aprobación de utility suele tardar **minutos a pocas horas**.
-- Anotar el **nombre exacto** de cada template aprobado y el **language code** (`es` o `es_CO`).
+- Anotar el **language code** aprobado (`es` o `es_CO`) → va en `WHATSAPP_TEMPLATE_LANG`.
 
 ---
 
-### Paso 4 — Codear Fase B (templates) en el backend
+### Paso 4 — Fase B (templates) en el backend ✅ YA CODEADA (2026-07-05)
 
-> Solo cuando los templates estén aprobados. Mantiene Mock y OpenWA intactos.
-
-1. **`packages/domain/src/whatsapp/types.ts`** — extender la interface:
-   ```ts
-   export interface WhatsAppTemplateMessage {
-     name: string;            // nombre del template aprobado
-     languageCode: string;    // 'es' o 'es_CO'
-     variables: string[];     // valores para {{1}}, {{2}}, ... en orden
-   }
-   export interface WhatsAppProvider {
-     sendText(phoneE164: string, text: string): Promise<WhatsAppSendResult>;
-     sendTemplate?(
-       phoneE164: string,
-       template: WhatsAppTemplateMessage,
-     ): Promise<WhatsAppSendResult>;
-   }
-   ```
-2. **`packages/domain/src/whatsapp/messages.ts`** — agregar un builder que, para **los 4
-   stages**, devuelva `{ name, languageCode, variables }` (mapeo stage→template) además del
-   texto de fallback.
-3. **`apps/api/.../kapso.adapter.ts`** — implementar `sendTemplate` (POST a la Cloud API
-   con `type: 'template'` y los `components`/`parameters`).
-4. **`notification.service.ts`** — por stage: si hay template configurado **y** el provider
-   soporta `sendTemplate`, usar template; si no, caer a `sendText` (Mock/OpenWA siguen
-   funcionando, sandbox sigue con texto libre).
-5. `pnpm typecheck && pnpm lint && pnpm test`.
+> No queda nada de código por escribir. Lo implementado:
+>
+> - `packages/domain/src/whatsapp/templates.ts` — `buildNotificationTemplate` (4 stages,
+>   variables en el orden EXACTO del Paso 3), `buildOwnerAlertTemplate` (`alerta_negocio`),
+>   `sanitizeTemplateParam` (Meta rechaza `\n`/tabs en variables → se aplanan a " | ").
+>   Con tests (domain 161).
+> - Puerto `WhatsAppProvider.sendTemplate?` (opcional — OpenWA no lo implementa y sigue igual).
+> - `KapsoWhatsAppAdapter.sendTemplate` (Cloud API `type:'template'`) y Mock con log.
+> - `NotificationService` + `OwnerNotificationService`: si `WHATSAPP_TEMPLATES_ENABLED=true`
+>   y el provider soporta templates → template; si no → texto libre (sandbox/dev intactos).
+>   El texto humano SIEMPRE queda auditado en `whatsapp_messages`.
+>
+> **Activación = solo la env var** `WHATSAPP_TEMPLATES_ENABLED=true` (+ opcional
+> `WHATSAPP_TEMPLATE_LANG=es_CO` si Meta aprobó con ese code; default `es`). Se puede
+> togglear sin tocar código.
 
 ---
 
@@ -211,6 +247,8 @@ Variables: `1=nombre`, `2=recibo`, `3=negocio`.
    ```
    KAPSO_API_KEY=<key de producción>
    KAPSO_PHONE_NUMBER_ID=<phone number id de producción>
+   WHATSAPP_TEMPLATES_ENABLED=true          # ← recién cuando los 5 templates estén APROBADOS
+   WHATSAPP_TEMPLATE_LANG=es                # o es_CO si Meta aprobó con ese code
    ```
 2. Confirmar que ya están (de CLAUDE.md sec 14 / deploy.md):
    `BUSINESS_NAME`, `BUSINESS_ADDRESS_SHORT`, `PAYMENT_INSTRUCTIONS_NEQUI`,
@@ -225,12 +263,14 @@ Variables: `1=nombre`, `2=recibo`, `3=negocio`.
 
 1. Hacer un pedido web real con un teléfono de prueba.
 2. Confirmar que llega `payment_instructions` (vía template).
-3. Responder con un "comprobante" desde el teléfono → abre la ventana.
-4. Confirmar pago en el POS → llega `payment_received` (texto libre).
-5. Marcar listo en KDS → llega `pickup_ready` (texto libre).
-6. Probar un rechazo → llega `canceled` (vía template).
-7. Verificar en la tabla `whatsapp_messages` que cada envío quedó con `status='sent'`.
-8. Verificar que las respuestas del cliente aparecen en la bandeja de Kapso.
+3. Responder con un "comprobante" desde el teléfono → abre la ventana (se ve en la bandeja).
+4. Confirmar pago en el POS → llega `payment_received` (vía template).
+5. "Marcar listo" en el POS (modal Pedidos web) → llega `pickup_ready` (vía template).
+6. Probar un rechazo → llega `order_canceled` (vía template).
+7. Forzar una alerta al dueño (ej. anular una venta) → llega `alerta_negocio` al
+   `OWNER_WHATSAPP_PHONE`.
+8. Verificar en la tabla `whatsapp_messages` que cada envío quedó con `status='sent'`.
+9. Verificar que las respuestas del cliente aparecen en la bandeja de Kapso.
 
 ---
 
@@ -257,9 +297,13 @@ Variables: `1=nombre`, `2=recibo`, `3=negocio`.
 
 ## Resumen para retomar en frío
 
-1. **Hoy:** Fase A ya está. Probar con sandbox (Paso 0) cuando quieras.
-2. **Para prod:** chip +57 (Paso 1) → registrar en Kapso (Paso 2) → 4 templates utility
-   (Paso 3) → codear `sendTemplate` (Paso 4) → bandeja de Kapso (Paso 5) → env vars en
-   Railway (Paso 6) → smoke (Paso 7).
+**TODO EL CÓDIGO YA ESTÁ (Fases A y B).** Lo que falta es 100% operativo y gira alrededor
+del número de teléfono:
+
+1. **Hoy, sin nada:** probar con sandbox (Paso 0) — solo cuenta free de Kapso + 2 env vars.
+2. **Para prod:** chip +57 (Paso 1) → registrar el número en Kapso (Paso 2) → registrar los
+   **5 templates** utility con los nombres EXACTOS (Paso 3) → env vars en Railway
+   (`KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATES_ENABLED=true`,
+   `WHATSAPP_TEMPLATE_LANG`) y borrar las `OPENWA_*` (Paso 6) → smoke (Paso 7).
 3. Responder clientes desde la **bandeja web de Kapso**, no desde un celular.
 4. Cero baneo por automatización (es Cloud API oficial); cuidar solo el quality rating.

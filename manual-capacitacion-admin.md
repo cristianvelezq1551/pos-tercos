@@ -136,7 +136,7 @@ Colores del margen en el sistema (escala unificada): **verde** sano (≥30%), **
 
 ### 3.1 Inicio (Dashboard)
 - **Qué es:** la pantalla principal: el "pulso del día".
-- **Qué muestra:** ingresos de hoy y comparación contra la semana pasada, número de ventas, pedidos web por confirmar, stock crítico, pedidos en cocina y listos, sugerencias de compra pendientes, y un **resumen del día hecho por IA**.
+- **Qué muestra:** ingresos de hoy y comparación contra la semana pasada, número de ventas, pedidos web por confirmar, stock crítico, pedidos web por marcar listo y listos para retirar, sugerencias de compra pendientes, y un **resumen del día hecho por IA**.
 - **Para qué sirve:** echar un vistazo rápido al arrancar el día y al cerrar.
 - **Quién entra:** Administrador y Dueño.
 

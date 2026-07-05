@@ -2,6 +2,8 @@
 
 > **Estado de partida:** base de datos de desarrollo **vacía**, solo con 4 usuarios de acceso.
 > Sigue las fases **en orden** (cada una depende de la anterior). Marca cada casilla y revisa el **Esperado**.
+>
+> ⚠️ **2026-06-27 (CLAUDE.md §7.v10): turnero + KDS ELIMINADOS.** Ignorá la "FASE 8 — Cocina (KDS) + Pantalla pública" y el "recibo con número de turno": hoy COUNTER termina en PAGADO (recibo con # de recibo), el pedido web se marca "listo para retirar" desde el POS, y la pantalla del local solo muestra productos + publicidad + música.
 
 ## Prerrequisitos
 

@@ -2,9 +2,15 @@
 
 > Visión arquitectónica del monorepo. Para el estado vivo de cada módulo ver
 > `estado-del-sistema.md`; para reglas de código y decisiones canónicas ver `CLAUDE.md`.
+>
+> ⚠️ **2026-06-27 (CLAUDE.md §7.v10): turnero + KDS ELIMINADOS.** Toda mención de
+> `apps/kds-flutter`, `/ws/kds`, la pantalla de turno y el turnero en este doc es
+> **histórica**. Hoy: COUNTER termina en PAGADO; el pedido web se marca "listo"
+> desde el POS (`/sales/:id/mark-ready`); `apps/public-display` es solo productos
+> + publicidad + música; no hay app de cocina (la futura será web).
 
 POS para restaurante de comida rápida en Colombia: 1 punto de venta, 1 cajero por turno,
-comanda de cocina en tablet, pedidos web pickup y notificaciones WhatsApp automáticas.
+pedidos web pickup y notificaciones WhatsApp automáticas.
 
 ---
 
