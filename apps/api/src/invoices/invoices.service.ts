@@ -24,6 +24,27 @@ import { includeFull, toInvoiceDto } from './invoices.mappers';
 /** Suba de costo (vs último conocido) que dispara alerta WhatsApp al dueño. */
 const COST_INCREASE_ALERT_PCT = 0.15;
 
+/** Shape mínimo del insumo/producto cargado para confirmar una factura. */
+interface ConfirmIngredient {
+  id: string;
+  isActive: boolean;
+  name: string;
+  unitPurchase: string;
+  unitRecipe: string;
+  conversionFactor: Prisma.Decimal;
+  lastUnitCost: Prisma.Decimal | null;
+}
+interface ConfirmProduct {
+  id: string;
+  isActive: boolean;
+  name: string;
+  directResale: boolean;
+  unitPurchase: string | null;
+  unitStock: string | null;
+  conversionFactor: Prisma.Decimal | null;
+  lastUnitCost: Prisma.Decimal | null;
+}
+
 /**
  * Convierte cantidad declarada en factura a la unidad BASE de stock.
  *
@@ -288,7 +309,43 @@ export class InvoicesService {
       throw new BadRequestException('Invoice is rejected; cannot confirm');
     }
 
-    // Particionar items por entityType para validar cada set
+    const { ingredients, products } = await this.loadAndValidateEntities(input);
+    this.assertInvoiceTotalsCoherent(input);
+
+    const supplier = await this.suppliers.upsertByNit(input.supplierNit, input.supplierName);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const invoiceUpdated = await this.replaceItemsAndHeader(tx, id, input, supplier.id, userId);
+      await this.writePurchaseMovements(tx, id, input, ingredients, products, supplier, userId);
+      await this.upsertSupplierProductsAndCosts(tx, input, ingredients, products, supplier);
+      return invoiceUpdated;
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'INVOICE_CONFIRMED',
+      entityType: 'invoice',
+      entityId: id,
+      metadata: {
+        supplierId: supplier.id,
+        supplierNit: supplier.nit,
+        itemsCount: input.items.length,
+        total: input.total,
+      },
+    });
+
+    this.notifyCostIncreases(input, ingredients, products, supplier, id);
+
+    void this.inventory; // (kept for future cross-domain calls)
+
+    return toInvoiceDto(updated);
+  }
+
+  /** Carga insumos/productos referenciados y valida que existan, estén activos
+   *  y (productos) sean direct-resale. Lanza BadRequest con el detalle. */
+  private async loadAndValidateEntities(
+    input: ConfirmInvoice,
+  ): Promise<{ ingredients: ConfirmIngredient[]; products: ConfirmProduct[] }> {
     const ingredientIds = Array.from(
       new Set(
         input.items
@@ -343,8 +400,12 @@ export class InvoicesService {
       throw new BadRequestException(`Items refer to inactive products: ${inactiveProd.join(', ')}`);
     }
 
-    // FASE 4 ajustes 2.3: total de la factura debe coincidir (con tolerancia)
-    // con la suma de items.total. Tolerancia = max(1% del total, $1.000 COP).
+    return { ingredients, products };
+  }
+
+  /** FASE 4 ajustes 2.3 + 2.4: el total declarado coincide (con tolerancia) con
+   *  la suma de items, y el IVA no excede el total. */
+  private assertInvoiceTotalsCoherent(input: ConfirmInvoice): void {
     const itemsSum = input.items.reduce((acc, it) => acc + Number(it.total), 0);
     const totalDelta = Math.abs(input.total - itemsSum);
     const totalTolerance = Math.max(input.total * 0.01, 1000);
@@ -353,230 +414,236 @@ export class InvoicesService {
         `Total de la factura ($${input.total.toLocaleString('es-CO')}) no coincide con la suma de items ($${itemsSum.toLocaleString('es-CO')}). Diferencia: $${totalDelta.toLocaleString('es-CO')} (tolerancia $${Math.round(totalTolerance).toLocaleString('es-CO')}).`,
       );
     }
-
-    // FASE 4 ajustes 2.4: IVA no puede exceder el total
     if (input.iva !== undefined && input.iva !== null && input.iva > input.total) {
       throw new BadRequestException(
         `IVA ($${input.iva.toLocaleString('es-CO')}) no puede ser mayor al total ($${input.total.toLocaleString('es-CO')}).`,
       );
     }
+  }
 
-    const supplier = await this.suppliers.upsertByNit(input.supplierNit, input.supplierName);
-
-    const updated = await this.prisma.$transaction(async (tx) => {
-      // 1. Replace invoice_items with user-edited ones
-      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
-      await tx.invoiceItem.createMany({
-        data: input.items.map((it, idx) => ({
-          invoiceId: id,
-          entityType: it.entityType,
-          ingredientId: it.entityType === 'INGREDIENT' ? (it.ingredientId as string) : null,
-          productId: it.entityType === 'PRODUCT' ? (it.productId as string) : null,
-          descriptionRaw: it.descriptionRaw,
-          quantity: it.quantity,
-          unit: it.unit,
-          unitPrice: it.unitPrice,
-          total: it.total,
-          sortOrder: idx,
-        })),
-      });
-
-      // 2. Update invoice header.
-      //    paymentStatus arranca en PENDING (sin importar si ya estaba seteado
-      //    por una confirmación previa que fue revertida): confirmar = generó
-      //    la obligación de pagar al proveedor.
-      const invoiceUpdated = await tx.invoice.update({
-        where: { id },
-        data: {
-          supplierId: supplier.id,
-          invoiceNumber: input.invoiceNumber ?? null,
-          total: input.total,
-          iva: input.iva ?? null,
-          status: 'CONFIRMED',
-          confirmedById: userId,
-          confirmedAt: new Date(),
-          notes: input.notes ?? null,
-          paymentStatus: 'PENDING',
-          paidAt: null,
-          paymentProofKey: null,
-          paymentActorId: null,
-          paymentNote: null,
-        },
-        include: includeFull(),
-      });
-
-      // 3. Inventory movements (PURCHASE) per item.
-      //    Convierte la cantidad declarada (en unit de compra) a la unit
-      //    de stock usando conversionFactor.
-      for (const item of input.items) {
-        if (item.entityType === 'INGREDIENT') {
-          const ing = ingredients.find((i) => i.id === item.ingredientId);
-          if (!ing) continue;
-          const stockQty = computeStockQty({
-            quantity: item.quantity,
-            invoiceUnit: item.unit,
-            stockUnit: ing.unitRecipe,
-            conversionFactor: Number(ing.conversionFactor),
-            baseFactor: item.baseFactor,
-          });
-          await tx.inventoryMovement.create({
-            data: {
-              entityType: 'INGREDIENT',
-              ingredientId: item.ingredientId as string,
-              delta: stockQty,
-              // Costo por unidad de stock = total de la línea / unidades recibidas.
-              unitCost: stockUnitCost(item.total, stockQty),
-              type: 'PURCHASE',
-              sourceType: 'invoice',
-              sourceId: id,
-              userId,
-              notes: `Factura ${input.invoiceNumber ?? id.slice(0, 8)} · ${supplier.name}`,
-            },
-          });
-        } else {
-          const prod = products.find((p) => p.id === item.productId);
-          if (!prod) continue;
-          const stockQty = computeStockQty({
-            quantity: item.quantity,
-            invoiceUnit: item.unit,
-            stockUnit: prod.unitStock ?? 'unidad',
-            conversionFactor: prod.conversionFactor !== null ? Number(prod.conversionFactor) : 1,
-            baseFactor: item.baseFactor,
-          });
-          await tx.inventoryMovement.create({
-            data: {
-              entityType: 'PRODUCT',
-              productId: item.productId as string,
-              delta: stockQty,
-              unitCost: stockUnitCost(item.total, stockQty),
-              type: 'PURCHASE',
-              sourceType: 'invoice',
-              sourceId: id,
-              userId,
-              notes: `Factura ${input.invoiceNumber ?? id.slice(0, 8)} · ${supplier.name}`,
-            },
-          });
-        }
-      }
-
-      // 4. Update supplier_products polimórfico (insumos Y productos direct-resale).
-      //    El precio guardado es el COSTO (lo que pagamos al proveedor),
-      //    NO el precio de venta. Está en unidad de COMPRA (kg, caja).
-      for (const item of input.items) {
-        if (item.entityType === 'INGREDIENT') {
-          await tx.supplierProduct.upsert({
-            where: {
-              supplierId_ingredientId: {
-                supplierId: supplier.id,
-                ingredientId: item.ingredientId as string,
-              },
-            },
-            create: {
-              supplierId: supplier.id,
-              entityType: 'INGREDIENT',
-              ingredientId: item.ingredientId as string,
-              lastUnitPrice: item.unitPrice,
-              lastPurchaseDate: new Date(),
-            },
-            update: {
-              lastUnitPrice: item.unitPrice,
-              lastPurchaseDate: new Date(),
-            },
-          });
-
-          // FASE 4 ajustes 2.2: actualizar lastUnitCost del ingrediente
-          // (espejo de la actualización del producto direct-resale).
-          // En unitPurchase del ingrediente — re-escalado por la conversión real
-          // de la compra (ver purchaseUnitCost) para no inflar el costo.
-          const ingForCost = ingredients.find((i) => i.id === item.ingredientId);
-          await tx.ingredient.update({
-            where: { id: item.ingredientId as string },
-            data: {
-              lastUnitCost: ingForCost
-                ? purchaseUnitCost({
-                    quantity: item.quantity,
-                    lineTotal: item.total,
-                    invoiceUnit: item.unit,
-                    stockUnit: ingForCost.unitRecipe,
-                    conversionFactor: Number(ingForCost.conversionFactor),
-                    baseFactor: item.baseFactor,
-                  })
-                : item.unitPrice,
-              lastUnitCostDate: new Date(),
-            },
-          });
-        } else {
-          // PRODUCT direct-resale
-          await tx.supplierProduct.upsert({
-            where: {
-              supplierId_productId: {
-                supplierId: supplier.id,
-                productId: item.productId as string,
-              },
-            },
-            create: {
-              supplierId: supplier.id,
-              entityType: 'PRODUCT',
-              productId: item.productId as string,
-              lastUnitPrice: item.unitPrice,
-              lastPurchaseDate: new Date(),
-            },
-            update: {
-              lastUnitPrice: item.unitPrice,
-              lastPurchaseDate: new Date(),
-            },
-          });
-
-          // 5. Actualizar lastUnitCost del producto (para display rápido
-          //    de margen vs basePrice) — re-escalado por la conversión real.
-          const prodForCost = products.find((p) => p.id === item.productId);
-          await tx.product.update({
-            where: { id: item.productId as string },
-            data: {
-              lastUnitCost: prodForCost
-                ? purchaseUnitCost({
-                    quantity: item.quantity,
-                    lineTotal: item.total,
-                    invoiceUnit: item.unit,
-                    stockUnit: prodForCost.unitStock ?? 'unidad',
-                    conversionFactor:
-                      prodForCost.conversionFactor !== null ? Number(prodForCost.conversionFactor) : 1,
-                    baseFactor: item.baseFactor,
-                  })
-                : item.unitPrice,
-              lastUnitCostDate: new Date(),
-            },
-          });
-        }
-      }
-
-      return invoiceUpdated;
+  /** Reemplaza los invoice_items por los editados y actualiza el header de la
+   *  factura a CONFIRMED. paymentStatus arranca en PENDING (confirmar = generó
+   *  la obligación de pagar al proveedor). */
+  private async replaceItemsAndHeader(
+    tx: Prisma.TransactionClient,
+    id: string,
+    input: ConfirmInvoice,
+    supplierId: string,
+    userId: string,
+  ) {
+    await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+    await tx.invoiceItem.createMany({
+      data: input.items.map((it, idx) => ({
+        invoiceId: id,
+        entityType: it.entityType,
+        ingredientId: it.entityType === 'INGREDIENT' ? (it.ingredientId as string) : null,
+        productId: it.entityType === 'PRODUCT' ? (it.productId as string) : null,
+        descriptionRaw: it.descriptionRaw,
+        quantity: it.quantity,
+        unit: it.unit,
+        unitPrice: it.unitPrice,
+        total: it.total,
+        sortOrder: idx,
+      })),
     });
 
-    await this.audit.log({
-      userId,
-      action: 'INVOICE_CONFIRMED',
-      entityType: 'invoice',
-      entityId: id,
-      metadata: {
-        supplierId: supplier.id,
-        supplierNit: supplier.nit,
-        itemsCount: input.items.length,
+    return tx.invoice.update({
+      where: { id },
+      data: {
+        supplierId,
+        invoiceNumber: input.invoiceNumber ?? null,
         total: input.total,
+        iva: input.iva ?? null,
+        status: 'CONFIRMED',
+        confirmedById: userId,
+        confirmedAt: new Date(),
+        notes: input.notes ?? null,
+        paymentStatus: 'PENDING',
+        paidAt: null,
+        paymentProofKey: null,
+        paymentActorId: null,
+        paymentNote: null,
       },
+      include: includeFull(),
     });
+  }
 
-    // Alerta de costos: si algún item subió >= COST_INCREASE_ALERT_PCT vs el
-    // último costo conocido, el dueño se entera al instante (fire-and-forget).
+  /** Movimientos PURCHASE por item: convierte la cantidad declarada (unidad de
+   *  compra) a la unidad de stock y registra el costo por unidad de stock. */
+  private async writePurchaseMovements(
+    tx: Prisma.TransactionClient,
+    id: string,
+    input: ConfirmInvoice,
+    ingredients: ConfirmIngredient[],
+    products: ConfirmProduct[],
+    supplier: { name: string },
+    userId: string,
+  ): Promise<void> {
+    const notes = (invoiceNumber: string | null | undefined) =>
+      `Factura ${invoiceNumber ?? id.slice(0, 8)} · ${supplier.name}`;
+    for (const item of input.items) {
+      if (item.entityType === 'INGREDIENT') {
+        const ing = ingredients.find((i) => i.id === item.ingredientId);
+        if (!ing) continue;
+        const stockQty = computeStockQty({
+          quantity: item.quantity,
+          invoiceUnit: item.unit,
+          stockUnit: ing.unitRecipe,
+          conversionFactor: Number(ing.conversionFactor),
+          baseFactor: item.baseFactor,
+        });
+        await tx.inventoryMovement.create({
+          data: {
+            entityType: 'INGREDIENT',
+            ingredientId: item.ingredientId as string,
+            delta: stockQty,
+            // Costo por unidad de stock = total de la línea / unidades recibidas.
+            unitCost: stockUnitCost(item.total, stockQty),
+            type: 'PURCHASE',
+            sourceType: 'invoice',
+            sourceId: id,
+            userId,
+            notes: notes(input.invoiceNumber),
+          },
+        });
+      } else {
+        const prod = products.find((p) => p.id === item.productId);
+        if (!prod) continue;
+        const stockQty = computeStockQty({
+          quantity: item.quantity,
+          invoiceUnit: item.unit,
+          stockUnit: prod.unitStock ?? 'unidad',
+          conversionFactor: prod.conversionFactor !== null ? Number(prod.conversionFactor) : 1,
+          baseFactor: item.baseFactor,
+        });
+        await tx.inventoryMovement.create({
+          data: {
+            entityType: 'PRODUCT',
+            productId: item.productId as string,
+            delta: stockQty,
+            unitCost: stockUnitCost(item.total, stockQty),
+            type: 'PURCHASE',
+            sourceType: 'invoice',
+            sourceId: id,
+            userId,
+            notes: notes(input.invoiceNumber),
+          },
+        });
+      }
+    }
+  }
+
+  /** Upsert de supplier_products (precio = COSTO al proveedor, en unidad de
+   *  compra) + actualización de lastUnitCost del insumo/producto (re-escalado
+   *  por la conversión real de la compra para no inflar el costo). */
+  private async upsertSupplierProductsAndCosts(
+    tx: Prisma.TransactionClient,
+    input: ConfirmInvoice,
+    ingredients: ConfirmIngredient[],
+    products: ConfirmProduct[],
+    supplier: { id: string },
+  ): Promise<void> {
+    for (const item of input.items) {
+      if (item.entityType === 'INGREDIENT') {
+        await tx.supplierProduct.upsert({
+          where: {
+            supplierId_ingredientId: {
+              supplierId: supplier.id,
+              ingredientId: item.ingredientId as string,
+            },
+          },
+          create: {
+            supplierId: supplier.id,
+            entityType: 'INGREDIENT',
+            ingredientId: item.ingredientId as string,
+            lastUnitPrice: item.unitPrice,
+            lastPurchaseDate: new Date(),
+          },
+          update: {
+            lastUnitPrice: item.unitPrice,
+            lastPurchaseDate: new Date(),
+          },
+        });
+
+        const ingForCost = ingredients.find((i) => i.id === item.ingredientId);
+        await tx.ingredient.update({
+          where: { id: item.ingredientId as string },
+          data: {
+            lastUnitCost: ingForCost
+              ? purchaseUnitCost({
+                  quantity: item.quantity,
+                  lineTotal: item.total,
+                  invoiceUnit: item.unit,
+                  stockUnit: ingForCost.unitRecipe,
+                  conversionFactor: Number(ingForCost.conversionFactor),
+                  baseFactor: item.baseFactor,
+                })
+              : item.unitPrice,
+            lastUnitCostDate: new Date(),
+          },
+        });
+      } else {
+        await tx.supplierProduct.upsert({
+          where: {
+            supplierId_productId: {
+              supplierId: supplier.id,
+              productId: item.productId as string,
+            },
+          },
+          create: {
+            supplierId: supplier.id,
+            entityType: 'PRODUCT',
+            productId: item.productId as string,
+            lastUnitPrice: item.unitPrice,
+            lastPurchaseDate: new Date(),
+          },
+          update: {
+            lastUnitPrice: item.unitPrice,
+            lastPurchaseDate: new Date(),
+          },
+        });
+
+        const prodForCost = products.find((p) => p.id === item.productId);
+        await tx.product.update({
+          where: { id: item.productId as string },
+          data: {
+            lastUnitCost: prodForCost
+              ? purchaseUnitCost({
+                  quantity: item.quantity,
+                  lineTotal: item.total,
+                  invoiceUnit: item.unit,
+                  stockUnit: prodForCost.unitStock ?? 'unidad',
+                  conversionFactor:
+                    prodForCost.conversionFactor !== null ? Number(prodForCost.conversionFactor) : 1,
+                  baseFactor: item.baseFactor,
+                })
+              : item.unitPrice,
+            lastUnitCostDate: new Date(),
+          },
+        });
+      }
+    }
+  }
+
+  /** Alerta de costos (fire-and-forget): si algún item subió >=
+   *  COST_INCREASE_ALERT_PCT vs el último costo conocido, avisa al dueño. */
+  private notifyCostIncreases(
+    input: ConfirmInvoice,
+    ingredients: ConfirmIngredient[],
+    products: ConfirmProduct[],
+    supplier: { name: string },
+    invoiceId: string,
+  ): void {
     const increases: CostIncreaseItem[] = [];
     for (const item of input.items) {
       const prev =
         item.entityType === 'INGREDIENT'
           ? ingredients.find((i) => i.id === item.ingredientId)
           : products.find((p) => p.id === item.productId);
-      const oldCost = prev?.lastUnitCost !== null && prev?.lastUnitCost !== undefined
-        ? Number(prev.lastUnitCost)
-        : null;
+      const oldCost =
+        prev?.lastUnitCost !== null && prev?.lastUnitCost !== undefined
+          ? Number(prev.lastUnitCost)
+          : null;
       if (oldCost === null || oldCost <= 0) continue;
       if (item.unitPrice >= oldCost * (1 + COST_INCREASE_ALERT_PCT)) {
         increases.push({ name: prev!.name, oldUnitCost: oldCost, newUnitCost: item.unitPrice });
@@ -590,13 +657,9 @@ export class InvoicesService {
           supplierName: supplier.name,
           items: increases,
         }),
-        { invoiceId: id, items: increases.length },
+        { invoiceId, items: increases.length },
       );
     }
-
-    void this.inventory; // (kept for future cross-domain calls)
-
-    return toInvoiceDto(updated);
   }
 
   /**

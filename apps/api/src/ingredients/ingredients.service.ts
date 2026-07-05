@@ -33,6 +33,7 @@ export class IngredientsService {
         unitRecipe: input.unitRecipe,
         conversionFactor: input.conversionFactor,
         thresholdMin: input.thresholdMin ?? 0,
+        portionSize: input.portionSize ?? null,
       },
     });
     return toIngredientDto(row);
@@ -48,6 +49,7 @@ export class IngredientsService {
         ...(input.unitRecipe !== undefined && { unitRecipe: input.unitRecipe }),
         ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
         ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
+        ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
       },
     });
@@ -104,6 +106,7 @@ function toIngredientDto(row: DbIngredient): Ingredient {
     unitRecipe: row.unitRecipe,
     conversionFactor: Number(row.conversionFactor),
     thresholdMin: Number(row.thresholdMin),
+    portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
     lastUnitCost: row.lastUnitCost !== null ? Number(row.lastUnitCost) : null,
     lastUnitCostDate: row.lastUnitCostDate?.toISOString() ?? null,
     isActive: row.isActive,

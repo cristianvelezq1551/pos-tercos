@@ -10,6 +10,7 @@ import {
   buildDiscrepancyAlertLink,
   buildShiftCloseUserPrompt,
 } from '@pos-tercos/domain';
+import { NON_REVENUE_SALE_STATUSES } from '@pos-tercos/types';
 import type {
   AiSummary,
   CashCountLine,
@@ -19,6 +20,7 @@ import type {
   CreateCashMovement,
   OpenShift,
   Shift,
+  SaleStatus,
   ShiftSessionDetail,
   ShiftStatus,
 } from '@pos-tercos/types';
@@ -35,6 +37,16 @@ import { PrismaService } from '../prisma/prisma.service';
 const DISCREPANCY_THRESHOLD_COP = 5_000;
 
 /**
+ * Estados cuyo dinero NO entra al turno (inverso de las ventas que cuentan).
+ * Fuente única: `NON_REVENUE_SALE_STATUSES`. Se usa como `notIn` en las queries
+ * de caja y como predicado en memoria — así las ventas que cuentan plata
+ * (PAGADO… + CANCELADO_SIN_REEMBOLSO) nunca divergen entre cálculos.
+ */
+const NON_REVENUE_STATUSES_ARR: SaleStatus[] = [...NON_REVENUE_SALE_STATUSES];
+const isRevenueSale = (status: string): boolean =>
+  !NON_REVENUE_STATUSES_ARR.includes(status as SaleStatus);
+
+/**
  * Clave del advisory lock que serializa apertura/reapertura de caja. El check
  * "¿ya hay una caja OPEN?" + el create/update no son atómicos por sí solos
  * (TOCTOU): dos aperturas concurrentes podrían crear DOS cajas OPEN, rompiendo
@@ -42,6 +54,26 @@ const DISCREPANCY_THRESHOLD_COP = 5_000;
  * una corra el check a la vez; la segunda ve la caja ya creada y es rechazada.
  */
 const SHIFT_OPEN_LOCK_KEY = 911_025;
+
+/**
+ * Reintenta una tx SERIALIZABLE abortada por un fallo de serialización 40001
+ * (mismo criterio que `isSerializationFailure` de las ventas — un cobro
+ * concurrente al cierre lo dispara y el reintento recomputa fresco).
+ */
+async function runWithSerializationRetry<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work();
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      const isSerialization =
+        e instanceof Error &&
+        (code === 'P2034' || /could not serialize|deadlock detected/i.test(e.message));
+      if (attempt < 5 && isSerialization) continue;
+      throw e;
+    }
+  }
+}
 
 type DbShiftWithCashier = Prisma.ShiftGetPayload<{
   include: { cashier: { select: { fullName: true } } };
@@ -91,15 +123,7 @@ export class ShiftsService {
             method: 'CASH',
             sale: {
               shiftId,
-              status: {
-                in: [
-                'PAGADO',
-                'EN_PREPARACION',
-                'LISTO_DESPACHO',
-                'ENTREGADO',
-                'CANCELADO_SIN_REEMBOLSO',
-              ]
-              },
+              status: { notIn: NON_REVENUE_STATUSES_ARR },
             },
           },
           _sum: { amount: true },
@@ -347,7 +371,6 @@ export class ShiftsService {
       select: {
         id: true,
         receiptNumber: true,
-        turnNumber: true,
         type: true,
         status: true,
         total: true,
@@ -369,7 +392,6 @@ export class ShiftsService {
     const orders = rows.map((r) => ({
       id: r.id,
       receiptNumber: Number(r.receiptNumber),
-      turnNumber: r.turnNumber,
       type: r.type,
       status: r.status,
       total: Number(r.total),
@@ -384,8 +406,9 @@ export class ShiftsService {
       })),
     }));
 
-    const PAID = new Set(['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO']);
-    const paidIds = new Set(orders.filter((o) => PAID.has(o.status)).map((o) => o.id));
+    // "Pagado" para el resumen = la venta cuenta plata (mismo criterio que el
+    // arqueo): todo menos NON_REVENUE_SALE_STATUSES (incluye CANCELADO_SIN_REEMBOLSO).
+    const paidIds = new Set(orders.filter((o) => isRevenueSale(o.status)).map((o) => o.id));
     const paid = orders.filter((o) => paidIds.has(o.id));
     // Por método desde sale_payments: una cuenta DIVIDIDA aporta su parte a
     // cada método (count = cantidad de pagos, no de ventas).
@@ -405,9 +428,9 @@ export class ShiftsService {
       const bt = byTypeMap.get(o.type) ?? { count: 0, total: 0 };
       byTypeMap.set(o.type, { count: bt.count + 1, total: bt.total + o.total });
     }
-    const sumBy = (method: string) =>
-      paid.filter((o) => o.paymentMethod === method).reduce((a, o) => a + o.total, 0);
-
+    // cash/transfer desde sale_payments (byMethodMap) — split-aware: una cuenta
+    // dividida aporta su porción a cada método (filtrar por sale.paymentMethod
+    // daría $0 a las divididas, donde ese campo es null).
     return {
       shift,
       digitalCountBreakdown: shift.digitalCountBreakdown ?? null,
@@ -416,8 +439,8 @@ export class ShiftsService {
         paidCount: paid.length,
         voidCount: orders.filter((o) => o.status === 'VOID').length,
         totalRevenue: paid.reduce((a, o) => a + o.total, 0),
-        cashRevenue: sumBy('CASH'),
-        transferRevenue: sumBy('TRANSFER'),
+        cashRevenue: byMethodMap.get('CASH')?.total ?? 0,
+        transferRevenue: byMethodMap.get('TRANSFER')?.total ?? 0,
         byMethod: [...byMethodMap.entries()].map(([method, v]) => ({ method, ...v })),
         byType: [...byTypeMap.entries()].map(([type, v]) => ({ type, ...v })),
       },
@@ -471,87 +494,60 @@ export class ShiftsService {
     // Efectivo esperado: el MISMO cálculo autoritativo que el POS muestra al
     // cerrar (vía getExpectedCash) → cero divergencia entre el target del
     // cajero y la diferencia registrada.
-    const { expectedCash, cashSalesTotal, cashIn, cashOut } = await this.computeExpectedCash(
-      shiftId,
-      Number(shift.openingCash),
-    );
-    const difference = Math.round(input.countedCash) - expectedCash; // (+) sobrante, (-) faltante
-
-    // Arqueo DIGITAL: esperado por método (porción de cada venta en ese
-    // método, desde sale_payments) vs lo que el cajero ve en cada app.
-    const digitalExpectedRows = await this.prisma.salePayment.groupBy({
-      by: ['method'],
-      where: {
-        method: { not: 'CASH' },
-        sale: {
-          shiftId,
-          status: {
-            in: [
-              'PAGADO',
-              'EN_PREPARACION',
-              'LISTO_DESPACHO',
-              'ENTREGADO',
-              'CANCELADO_SIN_REEMBOLSO',
-            ],
+    //
+    // Tx SERIALIZABLE (auditoría 2026-07-05): el cierre LEE sale_payments y
+    // ESCRIBE shift.status; el cobro (tx serializable) LEE shift.status y
+    // ESCRIBE sale_payments. En READ COMMITTED un cobro concurrente podía
+    // colarse ENTRE el cómputo del esperado y el update a CLOSED → arqueo con
+    // sobrante falso (plata cobrada que el esperado congelado no incluía).
+    // Con ambas tx serializables, Postgres aborta una (40001) y el retry
+    // recomputa con la foto consistente. El advisory lock serializa además
+    // contra open/reopen.
+    const { closed, expectedCash, cashSalesTotal, cashIn, cashOut, difference, digitalBreakdown } =
+      await runWithSerializationRetry(() =>
+        this.prisma.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SHIFT_OPEN_LOCK_KEY})`;
+            const computed = await this.computeExpectedCash(
+              shiftId,
+              Number(shift.openingCash),
+              tx,
+            );
+            const diff = Math.round(input.countedCash) - computed.expectedCash; // (+) sobrante, (-) faltante
+            const digital = await this.computeDigitalBreakdown(
+              shiftId,
+              input.digitalCounts ?? [],
+              tx,
+            );
+            const res = await tx.shift.updateMany({
+              where: { id: shiftId, status: 'OPEN' },
+              data: {
+                status: 'CLOSED',
+                closedAt: new Date(),
+                expectedCash: computed.expectedCash,
+                countedCash: input.countedCash,
+                difference: diff,
+                cashCountBreakdown: input.breakdown ?? undefined,
+                digitalCountBreakdown:
+                  digital.length > 0
+                    ? (digital as unknown as Prisma.InputJsonValue)
+                    : undefined,
+                tipsCollected: input.tips ?? null,
+                notes: input.notes ?? null,
+              },
+            });
+            if (res.count === 0) {
+              throw new BadRequestException('La caja ya fue cerrada.');
+            }
+            const row = await tx.shift.findUniqueOrThrow({
+              where: { id: shiftId },
+              include: { cashier: { select: { fullName: true } } },
+            });
+            return { closed: row, ...computed, difference: diff, digitalBreakdown: digital };
           },
-        },
-      },
-      _sum: { amount: true },
-    });
-    // Movimientos digitales del turno (entradas/salidas por método).
-    const digitalMovRows = await this.prisma.cashMovement.groupBy({
-      by: ['method', 'type'],
-      where: { shiftId, method: { not: 'CASH' } },
-      _sum: { amount: true },
-    });
-    const digitalMovNet = new Map<string, number>();
-    for (const r of digitalMovRows) {
-      const amt = Math.round(Number(r._sum.amount ?? 0));
-      digitalMovNet.set(
-        r.method as string,
-        (digitalMovNet.get(r.method as string) ?? 0) + (r.type === 'IN' ? amt : -amt),
+          { isolationLevel: 'Serializable', timeout: 15_000 },
+        ),
       );
-    }
-    const countedByMethod = new Map(
-      (input.digitalCounts ?? []).map((d) => [d.method, Math.round(d.counted)]),
-    );
-    const digitalMethods = new Set<string>([
-      ...digitalExpectedRows.map((r) => r.method as string),
-      ...digitalMovNet.keys(),
-      ...countedByMethod.keys(),
-    ]);
-    const digitalBreakdown: DigitalCountLine[] = [...digitalMethods].map((method) => {
-      const expected =
-        Math.round(
-          Number(digitalExpectedRows.find((r) => r.method === method)?._sum.amount ?? 0),
-        ) + (digitalMovNet.get(method) ?? 0);
-      const counted = countedByMethod.get(method as DigitalCountLine['method']) ?? null;
-      return {
-        method: method as DigitalCountLine['method'],
-        expected,
-        counted,
-        difference: counted !== null ? counted - expected : null,
-      };
-    });
-
-    const closed = await this.prisma.shift.update({
-      where: { id: shiftId },
-      data: {
-        status: 'CLOSED',
-        closedAt: new Date(),
-        expectedCash,
-        countedCash: input.countedCash,
-        difference,
-        cashCountBreakdown: input.breakdown ?? undefined,
-        digitalCountBreakdown:
-          digitalBreakdown.length > 0
-            ? (digitalBreakdown as unknown as Prisma.InputJsonValue)
-            : undefined,
-        tipsCollected: input.tips ?? null,
-        notes: input.notes ?? null,
-      },
-      include: { cashier: { select: { fullName: true } } },
-    });
 
     await this.audit.log({
       userId: cashierId,
@@ -571,64 +567,138 @@ export class ShiftsService {
     });
 
     if (Math.abs(difference) >= DISCREPANCY_THRESHOLD_COP) {
-      // FASE 15.A: link wa.me en metadata para abrir desde /audit. Desde
-      // 2026-06-10 además se ENVÍA directo al dueño vía OpenWA (abajo).
-      const alertLink = buildDiscrepancyAlertLink({
-        ownerPhone: process.env.OWNER_WHATSAPP_PHONE ?? null,
+      await this.alertCashDiscrepancy(shiftId, cashierId, difference, {
         cashierName: closed.cashier.fullName,
-        difference,
-        shiftId,
         closedAt: closed.closedAt ?? new Date(),
-        businessName: process.env.BUSINESS_NAME ?? 'Tercos',
       });
-      await this.audit.log({
-        userId: cashierId,
-        action: 'SHIFT_DISCREPANCY_DETECTED',
-        entityType: 'shift',
-        entityId: shiftId,
-        metadata: {
-          difference,
-          threshold: DISCREPANCY_THRESHOLD_COP,
-          whatsappAlertUrl: alertLink?.url ?? null,
-          whatsappAlertMessage: alertLink?.messagePlain ?? null,
-        },
-      });
-
-      if (alertLink) {
-        // Fire-and-forget: el cierre de caja no depende de WhatsApp.
-        void this.ownerNotifications.alert('shift_discrepancy', alertLink.messagePlain, {
-          shiftId,
-          difference,
-        });
-      }
     }
+    await this.alertDigitalDiscrepancy(shiftId, cashierId, digitalBreakdown);
 
-    // Descuadre DIGITAL (lo que dice la app vs las ventas): alerta aparte.
+    return toShiftDto(closed);
+  }
+
+  /**
+   * Arqueo DIGITAL: esperado por método (porción de cada venta en ese método,
+   * desde sale_payments) + movimientos digitales (IN−OUT) vs lo que el cajero
+   * vio en cada app. Una línea por método con counted/difference (null si no se
+   * contó ese método).
+   */
+  private async computeDigitalBreakdown(
+    shiftId: string,
+    digitalCounts: NonNullable<CloseShift['digitalCounts']>,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<DigitalCountLine[]> {
+    const digitalExpectedRows = await db.salePayment.groupBy({
+      by: ['method'],
+      where: {
+        method: { not: 'CASH' },
+        sale: { shiftId, status: { notIn: NON_REVENUE_STATUSES_ARR } },
+      },
+      _sum: { amount: true },
+    });
+    // Movimientos digitales del turno (entradas/salidas por método).
+    const digitalMovRows = await db.cashMovement.groupBy({
+      by: ['method', 'type'],
+      where: { shiftId, method: { not: 'CASH' } },
+      _sum: { amount: true },
+    });
+    const digitalMovNet = new Map<string, number>();
+    for (const r of digitalMovRows) {
+      const amt = Math.round(Number(r._sum.amount ?? 0));
+      digitalMovNet.set(
+        r.method as string,
+        (digitalMovNet.get(r.method as string) ?? 0) + (r.type === 'IN' ? amt : -amt),
+      );
+    }
+    const countedByMethod = new Map(
+      (digitalCounts ?? []).map((d) => [d.method, Math.round(d.counted)]),
+    );
+    const digitalMethods = new Set<string>([
+      ...digitalExpectedRows.map((r) => r.method as string),
+      ...digitalMovNet.keys(),
+      ...countedByMethod.keys(),
+    ]);
+    return [...digitalMethods].map((method) => {
+      const expected =
+        Math.round(
+          Number(digitalExpectedRows.find((r) => r.method === method)?._sum.amount ?? 0),
+        ) + (digitalMovNet.get(method) ?? 0);
+      const counted = countedByMethod.get(method as DigitalCountLine['method']) ?? null;
+      return {
+        method: method as DigitalCountLine['method'],
+        expected,
+        counted,
+        difference: counted !== null ? counted - expected : null,
+      };
+    });
+  }
+
+  /** Descuadre de EFECTIVO >= umbral: audit + link wa.me + alerta al dueño. */
+  private async alertCashDiscrepancy(
+    shiftId: string,
+    cashierId: string,
+    difference: number,
+    closed: { cashierName: string; closedAt: Date },
+  ): Promise<void> {
+    // FASE 15.A: link wa.me en metadata para abrir desde /audit. Desde
+    // 2026-06-10 además se ENVÍA directo al dueño vía OpenWA.
+    const alertLink = buildDiscrepancyAlertLink({
+      ownerPhone: process.env.OWNER_WHATSAPP_PHONE ?? null,
+      cashierName: closed.cashierName,
+      difference,
+      shiftId,
+      closedAt: closed.closedAt,
+      businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+    });
+    await this.audit.log({
+      userId: cashierId,
+      action: 'SHIFT_DISCREPANCY_DETECTED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: {
+        difference,
+        threshold: DISCREPANCY_THRESHOLD_COP,
+        whatsappAlertUrl: alertLink?.url ?? null,
+        whatsappAlertMessage: alertLink?.messagePlain ?? null,
+      },
+    });
+    if (alertLink) {
+      // Fire-and-forget: el cierre de caja no depende de WhatsApp.
+      void this.ownerNotifications.alert('shift_discrepancy', alertLink.messagePlain, {
+        shiftId,
+        difference,
+      });
+    }
+  }
+
+  /** Descuadre DIGITAL (lo que dice la app vs las ventas) >= umbral por método. */
+  private async alertDigitalDiscrepancy(
+    shiftId: string,
+    cashierId: string,
+    digitalBreakdown: DigitalCountLine[],
+  ): Promise<void> {
     const digitalMismatch = digitalBreakdown.filter(
       (d) => d.difference !== null && Math.abs(d.difference) >= DISCREPANCY_THRESHOLD_COP,
     );
-    if (digitalMismatch.length > 0) {
-      const detail = digitalMismatch
-        .map(
-          (d) =>
-            `${d.method}: esperado $${d.expected.toLocaleString('es-CO')}, app $${(d.counted ?? 0).toLocaleString('es-CO')} (${d.difference! > 0 ? '+' : ''}$${d.difference!.toLocaleString('es-CO')})`,
-        )
-        .join('\n');
-      await this.audit.log({
-        userId: cashierId,
-        action: 'SHIFT_DISCREPANCY_DETECTED',
-        entityType: 'shift',
-        entityId: shiftId,
-        metadata: { kind: 'digital', digital: digitalMismatch, threshold: DISCREPANCY_THRESHOLD_COP },
-      });
-      void this.ownerNotifications.alert(
-        'shift_discrepancy',
-        `[${process.env.BUSINESS_NAME ?? 'Tercos'}] ⚠ Descuadre DIGITAL en cierre de caja\n\n${detail}\n\nShift: ${shiftId.slice(0, 8)}`,
-        { shiftId, kind: 'digital' },
-      );
-    }
-
-    return toShiftDto(closed);
+    if (digitalMismatch.length === 0) return;
+    const detail = digitalMismatch
+      .map(
+        (d) =>
+          `${d.method}: esperado $${d.expected.toLocaleString('es-CO')}, app $${(d.counted ?? 0).toLocaleString('es-CO')} (${d.difference! > 0 ? '+' : ''}$${d.difference!.toLocaleString('es-CO')})`,
+      )
+      .join('\n');
+    await this.audit.log({
+      userId: cashierId,
+      action: 'SHIFT_DISCREPANCY_DETECTED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: { kind: 'digital', digital: digitalMismatch, threshold: DISCREPANCY_THRESHOLD_COP },
+    });
+    void this.ownerNotifications.alert(
+      'shift_discrepancy',
+      `[${process.env.BUSINESS_NAME ?? 'Tercos'}] ⚠ Descuadre DIGITAL en cierre de caja\n\n${detail}\n\nShift: ${shiftId.slice(0, 8)}`,
+      { shiftId, kind: 'digital' },
+    );
   }
 
   /**
@@ -654,34 +724,28 @@ export class ShiftsService {
     return { ...r, openingCash };
   }
 
-  /** Cálculo puro de efectivo esperado (compartido por close + getExpectedCash). */
+  /** Cálculo puro de efectivo esperado (compartido por close + getExpectedCash).
+   *  `db` permite correrlo DENTRO de la tx serializable del cierre. */
   private async computeExpectedCash(
     shiftId: string,
     openingCash: number,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<{ expectedCash: number; cashSalesTotal: number; cashIn: number; cashOut: number }> {
     // Solo ventas que cuentan plata en efectivo: PAGADO en adelante; excluye
     // PENDIENTE_PAGO, VOID (reembolsado) y CANCELADO_NO_PAGO. Incluye
     // CANCELADO_SIN_REEMBOLSO (la plata quedó).
-    const cashSales = await this.prisma.salePayment.aggregate({
+    const cashSales = await db.salePayment.aggregate({
       where: {
         method: 'CASH',
         sale: {
           shiftId,
-          status: {
-            in: [
-              'PAGADO',
-              'EN_PREPARACION',
-              'LISTO_DESPACHO',
-              'ENTREGADO',
-              'CANCELADO_SIN_REEMBOLSO',
-            ],
-          },
+          status: { notIn: NON_REVENUE_STATUSES_ARR },
         },
       },
       _sum: { amount: true },
     });
     const cashSalesTotal = Math.round(Number(cashSales._sum.amount ?? 0));
-    const { cashIn, cashOut } = await this.sumCashMovements(shiftId);
+    const { cashIn, cashOut } = await this.sumCashMovements(shiftId, db);
     const expectedCash = Math.round(openingCash) + cashSalesTotal + cashIn - cashOut;
     return { expectedCash, cashSalesTotal, cashIn, cashOut };
   }
@@ -689,8 +753,9 @@ export class ShiftsService {
   /** Suma de movimientos de efectivo del turno (entradas y salidas), en COP. */
   private async sumCashMovements(
     shiftId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<{ cashIn: number; cashOut: number }> {
-    const grouped = await this.prisma.cashMovement.groupBy({
+    const grouped = await db.cashMovement.groupBy({
       by: ['type'],
       // Solo EFECTIVO: los movimientos digitales ajustan el arqueo digital
       // de su método, no el cajón físico.
@@ -716,25 +781,37 @@ export class ShiftsService {
     input: CreateCashMovement,
     userId: string,
   ): Promise<CashMovement> {
-    const shift = await this.prisma.shift.findUnique({
-      where: { id: shiftId },
-      select: { id: true, status: true },
-    });
-    if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
-    if (shift.status !== 'OPEN') {
-      throw new BadRequestException('Solo se registran movimientos en una caja abierta.');
-    }
-    const row = await this.prisma.cashMovement.create({
-      data: {
-        shiftId,
-        type: input.type,
-        method: input.method,
-        amount: input.amount,
-        reason: input.reason,
-        userId,
-      },
-      include: { user: { select: { fullName: true } } },
-    });
+    // Tx SERIALIZABLE (auditoría 2026-07-05): el cierre lee los movimientos y
+    // congela el esperado; un movimiento READ COMMITTED podía commitear ENTRE
+    // ese cómputo y el CLOSED → plata fuera del arqueo. Serializable + re-check
+    // del status dentro de la tx → SSI aborta a uno y el reintento ve la caja
+    // ya cerrada (400 limpio).
+    const row = await runWithSerializationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const shift = await tx.shift.findUnique({
+            where: { id: shiftId },
+            select: { id: true, status: true },
+          });
+          if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
+          if (shift.status !== 'OPEN') {
+            throw new BadRequestException('Solo se registran movimientos en una caja abierta.');
+          }
+          return tx.cashMovement.create({
+            data: {
+              shiftId,
+              type: input.type,
+              method: input.method,
+              amount: input.amount,
+              reason: input.reason,
+              userId,
+            },
+            include: { user: { select: { fullName: true } } },
+          });
+        },
+        { isolationLevel: 'Serializable', timeout: 10_000 },
+      ),
+    );
     await this.audit.log({
       userId,
       action: input.type === 'IN' ? 'CASH_MOVEMENT_IN' : 'CASH_MOVEMENT_OUT',
@@ -756,17 +833,27 @@ export class ShiftsService {
     input: CreateCashMovement,
     userId: string,
   ): Promise<CashMovement> {
-    const before = await this.findOpenShiftMovement(shiftId, movementId);
-    const row = await this.prisma.cashMovement.update({
-      where: { id: movementId },
-      data: {
-        type: input.type,
-        method: input.method,
-        amount: input.amount,
-        reason: input.reason,
-      },
-      include: { user: { select: { fullName: true } } },
-    });
+    // Serializable por la misma razón que addCashMovement: no editar un
+    // movimiento ENTRE el cómputo del esperado y el CLOSED del cierre.
+    const { before, row } = await runWithSerializationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const prev = await this.findOpenShiftMovement(shiftId, movementId, tx);
+          const updated = await tx.cashMovement.update({
+            where: { id: movementId },
+            data: {
+              type: input.type,
+              method: input.method,
+              amount: input.amount,
+              reason: input.reason,
+            },
+            include: { user: { select: { fullName: true } } },
+          });
+          return { before: prev, row: updated };
+        },
+        { isolationLevel: 'Serializable', timeout: 10_000 },
+      ),
+    );
     await this.audit.log({
       userId,
       action: 'CASH_MOVEMENT_UPDATED',
@@ -797,8 +884,16 @@ export class ShiftsService {
     movementId: string,
     userId: string,
   ): Promise<void> {
-    const before = await this.findOpenShiftMovement(shiftId, movementId);
-    await this.prisma.cashMovement.delete({ where: { id: movementId } });
+    const before = await runWithSerializationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const prev = await this.findOpenShiftMovement(shiftId, movementId, tx);
+          await tx.cashMovement.delete({ where: { id: movementId } });
+          return prev;
+        },
+        { isolationLevel: 'Serializable', timeout: 10_000 },
+      ),
+    );
     await this.audit.log({
       userId,
       action: 'CASH_MOVEMENT_DELETED',
@@ -815,8 +910,12 @@ export class ShiftsService {
   }
 
   /** El movimiento existe, pertenece a esa caja y la caja sigue OPEN. */
-  private async findOpenShiftMovement(shiftId: string, movementId: string) {
-    const row = await this.prisma.cashMovement.findUnique({
+  private async findOpenShiftMovement(
+    shiftId: string,
+    movementId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const row = await db.cashMovement.findUnique({
       where: { id: movementId },
       include: { shift: { select: { status: true } } },
     });

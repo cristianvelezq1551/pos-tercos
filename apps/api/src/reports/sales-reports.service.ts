@@ -50,7 +50,7 @@ export class SalesReportsService {
   async getDailyAiSummary(date: Date): Promise<AiSummary> {
     const dayStart = startOfDay(date);
     const dayEnd = endOfDay(date);
-    const [summary, top, shift, delayed, lowStock] = await Promise.all([
+    const [summary, top, shift, lowStock] = await Promise.all([
       this.getSalesSummary(dayStart, dayEnd, 'daily'),
       this.getTopProducts(dayStart, dayEnd, 3),
       this.prisma.shift.findFirst({
@@ -60,9 +60,6 @@ export class SalesReportsService {
         },
         orderBy: { closedAt: 'desc' },
         select: { difference: true },
-      }),
-      this.prisma.auditLog.count({
-        where: { action: 'KDS_ORDER_DELAYED', createdAt: { gte: dayStart, lte: dayEnd } },
       }),
       this.computeLowStockCount(),
     ]);
@@ -77,7 +74,6 @@ export class SalesReportsService {
       digitalRevenue: round(summary.totals.revenue - cashRevenue),
       voidCount: summary.totals.voidCount,
       cashDifference: shift?.difference != null ? Number(shift.difference) : null,
-      delayedKitchenCount: delayed,
       lowStockCount: lowStock,
       topProducts: top.products.map((p) => ({ name: p.productName, qty: p.quantity })),
     };
@@ -114,11 +110,14 @@ export class SalesReportsService {
       },
     });
 
-    // Total / avg / discount / count + voidCount
+    // Total / avg / discount / count + voidCount. Las anuladas se cuentan por
+    // paidAt — el MISMO eje temporal que el revenue del summary: el void cae
+    // en el día en que esa venta se había COBRADO (su plata salió de ese día),
+    // no en el día en que se anuló.
     const voidCount = await this.prisma.sale.count({
       where: {
         status: 'VOID',
-        createdAt: { gte: from, lte: to },
+        paidAt: { gte: from, lte: to },
       },
     });
 
@@ -217,6 +216,30 @@ export class SalesReportsService {
       take: limit,
     });
 
+    // Descuento manual SOBRE EL TOTAL (#5b): no vive en las líneas → sin este
+    // prorrateo el revenue del ranking quedaba inflado (Σ lineTotal >
+    // sale.total) y no conciliaba con el summary. Se reparte el descuento de
+    // cada venta entre sus productos por el peso de cada línea.
+    const orderDiscounted = await this.prisma.sale.findMany({
+      where: { ...paidSalesWhere(from, to), orderDiscountAmount: { gt: 0 } },
+      select: {
+        orderDiscountAmount: true,
+        items: { select: { productId: true, lineTotal: true } },
+      },
+    });
+    const orderDiscountByProduct = new Map<string, number>();
+    for (const s of orderDiscounted) {
+      const saleLineSum = s.items.reduce((a, it) => a + Number(it.lineTotal), 0);
+      if (saleLineSum <= 0) continue;
+      const factor = Number(s.orderDiscountAmount) / saleLineSum;
+      for (const it of s.items) {
+        orderDiscountByProduct.set(
+          it.productId,
+          (orderDiscountByProduct.get(it.productId) ?? 0) + Number(it.lineTotal) * factor,
+        );
+      }
+    }
+
     const productIds = grouped.map((g) => g.productId);
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -238,7 +261,8 @@ export class SalesReportsService {
       const product = productMap.get(g.productId);
       const productName = product?.name ?? '(producto eliminado)';
       const quantity = Number(g._sum.quantity ?? 0);
-      const revenue = Number(g._sum.lineTotal ?? 0);
+      const revenue =
+        Number(g._sum.lineTotal ?? 0) - (orderDiscountByProduct.get(g.productId) ?? 0);
 
       const estCostPerUnit = product ? (costByProduct.get(g.productId) ?? null) : null;
       const estCost =
@@ -431,7 +455,7 @@ export class SalesReportsService {
     // pasada (si no, en la mañana el WoW% siempre se ve fuertemente negativo).
     const lastWeekEnd = addDays(now, -7);
 
-    const [today, lastWeekSameDay, pendingWeb, inKitchen, ready, lowStock, pendingSugg] = await Promise.all([
+    const [today, lastWeekSameDay, pendingWeb, toPrepare, ready, lowStock, pendingSugg] = await Promise.all([
       this.prisma.sale.aggregate({
         where: paidSalesWhere(dayStart, dayEnd),
         _sum: { total: true, discountTotal: true },
@@ -447,11 +471,20 @@ export class SalesReportsService {
           status: 'PENDIENTE_PAGO',
         },
       }),
+      // Pedidos WEB pagados que el cajero aún debe marcar "listo". Solo
+      // WEB_PICKUP: el mostrador (COUNTER) termina en PAGADO y NO entra a esta
+      // cola (si no, cada venta de caja inflaría el contador para siempre).
       this.prisma.sale.count({
-        where: { status: { in: ['PAGADO', 'EN_PREPARACION'] } },
+        where: { type: 'WEB_PICKUP', status: 'PAGADO' },
       }),
+      // Pedidos WEB marcados "listos para retirar" hoy (acotado al día para que
+      // no acumule indefinidamente — LISTO_DESPACHO es terminal).
       this.prisma.sale.count({
-        where: { status: 'LISTO_DESPACHO' },
+        where: {
+          type: 'WEB_PICKUP',
+          status: 'LISTO_DESPACHO',
+          readyAt: { gte: dayStart, lte: dayEnd },
+        },
       }),
       this.computeLowStockCount(),
       this.prisma.purchaseSuggestion.count({
@@ -474,8 +507,8 @@ export class SalesReportsService {
       todayDiscount: round(todayDiscount),
       weekOverWeekPct,
       pendingWebOrders: pendingWeb,
-      ordersInKitchen: inKitchen,
-      ordersReady: ready,
+      webOrdersToPrepare: toPrepare,
+      webOrdersReady: ready,
       lowStockCount: lowStock,
       pendingSuggestions: pendingSugg,
     };

@@ -47,6 +47,17 @@ export class UsersService {
     return user;
   }
 
+  /** Resuelve nombres por id (para mostrar autores sin exponer la entidad User). */
+  async namesByIds(ids: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return new Map();
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, fullName: true },
+    });
+    return new Map(rows.map((r) => [r.id, r.fullName]));
+  }
+
   // ==================================================================
   // Gestión de usuarios (admin) — DUENO-only via controller
   // ==================================================================

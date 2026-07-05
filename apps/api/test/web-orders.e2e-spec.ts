@@ -1,0 +1,194 @@
+/**
+ * web-orders.e2e-spec.ts
+ *
+ * Ciclo de vida COMPLETO de un pedido WEB_PICKUP tras eliminar el turnero/KDS:
+ *   crear (público) → confirmar pago (cajero) → "marcar listo" (cajero).
+ *
+ * Cubre el endpoint POST /sales/:id/mark-ready (reemplazo de KdsService.ready):
+ * transición PAGADO→LISTO_DESPACHO, guards de type/status, TOCTOU del doble
+ * "marcar listo", y el disparo de las notificaciones WhatsApp en cada paso
+ * (persistidas en whatsapp_messages vía MockWhatsAppAdapter).
+ */
+import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
+import type { INestApplication } from '@nestjs/common';
+import supertest from 'supertest';
+import type { PrismaService } from '../src/prisma/prisma.service';
+import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
+import { cleanDb } from './helpers/db-cleaner';
+
+describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let request: ReturnType<typeof supertest>;
+  let duenoToken: string;
+  let cajeroToken: string;
+  let gaseosaId: string;
+
+  /** Las notificaciones son fire-and-forget: la fila en whatsapp_messages se
+   *  escribe después de responder el HTTP. Reintenta hasta verla. */
+  const waitForWhatsApp = async (
+    saleId: string,
+    stage: string,
+    tries = 25,
+  ): Promise<{ status: string; body: string } | null> => {
+    for (let i = 0; i < tries; i++) {
+      const msg = await prisma.whatsAppMessage.findFirst({
+        where: { saleId, stage },
+        select: { status: true, body: true },
+      });
+      if (msg) return msg;
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    return null;
+  };
+
+  const createWebOrder = async (): Promise<{ id: string; total: number }> => {
+    const res = await request
+      .post('/web/orders')
+      .send({
+        type: 'WEB_PICKUP',
+        items: [{ productId: gaseosaId, quantity: 1 }],
+        customerName: 'Cliente Web',
+        customerPhone: '+573001234567',
+      })
+      .expect(201);
+    return { id: res.body.order.id as string, total: res.body.order.total as number };
+  };
+
+  const confirmPayment = (saleId: string, total: number) =>
+    request
+      .post(`/sales/${saleId}/confirm-payment`)
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .send({ method: 'CASH', amountReceived: total });
+
+  beforeAll(async () => {
+    ({ app, prisma, request } = await bootstrapApp());
+    const hash = await bcrypt.hash('dev12345', 10);
+    await prisma.user.createMany({
+      data: [
+        { email: 'dueno-web@test.local', fullName: 'Dueño Web', role: 'DUENO', passwordHash: hash, mustChangePwd: false, active: true },
+        { email: 'cajero-web@test.local', fullName: 'Cajero Web', role: 'CAJERO', passwordHash: hash, mustChangePwd: false, active: true },
+      ],
+    });
+    duenoToken = await loginAs(request, 'dueno-web@test.local');
+    cajeroToken = await loginAs(request, 'cajero-web@test.local');
+
+    const prod = await request
+      .post('/products')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        name: 'Gaseosa Web',
+        basePrice: 5000,
+        directResale: true,
+        unitPurchase: 'unit',
+        unitStock: 'unit',
+        conversionFactor: 1,
+        modifiersEnabled: false,
+      })
+      .expect(201);
+    gaseosaId = prod.body.id as string;
+    await request
+      .post('/inventory/movements')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ entityType: 'PRODUCT', productId: gaseosaId, delta: 100, type: 'INITIAL', unitCost: 2000 })
+      .expect(201);
+
+    // El cobro de un pedido web asocia turno+cajero → necesita la caja abierta.
+    await request
+      .post('/shifts/open')
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .send({ openingCash: 50000 })
+      .expect(201);
+  });
+
+  afterAll(async () => {
+    await cleanDb(prisma);
+    await app.close();
+  });
+
+  it('crear pedido web dispara las instrucciones de pago por WhatsApp', async () => {
+    const order = await createWebOrder();
+    const msg = await waitForWhatsApp(order.id, 'payment_instructions');
+    expect(msg).not.toBeNull();
+    expect(msg!.status).toBe('sent');
+  });
+
+  it('flujo completo: confirmar pago → PAGADO + payment_received; marcar listo → LISTO_DESPACHO + pickup_ready', async () => {
+    const order = await createWebOrder();
+
+    // Cajero confirma el pago.
+    const paid = await confirmPayment(order.id, order.total).expect(201);
+    expect(paid.body.status).toBe('PAGADO');
+    const received = await waitForWhatsApp(order.id, 'payment_received');
+    expect(received?.status).toBe('sent');
+
+    // Cajero marca "listo para retirar".
+    const ready = await request
+      .post(`/sales/${order.id}/mark-ready`)
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .expect(201);
+    expect(ready.body.status).toBe('LISTO_DESPACHO');
+
+    // readyAt quedó sellado (lo usa el dashboard "listos hoy").
+    const row = await prisma.sale.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { readyAt: true },
+    });
+    expect(row.readyAt).not.toBeNull();
+
+    // Y el cliente recibió el "listo para retirar".
+    const pickup = await waitForWhatsApp(order.id, 'pickup_ready');
+    expect(pickup?.status).toBe('sent');
+
+    // sale_status_log registró la transición.
+    const log = await prisma.saleStatusLog.findFirst({
+      where: { saleId: order.id, statusTo: 'LISTO_DESPACHO' },
+    });
+    expect(log).toBeTruthy();
+  });
+
+  it('mark-ready rechaza un pedido WEB que todavía NO está pagado (400)', async () => {
+    const order = await createWebOrder();
+    await request
+      .post(`/sales/${order.id}/mark-ready`)
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .expect(400);
+  });
+
+  it('mark-ready rechaza una venta COUNTER (solo aplica a WEB_PICKUP) (400)', async () => {
+    const created = await request
+      .post('/sales')
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ type: 'COUNTER', items: [{ productId: gaseosaId, quantity: 1 }] })
+      .expect(201);
+    await confirmPayment(created.body.id, created.body.total).expect(201);
+
+    await request
+      .post(`/sales/${created.body.id}/mark-ready`)
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .expect(400);
+  });
+
+  it('mark-ready dos veces: el segundo es 400 (guard TOCTOU por status) y no reenvía WhatsApp', async () => {
+    const order = await createWebOrder();
+    await confirmPayment(order.id, order.total).expect(201);
+
+    await request
+      .post(`/sales/${order.id}/mark-ready`)
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .expect(201);
+    await request
+      .post(`/sales/${order.id}/mark-ready`)
+      .set('Authorization', `Bearer ${cajeroToken}`)
+      .expect(400);
+
+    // Exactamente UN pickup_ready (idempotencia del flag notified_*).
+    await waitForWhatsApp(order.id, 'pickup_ready');
+    const count = await prisma.whatsAppMessage.count({
+      where: { saleId: order.id, stage: 'pickup_ready' },
+    });
+    expect(count).toBe(1);
+  });
+});

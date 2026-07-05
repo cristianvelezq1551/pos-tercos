@@ -1,7 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { WhatsAppProvider } from '@pos-tercos/domain';
+import {
+  buildOwnerAlertTemplate,
+  WHATSAPP_TEMPLATE_LANG_DEFAULT,
+  type WhatsAppProvider,
+} from '@pos-tercos/domain';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
+import { templatesEnabled } from './notification.service';
 
 export type OwnerAlertKind =
   | 'shift_discrepancy'
@@ -9,6 +14,8 @@ export type OwnerAlertKind =
   | 'drawer_no_sale'
   | 'cost_increase'
   | 'cortesia_request'
+  | 'cortesia_given'
+  | 'manual_discount'
   | 'server_error';
 
 /**
@@ -37,7 +44,19 @@ export class OwnerNotificationService {
     const phone = process.env.OWNER_WHATSAPP_PHONE;
     if (!phone) return;
     try {
-      const result = await this.wa.sendText(phone, text);
+      // Cloud API: la alerta al dueño es business-initiated → con templates
+      // activos va por `alerta_negocio` (texto aplanado a una línea); si no,
+      // texto libre (OpenWA/mock/sandbox).
+      const result =
+        templatesEnabled() && this.wa.sendTemplate
+          ? await this.wa.sendTemplate(
+              phone,
+              buildOwnerAlertTemplate(
+                text,
+                process.env.WHATSAPP_TEMPLATE_LANG ?? WHATSAPP_TEMPLATE_LANG_DEFAULT,
+              ),
+            )
+          : await this.wa.sendText(phone, text);
       if (!result.ok) {
         this.logger.warn(`Alerta '${kind}' al dueño falló: ${result.error ?? 'sin detalle'}`);
       }

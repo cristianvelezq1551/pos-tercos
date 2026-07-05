@@ -201,10 +201,11 @@ export class SalesConsumptionService {
    * que se cree la venta y se descubra después: la idea es no permitir stock
    * negativo aunque el sold-out UI haya fallado en bloquearla.
    *
-   * Esta es la red de seguridad transaccional. Si dos ventas concurrentes
-   * dejan stock negativo (TOCTOU), una pasa y la otra falla — comportamiento
-   * aceptable: la primera transa, la segunda recibe error y el cajero retira
-   * el item. (Para race-free total habría que SERIALIZABLE el tx.)
+   * Esta es la red de seguridad transaccional. Los tres callers (cobro, sync
+   * offline, edición) la corren DENTRO de una tx SERIALIZABLE (`SALE_TX_OPTS`)
+   * con retry 40001: dos ventas concurrentes sobre el mismo stock se
+   * serializan — una transa y la otra recomputa fresco o falla con el
+   * faltante.
    */
   async assertStockSufficient(
     tx: Prisma.TransactionClient,

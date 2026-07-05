@@ -35,6 +35,7 @@ import {
   type Sale,
   type SaleStatus,
   type SaleStatusLogEntry,
+  type SendToKitchenResponse,
   type SyncOfflineSale,
   type VoidSale,
 } from '@pos-tercos/types';
@@ -127,6 +128,16 @@ export class SalesController {
     return this.sales.confirmPayment(id, body, user.sub);
   }
 
+  /** Pedido WEB pagado → "listo para retirar": dispara el WhatsApp al cliente. */
+  @CashierAccess()
+  @Post(':id/mark-ready')
+  markReady(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Sale> {
+    return this.sales.markWebReady(id, user.sub);
+  }
+
   /**
    * Anular venta. Requiere header X-Approval-Pin con PIN de Admin/Dueño.
    */
@@ -148,8 +159,9 @@ export class SalesController {
   }
 
   /**
-   * Reembolsa un pedido que la cocina YA inició (EN_PREPARACION/LISTO/ENTREGADO).
-   * No revierte stock (la comida se consumió); requiere X-Approval-Pin.
+   * Reembolsa un pedido ya retirado/entregado (web en LISTO_DESPACHO; o
+   * EN_PREPARACION/ENTREGADO históricos). No revierte stock (la comida se
+   * consumió); requiere X-Approval-Pin.
    */
   @CashierAccess()
   @Throttle({ default: { ttl: 300_000, limit: 5 } })
@@ -224,14 +236,32 @@ export class SalesController {
       if (!r.success) throw new BadRequestException(`Status inválido: ${status}`);
       parsedStatus = r.data;
     }
+    // B9: fechas/límite inválidos son 400 del cliente, no un 500 de Prisma
+    // (Invalid Date / take: NaN).
+    const parseDate = (label: string, value?: string): Date | undefined => {
+      if (!value) return undefined;
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) {
+        throw new BadRequestException(`Parámetro '${label}' inválido: ${value}`);
+      }
+      return d;
+    };
+    let parsedLimit: number | undefined;
+    if (limit !== undefined) {
+      const n = Number(limit);
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new BadRequestException(`Parámetro 'limit' inválido: ${limit}`);
+      }
+      parsedLimit = Math.min(Math.floor(n), 200);
+    }
     return this.sales.list({
       status: parsedStatus,
       cashierId,
       shiftId,
       type,
-      from: from ? new Date(from) : undefined,
-      to: to ? new Date(to) : undefined,
-      limit: limit ? Math.min(Number(limit), 200) : undefined,
+      from: parseDate('from', from),
+      to: parseDate('to', to),
+      limit: parsedLimit,
     });
   }
 
@@ -282,6 +312,21 @@ export class SalesController {
   }
 
   /**
+   * Cuentas abiertas (#3): envía a cocina SOLO lo pendiente (comanda
+   * incremental) y estampa las líneas como enviadas. Devuelve ambas variantes
+   * de comanda en bytes ESC/POS para que el POS las rutee a sus impresoras.
+   */
+  @CashierAccess()
+  @Post(':id/send-to-kitchen')
+  @HttpCode(200)
+  sendToKitchen(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SendToKitchenResponse> {
+    return this.receipts.sendToKitchen(id, user.sub);
+  }
+
+  /**
    * Comanda de COCINA en bytes ESC/POS (base64) para el print-agent local.
    * Sale al COBRAR (la venta puede seguir PENDIENTE_PAGO) — la cocina
    * arranca sin esperar la confirmación del pago.
@@ -293,11 +338,19 @@ export class SalesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Query('cancel') cancel?: string,
     @Query('variant') variant?: string,
+    @Query('corrected') corrected?: string,
   ): Promise<{ escposBase64: string; receiptNumber: number; reprint: boolean }> {
     // ?cancel=true → ticket de ANULACIÓN (el cobro se abandonó tras imprimir
     // la comanda; la cocina debe descartar el pedido).
     // ?variant=kitchen → comanda de COCINA (excluye reventa directa: bebidas).
-    return this.receipts.getComandaEscPos(id, user.sub, cancel === 'true', variant === 'kitchen' ? 'kitchen' : 'full');
+    // ?corrected=true → la comanda sale rotulada "PEDIDO MODIFICADO" (edición).
+    return this.receipts.getComandaEscPos(
+      id,
+      user.sub,
+      cancel === 'true',
+      variant === 'kitchen' ? 'kitchen' : 'full',
+      corrected === 'true',
+    );
   }
 
   /**

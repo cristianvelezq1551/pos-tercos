@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   buildNotificationMessage,
+  buildNotificationTemplate,
+  WHATSAPP_TEMPLATE_LANG_DEFAULT,
   type WhatsAppNotificationStage,
   type WhatsAppProvider,
   type WhatsAppSaleSnapshot,
@@ -13,10 +15,20 @@ import { PrismaService } from '../prisma/prisma.service';
 const WHATSAPP_RETENTION_DAYS = 90;
 
 /**
- * Envía notificaciones WhatsApp al cliente vía OpenWA en las transiciones
- * de un pedido web (solo WEB_PICKUP). Idempotente por los flags notified_*
- * de Sale. NUNCA lanza: un fallo de WhatsApp no debe tumbar la transición
- * de negocio (el caller la llama fire-and-forget).
+ * `WHATSAPP_TEMPLATES_ENABLED=true` activa el envío por template (requiere
+ * los templates APROBADOS en Meta — kapso-setup.md Paso 3). Se lee en cada
+ * envío (no al boot) para poder togglear sin redeploy de código.
+ */
+export function templatesEnabled(): boolean {
+  return process.env.WHATSAPP_TEMPLATES_ENABLED === 'true';
+}
+
+/**
+ * Envía notificaciones WhatsApp al cliente vía el WhatsAppProvider activo
+ * (Kapso/OpenWA/Mock según env) en las transiciones de un pedido web (solo
+ * WEB_PICKUP). Idempotente por los flags notified_* de Sale. NUNCA lanza: un
+ * fallo de WhatsApp no debe tumbar la transición de negocio (el caller la
+ * llama fire-and-forget).
  */
 @Injectable()
 export class NotificationService {
@@ -66,16 +78,32 @@ export class NotificationService {
         customerPhone: sale.customerPhone,
         total: Number(sale.total),
       };
-      const text = buildNotificationMessage(stage, snapshot, {
+      const msgOpts = {
         businessName: this.businessName,
         businessAddressShort: this.addressShort,
         paymentInstructions:
           stage === 'payment_instructions' ? this.paymentInstructions() : null,
-      });
+      };
+      // El texto humano SIEMPRE se arma: es el fallback de sendText y lo que
+      // queda auditado en whatsapp_messages (aunque el envío vaya por template).
+      const text = buildNotificationMessage(stage, snapshot, msgOpts);
 
       let result: Awaited<ReturnType<WhatsAppProvider['sendText']>>;
       try {
-        result = await this.wa.sendText(sale.customerPhone, text);
+        // Producción con Cloud API: business-initiated fuera de la ventana de
+        // 24h SOLO llega por template pre-aprobado. Con el flag apagado
+        // (sandbox/dev/OpenWA) va como texto libre.
+        if (templatesEnabled() && this.wa.sendTemplate) {
+          const template = buildNotificationTemplate(
+            stage,
+            snapshot,
+            msgOpts,
+            process.env.WHATSAPP_TEMPLATE_LANG ?? WHATSAPP_TEMPLATE_LANG_DEFAULT,
+          );
+          result = await this.wa.sendTemplate(sale.customerPhone, template);
+        } else {
+          result = await this.wa.sendText(sale.customerPhone, text);
+        }
       } catch (err) {
         // El provider lanzó: liberar el claim para que un reintento futuro
         // pueda volver a enviar, y propagar al catch externo (log + no-throw).

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   CountTask,
   CreateStockCount,
@@ -88,7 +88,12 @@ export class StockCountsService {
    * transacción para que la diferencia no quede desfasada por una venta
    * concurrente.
    */
-  async register(input: CreateStockCount, userId: string): Promise<StockCount> {
+  async register(
+    input: CreateStockCount,
+    userId: string,
+    opts: { autoApprove?: boolean } = {},
+  ): Promise<StockCount> {
+    const autoApprove = opts.autoApprove ?? true;
     const entityId =
       input.entityType === 'INGREDIENT'
         ? input.ingredientId!
@@ -99,7 +104,7 @@ export class StockCountsService {
     // Valida existencia + activo (lanza NotFound/BadRequest del inventory).
     const stockable = await this.inventory.getStockableById(input.entityType, entityId);
 
-    const created = await this.registerWithRetry(input, entityId, userId);
+    const created = await this.registerWithRetry(input, entityId, userId, autoApprove);
 
     await this.audit.log({
       userId,
@@ -113,23 +118,114 @@ export class StockCountsService {
         countedQty: input.countedQty,
         ledgerQty: Number(created.ledgerQty),
         difference: Number(created.difference),
-        adjustmentCreated: Math.abs(Number(created.difference)) > COUNT_EPSILON,
+        pendingApproval: !autoApprove,
+        adjustmentCreated: autoApprove && Math.abs(Number(created.difference)) > COUNT_EPSILON,
       },
     });
 
-    return {
-      id: created.id,
-      entityType: input.entityType,
-      entityId,
-      name: stockable.name,
-      countedQty: Number(created.countedQty),
-      ledgerQty: Number(created.ledgerQty),
-      difference: Number(created.difference),
-      userId,
-      userName: null,
-      notes: created.notes,
-      createdAt: created.createdAt.toISOString(),
-    };
+    return this.toDto(created, stockable.name, null);
+  }
+
+  /** Conteos del cocinero pendientes de aprobación (para el admin). */
+  async listPending(): Promise<StockCount[]> {
+    const rows = await this.prisma.stockCount.findMany({
+      where: { status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+      include: countIncludes(),
+    });
+    return rows.map((r) => this.rowToDto(r, null));
+  }
+
+  /**
+   * El admin APRUEBA un conteo pendiente: aplica la diferencia detectada al
+   * momento del conteo (delta = difference(T)) como ajuste. Usar la diferencia
+   * guardada —no recalcular contra el ledger actual— preserva las ventas y
+   * producciones legítimas ocurridas entre el conteo y la aprobación.
+   */
+  async approve(id: string, adminId: string, note?: string): Promise<StockCount> {
+    const existing = await this.prisma.stockCount.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Conteo no encontrado');
+    if (existing.status !== 'PENDING') throw new BadRequestException('El conteo ya fue resuelto.');
+    const difference = Number(existing.difference);
+
+    await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.stockCount.updateMany({
+        where: { id, status: 'PENDING' },
+        data: { status: 'APPROVED', resolvedById: adminId, resolvedAt: new Date(), resolverNote: note ?? null },
+      });
+      if (claim.count === 0) throw new BadRequestException('El conteo ya fue resuelto.');
+      if (Math.abs(difference) > COUNT_EPSILON) {
+        await tx.inventoryMovement.create({
+          data: {
+            entityType: existing.entityType,
+            ingredientId: existing.ingredientId,
+            productId: existing.productId,
+            subproductId: existing.subproductId,
+            delta: difference,
+            type: 'MANUAL_ADJUSTMENT',
+            sourceType: 'stock_count',
+            sourceId: id,
+            userId: adminId,
+            notes: `Conteo aprobado: dif. ${difference}${note ? ` · ${note}` : ''}`.slice(0, 200),
+          },
+        });
+      }
+      // Cualquier OTRO conteo pendiente del MISMO stockable quedó obsoleto: su
+      // `difference` se calculó contra un ledger que no incluía este ajuste, así
+      // que aprobarlo después doble-aplicaría la discrepancia. Se supersede.
+      await tx.stockCount.updateMany({
+        where: {
+          id: { not: id },
+          status: 'PENDING',
+          entityType: existing.entityType,
+          ingredientId: existing.ingredientId,
+          productId: existing.productId,
+          subproductId: existing.subproductId,
+        },
+        data: {
+          status: 'REJECTED',
+          resolvedById: adminId,
+          resolvedAt: new Date(),
+          resolverNote: 'Reemplazado por un conteo aprobado más reciente del mismo ítem.',
+        },
+      });
+    });
+
+    await this.audit.log({
+      userId: adminId,
+      action: 'STOCK_COUNT_APPROVED',
+      entityType: 'stock_count',
+      entityId: id,
+      metadata: { difference, adjustmentCreated: Math.abs(difference) > COUNT_EPSILON, note: note ?? null },
+    });
+    return this.readOne(id);
+  }
+
+  /** El admin RECHAZA un conteo pendiente: no ajusta stock. */
+  async reject(id: string, adminId: string, note?: string): Promise<StockCount> {
+    const existing = await this.prisma.stockCount.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Conteo no encontrado');
+    if (existing.status !== 'PENDING') throw new BadRequestException('El conteo ya fue resuelto.');
+    await this.prisma.stockCount.update({
+      where: { id },
+      data: { status: 'REJECTED', resolvedById: adminId, resolvedAt: new Date(), resolverNote: note ?? null },
+    });
+    await this.audit.log({
+      userId: adminId,
+      action: 'STOCK_COUNT_REJECTED',
+      entityType: 'stock_count',
+      entityId: id,
+      metadata: { note: note ?? null },
+    });
+    return this.readOne(id);
+  }
+
+  private async readOne(id: string): Promise<StockCount> {
+    const row = await this.prisma.stockCount.findUniqueOrThrow({ where: { id }, include: countIncludes() });
+    const resolverName = row.resolvedById
+      ? (await this.prisma.user.findUnique({ where: { id: row.resolvedById }, select: { fullName: true } }))?.fullName ?? null
+      : null;
+    return this.rowToDto(row, resolverName);
   }
 
   /**
@@ -142,6 +238,7 @@ export class StockCountsService {
     input: CreateStockCount,
     entityId: string,
     userId: string,
+    autoApprove: boolean,
   ): Promise<Prisma.StockCountGetPayload<object>> {
     for (let attempt = 1; ; attempt++) {
       try {
@@ -159,12 +256,17 @@ export class StockCountsService {
                 countedQty: input.countedQty,
                 ledgerQty,
                 difference,
+                // Conteo del cocinero → PENDING (sin ajustar). Conteo del admin →
+                // APPROVED e inmediato (aplica el ajuste en esta misma tx).
+                status: autoApprove ? 'APPROVED' : 'PENDING',
+                resolvedById: autoApprove ? userId : null,
+                resolvedAt: autoApprove ? new Date() : null,
                 userId,
                 notes: input.notes ?? null,
               },
             });
 
-            if (Math.abs(difference) > COUNT_EPSILON) {
+            if (autoApprove && Math.abs(difference) > COUNT_EPSILON) {
               await tx.inventoryMovement.create({
                 data: {
                   entityType: input.entityType,
@@ -196,14 +298,18 @@ export class StockCountsService {
     const rows = await this.prisma.stockCount.findMany({
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: {
-        ingredient: { select: { name: true } },
-        product: { select: { name: true } },
-        subproduct: { select: { name: true } },
-        user: { select: { fullName: true } },
-      },
+      include: countIncludes(),
     });
-    return rows.map((r) => ({
+    const resolverIds = [...new Set(rows.map((r) => r.resolvedById).filter((x): x is string => !!x))];
+    const resolvers = resolverIds.length
+      ? await this.prisma.user.findMany({ where: { id: { in: resolverIds } }, select: { id: true, fullName: true } })
+      : [];
+    const resolverName = new Map(resolvers.map((u) => [u.id, u.fullName]));
+    return rows.map((r) => this.rowToDto(r, r.resolvedById ? (resolverName.get(r.resolvedById) ?? null) : null));
+  }
+
+  private rowToDto(r: CountRow, resolverName: string | null): StockCount {
+    return {
       id: r.id,
       entityType: r.entityType,
       entityId: (r.ingredientId ?? r.productId ?? r.subproductId)!,
@@ -211,11 +317,39 @@ export class StockCountsService {
       countedQty: Number(r.countedQty),
       ledgerQty: Number(r.ledgerQty),
       difference: Number(r.difference),
+      status: r.status,
       userId: r.userId,
       userName: r.user?.fullName ?? null,
+      resolvedByName: resolverName,
+      resolvedAt: r.resolvedAt?.toISOString() ?? null,
+      resolverNote: r.resolverNote,
       notes: r.notes,
       createdAt: r.createdAt.toISOString(),
-    }));
+    };
+  }
+
+  private toDto(
+    created: Prisma.StockCountGetPayload<object>,
+    name: string,
+    resolverName: string | null,
+  ): StockCount {
+    return {
+      id: created.id,
+      entityType: created.entityType,
+      entityId: (created.ingredientId ?? created.productId ?? created.subproductId)!,
+      name,
+      countedQty: Number(created.countedQty),
+      ledgerQty: Number(created.ledgerQty),
+      difference: Number(created.difference),
+      status: created.status,
+      userId: created.userId,
+      userName: null,
+      resolvedByName: resolverName,
+      resolvedAt: created.resolvedAt?.toISOString() ?? null,
+      resolverNote: created.resolverNote,
+      notes: created.notes,
+      createdAt: created.createdAt.toISOString(),
+    };
   }
 
   private async ledgerStock(
@@ -233,3 +367,15 @@ export class StockCountsService {
     return Number(agg._sum.delta ?? 0);
   }
 }
+
+/** Include estándar para resolver el nombre del stockable y de quien contó. */
+function countIncludes() {
+  return {
+    ingredient: { select: { name: true } },
+    product: { select: { name: true } },
+    subproduct: { select: { name: true } },
+    user: { select: { fullName: true } },
+  } satisfies Prisma.StockCountInclude;
+}
+
+type CountRow = Prisma.StockCountGetPayload<{ include: ReturnType<typeof countIncludes> }>;

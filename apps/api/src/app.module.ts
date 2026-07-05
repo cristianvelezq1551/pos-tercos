@@ -16,15 +16,15 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { HealthController } from './health/health.controller';
+import { HealthService } from './health/health.service';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { InvoicesModule } from './invoices/invoices.module';
-import { KdsModule } from './kds/kds.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { DisplayModule } from './display/display.module';
-import { PublicDisplayModule } from './public-display/public-display.module';
+import { KitchenModule } from './kitchen/kitchen.module';
 import { RecipeBookModule } from './recipe-book/recipe-book.module';
 import { PurchaseSuggestionsModule } from './purchase-suggestions/purchase-suggestions.module';
 import { WorkersModule } from './workers/workers.module';
@@ -77,10 +77,9 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     InvoicesModule,
     ShiftsModule,
     SalesModule,
-    KdsModule,
-    PublicDisplayModule,
     DisplayModule,
     RecipeBookModule,
+    KitchenModule,
     WebHeroModule,
     WebMenuModule,
     WebOrdersModule,
@@ -94,6 +93,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
   ],
   controllers: [HealthController],
   providers: [
+    HealthService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },

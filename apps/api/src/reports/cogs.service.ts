@@ -295,6 +295,7 @@ export class CogsService {
         where: { paidAt: { gte: from, lte: to }, status: { notIn: [...EXCLUDED_STATUSES] } },
         select: {
           id: true,
+          orderDiscountAmount: true,
           items: { select: { productId: true, quantity: true, sizeId: true, lineTotal: true } },
         },
       }),
@@ -362,11 +363,20 @@ export class CogsService {
       const partialOf = (m: Map<string, CostQty> | undefined, id: string): boolean =>
         (m?.get(id)?.unknownQty ?? 0) > 0;
 
+      // Descuento manual SOBRE EL TOTAL (#5b): no vive en las líneas — se
+      // prorratea por el peso de cada línea para que Σ revenue por producto
+      // concilie con sale.total (y con getPnl). Sin esto, una venta con
+      // descuento al total inflaba el revenue/margen de sus productos.
+      const orderDiscount = Number(sale.orderDiscountAmount ?? 0);
+      const saleLineSum = sale.items.reduce((s, it) => s + Number(it.lineTotal), 0);
+      const orderDiscountFactor =
+        orderDiscount > 0 && saleLineSum > 0 ? orderDiscount / saleLineSum : 0;
+
       for (const item of sale.items) {
         const p = meta.get(item.productId);
         const a = bump(item.productId);
         a.units += item.quantity;
-        a.revenue += Number(item.lineTotal);
+        a.revenue += Number(item.lineTotal) * (1 - orderDiscountFactor);
         if (!p) {
           a.partial = true;
           continue;
@@ -427,6 +437,12 @@ export class CogsService {
    *
    * NO desciende por las recetas de los subproductos (el costo de ellos viene
    * del lot FIFO de su producción, no de expandir su receta).
+   *
+   * LIMITACIÓN conocida (auditoría 2026-07-05): expande la receta VIGENTE, no
+   * la del momento de la venta. Si la receta cambió después, las cantidades
+   * difieren del consumo real del ledger → el margen POR PRODUCTO es una
+   * aproximación en ese caso (el P&G global no sufre esto: suma el ledger
+   * directo). Arreglarlo exigiría snapshot de receta por venta.
    */
   private async expandLineToConsumption(
     product: { id: string; directResale: boolean; isCombo: boolean; comboComponents: { productId: string; quantity: number }[] },

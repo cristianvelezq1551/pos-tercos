@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { expandRecipeOneLevel, roundCost, roundsToZeroAt4 } from '@pos-tercos/domain';
+import type { StorageProvider } from '@pos-tercos/domain';
 import type {
   ProductionRun,
   RecordProduction,
@@ -8,6 +9,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
+import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
@@ -43,7 +45,25 @@ export class ProductionService {
     private readonly recipes: RecipesService,
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
+
+  /** Sube la foto de evidencia de una producción y devuelve su storage key. */
+  async uploadEvidence(buffer: Buffer, mimeType: string): Promise<{ key: string }> {
+    const ext = mimeType.split('/')[1] ?? 'jpg';
+    const stored = await this.storage.put('production', buffer, mimeType, ext);
+    return { key: stored.key };
+  }
+
+  /** Devuelve la foto de evidencia de una tanda (para servirla), o null. */
+  async getEvidence(runId: string): Promise<Buffer | null> {
+    const mv = await this.prisma.inventoryMovement.findFirst({
+      where: { sourceId: runId, sourceType: 'production', evidenceKey: { not: null } },
+      select: { evidenceKey: true },
+    });
+    if (!mv?.evidenceKey) return null;
+    return this.storage.get(mv.evidenceKey);
+  }
 
   /**
    * Estado de producción de los subproductos ACTIVOS para la pantalla del KDS:
@@ -143,6 +163,7 @@ export class ProductionService {
         sourceId: runId,
         userId: actorId,
         idempotencyKey: input.idempotencyKey ?? null,
+        evidenceKey: input.evidenceKey ?? null,
         notes,
       },
       ...[...expansion.ingredients]
@@ -231,6 +252,7 @@ export class ProductionService {
         unit: sub.unit,
         ingredientsConsumed: expansion.ingredients.size,
         subproductsConsumed: expansion.subproducts.size,
+        hasEvidence: Boolean(input.evidenceKey),
       },
     });
 
@@ -304,6 +326,10 @@ export class ProductionService {
     if (!positive || !positive.subproductId) {
       throw new NotFoundException(`Production run ${runId} not found`);
     }
+    // Ruta servible de la foto (el browser la pide vía el proxy /api de la app).
+    const evidenceUrl = positive.evidenceKey
+      ? `/api/subproducts/production/${runId}/evidence`
+      : null;
     const consumed: ProductionRun['consumed'] = rows
       .filter((r) => Number(r.delta) < 0)
       .map((r) => {
@@ -332,6 +358,7 @@ export class ProductionService {
       quantityProduced: Number(positive.delta),
       unit: positive.subproduct?.unit ?? '',
       consumed,
+      evidenceUrl,
       createdAt: positive.createdAt.toISOString(),
     };
   }

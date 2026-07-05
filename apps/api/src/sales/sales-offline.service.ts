@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { Sale, SyncOfflineSale } from '@pos-tercos/types';
 import type { PaymentMethod, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import { SalesConsumptionService, type ConsumptionSpec } from './sales-consumption.service';
@@ -19,6 +20,9 @@ const MAX_FUTURE_CLOCK_DRIFT_MS = 15 * 60 * 1000;
 /** Drift de precio tolerado antes de marcar en bitácora (1% por línea). */
 const PRICE_DRIFT_TOLERANCE = 0.01;
 
+/** Tolerancia de redondeo para la consistencia interna del payload (B5). */
+const MONEY_EPSILON = 0.01;
+
 /**
  * Sincronización de ventas cobradas OFFLINE (Fase B.3). Separado de
  * SalesService: el flujo no comparte estado con el cobro online, solo la
@@ -26,12 +30,58 @@ const PRICE_DRIFT_TOLERANCE = 0.01;
  */
 @Injectable()
 export class SalesOfflineService {
+  private readonly logger = new Logger(SalesOfflineService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly shifts: ShiftsService,
     private readonly consumption: SalesConsumptionService,
+    private readonly paymentMethods: PaymentMethodsService,
   ) {}
+
+  /**
+   * B5: consistencia interna del payload offline. "Gana lo cobrado offline"
+   * aplica a los PRECIOS (no se recomputan promos), pero un payload que no
+   * cierra aritméticamente (total ≠ subtotal − descuento, o ≠ Σ líneas) es
+   * corrupción o manipulación — se rechaza a la bandeja de revisión ANTES de
+   * quemar recibo (además el CHECK de la DB lo abortaría con un 500 feo).
+   */
+  private assertPayloadConsistent(input: SyncOfflineSale): void {
+    const p = input.payload;
+    const fail = (msg: string): never => {
+      throw new BadRequestException(
+        `Venta offline ${input.provisionalNumber} inconsistente: ${msg}. Revisala en la bandeja.`,
+      );
+    };
+    let sumSubtotal = 0;
+    let sumTotal = 0;
+    for (const [i, l] of p.lines.entries()) {
+      if (Math.abs(l.lineSubtotal - l.unitPrice * l.quantity) > MONEY_EPSILON) {
+        fail(`línea ${i + 1}: subtotal ≠ precio × cantidad`);
+      }
+      if (Math.abs(l.lineTotal - (l.lineSubtotal - l.lineDiscount)) > MONEY_EPSILON) {
+        fail(`línea ${i + 1}: total ≠ subtotal − descuento`);
+      }
+      sumSubtotal += l.lineSubtotal;
+      sumTotal += l.lineTotal;
+    }
+    if (Math.abs(p.subtotal - sumSubtotal) > MONEY_EPSILON) {
+      fail('subtotal ≠ suma de líneas');
+    }
+    if (Math.abs(p.total - (p.subtotal - p.discount)) > MONEY_EPSILON) {
+      fail('total ≠ subtotal − descuento');
+    }
+    if (Math.abs(p.total - sumTotal) > MONEY_EPSILON) {
+      fail('total ≠ suma de totales de línea');
+    }
+    if (
+      input.payment.method === 'CASH' &&
+      input.payment.amountReceived < p.total - MONEY_EPSILON
+    ) {
+      fail('efectivo recibido menor que el total');
+    }
+  }
 
   /**
    * Registra una venta cobrada OFFLINE (COUNTER) que el POS sincroniza al
@@ -39,8 +89,8 @@ export class SalesOfflineService {
    *  - Totales VERBATIM (no recomputa promos ni valida soldOut → "gana lo
    *    cobrado offline"; cualquier diferencia se ve en el stock/auditoría).
    *  - `paidAt = soldOfflineAt` (backdateado → el revenue cae en la hora real).
-   *  - Status ENTREGADO: la venta ya fue entrega directa offline (NO entra al
-   *    KDS ni al turnero, ni dispara notificaciones).
+   *  - Status PAGADO: igual que el cobro online de mostrador (estado terminal
+   *    de COUNTER; ya se entregó en el local, no dispara notificaciones).
    *  - Idempotente por `localId` (= idempotency key) → cero doble-cobro.
    */
   async syncOffline(input: SyncOfflineSale, userId: string): Promise<Sale> {
@@ -58,6 +108,9 @@ export class SalesOfflineService {
       });
       return toSaleDto(dup);
     }
+
+    // B5: el payload debe cerrar aritméticamente antes de tocar la DB.
+    this.assertPayloadConsistent(input);
 
     // Reloj del POS adelantado → paidAt en el futuro → reportes y caja rotos.
     // Pasado lejano es legítimo (corte largo de internet); futuro no existe.
@@ -102,20 +155,14 @@ export class SalesOfflineService {
         SELECT nextval('receipt_seq') AS next
       `;
       const receiptNumber = next;
-      // Turno: secuencia por caja (igual que confirmPayment). El índice único
-      // (shift_id, turn_number) + runSaleTxWithRetry evitan que un sync offline
-      // y un cobro online concurrentes asignen el mismo turno.
-      const assigned = await tx.sale.count({
-        where: { shiftId: shift.id, turnNumber: { not: null } },
-      });
-      const turnNumber = assigned + 1;
 
       const sale = await tx.sale.create({
         data: {
           receiptNumber,
           type: 'COUNTER',
-          status: 'ENTREGADO',
-          turnNumber,
+          // Igual que el cobro online: una venta de mostrador termina en PAGADO
+          // (estado terminal de COUNTER; ya no hay cocina/entrega que la avance).
+          status: 'PAGADO',
           customerName: input.payload.customerName,
           subtotal: input.payload.subtotal,
           discountTotal: input.payload.discount,
@@ -143,7 +190,7 @@ export class SalesOfflineService {
           statusLog: {
             create: {
               statusFrom: null,
-              statusTo: 'ENTREGADO',
+              statusTo: 'PAGADO',
               userId,
               notes: `Venta offline ${input.provisionalNumber} sincronizada`,
             },
@@ -186,6 +233,44 @@ export class SalesOfflineService {
     );
 
     const dto = toSaleDto(updated);
+    // B6: venta offline de un día ANTERIOR colgada de la caja de HOY — el
+    // arqueo de hoy incluye plata cobrada otro día. No se bloquea (la venta
+    // ya ocurrió y no hay caja histórica donde colgarla), pero queda en
+    // bitácora para que el dueño entienda el descuadre al conciliar.
+    const soldDay = new Date(input.soldOfflineAt);
+    const today = new Date();
+    if (soldDay.toDateString() !== today.toDateString()) {
+      await this.audit.log({
+        userId,
+        action: 'OFFLINE_SYNC_DISCREPANCY',
+        entityType: 'sale',
+        entityId: dto.id,
+        metadata: {
+          kind: 'cross_day_shift',
+          provisionalNumber: input.provisionalNumber,
+          soldOfflineAt: input.soldOfflineAt,
+          syncedAt: today.toISOString(),
+          shiftId: shift.id,
+          total: dto.total,
+        },
+      });
+    }
+    // Método deshabilitado por el admin: no se bloquea (la venta ya se cobró
+    // con ese método en el mostrador), pero queda en bitácora.
+    const enabled = await this.paymentMethods.enabledSet().catch(() => null);
+    if (enabled && !enabled.has(input.payment.method)) {
+      await this.audit.log({
+        userId,
+        action: 'OFFLINE_SYNC_DISCREPANCY',
+        entityType: 'sale',
+        entityId: dto.id,
+        metadata: {
+          kind: 'disabled_payment_method',
+          provisionalNumber: input.provisionalNumber,
+          method: input.payment.method,
+        },
+      });
+    }
     // "Gana lo cobrado offline" (decisión documentada), pero el drift de
     // precio contra el catálogo ACTUAL queda en bitácora: si la venta se
     // cobró con un snapshot viejo (o manipulado), el dueño lo ve.
@@ -202,14 +287,13 @@ export class SalesOfflineService {
       metadata: {
         provisionalNumber: input.provisionalNumber,
         receiptNumber: dto.receiptNumber,
-        turnNumber: dto.turnNumber,
         method: input.payment.method,
         offlineVerified: input.payment.offlineVerified,
         soldOfflineAt: input.soldOfflineAt,
         movementsCreated: specs.length,
       },
     });
-    // Sin KDS ni notificaciones: la venta offline ya se entregó (entrega directa).
+    // Sin notificaciones: la venta de mostrador offline ya se cobró y entregó.
     return dto;
   }
 
@@ -260,8 +344,12 @@ export class SalesOfflineService {
           metadata: { provisionalNumber: input.provisionalNumber, lines: drifted },
         });
       }
-    } catch {
-      // La auditoría de drift nunca bloquea el sync (la venta ya está grabada).
+    } catch (err) {
+      // La auditoría de drift nunca bloquea el sync (la venta ya está grabada),
+      // pero un fallo acá NO puede desaparecer mudo (B8): es señal de DB rota.
+      this.logger.error(
+        `auditPriceDrift falló para sale ${saleId}: ${err instanceof Error ? err.message : err}`,
+      );
     }
   }
 
@@ -306,8 +394,12 @@ export class SalesOfflineService {
           metadata: { count: negative.length, items: negative },
         });
       }
-    } catch {
-      // La auditoría nunca bloquea el sync (la venta ya está grabada).
+    } catch (err) {
+      // La auditoría nunca bloquea el sync (la venta ya está grabada), pero
+      // el fallo queda en el log del proceso (B8) — no desaparece mudo.
+      this.logger.error(
+        `auditNegativeStock falló para sale ${saleId}: ${err instanceof Error ? err.message : err}`,
+      );
     }
   }
 }

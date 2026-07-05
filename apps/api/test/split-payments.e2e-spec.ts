@@ -209,6 +209,12 @@ describe('Pagos divididos E2E', () => {
     expect(cash?.total).toBe(8000);
     expect(nequi?.total).toBe(7000);
 
+    // cashRevenue/transferRevenue del resumen son split-aware: salen de
+    // sale_payments, no de sale.paymentMethod (que es null en una cuenta
+    // dividida). La porción CASH de la venta dividida cuenta los $8.000.
+    expect(detail.body.summary.cashRevenue).toBe(8000);
+    expect(detail.body.summary.transferRevenue).toBe(0);
+
     // Cierre: esperado = apertura 50.000 + porción CASH 8.000 (la NEQUI no
     // entra al cajón). Contado exacto → diferencia 0. Arqueo DIGITAL: la app
     // de Nequi muestra 6.000 (faltan 1.000 vs la parte vendida de 7.000).

@@ -54,30 +54,20 @@ export class PurchaseSuggestionsService {
   // ==================================================================
 
   /**
-   * Cron horario al minuto :15 (escalonado para no chocar con otras crons
-   * de inicio de hora). El audit log queda con userId=null porque no hay
-   * actor humano: lo dispara el scheduler.
+   * Cron horario (top of hour). El audit log queda con userId=null porque no
+   * hay actor humano: lo dispara el scheduler.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async runScanScheduled(): Promise<void> {
-    // Guard de re-entrada: un scan lento (loop por stockable + create + audit)
-    // no debe solaparse con el siguiente tick y duplicar trabajo sobre un
-    // snapshot de dedupe ya viejo.
-    if (this.scanning) {
-      this.logger.warn('scan anterior aún en curso — se omite este tick');
-      return;
-    }
-    this.scanning = true;
     try {
       await this.runScan(null);
     } catch (e) {
-      // No re-lanzar: el cron no tiene supervisor que reintente.
+      // No re-lanzar: el cron no tiene supervisor que reintente. runScan ya
+      // logueó si fue un skip por solapamiento.
       this.logger.error(
         `Scan cron failed: ${(e as Error).message}`,
         (e as Error).stack,
       );
-    } finally {
-      this.scanning = false;
     }
   }
 
@@ -97,6 +87,29 @@ export class PurchaseSuggestionsService {
    *   user "system" si existiera). Si null, audit queda con userId=null.
    */
   async runScan(systemUserId: string | null = null): Promise<ScanResult> {
+    // Guard de re-entrada COMPARTIDO entre el cron y el endpoint manual del
+    // Dueño: el dedupe (check-then-insert sin unique en DB) no es atómico, así
+    // que dos scans solapados crearían sugerencias PENDING duplicadas del
+    // mismo stockable (auditoría 2026-07-05). Con el guard acá, "escanear
+    // ahora" mientras corre el cron devuelve el resultado vacío sin duplicar.
+    if (this.scanning) {
+      this.logger.warn('scan ya en curso — se omite esta corrida');
+      return {
+        scannedAt: new Date().toISOString(),
+        scannedCount: 0,
+        createdCount: 0,
+        staledCount: 0,
+      };
+    }
+    this.scanning = true;
+    try {
+      return await this.doRunScan(systemUserId);
+    } finally {
+      this.scanning = false;
+    }
+  }
+
+  private async doRunScan(systemUserId: string | null): Promise<ScanResult> {
     const scannedAt = new Date();
     const [stockables, ingredientCosts, productCosts] = await Promise.all([
       this.inventory.listStockables({ onlyActive: true }),

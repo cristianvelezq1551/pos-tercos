@@ -124,9 +124,25 @@ export class ReconciliationService {
     // PAGOS digitales del POS en el rango (con buffer ±24h de tolerancia).
     // La unidad de match es el PAGO (sale_payments), no la venta: una cuenta
     // dividida con 2 transferencias genera 2 abonos en el banco, cada uno
-    // matchea contra su parte. (Antes además solo se miraba status=PAGADO —
-    // pero al reconciliar las ventas ya avanzaron a ENTREGADO: bug latente.)
+    // matchea contra su parte. El set de status cubre todo estado "cobrado"
+    // (incluye LISTO_DESPACHO de los web y los EN_PREPARACION/ENTREGADO
+    // históricos), no solo PAGADO.
     const bufferMs = TIME_TOLERANCE_HOURS * 60 * 60 * 1000;
+    // Ventana del extracto en DÍAS CALENDARIO del negocio (TZ local del server):
+    // las fechas date-only del CSV se parsean a medianoche UTC; comparar contra
+    // `periodTo` crudo excluía toda venta de la tarde/noche del último día del
+    // extracto — justo las que faltaban en el banco quedaban sin flag
+    // (auditoría 2026-07-05). Se computa ACÁ para que el fetch de candidatos
+    // cubra la ventana completa (en UTC-5, periodEndExcl > periodTo+24h; con el
+    // buffer solo, las ventas de 19:00-24:00 del último día ni se cargaban).
+    const localDayStart = (d: Date): Date =>
+      new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    const periodStart = localDayStart(periodFrom);
+    const periodEndExcl = new Date(localDayStart(periodTo).getTime() + 24 * 60 * 60 * 1000);
+    const fetchFrom = new Date(
+      Math.min(periodFrom.getTime() - bufferMs, periodStart.getTime()),
+    );
+    const fetchTo = new Date(Math.max(periodTo.getTime() + bufferMs, periodEndExcl.getTime()));
     const compatibleMethods = methodsForSource(source);
     const paymentRows = await this.prisma.salePayment.findMany({
       where: {
@@ -142,8 +158,8 @@ export class ReconciliationService {
             ],
           },
           paidAt: {
-            gte: new Date(periodFrom.getTime() - bufferMs),
-            lte: new Date(periodTo.getTime() + bufferMs),
+            gte: fetchFrom,
+            lte: fetchTo,
           },
         },
       },
@@ -210,11 +226,13 @@ export class ReconciliationService {
       }
     }
 
-    // Pagos digitales del POS sin match en el CSV
+    // Pagos digitales del POS sin match en el CSV, dentro de la ventana de
+    // días calendario computada arriba (los candidatos del buffer extra solo
+    // participan del matching, no del flag).
     for (const cand of candidates) {
       if (usedPaymentIds.has(cand.paymentId)) continue;
       // Solo consideramos sin-match los que estén EN el periodo CSV (no en el buffer).
-      if (cand.paidAt! < periodFrom || cand.paidAt! > periodTo) continue;
+      if (cand.paidAt! < periodStart || cand.paidAt! >= periodEndExcl) continue;
       rows.push({
         status: 'unmatched_sale',
         csvDate: null,

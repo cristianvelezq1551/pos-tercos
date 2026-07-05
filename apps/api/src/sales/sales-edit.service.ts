@@ -1,21 +1,19 @@
 import {
   BadRequestException,
-  forwardRef,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { roundMoney } from '@pos-tercos/domain';
+import { manualDiscountAmount, roundMoney, type ManualDiscountSpec } from '@pos-tercos/domain';
 import type {
   AppliedModifier,
   ChangeSalePayment,
   EditSaleItems,
+  ManualDiscountKind,
   PaymentMethod,
   Sale,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
-import { KdsGateway } from '../kds/kds.gateway';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
@@ -48,7 +46,7 @@ const PAYMENT_CHANGE_STATUSES = [
 ] as const;
 
 /**
- * Correcciones del mostrador sobre ventas YA COBRADAS:
+ * Correcciones del mostrador sobre ventas YA COBRADAS (y cuentas abiertas):
  *  - editItems: cambiar productos del pedido respetando a la cocina (si ya
  *    lo inició, solo se tocan líneas de reventa directa, ej. bebidas).
  *  - changePayment: reclasificar el método/división del pago (la plata ya
@@ -63,7 +61,6 @@ export class SalesEditService {
     private readonly promotions: PromotionsService,
     private readonly consumption: SalesConsumptionService,
     private readonly paymentMethods: PaymentMethodsService,
-    @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
   ) {}
 
   // ==================================================================
@@ -71,185 +68,287 @@ export class SalesEditService {
   // ==================================================================
 
   async editItems(saleId: string, input: EditSaleItems, userId: string): Promise<Sale> {
-    const existing = await this.prisma.sale.findUnique({
-      where: { id: saleId },
-      include: { items: true, payments: true, shift: { select: { status: true } } },
-    });
-    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (!EDITABLE_STATUSES.includes(existing.status as (typeof EDITABLE_STATUSES)[number])) {
-      throw new BadRequestException(
-        existing.status === 'ENTREGADO'
-          ? 'El pedido ya fue entregado — no se puede editar.'
-          : `No se puede editar un pedido en estado ${existing.status}.`,
-      );
-    }
-    if (existing.shift && existing.shift.status !== 'OPEN') {
-      throw new BadRequestException(
-        'La caja del turno ya cerró — el pedido es histórico inmutable.',
-      );
-    }
-
-    // Productos involucrados (viejos + nuevos) con su flag de reventa.
-    const oldIds = existing.items.map((it) => it.productId);
-    const newIds = input.items.map((it) => it.productId);
-    const allIds = Array.from(new Set([...oldIds, ...newIds]));
     const now = new Date();
-    const [products, activePromotions] = await Promise.all([
-      this.prisma.product.findMany({
-        where: { id: { in: allIds } },
-        include: { sizes: true, modifiers: true },
-      }),
-      this.promotions.loadActiveAt(now),
-    ]);
-    const productMap = new Map(products.map((p) => [p.id, p]));
+    let auditMeta: Record<string, unknown> = {};
 
-    // Regla de cocina: si la cocina YA inició el pedido, las líneas de
-    // PREPARACIÓN deben quedar idénticas — solo cambia la reventa directa.
-    // PENDIENTE_PAGO y PAGADO (sin iniciar) se editan libremente.
-    if (
-      KITCHEN_STARTED_STATUSES.includes(
-        existing.status as (typeof KITCHEN_STARTED_STATUSES)[number],
-      )
-    ) {
-      const oldPrepared = this.preparedFingerprint(
-        existing.items.map((it) => ({
-          productId: it.productId,
-          sizeId: it.sizeId,
-          quantity: it.quantity,
-          modifierIds: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map(
-            (m) => m.modifierId,
-          ),
-          notes: it.notes,
-        })),
-        productMap,
-      );
-      const newPrepared = this.preparedFingerprint(
-        input.items.map((it) => ({
-          productId: it.productId,
-          sizeId: it.sizeId ?? null,
-          quantity: it.quantity,
-          modifierIds: (it.modifiers ?? []).map((m) => m.modifierId),
-          notes: it.notes ?? null,
-        })),
-        productMap,
-      );
-      if (!mapsEqual(oldPrepared, newPrepared)) {
-        throw new BadRequestException(
-          'La cocina ya inició este pedido: las comidas de preparación no se pueden cambiar (solo productos de reventa, ej. bebidas).',
-        );
-      }
-    }
-
-    // Recalcular líneas con el mismo motor del create (precios + promos).
-    const computedItems: ComputedSaleItem[] = input.items.map((it) =>
-      computeLine(it, productMap, activePromotions, now),
-    );
-    const subtotal = roundMoney(computedItems.reduce((a, it) => a + it.lineSubtotal, 0));
-    const discountTotal = roundMoney(computedItems.reduce((a, it) => a + it.lineDiscount, 0));
-    const total = roundMoney(subtotal - discountTotal);
-    const oldTotal = Number(existing.total);
-
-    // Cuenta dividida + total distinto: no hay forma única de repartir la
-    // diferencia entre las partes → se corrige el pago aparte (changePayment).
-    if (existing.payments.length > 1 && Math.abs(total - oldTotal) > 0.005) {
-      throw new BadRequestException(
-        'La cuenta está dividida y el total cambiaría. Ajustá los pagos con "Cambiar pago" después de igualar el total, o anulá y recobrá.',
-      );
-    }
-
-    // Stock: movements por la DIFERENCIA de consumo (viejo vs nuevo). El
-    // consumo ya descontado al cobrar queda intacto; acá solo se ajusta.
-    // PENDIENTE_PAGO aún NO descontó stock (se descuenta al confirmar el pago
-    // con los items finales) → no se generan movements al editarlo.
-    const stockWasDeducted = STOCK_DEDUCTED_STATUSES.includes(
-      existing.status as (typeof STOCK_DEDUCTED_STATUSES)[number],
-    );
-    const deltaMovements = stockWasDeducted
-      ? this.consumptionDelta(
-          ...(await Promise.all([
-            this.consumption.computeConsumptionSpecs(
-              existing.items.map((it) => ({
-                productId: it.productId,
-                quantity: it.quantity,
-                sizeId: it.sizeId,
-                modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map(
-                  (m) => ({ modifierId: m.modifierId }),
-                ),
-              })),
-              `Sale ${saleId.slice(0, 8)}`,
-            ),
-            this.consumption.computeConsumptionSpecs(
-              input.items.map((it) => ({
-                productId: it.productId,
-                quantity: it.quantity,
-                sizeId: it.sizeId ?? null,
-                modifiers: it.modifiers,
-              })),
-              `Sale ${saleId.slice(0, 8)}`,
-            ),
-          ])),
-          saleId,
-          userId,
-        )
-      : [];
-
+    // B2 (auditoría): TODAS las lecturas de la venta van DENTRO de la tx y del
+    // retry de serialización. Un reintento recomputa los deltas de stock contra
+    // los items FRESCOS — antes se computaban afuera y el retry re-aplicaba
+    // deltas stale (doble ajuste permanente en el ledger).
     const updated = await runSaleTxWithRetry(() =>
-     this.prisma.$transaction(async (tx) => {
-      const res = await tx.sale.updateMany({
-        // Guard TOCTOU: si la cocina avanzó el estado entre la lectura y acá,
-        // abortamos (la regla de líneas bloqueadas podría haber cambiado).
-        where: { id: saleId, status: existing.status },
-        data: { subtotal, discountTotal, total },
-      });
-      if (res.count === 0) {
-        throw new BadRequestException('El pedido cambió de estado — recargá e intentá de nuevo.');
-      }
-      await tx.saleItem.deleteMany({ where: { saleId } });
-      await tx.saleItem.createMany({
-        data: computedItems.map((c) => ({
-          saleId,
-          productId: c.productId,
-          sizeId: c.sizeId,
-          quantity: c.quantity,
-          unitPrice: c.unitPrice,
-          modifiersJson: c.modifiers as unknown as Prisma.InputJsonValue,
-          notes: c.notes,
-          appliedPromotionId: c.appliedPromotionId,
-          lineSubtotal: c.lineSubtotal,
-          lineDiscount: c.lineDiscount,
-          lineTotal: c.lineTotal,
-        })),
-      });
-
-      // Pago único: la parte se ajusta al nuevo total (el cajero cobra o
-      // devuelve la diferencia en el momento).
-      if (Math.abs(total - oldTotal) > 0.005 && existing.payments.length === 1) {
-        const pay = existing.payments[0]!;
-        const received =
-          pay.amountReceived !== null ? Math.max(Number(pay.amountReceived), total) : null;
-        await tx.salePayment.update({
-          where: { id: pay.id },
-          data: { amount: total, amountReceived: received },
+      this.prisma.$transaction(async (tx) => {
+        const existing = await tx.sale.findUnique({
+          where: { id: saleId },
+          include: { items: true, payments: true, shift: { select: { status: true } } },
         });
-      }
+        if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+        if (!EDITABLE_STATUSES.includes(existing.status as (typeof EDITABLE_STATUSES)[number])) {
+          throw new BadRequestException(
+            existing.status === 'ENTREGADO'
+              ? 'El pedido ya fue entregado — no se puede editar.'
+              : `No se puede editar un pedido en estado ${existing.status}.`,
+          );
+        }
+        // Cuenta abierta sin pagar: VIVE entre cajas a propósito (se puede
+        // seguir agregando aunque la caja que la creó haya cerrado — al cobrar
+        // se re-cuelga a la caja abierta). Las ventas YA COBRADAS sí quedan
+        // congeladas al cerrar su caja (histórico inmutable del arqueo).
+        const isLiveOpenTab = existing.isOpenTab && existing.status === 'PENDIENTE_PAGO';
+        if (!isLiveOpenTab && existing.shift && existing.shift.status !== 'OPEN') {
+          throw new BadRequestException(
+            'La caja del turno ya cerró — el pedido es histórico inmutable.',
+          );
+        }
 
-      if (deltaMovements.length > 0) {
-        await this.consumption.assertStockSufficient(tx, deltaMovements);
-        await tx.inventoryMovement.createMany({ data: deltaMovements });
-      }
+        // Descuento manual (#5b): presente = setear, null = quitar, ausente =
+        // conservar el de la venta. Cualquier descuento manual desactiva promos.
+        const orderDiscountSpec: ManualDiscountSpec | null =
+          input.orderDiscount === undefined
+            ? existing.orderDiscountKind !== null && existing.orderDiscountValue !== null
+              ? {
+                  kind: existing.orderDiscountKind as ManualDiscountKind,
+                  value: Number(existing.orderDiscountValue),
+                }
+              : null
+            : input.orderDiscount;
+        const hasManualDiscount =
+          orderDiscountSpec !== null ||
+          input.items.some((it) => it.manualDiscount !== undefined);
+        const discountReason = input.discountReason ?? existing.discountReason ?? null;
+        if (hasManualDiscount && !discountReason) {
+          throw new BadRequestException('El descuento manual requiere un motivo.');
+        }
 
-      await tx.saleStatusLog.create({
-        data: {
-          saleId,
-          statusFrom: existing.status,
-          statusTo: existing.status,
-          userId,
-          notes: `Pedido editado (${computedItems.length} líneas, total ${oldTotal} → ${total})`,
-        },
-      });
+        // Productos involucrados (viejos + nuevos) con su flag de reventa.
+        const oldIds = existing.items.map((it) => it.productId);
+        const newIds = input.items.map((it) => it.productId);
+        const allIds = Array.from(new Set([...oldIds, ...newIds]));
+        const [products, activePromotions] = await Promise.all([
+          this.prisma.product.findMany({
+            where: { id: { in: allIds } },
+            include: { sizes: true, modifiers: true },
+          }),
+          hasManualDiscount ? Promise.resolve([]) : this.promotions.loadActiveAt(now),
+        ]);
+        const productMap = new Map(products.map((p) => [p.id, p]));
 
-      return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
-     }, SALE_TX_OPTS),
+        // Regla de cocina: si la cocina YA inició el pedido, las líneas de
+        // PREPARACIÓN deben quedar idénticas — solo cambia la reventa directa.
+        // PENDIENTE_PAGO (incl. cuentas abiertas) y PAGADO se editan libremente.
+        if (
+          KITCHEN_STARTED_STATUSES.includes(
+            existing.status as (typeof KITCHEN_STARTED_STATUSES)[number],
+          )
+        ) {
+          const oldPrepared = this.preparedFingerprint(
+            existing.items.map((it) => ({
+              productId: it.productId,
+              sizeId: it.sizeId,
+              quantity: it.quantity,
+              modifierIds: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map(
+                (m) => m.modifierId,
+              ),
+              notes: it.notes,
+            })),
+            productMap,
+          );
+          const newPrepared = this.preparedFingerprint(
+            input.items.map((it) => ({
+              productId: it.productId,
+              sizeId: it.sizeId ?? null,
+              quantity: it.quantity,
+              modifierIds: (it.modifiers ?? []).map((m) => m.modifierId),
+              notes: it.notes ?? null,
+            })),
+            productMap,
+          );
+          if (!mapsEqual(oldPrepared, newPrepared)) {
+            throw new BadRequestException(
+              'La cocina ya inició este pedido: las comidas de preparación no se pueden cambiar (solo productos de reventa, ej. bebidas).',
+            );
+          }
+        }
+
+        // Recalcular líneas con el mismo motor del create (precios + promos o
+        // descuento manual — excluyentes).
+        const computedItems: ComputedSaleItem[] = input.items.map((it) =>
+          computeLine(it, productMap, activePromotions, now),
+        );
+        const subtotal = roundMoney(computedItems.reduce((a, it) => a + it.lineSubtotal, 0));
+        const lineDiscountTotal = roundMoney(
+          computedItems.reduce((a, it) => a + it.lineDiscount, 0),
+        );
+        const orderDiscountAmount = orderDiscountSpec
+          ? manualDiscountAmount(roundMoney(subtotal - lineDiscountTotal), orderDiscountSpec)
+          : 0;
+        const discountTotal = roundMoney(lineDiscountTotal + orderDiscountAmount);
+        const total = roundMoney(subtotal - discountTotal);
+        const oldTotal = Number(existing.total);
+
+        // Cuenta dividida + total distinto: no hay forma única de repartir la
+        // diferencia entre las partes → se corrige el pago aparte (changePayment).
+        if (existing.payments.length > 1 && Math.abs(total - oldTotal) > 0.005) {
+          throw new BadRequestException(
+            'La cuenta está dividida y el total cambiaría. Ajustá los pagos con "Cambiar pago" después de igualar el total, o anulá y recobrá.',
+          );
+        }
+
+        // Stock: movements por la DIFERENCIA de consumo (viejo vs nuevo). El
+        // consumo ya descontado al cobrar queda intacto; acá solo se ajusta.
+        // PENDIENTE_PAGO aún NO descontó stock → no se generan movements.
+        const stockWasDeducted = STOCK_DEDUCTED_STATUSES.includes(
+          existing.status as (typeof STOCK_DEDUCTED_STATUSES)[number],
+        );
+        const deltaMovements = stockWasDeducted
+          ? this.consumptionDelta(
+              ...(await Promise.all([
+                this.consumption.computeConsumptionSpecs(
+                  existing.items.map((it) => ({
+                    productId: it.productId,
+                    quantity: it.quantity,
+                    sizeId: it.sizeId,
+                    modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map(
+                      (m) => ({ modifierId: m.modifierId }),
+                    ),
+                  })),
+                  `Sale ${saleId.slice(0, 8)}`,
+                ),
+                this.consumption.computeConsumptionSpecs(
+                  input.items.map((it) => ({
+                    productId: it.productId,
+                    quantity: it.quantity,
+                    sizeId: it.sizeId ?? null,
+                    modifiers: it.modifiers,
+                  })),
+                  `Sale ${saleId.slice(0, 8)}`,
+                ),
+              ])),
+              saleId,
+              userId,
+            )
+          : [];
+
+        // Comanda incremental (#3): preservar lo YA enviado a cocina. Las filas
+        // se recrean, así que la cantidad enviada se transfiere por huella de
+        // línea (hasta la cantidad nueva; si una línea enviada se achicó, el
+        // excedente enviado se pierde — la corrección va por comanda "PEDIDO
+        // MODIFICADO" o de viva voz).
+        const sentByKey = new Map<string, { qty: number; at: Date | null }>();
+        for (const it of existing.items) {
+          if (it.sentToKitchenQty <= 0) continue;
+          const key = lineKey(
+            it.productId,
+            it.sizeId,
+            ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => m.modifierId),
+            it.notes,
+          );
+          const cur = sentByKey.get(key) ?? { qty: 0, at: null };
+          cur.qty += it.sentToKitchenQty;
+          if (it.sentToKitchenAt && (!cur.at || it.sentToKitchenAt > cur.at)) {
+            cur.at = it.sentToKitchenAt;
+          }
+          sentByKey.set(key, cur);
+        }
+        const itemRows = computedItems.map((c) => {
+          const key = lineKey(
+            c.productId,
+            c.sizeId,
+            c.modifiers.map((m) => m.modifierId),
+            c.notes,
+          );
+          const sent = sentByKey.get(key);
+          let sentToKitchenQty = 0;
+          let sentToKitchenAt: Date | null = null;
+          if (sent && sent.qty > 0) {
+            sentToKitchenQty = Math.min(sent.qty, c.quantity);
+            sent.qty -= sentToKitchenQty;
+            sentToKitchenAt = sent.at;
+          }
+          return { c, sentToKitchenQty, sentToKitchenAt };
+        });
+
+        const res = await tx.sale.updateMany({
+          // Guard TOCTOU: si el estado avanzó entre la lectura y acá (otra tx
+          // ya commiteada), abortamos — la regla de líneas bloqueadas podría
+          // haber cambiado.
+          where: { id: saleId, status: existing.status },
+          data: {
+            subtotal,
+            discountTotal,
+            total,
+            orderDiscountKind: orderDiscountSpec?.kind ?? null,
+            orderDiscountValue: orderDiscountSpec?.value ?? null,
+            orderDiscountAmount,
+            // Sin descuento manual el motivo se LIMPIA (quitar el descuento
+            // no debe dejar un motivo colgado en la venta).
+            discountReason: hasManualDiscount ? discountReason : null,
+          },
+        });
+        if (res.count === 0) {
+          throw new BadRequestException(
+            'El pedido cambió de estado — recargá e intentá de nuevo.',
+          );
+        }
+        await tx.saleItem.deleteMany({ where: { saleId } });
+        await tx.saleItem.createMany({
+          data: itemRows.map(({ c, sentToKitchenQty, sentToKitchenAt }) => ({
+            saleId,
+            productId: c.productId,
+            sizeId: c.sizeId,
+            quantity: c.quantity,
+            unitPrice: c.unitPrice,
+            modifiersJson: c.modifiers as unknown as Prisma.InputJsonValue,
+            notes: c.notes,
+            appliedPromotionId: c.appliedPromotionId,
+            lineSubtotal: c.lineSubtotal,
+            lineDiscount: c.lineDiscount,
+            lineTotal: c.lineTotal,
+            manualDiscountKind: c.manualDiscountKind,
+            manualDiscountValue: c.manualDiscountValue,
+            sentToKitchenQty,
+            sentToKitchenAt,
+          })),
+        });
+
+        // Pago único: la parte se ajusta al nuevo total (el cajero cobra o
+        // devuelve la diferencia en el momento).
+        if (Math.abs(total - oldTotal) > 0.005 && existing.payments.length === 1) {
+          const pay = existing.payments[0]!;
+          const received =
+            pay.amountReceived !== null ? Math.max(Number(pay.amountReceived), total) : null;
+          await tx.salePayment.update({
+            where: { id: pay.id },
+            data: { amount: total, amountReceived: received },
+          });
+        }
+
+        if (deltaMovements.length > 0) {
+          await this.consumption.assertStockSufficient(tx, deltaMovements);
+          await tx.inventoryMovement.createMany({ data: deltaMovements });
+        }
+
+        await tx.saleStatusLog.create({
+          data: {
+            saleId,
+            statusFrom: existing.status,
+            statusTo: existing.status,
+            userId,
+            notes: `Pedido editado (${computedItems.length} líneas, total ${oldTotal} → ${total})`,
+          },
+        });
+
+        auditMeta = {
+          status: existing.status,
+          totalBefore: oldTotal,
+          totalAfter: total,
+          itemsBefore: existing.items.map((it) => `${it.quantity}x ${it.productId}`),
+          itemsAfter: computedItems.map((c) => `${c.quantity}x ${c.productId}`),
+          stockDeltaMovements: deltaMovements.length,
+          manualDiscount: hasManualDiscount || undefined,
+        };
+
+        return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
+      }, SALE_TX_OPTS),
     );
 
     await this.audit.log({
@@ -257,24 +356,10 @@ export class SalesEditService {
       action: 'SALE_ITEMS_EDITED',
       entityType: 'sale',
       entityId: saleId,
-      metadata: {
-        status: existing.status,
-        totalBefore: oldTotal,
-        totalAfter: total,
-        itemsBefore: existing.items.map((it) => `${it.quantity}x ${it.productId}`),
-        itemsAfter: computedItems.map((c) => `${c.quantity}x ${c.productId}`),
-        stockDeltaMovements: deltaMovements.length,
-      },
+      metadata: auditMeta,
     });
 
-    const dto = toSaleDto(updated);
-    // La cocina ve el pedido actualizado al instante (mismo evento que usa
-    // el board para refrescar una card existente). PENDIENTE_PAGO no está en
-    // el board todavía → no se emite.
-    if (existing.status !== 'PENDIENTE_PAGO') {
-      this.kdsGateway.emit('order.status.changed', dto);
-    }
-    return dto;
+    return toSaleDto(updated);
   }
 
   // ==================================================================
@@ -414,12 +499,7 @@ export class SalesEditService {
       const product = productMap.get(line.productId);
       if (!product) throw new NotFoundException(`Product ${line.productId} not found`);
       if (product.directResale) continue; // reventa: editable siempre
-      const key = [
-        line.productId,
-        line.sizeId ?? '',
-        [...line.modifierIds].sort().join(','),
-        (line.notes ?? '').trim(),
-      ].join('|');
+      const key = lineKey(line.productId, line.sizeId, line.modifierIds, line.notes);
       out.set(key, (out.get(key) ?? 0) + line.quantity);
     }
     return out;
@@ -479,6 +559,18 @@ export class SalesEditService {
     }
     return out;
   }
+}
+
+/** Clave normalizada de una línea (producto + tamaño + modificadores + notas). */
+function lineKey(
+  productId: string,
+  sizeId: string | null,
+  modifierIds: readonly string[],
+  notes: string | null,
+): string {
+  return [productId, sizeId ?? '', [...modifierIds].sort().join(','), (notes ?? '').trim()].join(
+    '|',
+  );
 }
 
 function mapsEqual(a: Map<string, number>, b: Map<string, number>): boolean {

@@ -1,5 +1,10 @@
 import type { ComandaData, ReceiptData } from '@pos-tercos/domain';
-import type { AppliedModifier, Sale, SaleItem } from '@pos-tercos/types';
+import type {
+  AppliedModifier,
+  ManualDiscountKind,
+  Sale,
+  SaleItem,
+} from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 
 /**
@@ -45,7 +50,6 @@ export function includeFull() {
 export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
   return {
     receiptNumber: sale.receiptNumber,
-    turnNumber: sale.turnNumber,
     createdAt: sale.createdAt,
     cashierName: sale.cashierName ?? null,
     customerName: sale.customerName,
@@ -89,7 +93,6 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
 export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
   return {
     receiptNumber: sale.receiptNumber,
-    turnNumber: sale.turnNumber,
     createdAt: sale.createdAt,
     type: sale.type,
     customerName: sale.customerName,
@@ -101,6 +104,7 @@ export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
       notes: it.notes ?? null,
     })),
     reprintLabel: isReprint ? 'REIMPRESIÓN' : null,
+    footer: process.env.BUSINESS_NAME ?? 'Tercos',
   };
 }
 
@@ -121,13 +125,20 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     lineSubtotal: Number(it.lineSubtotal),
     lineDiscount: Number(it.lineDiscount),
     lineTotal: Number(it.lineTotal),
+    sentToKitchenQty: it.sentToKitchenQty,
+    manualDiscount:
+      it.manualDiscountKind !== null && it.manualDiscountValue !== null
+        ? {
+            kind: it.manualDiscountKind as ManualDiscountKind,
+            value: Number(it.manualDiscountValue),
+          }
+        : null,
   }));
   return {
     id: row.id,
     receiptNumber: Number(row.receiptNumber),
     type: row.type,
     status: row.status,
-    turnNumber: row.turnNumber,
     customerName: row.customerName,
     customerPhone: row.customerPhone,
     customerNit: row.customerNit,
@@ -142,6 +153,16 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     cashierName: row.cashier?.fullName ?? null,
     shiftId: row.shiftId,
     notes: row.notes,
+    isOpenTab: row.isOpenTab,
+    orderDiscount:
+      row.orderDiscountKind !== null && row.orderDiscountValue !== null
+        ? {
+            kind: row.orderDiscountKind as ManualDiscountKind,
+            value: Number(row.orderDiscountValue),
+          }
+        : null,
+    orderDiscountAmount: Number(row.orderDiscountAmount),
+    discountReason: row.discountReason,
     voidReason: row.voidReason,
     idempotencyKey: row.idempotencyKey,
     payments: (row.payments ?? []).map((p) => ({

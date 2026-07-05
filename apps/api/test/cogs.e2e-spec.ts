@@ -235,8 +235,11 @@ describe('COGS refund post-preparación (e2e HTTP)', () => {
       .send({ method: 'CASH', amountReceived: 9000 })
       .expect(201);
 
-    // La cocina lo inicia (PAGADO → EN_PREPARACION) → ya no es anulable, solo reembolsable.
-    await auth(ctx.request.post(`/kds/orders/${saleId}/start`)).expect(200);
+    // El pedido pasa a "listo para retirar" → ya no es anulable, solo reembolsable.
+    await ctx.prisma.sale.update({
+      where: { id: saleId },
+      data: { status: 'LISTO_DESPACHO' },
+    });
 
     // Reembolsar con PIN: pasa a VOID, NO revierte stock.
     await auth(ctx.request.post(`/sales/${saleId}/refund`))

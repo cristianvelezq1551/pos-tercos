@@ -1,5 +1,4 @@
-import { forwardRef, Module } from '@nestjs/common';
-import { KdsModule } from '../kds/kds.module';
+import { Module } from '@nestjs/common';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { RecipesModule } from '../recipes/recipes.module';
 import { ShiftsModule } from '../shifts/shifts.module';
@@ -13,12 +12,7 @@ import { SalesReceiptService } from './sales-receipt.service';
 import { SalesService } from './sales.service';
 
 @Module({
-  imports: [
-    RecipesModule,
-    PromotionsModule,
-    ShiftsModule,
-    forwardRef(() => KdsModule),
-  ],
+  imports: [RecipesModule, PromotionsModule, ShiftsModule],
   controllers: [SalesController],
   providers: [
     SalesService,

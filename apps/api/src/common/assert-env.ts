@@ -7,8 +7,21 @@
 // (random + SHA-256 en DB), no JWT firmados. Pedirlo daba falsa confianza.
 const REQUIRED_ENV = ['DATABASE_URL', 'JWT_ACCESS_SECRET'] as const;
 
-/** Requeridas solo en producción (en dev tienen fallback o mock). */
-const REQUIRED_ENV_PROD = ['WEB_ORDER_TOKEN_SECRET'] as const;
+/** Requeridas solo en producción (en dev tienen fallback o mock).
+ *  CORS_ORIGINS: main.ts también la valida, pero acá sale en la MISMA lista
+ *  de faltantes. STORAGE_PROVIDER: sin ella la API arranca en modo `local` y
+ *  escribe uploads al filesystem EFÍMERO de Railway — pérdida silenciosa de
+ *  fotos en cada redeploy; en prod debe ser una elección explícita. */
+const REQUIRED_ENV_PROD = ['WEB_ORDER_TOKEN_SECRET', 'CORS_ORIGINS', 'STORAGE_PROVIDER'] as const;
+
+/** Features de negocio que en prod mueren EN SILENCIO si falta su var (no
+ *  bloquean el boot, pero el warning queda gritado en el log de arranque). */
+const PROD_FEATURE_WARNINGS: ReadonlyArray<[string, string]> = [
+  ['OWNER_WHATSAPP_PHONE', 'sin ella NO salen alertas antifraude ni el digest diario al dueño'],
+  ['PRINTER_PROVIDER', 'sin `escpos` los recibos se "imprimen" a archivos locales efímeros'],
+  ['TZ', 'los crons y cortes de día asumen TZ=America/Bogota; sin ella corren en UTC'],
+  ['KAPSO_API_KEY', 'sin KAPSO_* (ni OPENWA_*) el WhatsApp queda en MOCK: cero notificaciones reales'],
+];
 
 /** Secretos que en prod deben tener entropía mínima (no un placeholder débil). */
 const MIN_SECRET_LENGTH = 32;
@@ -43,6 +56,13 @@ export function assertRequiredEnv(): void {
         `Secretos demasiado cortos (mínimo ${MIN_SECRET_LENGTH} caracteres): ${weak.join(', ')}. ` +
           'Generá uno aleatorio: `openssl rand -base64 48`.',
       );
+    }
+
+    for (const [key, consequence] of PROD_FEATURE_WARNINGS) {
+      if (!process.env[key]) {
+        // eslint-disable-next-line no-console
+        console.warn(`⚠️  [env] ${key} no está seteada en producción — ${consequence}.`);
+      }
     }
   }
 }

@@ -263,8 +263,17 @@ function includeFull() {
   } satisfies Prisma.InventoryMovementInclude;
 }
 
+/** Porciones disponibles = stock ÷ porción (2 decimales). Null si no hay porción. */
+function portionsOf(portionSize: unknown, current: number): number | null {
+  if (portionSize === null || portionSize === undefined) return null;
+  const size = Number(portionSize);
+  if (!(size > 0)) return null;
+  return Math.round((current / size) * 100) / 100;
+}
+
 function ingredientToStockable(row: DbIngredient, current: number): Stockable {
   const thresholdMin = Number(row.thresholdMin);
+  const portionSize = row.portionSize !== null ? Number(row.portionSize) : null;
   return {
     type: 'INGREDIENT',
     id: row.id,
@@ -276,6 +285,8 @@ function ingredientToStockable(row: DbIngredient, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    portionSize,
+    portions: portionsOf(portionSize, current),
     category: null,
     basePrice: null,
   };
@@ -294,6 +305,9 @@ function productToStockable(row: DbProduct, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    // Reventa directa: se vende por unidad, no aplica "porciones".
+    portionSize: null,
+    portions: null,
     category: row.category,
     basePrice: Number(row.basePrice),
   };
@@ -314,6 +328,8 @@ function subproductToStockable(row: DbSubproduct, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
+    portions: portionsOf(row.portionSize, current),
     category: null,
     basePrice: null,
   };
@@ -339,6 +355,7 @@ function toMovementDto(row: DbInventoryMovement): InventoryMovement {
     userId: row.userId,
     userFullName: row.user?.fullName ?? null,
     notes: row.notes,
+    evidenceUrl: row.evidenceKey ? `/api/subproducts/production/${row.sourceId}/evidence` : null,
     idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
   };

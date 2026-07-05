@@ -23,7 +23,6 @@ describe('Sales Edit E2E', () => {
 
   let duenoToken: string;
   let cajeroToken: string;
-  let cocineroToken: string;
 
   let papasId: string; // preparación (no reventa)
   let gaseosaId: string; // reventa directa (stock propio)
@@ -69,13 +68,11 @@ describe('Sales Edit E2E', () => {
       data: [
         { email: 'dueno-edit@test.local', fullName: 'Dueño Edit', role: 'DUENO', passwordHash: hash, mustChangePwd: false, active: true },
         { email: 'cajero-edit@test.local', fullName: 'Cajero Edit', role: 'CAJERO', passwordHash: hash, mustChangePwd: false, active: true },
-        { email: 'cocinero-edit@test.local', fullName: 'Cocinero Edit', role: 'COCINERO', passwordHash: hash, mustChangePwd: false, active: true },
       ],
       skipDuplicates: true,
     });
     duenoToken = await loginAs(request, 'dueno-edit@test.local');
     cajeroToken = await loginAs(request, 'cajero-edit@test.local');
-    cocineroToken = await loginAs(request, 'cocinero-edit@test.local');
 
     // Producto de PREPARACIÓN (sin reventa).
     const papas = await request
@@ -177,16 +174,17 @@ describe('Sales Edit E2E', () => {
       expect((log!.metadata as { totalAfter: number }).totalAfter).toBe(17000);
     });
 
-    it('EN_PREPARACION: bloquea cambios de preparación, permite cambiar reventa', async () => {
+    it('LISTO_DESPACHO: bloquea cambios de preparación, permite cambiar reventa', async () => {
       const sale = await createPaidSale([
         { productId: papasId, quantity: 2 },
         { productId: gaseosaId, quantity: 2 },
       ]);
-      // La cocina inicia el pedido.
-      await request
-        .post(`/kds/orders/${sale.id}/start`)
-        .set('Authorization', `Bearer ${cocineroToken}`)
-        .expect(200);
+      // El pedido pasa a "listo para retirar" (web mark-ready). El guard de
+      // edición ya no permite tocar líneas de preparación.
+      await prisma.sale.update({
+        where: { id: sale.id },
+        data: { status: 'LISTO_DESPACHO' },
+      });
 
       // Cambiar las papas (preparación) → 400.
       await request
@@ -212,24 +210,15 @@ describe('Sales Edit E2E', () => {
         })
         .expect(200);
       expect(res.body.total).toBe(2 * PAPAS_PRICE + GASEOSA_PRICE);
-      expect(res.body.status).toBe('EN_PREPARACION');
+      expect(res.body.status).toBe('LISTO_DESPACHO');
     });
 
     it('rechaza editar una venta ENTREGADO', async () => {
       const sale = await createPaidSale([{ productId: gaseosaId, quantity: 1 }]);
-      // listo → entregado (cocina marca listo, cajero entrega vía public-display)
-      await request
-        .post(`/kds/orders/${sale.id}/start`)
-        .set('Authorization', `Bearer ${cocineroToken}`)
-        .expect(200);
-      await request
-        .post(`/kds/orders/${sale.id}/ready`)
-        .set('Authorization', `Bearer ${cocineroToken}`)
-        .expect(200);
-      await request
-        .post(`/public-display/deliver/${sale.id}`)
-        .set('Authorization', `Bearer ${cajeroToken}`)
-        .expect(201);
+      await prisma.sale.update({
+        where: { id: sale.id },
+        data: { status: 'ENTREGADO' },
+      });
 
       await request
         .patch(`/sales/${sale.id}/items`)

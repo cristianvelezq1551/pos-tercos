@@ -1,10 +1,11 @@
 /**
  * cortesias.e2e-spec.ts
  *
- * Cortesías (producto regalado): el cajero la SOLICITA (queda PENDING, sin tocar
- * stock); un admin/dueño la APRUEBA (recién ahí se descuenta stock a costo FIFO)
- * o la RECHAZA (no toca stock). Cubre la máquina de estados, el efecto sobre el
- * inventario y el guard anti-doble-aprobación (TOCTOU).
+ * Cortesías (producto regalado) — flujo 2026-07 SIN aprobación: el cajero la
+ * REGISTRA y se aplica al instante (status APPROVED, descuenta stock a costo
+ * FIFO en la misma tx). El admin puede ANULARLA (reverse → REVERSED): devuelve
+ * el stock con un movimiento compensatorio y la saca del COGS de cortesías.
+ * Cubre la máquina de estados, el efecto sobre el inventario y los guards.
  */
 
 import * as bcrypt from 'bcrypt';
@@ -31,11 +32,13 @@ describe('Cortesías E2E', () => {
       .set(auth(cajeroToken))
       .send({ productId, quantity, reason })
       .expect(201);
-    return res.body.id as string;
+    return res.body as { id: string; status: string };
   };
 
-  const movementsForCortesia = (cortesiaId: string) =>
+  const consumeMovements = (cortesiaId: string) =>
     prisma.inventoryMovement.findMany({ where: { sourceType: 'cortesia', sourceId: cortesiaId } });
+  const reversalMovements = (cortesiaId: string) =>
+    prisma.inventoryMovement.findMany({ where: { sourceType: 'cortesia_reversal', sourceId: cortesiaId } });
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
@@ -78,64 +81,83 @@ describe('Cortesías E2E', () => {
     await app.close();
   });
 
-  it('solicitar deja la cortesía en PENDING sin descontar stock', async () => {
-    const id = await createCortesia(2, 'Cliente frecuente');
-    const list = await request.get('/cortesias?status=PENDING').set(auth(duenoToken)).expect(200);
-    const found = (list.body as Array<{ id: string; status: string }>).find((c) => c.id === id);
-    expect(found?.status).toBe('PENDING');
-    expect(await movementsForCortesia(id)).toHaveLength(0); // aún no toca stock
-  });
+  it('registrar deja la cortesía APPROVED y descuenta stock al instante', async () => {
+    const { id, status } = await createCortesia(2, 'Cliente frecuente');
+    expect(status).toBe('APPROVED');
 
-  it('un rol no-admin no puede aprobar (403)', async () => {
-    const id = await createCortesia(1, 'Prueba de rol');
-    await request.post(`/cortesias/${id}/approve`).set(auth(cajeroToken)).send({}).expect(403);
-  });
-
-  it('aprobar descuenta stock del producto (movement negativo, sourceType cortesia)', async () => {
-    const id = await createCortesia(3, 'Regalo de inauguración');
-    const res = await request.post(`/cortesias/${id}/approve`).set(auth(duenoToken)).send({}).expect(201);
-    expect(res.body.status).toBe('APPROVED');
-
-    const movements = await movementsForCortesia(id);
+    const movements = await consumeMovements(id);
     expect(movements).toHaveLength(1);
     expect(movements[0]!.productId).toBe(productId);
-    expect(Number(movements[0]!.delta)).toBe(-3); // 3 unidades consumidas
+    expect(Number(movements[0]!.delta)).toBe(-2); // 2 unidades consumidas ya
   });
 
-  it('rechazar NO toca stock', async () => {
-    const id = await createCortesia(2, 'No autorizada');
-    const res = await request.post(`/cortesias/${id}/reject`).set(auth(duenoToken)).send({}).expect(201);
-    expect(res.body.status).toBe('REJECTED');
-    expect(await movementsForCortesia(id)).toHaveLength(0);
+  it('un rol no-admin no puede anular (403)', async () => {
+    const { id } = await createCortesia(1, 'Prueba de rol');
+    await request.post(`/cortesias/${id}/reverse`).set(auth(cajeroToken)).send({}).expect(403);
   });
 
-  it('no se puede aprobar dos veces (guard anti-doble-descuento)', async () => {
-    const id = await createCortesia(1, 'Doble aprobación');
-    await request.post(`/cortesias/${id}/approve`).set(auth(duenoToken)).send({}).expect(201);
-    await request.post(`/cortesias/${id}/approve`).set(auth(duenoToken)).send({}).expect(400);
-    expect(await movementsForCortesia(id)).toHaveLength(1); // solo un descuento
+  it('anular (reverse) devuelve el stock y marca REVERSED', async () => {
+    const { id } = await createCortesia(3, 'Regalo por error');
+    const res = await request.post(`/cortesias/${id}/reverse`).set(auth(duenoToken)).send({}).expect(201);
+    expect(res.body.status).toBe('REVERSED');
+
+    const consume = await consumeMovements(id);
+    const reversal = await reversalMovements(id);
+    expect(consume).toHaveLength(1);
+    expect(Number(consume[0]!.delta)).toBe(-3);
+    expect(reversal).toHaveLength(1);
+    expect(Number(reversal[0]!.delta)).toBe(3); // devuelve exactamente lo descontado
   });
 
-  it('no se puede rechazar una cortesía ya aprobada', async () => {
-    const id = await createCortesia(1, 'Aprobar y luego rechazar');
-    await request.post(`/cortesias/${id}/approve`).set(auth(duenoToken)).send({}).expect(201);
-    await request.post(`/cortesias/${id}/reject`).set(auth(duenoToken)).send({}).expect(400);
+  it('no se puede anular dos veces (guard TOCTOU)', async () => {
+    const { id } = await createCortesia(1, 'Doble anulación');
+    await request.post(`/cortesias/${id}/reverse`).set(auth(duenoToken)).send({}).expect(201);
+    await request.post(`/cortesias/${id}/reverse`).set(auth(duenoToken)).send({}).expect(400);
+    expect(await reversalMovements(id)).toHaveLength(1); // solo una devolución
   });
 
   it('la DB rechaza un status fuera del enum (garantía nativa, no solo la app)', async () => {
-    const id = await createCortesia(1, 'Estado inválido');
+    const { id } = await createCortesia(1, 'Estado inválido');
     await expect(
       prisma.$executeRawUnsafe(`UPDATE cortesia_requests SET status = 'INVALIDO' WHERE id = '${id}'`),
     ).rejects.toThrow();
   });
 
-  it('el resumen del mes cuenta las cortesías aprobadas', async () => {
+  it('el resumen del mes cuenta las cortesías registradas y excluye las anuladas', async () => {
+    await cleanDb(prisma);
+    // Re-seed mínimo (cleanDb borró usuarios/producto).
+    const hash = await bcrypt.hash('dev12345', 10);
+    await prisma.user.createMany({
+      data: [
+        { email: 'dueno-cortesias@test.local', fullName: 'Dueño Cortesías', role: 'DUENO', passwordHash: hash, mustChangePwd: false, active: true },
+        { email: 'cajero-cortesias@test.local', fullName: 'Cajero Cortesías', role: 'CAJERO', passwordHash: hash, mustChangePwd: false, active: true },
+      ],
+      skipDuplicates: true,
+    });
+    duenoToken = await loginAs(request, 'dueno-cortesias@test.local');
+    cajeroToken = await loginAs(request, 'cajero-cortesias@test.local');
+    const prod = await request
+      .post('/products')
+      .set(auth(duenoToken))
+      .send({
+        name: 'Gaseosa Cortesía Test 2', category: 'Bebidas', basePrice: 4_000, isActive: true,
+        directResale: true, isCombo: false, modifiersEnabled: false, unitPurchase: 'caja',
+        unitStock: 'unidad', conversionFactor: 24, thresholdMin: 0,
+      })
+      .expect(201);
+    productId = prod.body.id as string;
+
+    await createCortesia(1, 'Cuenta 1');
+    await createCortesia(1, 'Cuenta 2');
+    const { id: toReverse } = await createCortesia(1, 'Se anula');
+    await request.post(`/cortesias/${toReverse}/reverse`).set(auth(duenoToken)).send({}).expect(201);
+
     const now = new Date();
     const res = await request
       .get(`/cortesias/given-summary?year=${now.getFullYear()}&month=${now.getMonth() + 1}`)
       .set(auth(duenoToken))
       .expect(200);
-    // Aprobamos varias arriba (qty 3 + 1 + 1) → al menos 3 cortesías aprobadas.
-    expect(res.body.count).toBeGreaterThanOrEqual(3);
+    // 3 registradas − 1 anulada = 2 cuentan.
+    expect(res.body.count).toBe(2);
   });
 });

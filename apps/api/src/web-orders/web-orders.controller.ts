@@ -93,7 +93,7 @@ function buildPaymentInstructions(order: PublicWebOrder): string {
   }
   lines.push('');
   lines.push(
-    `Te vamos a contactar por WhatsApp para pedirte el comprobante. Tu orden #${order.receiptNumber} se enviará a cocina apenas el cajero verifique el pago.`,
+    `Te vamos a contactar por WhatsApp para pedirte el comprobante. Apenas el cajero verifique el pago, preparamos tu orden #${order.receiptNumber} y te avisamos cuando esté lista para retirar.`,
   );
   return lines.join('\n');
 }

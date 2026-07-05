@@ -3,9 +3,8 @@ import { DisplayContentController } from './display-content.controller';
 import { DisplayContentService } from './display-content.service';
 
 /**
- * Contenido configurable del turnero (B-roll + música). Separado de
- * `PublicDisplayModule` (estado de turnos/SSE) — este módulo administra
- * QUÉ se muestra; aquél, A QUIÉN se llama.
+ * Contenido configurable de la pantalla del local (B-roll + música): el dueño
+ * administra QUÉ se muestra en la TV (productos + publicidad), sin turnos.
  */
 @Module({
   controllers: [DisplayContentController],

@@ -1,10 +1,30 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UsePipes } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+  UsePipes,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import {
   CreateSubproductSchema,
   RecordProductionSchema,
   UpdateSubproductSchema,
   type CreateSubproduct,
   type JwtAccessPayload,
+  type ProductionEvidenceUpload,
   type ProductionRun,
   type RecordProduction,
   type Subproduct,
@@ -13,9 +33,13 @@ import {
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, KitchenAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { detectImageMime } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ProductionService } from './production.service';
 import { SubproductsService } from './subproducts.service';
+
+/** Límite de la foto de evidencia de producción (mismo criterio que facturas). */
+const EVIDENCE_MAX_BYTES = 8 * 1024 * 1024;
 
 @Controller('subproducts')
 export class SubproductsController {
@@ -35,6 +59,36 @@ export class SubproductsController {
   @Get('production-status')
   productionStatus(): Promise<SubproductProductionStatus[]> {
     return this.production.listProductionStatus();
+  }
+
+  /** Sube la foto de evidencia ANTES de registrar la producción. Devuelve la
+   *  key para pasar como `evidenceKey` en /produce. Cocinero/Admin/Dueño. */
+  @KitchenAccess()
+  @Post('production/evidence')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: EVIDENCE_MAX_BYTES } }))
+  async uploadEvidence(
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<ProductionEvidenceUpload> {
+    if (!file) throw new BadRequestException('Falta el archivo en el campo "photo".');
+    const mime = detectImageMime(file.buffer);
+    if (!mime) {
+      throw new BadRequestException('El archivo no parece una imagen válida (JPG, PNG, WebP, GIF).');
+    }
+    return this.production.uploadEvidence(file.buffer, mime);
+  }
+
+  /** Sirve la foto de evidencia de una tanda de producción. Cocinero/Admin/Dueño. */
+  @KitchenAccess()
+  @Get('production/:runId/evidence')
+  async getEvidence(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.production.getEvidence(runId);
+    if (!buffer) throw new NotFoundException('Sin evidencia para esta producción.');
+    res.setHeader('Content-Type', detectImageMime(buffer) ?? 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.end(buffer);
   }
 
   @Get(':id')

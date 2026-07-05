@@ -23,15 +23,32 @@ const logger = new Logger('WhatsAppModule');
     {
       provide: WHATSAPP_PROVIDER,
       useFactory: (mock: MockWhatsAppAdapter): WhatsAppProvider => {
-        if (process.env.KAPSO_API_KEY && process.env.KAPSO_PHONE_NUMBER_ID) {
+        // Config PARCIAL = error de deploy, no un "modo mock" silencioso: en
+        // prod eso significaría cero notificaciones sin que nadie lo note
+        // (auditoría 2026-07-05). Todo-o-nada por proveedor.
+        const kapsoVars = [process.env.KAPSO_API_KEY, process.env.KAPSO_PHONE_NUMBER_ID];
+        const kapsoSet = kapsoVars.filter(Boolean).length;
+        if (kapsoSet === 1) {
+          throw new Error(
+            'Config KAPSO_* incompleta: se necesitan KAPSO_API_KEY y KAPSO_PHONE_NUMBER_ID (o ninguna).',
+          );
+        }
+        const openwaVars = [
+          process.env.OPENWA_URL,
+          process.env.OPENWA_API_KEY,
+          process.env.OPENWA_SESSION_ID,
+        ];
+        const openwaSet = openwaVars.filter(Boolean).length;
+        if (openwaSet > 0 && openwaSet < 3) {
+          throw new Error(
+            'Config OPENWA_* incompleta: se necesitan OPENWA_URL, OPENWA_API_KEY y OPENWA_SESSION_ID (o ninguna).',
+          );
+        }
+        if (kapsoSet === 2) {
           logger.log('Using KapsoWhatsAppAdapter (KAPSO_* detected)');
           return new KapsoWhatsAppAdapter();
         }
-        if (
-          process.env.OPENWA_URL &&
-          process.env.OPENWA_API_KEY &&
-          process.env.OPENWA_SESSION_ID
-        ) {
+        if (openwaSet === 3) {
           logger.log('Using OpenWaWhatsAppAdapter (OPENWA_* detected)');
           return new OpenWaWhatsAppAdapter();
         }

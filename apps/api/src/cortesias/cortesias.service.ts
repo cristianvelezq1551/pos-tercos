@@ -67,7 +67,7 @@ export class CortesiasService {
   async create(input: CreateCortesia, userId: string): Promise<CortesiaRequest> {
     const product = await this.prisma.product.findUnique({
       where: { id: input.productId },
-      select: { id: true, name: true, basePrice: true, comboPrice: true },
+      select: { id: true, name: true, basePrice: true, comboPrice: true, isCombo: true },
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
@@ -89,37 +89,102 @@ export class CortesiasService {
       .catch(() => null);
     const unitCost = cost?.totalCost ?? null;
     const costAmount = unitCost !== null ? roundMoney(unitCost * input.quantity) : null;
-    const unitPrice = Number(product.basePrice ?? 0) || Number(product.comboPrice ?? 0);
+    // Precio de venta unitario espejando computeLine: en combos gana comboPrice,
+    // y se suma el modificador del talle si aplica (antes usaba basePrice a secas
+    // y omitía el talle → subreportaba el valor comercial regalado).
+    let unitPrice =
+      product.isCombo && product.comboPrice !== null
+        ? Number(product.comboPrice)
+        : Number(product.basePrice ?? 0);
+    if (input.sizeId) {
+      const size = await this.prisma.productSize.findUnique({
+        where: { id: input.sizeId },
+        select: { priceModifier: true, productId: true },
+      });
+      if (size && size.productId === product.id) {
+        unitPrice += Number(size.priceModifier);
+      }
+    }
     const salePrice = roundMoney(unitPrice * input.quantity);
 
-    const created = await this.prisma.cortesiaRequest.create({
-      data: {
-        status: 'PENDING',
-        saleId: input.saleId ?? null,
-        productId: input.productId,
-        sizeId: input.sizeId ?? null,
-        quantity: input.quantity,
-        reason: input.reason,
-        costAmount,
-        salePrice,
-        requestedById: userId,
-      },
+    // Auto-aprobada: la cortesía es efectiva al registrarse (sin gate de admin).
+    // Se descuenta el stock a costo FIFO en la MISMA tx que la crea; el ledger la
+    // valúa y la lleva a su bucket de cortesías. Un fallo de stock no bloquea (el
+    // producto ya se entregó): el FIFO marca lo que falte como costo desconocido.
+    const created = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.cortesiaRequest.create({
+        data: {
+          status: 'APPROVED',
+          saleId: input.saleId ?? null,
+          productId: input.productId,
+          sizeId: input.sizeId ?? null,
+          quantity: input.quantity,
+          reason: input.reason,
+          costAmount,
+          salePrice,
+          requestedById: userId,
+          resolvedById: userId,
+          resolvedAt: new Date(),
+        },
+      });
+      const movements = await this.buildCortesiaMovements(row.id, input, userId);
+      if (movements.length > 0) {
+        await tx.inventoryMovement.createMany({ data: movements });
+      }
+      return row;
     });
 
     await this.audit.log({
       userId,
-      action: 'CORTESIA_REQUESTED',
+      action: 'CORTESIA_APPROVED',
       entityType: 'cortesia',
       entityId: created.id,
-      metadata: { productId: input.productId, quantity: input.quantity, costAmount, salePrice, reason: input.reason },
+      metadata: { productId: input.productId, quantity: input.quantity, costAmount, salePrice, reason: input.reason, auto: true },
     });
     void this.ownerNotifications.alert(
-      'cortesia_request',
-      `Cortesía solicitada: ${input.quantity}x ${product.name} — ${input.reason}`,
+      'cortesia_given',
+      `Cortesía registrada: ${input.quantity}x ${product.name} — ${input.reason}`,
       { cortesiaId: created.id },
     );
 
     return (await this.toDtos([created]))[0]!;
+  }
+
+  /**
+   * Movimientos de inventario (un nivel, igual que una venta) para descontar el
+   * stock de una cortesía. Descarta consumos que redondean a 0 en Decimal(_,4):
+   * un delta=0 viola el CHECK `delta <> 0` y abortaría toda la tx.
+   */
+  private async buildCortesiaMovements(
+    cortesiaId: string,
+    input: Pick<CreateCortesia, 'productId' | 'quantity' | 'sizeId'> & { reason: string },
+    userId: string,
+  ): Promise<Prisma.InventoryMovementCreateManyInput[]> {
+    const specs = await this.consumption.computeConsumptionSpecs(
+      [
+        {
+          productId: input.productId,
+          quantity: input.quantity,
+          sizeId: input.sizeId ?? null,
+          modifiers: [],
+        },
+      ],
+      'Cortesía',
+    );
+    return specs
+      .filter((s) => !roundsToZeroAt4(s.delta))
+      .map((s) => ({
+        entityType: s.entityType,
+        ingredientId: s.ingredientId ?? null,
+        productId: s.productId ?? null,
+        subproductId: s.subproductId ?? null,
+        delta: s.delta,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'cortesia',
+        sourceId: cortesiaId,
+        userId,
+        notes: `Cortesía: ${input.reason}`.slice(0, 200),
+      }));
   }
 
   async list(status?: CortesiaStatus[]): Promise<CortesiaRequest[]> {
@@ -183,39 +248,23 @@ export class CortesiasService {
       throw new BadRequestException(`La cortesía ya fue ${existing.status === 'APPROVED' ? 'aprobada' : 'rechazada'}.`);
     }
 
-    // AUTORIZAR = la cortesía es real → recién acá se descuenta el stock (un
-    // nivel, igual que una venta). El ledger FIFO lo valúa a costo y lo lleva a
-    // su bucket de cortesías. RECHAZAR no toca stock (nunca se descontó).
-    let movements: Prisma.InventoryMovementCreateManyInput[] = [];
-    if (status === 'APPROVED') {
-      const specs = await this.consumption.computeConsumptionSpecs(
-        [
-          {
-            productId: existing.productId,
-            quantity: existing.quantity,
-            sizeId: existing.sizeId ?? null,
-            modifiers: [],
-          },
-        ],
-        'Cortesía',
-      );
-      // Descartar consumos que redondean a 0 en Decimal(_,4): un delta=0 viola
-      // el CHECK `delta <> 0` y abortaría toda la aprobación con un error opaco.
-      movements = specs
-        .filter((s) => !roundsToZeroAt4(s.delta))
-        .map((s) => ({
-          entityType: s.entityType,
-          ingredientId: s.ingredientId ?? null,
-          productId: s.productId ?? null,
-          subproductId: s.subproductId ?? null,
-          delta: s.delta,
-          type: 'MANUAL_ADJUSTMENT',
-          sourceType: 'cortesia',
-          sourceId: id,
-          userId,
-          notes: `Cortesía: ${existing.reason}`.slice(0, 200),
-        }));
-    }
+    // Flujo LEGACY: resuelve filas históricas que quedaron en PENDING del modelo
+    // anterior de aprobación. AUTORIZAR descuenta el stock (un nivel, como una
+    // venta); RECHAZAR no toca stock (nunca se descontó). Las cortesías nuevas
+    // ya nacen APPROVED desde `create`, así que esto solo aplica a datos viejos.
+    const movements =
+      status === 'APPROVED'
+        ? await this.buildCortesiaMovements(
+            id,
+            {
+              productId: existing.productId,
+              quantity: existing.quantity,
+              sizeId: existing.sizeId,
+              reason: existing.reason,
+            },
+            userId,
+          )
+        : [];
 
     const updated = await this.prisma.$transaction(async (tx) => {
       // Guard atómico contra TOCTOU: el claim solo prospera si SIGUE en PENDING.
@@ -254,6 +303,86 @@ export class CortesiasService {
         costAmount: existing.costAmount ? Number(existing.costAmount) : null,
         note: note ?? null,
         movementsCreated: movements.length,
+      },
+    });
+    return (await this.toDtos([updated]))[0]!;
+  }
+
+  /**
+   * El admin ANULA una cortesía autorizada registrada por error: devuelve el
+   * stock descontado y la saca del COGS de cortesías (el reporte filtra por
+   * status='APPROVED', así que REVERSED deja de contar). Los movimientos
+   * compensatorios (`sourceType='cortesia_reversal'`) restauran la cantidad y
+   * el ledger FIFO les devuelve la base de costo ORIGINAL (los draws de la
+   * cortesía quedan registrados en el replay — ver run-ledger.ts). Solo
+   * revierte cortesías APPROVED (las nuevas nacen así).
+   */
+  async reverse(id: string, userId: string, note?: string): Promise<CortesiaRequest> {
+    const existing = await this.prisma.cortesiaRequest.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Cortesía no encontrada');
+    if (existing.status !== 'APPROVED') {
+      throw new BadRequestException('Solo se pueden anular cortesías autorizadas.');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Claim TOCTOU-safe: solo prospera si SIGUE APPROVED (evita doble reversa).
+      const claim = await tx.cortesiaRequest.updateMany({
+        where: { id, status: 'APPROVED' },
+        data: {
+          status: 'REVERSED',
+          resolvedById: userId,
+          resolvedAt: new Date(),
+          resolverNote: note ?? null,
+          seenByRequester: false,
+        },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException('La cortesía ya fue anulada.');
+      }
+      // Movimientos originales del descuento → compensar por NETO (delta invertido)
+      // para devolver EXACTAMENTE lo que se descontó, sin violar delta<>0.
+      const originals = await tx.inventoryMovement.findMany({
+        where: { sourceType: 'cortesia', sourceId: id },
+        select: { entityType: true, ingredientId: true, productId: true, subproductId: true, delta: true },
+      });
+      const netByStockable = new Map<string, Prisma.InventoryMovementCreateManyInput>();
+      for (const o of originals) {
+        const k = `${o.entityType}:${o.ingredientId ?? ''}:${o.productId ?? ''}:${o.subproductId ?? ''}`;
+        const cur = netByStockable.get(k);
+        if (cur) {
+          cur.delta = Number(cur.delta) - Number(o.delta);
+        } else {
+          netByStockable.set(k, {
+            entityType: o.entityType,
+            ingredientId: o.ingredientId,
+            productId: o.productId,
+            subproductId: o.subproductId,
+            delta: -Number(o.delta),
+            type: 'MANUAL_ADJUSTMENT',
+            sourceType: 'cortesia_reversal',
+            sourceId: id,
+            userId,
+            notes: `Anulación cortesía: ${note ?? existing.reason}`.slice(0, 200),
+          });
+        }
+      }
+      const reverseMovements = [...netByStockable.values()].filter(
+        (m) => !roundsToZeroAt4(Number(m.delta)),
+      );
+      if (reverseMovements.length > 0) {
+        await tx.inventoryMovement.createMany({ data: reverseMovements });
+      }
+      return tx.cortesiaRequest.findUniqueOrThrow({ where: { id } });
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'CORTESIA_REVERSED',
+      entityType: 'cortesia',
+      entityId: id,
+      metadata: {
+        costAmount: existing.costAmount ? Number(existing.costAmount) : null,
+        note: note ?? null,
       },
     });
     return (await this.toDtos([updated]))[0]!;

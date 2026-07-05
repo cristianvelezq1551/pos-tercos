@@ -1,14 +1,14 @@
 import {
   BadRequestException,
-  forwardRef,
   ForbiddenException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
   applyPromotion,
+  buildManualDiscountAlertMessage,
   buildVoidAlertMessage,
+  manualDiscountAmount,
   roundMoney,
   roundsToZeroAt4,
   type PromotionDef,
@@ -31,7 +31,6 @@ import type { Prisma, SaleStatus as DbSaleStatus } from '@prisma/client';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
-import { KdsGateway } from '../kds/kds.gateway';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
@@ -59,19 +58,6 @@ export const SALE_TX_OPTS = {
   timeout: 15_000,
 } as const;
 
-/**
- * Verdadero solo para una colisión P2002 en el índice único de turno
- * (shift_id, turn_number). NO matchea otras unicidades (ej. idempotency_key),
- * para no reintentar transacciones que deben fallar por duplicado real.
- */
-export function isTurnNumberCollision(e: unknown): boolean {
-  if (typeof e !== 'object' || e === null || !('code' in e)) return false;
-  if ((e as { code?: string }).code !== 'P2002') return false;
-  const target = (e as { meta?: { target?: unknown } }).meta?.target;
-  const s = Array.isArray(target) ? target.join(',') : String(target ?? '');
-  return s.includes('turn_number') || s.includes('turnNumber');
-}
-
 /** Postgres SQLSTATE 40001 (serialization_failure) → Prisma lo expone como P2034. */
 export function isSerializationFailure(e: unknown): boolean {
   if (!(e instanceof Error)) return false;
@@ -80,26 +66,82 @@ export function isSerializationFailure(e: unknown): boolean {
 }
 
 /**
- * Reintenta una transacción de venta cuando aborta por (a) colisión del índice
- * de turno, o (b) fallo de serialización Serializable (otra venta/producción
- * tocó el mismo stock). La tx hace rollback COMPLETO, así que reintentar es
- * seguro: el guard de status (`updateMany WHERE PENDIENTE_PAGO`) impide
- * doble-cobro, y el turno + stock se recomputan frescos en el reintento.
+ * P2002 sobre sales.idempotency_key: dos POST /sales concurrentes con la misma
+ * key, o un reintento tras crash entre el commit y el cache de idempotencia.
+ * El caller lo resuelve devolviendo la venta ya creada (fix B3 auditoría).
+ */
+export function isIdempotencyKeyConflict(e: unknown): boolean {
+  const err = e as { code?: string; meta?: { target?: unknown } };
+  if (err?.code !== 'P2002') return false;
+  const target = err.meta?.target;
+  return Array.isArray(target)
+    ? target.some((t) => String(t).includes('idempotency_key'))
+    : String(target ?? '').includes('idempotency_key');
+}
+
+/**
+ * Reintenta una transacción de venta cuando aborta por un fallo de
+ * serialización Serializable (otra venta/producción tocó el mismo stock). La tx
+ * hace rollback COMPLETO, así que reintentar es seguro: el guard de status
+ * (`updateMany WHERE PENDIENTE_PAGO`) impide doble-cobro, y el stock se
+ * recomputa fresco en el reintento.
  */
 export async function runSaleTxWithRetry<T>(work: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await work();
     } catch (e) {
-      if (
-        attempt < MAX_SALE_TX_RETRIES &&
-        (isTurnNumberCollision(e) || isSerializationFailure(e))
-      ) {
+      if (attempt < MAX_SALE_TX_RETRIES && isSerializationFailure(e)) {
         continue;
       }
       throw e;
     }
   }
+}
+
+/** Movement original de una venta (los campos que el reverso necesita leer). */
+type SaleMovement = {
+  entityType: Prisma.InventoryMovementCreateManyInput['entityType'];
+  ingredientId: string | null;
+  productId: string | null;
+  subproductId: string | null;
+  delta: Prisma.Decimal | number;
+};
+
+/**
+ * Reverso de una venta anulada/reembolsada: emite UN movement compensatorio por
+ * stockable = NETO consumido (suma de TODOS los movements SALE: cobro + ajustes
+ * de edición), con delta opuesto. Un reverso por movement descoordinaría el FIFO
+ * (devuelve `delta` unidades por reverso); el neto lo resuelve de una. Descarta
+ * netos que redondean a 0 (consumido y ya devuelto por una edición), que
+ * violarían el CHECK `delta <> 0`.
+ */
+export function buildNetReverseMovements(
+  originals: SaleMovement[],
+  opts: { saleId: string; userId: string; notes: string },
+): Prisma.InventoryMovementCreateManyInput[] {
+  const netByStockable = new Map<string, Prisma.InventoryMovementCreateManyInput>();
+  for (const orig of originals) {
+    const k = `${orig.entityType}:${orig.ingredientId ?? ''}:${orig.productId ?? ''}:${orig.subproductId ?? ''}`;
+    const cur = netByStockable.get(k);
+    if (cur) {
+      cur.delta = Number(cur.delta) - Number(orig.delta);
+    } else {
+      netByStockable.set(k, {
+        entityType: orig.entityType,
+        ingredientId: orig.ingredientId,
+        productId: orig.productId,
+        subproductId: orig.subproductId,
+        delta: -Number(orig.delta),
+        type: 'SALE',
+        sourceType: 'sale',
+        sourceId: opts.saleId,
+        userId: opts.userId,
+        notes: opts.notes,
+      });
+    }
+  }
+  return [...netByStockable.values()].filter((m) => !roundsToZeroAt4(Number(m.delta)));
 }
 
 interface ListSalesFilter {
@@ -121,7 +163,6 @@ export class SalesService {
     private readonly audit: AuditService,
     private readonly promotions: PromotionsService,
     private readonly consumption: SalesConsumptionService,
-    @Inject(forwardRef(() => KdsGateway)) private readonly kdsGateway: KdsGateway,
     private readonly notifications: NotificationService,
     private readonly ownerNotifications: OwnerNotificationService,
     private readonly paymentMethods: PaymentMethodsService,
@@ -179,6 +220,12 @@ export class SalesService {
       }
     }
 
+    // Descuento manual (#5b): EXCLUYENTE con promociones. Cualquier descuento
+    // manual (línea o total) desactiva el motor de promos para toda la venta.
+    const hasManualDiscount =
+      input.orderDiscount !== undefined ||
+      input.items.some((it) => it.manualDiscount !== undefined);
+
     // Cargar productos + sizes + modifiers + promociones activas en paralelo
     const productIds = Array.from(new Set(input.items.map((i) => i.productId)));
     const now = new Date();
@@ -187,11 +234,11 @@ export class SalesService {
         where: { id: { in: productIds } },
         include: { sizes: true, modifiers: true },
       }),
-      this.promotions.loadActiveAt(now),
+      hasManualDiscount ? Promise.resolve([]) : this.promotions.loadActiveAt(now),
     ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // Validar + computar líneas (incluye motor de promociones puro)
+    // Validar + computar líneas (motor de promos puro, o descuento manual)
     const computedItems: ComputedSaleItem[] = input.items.map((it) =>
       computeLine(it, productMap, activePromotions, now),
     );
@@ -199,9 +246,15 @@ export class SalesService {
     const subtotal = roundMoney(
       computedItems.reduce((acc, it) => acc + it.lineSubtotal, 0),
     );
-    const discountTotal = roundMoney(
+    const lineDiscountTotal = roundMoney(
       computedItems.reduce((acc, it) => acc + it.lineDiscount, 0),
     );
+    // Descuento sobre el TOTAL: se aplica sobre lo que queda después de los
+    // descuentos de línea (nunca deja el total en negativo).
+    const orderDiscountAmount = input.orderDiscount
+      ? manualDiscountAmount(roundMoney(subtotal - lineDiscountTotal), input.orderDiscount)
+      : 0;
+    const discountTotal = roundMoney(lineDiscountTotal + orderDiscountAmount);
     const total = roundMoney(subtotal - discountTotal);
 
     // turn_number NO se asigna al crear: se asigna al PAGAR (confirmPayment),
@@ -216,51 +269,85 @@ export class SalesService {
     `;
     const receiptNumber = next;
 
-    const newSaleId = await this.prisma.$transaction(async (tx) => {
-      const sale = await tx.sale.create({
-        data: {
-          receiptNumber,
-          type: input.type,
-          status: 'PENDIENTE_PAGO',
-          turnNumber: null,
-          customerName: input.customerName ?? null,
-          customerPhone: input.customerPhone ?? null,
-          customerNit: input.customerNit ?? null,
-          subtotal,
-          discountTotal,
-          total,
-          // WEB_* no tiene cashier ni shift hasta que el cajero confirme pago
-          cashierId: input.type === 'COUNTER' ? cashierId : null,
-          shiftId: input.type === 'COUNTER' ? shift!.id : null,
-          notes: input.notes ?? null,
-          idempotencyKey: idempotencyKey ?? null,
-          items: {
-            create: computedItems.map((c) => ({
-              productId: c.productId,
-              sizeId: c.sizeId,
-              quantity: c.quantity,
-              unitPrice: c.unitPrice,
-              modifiersJson: c.modifiers as unknown as Prisma.InputJsonValue,
-              notes: c.notes,
-              appliedPromotionId: c.appliedPromotionId,
-              lineSubtotal: c.lineSubtotal,
-              lineDiscount: c.lineDiscount,
-              lineTotal: c.lineTotal,
-            })),
-          },
-          statusLog: {
-            create: {
-              statusFrom: null,
-              statusTo: 'PENDIENTE_PAGO',
-              userId: cashierId,
-              notes: 'Venta creada',
+    let newSaleId: string;
+    try {
+      newSaleId = await this.prisma.$transaction(async (tx) => {
+        const sale = await tx.sale.create({
+          data: {
+            receiptNumber,
+            type: input.type,
+            status: 'PENDIENTE_PAGO',
+            // Defensa en profundidad además del Zod: cuenta abierta SOLO COUNTER.
+            isOpenTab: input.openTab === true && input.type === 'COUNTER',
+            customerName: input.customerName ?? null,
+            customerPhone: input.customerPhone ?? null,
+            customerNit: input.customerNit ?? null,
+            subtotal,
+            discountTotal,
+            total,
+            orderDiscountKind: input.orderDiscount?.kind ?? null,
+            orderDiscountValue: input.orderDiscount?.value ?? null,
+            orderDiscountAmount,
+            discountReason: hasManualDiscount ? (input.discountReason ?? null) : null,
+            // WEB_* no tiene cashier ni shift hasta que el cajero confirme pago
+            cashierId: input.type === 'COUNTER' ? cashierId : null,
+            shiftId: input.type === 'COUNTER' ? shift!.id : null,
+            notes: input.notes ?? null,
+            idempotencyKey: idempotencyKey ?? null,
+            items: {
+              create: computedItems.map((c) => ({
+                productId: c.productId,
+                sizeId: c.sizeId,
+                quantity: c.quantity,
+                unitPrice: c.unitPrice,
+                modifiersJson: c.modifiers as unknown as Prisma.InputJsonValue,
+                notes: c.notes,
+                appliedPromotionId: c.appliedPromotionId,
+                lineSubtotal: c.lineSubtotal,
+                lineDiscount: c.lineDiscount,
+                lineTotal: c.lineTotal,
+                manualDiscountKind: c.manualDiscountKind,
+                manualDiscountValue: c.manualDiscountValue,
+              })),
+            },
+            statusLog: {
+              create: {
+                statusFrom: null,
+                statusTo: 'PENDIENTE_PAGO',
+                userId: cashierId,
+                notes: input.openTab ? 'Cuenta abierta creada' : 'Venta creada',
+              },
             },
           },
-        },
-        select: { id: true },
+          select: { id: true },
+        });
+        return sale.id;
       });
-      return sale.id;
-    });
+    } catch (e) {
+      // B3: race de dos creates con la misma key (o crash entre commit y cache
+      // de idempotencia) → NO es un 500: la venta ya existe, se devuelve esa.
+      if (idempotencyKey && isIdempotencyKeyConflict(e)) {
+        const winner = await this.prisma.sale.findUnique({
+          where: { idempotencyKey },
+          include: includeFull(),
+        });
+        if (winner) {
+          await this.audit.log({
+            userId: cashierId,
+            action: 'IDEMPOTENCY_HIT',
+            entityType: 'sale',
+            entityId: winner.id,
+            metadata: {
+              endpoint: SALES_CREATE_ENDPOINT,
+              key: idempotencyKey,
+              via: 'unique-constraint',
+            },
+          });
+          return toSaleDto(winner);
+        }
+      }
+      throw e;
+    }
 
     const created = await this.prisma.sale.findUniqueOrThrow({
       where: { id: newSaleId },
@@ -289,8 +376,49 @@ export class SalesService {
         itemsCount: dto.items?.length ?? 0,
         shiftId: shift?.id ?? null,
         type: dto.type,
+        openTab: dto.isOpenTab || undefined,
       },
     });
+
+    if (hasManualDiscount) {
+      // #5b: sin aprobación, pero el dueño se entera de CADA descuento manual.
+      await this.audit.log({
+        userId: cashierId,
+        action: 'SALE_MANUAL_DISCOUNT',
+        entityType: 'sale',
+        entityId: dto.id,
+        metadata: {
+          receiptNumber: dto.receiptNumber,
+          subtotal: dto.subtotal,
+          discountTotal: dto.discountTotal,
+          total: dto.total,
+          orderDiscount: input.orderDiscount ?? null,
+          lineDiscounts: computedItems
+            .filter((c) => c.manualDiscountKind !== null)
+            .map((c) => ({
+              productId: c.productId,
+              kind: c.manualDiscountKind,
+              value: c.manualDiscountValue,
+              amount: c.lineDiscount,
+            })),
+          reason: input.discountReason ?? null,
+        },
+      });
+      void this.ownerNotifications.alert(
+        'manual_discount',
+        buildManualDiscountAlertMessage({
+          businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+          cashierName: dto.cashierName ?? null,
+          receiptNumber: dto.receiptNumber,
+          customerName: dto.customerName,
+          subtotal: dto.subtotal,
+          discountTotal: dto.discountTotal,
+          total: dto.total,
+          reason: input.discountReason ?? '(sin motivo)',
+        }),
+        { saleId: dto.id, receiptNumber: dto.receiptNumber },
+      );
+    }
 
     return dto;
   }
@@ -329,129 +457,68 @@ export class SalesService {
     const summaryMethod: PaymentMethod | null =
       parts.length === 1 ? (parts[0]!.method as PaymentMethod) : null;
 
-    // WEB_PICKUP entra sin turno; al confirmar el cajero le asocia SU turno
-    // abierto (si no, la venta nunca entra al cierre de caja / Z-report).
-    let shiftId = existing.shiftId;
-    let cashierId = existing.cashierId;
-    if (existing.type === 'WEB_PICKUP' && shiftId === null) {
-      // getActiveTodayShift lanza Conflict si la caja quedó abierta de ayer →
-      // el cajero debe cerrarla antes de confirmar pagos.
-      const shift = await this.shifts.getActiveTodayShift(userId);
-      if (!shift) {
-        // Sin caja abierta la venta web quedaría con shiftId/cashierId null y
-        // nunca entraría al cierre de caja (Z-report) ni a la atribución de
-        // comisiones → descuadre silencioso. Igual que COUNTER, exigimos caja.
-        throw new BadRequestException(
-          'Abrí la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).',
-        );
-      }
-      shiftId = shift.id;
-      cashierId = userId;
-    }
-
-    // Consumo de stock: lógica ÚNICA compartida con syncOffline (reventa
-    // directa / receta un nivel / combos por componentes).
-    const consumptionSpecs = await this.consumption.computeConsumptionSpecs(
-      existing.items.map((it) => ({
-        productId: it.productId,
-        quantity: it.quantity,
-        sizeId: it.sizeId,
-        modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
-          modifierId: m.modifierId,
-        })),
-      })),
-      `Sale ${existing.id.slice(0, 8)}`,
+    const { shiftId, cashierId } = await this.resolvePaymentShift(
+      existing.type,
+      existing.shiftId,
+      existing.cashierId,
+      userId,
     );
-    const stockMovementsToCreate: Prisma.InventoryMovementCreateManyInput[] =
-      consumptionSpecs.map((s) => ({
-        entityType: s.entityType,
-        ingredientId: s.ingredientId ?? null,
-        productId: s.productId ?? null,
-        subproductId: s.subproductId ?? null,
-        delta: s.delta,
-        type: 'SALE',
-        sourceType: 'sale',
-        sourceId: saleId,
-        userId,
-        notes: s.note,
-      }));
 
+    let movementsCreated = 0;
     const updated = await runSaleTxWithRetry(() =>
-     this.prisma.$transaction(async (tx) => {
-      // Turno: secuencia ÚNICA por CAJA (no global). Resetea cada vez que se
-      // abre una caja nueva → cada día empieza en #1, sin importar cuántos
-      // pedidos hubo ayer. Cuenta los que ya tienen turno en ESTA caja + 1.
-      // El índice único (shift_id, turn_number) + el retry de arriba garantizan
-      // que dos cobros concurrentes NO compartan el mismo turno.
-      // (Fallback a "hoy" si por algún motivo no hay caja asociada.)
-      let assigned: number;
-      if (shiftId) {
-        assigned = await tx.sale.count({
-          where: { shiftId, turnNumber: { not: null } },
-        });
-      } else {
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        assigned = await tx.sale.count({
-          where: { turnNumber: { not: null }, paidAt: { gte: startOfDay } },
-        });
-      }
-      const turnNumber = assigned + 1;
-
-      // Guard transaccional contra doble-cobro (doble-click / retry de red):
-      // el status se condiciona DENTRO del UPDATE. Si otra request ya cobró,
-      // count===0 y abortamos sin descontar stock dos veces.
-      const res = await tx.sale.updateMany({
-        where: { id: saleId, status: 'PENDIENTE_PAGO' },
-        data: {
-          status: 'PAGADO',
-          paymentMethod: summaryMethod,
-          paidAt: new Date(),
-          paidByUserId: userId,
-          turnNumber,
-          shiftId,
-          cashierId,
+      this.prisma.$transaction(
+        async (tx) => {
+          // B1 (auditoría): la verdad final de items/total se lee DENTRO de la
+          // tx SERIALIZABLE. Si un editItems corrió entre la lectura de arriba
+          // y acá, el stock y los pagos se calculan sobre la venta FRESCA (o la
+          // suma de partes deja de cuadrar y se aborta con 400).
+          const fresh = await tx.sale.findUnique({
+            where: { id: saleId },
+            include: { items: true },
+          });
+          if (!fresh || fresh.status !== 'PENDIENTE_PAGO') {
+            throw new BadRequestException('La venta ya fue cobrada o cambió de estado.');
+          }
+          const freshTotal = Number(fresh.total);
+          const partsSum = parts.reduce((acc, p) => acc + p.amount, 0);
+          if (Math.abs(partsSum - freshTotal) > 0.005) {
+            throw new BadRequestException(
+              `El pedido cambió mientras se cobraba: el total ahora es ${freshTotal}. Recargá y volvé a cobrar.`,
+            );
+          }
+          // B4 (auditoría): la caja destino debe seguir ABIERTA — si cerró entre
+          // la resolución y acá, el efectivo quedaría fuera de todo arqueo.
+          if (shiftId) {
+            const shift = await tx.shift.findUnique({
+              where: { id: shiftId },
+              select: { status: true },
+            });
+            if (!shift || shift.status !== 'OPEN') {
+              throw new BadRequestException(
+                'La caja se cerró mientras se cobraba. Abrí caja e intentá de nuevo.',
+              );
+            }
+          }
+          const stockMovementsToCreate = await this.buildSaleStockMovements(
+            fresh.items,
+            saleId,
+            fresh.id,
+            userId,
+          );
+          movementsCreated = stockMovementsToCreate.length;
+          return this.applyConfirmPaymentTx(tx, {
+            saleId,
+            summaryMethod,
+            parts,
+            shiftId,
+            cashierId,
+            userId,
+            notes: input.notes,
+            stockMovementsToCreate,
+          });
         },
-      });
-      if (res.count === 0) {
-        throw new BadRequestException(
-          'La venta ya fue cobrada o cambió de estado.',
-        );
-      }
-      await tx.saleStatusLog.create({
-        data: {
-          saleId,
-          statusFrom: 'PENDIENTE_PAGO',
-          statusTo: 'PAGADO',
-          userId,
-          notes: input.notes ?? (summaryMethod ? `Cobro ${summaryMethod}` : `Cobro dividido (${parts.length} pagos)`),
-        },
-      });
-      await tx.salePayment.createMany({
-        data: parts.map((p) => ({
-          saleId,
-          method: p.method as PaymentMethod,
-          amount: p.amount,
-          // El vuelto solo existe en efectivo; default = exacto.
-          amountReceived: p.method === 'CASH' ? (p.amountReceived ?? p.amount) : null,
-        })),
-      });
-      if (stockMovementsToCreate.length > 0) {
-        // Defensa contra stock negativo: el cajero ya pasó por el sold-out gate
-        // del POS, pero si la ventana de availability se desactualizó (otra
-        // venta consumió primero, o el snapshot offline está stale), bloqueamos
-        // acá antes de crear el movement. Lee el stock actual en una sola
-        // groupBy y compara contra la suma de deltas negativos por entidad.
-        await this.consumption.assertStockSufficient(tx, stockMovementsToCreate);
-        await tx.inventoryMovement.createMany({
-          data: stockMovementsToCreate,
-        });
-      }
-      return tx.sale.findUniqueOrThrow({
-        where: { id: saleId },
-        include: includeFull(),
-      });
-     }, SALE_TX_OPTS),
+        SALE_TX_OPTS,
+      ),
     );
 
     await this.audit.log({
@@ -463,18 +530,201 @@ export class SalesService {
         method: summaryMethod ?? 'SPLIT',
         parts: parts.length,
         amountReceived: input.amountReceived ?? null,
-        movementsCreated: stockMovementsToCreate.length,
+        movementsCreated,
       },
     });
 
     const dto = toSaleDto(updated);
-    // Notifica al KDS: la venta entra al queue de cocina.
-    this.kdsGateway.emit('order.created', dto);
     // Notifica al cliente via WhatsApp que el pago fue verificado (WEB_PICKUP).
     // `silent` (cobro retroactivo offline) lo omite — el cliente ya retiró.
     if (!input.silent) {
       void this.notifications.notify(saleId, 'payment_received');
     }
+    return dto;
+  }
+
+  /**
+   * Resuelve el turno/cajero de la venta al cobrar.
+   *  - WEB_PICKUP entra sin turno; al confirmar, el cajero le asocia SU caja
+   *    abierta (si no, la venta nunca entraría al cierre de caja / Z-report).
+   *  - COUNTER ya trae la caja del create — pero una CUENTA ABIERTA puede
+   *    cruzar cajas (se cobra días después): si la caja original ya cerró, la
+   *    venta se cuelga de la caja abierta del que cobra (la plata entra AHÍ).
+   */
+  private async resolvePaymentShift(
+    type: string,
+    currentShiftId: string | null,
+    currentCashierId: string | null,
+    userId: string,
+  ): Promise<{ shiftId: string | null; cashierId: string | null }> {
+    if (currentShiftId !== null) {
+      const current = await this.prisma.shift.findUnique({
+        where: { id: currentShiftId },
+        select: { status: true },
+      });
+      if (current?.status === 'OPEN') {
+        return { shiftId: currentShiftId, cashierId: currentCashierId };
+      }
+    }
+    // getActiveTodayShift lanza Conflict si la caja quedó abierta de ayer →
+    // el cajero debe cerrarla antes de confirmar pagos.
+    const shift = await this.shifts.getActiveTodayShift(userId);
+    if (!shift) {
+      throw new BadRequestException(
+        type === 'WEB_PICKUP'
+          ? 'Abrí la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).'
+          : 'La caja de esta venta ya cerró y no hay caja abierta. Abrí caja antes de cobrar.',
+      );
+    }
+    // El cajero original se conserva si existía (atribución de la venta); la
+    // caja pasa a ser la del cobro para que el arqueo cuadre.
+    return { shiftId: shift.id, cashierId: currentCashierId ?? userId };
+  }
+
+  /**
+   * Construye los movements SALE de la venta (consumo de stock). Lógica ÚNICA
+   * compartida con syncOffline: reventa directa / receta un nivel / combos por
+   * componentes (vía SalesConsumptionService).
+   */
+  private async buildSaleStockMovements(
+    items: { productId: string; quantity: number; sizeId: string | null; modifiersJson: Prisma.JsonValue }[],
+    saleId: string,
+    saleShortRef: string,
+    userId: string,
+  ): Promise<Prisma.InventoryMovementCreateManyInput[]> {
+    const consumptionSpecs = await this.consumption.computeConsumptionSpecs(
+      items.map((it) => ({
+        productId: it.productId,
+        quantity: it.quantity,
+        sizeId: it.sizeId,
+        modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
+          modifierId: m.modifierId,
+        })),
+      })),
+      `Sale ${saleShortRef.slice(0, 8)}`,
+    );
+    return consumptionSpecs.map((s) => ({
+      entityType: s.entityType,
+      ingredientId: s.ingredientId ?? null,
+      productId: s.productId ?? null,
+      subproductId: s.subproductId ?? null,
+      delta: s.delta,
+      type: 'SALE',
+      sourceType: 'sale',
+      sourceId: saleId,
+      userId,
+      notes: s.note,
+    }));
+  }
+
+  /**
+   * Transacción del cobro: guard de doble-cobro condicionado por status
+   * (count===0 → aborta sin descontar stock dos veces), status log, pagos en
+   * sale_payments (fuente de verdad del método) y movements de stock con
+   * defensa contra stock negativo. Bajo SALE_TX_OPTS (SERIALIZABLE).
+   */
+  private async applyConfirmPaymentTx(
+    tx: Prisma.TransactionClient,
+    args: {
+      saleId: string;
+      summaryMethod: PaymentMethod | null;
+      parts: SalePaymentInput[];
+      shiftId: string | null;
+      cashierId: string | null;
+      userId: string;
+      notes: string | undefined;
+      stockMovementsToCreate: Prisma.InventoryMovementCreateManyInput[];
+    },
+  ): Promise<Prisma.SaleGetPayload<{ include: ReturnType<typeof includeFull> }>> {
+    const { saleId, summaryMethod, parts, shiftId, cashierId, userId, notes, stockMovementsToCreate } =
+      args;
+    const res = await tx.sale.updateMany({
+      where: { id: saleId, status: 'PENDIENTE_PAGO' },
+      data: {
+        status: 'PAGADO',
+        paymentMethod: summaryMethod,
+        paidAt: new Date(),
+        paidByUserId: userId,
+        shiftId,
+        cashierId,
+      },
+    });
+    if (res.count === 0) {
+      throw new BadRequestException('La venta ya fue cobrada o cambió de estado.');
+    }
+    await tx.saleStatusLog.create({
+      data: {
+        saleId,
+        statusFrom: 'PENDIENTE_PAGO',
+        statusTo: 'PAGADO',
+        userId,
+        notes:
+          notes ??
+          (summaryMethod ? `Cobro ${summaryMethod}` : `Cobro dividido (${parts.length} pagos)`),
+      },
+    });
+    await tx.salePayment.createMany({
+      data: parts.map((p) => ({
+        saleId,
+        method: p.method as PaymentMethod,
+        amount: p.amount,
+        // El vuelto solo existe en efectivo; default = exacto.
+        amountReceived: p.method === 'CASH' ? (p.amountReceived ?? p.amount) : null,
+      })),
+    });
+    if (stockMovementsToCreate.length > 0) {
+      // Defensa contra stock negativo: el cajero ya pasó por el sold-out gate del
+      // POS, pero si la ventana de availability se desactualizó, bloqueamos acá
+      // antes de crear el movement.
+      await this.consumption.assertStockSufficient(tx, stockMovementsToCreate);
+      await tx.inventoryMovement.createMany({ data: stockMovementsToCreate });
+    }
+    return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
+  }
+
+  /**
+   * Pedido WEB pagado → LISTO_DESPACHO: el cajero marca "listo para retirar" y se
+   * dispara el WhatsApp al cliente (sin cocina/KDS).
+   * Solo WEB_PICKUP en PAGADO; LISTO_DESPACHO es el estado final del pedido web.
+   */
+  async markWebReady(saleId: string, userId: string): Promise<Sale> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { type: true, status: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (existing.type !== 'WEB_PICKUP') {
+      throw new BadRequestException('Solo los pedidos web se marcan listos para retirar.');
+    }
+    if (existing.status !== 'PAGADO') {
+      throw new BadRequestException(`No se puede marcar listo en estado ${existing.status}.`);
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Guard condicionado por status: dos "marcar listo" concurrentes no
+      // disparan dos WhatsApp ni doble transición.
+      const claim = await tx.sale.updateMany({
+        where: { id: saleId, status: 'PAGADO' },
+        data: { status: 'LISTO_DESPACHO', readyAt: new Date() },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException('El pedido cambió de estado. Refrescá.');
+      }
+      await tx.saleStatusLog.create({
+        data: { saleId, statusFrom: 'PAGADO', statusTo: 'LISTO_DESPACHO', userId },
+      });
+      return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'SALE_STATUS_CHANGED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: { from: 'PAGADO', to: 'LISTO_DESPACHO', by: 'mark-ready' },
+    });
+    const dto = toSaleDto(updated);
+    void this.notifications.notify(saleId, 'pickup_ready');
     return dto;
   }
 
@@ -530,6 +780,102 @@ export class SalesService {
   // ==================================================================
 
   /**
+   * Verifica el PIN de aprobación (Admin/Dueño) para una acción sensible
+   * (anular/reembolsar). Audita el rechazo y devuelve el id del aprobador.
+   * Compartido por `void` y `refund`.
+   */
+  private async verifyApproval(
+    saleId: string,
+    cashierId: string,
+    approverPin: string,
+    reason: 'void' | 'refund',
+  ): Promise<string> {
+    return this.approvals.verify(approverPin).catch(async (err) => {
+      await this.audit.log({
+        userId: cashierId,
+        action: 'APPROVAL_DENIED',
+        entityType: 'sale',
+        entityId: saleId,
+        metadata: { reason, message: err instanceof Error ? err.message : 'invalid pin' },
+      });
+      throw err instanceof ForbiddenException ? err : new ForbiddenException('PIN inválido');
+    });
+  }
+
+  /**
+   * Caja destino del movimiento de DEVOLUCIÓN de una anulación/reembolso.
+   * Si la caja de la venta sigue ABIERTA no hace falta nada (su esperado
+   * excluye VOID y se auto-corrige). Si ya CERRÓ, la plata sale físicamente
+   * del cajón de la caja abierta ACTUAL: sin un movimiento OUT, esa caja
+   * cerraría con faltante falso y la vieja quedaría "cuadrada" con plata que
+   * ya no está (auditoría 2026-07-05). Sin caja abierta → se bloquea.
+   */
+  private async resolveRefundMovementShift(
+    saleShiftId: string | null,
+    userId: string,
+  ): Promise<string | null> {
+    if (!saleShiftId) return null;
+    const original = await this.prisma.shift.findUnique({
+      where: { id: saleShiftId },
+      select: { status: true },
+    });
+    if (original?.status === 'OPEN') return null;
+    const current = await this.shifts.getActiveTodayShift(userId);
+    if (!current) {
+      throw new BadRequestException(
+        'La caja de esta venta ya cerró: abrí caja para registrar la devolución de la plata.',
+      );
+    }
+    return current.id;
+  }
+
+  /**
+   * Movimientos OUT (uno por parte de pago, respetando el método) que
+   * registran la devolución en la caja abierta actual. Se crean DENTRO de la
+   * tx del void/refund, re-verificando que esa caja siga abierta.
+   */
+  private async createRefundMovements(
+    tx: Prisma.TransactionClient,
+    movementShiftId: string,
+    sale: {
+      payments: ReadonlyArray<{ method: PaymentMethod; amount: Prisma.Decimal | number }>;
+      receiptNumber: bigint | number;
+      total: Prisma.Decimal | number;
+      paymentMethod: PaymentMethod | null;
+    },
+    userId: string,
+    kind: 'anulada' | 'reembolsada',
+  ): Promise<void> {
+    const shift = await tx.shift.findUnique({
+      where: { id: movementShiftId },
+      select: { status: true },
+    });
+    if (!shift || shift.status !== 'OPEN') {
+      throw new BadRequestException(
+        'La caja se cerró mientras se registraba la devolución. Abrí caja e intentá de nuevo.',
+      );
+    }
+    // Venta histórica sin filas en sale_payments (previa a la tabla o migrada):
+    // igual hay que registrar la salida — un solo OUT por el total con el
+    // método resumen (CASH como último recurso). Sin esto la caja actual
+    // cerraría con faltante falso.
+    const parts =
+      sale.payments.length > 0
+        ? sale.payments
+        : [{ method: sale.paymentMethod ?? ('CASH' as PaymentMethod), amount: sale.total }];
+    await tx.cashMovement.createMany({
+      data: parts.map((p) => ({
+        shiftId: movementShiftId,
+        type: 'OUT' as const,
+        method: p.method,
+        amount: p.amount,
+        reason: `Devolución venta #${sale.receiptNumber} ${kind} (su caja ya había cerrado)`,
+        userId,
+      })),
+    });
+  }
+
+  /**
    * Anula una venta. Requiere PIN de Admin/Dueño en `approverPin`. Si la
    * sale estaba PAGADO (o estados posteriores), revierte los movements
    * de stock con movements compensatorios (delta opuesto, type=SALE).
@@ -540,20 +886,11 @@ export class SalesService {
     cashierId: string,
     approverPin: string,
   ): Promise<Sale> {
-    const approverId = await this.approvals.verify(approverPin).catch(async (err) => {
-      await this.audit.log({
-        userId: cashierId,
-        action: 'APPROVAL_DENIED',
-        entityType: 'sale',
-        entityId: saleId,
-        metadata: { reason: 'void', message: err instanceof Error ? err.message : 'invalid pin' },
-      });
-      throw err instanceof ForbiddenException ? err : new ForbiddenException('PIN inválido');
-    });
+    const approverId = await this.verifyApproval(saleId, cashierId, approverPin, 'void');
 
     const existing = await this.prisma.sale.findUnique({
       where: { id: saleId },
-      include: { items: true },
+      include: { items: true, payments: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
     // Solo se anula un pedido PAGADO que la cocina AÚN NO inició. Una vez en
@@ -566,6 +903,7 @@ export class SalesService {
           : `No se puede anular en estado ${existing.status}.`,
       );
     }
+    const movementShiftId = await this.resolveRefundMovementShift(existing.shiftId, cashierId);
 
     const oldStatus = existing.status;
     let reversedCount = 0;
@@ -608,36 +946,30 @@ export class SalesService {
       const originals = await tx.inventoryMovement.findMany({
         where: { sourceType: 'sale', sourceId: saleId, type: 'SALE' },
       });
-      const netByStockable = new Map<string, Prisma.InventoryMovementCreateManyInput>();
-      for (const orig of originals) {
-        const k = `${orig.entityType}:${orig.ingredientId ?? ''}:${orig.productId ?? ''}:${orig.subproductId ?? ''}`;
-        const cur = netByStockable.get(k);
-        if (cur) {
-          cur.delta = Number(cur.delta) - Number(orig.delta);
-        } else {
-          netByStockable.set(k, {
-            entityType: orig.entityType,
-            ingredientId: orig.ingredientId,
-            productId: orig.productId,
-            subproductId: orig.subproductId,
-            delta: -Number(orig.delta),
-            type: 'SALE',
-            sourceType: 'sale',
-            sourceId: saleId,
-            userId: cashierId,
-            notes: `Reverso de void · ${input.reason.slice(0, 100)}`,
-          });
-        }
-      }
-      // Descartar netos que redondean a 0 (consumido y luego ya devuelto por una
-      // edición): un delta=0 violaría el CHECK `delta <> 0`.
-      const reverseMovements = [...netByStockable.values()].filter(
-        (m) => !roundsToZeroAt4(Number(m.delta)),
-      );
+      const reverseMovements = buildNetReverseMovements(originals, {
+        saleId,
+        userId: cashierId,
+        notes: `Reverso de void · ${input.reason.slice(0, 100)}`,
+      });
       if (reverseMovements.length > 0) {
         await tx.inventoryMovement.createMany({ data: reverseMovements });
       }
       reversedCount = reverseMovements.length;
+      // Caja de la venta CERRADA → la plata devuelta sale de la caja actual.
+      if (movementShiftId) {
+        await this.createRefundMovements(
+          tx,
+          movementShiftId,
+          {
+            payments: existing.payments,
+            receiptNumber: existing.receiptNumber,
+            total: existing.total,
+            paymentMethod: existing.paymentMethod,
+          },
+          cashierId,
+          'anulada',
+        );
+      }
       return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
     });
 
@@ -669,14 +1001,11 @@ export class SalesService {
         businessName: process.env.BUSINESS_NAME ?? 'Tercos',
         cashierName: dto.cashierName ?? null,
         receiptNumber: dto.receiptNumber,
-        turnNumber: dto.turnNumber,
         total: dto.total,
         reason: input.reason,
       }),
       { saleId, receiptNumber: dto.receiptNumber },
     );
-    // Estaba PAGADO → en la cola de cocina. Avisar al KDS para sacarlo del board.
-    this.kdsGateway.emit('order.status.changed', dto);
     return dto;
   }
 
@@ -685,13 +1014,14 @@ export class SalesService {
   // ==================================================================
 
   /**
-   * Reembolsa un pedido que la cocina ya tomó (EN_PREPARACION / LISTO_DESPACHO
-   * / ENTREGADO). Requiere PIN de Admin/Dueño. A diferencia del void:
+   * Reembolsa un pedido ya entregado/retirado: hoy aplica a un pedido web en
+   * LISTO_DESPACHO (más EN_PREPARACION/ENTREGADO en datos históricos previos a
+   * la eliminación del KDS). Requiere PIN de Admin/Dueño. A diferencia del void:
    *  - NO revierte stock: la comida ya se preparó/entregó → es una pérdida.
    *  - El pedido pasa a VOID (se excluye de ingresos y del arqueo) → la plata
    *    devuelta al cliente queda reflejada (el cajero entrega el efectivo /
    *    reversa la transferencia; el esperado de caja ya no la incluye).
-   * Para anular un PAGADO que la cocina aún NO inició, se usa `void`.
+   * Para anular un PAGADO de mostrador (no retirado), se usa `void`.
    */
   async refund(
     saleId: string,
@@ -699,20 +1029,20 @@ export class SalesService {
     cashierId: string,
     approverPin: string,
   ): Promise<Sale> {
-    const approverId = await this.approvals.verify(approverPin).catch(async (err) => {
-      await this.audit.log({
-        userId: cashierId,
-        action: 'APPROVAL_DENIED',
-        entityType: 'sale',
-        entityId: saleId,
-        metadata: { reason: 'refund', message: err instanceof Error ? err.message : 'invalid pin' },
-      });
-      throw err instanceof ForbiddenException ? err : new ForbiddenException('PIN inválido');
-    });
+    const approverId = await this.verifyApproval(saleId, cashierId, approverPin, 'refund');
 
     const existing = await this.prisma.sale.findUnique({
       where: { id: saleId },
-      select: { id: true, status: true, type: true },
+      select: {
+        id: true,
+        status: true,
+        type: true,
+        shiftId: true,
+        receiptNumber: true,
+        total: true,
+        paymentMethod: true,
+        payments: true,
+      },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
     const REFUNDABLE = ['EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
@@ -723,6 +1053,7 @@ export class SalesService {
           : `No se puede reembolsar en estado ${existing.status}.`,
       );
     }
+    const movementShiftId = await this.resolveRefundMovementShift(existing.shiftId, cashierId);
 
     const oldStatus = existing.status;
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -742,6 +1073,21 @@ export class SalesService {
           notes: `reembolso: ${input.reason}`,
         },
       });
+      // Caja de la venta CERRADA → la plata devuelta sale de la caja actual.
+      if (movementShiftId) {
+        await this.createRefundMovements(
+          tx,
+          movementShiftId,
+          {
+            payments: existing.payments,
+            receiptNumber: existing.receiptNumber,
+            total: existing.total,
+            paymentMethod: existing.paymentMethod,
+          },
+          cashierId,
+          'reembolsada',
+        );
+      }
       return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
     });
 
@@ -767,14 +1113,11 @@ export class SalesService {
         businessName: process.env.BUSINESS_NAME ?? 'Tercos',
         cashierName: dto.cashierName ?? null,
         receiptNumber: dto.receiptNumber,
-        turnNumber: dto.turnNumber,
         total: dto.total,
         reason: `REEMBOLSO — ${input.reason}`,
       }),
       { saleId, receiptNumber: dto.receiptNumber, refund: true },
     );
-    // Estaba en la cola/board de cocina → avisar al KDS para sacarlo.
-    this.kdsGateway.emit('order.status.changed', dto);
     return dto;
   }
 
@@ -790,7 +1133,7 @@ export class SalesService {
   async cancelUnpaid(saleId: string, cashierId: string): Promise<Sale> {
     const existing = await this.prisma.sale.findUnique({
       where: { id: saleId },
-      select: { type: true, status: true },
+      select: { type: true, status: true, isOpenTab: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
     // Idempotente: si ya quedó CANCELADO_NO_PAGO (ej. el cleanup del POS cancela
@@ -826,7 +1169,9 @@ export class SalesService {
           notes:
             existing.type === 'WEB_PICKUP'
               ? 'Pedido web rechazado por el cajero'
-              : 'Cobro abandonado en el mostrador',
+              : existing.isOpenTab
+                ? 'Cuenta abierta cancelada por el cajero'
+                : 'Cobro abandonado en el mostrador',
         },
       });
       return tx.sale.findUniqueOrThrow({
@@ -925,6 +1270,9 @@ export interface ComputedSaleItem {
   lineSubtotal: number;
   lineDiscount: number;
   lineTotal: number;
+  /** Descuento manual de la línea (#5b) — null si el descuento vino de promo. */
+  manualDiscountKind: 'FIXED' | 'PERCENT' | null;
+  manualDiscountValue: number | null;
 }
 
 export type ProductWithRelations = Prisma.ProductGetPayload<{
@@ -996,6 +1344,26 @@ export function computeLine(
   const unitPrice = roundMoney(basePrice);
   const lineSubtotal = roundMoney(unitPrice * input.quantity);
 
+  // Descuento MANUAL de línea (#5b): excluyente con promos — el caller ya
+  // desactivó el motor (activePromotions=[]) si la venta trae descuento manual.
+  if (input.manualDiscount) {
+    const lineDiscount = manualDiscountAmount(lineSubtotal, input.manualDiscount);
+    return {
+      productId: product.id,
+      sizeId,
+      quantity: input.quantity,
+      unitPrice,
+      modifiers,
+      notes: input.notes?.trim() ? input.notes.trim() : null,
+      appliedPromotionId: null,
+      lineSubtotal,
+      lineDiscount,
+      lineTotal: roundMoney(lineSubtotal - lineDiscount),
+      manualDiscountKind: input.manualDiscount.kind,
+      manualDiscountValue: input.manualDiscount.value,
+    };
+  }
+
   // Motor de promociones puro (5.C + 12.A: BOGO/FIXED_OFF/COMBO_OFF).
   // Devuelve appliedPromotionId=null + lineDiscount=0 cuando ninguna matchea.
   const promo = applyPromotion(
@@ -1023,5 +1391,7 @@ export function computeLine(
     lineSubtotal,
     lineDiscount,
     lineTotal,
+    manualDiscountKind: null,
+    manualDiscountValue: null,
   };
 }

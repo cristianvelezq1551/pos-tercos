@@ -321,7 +321,8 @@ describe('Sales E2E', () => {
       expect(typeof res.body.escposBase64).toBe('string');
       expect(res.body.reprint).toBe(false);
       const decoded = Buffer.from(res.body.escposBase64 as string, 'base64').toString('latin1');
-      expect(decoded).toContain('COMANDA COCINA');
+      // Sin ?variant=kitchen → comanda COMPLETA (cajero), lleva todo.
+      expect(decoded).toContain('COMANDA COMPLETA');
       expect(decoded).toContain('Hamburguesa Test');
       // Sin turno asignado (no se ha pagado) → identifica por pedido.
       expect(decoded).toContain(`PEDIDO #${res.body.receiptNumber}`);
@@ -451,7 +452,7 @@ describe('Sales E2E', () => {
       },
     });
 
-    it('registra la venta offline ENTREGADO con recibo y turno reales + paidAt backdateado', async () => {
+    it('registra la venta offline PAGADO con recibo real + paidAt backdateado', async () => {
       const res = await request
         .post('/sales/sync-offline')
         .set('Authorization', `Bearer ${cajeroToken}`)
@@ -459,10 +460,10 @@ describe('Sales E2E', () => {
         .expect(201);
 
       const sale = res.body;
-      expect(sale.status).toBe('ENTREGADO');
+      // Mismo estado terminal que el cobro online de mostrador (PAGADO).
+      expect(sale.status).toBe('PAGADO');
       expect(typeof sale.receiptNumber).toBe('number');
       expect(sale.receiptNumber).toBeGreaterThan(0);
-      expect(sale.turnNumber).toBeGreaterThan(0);
       expect(sale.total).toBe(15000);
       expect(sale.paymentMethod).toBe('CASH');
       // paidAt backdateado al momento real de la venta offline.
@@ -499,6 +500,43 @@ describe('Sales E2E', () => {
       expect(second.body.id).toBe(first.body.id);
       expect(second.body.receiptNumber).toBe(first.body.receiptNumber);
     });
+
+    it('B5: rechaza un payload que no cierra aritméticamente (total ≠ Σ líneas)', async () => {
+      const body = buildBody(randomUUID());
+      body.payload.total = 99_000; // no coincide con subtotal − descuento
+      const res = await request
+        .post('/sales/sync-offline')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send(body)
+        .expect(400);
+      expect(String(res.body.message)).toContain('inconsistente');
+    });
+
+    it('B5: rechaza efectivo recibido menor que el total', async () => {
+      const body = buildBody(randomUUID());
+      body.payment.amountReceived = 1_000; // total es 15.000
+      const res = await request
+        .post('/sales/sync-offline')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send(body)
+        .expect(400);
+      expect(String(res.body.message)).toContain('efectivo');
+    });
+
+    it('B6: una venta offline de otro día queda marcada en bitácora (cross_day_shift)', async () => {
+      const body = buildBody(randomUUID());
+      body.soldOfflineAt = new Date(Date.now() - 26 * 60 * 60_000).toISOString(); // ayer
+      const res = await request
+        .post('/sales/sync-offline')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send(body)
+        .expect(201);
+      const log = await prisma.auditLog.findFirst({
+        where: { action: 'OFFLINE_SYNC_DISCREPANCY', entityId: res.body.id },
+      });
+      expect(log).toBeTruthy();
+      expect((log!.metadata as { kind?: string }).kind).toBe('cross_day_shift');
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -516,6 +554,21 @@ describe('Sales E2E', () => {
 
     it('rechaza acceso sin token', async () => {
       await request.get('/sales').expect(401);
+    });
+
+    it('B9: from/to/limit inválidos devuelven 400 (no 500)', async () => {
+      await request
+        .get('/sales?from=no-es-fecha')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(400);
+      await request
+        .get('/sales?to=2026-13-99')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(400);
+      await request
+        .get('/sales?limit=banana')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(400);
     });
   });
 });

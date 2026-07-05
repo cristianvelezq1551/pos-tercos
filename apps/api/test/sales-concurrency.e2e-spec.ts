@@ -1,7 +1,9 @@
 /**
- * E2E de concurrencia del cobro: confirmar varias ventas EN PARALELO en la
- * misma caja debe producir turnos DISTINTOS (1..N), nunca duplicados. Valida el
- * índice único (shift_id, turn_number) + el retry `runWithTurnRetry`.
+ * E2E de concurrencia del cobro: confirmar varias ventas EN PARALELO debe
+ * producir números de RECIBO distintos (secuencia monotónica), nunca
+ * duplicados, y dos cobros del mismo stock escaso no pueden dejar stock
+ * negativo (SERIALIZABLE + retry). El turnero se eliminó: la identidad
+ * contable es el receiptNumber.
  */
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
@@ -11,7 +13,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 
-describe('Cobro concurrente — unicidad de turno E2E', () => {
+describe('Cobro concurrente — unicidad de recibo E2E', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let request: ReturnType<typeof supertest>;
@@ -78,7 +80,7 @@ describe('Cobro concurrente — unicidad de turno E2E', () => {
     return res.body.id as string;
   };
 
-  it('N confirmaciones en paralelo → turnos distintos 1..N, sin duplicados', async () => {
+  it('N confirmaciones en paralelo → recibos distintos, sin duplicados', async () => {
     const N = 8;
     const saleIds = await Promise.all(Array.from({ length: N }, () => createSale()));
 
@@ -92,10 +94,10 @@ describe('Cobro concurrente — unicidad de turno E2E', () => {
     );
 
     for (const r of results) expect([200, 201]).toContain(r.status);
-    const turns = results.map((r) => r.body.turnNumber as number).sort((a, b) => a - b);
-    expect(turns).toEqual(Array.from({ length: N }, (_, i) => i + 1));
-    // Sin duplicados (lo garantiza el índice único + retry).
-    expect(new Set(turns).size).toBe(N);
+    // El número de recibo viene de una secuencia monotónica: N cobros
+    // concurrentes producen N recibos distintos, sin duplicados.
+    const receipts = results.map((r) => r.body.receiptNumber as number);
+    expect(new Set(receipts).size).toBe(N);
   });
 
   it('dos cobros del MISMO stock escaso → exactamente uno gana, sin stock negativo', async () => {

@@ -3,7 +3,7 @@ import { NotificationService } from './notification.service';
 import { OwnerNotificationService } from './owner-notification.service';
 
 /**
- * @Global para que SalesService/KdsService inyecten NotificationService
+ * @Global para que SalesService inyecte NotificationService
  * sin importarlo en cada módulo. WHATSAPP_PROVIDER (WhatsAppModule global)
  * y PrismaService (PrismaModule global) se resuelven globalmente.
  */

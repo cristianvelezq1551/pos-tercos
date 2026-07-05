@@ -10,16 +10,19 @@ import {
   renderComandaEscPos,
   renderReceiptEscPos,
   type CashDrawerProvider,
+  type ComandaData,
   type DrawerOpenResult,
   type PrinterProvider,
   type PrintResult,
 } from '@pos-tercos/domain';
+import type { AppliedModifier, SendToKitchenResponse } from '@pos-tercos/types';
 import { CASH_DRAWER_PROVIDER } from '../adapters/cash-drawer/cash-drawer.module';
 import { PRINTER_PROVIDER } from '../adapters/printer/printer.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { runSaleTxWithRetry } from './sales.service';
 import { buildComandaData, buildReceiptData, includeFull, toSaleDto } from './sales.mappers';
 
 const PRINTABLE_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
@@ -87,6 +90,7 @@ export class SalesReceiptService {
     userId: string,
     cancel = false,
     variant: 'kitchen' | 'full' = 'full',
+    corrected = false,
   ): Promise<{
     escposBase64: string;
     receiptNumber: number;
@@ -103,18 +107,33 @@ export class SalesReceiptService {
         `Sale en status ${sale.status} no genera comanda.`,
       );
     }
-    // Comanda de cocina: excluye reventa directa (bebidas/snacks que no se
-    // preparan). La comanda completa (cajero) lleva todo.
+    // Comanda de cocina: si el pedido tiene AL MENOS un plato (algo que se
+    // prepara, no reventa directa), imprime el pedido COMPLETO — incluidas las
+    // bebidas — para armar la orden entera. Si es SOLO bebidas, queda vacía
+    // (itemCount 0 → el POS no imprime comanda en cocina). La comanda completa
+    // (cajero) siempre lleva todo.
+    const hasKitchenItem = sale.items.some((it) => !it.product?.directResale);
     const scoped =
       variant === 'kitchen'
-        ? { ...sale, items: sale.items.filter((it) => !it.product?.directResale) }
+        ? { ...sale, items: hasKitchenItem ? sale.items : [] }
         : sale;
 
     const previousPrints = await this.prisma.auditLog.count({
       where: { action: 'COMANDA_PRINTED', entityType: 'sale', entityId: saleId },
     });
     const isReprint = !cancel && previousPrints > 0;
-    const comanda = { ...buildComandaData(toSaleDto(scoped), isReprint), cancelled: cancel };
+    const comanda = {
+      ...buildComandaData(toSaleDto(scoped), isReprint),
+      cancelled: cancel,
+      title: variant === 'kitchen' ? 'COMANDA COCINA' : 'COMANDA COMPLETA',
+      // Edición de un pedido → la comanda reemplaza la anterior; rótulo claro
+      // para que cocina no la confunda con el pedido original.
+      reprintLabel: corrected
+        ? 'PEDIDO MODIFICADO'
+        : isReprint
+          ? 'REIMPRESIÓN'
+          : null,
+    };
     const bytes = renderComandaEscPos(comanda);
 
     await this.audit.log({
@@ -135,6 +154,121 @@ export class SalesReceiptService {
       reprint: isReprint,
       itemCount: scoped.items.length,
     };
+  }
+
+  /**
+   * Cuentas abiertas (#3): envía a cocina SOLO lo pendiente (comanda
+   * incremental). Estampa `sentToKitchenQty = quantity` en las líneas enviadas
+   * y devuelve las dos variantes de comanda (cocina / completa) con únicamente
+   * las unidades NUEVAS, para que el POS las rutee a sus impresoras.
+   * Si no hay nada pendiente, no estampa ni renderiza (pendingCount=0).
+   */
+  async sendToKitchen(saleId: string, userId: string): Promise<SendToKitchenResponse> {
+    // Dos envíos CONCURRENTES no pueden imprimir la misma tanda dos veces
+    // (cocina prepararía doble): el estampado va con guard optimista por fila
+    // (updateMany condicionado al sentToKitchenQty leído) — si otro envío ganó
+    // la carrera, count===0 → se aborta y el reintento recomputa lo pendiente
+    // (que ya estará vacío → pendingCount 0, sin comanda).
+    const result = await runSaleTxWithRetry(() =>
+     this.prisma.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({ where: { id: saleId }, include: includeFull() });
+      if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
+      if (!COMANDA_STATUSES.includes(sale.status as (typeof COMANDA_STATUSES)[number])) {
+        throw new BadRequestException(`Sale en status ${sale.status} no genera comanda.`);
+      }
+
+      const pending = sale.items.filter((it) => it.quantity > it.sentToKitchenQty);
+      const receiptNumber = Number(sale.receiptNumber);
+      const prevBatches = new Set(
+        sale.items
+          .filter((it) => it.sentToKitchenAt !== null)
+          .map((it) => it.sentToKitchenAt!.getTime()),
+      ).size;
+      if (pending.length === 0) {
+        return {
+          batch: Math.max(prevBatches, 1),
+          pendingCount: 0,
+          kitchen: null,
+          full: null,
+          receiptNumber,
+        } satisfies SendToKitchenResponse;
+      }
+
+      const now = new Date();
+      for (const it of pending) {
+        const claim = await tx.saleItem.updateMany({
+          where: { id: it.id, sentToKitchenQty: it.sentToKitchenQty },
+          data: { sentToKitchenQty: it.quantity, sentToKitchenAt: now },
+        });
+        if (claim.count === 0) {
+          // Otro envío (u otra edición) tocó la línea entre la lectura y acá.
+          // P2034 sintético → runSaleTxWithRetry reintenta con datos frescos.
+          throw Object.assign(new Error('could not serialize send-to-kitchen claim'), {
+            code: 'P2034',
+          });
+        }
+      }
+
+      const batch = prevBatches + 1;
+      const pendingLines = pending.map((it) => ({
+        productName: it.product?.name ?? '(sin nombre)',
+        sizeName: it.size?.name ?? null,
+        quantity: it.quantity - it.sentToKitchenQty,
+        modifiers: (((it.modifiersJson as unknown as AppliedModifier[]) ?? []) as AppliedModifier[]).map(
+          (m) => m.name,
+        ),
+        notes: it.notes ?? null,
+        directResale: it.product?.directResale ?? false,
+      }));
+      // Misma regla que la comanda normal: si la tanda tiene al menos un plato,
+      // la comanda de cocina lleva TODO lo pendiente (incl. bebidas); si es solo
+      // reventa, queda vacía y el POS no la imprime en cocina.
+      const hasKitchenItem = pendingLines.some((l) => !l.directResale);
+      const base = (lines: typeof pendingLines, title: string): ComandaData => ({
+        receiptNumber,
+        createdAt: now.toISOString(),
+        type: sale.type,
+        customerName: sale.customerName,
+        items: lines.map(({ directResale: _drop, ...line }) => line),
+        title,
+        // Tanda 2+ → rótulo ADICIÓN: cocina sabe que se SUMA al pedido anterior.
+        reprintLabel: batch > 1 ? 'ADICIÓN' : null,
+        footer: process.env.BUSINESS_NAME ?? 'Tercos',
+      });
+      const kitchenLines = hasKitchenItem ? pendingLines : [];
+      const kitchen = base(kitchenLines, 'COMANDA COCINA');
+      const full = base(pendingLines, 'COMANDA COMPLETA');
+
+      return {
+        batch,
+        pendingCount: pendingLines.length,
+        kitchen: {
+          escposBase64: renderComandaEscPos(kitchen).toString('base64'),
+          itemCount: kitchenLines.length,
+        },
+        full: {
+          escposBase64: renderComandaEscPos(full).toString('base64'),
+          itemCount: pendingLines.length,
+        },
+        receiptNumber,
+      } satisfies SendToKitchenResponse;
+     }),
+    );
+
+    if (result.pendingCount > 0) {
+      await this.audit.log({
+        userId,
+        action: 'SALE_SENT_TO_KITCHEN',
+        entityType: 'sale',
+        entityId: saleId,
+        metadata: {
+          receiptNumber: result.receiptNumber,
+          batch: result.batch,
+          lines: result.pendingCount,
+        },
+      });
+    }
+    return result;
   }
 
   /**

@@ -18,17 +18,20 @@ const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
  * que una sesión de cajero pise/active la de admin y viceversa. El frontend
  * declara su app con el header `X-Client-App`. Default `pos` por compatibilidad.
  */
-type ClientApp = 'admin' | 'pos';
+type ClientApp = 'admin' | 'pos' | 'cocina';
 
 const COOKIE_NAMES: Record<ClientApp, { access: string; refresh: string }> = {
   admin: { access: 'admin_access', refresh: 'admin_refresh' },
   pos: { access: 'pos_access', refresh: 'pos_refresh' },
+  cocina: { access: 'cocina_access', refresh: 'cocina_refresh' },
 };
 
 function resolveApp(req: Request): ClientApp {
   const header = req.headers['x-client-app'];
   const value = Array.isArray(header) ? header[0] : header;
-  return value === 'admin' ? 'admin' : 'pos';
+  if (value === 'admin') return 'admin';
+  if (value === 'cocina') return 'cocina';
+  return 'pos';
 }
 
 @Controller('auth')

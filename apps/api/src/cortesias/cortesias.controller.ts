@@ -19,7 +19,8 @@ import { CortesiasService } from './cortesias.service';
 export class CortesiasController {
   constructor(private readonly cortesias: CortesiasService) {}
 
-  /** El cajero solicita una cortesía (queda PENDING; el stock se descuenta al aprobar). */
+  /** El cajero registra una cortesía: se aplica al instante (descuenta stock a
+   * costo FIFO) y notifica al dueño. No requiere aprobación de admin. */
   @CashierAccess()
   @Post()
   create(
@@ -89,5 +90,17 @@ export class CortesiasController {
     @Body(new ZodValidationPipe(ResolveCortesiaSchema)) body: ResolveCortesia,
   ): Promise<CortesiaRequest> {
     return this.cortesias.reject(id, user.sub, body.note);
+  }
+
+  /** El admin ANULA una cortesía registrada por error: devuelve stock y la saca
+   * del COGS de cortesías. Solo aplica a cortesías autorizadas. */
+  @AdminAccess()
+  @Post(':id/reverse')
+  reverse(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ResolveCortesiaSchema)) body: ResolveCortesia,
+  ): Promise<CortesiaRequest> {
+    return this.cortesias.reverse(id, user.sub, body.note);
   }
 }

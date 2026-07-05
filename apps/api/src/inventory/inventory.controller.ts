@@ -2,11 +2,13 @@ import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPi
 import {
   CreateInventoryMovementSchema,
   CreateStockCountSchema,
+  ResolveStockCountSchema,
   StockableTypeEnum,
   type CountTask,
   type CreateInventoryMovement,
   type CreateStockCount,
   type InventoryMovement,
+  type ResolveStockCount,
   type Stockable,
   type StockableType,
   type StockCount,
@@ -75,6 +77,35 @@ export class InventoryController {
   listCounts(@Query('limit') limit?: string): Promise<StockCount[]> {
     const n = limit ? Math.min(Math.max(Number(limit) || 30, 1), 100) : 30;
     return this.stockCounts.listRecent(n);
+  }
+
+  /** Conteos del cocinero pendientes de aprobación (#7). */
+  @AdminAccess()
+  @Get('counts/pending')
+  listPendingCounts(): Promise<StockCount[]> {
+    return this.stockCounts.listPending();
+  }
+
+  /** Aprueba un conteo pendiente → aplica el ajuste de stock. */
+  @AdminAccess()
+  @Post('counts/:id/approve')
+  approveCount(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ResolveStockCountSchema)) body: ResolveStockCount,
+  ): Promise<StockCount> {
+    return this.stockCounts.approve(id, user.sub, body.note);
+  }
+
+  /** Rechaza un conteo pendiente → no ajusta stock. */
+  @AdminAccess()
+  @Post('counts/:id/reject')
+  rejectCount(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ResolveStockCountSchema)) body: ResolveStockCount,
+  ): Promise<StockCount> {
+    return this.stockCounts.reject(id, user.sub, body.note);
   }
 
   @Get('movements')

@@ -55,6 +55,8 @@ export class StaleSalesSweepService {
         type: 'COUNTER',
         status: 'PENDIENTE_PAGO',
         createdAt: { lt: cutoff },
+        // Cuentas abiertas (#3): viven sin pagar a propósito — NUNCA barrerlas.
+        isOpenTab: false,
       },
       select: { id: true, receiptNumber: true, createdAt: true },
     });

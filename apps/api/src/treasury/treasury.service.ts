@@ -371,7 +371,12 @@ function breakdown(
 }
 
 function parseYmd(s: string): Date {
-  return new Date(`${s}T00:00:00.000Z`);
+  // Medianoche LOCAL del server (TZ=America/Bogota), no UTC: el ancla de
+  // tesorería es un día calendario local, igual que el resto de los cortes de
+  // fecha del sistema. Con `...T00:00:00Z` el corte caía a las 19:00 del día
+  // anterior en UTC-5 y arrastraba transacciones de esa franja.
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y!, m! - 1, d!);
 }
 /** Redondeo COP (2 dec) — delega al canónico del dominio (single source of truth). */
 function round(n: number): number {
