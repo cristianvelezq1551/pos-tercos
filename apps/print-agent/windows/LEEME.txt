@@ -1,0 +1,48 @@
+============================================
+  IMPRESION TERCOS - Instalacion (1 sola vez)
+============================================
+
+QUE HACE ESTO
+  Deja el "print-agent" (el puente entre el navegador y las
+  impresoras USB) arrancando SOLO cada vez que se prende la PC,
+  sin ventanas y sin que nadie lo tenga que abrir.
+
+  Despues de instalar: prendes la PC, abris el POS en el
+  navegador y a trabajar. El cajero no toca nada mas.
+
+
+INSTALAR (una vez)
+  1. Copia esta carpeta completa a la PC del cajero
+     (por ejemplo al Escritorio).
+  2. Clic derecho en  instalar-impresion.bat
+     -> "Ejecutar como administrador".
+  3. Espera el mensaje "LISTO" y cierra la ventana.
+  4. Comproba: abri en el navegador
+        http://localhost:9120/health
+     Debe responder  {"ok":true,...}
+
+  Listo. No hay que volver a hacer nada.
+
+
+CONFIGURAR LAS IMPRESORAS (una vez, en el POS)
+  En el navegador, entra a la pagina de configuracion del POS
+  (.../configuracion) y asigna:
+     - Impresora de COCINA  -> solo "Comanda de cocina"
+     - Impresora del CAJERO -> solo "Factura del cliente"
+  Guarda. Asi cada impresora saca un solo ticket por venta.
+
+
+SI ALGO NO IMPRIME
+  - Abri http://localhost:9120/health . Si NO responde, reinicia
+    la PC (el agent arranca solo al iniciar sesion).
+  - Revisa el archivo de registro:  C:\TercosPOS\print-agent.log
+
+
+ACTUALIZAR EL AGENT (cuando haya version nueva)
+  1. Doble clic en  desinstalar-impresion.bat
+  2. Reemplaza  tercos-print-agent.exe  por el nuevo.
+  3. Clic derecho en  instalar-impresion.bat -> Ejecutar como admin.
+
+
+QUITARLO
+  Doble clic en  desinstalar-impresion.bat

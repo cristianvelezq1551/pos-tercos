@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
+import { log } from './logger';
 
 /**
  * Driver de impresora térmica ESC/POS. Recibe bytes ya renderizados y los
@@ -199,9 +200,11 @@ async function writeWindowsRaw(printerName: string, bytes: Buffer): Promise<void
   const scriptFile = join(tmpdir(), `tercos-rawprint-${stamp}.ps1`);
   await writeFile(dataFile, bytes);
   await writeFile(scriptFile, PS_RAW_SCRIPT, 'utf8');
+  log(`[driver] winspool: imprimiendo ${bytes.length}B en "${printerName}" (script ${scriptFile})`);
+  const t0 = Date.now();
   try {
     await new Promise<void>((res, rej) => {
-      execFile(
+      const child = execFile(
         'powershell.exe',
         [
           '-NoProfile',
@@ -215,12 +218,21 @@ async function writeWindowsRaw(printerName: string, bytes: Buffer): Promise<void
           '-DataFile',
           dataFile,
         ],
-        { windowsHide: true, timeout: 15000 },
-        (err, _stdout, stderr) => {
-          if (err) rej(new Error(stderr?.trim() || err.message));
-          else res();
+        { windowsHide: true, timeout: 20000 },
+        (err, stdout, stderr) => {
+          const ms = Date.now() - t0;
+          if (stdout?.trim()) log(`[driver] winspool stdout (${ms}ms): ${stdout.trim()}`);
+          if (stderr?.trim()) log(`[driver] winspool stderr (${ms}ms): ${stderr.trim()}`);
+          if (err) {
+            log(`[driver] winspool ✗ (${ms}ms) code=${(err as { code?: number }).code ?? '?'} killed=${(err as { killed?: boolean }).killed ?? false}: ${err.message}`);
+            rej(new Error(stderr?.trim() || err.message));
+          } else {
+            log(`[driver] winspool ✓ "${printerName}" en ${ms}ms`);
+            res();
+          }
         },
       );
+      child.on('error', (e) => log(`[driver] winspool spawn error: ${e.message}`));
     });
   } finally {
     await rm(dataFile, { force: true }).catch(() => undefined);

@@ -9,7 +9,7 @@
     "test-print": "tsx src/test-print.ts",
     "build": "tsc",
     "bundle": "node build.mjs",
-    "package:win": "node build.mjs && npx -y @yao-pkg/pkg@latest dist/agent.cjs --targets node20-win-x64 --output dist/tercos-print-agent.exe",
+    "package:win": "node build.mjs && npx -y @yao-pkg/pkg@latest dist/agent.cjs --targets node22-win-x64 --output dist/tercos-print-agent.exe --public",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
