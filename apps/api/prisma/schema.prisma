@@ -164,6 +164,8 @@ model Subproduct {
   /// Umbral mínimo de stock (en `unit`). Si stock cae bajo este nivel
   /// debería sugerirse producir más. 0 = sin umbral.
   thresholdMin        Decimal             @default(0) @db.Decimal(14, 4) @map("threshold_min")
+  /// Tamaño de una porción, en `unit`. Null = sin porción definida.
+  portionSize         Decimal?            @db.Decimal(14, 4) @map("portion_size")
   isActive            Boolean             @default(true) @map("is_active")
   createdAt           DateTime            @default(now()) @map("created_at")
   updatedAt           DateTime            @updatedAt @map("updated_at")
@@ -183,6 +185,8 @@ model Ingredient {
   unitRecipe       String              @map("unit_recipe")
   conversionFactor Decimal             @map("conversion_factor") @db.Decimal(14, 6)
   thresholdMin     Decimal             @default(0) @map("threshold_min") @db.Decimal(14, 4)
+  /// Tamaño de una porción, en unitRecipe (ej. 150 = 150 g/porción). Null = sin porción.
+  portionSize      Decimal?            @map("portion_size") @db.Decimal(14, 4)
   /// Costo histórico (FASE 4 ajustes 2.2). En unitPurchase. Auto-actualizado al confirmar facturas.
   lastUnitCost     Decimal?            @map("last_unit_cost") @db.Decimal(14, 4)
   lastUnitCostDate DateTime?           @map("last_unit_cost_date")
@@ -237,6 +241,9 @@ model InventoryMovement {
   sourceId       String?               @map("source_id")
   userId         String?               @map("user_id")
   notes          String?
+  /// Foto de evidencia (#6). Storage key de la foto que sube el cocinero al
+  /// registrar una producción. Se guarda en el movement +N de la tanda.
+  evidenceKey    String?               @map("evidence_key")
   idempotencyKey String?               @unique @map("idempotency_key")
   createdAt      DateTime              @default(now()) @map("created_at")
   entityType     StockableType         @map("entity_type")
@@ -417,6 +424,17 @@ model Sale {
   subtotal                      Decimal         @db.Decimal(14, 2)
   discountTotal                 Decimal         @default(0) @map("discount_total") @db.Decimal(14, 2)
   total                         Decimal         @db.Decimal(14, 2)
+  /// Cuenta abierta (#3): venta COUNTER que vive en PENDIENTE_PAGO
+  /// indefinidamente (cliente conocido). Exenta del sweep de abandonadas.
+  isOpenTab                     Boolean         @default(false) @map("is_open_tab")
+  /// Descuento manual (#5b): motivo obligatorio cuando hay descuento manual.
+  discountReason                String?         @map("discount_reason")
+  /// Descuento manual sobre el TOTAL: 'FIXED' | 'PERCENT' (CHECK en DB).
+  orderDiscountKind             String?         @map("order_discount_kind")
+  orderDiscountValue            Decimal?        @map("order_discount_value") @db.Decimal(14, 2)
+  /// Monto resultante del descuento sobre el total (0 si no hay).
+  /// discount_total = Σ line_discount + order_discount_amount.
+  orderDiscountAmount           Decimal         @default(0) @map("order_discount_amount") @db.Decimal(14, 2)
   paymentMethod                 PaymentMethod?  @map("payment_method")
   paidAt                        DateTime?       @map("paid_at")
   /// Momento en que la cocina marcó LISTO_DESPACHO. Ordena la cola de
@@ -474,6 +492,14 @@ model SaleItem {
   lineSubtotal       Decimal      @map("line_subtotal") @db.Decimal(14, 2)
   lineDiscount       Decimal      @default(0) @map("line_discount") @db.Decimal(14, 2)
   lineTotal          Decimal      @map("line_total") @db.Decimal(14, 2)
+  /// Comanda incremental (#3): unidades de esta línea YA enviadas a cocina.
+  /// La comanda de una cuenta abierta imprime quantity - sent_to_kitchen_qty.
+  sentToKitchenQty   Int          @default(0) @map("sent_to_kitchen_qty")
+  sentToKitchenAt    DateTime?    @map("sent_to_kitchen_at")
+  /// Descuento manual por línea (#5b): 'FIXED' | 'PERCENT' (CHECK en DB).
+  /// El monto resultante vive en line_discount (appliedPromotionId queda null).
+  manualDiscountKind  String?     @map("manual_discount_kind")
+  manualDiscountValue Decimal?    @map("manual_discount_value") @db.Decimal(14, 2)
   appliedPromotion   Promotion?   @relation(fields: [appliedPromotionId], references: [id])
   product            Product      @relation(fields: [productId], references: [id])
   sale               Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
@@ -842,9 +868,13 @@ enum SaleType {
 }
 
 /// Estado del ciclo de vida de una venta (solo COUNTER + WEB_PICKUP).
-/// COUNTER: PENDIENTE_PAGO -> PAGADO -> EN_PREPARACION -> LISTO_DESPACHO
-/// -> ENTREGADO (retirado). PENDIENTE_PAGO -> CANCELADO_NO_PAGO, o
-/// cualquier -> CANCELADO_SIN_REEMBOLSO / VOID.
+/// Ciclo vigente (turnero/KDS eliminados, CLAUDE.md §7.v10):
+///   COUNTER:     PENDIENTE_PAGO -> PAGADO (terminal).
+///   WEB_PICKUP:  PENDIENTE_PAGO -> PAGADO -> LISTO_DESPACHO (terminal).
+///   Cancelaciones: PENDIENTE_PAGO -> CANCELADO_NO_PAGO; cualquiera ->
+///   CANCELADO_SIN_REEMBOLSO / VOID.
+/// EN_PREPARACION y ENTREGADO quedan DORMIDOS (solo data histórica; ningún
+/// código nuevo los escribe).
 enum SaleStatus {
   PENDIENTE_PAGO
   PAGADO
@@ -966,6 +996,7 @@ enum CortesiaStatus {
   PENDING
   APPROVED
   REJECTED
+  REVERSED
 }
 
 /// Pagos efectivos de costos fijos. Un registro = un costo fijo × (año, mes).
@@ -1011,6 +1042,13 @@ model StockCount {
   countedQty   Decimal       @db.Decimal(14, 4) @map("counted_qty")
   ledgerQty    Decimal       @db.Decimal(14, 4) @map("ledger_qty")
   difference   Decimal       @db.Decimal(14, 4)
+  /// Conteo del cocinero (#7): nace PENDING y NO ajusta stock hasta que el admin
+  /// aprueba (recién ahí se materializa la diferencia). Los conteos del admin
+  /// (o históricos) son APPROVED directo. Default APPROVED por eso.
+  status       CountStatus   @default(APPROVED)
+  resolvedById String?       @map("resolved_by_id")
+  resolvedAt   DateTime?     @map("resolved_at")
+  resolverNote String?       @map("resolver_note")
   userId       String?       @map("user_id")
   notes        String?
   createdAt    DateTime      @default(now()) @map("created_at")
@@ -1022,7 +1060,14 @@ model StockCount {
   @@index([entityType, ingredientId, createdAt(sort: Desc)])
   @@index([entityType, productId, createdAt(sort: Desc)])
   @@index([entityType, subproductId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
   @@map("stock_counts")
+}
+
+enum CountStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 /// Pagos de una venta — fuente ÚNICA de verdad del método de pago. El cobro
@@ -1247,4 +1292,66 @@ model BusinessConfig {
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("business_config")
+}
+
+// ====================================================================
+// COCINA (app del cocinero) — incidencias + checklist apertura/cierre
+// ====================================================================
+
+enum KitchenIncidentCategory {
+  INSUMO
+  EQUIPO
+  PRODUCCION
+  OTRO
+}
+
+enum ChecklistType {
+  OPEN
+  CLOSE
+}
+
+/// Bitácora de incidencias que el cocinero deja para el dueño (insumo en mal
+/// estado, equipo, tanda perdida…). FK a usuario relation-less (se resuelve el
+/// nombre en el service), igual que treasury_movements.actorId.
+model KitchenIncident {
+  id           String                  @id @default(uuid())
+  category     KitchenIncidentCategory
+  note         String
+  authorId     String                  @map("author_id")
+  resolvedAt   DateTime?               @map("resolved_at")
+  resolvedById String?                 @map("resolved_by_id")
+  createdAt    DateTime                @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@index([resolvedAt])
+  @@map("kitchen_incidents")
+}
+
+/// Ítem del checklist de apertura/cierre de cocina (lo administra el admin/dueño).
+model ChecklistItem {
+  id        String        @id @default(uuid())
+  type      ChecklistType
+  label     String
+  sortOrder Int           @default(0) @map("sort_order")
+  isActive  Boolean       @default(true) @map("is_active")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@index([type, isActive, sortOrder])
+  @@map("checklist_items")
+}
+
+/// Una rutina de checklist (apertura/cierre) completada en un día de negocio.
+/// `day` = YYYY-MM-DD local. Único por (type, day): la rutina se cierra una vez
+/// al día (re-completar hace upsert).
+model ChecklistCompletion {
+  id            String        @id @default(uuid())
+  type          ChecklistType
+  day           String
+  doneItemIds   String[]      @map("done_item_ids")
+  completedById String        @map("completed_by_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([type, day])
+  @@map("checklist_completions")
 }
