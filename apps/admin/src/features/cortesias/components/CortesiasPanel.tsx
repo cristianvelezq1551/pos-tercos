@@ -3,28 +3,36 @@
 import type { CortesiaRequest, CortesiaStatus } from '@pos-tercos/types';
 import { Badge, Button, Card, EmptyState, Input, Money, cn, formatCop, formatDate } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
-import { approveCortesia, getCortesiaGivenSummary, listCortesias, rejectCortesia } from '../api/client';
+import {
+  approveCortesia,
+  getCortesiaGivenSummary,
+  listCortesias,
+  rejectCortesia,
+  reverseCortesia,
+} from '../api/client';
 
 const TABS: { key: string; label: string; status?: CortesiaStatus }[] = [
+  { key: 'APPROVED', label: 'Registradas', status: 'APPROVED' },
+  { key: 'REVERSED', label: 'Anuladas', status: 'REVERSED' },
   { key: 'PENDING', label: 'Sin revisar', status: 'PENDING' },
-  { key: 'APPROVED', label: 'Autorizadas', status: 'APPROVED' },
-  { key: 'REJECTED', label: 'Rechazadas', status: 'REJECTED' },
   { key: 'ALL', label: 'Todas' },
 ];
 
-const STATUS_TONE: Record<CortesiaStatus, 'warning' | 'success' | 'danger'> = {
+const STATUS_TONE: Record<CortesiaStatus, 'warning' | 'success' | 'danger' | 'neutral'> = {
   PENDING: 'warning',
   APPROVED: 'success',
   REJECTED: 'danger',
+  REVERSED: 'neutral',
 };
 const STATUS_LABEL: Record<CortesiaStatus, string> = {
   PENDING: 'Sin revisar',
-  APPROVED: 'Autorizada',
+  APPROVED: 'Registrada',
   REJECTED: 'Rechazada',
+  REVERSED: 'Anulada',
 };
 
 export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
-  const [tab, setTab] = useState('PENDING');
+  const [tab, setTab] = useState('APPROVED');
   const [rows, setRows] = useState<CortesiaRequest[]>(initial);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -64,12 +72,13 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
     void loadSummary();
   }, [loadSummary]);
 
-  const resolve = async (id: string, action: 'approve' | 'reject') => {
+  const resolve = async (id: string, action: 'approve' | 'reject' | 'reverse') => {
     const note = notes[id]?.trim() || undefined;
     setBusyId(id);
     try {
       if (action === 'approve') await approveCortesia(id, note);
-      else await rejectCortesia(id, note);
+      else if (action === 'reject') await rejectCortesia(id, note);
+      else await reverseCortesia(id, note);
       await Promise.all([refresh(tab), loadSummary()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error resolviendo la cortesía');
@@ -90,7 +99,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <p>{monthTotal.count} autorizada{monthTotal.count === 1 ? '' : 's'}</p>
+          <p>{monthTotal.count} registrada{monthTotal.count === 1 ? '' : 's'}</p>
           <p className="mt-0.5">costo FIFO · coincide con Estado financiero</p>
         </div>
       </Card>
@@ -188,6 +197,26 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
                       {busyId === c.id ? '…' : 'Autorizar'}
                     </Button>
                   </span>
+                </div>
+              ) : c.status === 'APPROVED' ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    type="text"
+                    value={notes[c.id] ?? ''}
+                    onChange={(e) => setNotes((p) => ({ ...p, [c.id]: e.target.value }))}
+                    placeholder="Motivo de la anulación (opcional)"
+                    maxLength={200}
+                    className="flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyId === c.id}
+                    onClick={() => void resolve(c.id, 'reverse')}
+                    title="Anula la cortesía: devuelve el stock y la saca del costo de cortesías"
+                  >
+                    {busyId === c.id ? '…' : 'Anular'}
+                  </Button>
                 </div>
               ) : c.resolverNote ? (
                 <p className="text-[0.6875rem] text-muted-foreground">Nota: {c.resolverNote}</p>

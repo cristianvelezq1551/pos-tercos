@@ -1,4 +1,4 @@
-import type { AuditLogEntry } from '@pos-tercos/types';
+import { USER_ROLE_LABELS, type AuditLogEntry } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
 
 /**
@@ -16,13 +16,7 @@ const REASON_LABEL: Record<string, string> = {
   missing_pin: 'no envió PIN',
 };
 
-const ROLE_LABEL: Record<string, string> = {
-  DUENO: 'Dueño',
-  ADMIN_OPERATIVO: 'Administrador operativo',
-  CAJERO: 'Cajero',
-  COCINERO: 'Cocinero',
-  TRABAJADOR: 'Trabajador',
-};
+const ROLE_LABEL: Record<string, string> = USER_ROLE_LABELS;
 
 const PAY_TYPE_LABEL: Record<string, string> = { MONTHLY: 'Mensual', DAILY: 'Diario' };
 

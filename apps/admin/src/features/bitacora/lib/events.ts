@@ -20,11 +20,14 @@ const ANULACIONES: AuditAction[] = ['SALE_VOIDED', 'SALE_REFUNDED'];
 const CAJON: AuditAction[] = ['CASH_DRAWER_OPENED', 'CASH_DRAWER_OPENED_NO_SALE'];
 const APROBACIONES: AuditAction[] = ['APPROVAL_GRANTED', 'APPROVAL_DENIED', 'APPROVAL_PIN_SET'];
 const SESIONES: AuditAction[] = ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED', 'AUTH_LOGOUT'];
+// Histórico: KDS_ORDER_DELAYED ya no se emite (cocina/KDS eliminados). El grupo
+// se conserva para poder filtrar registros previos a la eliminación.
 const COCINA: AuditAction[] = ['KDS_ORDER_DELAYED'];
 const CORTESIAS: AuditAction[] = [
   'CORTESIA_REQUESTED',
   'CORTESIA_APPROVED',
   'CORTESIA_REJECTED',
+  'CORTESIA_REVERSED',
 ];
 const PERSONAL: AuditAction[] = [
   'USER_SALARY_CHANGED',
@@ -43,7 +46,7 @@ export const BITACORA_GROUPS: BitacoraGroup[] = [
   { key: 'aprobaciones', label: 'Aprobaciones', actions: APROBACIONES },
   { key: 'sesiones', label: 'Sesiones', actions: SESIONES },
   { key: 'personal', label: 'Personal / Nómina', actions: PERSONAL },
-  { key: 'cocina', label: 'Cocina (KDS)', actions: COCINA },
+  { key: 'cocina', label: 'Cocina (histórico)', actions: COCINA },
 ];
 
 export type EventTone = 'neutral' | 'success' | 'warning' | 'danger';
@@ -116,14 +119,20 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
       };
     case 'CORTESIA_APPROVED':
       return {
-        label: 'Autorizó cortesía',
-        detail: `${m.costAmount != null ? `Costo ${cop(m.costAmount)}` : ''}${m.note ? ` · ${String(m.note)}` : ''}`.trim() || null,
-        tone: 'success',
+        label: 'Registró cortesía',
+        detail: `${m.quantity ? `${String(m.quantity)}× ` : ''}${m.reason ? String(m.reason) : ''}${m.costAmount != null ? ` · costo ${cop(m.costAmount)}` : ''}`.trim() || null,
+        tone: 'warning',
       };
     case 'CORTESIA_REJECTED':
       return {
         label: 'Rechazó cortesía',
         detail: m.note ? `Motivo: ${String(m.note)}` : null,
+        tone: 'danger',
+      };
+    case 'CORTESIA_REVERSED':
+      return {
+        label: 'Anuló cortesía',
+        detail: `${m.costAmount != null ? `Costo ${cop(m.costAmount)}` : ''}${m.note ? ` · ${String(m.note)}` : ''}`.trim() || null,
         tone: 'danger',
       };
     case 'CASH_DRAWER_OPENED':
@@ -179,9 +188,11 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
         tone: 'neutral',
       };
     case 'KDS_ORDER_DELAYED':
+      // Histórico: este evento ya no se emite (cocina/KDS eliminados), pero la
+      // bitácora lo sigue mostrando para registros previos.
       return {
-        label: 'Pedido demorado en cocina',
-        detail: `${m.turnNumber ? `Turno ${String(m.turnNumber)} · ` : ''}${String(m.elapsedMin ?? '?')} min (umbral ${String(m.thresholdMin ?? 10)})`,
+        label: 'Pedido demorado en cocina (histórico)',
+        detail: `Recibo #${String(m.receiptNumber ?? '?')} · ${String(m.elapsedMin ?? '?')} min (umbral ${String(m.thresholdMin ?? 10)})`,
         tone: 'warning',
       };
     default:

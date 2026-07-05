@@ -23,12 +23,18 @@ interface FormState {
   unitRecipe: string;
   conversionFactor: number | null;
   thresholdMin: number | null;
+  portionSize: number | null;
   isActive: boolean;
 }
 
 export function IngredientForm({ initial }: IngredientFormProps) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
+  // `submitting` cubre la llamada de red (useTransition NO la cubre: el await
+  // corre fuera de startTransition, y sin esto un doble-click creaba
+  // duplicados con red lenta).
+  const [submitting, setSubmitting] = useState(false);
+  const pending = transitionPending || submitting;
   const [error, setError] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [form, setForm] = useState<FormState>(() => ({
@@ -37,6 +43,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
     unitRecipe: initial?.unitRecipe ?? '',
     conversionFactor: initial?.conversionFactor ?? null,
     thresholdMin: initial?.thresholdMin ?? 0,
+    portionSize: initial?.portionSize ?? null,
     isActive: initial?.isActive ?? true,
   }));
 
@@ -44,6 +51,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (pending) return;
     setError(null);
 
     if (form.conversionFactor === null || form.conversionFactor <= 0) {
@@ -54,7 +62,12 @@ export function IngredientForm({ initial }: IngredientFormProps) {
       setError('El mínimo de alerta debe ser un número ≥ 0.');
       return;
     }
+    if (form.portionSize !== null && form.portionSize <= 0) {
+      setError('El tamaño de porción debe ser mayor a 0 (o dejarse vacío).');
+      return;
+    }
 
+    setSubmitting(true);
     try {
       if (isEdit && initial) {
         await updateIngredient(initial.id, {
@@ -63,6 +76,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           unitRecipe: form.unitRecipe,
           conversionFactor: form.conversionFactor,
           thresholdMin: form.thresholdMin,
+          portionSize: form.portionSize,
           isActive: form.isActive,
         });
       } else {
@@ -72,6 +86,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           unitRecipe: form.unitRecipe,
           conversionFactor: form.conversionFactor,
           thresholdMin: form.thresholdMin,
+          portionSize: form.portionSize,
         });
       }
       startTransition(() => {
@@ -80,12 +95,15 @@ export function IngredientForm({ initial }: IngredientFormProps) {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error desconocido');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDeactivate = async () => {
-    if (!initial) return;
+    if (!initial || pending) return;
     setError(null);
+    setSubmitting(true);
     try {
       await deactivateIngredient(initial.id);
       startTransition(() => {
@@ -95,6 +113,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error desconocido');
     } finally {
+      setSubmitting(false);
       setConfirmDeactivate(false);
     }
   };
@@ -178,6 +197,20 @@ export function IngredientForm({ initial }: IngredientFormProps) {
               min={0}
               disabled={pending}
               placeholder="0"
+            />
+          </FormField>
+
+          <FormField
+            label="Tamaño de porción (opcional)"
+            hint={`En ${form.unitRecipe || 'unidad de receta'}. El inventario mostrará las porciones disponibles (stock ÷ porción). Vacío = sin porciones.`}
+          >
+            <NumberInput
+              value={form.portionSize}
+              onChange={(v) => setForm((f) => ({ ...f, portionSize: v }))}
+              decimals={4}
+              min={0}
+              disabled={pending}
+              placeholder="150"
             />
           </FormField>
         </div>

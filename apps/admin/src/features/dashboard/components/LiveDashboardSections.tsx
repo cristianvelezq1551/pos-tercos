@@ -23,7 +23,7 @@ import { getDashboardSummary } from '../api/client';
 const POLL_MS = 15_000;
 
 /**
- * Stats del día + cocina en vivo. Se hidrata con el snapshot SSR y luego se
+ * Stats del día + pedidos web en vivo. Se hidrata con el snapshot SSR y luego se
  * autoactualiza cada 15s vía polling al endpoint del dashboard, MÁS un refresco
  * inmediato al volver el foco/pestaña (así una venta del cajero aparece apenas
  * el dueño mira la pantalla, sin esperar el próximo tick). Soft-update: no
@@ -149,17 +149,17 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
         </div>
       </Section>
 
-      <Section eyebrow="Cocina" title="En vivo" size="md">
+      <Section eyebrow="Pedidos web" title="En vivo" size="md">
         <div className="grid gap-3 sm:grid-cols-3">
           <KitchenCard
-            label="En cocina"
-            value={summary.ordersInKitchen}
+            label="Por marcar listo"
+            value={summary.webOrdersToPrepare}
             icon={<ChefHat className="h-5 w-5" strokeWidth={1.75} />}
             tone="warning"
           />
           <KitchenCard
-            label="Listos para entregar"
-            value={summary.ordersReady}
+            label="Listos para retirar (hoy)"
+            value={summary.webOrdersReady}
             icon={<BrandIcon name="flame" className="h-5 w-5" />}
             tone="success"
           />

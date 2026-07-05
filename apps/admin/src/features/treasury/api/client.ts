@@ -14,6 +14,7 @@ import {
 } from '@pos-tercos/types';
 import { z } from 'zod';
 import { request, validateInput } from '../../../lib/api-client';
+import { randomUUID } from '../../../lib/uuid';
 
 const MovementListSchema = z.array(TreasuryMovementSchema);
 
@@ -38,7 +39,7 @@ export function createTransfer(input: CreateTransfer): Promise<TreasuryMovement>
   validateInput(CreateTransferSchema, input);
   return request(
     '/treasury/transfer',
-    { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': crypto.randomUUID() } },
+    { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': randomUUID() } },
     TreasuryMovementSchema,
   );
 }
@@ -47,7 +48,7 @@ export function createAdjustment(input: CreateAdjustment): Promise<TreasuryMovem
   validateInput(CreateAdjustmentSchema, input);
   return request(
     '/treasury/adjustment',
-    { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': crypto.randomUUID() } },
+    { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': randomUUID() } },
     TreasuryMovementSchema,
   );
 }

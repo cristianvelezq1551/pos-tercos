@@ -2,7 +2,7 @@
 
 import type { DisplaySlide } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, Textarea } from '@pos-tercos/ui';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createSlide,
   listSlides,
@@ -30,9 +30,25 @@ export function SlideEditModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Blob URL del preview: se revoca al re-elegir foto y al desmontar (sin
+  // esto, cada selección filtraba un blob en memoria).
+  const blobUrlRef = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    },
+    [],
+  );
+
   const pick = (f: File | null) => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
     setFile(f);
-    setPreview(f ? URL.createObjectURL(f) : (slide?.imageUrl ?? null));
+    const url = f ? URL.createObjectURL(f) : null;
+    blobUrlRef.current = url;
+    setPreview(url ?? slide?.imageUrl ?? null);
   };
 
   const valid =
@@ -52,6 +68,7 @@ export function SlideEditModal({
       onSaved(await listSlides());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error guardando');
+    } finally {
       setBusy(false);
     }
   };

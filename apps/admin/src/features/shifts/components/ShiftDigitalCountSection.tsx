@@ -1,12 +1,7 @@
-import type { ShiftSessionDetail } from '@pos-tercos/types';
+import { PAYMENT_METHOD_LABELS, type ShiftSessionDetail } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
 
-const METHOD_LABELS: Record<string, string> = {
-  NEQUI: 'Nequi',
-  DAVIPLATA: 'Daviplata',
-  QR_BANCOLOMBIA: 'QR Bancolombia',
-  TRANSFER: 'Transferencia',
-};
+const METHOD_LABELS: Record<string, string> = PAYMENT_METHOD_LABELS;
 
 /** Arqueo digital del cierre: esperado (ventas) vs lo que mostró cada app. */
 export function ShiftDigitalCountSection({

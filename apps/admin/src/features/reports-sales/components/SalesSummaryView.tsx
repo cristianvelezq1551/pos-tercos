@@ -1,4 +1,4 @@
-import type { SalesSummary } from '@pos-tercos/types';
+import { PAYMENT_METHOD_LABELS, type PaymentMethod, type SalesSummary } from '@pos-tercos/types';
 import { formatCop, formatNumber } from '../../../lib/format';
 
 interface SalesSummaryViewProps {
@@ -10,13 +10,8 @@ const TYPE_LABEL: Record<string, string> = {
   WEB_PICKUP: 'Web · recoger',
 };
 
-const METHOD_LABEL: Record<string, string> = {
-  CASH: 'Efectivo',
-  NEQUI: 'Nequi',
-  DAVIPLATA: 'DaviPlata',
-  QR_BANCOLOMBIA: 'QR Bancolombia',
-  TRANSFER: 'Transferencia',
-};
+const methodLabel = (m: string): string =>
+  PAYMENT_METHOD_LABELS[m as PaymentMethod] ?? m;
 
 export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
   const maxBucketRevenue = summary.buckets.reduce(
@@ -93,7 +88,7 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
           title="Por método de pago"
           rows={summary.byMethod.map((m) => ({
             key: m.method,
-            label: METHOD_LABEL[m.method] ?? m.method,
+            label: methodLabel(m.method),
             count: m.count,
             revenue: m.revenue,
           }))}

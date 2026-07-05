@@ -34,3 +34,12 @@ export function rejectCortesia(id: string, note?: string): Promise<CortesiaReque
     CortesiaRequestSchema,
   );
 }
+
+/** Anula una cortesía registrada por error: devuelve stock y la saca del COGS. */
+export function reverseCortesia(id: string, note?: string): Promise<CortesiaRequest> {
+  return request(
+    `/cortesias/${id}/reverse`,
+    { method: 'POST', body: JSON.stringify({ note }) },
+    CortesiaRequestSchema,
+  );
+}

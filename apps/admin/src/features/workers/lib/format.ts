@@ -1,18 +1,12 @@
-import type { PayType } from '@pos-tercos/types';
+import { USER_ROLE_LABELS, type PayType, type UserRole } from '@pos-tercos/types';
 
 export const PAY_TYPE_LABEL: Record<PayType, string> = {
   MONTHLY: 'Mensual',
   DAILY: 'Diario',
 };
 
-export const ROLE_LABEL: Record<string, string> = {
-  DUENO: 'Dueño',
-  ADMIN_OPERATIVO: 'Admin operativo',
-  CAJERO: 'Cajero',
-  COCINERO: 'Cocinero',
-  TRABAJADOR: 'Trabajador',
-};
+export const ROLE_LABEL = USER_ROLE_LABELS;
 
 export function roleLabel(role: string): string {
-  return ROLE_LABEL[role] ?? role;
+  return USER_ROLE_LABELS[role as UserRole] ?? role;
 }

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Chip, Container, PageHeader } from '@pos-tercos/ui';
 import { CalendarDays } from 'lucide-react';
-import { WeeklyPayrollView } from '../../../../features/workers/components/WeeklyPayrollView';
+import { WeeklyPayrollView } from '../../../../features/workers';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
 import { requireRole } from '../../../../lib/guards';

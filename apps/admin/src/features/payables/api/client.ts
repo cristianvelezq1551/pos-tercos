@@ -6,6 +6,7 @@ import {
 } from '@pos-tercos/types';
 import { z } from 'zod';
 import { request, validateInput } from '../../../lib/api-client';
+import { randomUUID } from '../../../lib/uuid';
 
 const PayableListSchema = z.array(PayableCommitmentSchema);
 
@@ -30,7 +31,7 @@ export async function payPayable(
     method: 'POST',
     credentials: 'include',
     body: fd,
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': randomUUID() },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };

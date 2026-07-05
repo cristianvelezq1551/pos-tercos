@@ -27,7 +27,6 @@ export function ShiftSessionOrdersTable({ orders }: { orders: ShiftSessionOrder[
         <thead className="bg-muted/40">
           <tr>
             <Th>Recibo</Th>
-            <Th>Turno</Th>
             <Th>Tipo</Th>
             <Th>Cliente</Th>
             <Th>Método</Th>
@@ -44,7 +43,6 @@ export function ShiftSessionOrdersTable({ orders }: { orders: ShiftSessionOrder[
                   #{o.receiptNumber}
                 </span>
               </Td>
-              <Td>{o.turnNumber !== null ? o.turnNumber : '—'}</Td>
               <Td>{TYPE_LABEL[o.type] ?? o.type}</Td>
               <Td>{o.customerName ?? '—'}</Td>
               <Td>{o.paymentMethod ? METHOD_LABEL[o.paymentMethod] ?? o.paymentMethod : '—'}</Td>

@@ -1,12 +1,7 @@
-import type { UserRole } from '@pos-tercos/types';
+import { USER_ROLE_LABELS, type UserRole } from '@pos-tercos/types';
 
-export const ROLE_LABEL: Record<UserRole, string> = {
-  DUENO: 'Dueño',
-  ADMIN_OPERATIVO: 'Admin operativo',
-  CAJERO: 'Cajero',
-  COCINERO: 'Cocinero',
-  TRABAJADOR: 'Trabajador',
-};
+/** Re-export del catálogo canónico de @pos-tercos/types. */
+export const ROLE_LABEL = USER_ROLE_LABELS;
 
 export const ROLE_OPTIONS: { value: UserRole; label: string }[] = (
   ['CAJERO', 'COCINERO', 'TRABAJADOR', 'ADMIN_OPERATIVO', 'DUENO'] as UserRole[]

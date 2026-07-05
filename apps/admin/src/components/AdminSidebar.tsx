@@ -32,6 +32,7 @@ import {
   Truck,
   Users,
   Wallet,
+  CookingPot,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -39,6 +40,9 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import type { UserRole } from '@pos-tercos/types';
 import { useNavProgress } from './nav-progress';
+// Deep import A PROPÓSITO: el barrel de cortesías re-exporta server.ts
+// (next/headers) y este componente es 'use client' → romper el barrel acá
+// rompe el build de producción. Excepción documentada a la regla del barrel.
 import { useCortesiaPendingCount } from '../features/cortesias/hooks/usePendingCount';
 
 interface NavItem {
@@ -55,6 +59,7 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Operación', label: 'Turnero', href: '/turnero', icon: MonitorPlay },
   { section: 'Operación', label: 'Publicidad web', href: '/publicidad', icon: Megaphone },
   { section: 'Operación', label: 'Solicitudes', href: '/solicitudes', icon: Gift },
+  { section: 'Operación', label: 'Cocina', href: '/cocina', icon: CookingPot },
   { section: 'Catálogo', label: 'Productos', href: '/products', icon: ShoppingBasket },
   { section: 'Catálogo', label: 'Subproductos', href: '/subproducts', icon: Layers },
   { section: 'Catálogo', label: 'Insumos', href: '/ingredients', icon: Package },

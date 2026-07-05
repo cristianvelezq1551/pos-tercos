@@ -23,13 +23,19 @@ interface FormState {
   yield: number | null;
   unit: string;
   thresholdMin: number | null;
+  portionSize: number | null;
   preparationSteps: string[];
   isActive: boolean;
 }
 
 export function SubproductForm({ initial }: SubproductFormProps) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [transitionPending, startTransition] = useTransition();
+  // `submitting` cubre la llamada de red (useTransition NO la cubre: el await
+  // corre fuera de startTransition, y sin esto un doble-click creaba
+  // duplicados con red lenta).
+  const [submitting, setSubmitting] = useState(false);
+  const pending = transitionPending || submitting;
   const [error, setError] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [form, setForm] = useState<FormState>(() => ({
@@ -37,6 +43,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     yield: initial?.yield ?? null,
     unit: initial?.unit ?? 'unidad',
     thresholdMin: initial?.thresholdMin ?? null,
+    portionSize: initial?.portionSize ?? null,
     preparationSteps: initial?.preparationSteps ?? [],
     isActive: initial?.isActive ?? true,
   }));
@@ -45,13 +52,19 @@ export function SubproductForm({ initial }: SubproductFormProps) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (pending) return;
     setError(null);
 
     if (form.yield === null || form.yield <= 0) {
       setError('El rendimiento debe ser un número positivo.');
       return;
     }
+    if (form.portionSize !== null && form.portionSize <= 0) {
+      setError('El tamaño de porción debe ser mayor a 0 (o dejarse vacío).');
+      return;
+    }
 
+    setSubmitting(true);
     try {
       if (isEdit && initial) {
         await updateSubproduct(initial.id, {
@@ -59,6 +72,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           yield: form.yield,
           unit: form.unit,
           thresholdMin: form.thresholdMin ?? 0,
+          portionSize: form.portionSize,
           preparationSteps: form.preparationSteps,
           isActive: form.isActive,
         });
@@ -68,6 +82,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           yield: form.yield,
           unit: form.unit,
           thresholdMin: form.thresholdMin ?? 0,
+          portionSize: form.portionSize,
           preparationSteps: form.preparationSteps,
         });
       }
@@ -77,12 +92,15 @@ export function SubproductForm({ initial }: SubproductFormProps) {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error desconocido');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDeactivate = async () => {
-    if (!initial) return;
+    if (!initial || pending) return;
     setError(null);
+    setSubmitting(true);
     try {
       await deactivateSubproduct(initial.id);
       startTransition(() => {
@@ -92,6 +110,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error desconocido');
     } finally {
+      setSubmitting(false);
       setConfirmDeactivate(false);
     }
   };
@@ -141,19 +160,35 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           </FormField>
         </div>
 
-        <FormField
-          label="Umbral mínimo de stock"
-          hint={`Si el stock cae bajo este nivel (en ${form.unit || 'unidad'}), aparece como "Falta producir" en el inventario. 0 = sin umbral.`}
-        >
-          <NumberInput
-            value={form.thresholdMin}
-            onChange={(v) => setForm((f) => ({ ...f, thresholdMin: v }))}
-            decimals={4}
-            min={0}
-            disabled={pending}
-            placeholder="0"
-          />
-        </FormField>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label="Umbral mínimo de stock"
+            hint={`Si el stock cae bajo este nivel (en ${form.unit || 'unidad'}), aparece como "Falta producir" en el inventario. 0 = sin umbral.`}
+          >
+            <NumberInput
+              value={form.thresholdMin}
+              onChange={(v) => setForm((f) => ({ ...f, thresholdMin: v }))}
+              decimals={4}
+              min={0}
+              disabled={pending}
+              placeholder="0"
+            />
+          </FormField>
+
+          <FormField
+            label="Tamaño de porción (opcional)"
+            hint={`En ${form.unit || 'unidad'}. El inventario mostrará las porciones disponibles (stock ÷ porción). Vacío = sin porciones.`}
+          >
+            <NumberInput
+              value={form.portionSize}
+              onChange={(v) => setForm((f) => ({ ...f, portionSize: v }))}
+              decimals={4}
+              min={0}
+              disabled={pending}
+              placeholder="1"
+            />
+          </FormField>
+        </div>
 
         <PreparationStepsField
           value={form.preparationSteps}

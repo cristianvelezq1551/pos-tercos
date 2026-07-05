@@ -54,6 +54,21 @@ export function StockTable({ rows }: StockTableProps) {
       cell: (r) => r.unitStock,
     },
     {
+      key: 'portions',
+      header: 'Porciones',
+      align: 'right',
+      numeric: true,
+      hideOnMobile: true,
+      cell: (r) =>
+        r.portions != null ? (
+          <span className="text-foreground" title={`Porción = ${r.portionSize} ${r.unitStock}`}>
+            <Quantity value={r.portions} maxDecimals={2} className="text-current" /> porc.
+          </span>
+        ) : (
+          <span className="text-ink-400">—</span>
+        ),
+    },
+    {
       key: 'threshold',
       header: 'Mínimo',
       align: 'right',

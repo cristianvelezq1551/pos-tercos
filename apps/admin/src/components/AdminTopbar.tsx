@@ -1,4 +1,4 @@
-import type { User } from '@pos-tercos/types';
+import { USER_ROLE_LABELS, type User, type UserRole } from '@pos-tercos/types';
 import { BrandLogo } from '@pos-tercos/brand';
 import { IconButton, Topbar, UserMenu } from '@pos-tercos/ui';
 import { Menu } from 'lucide-react';
@@ -43,12 +43,5 @@ export function AdminTopbar({ user, onMenuClick }: AdminTopbarProps) {
 }
 
 function roleLabel(role: string): string {
-  const map: Record<string, string> = {
-    DUENO: 'Dueño',
-    ADMIN_OPERATIVO: 'Administrador operativo',
-    ADMIN_FINANCIERO: 'Administrador financiero',
-    CAJERO: 'Cajero',
-    COCINERO: 'Cocinero',
-  };
-  return map[role] ?? role;
+  return USER_ROLE_LABELS[role as UserRole] ?? role;
 }

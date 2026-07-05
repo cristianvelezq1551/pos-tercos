@@ -83,12 +83,25 @@ export function MovementsTable({ rows }: MovementsTableProps) {
       key: 'notes',
       header: 'Notas',
       hideOnMobile: true,
-      cell: (m) =>
-        m.notes ? (
-          <span className="text-ink-600">{m.notes}</span>
-        ) : (
-          <span className="text-ink-300">—</span>
-        ),
+      cell: (m) => (
+        <span className="flex flex-wrap items-center gap-2">
+          {m.notes ? (
+            <span className="text-ink-600">{m.notes}</span>
+          ) : (
+            <span className="text-ink-300">—</span>
+          )}
+          {m.evidenceUrl ? (
+            <a
+              href={m.evidenceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              📷 Evidencia
+            </a>
+          ) : null}
+        </span>
+      ),
     },
     {
       key: 'user',

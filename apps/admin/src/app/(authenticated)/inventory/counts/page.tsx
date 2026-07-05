@@ -1,6 +1,6 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { ClipboardCheck } from 'lucide-react';
-import { CountTasksPanel, RecentCountsTable } from '../../../../features/stock-counts';
+import { CountTasksPanel, PendingCountsPanel, RecentCountsTable } from '../../../../features/stock-counts';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
 import type { CountTask, StockCount } from '@pos-tercos/types';
@@ -8,14 +8,15 @@ import type { CountTask, StockCount } from '@pos-tercos/types';
 export const dynamic = 'force-dynamic';
 
 async function loadData(): Promise<
-  { tasks: CountTask[]; recent: StockCount[] } | { error: string }
+  { tasks: CountTask[]; recent: StockCount[]; pending: StockCount[] } | { error: string }
 > {
   try {
-    const [tasks, recent] = await Promise.all([
+    const [tasks, recent, pending] = await Promise.all([
       serverFetchJson<CountTask[]>('/inventory/count-tasks?limit=5'),
       serverFetchJson<StockCount[]>('/inventory/counts?limit=30'),
+      serverFetchJson<StockCount[]>('/inventory/counts/pending'),
     ]);
-    return { tasks, recent };
+    return { tasks, recent, pending };
   } catch (err) {
     return { error: friendlyApiError(err) };
   }
@@ -42,6 +43,12 @@ export default async function InventoryCountsPage() {
           </p>
         ) : (
           <div className="space-y-8">
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Conteos del cocinero por aprobar
+              </h2>
+              <PendingCountsPanel initial={result.pending} />
+            </section>
             <CountTasksPanel tasks={result.tasks} />
             <section className="space-y-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
