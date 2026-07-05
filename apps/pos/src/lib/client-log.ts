@@ -72,6 +72,23 @@ export function logError(
   }
 }
 
+/**
+ * Migaja de diagnóstico (info, no error): queda en consola + en el ring buffer
+ * (`window.__posLogs()`) para reconstruir una secuencia (ej. impresión paso a
+ * paso) aunque haya salido bien. NO reporta al servidor (evita ruido/límite).
+ */
+export function logInfo(scope: string, message: string, context?: Record<string, unknown>): void {
+  try {
+    console.info(`[pos:${scope}]`, message, context ?? '');
+    if (typeof window === 'undefined') return;
+    const prev = readLogs();
+    prev.push({ at: new Date().toISOString(), scope, message, ...(context ? { context } : {}) });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prev.slice(-MAX_ENTRIES)));
+  } catch {
+    // El logger jamás propaga.
+  }
+}
+
 export function readLogs(): ClientLogEntry[] {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);

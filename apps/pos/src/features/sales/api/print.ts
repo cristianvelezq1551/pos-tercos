@@ -13,12 +13,19 @@
  * Los bytes siempre salen del print-agent LOCAL (misma PC que la impresora).
  * NO usa el diálogo del navegador (causaba papel infinito).
  */
-import type { Sale } from '@pos-tercos/types';
+import {
+  SendToKitchenResponseSchema,
+  type Sale,
+  type SendToKitchenResponse,
+} from '@pos-tercos/types';
 import { buildReceiptDataInput, type ReceiptDataInput } from '../lib/build-receipt-data';
 import { printersForDoc } from '../../printing/lib/printer-config';
+import { logError, logInfo } from '../../../lib/client-log';
 
 const AGENT_URL =
   process.env.NEXT_PUBLIC_PRINT_AGENT_URL ?? 'http://localhost:9120';
+/** Corte si el agent no responde (caído/colgado) — no colgar la UI del cajero. */
+const AGENT_TIMEOUT_MS = 15_000;
 
 export interface PrintOptions {
   /** Datos de la venta para imprimir offline si el backend no responde. */
@@ -32,8 +39,10 @@ export async function printReceipt(
   opts: PrintOptions = {},
 ): Promise<void> {
   const targets = printersForDoc('factura');
+  logInfo('print', 'recibo: inicio', { saleId, targets, agent: AGENT_URL });
   const escposBase64 = await tryBackendBytes(saleId);
   if (escposBase64) {
+    logInfo('print', 'recibo: bytes del backend OK', { saleId, bytes: escposBase64.length });
     await sendToTargets({ escposBase64 }, targets);
     return;
   }
@@ -43,6 +52,7 @@ export async function printReceipt(
       'No se pudo generar el recibo (sin conexión) y no hay datos para imprimirlo offline.',
     );
   }
+  logInfo('print', 'recibo: backend inalcanzable → respaldo offline', { saleId });
   const receipt = buildReceiptDataInput(opts.fallback, { reprint: opts.reprint });
   await sendToTargets({ receipt }, targets);
 }
@@ -57,14 +67,24 @@ export async function printReceipt(
  */
 export async function printComanda(
   saleId: string,
-  opts: { cancel?: boolean } = {},
+  opts: { cancel?: boolean; corrected?: boolean } = {},
 ): Promise<void> {
   const kitchen = printersForDoc('comanda-cocina');
   const full = printersForDoc('comanda-completa');
+  logInfo('print', 'comanda: inicio', {
+    saleId,
+    kitchen,
+    full,
+    cancel: !!opts.cancel,
+    corrected: !!opts.corrected,
+  });
 
   // Sin config de comandas → comportamiento histórico (una impresora default).
   if (kitchen.length === 0 && full.length === 0) {
-    const { escposBase64 } = await fetchComanda(saleId, { cancel: opts.cancel });
+    const { escposBase64 } = await fetchComanda(saleId, {
+      cancel: opts.cancel,
+      corrected: opts.corrected,
+    });
     await sendToTargets({ escposBase64 }, []);
     return;
   }
@@ -72,6 +92,7 @@ export async function printComanda(
   if (kitchen.length > 0) {
     const { escposBase64, itemCount } = await fetchComanda(saleId, {
       cancel: opts.cancel,
+      corrected: opts.corrected,
       variant: 'kitchen',
     });
     // No imprimir comanda de cocina vacía (pedido solo de bebidas), salvo que
@@ -84,10 +105,56 @@ export async function printComanda(
   if (full.length > 0) {
     const { escposBase64 } = await fetchComanda(saleId, {
       cancel: opts.cancel,
+      corrected: opts.corrected,
       variant: 'full',
     });
     await sendToTargets({ escposBase64 }, full);
   }
+}
+
+/**
+ * Cuentas abiertas (#3): manda a cocina SOLO lo pendiente. El backend estampa
+ * las líneas como enviadas y devuelve ambas variantes de comanda; acá se rutean
+ * a las impresoras igual que printComanda. Si no había nada pendiente
+ * (pendingCount 0) no se imprime nada.
+ */
+export async function sendTabToKitchen(saleId: string): Promise<SendToKitchenResponse> {
+  const res = await fetch(`/api/sales/${saleId}/send-to-kitchen`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `No se pudo enviar a cocina (${res.status})${text ? `: ${text.slice(0, 150)}` : ''}`,
+    );
+  }
+  const data = SendToKitchenResponseSchema.parse(await res.json());
+  if (data.pendingCount === 0) {
+    logInfo('print', 'send-to-kitchen: sin pendientes, nada que imprimir', { saleId });
+    return data;
+  }
+  const kitchen = printersForDoc('comanda-cocina');
+  const full = printersForDoc('comanda-completa');
+  logInfo('print', 'send-to-kitchen: imprimiendo tanda', {
+    saleId,
+    batch: data.batch,
+    lines: data.pendingCount,
+    kitchen,
+    full,
+  });
+  // Sin config de comandas → comportamiento histórico (una impresora default).
+  if (kitchen.length === 0 && full.length === 0) {
+    if (data.full) await sendToTargets({ escposBase64: data.full.escposBase64 }, []);
+    return data;
+  }
+  if (kitchen.length > 0 && data.kitchen && data.kitchen.itemCount > 0) {
+    await sendToTargets({ escposBase64: data.kitchen.escposBase64 }, kitchen);
+  }
+  if (full.length > 0 && data.full) {
+    await sendToTargets({ escposBase64: data.full.escposBase64 }, full);
+  }
+  return data;
 }
 
 /**
@@ -102,10 +169,11 @@ export async function printReceiptData(receipt: ReceiptDataInput): Promise<void>
 /** Pide los bytes de la comanda al backend (variante opcional). */
 async function fetchComanda(
   saleId: string,
-  opts: { cancel?: boolean; variant?: 'kitchen' | 'full' },
+  opts: { cancel?: boolean; corrected?: boolean; variant?: 'kitchen' | 'full' },
 ): Promise<{ escposBase64: string; itemCount: number }> {
   const params = new URLSearchParams();
   if (opts.cancel) params.set('cancel', 'true');
+  if (opts.corrected) params.set('corrected', 'true');
   if (opts.variant) params.set('variant', opts.variant);
   const qs = params.toString();
   const res = await fetch(`/api/sales/${saleId}/comanda-escpos${qs ? `?${qs}` : ''}`, {
@@ -167,22 +235,37 @@ async function sendToTargets(body: PrintPayload, targets: string[]): Promise<voi
 async function sendToAgent(
   body: PrintPayload & { printer?: string },
 ): Promise<void> {
+  const dest = body.printer ?? '(impresora por defecto del agent)';
+  logInfo('print', 'enviando al print-agent', { printer: dest });
   let agentRes: Response;
+  // Timeout: si el agent está caído/colgado, NO dejamos la UI esperando para
+  // siempre — abortamos a los 15s y reportamos como "agent no contactable".
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
   try {
     agentRes = await fetch(`${AGENT_URL}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
-  } catch {
+  } catch (e) {
+    // Causa típica en Vercel: el navegador bloqueó el request a localhost
+    // (Private Network Access / mixed-content), el agent no está corriendo, o
+    // se colgó y el request agotó el timeout (abort).
+    logError('print', e, { printer: dest, agent: AGENT_URL, hint: 'agent no contactable / PNA bloqueado / timeout' });
     throw new Error(
-      'No se pudo contactar la impresora local (print-agent). ¿Está corriendo en esta PC?',
+      'No se pudo contactar la impresora local (print-agent). ¿Está corriendo el agent en esta PC y el navegador permite conexiones a localhost?',
     );
+  } finally {
+    clearTimeout(timer);
   }
   if (!agentRes.ok) {
     const text = await agentRes.text().catch(() => '');
+    logError('print', `agent ${agentRes.status}: ${text.slice(0, 150)}`, { printer: dest });
     throw new Error(
       `La impresora rechazó la impresión (${agentRes.status})${text ? `: ${text.slice(0, 150)}` : ''}`,
     );
   }
+  logInfo('print', 'impreso OK', { printer: dest });
 }

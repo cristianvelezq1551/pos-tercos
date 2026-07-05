@@ -4,7 +4,6 @@ import type { PublicWebOrder, Sale } from '@pos-tercos/types';
 import { Button, Dialog, EmptyState, LoadingSkeleton, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../../sales';
-import { useKdsLiveRefresh } from '../hooks/useKdsLiveRefresh';
 import { saleToPublicWebOrder } from '../lib/project';
 import { FILTERS } from '../lib/order-filters';
 import { ConfirmWebPaymentModal } from './ConfirmWebPaymentModal';
@@ -25,11 +24,9 @@ const POLL_MS = 12_000;
 export function WebOrdersModal({
   open,
   onClose,
-  wsToken,
 }: {
   open: boolean;
   onClose: () => void;
-  wsToken: string | null;
 }) {
   const [orders, setOrders] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(false);
@@ -64,9 +61,6 @@ export function WebOrdersModal({
     () => orders.filter((o) => o.status === 'PENDIENTE_PAGO').length,
     [orders],
   );
-
-  // Tiempo real: mismo estado que el KDS (cuando cocina inicia/marca listo).
-  useKdsLiveRefresh(wsToken, open, refresh);
 
   useEffect(() => {
     if (!open) return;

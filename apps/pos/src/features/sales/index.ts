@@ -1,4 +1,5 @@
 export { CartPanel } from './components/CartPanel';
+export { OrdersPanel } from './components/OrdersPanel';
 export { CheckoutModal, type CheckoutSuccess } from './components/CheckoutModal';
 export { TransferSection } from './components/TransferSection';
 export { VoidModal } from './components/VoidModal';

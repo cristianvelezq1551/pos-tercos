@@ -83,11 +83,7 @@ export function WebOrdersAction({
           </span>
         ) : null}
       </Button>
-      <WebOrdersModal
-        open={open}
-        onClose={() => setOpen(false)}
-        wsToken={wsToken}
-      />
+      <WebOrdersModal open={open} onClose={() => setOpen(false)} />
     </>
   );
 }

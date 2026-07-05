@@ -75,3 +75,22 @@ export function printersForDoc(doc: PrintDocType): string[] {
     .printers.filter((p) => p.docs.includes(doc))
     .map((p) => p.name);
 }
+
+/**
+ * ¿Una misma impresora imprime TANTO la factura COMO alguna comanda? En ese caso
+ * (caja con factura + comanda) conviene separar la factura en un paso aparte
+ * (modal) para que no salga pegada a la comanda en el mismo rollo. Si la factura
+ * va a una impresora distinta de las comandas, se imprime todo automático.
+ */
+export function facturaSharesPrinterWithComanda(): boolean {
+  const { printers } = getPrinterConfig();
+  const facturaNames = new Set(
+    printers.filter((p) => p.docs.includes('factura')).map((p) => p.name),
+  );
+  if (facturaNames.size === 0) return false;
+  return printers.some(
+    (p) =>
+      facturaNames.has(p.name) &&
+      (p.docs.includes('comanda-cocina') || p.docs.includes('comanda-completa')),
+  );
+}

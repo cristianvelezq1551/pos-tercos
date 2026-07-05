@@ -4,7 +4,7 @@ import type { OfflineSale } from '../lib/types';
 /**
  * Sincroniza UNA venta offline con el backend. El `localId` viaja como
  * idempotency key (lo usa el backend para no doble-cobrar en reintentos).
- * Devuelve la venta real (con receiptNumber + turnNumber asignados).
+ * Devuelve la venta real (con receiptNumber asignado).
  */
 export async function syncOfflineSale(sale: OfflineSale): Promise<Sale> {
   const res = await fetch('/api/sales/sync-offline', {

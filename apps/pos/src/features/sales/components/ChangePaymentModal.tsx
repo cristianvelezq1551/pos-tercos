@@ -101,7 +101,7 @@ export function ChangePaymentModal({
       open={open}
       onClose={pending ? () => {} : onClose}
       title="Cambiar pago"
-      description={`${sale.turnNumber !== null ? `Turno ${sale.turnNumber}` : `Recibo #${sale.receiptNumber}`} · registrado como ${current}`}
+      description={`${`Recibo #${sale.receiptNumber}`} · registrado como ${current}`}
       maxWidth="max-w-lg"
       footer={
         <>

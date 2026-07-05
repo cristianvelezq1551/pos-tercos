@@ -1,5 +1,6 @@
 'use client';
 
+import type { ManualDiscount } from '@pos-tercos/types';
 import { create } from 'zustand';
 import type { CartLine } from '../lib/cart-types';
 
@@ -20,7 +21,6 @@ export interface LastSaleSummary {
   receiptNumber: number | null;
   /** Número provisional OFF-N (solo en venta offline). */
   provisionalNumber?: string | null;
-  turnNumber: number | null;
   total: number;
   paymentMethod: string;
   changeDue: number;
@@ -29,10 +29,23 @@ export interface LastSaleSummary {
 interface CartState {
   items: CartLine[];
   lastSale: LastSaleSummary | null;
+  /** Nombre del cliente del pedido de mostrador (#1). Opcional salvo cuenta abierta. */
+  customerName: string;
+  /** Descuentos manuales (#5b) por línea — excluyentes con promos. */
+  lineDiscounts: Record<string, ManualDiscount>;
+  /** Descuento manual sobre el total (#5b). */
+  orderDiscount: ManualDiscount | null;
+  /** Motivo del descuento manual (obligatorio si hay descuento). */
+  discountReason: string;
   addItem: (input: AddInput) => void;
   removeLine: (lineId: string) => void;
   updateQty: (lineId: string, qty: number) => void;
   setNotes: (lineId: string, notes: string) => void;
+  setCustomerName: (name: string) => void;
+  setLineDiscount: (lineId: string, spec: ManualDiscount | null) => void;
+  setOrderDiscount: (spec: ManualDiscount | null) => void;
+  setDiscountReason: (reason: string) => void;
+  clearDiscounts: () => void;
   clear: () => void;
   setLastSale: (sale: LastSaleSummary | null) => void;
 }
@@ -50,6 +63,10 @@ const nextLineId = () => `line-${Date.now().toString(36)}-${(lineCounter++).toSt
 export const useCartStore = create<CartState>((set) => ({
   items: [],
   lastSale: null,
+  customerName: '',
+  lineDiscounts: {},
+  orderDiscount: null,
+  discountReason: '',
   addItem: (input) =>
     set((state) => {
       const sig = lineSignature(input);
@@ -77,7 +94,10 @@ export const useCartStore = create<CartState>((set) => ({
       };
     }),
   removeLine: (lineId) =>
-    set((state) => ({ items: state.items.filter((it) => it.lineId !== lineId) })),
+    set((state) => {
+      const { [lineId]: _dropped, ...rest } = state.lineDiscounts;
+      return { items: state.items.filter((it) => it.lineId !== lineId), lineDiscounts: rest };
+    }),
   updateQty: (lineId, qty) =>
     set((state) => ({
       items: state.items.map((it) =>
@@ -92,17 +112,40 @@ export const useCartStore = create<CartState>((set) => ({
           : it,
       ),
     })),
-  clear: () => set({ items: [] }),
+  setCustomerName: (name) => set({ customerName: name }),
+  setLineDiscount: (lineId, spec) =>
+    set((state) => {
+      if (spec === null) {
+        const { [lineId]: _dropped, ...rest } = state.lineDiscounts;
+        return { lineDiscounts: rest };
+      }
+      return { lineDiscounts: { ...state.lineDiscounts, [lineId]: spec } };
+    }),
+  setOrderDiscount: (spec) => set({ orderDiscount: spec }),
+  setDiscountReason: (reason) => set({ discountReason: reason }),
+  clearDiscounts: () => set({ lineDiscounts: {}, orderDiscount: null, discountReason: '' }),
+  clear: () =>
+    set({
+      items: [],
+      customerName: '',
+      lineDiscounts: {},
+      orderDiscount: null,
+      discountReason: '',
+    }),
   setLastSale: (sale) => set({ lastSale: sale }),
 }));
 
 /** Convierte el carrito local al payload del backend (CreateSale.items). */
-export function cartLinesToCreateItems(items: readonly CartLine[]) {
+export function cartLinesToCreateItems(
+  items: readonly CartLine[],
+  lineDiscounts: Record<string, ManualDiscount> = {},
+) {
   return items.map((it) => ({
     productId: it.productId,
     sizeId: it.size?.id,
     quantity: it.quantity,
     modifiers: it.modifiers.map((m) => ({ modifierId: m.id })),
     notes: it.notes,
+    manualDiscount: lineDiscounts[it.lineId],
   }));
 }

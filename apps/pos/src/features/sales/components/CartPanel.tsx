@@ -1,17 +1,21 @@
 'use client';
 
-import { Button, EmptyState, Money } from '@pos-tercos/ui';
+import { Button, EmptyState } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
 import type { Promotion } from '@pos-tercos/types';
 import { useMemo, useState } from 'react';
 import { fetchActivePromotions } from '../api';
-import { printReceipt, printReceiptData } from '../api/print';
 import { computeCartTotals } from '../lib/totals';
+import { printCheckoutReceipt } from '../lib/print-on-checkout';
+import { notifyOrdersChanged } from '../lib/orders-events';
 import { useCartStore } from '../store/cart-store';
 import { CartLineRow } from './CartLineRow';
+import { CartFooter } from './CartFooter';
+import { CartMetaControls } from './CartMetaControls';
 import { CheckoutModal, type CheckoutSuccess } from './CheckoutModal';
-import { LastSaleBanner } from './LastSaleBanner';
+import { useFacturaPrint } from '../hooks/useFacturaPrint';
 import { OrderCortesiaModal } from '../../cortesias';
+import { useOffline } from '../../offline';
 import { usePolling } from '../../../lib/use-polling';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -25,12 +29,19 @@ export function CartPanel() {
   const clear = useCartStore((s) => s.clear);
   const lastSale = useCartStore((s) => s.lastSale);
   const setLastSale = useCartStore((s) => s.setLastSale);
+  const customerName = useCartStore((s) => s.customerName);
+  const lineDiscounts = useCartStore((s) => s.lineDiscounts);
+  const orderDiscount = useCartStore((s) => s.orderDiscount);
+  const discountReason = useCartStore((s) => s.discountReason);
+  const { status: offlineStatus } = useOffline();
+  const offline = offlineStatus === 'offline';
 
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [cortesiaOpen, setCortesiaOpen] = useState(false);
   const [cortesiaMsg, setCortesiaMsg] = useState<string | null>(null);
+  const { requestFactura, facturaModal } = useFacturaPrint();
 
   const handleCortesiaDone = () => {
     clear();
@@ -48,27 +59,52 @@ export function CartPanel() {
     }
   }, PROMO_REFRESH_MS);
 
-  const totals = useMemo(() => computeCartTotals(items, promos), [items, promos]);
+  // Offline los descuentos manuales se ignoran (el sync no los representa y
+  // la UI los oculta); online espejan exactamente el cálculo del backend.
+  const totals = useMemo(
+    () =>
+      computeCartTotals(
+        items,
+        promos,
+        undefined,
+        offline ? undefined : { lineDiscounts, orderDiscount },
+      ),
+    [items, promos, offline, lineDiscounts, orderDiscount],
+  );
+
+  const checkoutMeta = useMemo(
+    () => ({
+      customerName: customerName.trim() ? customerName.trim() : null,
+      lineDiscounts: offline ? {} : lineDiscounts,
+      orderDiscount: offline ? null : orderDiscount,
+      discountReason: discountReason.trim() ? discountReason.trim() : null,
+    }),
+    [customerName, lineDiscounts, orderDiscount, discountReason, offline],
+  );
 
   const handleCheckoutSuccess = (s: CheckoutSuccess) => {
     setLastSale({
       id: s.saleId ?? null,
       receiptNumber: s.receiptNumber ?? null,
       provisionalNumber: s.provisionalNumber ?? null,
-      turnNumber: s.turnNumber,
       total: s.total,
       paymentMethod: s.paymentMethod,
       changeDue: s.changeDue,
     });
     clear();
     setCheckoutOpen(false);
-    // Auto-imprime sin botón ni ventana de navegador.
-    if (s.provisionalNumber && s.receipt) {
-      // Offline: el recibo ya viene armado (número provisional OFF-N).
-      void printReceiptData(s.receipt).catch(() => undefined);
-    } else if (s.saleId) {
-      // Online: bytes del backend; si el backend cae, cae al recibo de la venta.
-      void printReceipt(s.saleId, { fallback: s.sale }).catch(() => undefined);
+    notifyOrdersChanged();
+    // Online: la comanda ya salió al confirmar → la factura va por requestFactura
+    // (modal si comparte impresora con la comanda, directo si no). Offline no
+    // tiene comanda → imprime el recibo provisional directo.
+    if (s.saleId) {
+      requestFactura({
+        receiptNumber: s.receiptNumber ?? null,
+        total: s.total,
+        print: () => printCheckoutReceipt(s),
+      });
+    } else {
+      printCheckoutReceipt(s);
     }
   };
 
@@ -92,6 +128,8 @@ export function CartPanel() {
           </div>
         ) : null}
       </header>
+
+      <CartMetaControls offline={offline} onInfo={setCortesiaMsg} />
 
       {cortesiaMsg ? (
         <div className="flex items-start justify-between gap-2 border-b border-success-border bg-success-bg px-4 py-2 text-xs text-success">
@@ -139,43 +177,14 @@ export function CartPanel() {
         )}
       </div>
 
-      <footer className="border-t border-border bg-muted/40 px-4 py-3">
-        {promoError ? (
-          <p
-            role="alert"
-            className="mb-2 rounded-md border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning"
-          >
-            Promos: {promoError}
-          </p>
-        ) : null}
-        <div className="space-y-1 text-sm">
-          <Row label="Subtotal" value={totals.subtotal} />
-          {totals.discount > 0 ? (
-            <Row label="Descuentos" value={-totals.discount} highlight />
-          ) : null}
-          <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
-            <span className="font-display text-base font-bold text-foreground">Total</span>
-            <Money amount={totals.total} size="2xl" weight="bold" />
-          </div>
-        </div>
-        <Button
-          size="xl"
-          className="mt-3 w-full"
-          disabled={items.length === 0}
-          onClick={() => setCheckoutOpen(true)}
-        >
-          {items.length > 0 ? (
-            <>
-              Cobrar <Money amount={totals.total} size="lg" weight="bold" className="ml-2 text-current" />
-            </>
-          ) : (
-            'Cobrar'
-          )}
-        </Button>
-        {lastSale ? (
-          <LastSaleBanner sale={lastSale} onDismiss={() => setLastSale(null)} />
-        ) : null}
-      </footer>
+      <CartFooter
+        totals={totals}
+        itemsCount={items.length}
+        promoError={promoError}
+        lastSale={lastSale}
+        onCheckout={() => setCheckoutOpen(true)}
+        onDismissLastSale={() => setLastSale(null)}
+      />
 
       <CheckoutModal
         open={checkoutOpen}
@@ -183,6 +192,7 @@ export function CartPanel() {
         items={items}
         totals={totals}
         promos={promos}
+        meta={checkoutMeta}
         onClose={() => setCheckoutOpen(false)}
         onSuccess={handleCheckoutSuccess}
       />
@@ -193,28 +203,9 @@ export function CartPanel() {
         onClose={() => setCortesiaOpen(false)}
         onDone={handleCortesiaDone}
       />
-    </aside>
-  );
-}
 
-function Row({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string;
-  value: number;
-  highlight?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className={highlight ? 'text-success' : 'text-muted-foreground'}>{label}</span>
-      <Money
-        amount={value}
-        weight={highlight ? 'semibold' : 'medium'}
-        className={highlight ? 'text-success' : ''}
-      />
-    </div>
+      {facturaModal}
+    </aside>
   );
 }
 

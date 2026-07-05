@@ -8,8 +8,7 @@ export interface WebFilter {
 
 export const FILTERS: WebFilter[] = [
   { key: 'pago', label: 'Pend. pago', match: (s) => s === 'PENDIENTE_PAGO' },
-  { key: 'cocina', label: 'En cocina', match: (s) => s === 'PAGADO' || s === 'EN_PREPARACION' },
+  { key: 'preparar', label: 'Por preparar', match: (s) => s === 'PAGADO' },
   { key: 'listos', label: 'Listos', match: (s) => s === 'LISTO_DESPACHO' },
-  { key: 'entregados', label: 'Entregados', match: (s) => s === 'ENTREGADO' },
   { key: 'todos', label: 'Todos', match: () => true },
 ];

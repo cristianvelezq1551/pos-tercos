@@ -24,8 +24,8 @@ export function LastSaleBanner({
           <p className="text-sm font-semibold text-foreground">
             {sale.provisionalNumber ? (
               <>{sale.provisionalNumber} · cobrada offline</>
-            ) : sale.turnNumber !== null ? (
-              <>Turno #{sale.turnNumber} · pagado</>
+            ) : sale.receiptNumber !== null ? (
+              <>Recibo #{sale.receiptNumber} · pagado</>
             ) : (
               <>Venta pagada</>
             )}

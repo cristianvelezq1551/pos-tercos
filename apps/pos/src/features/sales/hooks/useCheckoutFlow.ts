@@ -4,37 +4,41 @@ import {
   DIGITAL_PAYMENT_METHODS,
   type PaymentMethod,
   type Promotion,
+  type Sale,
 } from '@pos-tercos/types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import { getErrorMessage } from '../../../lib/errors';
+import { randomUUID } from '../../../lib/uuid';
 import { useOffline } from '../../offline';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
-import { cancelSale } from '../api/cancel';
-import { printComanda } from '../api/print';
+import { printComanda, sendTabToKitchen } from '../api/print';
 import type { SplitResult } from '../components/split/SplitPaymentSection';
 import type { CartLine } from '../lib/cart-types';
 import {
-  autoPrintReceipt,
+  EMPTY_SALE_META,
   runConfirmCheckout,
   type CheckoutSuccess,
   type PaidCheckout,
+  type SaleMeta,
 } from '../lib/checkout-confirm';
 import { validateCheckout } from '../lib/checkout-validation';
 import type { CartTotalsResult } from '../lib/totals';
-import { useCheckoutSale } from './useCheckoutSale';
 import { useEnabledPaymentMethods } from './useEnabledPaymentMethods';
 
 const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
-// Estado + secuencia completa del cobro: crear venta al abrir → comanda →
-// confirmar pago → factura → cancelar si se cierra sin pagar.
+// Estado + secuencia completa del cobro: confirmar pago → comanda → factura.
+// `sale` presente = cobro de una venta EXISTENTE (cuenta abierta): no se crea
+// venta nueva y la comanda post-pago solo lleva lo pendiente de enviar.
 export function useCheckoutFlow({
   open,
   total,
   items,
   totals,
   promos,
+  sale = null,
+  meta = EMPTY_SALE_META,
   onClose,
   onSuccess,
 }: {
@@ -43,6 +47,8 @@ export function useCheckoutFlow({
   items: readonly CartLine[];
   totals: CartTotalsResult;
   promos: readonly Promotion[];
+  sale?: Sale | null;
+  meta?: SaleMeta;
   onClose: () => void;
   onSuccess: (s: CheckoutSuccess) => void;
 }) {
@@ -57,24 +63,27 @@ export function useCheckoutFlow({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
-  const [paid, setPaid] = useState(false);
   // Guard SÍNCRONO contra doble-confirmación: `pending` (estado React) se
   // actualiza async, así que dos clicks rapidísimos podían pasar el check antes
   // de que el primero seteara pending. La ref se marca al instante.
   const submittingRef = useRef(false);
 
   const enabledMethods = useEnabledPaymentMethods(open, offline);
-  const { sale, comandaState } = useCheckoutSale({
-    open,
-    offline,
-    idempotencyKey,
-    items,
-    onError: setError,
-  });
+
+  // Si la red cae con la cuenta dividida abierta, el split queda inalcanzable
+  // (el toggle se oculta offline) y confirmar intentaría el flujo online →
+  // error confuso. Se vuelve a pago único automáticamente.
+  useEffect(() => {
+    if (offline && splitOpen) {
+      setSplitOpen(false);
+      setSplitResult(null);
+      setSplitReason(null);
+    }
+  }, [offline, splitOpen]);
 
   useEffect(() => {
     if (open) {
-      setIdempotencyKey(crypto.randomUUID());
+      setIdempotencyKey(randomUUID());
       setMethod(null);
       setCashReceived(null);
       setDoubleVerified(false);
@@ -83,30 +92,15 @@ export function useCheckoutFlow({
       setSplitReason(null);
       setError(null);
       setPending(false);
-      setPaid(false);
       submittingRef.current = false;
     }
   }, [open]);
 
-  // Cerrar SIN pagar → cancelar la venta creada (no queda colgada en
-  // PENDIENTE_PAGO). Si la comanda YA salió a cocina, imprimir un ticket de
-  // ANULACIÓN para que descarten el pedido (no preparen comida muerta).
+  // Cerrar el modal: la venta recién se CREA al confirmar el pago (ya no al
+  // abrir), así que cerrar sin pagar no deja nada que limpiar ni imprime
+  // comandas. Si un cobro fallara a mitad (venta creada, pago no confirmado),
+  // queda en PENDIENTE_PAGO y el sweep de ventas huérfanas la cancela.
   const handleClose = () => {
-    if (sale && !paid) {
-      const id = sale.id;
-      // El ticket de anulación se imprime ANTES de cancelar: el endpoint lee la
-      // venta en PENDIENTE_PAGO; si cancelSale corre primero, el status ya no
-      // genera comanda. onClose no espera (la UI cierra al instante).
-      if (comandaState === 'ok') {
-        void printComanda(id, { cancel: true })
-          .catch((e) => logError('checkout.cancel-comanda', e, { saleId: id }))
-          .finally(() =>
-            void cancelSale(id).catch((e) => logError('checkout.cancel-sale', e, { saleId: id })),
-          );
-      } else {
-        void cancelSale(id).catch((e) => logError('checkout.cancel-sale', e, { saleId: id }));
-      }
-    }
     onClose();
   };
 
@@ -121,9 +115,20 @@ export function useCheckoutFlow({
   );
 
   const finishPaid = ({ paidSale, success }: PaidCheckout) => {
-    setPaid(true);
     notifyCajaChanged();
-    autoPrintReceipt(paidSale);
+    // Pago confirmado → la COMANDA a cocina sale acá, una sola vez. La FACTURA
+    // NO se imprime acá: la imprime onSuccess → printCheckoutReceipt (que además
+    // cubre el caso offline). Imprimirla en ambos lados era el "DUPLICADO".
+    // Cuenta abierta: la cocina YA recibió tandas — solo sale lo pendiente.
+    if (sale) {
+      void sendTabToKitchen(paidSale.id).catch((e) =>
+        logError('checkout.comanda', e, { saleId: paidSale.id }),
+      );
+    } else {
+      void printComanda(paidSale.id).catch((e) =>
+        logError('checkout.comanda', e, { saleId: paidSale.id }),
+      );
+    }
     onSuccess(success);
   };
 
@@ -159,6 +164,7 @@ export function useCheckoutFlow({
         totals,
         promos,
         idempotencyKey,
+        meta,
         refreshPending,
         finishPaid,
         onSuccess,
@@ -173,7 +179,6 @@ export function useCheckoutFlow({
   return {
     offline,
     enabledMethods,
-    comandaState,
     method,
     setMethod,
     cashReceived,

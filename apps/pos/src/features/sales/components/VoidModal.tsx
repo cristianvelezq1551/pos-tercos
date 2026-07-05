@@ -15,10 +15,12 @@ import {
 } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { listSales } from '../api/list';
+import { printComanda } from '../api/print';
 import { voidSale } from '../api/void';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
 import { getErrorMessage } from '../../../lib/errors';
+import { logError } from '../../../lib/client-log';
 
 const VOIDABLE_LIMIT = 50;
 /** Solo se anula un pedido PAGADO que la cocina aún NO inició. */
@@ -77,6 +79,11 @@ export function VoidModal({
     try {
       const voided = await voidSale(selectedId, { reason: reason.trim() }, pin);
       notifyCajaChanged();
+      // #8: la cocina recibió la comanda al cobrar — avisarle con el ticket de
+      // ANULACIÓN (número gigante) que descarte el pedido. Best-effort.
+      void printComanda(voided.id, { cancel: true }).catch((e) =>
+        logError('void.cancel-comanda', e, { saleId: voided.id }),
+      );
       onSuccess(voided);
       onClose();
     } catch (err) {
@@ -138,7 +145,7 @@ export function VoidModal({
                         />
                         <span>
                           <span className="font-semibold">
-                            {s.turnNumber !== null ? `Turno ${s.turnNumber}` : `Recibo #${s.receiptNumber}`}
+                            {`Recibo #${s.receiptNumber}`}
                           </span>
                           <span className="ml-2 text-xs text-muted-foreground">
                             Recibo #{s.receiptNumber} ·{' '}

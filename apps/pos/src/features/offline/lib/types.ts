@@ -90,7 +90,6 @@ export interface OfflineSale {
   /** Último intento de sync (ISO) — controla el backoff entre reintentos. */
   lastAttemptAt?: string;
   realReceiptNumber?: number;
-  realTurnNumber?: number;
 }
 
 /** Contadores de la jornada offline. */

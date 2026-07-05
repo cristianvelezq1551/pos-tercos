@@ -4,6 +4,7 @@ import { Button, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { ackCortesia, isUnseenResolved } from '../api/client';
 import { useCortesiaWatch } from './CortesiaWatchProvider';
+import { logError } from '../../../lib/client-log';
 
 const AUTO_DISMISS_MS = 7_000;
 
@@ -21,7 +22,7 @@ export function CortesiaNotifier() {
       setDismissed((prev) => new Set(prev).add(id));
       void ackCortesia(id)
         .then(refresh)
-        .catch(() => undefined);
+        .catch((e) => logError('cortesia-ack', e, { id }));
     },
     [refresh],
   );
@@ -62,7 +63,11 @@ export function CortesiaNotifier() {
                     approved ? 'text-success' : 'text-destructive',
                   )}
                 >
-                  {approved ? '✓ Cortesía autorizada' : '✕ Cortesía rechazada'}
+                  {approved
+                    ? '✓ Cortesía registrada'
+                    : c.status === 'REVERSED'
+                      ? '✕ Cortesía anulada'
+                      : '✕ Cortesía rechazada'}
                 </p>
                 <p className="mt-0.5 text-xs text-foreground">
                   {c.quantity}× {c.productName ?? 'Producto'}

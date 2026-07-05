@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { usePolling } from '../../../lib/use-polling';
+import { logError } from '../../../lib/client-log';
 import { isUnseenResolved, listMyCortesias } from '../api/client';
 import { CORTESIA_ACTIVITY_EVENT } from '../lib/cortesia-events';
 
@@ -41,8 +42,10 @@ export function CortesiaWatchProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       setItems(await listMyCortesias());
-    } catch {
-      // sin red: conservar lo último.
+    } catch (e) {
+      // sin red: conservar lo último, pero dejar traza para diagnosticar un
+      // fallo persistente de polling.
+      logError('cortesia-watch', e);
     }
   }, []);
 

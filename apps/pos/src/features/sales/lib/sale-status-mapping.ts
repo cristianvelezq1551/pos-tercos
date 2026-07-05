@@ -13,12 +13,13 @@ export const SALE_STATUS_MAPPING: StatusMapping<SaleStatus> = {
   VOID: { label: 'Anulado', tone: 'danger' },
 };
 
-/** Estados "activos" que pueden estar tardando (para la alerta >10 min). */
-export const ACTIVE_SALE_STATUSES: SaleStatus[] = [
-  'PENDIENTE_PAGO',
-  'PAGADO',
-  'EN_PREPARACION',
-];
+/**
+ * Estados "activos" que muestran el cronómetro de espera en el historial.
+ * Solo PENDIENTE_PAGO: una venta de mostrador PAGADA ya está cerrada (estado
+ * terminal) y un pedido web pagado tiene su propio cronómetro en el modal de
+ * Pedidos web. Mostrar el timer en PAGADO marcaría toda venta como "tardando".
+ */
+export const ACTIVE_SALE_STATUSES: SaleStatus[] = ['PENDIENTE_PAGO'];
 
 /** Minutos que un pedido activo puede esperar antes de marcarse "tardando". */
 export const SLOW_ORDER_THRESHOLD_MIN = 10;

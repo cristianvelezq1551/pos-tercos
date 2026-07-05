@@ -62,7 +62,7 @@ export function RefundModal({
     <Dialog
       open={open}
       onClose={pending ? () => {} : onClose}
-      title={`Reembolsar · ${sale.turnNumber !== null ? `Turno ${sale.turnNumber}` : `Recibo #${sale.receiptNumber}`}`}
+      title={`Reembolsar · ${`Recibo #${sale.receiptNumber}`}`}
       description="Devolución de un pedido que la cocina ya preparó."
       maxWidth="max-w-md"
       footer={

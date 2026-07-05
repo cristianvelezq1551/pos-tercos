@@ -67,7 +67,6 @@ async function drain(
         attempts,
         lastAttemptAt,
         realReceiptNumber: real.receiptNumber,
-        realTurnNumber: real.turnNumber ?? undefined,
       });
     } catch (err) {
       logError('offline-sync', err, {

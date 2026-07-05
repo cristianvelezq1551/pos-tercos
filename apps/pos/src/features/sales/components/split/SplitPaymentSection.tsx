@@ -1,24 +1,14 @@
 'use client';
 
-import type { SalePaymentInput } from '@pos-tercos/types';
+import type { PaymentMethod } from '@pos-tercos/types';
 import { Button, formatCop } from '@pos-tercos/ui';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  MAX_PARTS,
-  amountsFromUnits,
-  equalSplitAmounts,
-  explodeUnits,
-  rederiveUnits,
-  totalChange,
-  unitsSignature,
-  validateSplit,
-  type SplitMode,
-  type SplitPart,
-  type SplitUnit,
-} from '../../lib/split';
+import { MAX_PARTS, type SplitMode } from '../../lib/split';
 import type { CartTotalsResult } from '../../lib/totals';
 import { SplitItemsAssign } from './SplitItemsAssign';
 import { SplitPartRow } from './SplitPartRow';
+import { useSplitPayment, type SplitResult } from './use-split-payment';
+
+export type { SplitResult };
 
 const MODE_LABELS: Array<{ mode: SplitMode; label: string }> = [
   { mode: 'equal', label: 'Partes iguales' },
@@ -26,15 +16,11 @@ const MODE_LABELS: Array<{ mode: SplitMode; label: string }> = [
   { mode: 'amounts', label: 'Montos libres' },
 ];
 
-export interface SplitResult {
-  payments: SalePaymentInput[];
-  changeDue: number;
-}
-
 /**
  * Cuenta dividida: N personas, cada una con su monto (iguales / por
  * productos / libre) y su método. Reporta al modal la cuenta lista para
- * cobrar (o null mientras no valide).
+ * cobrar (o null mientras no valide). La lógica de estado vive en
+ * `useSplitPayment`; este componente es la vista.
  */
 export function SplitPaymentSection({
   total,
@@ -44,82 +30,11 @@ export function SplitPaymentSection({
 }: {
   total: number;
   totals: CartTotalsResult;
-  methods: readonly import('@pos-tercos/types').PaymentMethod[];
+  methods: readonly PaymentMethod[];
   onChange: (result: SplitResult | null, reason: string | null) => void;
 }) {
-  const [mode, setMode] = useState<SplitMode>('equal');
-  const [count, setCount] = useState(2);
-  const [units, setUnits] = useState<SplitUnit[]>(() => explodeUnits(totals));
-  const [parts, setParts] = useState<SplitPart[]>([]);
-
-  // Si el carrito o una promo cambian (p. ej. el refresh de promos de 60s)
-  // mientras la cuenta dividida está abierta, re-derivar las unidades con los
-  // precios nuevos preservando las asignaciones. Sin esto, `units` quedaba con
-  // precios viejos y en modo "por productos" los montos no sumaban el total.
-  const sig = unitsSignature(totals);
-  useEffect(() => {
-    setUnits((prev) => rederiveUnits(totals, prev));
-    // `sig` resume el contenido de `totals`; no depender de la referencia.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig]);
-
-  // Montos derivados según el modo (en 'amounts' la edición es manual).
-  useEffect(() => {
-    setParts((prev) => {
-      const amounts =
-        mode === 'equal'
-          ? equalSplitAmounts(total, count)
-          : mode === 'items'
-            ? amountsFromUnits(units, count)
-            : Array.from({ length: count }, (_, i) => prev[i]?.amount ?? 0);
-      return amounts.map((amount, i) => ({
-        index: i + 1,
-        amount,
-        method: prev[i]?.method ?? null,
-        cashReceived: prev[i]?.cashReceived ?? null,
-        verified: prev[i]?.verified ?? false,
-      }));
-    });
-  }, [mode, count, total, units]);
-
-  // En montos libres, la ÚLTIMA parte se autocompleta con el resto.
-  const setPartAmount = (index: number, amount: number) => {
-    setParts((prev) => {
-      const next = prev.map((p) => (p.index === index ? { ...p, amount } : p));
-      const last = next[next.length - 1]!;
-      if (index !== last.index) {
-        const others = next.slice(0, -1).reduce((acc, p) => acc + p.amount, 0);
-        next[next.length - 1] = { ...last, amount: Math.max(0, Math.round(total - others)) };
-      }
-      return next;
-    });
-  };
-
-  const validation = useMemo(() => validateSplit(parts, total), [parts, total]);
-
-  useEffect(() => {
-    if (!validation.ok) {
-      onChange(null, validation.reason);
-      return;
-    }
-    onChange(
-      {
-        payments: parts.map((p) => ({
-          method: p.method!,
-          amount: p.amount,
-          ...(p.method === 'CASH' && p.cashReceived !== null
-            ? { amountReceived: p.cashReceived }
-            : {}),
-          ...(p.method !== 'CASH' ? { digitalVerified: true } : {}),
-        })),
-        changeDue: totalChange(parts),
-      },
-      null,
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parts, validation.ok, validation.reason, total]);
-
-  const assigned = parts.reduce((acc, p) => acc + p.amount, 0);
+  const { mode, setMode, count, setCount, units, setUnits, parts, setParts, setPartAmount, assigned } =
+    useSplitPayment(total, totals, onChange);
 
   return (
     <div className="space-y-3">

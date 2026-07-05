@@ -13,13 +13,9 @@ export interface HistoryFilter {
 export const HISTORY_FILTERS: HistoryFilter[] = [
   { key: 'todos', label: 'Todos', match: () => true },
   { key: 'pago', label: 'Pend. pago', match: (s) => s === 'PENDIENTE_PAGO' },
-  {
-    key: 'cocina',
-    label: 'En cocina',
-    match: (s) => s === 'PAGADO' || s === 'EN_PREPARACION',
-  },
+  { key: 'pagados', label: 'Pagados', match: (s) => s === 'PAGADO' },
+  // Pedidos web "listos para retirar" (estado terminal del flujo web).
   { key: 'listos', label: 'Listos', match: (s) => s === 'LISTO_DESPACHO' },
-  { key: 'entregados', label: 'Entregados', match: (s) => s === 'ENTREGADO' },
   {
     key: 'anulados',
     label: 'Anulados',

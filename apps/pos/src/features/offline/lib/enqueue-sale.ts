@@ -1,4 +1,5 @@
 import type { PaymentMethod } from '@pos-tercos/types';
+import { randomUUID } from '../../../lib/uuid';
 import { offlineDb } from './db';
 import { applyConsumptionForSale } from './offline-availability';
 import type { OfflineSale, OfflineSalePayload } from './types';
@@ -43,7 +44,7 @@ export async function enqueueOfflineSale(input: {
   payment: { method: PaymentMethod; amountReceived: number; offlineVerified: boolean };
 }): Promise<OfflineSale> {
   const sale: OfflineSale = {
-    localId: crypto.randomUUID(),
+    localId: randomUUID(),
     provisionalNumber: await nextProvisionalNumber(),
     payload: input.payload,
     payment: input.payment,

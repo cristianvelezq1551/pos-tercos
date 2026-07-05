@@ -110,3 +110,50 @@ describe('computeCartTotals', () => {
     expect(r.lines.reduce((a, l) => a + l.lineTotal, 0)).toBeCloseTo(r.total, 2);
   });
 });
+
+describe('computeCartTotals — descuento manual (#5b)', () => {
+  it('descuento manual por línea desactiva las promos (excluyente)', () => {
+    const r = computeCartTotals([line()], [promo()], AT, {
+      lineDiscounts: { l1: { kind: 'FIXED', value: 2_000 } },
+      orderDiscount: null,
+    });
+    expect(r.lines[0]!.appliedPromotionId).toBeNull();
+    expect(r.lines[0]!.lineDiscount).toBe(2_000);
+    expect(r.discount).toBe(2_000);
+    expect(r.total).toBe(8_000);
+  });
+
+  it('descuento sobre el total se aplica después de los de línea', () => {
+    const r = computeCartTotals(
+      [line({ quantity: 2 })], // subtotal 20.000
+      [],
+      AT,
+      {
+        lineDiscounts: { l1: { kind: 'FIXED', value: 5_000 } },
+        orderDiscount: { kind: 'PERCENT', value: 10 }, // 10% de 15.000 = 1.500
+      },
+    );
+    expect(r.orderDiscountAmount).toBe(1_500);
+    expect(r.discount).toBe(6_500);
+    expect(r.total).toBe(13_500);
+  });
+
+  it('sin descuentos manuales las promos corren normal', () => {
+    const r = computeCartTotals([line()], [promo()], AT, {
+      lineDiscounts: {},
+      orderDiscount: null,
+    });
+    expect(r.lines[0]!.appliedPromotionId).not.toBeNull();
+    expect(r.discount).toBe(2_000); // 20% de 10.000
+    expect(r.orderDiscountAmount).toBe(0);
+  });
+
+  it('descuento FIXED sobre el total se capa al total restante', () => {
+    const r = computeCartTotals([line()], [], AT, {
+      lineDiscounts: {},
+      orderDiscount: { kind: 'FIXED', value: 99_000 },
+    });
+    expect(r.total).toBe(0);
+    expect(r.discount).toBe(10_000);
+  });
+});

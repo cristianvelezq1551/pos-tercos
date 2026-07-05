@@ -7,7 +7,6 @@ const sale = (over: Partial<Sale> = {}): Sale =>
   ({
     id: `00000000-0000-4000-8000-0000000000${String(20 + seq++).padStart(2, '0')}`,
     receiptNumber: 100 + seq,
-    turnNumber: seq,
     type: 'COUNTER',
     status: 'ENTREGADO',
     subtotal: 10_000,

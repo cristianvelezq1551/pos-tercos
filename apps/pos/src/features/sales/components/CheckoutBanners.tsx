@@ -1,14 +1,6 @@
 'use client';
 
-import type { ComandaState } from '../hooks/useCheckoutSale';
-
-export function CheckoutBanners({
-  offline,
-  comandaState,
-}: {
-  offline: boolean;
-  comandaState: ComandaState;
-}) {
+export function CheckoutBanners({ offline }: { offline: boolean }) {
   return (
     <>
       {offline ? (
@@ -18,18 +10,9 @@ export function CheckoutBanners({
         </p>
       ) : null}
       <p className="rounded-md border border-border bg-muted/60 px-3 py-2 text-sm font-medium text-foreground">
-        📋 Repasá el pedido en voz alta con el cliente antes de cobrar.
+        📋 Repasá el pedido en voz alta con el cliente antes de cobrar. La comanda
+        y la factura se imprimen al confirmar el pago.
       </p>
-      {comandaState === 'ok' ? (
-        <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs font-medium text-success">
-          ✓ Comanda enviada a cocina
-        </p>
-      ) : comandaState === 'error' ? (
-        <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs font-medium text-warning">
-          La comanda no se imprimió (¿print-agent apagado?). La venta sigue
-          normal — avisale a cocina de palabra.
-        </p>
-      ) : null}
     </>
   );
 }

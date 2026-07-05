@@ -1,4 +1,4 @@
-import type { PublicWebOrder, Shift, User } from '@pos-tercos/types';
+import { USER_ROLE_LABELS, type PublicWebOrder, type Shift, type User, type UserRole } from '@pos-tercos/types';
 import { Topbar, UserMenu } from '@pos-tercos/ui';
 import { BrandLogo } from '@pos-tercos/brand';
 import Link from 'next/link';
@@ -9,7 +9,7 @@ import { PosNav } from './PosNav';
 
 /**
  * Barra superior del POS (estilo FUDO): marca + pestañas con ícono
- * (Vender / Turnos / Historial / Caja) + pedidos web en vivo + usuario.
+ * (Vender / Historial / Caja / Arqueos / Config) + pedidos web en vivo + usuario.
  * Anular vive en Historial; el estado/cierre de caja, en la pestaña Caja.
  */
 export function PosTopbar({
@@ -54,12 +54,5 @@ export function PosTopbar({
 }
 
 function roleLabel(role: string): string {
-  const map: Record<string, string> = {
-    DUENO: 'Dueño',
-    ADMIN_OPERATIVO: 'Administrador operativo',
-    ADMIN_FINANCIERO: 'Administrador financiero',
-    CAJERO: 'Cajero',
-    COCINERO: 'Cocinero',
-  };
-  return map[role] ?? role;
+  return USER_ROLE_LABELS[role as UserRole] ?? role;
 }

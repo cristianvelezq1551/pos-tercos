@@ -1,13 +1,12 @@
 'use client';
 
-import { Archive, BellRing, History, Settings, UtensilsCrossed, Wallet } from 'lucide-react';
+import { Archive, History, Settings, UtensilsCrossed, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useUnseenCortesias } from '../features/cortesias';
 
 const TABS = [
   { href: '/', label: 'Vender', icon: UtensilsCrossed },
-  { href: '/turnos', label: 'Turnos', icon: BellRing },
   { href: '/historial', label: 'Historial', icon: History },
   { href: '/caja', label: 'Caja', icon: Wallet },
   { href: '/arqueos', label: 'Arqueos', icon: Archive },

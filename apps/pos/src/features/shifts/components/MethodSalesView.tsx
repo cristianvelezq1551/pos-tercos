@@ -97,7 +97,7 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">
-                    {o.turnNumber !== null ? `Turno ${o.turnNumber}` : `Recibo #${o.receiptNumber}`}
+                    {`Recibo #${o.receiptNumber}`}
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
                       {formatDate(o.createdAt, 'time')}
                       {o.customerName ? ` · ${o.customerName}` : ''}

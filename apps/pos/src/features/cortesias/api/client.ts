@@ -10,7 +10,7 @@ import { notifyCortesiaActivity } from '../lib/cortesia-events';
 
 const ListSchema = z.array(CortesiaRequestSchema);
 
-/** El cajero solicita una cortesía (queda PENDING para que un admin la confirme). */
+/** El cajero registra una cortesía: se aplica al instante y avisa al dueño (sin aprobación). */
 export async function createCortesia(input: CreateCortesia): Promise<CortesiaRequest> {
   const res = await fetch('/api/cortesias', {
     method: 'POST',

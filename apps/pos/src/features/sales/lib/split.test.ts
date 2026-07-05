@@ -62,6 +62,7 @@ describe('explodeUnits / amountsFromUnits', () => {
     ],
     subtotal: 35_000,
     discount: 1_000,
+    orderDiscountAmount: 0,
     total: 34_000,
   };
 

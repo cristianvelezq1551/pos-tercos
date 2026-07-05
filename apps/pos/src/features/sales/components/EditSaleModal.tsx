@@ -6,10 +6,12 @@ import { useEffect, useState } from 'react';
 import { ProductPickerModal, fetchActiveProducts, useAvailability } from '../../catalog';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { editSaleItems } from '../api/edit';
-import { printComanda } from '../api/print';
+import { printComanda, sendTabToKitchen } from '../api/print';
 import { AddProductChips } from './AddProductChips';
 import { EditSaleLineRow, type EditLine } from './EditSaleLineRow';
+import { saleItemsToEditLines, selectionToEditLine } from '../lib/edit-sale-lines';
 import { getErrorMessage } from '../../../lib/errors';
+import { logError } from '../../../lib/client-log';
 
 /**
  * Edición de un pedido YA COBRADO. Si la cocina ya lo inició, las líneas de
@@ -26,7 +28,7 @@ export function EditSaleModal({
   sale: Sale | null;
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (updated: Sale) => void;
 }) {
   const [lines, setLines] = useState<EditLine[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -51,22 +53,7 @@ export function EditSaleModal({
     void fetchActiveProducts().then((all) => {
       setProducts(all);
       const resaleMap = new Map(all.map((p) => [p.id, p.directResale] as const));
-      setLines(
-        (sale.items ?? []).map((it) => ({
-          productId: it.productId,
-          productName: it.productName ?? 'Producto',
-          sizeId: it.sizeId,
-          sizeName: it.sizeName ?? null,
-          quantity: it.quantity,
-          modifierIds: it.modifiers.map((m) => m.modifierId),
-          modifierNames: it.modifiers.map((m) => m.name),
-          notes: it.notes ?? null,
-          unitPrice: it.unitPrice,
-          locked:
-            (sale.status === 'EN_PREPARACION' || sale.status === 'LISTO_DESPACHO') &&
-            !(resaleMap.get(it.productId) ?? false),
-        })),
-      );
+      setLines(saleItemsToEditLines(sale, resaleMap));
     });
   }, [open, sale?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -79,7 +66,7 @@ export function EditSaleModal({
     setPending(true);
     setError(null);
     try {
-      await editSaleItems(sale.id, {
+      const updated = await editSaleItems(sale.id, {
         items: lines.map((l) => ({
           productId: l.productId,
           sizeId: l.sizeId ?? undefined,
@@ -90,10 +77,21 @@ export function EditSaleModal({
           notes: l.notes ?? undefined,
         })),
       });
-      // Cocina recibe la comanda corregida (sale como REIMPRESIÓN).
-      void printComanda(sale.id).catch(() => {});
+      // Cuenta abierta sin pagar: lo NUEVO va por comanda incremental (tanda
+      // "ADICIÓN"); si se quitó una línea ya enviada, avisar a cocina de voz.
+      // Pedido cobrado: reimprime la comanda CORREGIDA completa, marcada
+      // "PEDIDO MODIFICADO" (best-effort: si falla, va al log).
+      if (sale.isOpenTab && sale.status === 'PENDIENTE_PAGO') {
+        void sendTabToKitchen(sale.id).catch((e) =>
+          logError('print-comanda-edit', e, { saleId: sale.id }),
+        );
+      } else {
+        void printComanda(sale.id, { corrected: true }).catch((e) =>
+          logError('print-comanda-edit', e, { saleId: sale.id }),
+        );
+      }
       notifyCajaChanged();
-      onSaved();
+      onSaved(updated);
       onClose();
     } catch (err) {
       setError(getErrorMessage(err, 'Error guardando los cambios'));
@@ -107,7 +105,7 @@ export function EditSaleModal({
     <Dialog
       open={open}
       onClose={pending ? () => {} : onClose}
-      title={`Editar pedido · ${sale.turnNumber !== null ? `Turno ${sale.turnNumber}` : `Recibo #${sale.receiptNumber}`}`}
+      title={`Editar pedido · ${`Recibo #${sale.receiptNumber}`}`}
       description={
         kitchenStarted
           ? 'La cocina ya inició este pedido: solo se pueden cambiar productos de reventa (ej. bebidas).'
@@ -181,23 +179,7 @@ export function EditSaleModal({
         product={pickerProduct}
         open={pickerProduct !== null}
         onClose={() => setPickerProduct(null)}
-        onConfirm={(sel) =>
-          setLines((prev) => [
-            ...prev,
-            {
-              productId: sel.productId,
-              productName: sel.productName,
-              sizeId: sel.size?.id ?? null,
-              sizeName: sel.size?.name ?? null,
-              quantity: sel.quantity,
-              modifierIds: sel.modifiers.map((m) => m.id),
-              modifierNames: sel.modifiers.map((m) => m.name),
-              notes: null,
-              unitPrice: sel.unitPrice,
-              locked: false,
-            },
-          ])
-        }
+        onConfirm={(sel) => setLines((prev) => [...prev, selectionToEditLine(sel)])}
       />
     </Dialog>
   );

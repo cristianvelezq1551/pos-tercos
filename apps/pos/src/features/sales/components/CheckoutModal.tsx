@@ -1,10 +1,10 @@
 'use client';
 
-import type { Promotion } from '@pos-tercos/types';
+import type { Promotion, Sale } from '@pos-tercos/types';
 import { Button, Dialog, Money, formatCop } from '@pos-tercos/ui';
 import { useCheckoutFlow } from '../hooks/useCheckoutFlow';
 import type { CartLine } from '../lib/cart-types';
-import type { CheckoutSuccess } from '../lib/checkout-confirm';
+import type { CheckoutSuccess, SaleMeta } from '../lib/checkout-confirm';
 import type { CartTotalsResult } from '../lib/totals';
 import { CheckoutBanners } from './CheckoutBanners';
 import { SinglePaymentSection } from './SinglePaymentSection';
@@ -18,6 +18,8 @@ export function CheckoutModal({
   items,
   totals,
   promos,
+  sale = null,
+  meta,
   onClose,
   onSuccess,
 }: {
@@ -26,13 +28,16 @@ export function CheckoutModal({
   items: readonly CartLine[];
   totals: CartTotalsResult;
   promos: readonly Promotion[];
+  /** Venta EXISTENTE a cobrar (cuenta abierta). null = cobra el carrito. */
+  sale?: Sale | null;
+  /** Cliente + descuentos manuales del carrito (solo cuando sale es null). */
+  meta?: SaleMeta;
   onClose: () => void;
   onSuccess: (s: CheckoutSuccess) => void;
 }) {
   const {
     offline,
     enabledMethods,
-    comandaState,
     method,
     setMethod,
     cashReceived,
@@ -48,15 +53,20 @@ export function CheckoutModal({
     validation,
     handleClose,
     handleConfirm,
-  } = useCheckoutFlow({ open, total, items, totals, promos, onClose, onSuccess });
+  } = useCheckoutFlow({ open, total, items, totals, promos, sale, meta, onClose, onSuccess });
+
+  // Con descuento SOBRE EL TOTAL, el reparto "por productos" no puede cuadrar
+  // (las líneas no reflejan el descuento global) → se cobra en pago único.
+  const splitDisabled = totals.orderDiscountAmount > 0;
+  const linesCount = sale ? (sale.items?.length ?? 0) : items.length;
 
   return (
     <Dialog
       open={open}
       onClose={pending ? () => {} : handleClose}
-      title="Cobrar venta"
-      description={`Total ${formatCop(total)} · ${items.length} ${
-        items.length === 1 ? 'línea' : 'líneas'
+      title={sale ? `Cobrar cuenta · ${sale.customerName ?? `#${sale.receiptNumber}`}` : 'Cobrar venta'}
+      description={`Total ${formatCop(total)} · ${linesCount} ${
+        linesCount === 1 ? 'línea' : 'líneas'
       }`}
       maxWidth="max-w-lg"
       footer={
@@ -78,8 +88,8 @@ export function CheckoutModal({
       }
     >
       <div className="space-y-5">
-        <CheckoutBanners offline={offline} comandaState={comandaState} />
-        {!offline ? (
+        <CheckoutBanners offline={offline} />
+        {!offline && !splitDisabled ? (
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-foreground">
               {splitOpen ? 'Cuenta dividida' : 'Pago único'}

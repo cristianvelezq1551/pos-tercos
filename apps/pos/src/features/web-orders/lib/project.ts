@@ -6,7 +6,6 @@ export function saleToPublicWebOrder(sale: Sale): PublicWebOrder | null {
   return {
     id: sale.id,
     receiptNumber: sale.receiptNumber,
-    turnNumber: sale.turnNumber,
     type: sale.type,
     status: sale.status,
     customerName: sale.customerName ?? '',

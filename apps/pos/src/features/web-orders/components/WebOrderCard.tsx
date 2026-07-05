@@ -1,20 +1,17 @@
 'use client';
 
 import type { Sale } from '@pos-tercos/types';
-import { Button, Checkbox, Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
+import { Button, Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { SALE_STATUS_MAPPING } from '../../sales';
 import { cancelWebOrder, markWebOrderReady } from '../api';
 import { getErrorMessage } from '../../../lib/errors';
 
-/** Solo a partir de este tiempo ofrecemos "no avisar" (actualización retroactiva). */
-const STALE_MIN = 15;
-
 function minutesSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
 }
 
-/** Color del tiempo: verde <7 min, ámbar 7-10, rojo >10 (igual que el KDS). */
+/** Color del tiempo: verde <7 min, ámbar 7-10, rojo >10. */
 function elapsedTone(sale: Sale): string {
   const m = minutesSince(sale.paidAt ?? sale.createdAt);
   if (m >= 10) return 'text-destructive';
@@ -33,11 +30,7 @@ export function WebOrderCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [confirmReject, setConfirmReject] = useState(false);
-  const [silent, setSilent] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  // "No avisar" solo para pedidos viejos (≥15 min en su estado actual).
-  const stale = minutesSince(sale.paidAt ?? sale.createdAt) >= STALE_MIN;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -107,34 +100,17 @@ export function WebOrderCard({
             )}
           </div>
         ) : sale.status === 'PAGADO' ? (
-          // Pagado, en cola de cocina. El cajero NO inicia pedidos (eso es del
-          // KDS); solo espera a que la cocina lo tome.
-          <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
-            En cola de cocina — la cocina lo inicia
-          </p>
-        ) : sale.status === 'EN_PREPARACION' ? (
-          // Solo se marca listo cuando ya está iniciado en cocina.
-          <div className="space-y-2">
-            {stale ? (
-              <div className="rounded-lg border border-warning-border bg-warning-bg/40 px-3 py-2">
-                <Checkbox
-                  checked={silent}
-                  onChange={(e) => setSilent(e.target.checked)}
-                  label="No avisar al cliente"
-                  description="Pedido viejo (+15 min) — actualización retroactiva sin WhatsApp."
-                />
-              </div>
-            ) : null}
-            <Button
-              variant="success"
-              size="sm"
-              className="w-full"
-              disabled={busy}
-              onClick={() => run(() => markWebOrderReady(sale.id, stale && silent))}
-            >
-              {busy ? 'Marcando…' : 'Marcar listo'}
-            </Button>
-          </div>
+          // Pagado → el cajero marca "listo para retirar": avisa al cliente por
+          // WhatsApp (pickup_ready). LISTO_DESPACHO es el estado final.
+          <Button
+            variant="success"
+            size="sm"
+            className="w-full"
+            disabled={busy}
+            onClick={() => run(() => markWebOrderReady(sale.id))}
+          >
+            {busy ? 'Marcando…' : 'Marcar listo para retirar'}
+          </Button>
         ) : null}
       </div>
       {err ? (

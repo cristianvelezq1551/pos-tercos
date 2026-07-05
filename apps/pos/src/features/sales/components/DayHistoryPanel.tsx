@@ -4,6 +4,9 @@ import type { Sale } from '@pos-tercos/types';
 import { EmptyState, LoadingSkeleton, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../api/list';
+import { printReceipt } from '../api/print';
+import { useFacturaPrint } from '../hooks/useFacturaPrint';
+import { logError } from '../../../lib/client-log';
 import { ChangePaymentModal } from './ChangePaymentModal';
 import { EditSaleModal } from './EditSaleModal';
 import { RefundModal } from './RefundModal';
@@ -38,6 +41,7 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
   const [refundingSale, setRefundingSale] = useState<Sale | null>(null);
   const unseenCortesias = useUnseenCortesias();
   const cortesiasView = filterKey === CORTESIAS_KEY;
+  const { requestFactura, facturaModal } = useFacturaPrint();
 
   const refresh = useCallback(async () => {
     try {
@@ -59,6 +63,21 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
     void refresh().finally(() => setLoading(false));
   }, [active, refresh]);
   usePolling(refresh, POLL_MS, { enabled: active, immediate: false });
+
+  // Tras editar: la comanda corregida ya se reimprimió (en EditSaleModal). La
+  // FACTURA corregida se imprime igual que en el cobro — modal si comparte
+  // impresora con la comanda, directo si no.
+  const handleEdited = (updated: Sale) => {
+    void refresh();
+    requestFactura({
+      receiptNumber: updated.receiptNumber,
+      total: updated.total,
+      print: () =>
+        void printReceipt(updated.id, { fallback: updated, reprint: true }).catch((e) =>
+          logError('print-factura-edit', e, { saleId: updated.id }),
+        ),
+    });
+  };
 
   const filter =
     HISTORY_FILTERS.find((f) => f.key === filterKey) ?? HISTORY_FILTERS[0]!;
@@ -165,8 +184,9 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
         sale={editingSale}
         open={editingSale !== null}
         onClose={() => setEditingSale(null)}
-        onSaved={() => void refresh()}
+        onSaved={handleEdited}
       />
+      {facturaModal}
       <ChangePaymentModal
         sale={payingSale}
         open={payingSale !== null}

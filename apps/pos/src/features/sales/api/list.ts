@@ -23,7 +23,13 @@ export async function listSales(params: ListSalesParams = {}): Promise<Sale[]> {
   if (params.to) qs.set('to', params.to);
   if (params.limit) qs.set('limit', String(params.limit));
   const url = qs.size > 0 ? `/api/sales?${qs.toString()}` : '/api/sales';
-  const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+  // Timeout: un fetch colgado dejaba el guard inFlight de usePolling tomado
+  // para siempre → el panel de pedidos dejaba de refrescar en silencio.
+  const res = await fetch(url, {
+    credentials: 'include',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!res.ok) {
     throw new Error(`listSales failed: ${res.status}`);
   }

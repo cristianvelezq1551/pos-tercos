@@ -20,7 +20,6 @@ export function buildReceiptDataInput(
 ): ReceiptDataInput {
   return {
     receiptNumber: sale.receiptNumber,
-    turnNumber: sale.turnNumber,
     createdAt: sale.createdAt,
     cashierName: sale.cashierName ?? null,
     customerName: sale.customerName,
@@ -95,7 +94,6 @@ export function buildOfflineReceiptInput(
     id ? (promotions.find((p) => p.id === id)?.name ?? null) : null;
   return {
     receiptNumber: 0,
-    turnNumber: null,
     provisionalNumber: opts.provisionalNumber,
     createdAt: new Date().toISOString(),
     cashierName: opts.cashierName,

@@ -1,8 +1,7 @@
-import type { PaymentMethod, Promotion, Sale } from '@pos-tercos/types';
+import type { ManualDiscount, PaymentMethod, Promotion, Sale } from '@pos-tercos/types';
 import { enqueueOfflineSale, getCachedCashierName } from '../../offline';
 import { confirmPayment } from '../api/confirm-payment';
 import { createSale } from '../api/create';
-import { printReceipt } from '../api/print';
 import type { SplitResult } from '../components/split/SplitPaymentSection';
 import { cartLinesToCreateItems } from '../store/cart-store';
 import type { ReceiptDataInput } from './build-receipt-data';
@@ -10,8 +9,22 @@ import { buildOfflinePayload, buildOfflineReceiptInput } from './build-receipt-d
 import type { CartLine } from './cart-types';
 import type { CartTotalsResult } from './totals';
 
+/** Datos del pedido más allá de las líneas (#1 nombre + #5b descuentos). */
+export interface SaleMeta {
+  customerName: string | null;
+  lineDiscounts: Record<string, ManualDiscount>;
+  orderDiscount: ManualDiscount | null;
+  discountReason: string | null;
+}
+
+export const EMPTY_SALE_META: SaleMeta = {
+  customerName: null,
+  lineDiscounts: {},
+  orderDiscount: null,
+  discountReason: null,
+};
+
 export interface CheckoutSuccess {
-  turnNumber: number | null;
   total: number;
   /** Método único, o etiqueta "Dividido (N pagos)" en cuenta separada. */
   paymentMethod: string;
@@ -32,21 +45,28 @@ export interface PaidCheckout {
   success: CheckoutSuccess;
 }
 
-// Factura automática post-pago: best-effort — si la impresora falla, el
-// banner de la venta conserva el botón "Imprimir recibo" para reintentar.
-export function autoPrintReceipt(paidSale: Sale): void {
-  void printReceipt(paidSale.id, { fallback: paidSale }).catch(() => {});
-}
-
-// La venta normalmente ya se creó al abrir el modal (con su comanda);
-// si esa creación falló, se reintenta acá con el mismo idempotency-key.
+// `sale` presente = cobro de una venta existente (cuenta abierta); si no,
+// la venta se crea acá con el idempotency-key del modal (reintentos seguros).
 function ensureSale(
   sale: Sale | null,
   items: readonly CartLine[],
   idempotencyKey: string,
+  meta: SaleMeta,
 ): Promise<Sale> {
   if (sale) return Promise.resolve(sale);
-  return createSale({ type: 'COUNTER', items: cartLinesToCreateItems(items) }, idempotencyKey);
+  const hasManualDiscount =
+    meta.orderDiscount !== null || items.some((it) => meta.lineDiscounts[it.lineId]);
+  return createSale(
+    {
+      type: 'COUNTER',
+      items: cartLinesToCreateItems(items, meta.lineDiscounts),
+      customerName: meta.customerName?.trim() ? meta.customerName.trim() : undefined,
+      orderDiscount: meta.orderDiscount ?? undefined,
+      discountReason:
+        hasManualDiscount && meta.discountReason ? meta.discountReason : undefined,
+    },
+    idempotencyKey,
+  );
 }
 
 async function confirmSplitCheckout(args: {
@@ -54,15 +74,15 @@ async function confirmSplitCheckout(args: {
   items: readonly CartLine[];
   idempotencyKey: string;
   splitResult: SplitResult;
+  meta: SaleMeta;
 }): Promise<PaidCheckout> {
-  const created = await ensureSale(args.sale, args.items, args.idempotencyKey);
+  const created = await ensureSale(args.sale, args.items, args.idempotencyKey, args.meta);
   const paidSale = await confirmPayment(created.id, { payments: args.splitResult.payments });
   return {
     paidSale,
     success: {
       saleId: paidSale.id,
       receiptNumber: paidSale.receiptNumber,
-      turnNumber: paidSale.turnNumber,
       total: paidSale.total,
       paymentMethod: `Dividido (${args.splitResult.payments.length} pagos)`,
       changeDue: args.splitResult.changeDue,
@@ -96,7 +116,6 @@ async function confirmOfflineCheckout(args: {
     paymentMethod: args.method,
   });
   return {
-    turnNumber: null,
     total: args.total,
     paymentMethod: args.method,
     changeDue: args.changeDue,
@@ -113,8 +132,9 @@ async function confirmOnlineCheckout(args: {
   amountReceived: number;
   isDigital: boolean;
   changeDue: number;
+  meta: SaleMeta;
 }): Promise<PaidCheckout> {
-  const created = await ensureSale(args.sale, args.items, args.idempotencyKey);
+  const created = await ensureSale(args.sale, args.items, args.idempotencyKey, args.meta);
   const paidSale = await confirmPayment(created.id, {
     method: args.method,
     amountReceived: args.amountReceived,
@@ -125,7 +145,6 @@ async function confirmOnlineCheckout(args: {
     success: {
       saleId: paidSale.id,
       receiptNumber: paidSale.receiptNumber,
-      turnNumber: paidSale.turnNumber,
       total: paidSale.total,
       paymentMethod: args.method,
       changeDue: args.changeDue,
@@ -148,6 +167,8 @@ export interface ConfirmCheckoutDeps {
   totals: CartTotalsResult;
   promos: readonly Promotion[];
   idempotencyKey: string;
+  /** Cliente + descuentos manuales del carrito (ignorado si `sale` existe). */
+  meta: SaleMeta;
   refreshPending: () => void;
   finishPaid: (r: PaidCheckout) => void;
   onSuccess: (s: CheckoutSuccess) => void;
@@ -156,6 +177,14 @@ export interface ConfirmCheckoutDeps {
 // Despacha al flujo de cobro correspondiente. Los side-effects post-pago
 // (caja → factura → onSuccess) los ordena finishPaid en el caller.
 export async function runConfirmCheckout(d: ConfirmCheckoutDeps): Promise<void> {
+  // Una CUENTA ABIERTA vive en el backend: sin red no se puede cobrar (el
+  // flujo offline encolaría una venta NUEVA vacía y la cuenta seguiría viva
+  // → descuadre). Se rechaza con mensaje claro; el cajero reintenta con red.
+  if (d.offline && d.sale) {
+    throw new Error(
+      'Sin conexión no se puede cobrar una cuenta abierta. Esperá a que vuelva la red e intentá de nuevo.',
+    );
+  }
   // CUENTA DIVIDIDA (solo online): N partes en una sola confirmación atómica.
   if (d.splitOpen && d.splitResult) {
     d.finishPaid(
@@ -164,6 +193,7 @@ export async function runConfirmCheckout(d: ConfirmCheckoutDeps): Promise<void> 
         items: d.items,
         idempotencyKey: d.idempotencyKey,
         splitResult: d.splitResult,
+        meta: d.meta,
       }),
     );
     return;
@@ -197,6 +227,7 @@ export async function runConfirmCheckout(d: ConfirmCheckoutDeps): Promise<void> 
       amountReceived,
       isDigital: d.isDigital,
       changeDue: d.changeDue,
+      meta: d.meta,
     }),
   );
 }

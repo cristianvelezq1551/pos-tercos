@@ -127,7 +127,7 @@ export function MethodRow({
             <div key={o.id} className="text-xs">
               <div className="flex justify-between gap-2 tabular-nums text-foreground">
                 <span className="min-w-0 truncate font-medium">
-                  {o.turnNumber !== null ? `Turno ${o.turnNumber}` : `Recibo #${o.receiptNumber}`}
+                  {`Recibo #${o.receiptNumber}`}
                   {' · '}
                   {formatDate(o.createdAt, 'time')}
                   {o.customerName ? ` · ${o.customerName}` : ''}
