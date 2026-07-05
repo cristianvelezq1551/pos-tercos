@@ -38,6 +38,8 @@ export const InventoryMovementSchema = z.object({
   userId: z.string().uuid().nullable(),
   userFullName: z.string().nullable().optional(),
   notes: z.string().nullable(),
+  /** Ruta para ver la foto de evidencia (solo producciones con foto). */
+  evidenceUrl: z.string().nullable().optional(),
   idempotencyKey: z.string().nullable(),
   createdAt: z.string().datetime(),
 });
@@ -106,6 +108,12 @@ export const StockableSchema = z.object({
   currentStock: z.number(),
   lowStock: z.boolean(),
   isActive: z.boolean(),
+  /** Tamaño de porción (en unidad de stock). Null en productos direct-resale y
+   *  en ítems sin porción definida. */
+  portionSize: z.number().positive().nullable().optional(),
+  /** Porciones disponibles = currentStock / portionSize (null si sin porción).
+   *  Lo calcula el server para que POS/cocina/admin muestren el mismo número. */
+  portions: z.number().nullable().optional(),
   // Específicos del Producto direct-resale (null en insumos y subproductos):
   category: z.string().nullable().optional(),
   basePrice: z.number().nullable().optional(),
@@ -158,6 +166,11 @@ export const CreateStockCountSchema = z
   });
 export type CreateStockCount = z.infer<typeof CreateStockCountSchema>;
 
+/** Estado de un conteo físico: PENDING (del cocinero, sin ajustar), APPROVED
+ *  (ajuste aplicado) o REJECTED (descartado). */
+export const CountStatusEnum = z.enum(['PENDING', 'APPROVED', 'REJECTED']);
+export type CountStatus = z.infer<typeof CountStatusEnum>;
+
 export const StockCountSchema = z.object({
   id: z.string().uuid(),
   entityType: StockableTypeEnum,
@@ -166,12 +179,20 @@ export const StockCountSchema = z.object({
   countedQty: z.number(),
   ledgerQty: z.number(),
   difference: z.number(),
+  status: CountStatusEnum,
   userId: z.string().uuid().nullable(),
   userName: z.string().nullable(),
+  resolvedByName: z.string().nullable(),
+  resolvedAt: z.string().datetime().nullable(),
+  resolverNote: z.string().nullable(),
   notes: z.string().nullable(),
   createdAt: z.string().datetime(),
 });
 export type StockCount = z.infer<typeof StockCountSchema>;
+
+/** Nota opcional al aprobar/rechazar un conteo pendiente (admin). */
+export const ResolveStockCountSchema = z.object({ note: z.string().trim().max(300).optional() });
+export type ResolveStockCount = z.infer<typeof ResolveStockCountSchema>;
 
 /** Tarea de conteo sugerida para hoy (rotación cíclica). */
 export const CountTaskSchema = z.object({

@@ -6,33 +6,29 @@ import {
 } from './owner-alerts';
 
 describe('buildVoidAlertMessage', () => {
-  it('incluye recibo, turno, monto, cajero y motivo', () => {
+  it('incluye recibo, monto, cajero y motivo', () => {
     const msg = buildVoidAlertMessage({
       businessName: 'Tercos',
       cashierName: 'Laura',
       receiptNumber: 412,
-      turnNumber: 7,
       total: 28500,
       reason: 'Cliente se arrepintió',
     });
     expect(msg).toContain('[Tercos]');
     expect(msg).toContain('#412');
-    expect(msg).toContain('turno 7');
     expect(msg).toContain('28.500');
     expect(msg).toContain('Laura');
     expect(msg).toContain('Cliente se arrepintió');
   });
 
-  it('omite el turno cuando es null y tolera cajero desconocido', () => {
+  it('tolera cajero desconocido', () => {
     const msg = buildVoidAlertMessage({
       businessName: 'Tercos',
       cashierName: null,
       receiptNumber: 5,
-      turnNumber: null,
       total: 1000,
       reason: 'test',
     });
-    expect(msg).not.toContain('turno');
     expect(msg).toContain('desconocido');
   });
 });

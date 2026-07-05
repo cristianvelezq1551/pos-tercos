@@ -122,7 +122,21 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       const batch = productionBatches.get(m.sourceId)!;
       const produces = batch.find((x) => x.delta > 0);
       const consumes = batch.filter((x) => x.delta < 0);
-      if (!produces) continue; // batch malformado, ignorar
+      if (!produces) {
+        // Batch malformado (sin +N, datos corruptos): los consumos EXISTEN en
+        // la DB — se aplican como consumos sueltos para que el replay no
+        // infle el inventario respecto del stock real (auditoría 2026-07-05).
+        for (const c of consumes) events.push({ kind: 'single', ts: c.createdAt, m: c });
+        continue;
+      }
+      // Positivos EXTRA (batch corrupto con 2+ entradas): también existen en
+      // la DB — entran como entradas sueltas (lote con su unitCost, null si
+      // no tiene) en vez de droppearse del replay.
+      for (const extra of batch) {
+        if (extra.delta > 0 && extra !== produces) {
+          events.push({ kind: 'single', ts: extra.createdAt, m: extra });
+        }
+      }
       events.push({ kind: 'production', ts: m.createdAt, consumes, produces });
     } else {
       events.push({ kind: 'single', ts: m.createdAt, m });
@@ -136,6 +150,11 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
   // insumo recién comprado. Sort estable → dentro de la misma fase se conserva
   // el orden de inserción (por id), preservando el comportamiento previo cuando
   // los timestamps son distintos.
+  // Limitación conocida: DOS producciones en el MISMO ms donde una consume el
+  // subproducto que la otra produce se ordenan solo por orden de inserción
+  // (no hay orden topológico). Con producción manual de a una tanda es
+  // impracticable en la operación real; si ocurriera, el costo de la
+  // consumidora quedaría como unknownQty (nunca $0).
   const phaseOf = (e: Event): number => {
     if (e.kind === 'production') return 1;
     return e.m.delta > 0 ? 0 : 2;
@@ -219,6 +238,53 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     queues.set(key, q);
   };
 
+  /**
+   * Devuelve hasta `qty` unidades de los draws pendientes de `drawKey` —
+   * lo más recién consumido primero (reverso FIFO)— re-inyectándolas al
+   * FRENTE de la cola con su base de costo ORIGINAL. Compartido por el
+   * reverso de venta (void/edición) y la anulación de cortesía.
+   */
+  const returnDraws = (
+    drawKey: string,
+    key: string,
+    qty: number,
+  ): { returnedCost: number; returnedUnknown: number; returnedQty: number } => {
+    const draws = drawsBySource.get(drawKey) ?? [];
+    let toReturn = qty;
+    let returnedCost = 0;
+    let returnedUnknown = 0;
+    let returnedQty = 0;
+    // Lotes a re-inyectar, en orden [más reciente … más viejo].
+    const returnedLots: Lot[] = [];
+    for (let i = draws.length - 1; i >= 0 && toReturn > 0; i--) {
+      const d = draws[i]!;
+      const ret = Math.min(d.qty, toReturn);
+      if (ret <= 0) continue;
+      returnedLots.push({
+        movementId: d.movementId,
+        qty: ret,
+        unitCost: d.unitCost,
+        createdAt: d.createdAt,
+      });
+      returnedQty += ret;
+      if (d.unitCost === null) returnedUnknown += ret;
+      else returnedCost += ret * d.unitCost;
+      d.qty -= ret;
+      toReturn -= ret;
+    }
+    // Descartar los draws ya agotados (desde el final) y actualizar el registro.
+    while (draws.length > 0 && draws[draws.length - 1]!.qty <= 0) draws.pop();
+    if (draws.length === 0) drawsBySource.delete(drawKey);
+    else drawsBySource.set(drawKey, draws);
+    // Re-inyectar al FRENTE: unshift en orden [más reciente … más viejo] deja
+    // el más viejo primero en la cola (lo devuelto se consumió del frente, así
+    // que es más viejo que el resto → preserva FIFO).
+    const q = queues.get(key) ?? [];
+    for (const lot of returnedLots) q.unshift(lot);
+    queues.set(key, q);
+    return { returnedCost, returnedUnknown, returnedQty };
+  };
+
   for (const e of events) {
     if (e.kind === 'production') {
       // 1. Consumir insumos / sub-subproductos.
@@ -238,7 +304,12 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       const posQty = e.produces.delta;
       if (posKey && posQty > 0) {
         const iso = e.produces.createdAt.toISOString();
-        if (totalUnknownQty <= 0) {
+        if (totalConsumedQty <= 0) {
+          // Tanda sin consumos registrados (los insumos rondaron a 0 y se
+          // filtraron, o datos incompletos): el costo real NO es $0 — lote
+          // desconocido, NUNCA se asume gratis (auditoría 2026-07-05).
+          addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: null, createdAt: iso });
+        } else if (totalUnknownQty <= 0) {
           // Todo el insumo tenía costo → lote con costo conocido.
           addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: roundCost(totalCost / posQty), createdAt: iso });
         } else if (totalCost <= 0) {
@@ -287,39 +358,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     // unknownQty, igual que antes).
     if (m.type === 'SALE' && delta > 0) {
       const drawKey = `${m.sourceId ?? ''}:${key}`;
-      const draws = drawsBySource.get(drawKey) ?? [];
-      let toReturn = delta;
-      let returnedCost = 0;
-      let returnedUnknown = 0;
-      let returnedQty = 0;
-      // Lotes a re-inyectar, en orden [más reciente … más viejo].
-      const returnedLots: Lot[] = [];
-      for (let i = draws.length - 1; i >= 0 && toReturn > 0; i--) {
-        const d = draws[i]!;
-        const ret = Math.min(d.qty, toReturn);
-        if (ret <= 0) continue;
-        returnedLots.push({
-          movementId: d.movementId,
-          qty: ret,
-          unitCost: d.unitCost,
-          createdAt: d.createdAt,
-        });
-        returnedQty += ret;
-        if (d.unitCost === null) returnedUnknown += ret;
-        else returnedCost += ret * d.unitCost;
-        d.qty -= ret;
-        toReturn -= ret;
-      }
-      // Descartar los draws ya agotados (desde el final) y actualizar el registro.
-      while (draws.length > 0 && draws[draws.length - 1]!.qty <= 0) draws.pop();
-      if (draws.length === 0) drawsBySource.delete(drawKey);
-      else drawsBySource.set(drawKey, draws);
-      // Re-inyectar al FRENTE: unshift en orden [más reciente … más viejo] deja
-      // el más viejo primero en la cola (lo devuelto se consumió del frente, así
-      // que es más viejo que el resto → preserva FIFO).
-      const q = queues.get(key) ?? [];
-      for (const lot of returnedLots) q.unshift(lot);
-      queues.set(key, q);
+      const { returnedCost, returnedUnknown, returnedQty } = returnDraws(drawKey, key, delta);
       // Atribuir el reverso a la venta: cantidad y costo NEGATIVOS (un-consume).
       if (m.sourceId && returnedQty > 0) {
         const stockableId = key.slice(key.indexOf(':') + 1);
@@ -331,6 +370,37 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
           -returnedQty,
           -returnedUnknown,
         );
+      }
+      continue;
+    }
+
+    // Anulación de CORTESÍA: devuelve las unidades con su base de costo REAL
+    // (los draws registrados al descontar la cortesía) y NETEA el costo de la
+    // cortesía en los agregados. Antes el movimiento compensatorio entraba
+    // como lote unitCost=null → esas unidades se vendían luego a costo $0
+    // (subestimaba el COGS).
+    //
+    // El faltante (delta > draws devueltos) NO se re-inyecta — igual que el
+    // reverso de void: el replay cubre TODA la historia, así que "sin draws"
+    // significa que la cortesía consumió unidades FANTASMA (no había stock en
+    // las colas). Re-inyectar el faltante crearía lotes fantasma y el
+    // `remaining` del FIFO quedaría por encima del stock real de la DB
+    // (auditoría 2026-07-05).
+    if (m.sourceType === 'cortesia_reversal' && delta > 0) {
+      const drawKey = `${m.sourceId ?? ''}:${key}`;
+      const { returnedCost, returnedUnknown, returnedQty } = returnDraws(drawKey, key, delta);
+      if (returnedQty > 0 && (returnedCost > 0 || returnedUnknown > 0)) {
+        out.cortesia.push({
+          createdAt: iso,
+          cost: -roundCost(returnedCost),
+          unknownQty: -roundCost(returnedUnknown),
+        });
+        if (m.sourceId) {
+          const prev = out.cortesiaCostBySource.get(m.sourceId) ?? { cost: 0, unknownQty: 0 };
+          prev.cost = roundCost(prev.cost - returnedCost);
+          prev.unknownQty = roundCost(prev.unknownQty - returnedUnknown);
+          out.cortesiaCostBySource.set(m.sourceId, prev);
+        }
       }
       continue;
     }
@@ -363,7 +433,14 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       out.waste.push({ createdAt: iso, cost, unknownQty });
     } else if (m.sourceType === 'cortesia') {
       // Cortesía AUTORIZADA: producto regalado → costo FIFO real (no es venta
-      // ni merma; se reporta aparte en el estado financiero).
+      // ni merma; se reporta aparte en el estado financiero). Los draws se
+      // registran para que una ANULACIÓN devuelva la base de costo exacta.
+      if (m.sourceId) {
+        const drawKey = `${m.sourceId}:${key}`;
+        const acc = drawsBySource.get(drawKey) ?? [];
+        for (const d of draws) acc.push(d);
+        drawsBySource.set(drawKey, acc);
+      }
       out.cortesia.push({ createdAt: iso, cost, unknownQty });
       if (m.sourceId) {
         const prev = out.cortesiaCostBySource.get(m.sourceId) ?? { cost: 0, unknownQty: 0 };

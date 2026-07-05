@@ -44,18 +44,15 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   }
   out.push(LF);
 
-  // Turno (grande, centrado) — coincide con el turnero público. Offline muestra
-  // el número provisional (OFF-N) en lugar del turno real (aún no asignado).
-  const bigTurn =
-    receipt.provisionalNumber ??
-    (receipt.turnNumber !== null ? String(receipt.turnNumber) : null);
-  if (bigTurn !== null) {
+  // Venta OFFLINE: número provisional (OFF-N) grande y centrado para que el
+  // cliente lo referencie mientras se sincroniza.
+  if (receipt.provisionalNumber) {
     out.push(ALIGN_CENTER);
-    out.push(latin1('TU TURNO'));
+    out.push(latin1('PROVISIONAL'));
     out.push(LF);
     out.push(BOLD_ON);
     out.push(SIZE_2H_2W);
-    out.push(latin1(bigTurn));
+    out.push(latin1(receipt.provisionalNumber));
     out.push(SIZE_NORMAL);
     out.push(BOLD_OFF);
     out.push(LF);
@@ -153,15 +150,17 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   out.push(ALIGN_CENTER);
   out.push(latin1('¡Gracias por tu compra!'));
   out.push(LF);
-  out.push(LF);
-  out.push(LF);
 
-  // Abrir cajón monedero (ventas en efectivo) — pulso RJ-11 antes del corte.
+  // Abrir cajón monedero (ventas en efectivo) — pulso RJ-11 antes del margen.
   if (receipt.openDrawer) {
     out.push(DRAWER_KICK);
   }
 
-  // Cut
+  // Margen de corte: estas impresoras térmicas NO tienen cuchilla (el comando
+  // de corte de abajo lo ignoran). El espacio en blanco empuja el papel para
+  // poder cortar a mano sin que la factura quede pegada al ticket siguiente
+  // (ej. cuando comanda y factura salen por la misma impresora).
+  out.push(FEED_TEAR_MARGIN);
   out.push(CUT_PARTIAL);
 
   return Buffer.concat(out);
@@ -187,6 +186,8 @@ const SIZE_NORMAL = Buffer.from([0x1d, 0x21, 0x00]);
 const SIZE_2H = Buffer.from([0x1d, 0x21, 0x01]); // double height
 const SIZE_2H_2W = Buffer.from([0x1d, 0x21, 0x11]); // double height + width
 const CUT_PARTIAL = Buffer.from([0x1d, 0x56, 0x01]);
+/** Margen inferior (6 líneas) para cortar a mano sin pegar dos tickets. */
+const FEED_TEAR_MARGIN = Buffer.from('\n'.repeat(6), 'latin1');
 const SEPARATOR = Buffer.from(
   '-'.repeat(32) + '\n',
   'latin1',

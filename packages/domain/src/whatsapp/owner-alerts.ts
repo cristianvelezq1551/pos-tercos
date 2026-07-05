@@ -10,13 +10,12 @@ export function buildVoidAlertMessage(input: {
   businessName: string;
   cashierName: string | null;
   receiptNumber: number;
-  turnNumber: number | null;
   total: number;
   reason: string;
 }): string {
   return (
     `[${input.businessName}] 🚫 Venta ANULADA\n\n` +
-    `Recibo: #${input.receiptNumber}${input.turnNumber !== null ? ` (turno ${input.turnNumber})` : ''}\n` +
+    `Recibo: #${input.receiptNumber}\n` +
     `Monto: ${formatCop(input.total)}\n` +
     `Cajero: ${input.cashierName ?? 'desconocido'}\n` +
     `Motivo: ${input.reason}`
@@ -30,6 +29,32 @@ export function buildNoSaleDrawerAlertMessage(input: {
 }): string {
   return (
     `[${input.businessName}] 🔓 Cajón abierto SIN venta\n\n` +
+    `Cajero: ${input.cashierName ?? 'desconocido'}\n` +
+    `Motivo: ${input.reason}`
+  );
+}
+
+/**
+ * Alerta de descuento MANUAL aplicado por el cajero (#5b): sin aprobación,
+ * pero el dueño se entera al instante de cada uno.
+ */
+export function buildManualDiscountAlertMessage(input: {
+  businessName: string;
+  cashierName: string | null;
+  receiptNumber: number;
+  customerName: string | null;
+  subtotal: number;
+  discountTotal: number;
+  total: number;
+  reason: string;
+}): string {
+  return (
+    `[${input.businessName}] 🏷️ Descuento manual aplicado\n\n` +
+    `Recibo: #${input.receiptNumber}\n` +
+    `${input.customerName ? `Cliente: ${input.customerName}\n` : ''}` +
+    `Subtotal: ${formatCop(input.subtotal)}\n` +
+    `Descuento: -${formatCop(input.discountTotal)}\n` +
+    `Total cobrado: ${formatCop(input.total)}\n` +
     `Cajero: ${input.cashierName ?? 'desconocido'}\n` +
     `Motivo: ${input.reason}`
   );

@@ -14,7 +14,6 @@ import type { ReceiptData } from './types';
 
 const RECEIPT_BASE: ReceiptData = {
   receiptNumber: 42,
-  turnNumber: 7,
   createdAt: '2026-05-04T15:30:00.000Z',
   cashierName: 'Juan',
   customerName: null,
@@ -64,17 +63,24 @@ describe('renderReceiptEscPos', () => {
     expect(text).toContain('$36.000');
   });
 
-  it('imprime "TU TURNO" + el número cuando turnNumber está set', () => {
-    const out = renderReceiptEscPos({ ...RECEIPT_BASE, turnNumber: 7 });
+  it('imprime "RECIBO #<n>" (reemplazo del bloque de turno eliminado)', () => {
+    const out = renderReceiptEscPos(RECEIPT_BASE);
     const text = out.toString('latin1');
-    expect(text).toContain('TU TURNO');
-    expect(text).toContain('7');
+    expect(text).toContain('RECIBO #42');
+    expect(text).not.toContain('TURNO');
   });
 
-  it('omite el bloque de turno cuando turnNumber es null', () => {
-    const out = renderReceiptEscPos({ ...RECEIPT_BASE, turnNumber: null });
+  it('imprime el número PROVISIONAL en grande para ventas offline', () => {
+    const out = renderReceiptEscPos({ ...RECEIPT_BASE, provisionalNumber: 'OFF-7' });
     const text = out.toString('latin1');
-    expect(text).not.toContain('TU TURNO');
+    expect(text).toContain('PROVISIONAL');
+    expect(text).toContain('OFF-7');
+  });
+
+  it('omite el bloque provisional en ventas online (sin provisionalNumber)', () => {
+    const out = renderReceiptEscPos(RECEIPT_BASE);
+    const text = out.toString('latin1');
+    expect(text).not.toContain('PROVISIONAL');
   });
 
   it('imprime DUPLICADO label cuando reprintLabel está set', () => {

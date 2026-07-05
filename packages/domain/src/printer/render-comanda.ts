@@ -7,9 +7,6 @@
 
 export interface ComandaData {
   receiptNumber: number;
-  /** Turno del cliente. Suele ser null: la comanda sale al COBRAR, antes
-   *  de confirmar el pago (el turno se asigna al pagar). */
-  turnNumber: number | null;
   /** ISO datetime de la venta. */
   createdAt: string;
   /** COUNTER | WEB_PICKUP — la cocina distingue pedidos web. */
@@ -27,6 +24,13 @@ export interface ComandaData {
   /** true = ticket de ANULACIÓN: el cobro se abandonó tras imprimir la comanda
    *  → la cocina debe DESCARTAR este pedido. */
   cancelled?: boolean;
+  /** Pie centrado al final (nombre del negocio). Va seguido de un margen de
+   *  papel en blanco para poder cortar a mano sin dañar el texto del pedido
+   *  (estas impresoras no tienen cuchilla). */
+  footer?: string | null;
+  /** Encabezado: "COMANDA COCINA" (solo lo que se cocina) vs "COMANDA COMPLETA"
+   *  (todo, incl. bebidas, para expedición/cajero). Default cocina. */
+  title?: string | null;
 }
 
 export function renderComandaEscPos(comanda: ComandaData): Buffer {
@@ -45,7 +49,7 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
     out.push(SIZE_NORMAL);
     out.push(latin1('DESCARTAR ESTE PEDIDO'));
   } else {
-    out.push(latin1('*** COMANDA COCINA ***'));
+    out.push(latin1(`*** ${comanda.title && comanda.title.trim() ? comanda.title : 'COMANDA COCINA'} ***`));
   }
   out.push(BOLD_OFF);
   out.push(LF);
@@ -57,13 +61,7 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
   }
   out.push(SIZE_2H_2W);
   out.push(BOLD_ON);
-  out.push(
-    latin1(
-      comanda.turnNumber !== null
-        ? `TURNO ${comanda.turnNumber}`
-        : `PEDIDO #${comanda.receiptNumber}`,
-    ),
-  );
+  out.push(latin1(`PEDIDO #${comanda.receiptNumber}`));
   out.push(BOLD_OFF);
   out.push(SIZE_NORMAL);
   out.push(LF);
@@ -109,8 +107,17 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
     }
   }
   out.push(SEPARATOR);
+
+  // Pie + margen de corte. Estas impresoras NO tienen cuchilla: el cajero/cocina
+  // corta a mano. El nombre del negocio marca el final del pedido y los saltos
+  // en blanco empujan el papel para que el desgarro NO caiga sobre los ítems.
   out.push(LF);
-  out.push(LF);
+  out.push(ALIGN_CENTER);
+  out.push(BOLD_ON);
+  out.push(latin1(truncate(comanda.footer && comanda.footer.trim() ? comanda.footer : 'TERCOS', 32)));
+  out.push(BOLD_OFF);
+  out.push(ALIGN_LEFT);
+  out.push(FEED_TEAR_MARGIN);
   out.push(CUT_PARTIAL);
 
   return Buffer.concat(out);
@@ -129,6 +136,8 @@ const SIZE_2H = Buffer.from([0x1d, 0x21, 0x01]);
 const SIZE_2H_2W = Buffer.from([0x1d, 0x21, 0x11]);
 const CUT_PARTIAL = Buffer.from([0x1d, 0x56, 0x01]);
 const SEPARATOR = Buffer.from('-'.repeat(32) + '\n', 'latin1');
+/** Margen inferior (6 líneas) para cortar a mano sin dañar el texto del pedido. */
+const FEED_TEAR_MARGIN = Buffer.from('\n'.repeat(6), 'latin1');
 
 function latin1(s: string): Buffer {
   return Buffer.from(s, 'latin1');

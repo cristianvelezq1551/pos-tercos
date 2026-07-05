@@ -5,11 +5,8 @@
  */
 export interface ReceiptData {
   receiptNumber: number;
-  /** Turno mostrado al cliente (coincide con el turnero). null si aún no se
-   *  asignó (no debería pasar en una venta pagada). */
-  turnNumber: number | null;
   /** Venta OFFLINE: número provisional (ej. "OFF-7"). Cuando está presente, el
-   *  recibo muestra ese número como turno, "RECIBO PROVISIONAL" y un sello
+   *  recibo muestra ese número en grande, "RECIBO PROVISIONAL" y un sello
    *  "PENDIENTE DE SINCRONIZAR". El backend NUNCA lo setea (online intacto). */
   provisionalNumber?: string | null;
   /** ISO datetime. */

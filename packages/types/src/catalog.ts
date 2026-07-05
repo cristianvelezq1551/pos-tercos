@@ -11,6 +11,9 @@ export const IngredientSchema = z.object({
   unitRecipe: z.string(),
   conversionFactor: z.number().positive(),
   thresholdMin: z.number().nonnegative(),
+  /** Tamaño de una porción, en `unitRecipe` (ej. 150 = 150 g/porción). Null =
+   *  sin porción definida → el inventario solo muestra la unidad nativa. */
+  portionSize: z.number().positive().nullable(),
   // Costo histórico (FASE 4 ajustes 2.2). En unitPurchase. Auto-actualizado
   // al confirmar facturas (espejo de Product.lastUnitCost).
   lastUnitCost: z.number().nullable(),
@@ -27,6 +30,7 @@ export const CreateIngredientSchema = z.object({
   unitRecipe: z.string().min(1).max(20),
   conversionFactor: z.number().positive(),
   thresholdMin: z.number().nonnegative().optional(),
+  portionSize: z.number().positive().nullable().optional(),
 });
 export type CreateIngredient = z.infer<typeof CreateIngredientSchema>;
 
@@ -46,6 +50,8 @@ export const SubproductSchema = z.object({
   unit: z.string(),
   /** Umbral mínimo de stock en `unit`. 0 = sin umbral. */
   thresholdMin: z.number().nonnegative(),
+  /** Tamaño de una porción, en `unit`. Null = sin porción definida. */
+  portionSize: z.number().positive().nullable(),
   /** Paso a paso de preparación (biblia del cocinero). */
   preparationSteps: z.array(z.string()),
   isActive: z.boolean(),
@@ -62,6 +68,7 @@ export const CreateSubproductSchema = z.object({
   yield: z.number().positive(),
   unit: z.string().min(1).max(20).optional(),
   thresholdMin: z.number().nonnegative().optional(),
+  portionSize: z.number().positive().nullable().optional(),
   preparationSteps: PreparationStepsSchema.optional(),
 });
 export type CreateSubproduct = z.infer<typeof CreateSubproductSchema>;
@@ -83,10 +90,16 @@ export type UpdateSubproduct = z.infer<typeof UpdateSubproductSchema>;
 export const RecordProductionSchema = z.object({
   quantityProduced: z.number().positive(),
   notes: z.string().max(500).optional(),
+  /** Storage key de la foto de evidencia (subida antes vía /production/evidence). */
+  evidenceKey: z.string().max(300).nullable().optional(),
   /** Idempotency-key para reintentos del cliente sin doble producción. */
   idempotencyKey: z.string().min(1).max(100).optional(),
 });
 export type RecordProduction = z.infer<typeof RecordProductionSchema>;
+
+/** Respuesta de subir la foto de evidencia: la key para pasar a /produce. */
+export const ProductionEvidenceUploadSchema = z.object({ key: z.string() });
+export type ProductionEvidenceUpload = z.infer<typeof ProductionEvidenceUploadSchema>;
 
 /** Estado de producción de un subproducto para la pantalla de cocina (KDS):
  *  stock actual + umbral + flag "falta producir". Accesible al cocinero. */
@@ -180,6 +193,8 @@ export const ProductionRunSchema = z.object({
       unit: z.string(),
     }),
   ),
+  /** Ruta para ver la foto de evidencia (null si no se subió). */
+  evidenceUrl: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
 });
 export type ProductionRun = z.infer<typeof ProductionRunSchema>;

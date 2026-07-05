@@ -342,3 +342,89 @@ describe('runLedgerFifo · producción con costo mixto (parcial)', () => {
     expect(cq!.unknownQty).toBeGreaterThan(0);
   });
 });
+
+describe('runLedgerFifo · anulación de cortesía (base de costo real)', () => {
+  it('la reversa devuelve las unidades con su costo FIFO original y netea la cortesía', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({ delta: -3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'corA' }),
+      mov({ delta: 3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'corA' }),
+      // Venta posterior: debe costear a $100 (NO a $0 como antes del fix).
+      mov({ delta: -5, type: 'SALE', sourceId: 'saleZ' }),
+    ]);
+    expect(r.saleIngredientCost.get('saleZ')?.get('ing1')).toEqual({
+      cost: 500,
+      qty: 5,
+      unknownQty: 0,
+    });
+    // La cortesía queda neteada a 0 (consumo +300, reversa −300).
+    expect(r.cortesiaCostBySource.get('corA')).toEqual({ cost: 0, unknownQty: 0 });
+    const cortesiaTotal = r.cortesia.reduce((a, c) => a + c.cost, 0);
+    expect(cortesiaTotal).toBe(0);
+    // Inventario final: 10 − 3 + 3 − 5 = 5 unidades a $100.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 5, value: 500, unknownQty: 0 });
+  });
+
+  it('reversa parcial devuelve lo más recién consumido primero', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 2, unitCost: 10 }),
+      mov({ delta: 2, unitCost: 20 }),
+      // Cortesía cruza lotes: 2×10 + 1×20 = 40.
+      mov({ delta: -3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'corB' }),
+      // Reversa de 1 → devuelve la del lote de $20 (lo último consumido).
+      mov({ delta: 1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'corB' }),
+    ]);
+    expect(r.cortesiaCostBySource.get('corB')).toEqual({ cost: 20, unknownQty: 0 });
+    // Quedan 1 (reinyectada a $20) + 1 (del lote de $20 sin tocar) = 2×$20.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 2, value: 40, unknownQty: 0 });
+  });
+
+  it('reversa de una cortesía que sobre-consumió NO crea lotes fantasma (concilia con la DB)', () => {
+    const r = runLedgerFifo([
+      // Stock real: 1. La cortesía descuenta 3 (1 real + 2 fantasma).
+      mov({ delta: 1, unitCost: 50 }),
+      mov({ delta: -3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'corC' }),
+      mov({ delta: 3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'corC' }),
+    ]);
+    // DB: 1 − 3 + 3 = 1. El FIFO debe decir lo mismo (antes inyectaba el
+    // faltante como lote fantasma → remaining 3).
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 1, value: 50, unknownQty: 0 });
+  });
+
+  it('reversa sin draws (datos corruptos) no devuelve nada ni toca los agregados', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 4, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'corLegacy' }),
+    ]);
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty ?? 0).toBe(0);
+    expect(r.cortesiaCostBySource.has('corLegacy')).toBe(false);
+  });
+});
+
+describe('runLedgerFifo · bordes de producción (auditoría 2026-07-05)', () => {
+  it('tanda sin consumos registrados → lote de costo DESCONOCIDO, no $0', () => {
+    const r = runLedgerFifo([
+      // Solo el +N (los consumos rondaron a 0 y se filtraron al persistir).
+      mov({
+        delta: 5,
+        type: 'PRODUCTION',
+        sourceType: 'production',
+        sourceId: 'run1',
+        entityType: 'SUBPRODUCT',
+      }),
+      mov({ delta: -2, type: 'SALE', sourceId: 'saleP', entityType: 'SUBPRODUCT' }),
+    ]);
+    const cq = r.saleSubproductCost.get('saleP')?.get('sub1');
+    expect(cq?.cost).toBe(0);
+    expect(cq?.unknownQty).toBe(2); // desconocido, NUNCA $0 asumido
+  });
+
+  it('batch malformado (consumos sin +N) igual descuenta las colas', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      // Consumo de producción huérfano (el +N se perdió — datos corruptos).
+      mov({ delta: -4, type: 'PRODUCTION', sourceType: 'production', sourceId: 'runX' }),
+    ]);
+    // Antes se ignoraba el batch entero → remaining 10 (inflado). DB = 6.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 6, value: 600, unknownQty: 0 });
+  });
+});

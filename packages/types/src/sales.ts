@@ -109,6 +109,35 @@ export const UpdatePaymentMethodsSchema = z.object({
 export type UpdatePaymentMethods = z.infer<typeof UpdatePaymentMethodsSchema>;
 
 // ====================================================================
+// DESCUENTO MANUAL (#5b) — por línea y/o sobre el total
+// ====================================================================
+
+export const ManualDiscountKindEnum = z.enum(['FIXED', 'PERCENT']);
+export type ManualDiscountKind = z.infer<typeof ManualDiscountKindEnum>;
+
+/**
+ * Descuento manual del cajero. EXCLUYENTE con promociones: si la venta trae
+ * cualquier descuento manual (línea o total), las promos automáticas se
+ * ignoran por completo. Requiere `discountReason` en la venta.
+ */
+export const ManualDiscountSchema = z
+  .object({
+    kind: ManualDiscountKindEnum,
+    /** FIXED: monto en COP. PERCENT: 0 < value <= 100. */
+    value: z.number().positive(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.kind === 'PERCENT' && d.value > 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Un descuento porcentual no puede superar 100%.',
+        path: ['value'],
+      });
+    }
+  });
+export type ManualDiscount = z.infer<typeof ManualDiscountSchema>;
+
+// ====================================================================
 // SALE ITEM — wire format (output del backend)
 // ====================================================================
 
@@ -142,6 +171,10 @@ export const SaleItemSchema = z.object({
   lineSubtotal: z.number().nonnegative(),
   lineDiscount: z.number().nonnegative(),
   lineTotal: z.number().nonnegative(),
+  /** Unidades YA enviadas a cocina (comanda incremental de cuentas abiertas). */
+  sentToKitchenQty: z.number().int().nonnegative().default(0),
+  /** Descuento manual de la línea (null/ausente = sin descuento manual). */
+  manualDiscount: ManualDiscountSchema.nullable().optional(),
 });
 export type SaleItem = z.infer<typeof SaleItemSchema>;
 
@@ -164,9 +197,6 @@ export const SaleSchema = z.object({
   receiptNumber: z.number().int().positive(),
   type: SaleTypeEnum,
   status: SaleStatusEnum,
-  // null hasta el pago: el turno se asigna en confirmPayment (secuencia diaria
-  // única compartida COUNTER + WEB_PICKUP).
-  turnNumber: z.number().int().nullable(),
 
   customerName: z.string().nullable(),
   customerPhone: z.string().nullable(),
@@ -187,6 +217,14 @@ export const SaleSchema = z.object({
   shiftId: z.string().uuid().nullable(),
 
   notes: z.string().nullable(),
+  /** Cuenta abierta (#3): venta COUNTER que vive sin pagar hasta el cierre. */
+  isOpenTab: z.boolean().default(false),
+  /** Descuento manual sobre el total (null = sin descuento sobre el total). */
+  orderDiscount: ManualDiscountSchema.nullable().optional(),
+  /** Monto resultante del descuento sobre el total (0 si no hay). */
+  orderDiscountAmount: z.number().nonnegative().default(0),
+  /** Motivo del descuento manual (obligatorio si hubo descuento manual). */
+  discountReason: z.string().nullable().optional(),
   /** Motivo de anulación (solo cuando status=VOID). */
   voidReason: z.string().nullable().optional(),
   idempotencyKey: z.string().nullable(),
@@ -219,6 +257,8 @@ export const CreateSaleItemSchema = z.object({
   modifiers: z.array(CreateSaleItemModifierSchema).optional(),
   /** Notas de cocina por línea (ej. "sin cebolla"). */
   notes: z.string().max(200).optional(),
+  /** Descuento manual de la línea (#5b). Exige discountReason en la venta. */
+  manualDiscount: ManualDiscountSchema.optional(),
 });
 export type CreateSaleItem = z.infer<typeof CreateSaleItemSchema>;
 
@@ -242,8 +282,41 @@ export const CreateSaleSchema = z
     customerNit: z.string().min(1).max(40).optional(),
 
     notes: z.string().max(500).optional(),
+
+    /** Cuenta abierta (#3): solo COUNTER, requiere customerName. */
+    openTab: z.boolean().optional(),
+    /** Descuento manual sobre el TOTAL (#5b). */
+    orderDiscount: ManualDiscountSchema.optional(),
+    /** Motivo del descuento manual — obligatorio si hay CUALQUIER descuento manual. */
+    discountReason: z.string().min(3).max(200).optional(),
   })
   .superRefine((data, ctx) => {
+    const hasManualDiscount =
+      data.orderDiscount !== undefined ||
+      data.items.some((it) => it.manualDiscount !== undefined);
+    if (hasManualDiscount && !data.discountReason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'El descuento manual requiere un motivo (discountReason).',
+        path: ['discountReason'],
+      });
+    }
+    if (data.openTab) {
+      if (data.type !== 'COUNTER') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Solo las ventas de mostrador pueden quedar como cuenta abierta.',
+          path: ['openTab'],
+        });
+      }
+      if (!data.customerName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Una cuenta abierta requiere el nombre del cliente.',
+          path: ['customerName'],
+        });
+      }
+    }
     if (data.type !== 'COUNTER') {
       const ctxMsg = `${data.type} requires customerName + customerPhone`;
       if (!data.customerName) {
@@ -312,10 +385,55 @@ export const MAX_SPLIT_PARTS = 10;
  * ya lo inició (≠ PAGADO) las líneas de PREPARACIÓN no pueden cambiar (solo
  * reventa directa, ej. bebidas). El backend recalcula precios y stock.
  */
-export const EditSaleItemsSchema = z.object({
-  items: z.array(CreateSaleItemSchema).min(1),
-});
+export const EditSaleItemsSchema = z
+  .object({
+    items: z.array(CreateSaleItemSchema).min(1),
+    /** Descuento manual sobre el total: presente = setear, null = quitar,
+     *  ausente = conservar el actual de la venta. */
+    orderDiscount: ManualDiscountSchema.nullable().optional(),
+    /** Motivo del descuento manual (obligatorio si la edición deja descuento). */
+    discountReason: z.string().min(3).max(200).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const addsManualDiscount =
+      (data.orderDiscount !== undefined && data.orderDiscount !== null) ||
+      data.items.some((it) => it.manualDiscount !== undefined);
+    if (addsManualDiscount && !data.discountReason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'El descuento manual requiere un motivo (discountReason).',
+        path: ['discountReason'],
+      });
+    }
+  });
 export type EditSaleItems = z.infer<typeof EditSaleItemsSchema>;
+
+// ====================================================================
+// SEND TO KITCHEN — POST /sales/:id/send-to-kitchen (cuentas abiertas #3)
+// ====================================================================
+
+/** Bytes ESC/POS de una variante de comanda (cocina / completa). */
+export const ComandaBytesSchema = z.object({
+  escposBase64: z.string(),
+  /** Líneas con unidades pendientes incluidas en esta variante. */
+  itemCount: z.number().int().nonnegative(),
+});
+export type ComandaBytes = z.infer<typeof ComandaBytesSchema>;
+
+/**
+ * Respuesta de enviar la tanda pendiente a cocina: estampa las unidades como
+ * enviadas y devuelve las DOS variantes de comanda (solo lo NUEVO) para que
+ * el POS las rutee a sus impresoras. `pendingCount===0` → no había nada nuevo
+ * (no se imprimió ni estampó nada).
+ */
+export const SendToKitchenResponseSchema = z.object({
+  batch: z.number().int().positive(),
+  pendingCount: z.number().int().nonnegative(),
+  kitchen: ComandaBytesSchema.nullable(),
+  full: ComandaBytesSchema.nullable(),
+  receiptNumber: z.number().int().positive(),
+});
+export type SendToKitchenResponse = z.infer<typeof SendToKitchenResponseSchema>;
 
 // ====================================================================
 // CHANGE SALE PAYMENT — PATCH /sales/:id/payment
@@ -406,8 +524,8 @@ export type ConfirmPayment = z.infer<typeof ConfirmPaymentSchema>;
 // ====================================================================
 // Venta cobrada OFFLINE (COUNTER) que el POS sincroniza al recuperar conexión.
 // El backend la registra TAL CUAL se cobró (totales VERBATIM, sin recomputar
-// promos ni validar soldOut → "gana lo cobrado offline"), le asigna el recibo y
-// turno reales, descuenta stock y la deja ENTREGADO (ya fue entrega directa).
+// promos ni validar soldOut → "gana lo cobrado offline"), le asigna el recibo
+// real, descuenta stock y la deja PAGADO (estado terminal de mostrador).
 // Idempotente por `localId` (= idempotency key) → cero doble-cobro en reintentos.
 
 export const SyncOfflineLineSchema = z.object({

@@ -44,12 +44,33 @@ export interface WhatsAppSendResult {
 }
 
 /**
- * Puerto de envío. Implementado en apps/api por OpenWaWhatsAppAdapter
- * (real) y MockWhatsAppAdapter (dev). Recibe phone E.164; el adapter lo
- * convierte al chatId del proveedor.
+ * Mensaje por TEMPLATE pre-aprobado de Meta (Cloud API). Obligatorio para
+ * mensajes business-initiated fuera de la ventana de 24h. Los `variables`
+ * llenan {{1}}, {{2}}, … EN ORDEN y no pueden contener saltos de línea
+ * (usar `sanitizeTemplateParam`).
+ */
+export interface WhatsAppTemplateMessage {
+  /** Nombre EXACTO del template aprobado en Meta/Kapso. */
+  name: string;
+  /** Language code del template ('es' o 'es_CO'). */
+  languageCode: string;
+  /** Valores para {{1}}..{{n}} en orden. */
+  variables: string[];
+}
+
+/**
+ * Puerto de envío. Implementado en apps/api por KapsoWhatsAppAdapter (Cloud
+ * API oficial), OpenWaWhatsAppAdapter (legacy) y MockWhatsAppAdapter (dev).
+ * Recibe phone E.164; el adapter lo convierte al formato del proveedor.
+ * `sendTemplate` es opcional: solo la Cloud API lo soporta (OpenWA no tiene
+ * concepto de template).
  */
 export interface WhatsAppProvider {
   sendText(phoneE164: string, text: string): Promise<WhatsAppSendResult>;
+  sendTemplate?(
+    phoneE164: string,
+    template: WhatsAppTemplateMessage,
+  ): Promise<WhatsAppSendResult>;
 }
 
 // --- Alerta interna de descuadre (wa.me al Dueño, NO al cliente) ---

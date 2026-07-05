@@ -180,7 +180,7 @@ export const DAILY_SUMMARY_SYSTEM = `Sos el analista de operación de un restaur
 
 Reglas:
 - Máximo 5 frases. Empezá por lo más importante (ventas del día).
-- Resaltá lo bueno y lo que requiere atención (descuadres, anulaciones, demoras de cocina, stock bajo).
+- Resaltá lo bueno y lo que requiere atención (descuadres, anulaciones, stock bajo).
 - Cerrá con UNA sugerencia concreta si los datos la justifican.
 - No inventes datos. Usá solo lo que te dan.`;
 
@@ -193,7 +193,6 @@ export interface DailySummaryInput {
   digitalRevenue: number;
   voidCount: number;
   cashDifference: number | null; // del cierre del día, si lo hubo
-  delayedKitchenCount: number;
   lowStockCount: number;
   topProducts: Array<{ name: string; qty: number }>;
 }
@@ -206,7 +205,6 @@ export function buildDailySummaryUserPrompt(i: DailySummaryInput): string {
     `- Efectivo: ${cop(i.cashRevenue)} | Digital: ${cop(i.digitalRevenue)}`,
     `- Anulaciones: ${i.voidCount}`,
     `- Diferencia de caja al cierre: ${i.cashDifference === null ? 'sin cierre' : cop(i.cashDifference)}`,
-    `- Pedidos demorados en cocina (>10 min): ${i.delayedKitchenCount}`,
     `- Insumos/productos con stock bajo: ${i.lowStockCount}`,
   ];
   if (i.topProducts.length > 0) {

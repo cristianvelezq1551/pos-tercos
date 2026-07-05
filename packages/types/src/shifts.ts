@@ -150,7 +150,6 @@ export type ExpectedCash = z.infer<typeof ExpectedCashSchema>;
 export const ShiftSessionOrderSchema = z.object({
   id: z.string().uuid(),
   receiptNumber: z.number().int(),
-  turnNumber: z.number().int().nullable(),
   type: z.string(),
   status: z.string(),
   total: z.number(),

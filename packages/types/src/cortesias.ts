@@ -1,7 +1,13 @@
 import { z } from 'zod';
 
-/** Cortesía: producto regalado (línea de un pedido o suelto). */
-export const CortesiaStatusEnum = z.enum(['PENDING', 'APPROVED', 'REJECTED']);
+/**
+ * Cortesía: producto regalado (línea de un pedido o suelto). Desde 2026-07 se
+ * registran AUTO-APROBADAS (sin gate de admin): al crearse descuentan stock a
+ * costo FIFO y notifican al dueño. `REVERSED` = el admin la anuló por error
+ * (devuelve stock, sale del COGS de cortesías). `PENDING`/`REJECTED` quedan solo
+ * por compatibilidad con filas históricas del flujo anterior de aprobación.
+ */
+export const CortesiaStatusEnum = z.enum(['PENDING', 'APPROVED', 'REJECTED', 'REVERSED']);
 export type CortesiaStatus = z.infer<typeof CortesiaStatusEnum>;
 
 export const CreateCortesiaSchema = z.object({

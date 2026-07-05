@@ -9,6 +9,15 @@ export const UserRoleEnum = z.enum([
 ]);
 export type UserRole = z.infer<typeof UserRoleEnum>;
 
+/** Etiquetas canónicas de rol (única fuente — no redefinir en las apps). */
+export const USER_ROLE_LABELS: Record<UserRole, string> = {
+  DUENO: 'Dueño',
+  ADMIN_OPERATIVO: 'Admin operativo',
+  CAJERO: 'Cajero',
+  COCINERO: 'Cocinero',
+  TRABAJADOR: 'Trabajador',
+};
+
 export const UserSchema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),

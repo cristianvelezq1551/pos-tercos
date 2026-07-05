@@ -39,7 +39,10 @@ export const AuditActionEnum = z.enum([
   'CORTESIA_REQUESTED',
   'CORTESIA_APPROVED',
   'CORTESIA_REJECTED',
+  'CORTESIA_REVERSED',
   'SALE_STATUS_CHANGED',
+  'SALE_MANUAL_DISCOUNT',
+  'SALE_SENT_TO_KITCHEN',
   'SALE_SYNCED_OFFLINE',
   'OFFLINE_SYNC_DISCREPANCY',
   'OFFLINE_NEGATIVE_STOCK',
@@ -142,6 +145,8 @@ export const AuditActionEnum = z.enum([
   'OWNER_ALERT_SENT',
   // Conteo físico ciclado registrado (con o sin diferencia).
   'STOCK_COUNT_REGISTERED',
+  'STOCK_COUNT_APPROVED',
+  'STOCK_COUNT_REJECTED',
   // El admin habilitó/deshabilitó medios de pago del POS.
   'PAYMENT_METHODS_UPDATED',
   // El dueño cambió el día de corte del "mes del negocio".
@@ -162,6 +167,12 @@ export const AuditActionEnum = z.enum([
   'PAYABLE_CREATED',
   'PAYABLE_PAID',
   'PAYABLE_CANCELLED',
+  // Cocina (app del cocinero): incidencias + checklist apertura/cierre.
+  'KITCHEN_INCIDENT_LOGGED',
+  'KITCHEN_INCIDENT_RESOLVED',
+  'KITCHEN_CHECKLIST_COMPLETED',
+  'CHECKLIST_ITEM_CREATED',
+  'CHECKLIST_ITEM_UPDATED',
 ]);
 export type AuditAction = z.infer<typeof AuditActionEnum>;
 

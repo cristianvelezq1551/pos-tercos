@@ -272,10 +272,12 @@ export const DashboardSummarySchema = z.object({
   todayDiscount: z.number().nonnegative(),
   /** Diferencia % vs el mismo día de la semana pasada. null si no hay sample. */
   weekOverWeekPct: z.number().nullable(),
-  /** Pendientes en el momento de la consulta. */
+  /** Pedidos web pendientes de pago en el momento de la consulta. */
   pendingWebOrders: z.number().int().nonnegative(),
-  ordersInKitchen: z.number().int().nonnegative(),
-  ordersReady: z.number().int().nonnegative(),
+  /** Pedidos web pagados que el cajero aún no marcó "listo para retirar". */
+  webOrdersToPrepare: z.number().int().nonnegative(),
+  /** Pedidos web marcados "listos para retirar" hoy. */
+  webOrdersReady: z.number().int().nonnegative(),
   /** Stockables bajo threshold (ingredient/product directResale activos). */
   lowStockCount: z.number().int().nonnegative(),
   pendingSuggestions: z.number().int().nonnegative(),
