@@ -5,6 +5,19 @@ import { PrismaService } from '../../src/prisma/prisma.service';
  * Diseñado para correr en afterEach/afterAll sin tocar migraciones.
  */
 export async function cleanDb(prisma: PrismaService): Promise<void> {
+  // Defensa en profundidad: este TRUNCATE una vez borró usuarios/catálogo de
+  // la DB de DEV (antes de la separación de DBs). Aunque setup-env.ts fuerza
+  // la DB de test, un TEST_DATABASE_URL mal seteado la puede re-apuntar —
+  // acá se verifica contra la conexión REAL, no contra env vars.
+  const [{ db }] = await prisma.$queryRawUnsafe<Array<{ db: string }>>(
+    'SELECT current_database() AS db',
+  );
+  if (!db.endsWith('_test')) {
+    throw new Error(
+      `cleanDb se negó a truncar la DB "${db}": no termina en "_test". ` +
+        'Los e2e deben correr contra la DB de test, nunca dev/prod.',
+    );
+  }
   // Orden: hijos antes que padres
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE
     display_slides,

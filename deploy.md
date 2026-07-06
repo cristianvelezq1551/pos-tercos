@@ -6,12 +6,14 @@
 > WhatsApp automático vía OpenWA, print-agent en :9120.
 >
 > ⚠️ **Actualización 2026-06-27 (CLAUDE.md §7.v10): turnero + KDS ELIMINADOS.**
-> NO hay app de cocina (la `apps/kds-flutter` se borró; la futura será web, a
-> construir). NO hay turnero. La pantalla `apps/public-display` queda SOLO como
-> kiosko de **productos + publicidad + música** (sin turnos). COUNTER termina en
-> PAGADO; el cajero marca los pedidos WEB como "listo" desde el POS. Las
-> secciones §2.2 (KDS Flutter), §6 paso 5-6 (KDS/turnero) y la nota de TZ de
-> reset de turnos quedan **obsoletas** — ignorarlas.
+> La `apps/kds-flutter` se borró; NO hay turnero. La pantalla
+> `apps/public-display` queda SOLO como kiosko de **productos + publicidad +
+> música** (sin turnos). COUNTER termina en PAGADO; el cajero marca los pedidos
+> WEB como "listo" desde el POS.
+>
+> ✅ **Actualización 2026-06-27 (CLAUDE.md §7.v11): la app WEB de cocina SÍ
+> existe** (`apps/cocina`, construida el mismo día) — se despliega como 5º
+> frontend en Vercel, ver §2.2.
 >
 > **Pre-requisitos cumplidos** (ver `pendientes-externos-y-deploy.md`):
 > - Cuenta Cloudflare R2 + bucket `pos-tercos-prod`.
@@ -51,19 +53,22 @@
 
 ### 0.2 Endurecimiento pre-prod (recomendado fuerte)
 
-- [ ] **Bump de dependencias con CVE production-facing**: `next` (SSRF/DoS,
-      ≥15.5.16) y `multer` (DoS, ≥2.2.0 — es el path de subida de facturas).
-      `pnpm audit --prod` reporta 16 high. 🟠
-- [ ] **print-agent: auth obligatoria + CORS allowlist** — hoy `PRINT_AGENT_SECRET`
-      es opcional (acepta todo) y CORS `*`: cualquier web que el operador visite
-      puede abrir el cajón monedero. Exigir el secreto en prod. 🟠
-- [ ] **Timeouts de red**: `fetch` al print-agent y al R2 sin timeout cuelgan el
-      request del cajero si la Pi/túnel/R2 queda half-open. Agregar
-      `AbortSignal.timeout`. 🟠
-- [ ] **Alerta on-failure del backup** — el cron de backup falla en silencio;
-      agregar notificación si falla (hoy solo se descubre al necesitar restore). 🟠
-- [ ] **UptimeRobot sobre `/healthz`** — el canal de alerta de 5xx viaja por
-      WhatsApp (el servicio que más probablemente cae); un monitor externo
+- [x] **Bump de dependencias con CVE production-facing** — hecho:
+      `pnpm audit --prod` limpio (verificado 2026-07-06). ✅
+- [x] **print-agent endurecido** — hecho: sin `PRINT_AGENT_SECRET` escucha SOLO
+      en 127.0.0.1 (inalcanzable desde la red); con secret, validación
+      timing-safe. En prod (Pi accesible por red) **setear el secret es
+      obligatorio** — es lo que frena a una web maliciosa abriendo el cajón
+      desde el navegador del POS. ✅ (código) / 🟠 (operativo: setear la var)
+- [x] **Timeouts de red** — hecho: impresora y cajón 5s (`AbortSignal.timeout`),
+      R2 15s request / 5s conexión, WhatsApp con timeout propio. ✅
+- [x] **Alerta on-failure del backup** — hecho: el workflow abre/comenta un
+      GitHub Issue (label `backup-failure`) si falla → mail automático. Ojo:
+      NO cubre "el cron nunca corrió" (repo inactivo >60 días lo pausa GitHub);
+      para eso el dead-man's-switch de abajo. 🟠 parcial
+- [ ] **UptimeRobot sobre `/healthz`** + (opcional) ping a healthchecks.io al
+      final del backup como dead-man's-switch — el canal de alerta de 5xx viaja
+      por WhatsApp (el servicio que más probablemente cae); un monitor externo
       independiente es la red de seguridad real. Ver §8. 🟠
 
 ### 0.3 Deuda de escala (no bloquea el día 1; resolver antes de ~6 meses)
