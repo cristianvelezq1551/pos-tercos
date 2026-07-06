@@ -17,7 +17,10 @@ name: Postgres backup
 
 on:
   schedule:
-    - cron: '0 7 * * *' # 07:00 UTC = 2 AM Colombia
+    # Cada 6h (2 AM / 8 AM / 2 PM / 8 PM Colombia): acota la ventana máxima de
+    # pérdida de datos a ~6h (Railway hobby no tiene PITR). El dump es chico y
+    # GitHub Actions es gratis — no hay razón para conformarse con 24h.
+    - cron: '0 1,7,13,19 * * *'
   workflow_dispatch: {} # corrida manual para probar el pipeline
 
 jobs:
@@ -87,6 +90,21 @@ jobs:
                   aws s3 rm "s3://$BUCKET/backups/$key" --endpoint-url "$R2_ENDPOINT"
                 fi
               done
+
+      # Dead-man's-switch OPCIONAL (healthchecks.io): el Issue de abajo avisa si
+      # el backup FALLA, pero no si el cron NUNCA CORRIÓ (GitHub pausa schedules
+      # en repos inactivos >60 días). Con el secret HEALTHCHECKS_URL configurado,
+      # healthchecks.io espera este ping y alerta por su cuenta si no llega.
+      - name: Ping dead-man's-switch
+        if: success()
+        env:
+          HC_URL: ${{ secrets.HEALTHCHECKS_URL }}
+        run: |
+          if [ -n "$HC_URL" ]; then
+            curl -fsS --retry 3 "$HC_URL" >/dev/null && echo "ping enviado"
+          else
+            echo "HEALTHCHECKS_URL no configurado — paso omitido (opcional)"
+          fi
 
       # Un backup que falla EN SILENCIO se descubre el día que se necesita el
       # restore. Si cualquier paso falló, se abre (o comenta) un Issue — GitHub

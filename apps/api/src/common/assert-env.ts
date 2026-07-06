@@ -63,5 +63,27 @@ export function assertRequiredEnv(): void {
         console.warn(`⚠️  [env] ${key} no está seteada en producción — ${consequence}.`);
       }
     }
+
+    // Print-agent accesible por red SIN secret = cualquier web que visite el
+    // operador puede abrir el cajón monedero. Si se eligió escpos en prod, el
+    // secret es OBLIGATORIO (checklist humano → invariante del boot).
+    if (process.env.PRINTER_PROVIDER === 'escpos' && !process.env.PRINT_AGENT_SECRET) {
+      throw new Error(
+        'PRINTER_PROVIDER=escpos en producción exige PRINT_AGENT_SECRET ' +
+          '(el mismo valor en el print-agent). Sin él, el agent queda abierto ' +
+          'a cualquier página web del operador (apertura del cajón).',
+      );
+    }
+
+    // El default de pool de Prisma (num_cpu×2+1) es muy chico en planes hobby:
+    // un burst de cobros concurrentes lo agota. SALE_TX_OPTS.maxWait mitiga,
+    // pero el pool necesita holgura explícita (ver deploy.md §1.2).
+    if (!/[?&]connection_limit=/.test(process.env.DATABASE_URL ?? '')) {
+      console.warn(
+        '⚠️  [env] DATABASE_URL sin `connection_limit` — el pool default de Prisma ' +
+          'se deriva del nº de CPU y en planes chicos queda en ~3-5. Recomendado: ' +
+          '`?connection_limit=15` (ver deploy.md §1.2).',
+      );
+    }
   }
 }

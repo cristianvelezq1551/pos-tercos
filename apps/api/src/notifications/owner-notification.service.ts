@@ -16,7 +16,8 @@ export type OwnerAlertKind =
   | 'cortesia_request'
   | 'cortesia_given'
   | 'manual_discount'
-  | 'server_error';
+  | 'server_error'
+  | 'multi_instance';
 
 /**
  * Alertas puntuales al WhatsApp del DUEÑO (antifraude + costos). Igual que

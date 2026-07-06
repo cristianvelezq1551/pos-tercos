@@ -17,6 +17,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
+import { InstanceGuardService } from './health/instance-guard.service';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { InvoicesModule } from './invoices/invoices.module';
@@ -94,6 +95,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
   controllers: [HealthController],
   providers: [
     HealthService,
+    InstanceGuardService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },

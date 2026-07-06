@@ -1398,3 +1398,15 @@ model ChecklistCompletion {
   @@unique([type, day])
   @@map("checklist_completions")
 }
+
+/// Heartbeat de instancias vivas del API. El sistema ASUME single-instance
+/// (throttle in-memory, rooms WS): si aparece más de una instancia viva
+/// sostenida (autoscale activado por error), InstanceGuardService alerta al
+/// dueño en vez de romperse en silencio.
+model AppInstance {
+  id         String   @id
+  startedAt  DateTime @default(now()) @map("started_at")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+
+  @@map("app_instances")
+}
