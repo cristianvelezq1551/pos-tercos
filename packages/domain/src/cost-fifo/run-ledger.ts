@@ -166,6 +166,19 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
 
   const queues = new Map<string, Lot[]>();
   // Para revertir consumo de venta al anular: key = `${saleId}:${stockableKey}`.
+  // ACOTADO por pre-scan (mitigación de memoria, informe de calidad B1): los
+  // draws solo se usan cuando llega una REVERSA (void/edición con delta>0, o
+  // cortesia_reversal) — registrar los draws de TODAS las ventas históricas
+  // retenía ~1M objetos en el pico del replay. Con el pre-scan, solo se
+  // registran los de los sourceIds que efectivamente tienen reversas (un
+  // puñado), y el pico de memoria deja de crecer con la historia de ventas.
+  const reversedSources = new Set<string>();
+  for (const m of movements) {
+    if (!m.sourceId) continue;
+    if ((m.type === 'SALE' && m.delta > 0) || m.sourceType === 'cortesia_reversal') {
+      reversedSources.add(m.sourceId);
+    }
+  }
   const drawsBySource = new Map<string, Draw[]>();
 
   const out: LedgerFifo = {
@@ -423,10 +436,12 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       // consumir el mismo stockable más de una vez (cobro inicial + ajuste por
       // edición que agrega producto). Sobrescribir perdía los draws previos →
       // el void no podía revertir el consumo completo.
-      const drawKey = `${m.sourceId}:${key}`;
-      const acc = drawsBySource.get(drawKey) ?? [];
-      for (const d of draws) acc.push(d);
-      drawsBySource.set(drawKey, acc);
+      if (reversedSources.has(m.sourceId)) {
+        const drawKey = `${m.sourceId}:${key}`;
+        const acc = drawsBySource.get(drawKey) ?? [];
+        for (const d of draws) acc.push(d);
+        drawsBySource.set(drawKey, acc);
+      }
       const stockableId = key.slice(key.indexOf(':') + 1);
       attributeToSale(m.entityType, stockableId, m.sourceId, cost, -delta, unknownQty);
     } else if (m.type === 'WASTE') {
@@ -435,7 +450,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       // Cortesía AUTORIZADA: producto regalado → costo FIFO real (no es venta
       // ni merma; se reporta aparte en el estado financiero). Los draws se
       // registran para que una ANULACIÓN devuelva la base de costo exacta.
-      if (m.sourceId) {
+      if (m.sourceId && reversedSources.has(m.sourceId)) {
         const drawKey = `${m.sourceId}:${key}`;
         const acc = drawsBySource.get(drawKey) ?? [];
         for (const d of draws) acc.push(d);

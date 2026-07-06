@@ -2,6 +2,7 @@ import { PosTopbar } from '../../components/PosTopbar';
 import { SessionKeeper } from '../../features/auth';
 import { getAccessTokenServer, getCurrentUserServer } from '../../features/auth/server';
 import { OfflineProvider, OfflineStatusBar } from '../../features/offline';
+import { ComandaFailureAlert } from '../../features/sales';
 import { CortesiaNotifier, CortesiaWatchProvider } from '../../features/cortesias';
 import { getCurrentShiftServer } from '../../features/shifts/server';
 import { getPendingWebOrdersServer } from '../../features/web-orders/server';
@@ -34,6 +35,7 @@ export default async function AuthenticatedLayout({
             wsToken={wsToken}
           />
           <main className="flex-1 overflow-hidden">{children}</main>
+          <ComandaFailureAlert />
           <CortesiaNotifier />
         </div>
       </CortesiaWatchProvider>

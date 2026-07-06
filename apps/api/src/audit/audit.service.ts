@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import type { AuditAction, AuditLogEntry } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,11 +30,41 @@ type DbAuditLog = Prisma.AuditLogGetPayload<{
   include: { user: { select: { fullName: true; email: true } } };
 }>;
 
+/** Retención de audit_log: filas más viejas que esto se purgan (B2). */
+const AUDIT_RETENTION_MONTHS = 24;
+
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Purga mensual de retención (~1.2M filas/año sin esto → disco lleno en
+   * Railway a 18-24 meses). El trigger de audit_log permite DELETE SOLO de
+   * filas >24 meses (migración 20260706140000) — la inmutabilidad operativa
+   * se conserva. Día 1 a las 5 AM (después de los crons de 3-4 AM).
+   */
+  @Cron('0 5 1 * *')
+  async purgeOldEntries(): Promise<void> {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - AUDIT_RETENTION_MONTHS);
+    // Margen extra de 1 día: el trigger compara contra now() en el momento
+    // del DELETE — sin margen, una fila en el borde exacto lo haría fallar.
+    cutoff.setDate(cutoff.getDate() - 1);
+    try {
+      const { count } = await this.prisma.auditLog.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      if (count > 0) {
+        this.logger.log(`Retención: purgadas ${count} filas de audit_log > ${AUDIT_RETENTION_MONTHS} meses`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `purgeOldEntries error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   async log(input: LogInput): Promise<void> {
     try {

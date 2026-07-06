@@ -7,6 +7,7 @@ import { logError } from '../../../lib/client-log';
 import { randomUUID } from '../../../lib/uuid';
 import { createSale } from '../api/create';
 import { sendTabToKitchen } from '../api/print';
+import { notifyComandaFailed } from '../lib/comanda-events';
 import { notifyOrdersChanged } from '../lib/orders-events';
 import { cartLinesToCreateItems, useCartStore } from '../store/cart-store';
 import { DiscountModal } from './DiscountModal';
@@ -64,9 +65,10 @@ export function CartMetaControls({
         randomUUID(),
       );
       // Comanda de la primera tanda — best-effort (reintentable desde el panel).
-      await sendTabToKitchen(sale.id).catch((e) =>
-        logError('open-tab.comanda', e, { saleId: sale.id }),
-      );
+      await sendTabToKitchen(sale.id).catch((e) => {
+        logError('open-tab.comanda', e, { saleId: sale.id });
+        notifyComandaFailed({ saleId: sale.id, receiptNumber: sale.receiptNumber, kind: 'tanda' });
+      });
       clear();
       notifyOrdersChanged();
       onInfo(`Cuenta abierta #${sale.receiptNumber} · ${sale.customerName ?? ''} · comanda enviada`);

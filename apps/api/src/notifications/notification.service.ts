@@ -178,6 +178,50 @@ export class NotificationService {
   }
 
   /**
+   * Reintento de envíos FALLIDOS (informe de calidad A3): un `pickup_ready`
+   * que falló es un stage TERMINAL — nada vuelve a dispararlo y el cliente
+   * queda esperando para siempre. Este cron barre los `failed` de las últimas
+   * 24h y re-dispara `notify` (que es idempotente por flag: si un intento
+   * posterior ya salió, el flag está en true y no reenvía). Tope de 5 intentos
+   * por (venta, stage) para no martillar un número inválido eternamente.
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async retryFailedMessages(): Promise<void> {
+    if (this.retrying) return;
+    this.retrying = true;
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const failed = await this.prisma.whatsAppMessage.findMany({
+        where: { status: 'failed', createdAt: { gte: since } },
+        select: { saleId: true, stage: true },
+        orderBy: { createdAt: 'asc' },
+        take: 200,
+      });
+      const seen = new Set<string>();
+      for (const f of failed) {
+        if (!f.saleId) continue;
+        const key = `${f.saleId}:${f.stage}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const attempts = await this.prisma.whatsAppMessage.count({
+          where: { saleId: f.saleId, stage: f.stage },
+        });
+        if (attempts >= 5) continue;
+        // Si ya hay un envío exitoso posterior, notify() sale por el flag.
+        await this.notify(f.saleId, f.stage as WhatsAppNotificationStage);
+      }
+    } catch (err) {
+      this.logger.error(
+        `retryFailedMessages error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      this.retrying = false;
+    }
+  }
+
+  private retrying = false;
+
+  /**
    * Retención de PII: los mensajes guardan teléfono + cuerpo (nombre/total del
    * cliente) en claro. Se purgan a los 90 días — auditoría de envíos a corto
    * plazo sin acumular datos personales indefinidamente (Ley 1581 Habeas Data).

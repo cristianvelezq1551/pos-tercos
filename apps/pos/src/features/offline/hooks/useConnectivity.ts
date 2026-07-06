@@ -32,6 +32,11 @@ export function useConnectivity(): ConnectivityStatus {
           signal: ctrl.signal,
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
+        // Cinturón además del status HTTP: si algún proxy respondiera 200 con
+        // el backend degradado (DB caída), el body lo delata — "online" con la
+        // DB muerta es el peor estado posible (ni cobra ni encola offline).
+        const body = (await res.json().catch(() => null)) as { status?: string } | null;
+        if (body?.status !== 'ok') throw new Error(`health degraded: ${body?.status}`);
         if (cancelled) return;
         failsRef.current = 0;
         setStatus('online');

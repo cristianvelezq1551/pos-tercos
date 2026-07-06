@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from 'react';
 import { listSales } from '../api/list';
 import { printComanda } from '../api/print';
+import { notifyComandaFailed } from '../lib/comanda-events';
 import { voidSale } from '../api/void';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
@@ -81,9 +82,10 @@ export function VoidModal({
       notifyCajaChanged();
       // #8: la cocina recibió la comanda al cobrar — avisarle con el ticket de
       // ANULACIÓN (número gigante) que descarte el pedido. Best-effort.
-      void printComanda(voided.id, { cancel: true }).catch((e) =>
-        logError('void.cancel-comanda', e, { saleId: voided.id }),
-      );
+      void printComanda(voided.id, { cancel: true }).catch((e) => {
+        logError('void.cancel-comanda', e, { saleId: voided.id });
+        notifyComandaFailed({ saleId: voided.id, receiptNumber: voided.receiptNumber, kind: 'anulacion' });
+      });
       onSuccess(voided);
       onClose();
     } catch (err) {

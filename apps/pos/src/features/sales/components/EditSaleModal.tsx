@@ -7,6 +7,7 @@ import { ProductPickerModal, fetchActiveProducts, useAvailability } from '../../
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { editSaleItems } from '../api/edit';
 import { printComanda, sendTabToKitchen } from '../api/print';
+import { notifyComandaFailed } from '../lib/comanda-events';
 import { AddProductChips } from './AddProductChips';
 import { EditSaleLineRow, type EditLine } from './EditSaleLineRow';
 import { saleItemsToEditLines, selectionToEditLine } from '../lib/edit-sale-lines';
@@ -82,13 +83,15 @@ export function EditSaleModal({
       // Pedido cobrado: reimprime la comanda CORREGIDA completa, marcada
       // "PEDIDO MODIFICADO" (best-effort: si falla, va al log).
       if (sale.isOpenTab && sale.status === 'PENDIENTE_PAGO') {
-        void sendTabToKitchen(sale.id).catch((e) =>
-          logError('print-comanda-edit', e, { saleId: sale.id }),
-        );
+        void sendTabToKitchen(sale.id).catch((e) => {
+          logError('print-comanda-edit', e, { saleId: sale.id });
+          notifyComandaFailed({ saleId: sale.id, receiptNumber: sale.receiptNumber, kind: 'tanda' });
+        });
       } else {
-        void printComanda(sale.id, { corrected: true }).catch((e) =>
-          logError('print-comanda-edit', e, { saleId: sale.id }),
-        );
+        void printComanda(sale.id, { corrected: true }).catch((e) => {
+          logError('print-comanda-edit', e, { saleId: sale.id });
+          notifyComandaFailed({ saleId: sale.id, receiptNumber: sale.receiptNumber, kind: 'modificada' });
+        });
       }
       notifyCajaChanged();
       onSaved(updated);

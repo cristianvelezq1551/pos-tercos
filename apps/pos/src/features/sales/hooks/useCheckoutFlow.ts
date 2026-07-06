@@ -13,6 +13,7 @@ import { randomUUID } from '../../../lib/uuid';
 import { useOffline } from '../../offline';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { printComanda, sendTabToKitchen } from '../api/print';
+import { notifyComandaFailed } from '../lib/comanda-events';
 import type { SplitResult } from '../components/split/SplitPaymentSection';
 import type { CartLine } from '../lib/cart-types';
 import {
@@ -120,14 +121,26 @@ export function useCheckoutFlow({
     // NO se imprime acá: la imprime onSuccess → printCheckoutReceipt (que además
     // cubre el caso offline). Imprimirla en ambos lados era el "DUPLICADO".
     // Cuenta abierta: la cocina YA recibió tandas — solo sale lo pendiente.
+    // Un fallo NO muere en el log: dispara el aviso persistente con reintento
+    // (la plata se cobró pero cocina no vio el pedido — informe A2).
     if (sale) {
-      void sendTabToKitchen(paidSale.id).catch((e) =>
-        logError('checkout.comanda', e, { saleId: paidSale.id }),
-      );
+      void sendTabToKitchen(paidSale.id).catch((e) => {
+        logError('checkout.comanda', e, { saleId: paidSale.id });
+        notifyComandaFailed({
+          saleId: paidSale.id,
+          receiptNumber: paidSale.receiptNumber,
+          kind: 'tanda',
+        });
+      });
     } else {
-      void printComanda(paidSale.id).catch((e) =>
-        logError('checkout.comanda', e, { saleId: paidSale.id }),
-      );
+      void printComanda(paidSale.id).catch((e) => {
+        logError('checkout.comanda', e, { saleId: paidSale.id });
+        notifyComandaFailed({
+          saleId: paidSale.id,
+          receiptNumber: paidSale.receiptNumber,
+          kind: 'comanda',
+        });
+      });
     }
     onSuccess(success);
   };

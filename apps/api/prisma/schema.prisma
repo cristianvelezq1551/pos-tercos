@@ -1,3 +1,17 @@
+/// ⚠️ DDL INVISIBLE A PRISMA — leer ANTES de editar este schema.
+/// La DB tiene invariantes que este archivo NO muestra (viven en
+/// prisma/migrations/*.sql). NUNCA asumir que este schema es la verdad
+/// completa; una migración generada solo desde acá puede pisarlas:
+///  - Triggers insert-only: inventory_movements, audit_log, sale_status_log
+///    (reject_update_delete) — correcciones por movimiento compensatorio.
+///  - Trigger de rol en approval_pins (solo ADMIN_OPERATIVO/DUENO).
+///  - Trigger diferido trg_sale_payments_match / trg_sale_total_matches_payments:
+///    Σ sale_payments.amount == sales.total en ventas cobradas (20260706120000).
+///  - Índice único parcial uniq_shift_open_singleton: UNA sola caja OPEN.
+///  - ~40 CHECKs en SQL crudo (XOR polimórfico de stockables, totales
+///    coherentes, montos > 0, delta <> 0, descuento <= subtotal, etc.).
+///  - Secuencia receipt_seq (nextval explícito en SalesService — no convertir
+///    receipt_number a autoincrement/IDENTITY).
 generator client {
   provider = "prisma-client-js"
 }
@@ -259,6 +273,8 @@ model InventoryMovement {
   @@index([subproductId, createdAt(sort: Desc)])
   @@index([entityType, createdAt(sort: Desc)])
   @@index([type, createdAt(sort: Desc)])
+  /// Reversos/lecturas por origen (void, edición, cortesía, producción).
+  @@index([sourceType, sourceId])
   @@map("inventory_movements")
 }
 
@@ -753,7 +769,7 @@ model PayrollDay {
   createdById String?  @map("created_by_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([userId, workDate])
   @@index([userId, workDate(sort: Desc)])
@@ -772,7 +788,7 @@ model PayrollAdjustment {
   note        String?
   createdById String?  @map("created_by_id")
   createdAt   DateTime @default(now()) @map("created_at")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, periodStart])
   @@map("payroll_adjustments")
@@ -801,7 +817,7 @@ model PayrollPayment {
   /// Para CANCELLED, motivo; para PAID, nota opcional.
   note            String?
   createdAt       DateTime @default(now()) @map("created_at")
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([userId, periodStart])
   @@index([periodStart])
@@ -1189,7 +1205,7 @@ model PayrollWeekPayment {
   note           String?
   paidAt         DateTime @map("paid_at")
   createdAt      DateTime @default(now()) @map("created_at")
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, weekStart])
   @@index([weekStart])

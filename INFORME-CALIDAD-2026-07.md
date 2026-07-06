@@ -85,6 +85,53 @@ limpio · deps solo patch/minor detrás.
 
 ---
 
+## ✅ EJECUCIÓN (2026-07-06 — mismo día del informe)
+
+Todo lo accionable de corto plazo quedó RESUELTO y verificado (typecheck 13/13 ·
+domain 167 · pos 40 · **e2e 23 suites/182** · lint · builds 9/9 · migraciones
+aplicadas también a dev):
+
+- **A1** ✅ `/healthz` responde **503** con la DB caída y el heartbeat del POS valida
+  también el body → DB caída ahora SÍ manda el POS a modo offline (y UptimeRobot
+  la detectará).
+- **A2** ✅ `ComandaFailureAlert` global en el POS: si una comanda/tanda/anulación/
+  corrección NO imprime, aviso rojo persistente con botón Reintentar (emitido desde
+  checkout, cuenta abierta, edición y void).
+- **A3** ✅ Cron cada 10 min reintenta los WhatsApp `failed` de las últimas 24h
+  (idempotente por flag, tope 5 intentos por venta+stage).
+- **A4** ✅ Migración `20260706120000`: trigger DIFERIDO Σ`sale_payments`==`sales.total`
+  en ventas cobradas (en ambas tablas), índice único parcial **una sola caja OPEN**,
+  CHECKs `discount_total<=subtotal` y `order_discount_amount<=subtotal`.
+- **A5** ✅ Índice `[sourceType, sourceId]` en `inventory_movements`.
+- **A6** ✅ Mutantes muertos: e2e `void-arqueo` (VOID sale del esperado, del detalle
+  y de byMethod) + tests adversariales de redondeo sub-centavo (money + manual-discount).
+- **B2** ✅ Retención de `audit_log`: trigger permite DELETE solo >24 meses + cron
+  mensual de purga (inmutabilidad operativa intacta; movements y status_log NO cambian).
+- **B1-mitigación** ✅ `drawsBySource` acotado por pre-scan de reversas: el pico de
+  memoria del replay ya NO crece con la historia de ventas (solo con las reversas
+  reales). El freeze O(n) sincrónico sigue — ver plan abajo.
+- **C3** ✅ Header de `schema.prisma` documenta TODO el DDL invisible (triggers,
+  CHECKs, secuencia, índice parcial).
+- **C6** ✅ Nómina `onDelete: Cascade → Restrict` (migración `20260706130000`) — un
+  hard-delete de usuario ya no puede evaporar pagos con comprobante.
+
+### Plan B1 — snapshot del ledger FIFO (DEADLINE: antes del MES 9 de operación)
+
+El único trabajo estructural pendiente. Diseño acordado:
+1. Tabla `ledger_snapshots`: al CIERRE de cada mes del negocio se persisten, por
+   stockable, los lotes restantes (qty, unitCost, createdAt) + agregados ya
+   reportados del período (waste/cortesías valorizados).
+2. `runLedger` carga el snapshot más reciente + movements POSTERIORES al corte →
+   replay incremental (memoria y tiempo dejan de crecer con la historia).
+3. Regla de corte seguro: el snapshot solo se toma sobre períodos donde ya no
+   pueden entrar reversas que crucen el corte (void exige caja OPEN del día;
+   la reversa de cortesías es la única que cruza → corte a ≥60 días o
+   regeneración automática del snapshot si una reversa cruza).
+4. Validación obligatoria: test de equivalencia replay-completo vs
+   snapshot+incremental (byte a byte sobre remaining/saleCosts).
+5. Esfuerzo estimado: 2-4 días con tests. Hasta entonces, el sistema opera sin
+   riesgo (~6-9 meses de margen, y la mitigación de memoria ya está aplicada).
+
 ## Plan recomendado (en orden)
 
 1. **Pre-lanzamiento (1-2 días de trabajo):** A1 + A2 + A4 + A5 + A6 (código) · A3 (cron de reintento) · luego los pendientes operativos ya listados (sandbox Kapso, secrets backup, UptimeRobot — que ahora sí detectará DB caída gracias a A1, smoke con hardware).
