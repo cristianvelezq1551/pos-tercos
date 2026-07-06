@@ -114,10 +114,18 @@ aplicadas también a dev):
   CHECKs, secuencia, índice parcial).
 - **C6** ✅ Nómina `onDelete: Cascade → Restrict` (migración `20260706130000`) — un
   hard-delete de usuario ya no puede evaporar pagos con comprobante.
+- **B1** ✅ **EJECUTADO 2026-07-06** (adelantado: era "antes del mes 9"): snapshots
+  mensuales del ledger FIFO — ver detalle abajo y CLAUDE.md §7.v13.
+- **C2** ✅ Helper único `common/tx.ts` (isSerializationFailure +
+  runWithSerializationRetry) — 5 copias divergentes eliminadas.
+- **B.4b** ✅ Apertura de caja OFFLINE implementada (decisión del dueño 2026-07-06:
+  se revierte el diferimiento de offline-fase-b.md). CLAUDE.md §7.v13.
 
-### Plan B1 — snapshot del ledger FIFO (DEADLINE: antes del MES 9 de operación)
+### Plan B1 — snapshot del ledger FIFO — ✅ EJECUTADO 2026-07-06
 
-El único trabajo estructural pendiente. Diseño acordado:
+Implementado tal cual el diseño (con una mejora: la regla de corte seguro del punto 3
+se reemplazó por detección automática de reversa-cruza-corte con fallback a replay
+completo — más simple y nunca incorrecta). Diseño original:
 1. Tabla `ledger_snapshots`: al CIERRE de cada mes del negocio se persisten, por
    stockable, los lotes restantes (qty, unitCost, createdAt) + agregados ya
    reportados del período (waste/cortesías valorizados).
@@ -129,12 +137,13 @@ El único trabajo estructural pendiente. Diseño acordado:
    regeneración automática del snapshot si una reversa cruza).
 4. Validación obligatoria: test de equivalencia replay-completo vs
    snapshot+incremental (byte a byte sobre remaining/saleCosts).
-5. Esfuerzo estimado: 2-4 días con tests. Hasta entonces, el sistema opera sin
-   riesgo (~6-9 meses de margen, y la mitigación de memoria ya está aplicada).
+5. ~~Esfuerzo estimado: 2-4 días con tests.~~ Hecho: domain seed+equivalencia (6 tests),
+   tabla `ledger_snapshots`, `runLedger(rangeFrom?)` con caché por modo, cron mensual
+   (día 2 4:30 AM) + endpoint manual Dueño, e2e 4 casos. CLAUDE.md §7.v13.
 
 ## Plan recomendado (en orden)
 
 1. **Pre-lanzamiento (1-2 días de trabajo):** A1 + A2 + A4 + A5 + A6 (código) · A3 (cron de reintento) · luego los pendientes operativos ya listados (sandbox Kapso, secrets backup, UptimeRobot — que ahora sí detectará DB caída gracias a A1, smoke con hardware).
 2. **Primer sprint post-lanzamiento:** B3 (Playwright en CI) + B4 (contract tests) + decidir B5.
-3. **Con fecha dura antes del mes 9:** B1 (snapshot del ledger FIFO) — trabajo de arquitectura, no parche.
+3. ~~**Con fecha dura antes del mes 9:** B1 (snapshot del ledger FIFO)~~ ✅ EJECUTADO 2026-07-06 (antes del lanzamiento).
 4. **Backlog de deuda 2 años:** C1-C8, priorizando C1 (decisión multi-local) y C3 (documentar DDL invisible) porque son los que muerden sin avisar.

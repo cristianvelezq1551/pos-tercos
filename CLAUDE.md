@@ -911,9 +911,9 @@ Sesión de auditoría completa + hardening. Verificado: typecheck 12/12, lint 0,
 - **SSE pantalla pública**: backoff exponencial 3s→60s con techo. NUNCA deja de reintentar (kiosko sin operador) — solo deja de martillar.
 - **Sync offline POS**: `OfflineSale.attempts`; tras 3 fallos el drain automático salta la venta (rechazo permanente probable). El "Reintentar" de la bandeja usa `{ includeExhausted: true }`.
 
-### B.4b sigue DIFERIDA
+### B.4b — IMPLEMENTADA (2026-07-06, supersede el diferimiento)
 
-La apertura de caja offline NO se implementó: respeta la decisión documentada en `offline-fase-b.md` (2026-05-24). Condición para retomarla: verificar el núcleo offline en build de producción y/o que el negocio realmente arranque jornadas sin internet.
+La apertura de caja offline se implementó en §7.v13 (decisión del dueño). Este párrafo queda como historial del diferimiento original (2026-05-24).
 
 ---
 
@@ -999,7 +999,7 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 - Persistencia: si el navegador deniega `navigator.storage.persist()`, el banner offline lo avisa (cola en riesgo de purga) y queda en el logger.
 - SW **v3**: warm-up de `/`, `/caja`, `/historial`, `/turnos`, `/arqueos` en install. Subir `CACHE_VERSION` al agregar rutas.
 - Server `syncOffline`: rechaza `soldOfflineAt` >15 min en el futuro (audit `OFFLINE_SYNC_CLOCK_DRIFT`); audita drift de precio >1% vs catálogo (`OFFLINE_PRICE_DRIFT_DETECTED`) sin bloquear ("gana lo cobrado offline" sigue vigente).
-- `openShift` sin red: mensaje claro (apertura offline sigue DIFERIDA — B.4b).
+- `openShift` sin red: cae a la apertura OFFLINE local (B.4b implementada en §7.v13).
 
 ### Sweep de cobros abandonados
 - `StaleSalesSweepService`: cron 10 min cancela COUNTER `PENDIENTE_PAGO` >30 min (huérfanas del flujo "venta al abrir el cobro"); guard updateMany para no pisar un cobro en curso. Audit `STALE_SALES_SWEPT` + `POST /sales/admin/sweep-stale-pending` (Dueño). Los pedidos WEB pendientes NO se barren (los rechaza el cajero).
@@ -1113,6 +1113,27 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 ### #13 Anti-abuso del pedido web (2026-07-06)
 - `POST /web/orders`: máx **3 pedidos PENDIENTES por teléfono por día** (los pagados no cuentan) → 400 con mensaje claro.
 - **Kill-switch** `business_config.web_orders_enabled` (migración `20260706100000_web_orders_toggle`): el dueño pausa/reactiva pedidos web desde `/finanzas/estado` (WebOrdersToggleCard) sin deploy. API → 503; `GET /web/menu` expone `webOrdersEnabled` y la web muestra banner + bloquea `/checkout`. El 503 deliberado NO alerta al dueño como error del sistema (ServerErrorAlertFilter ignora HttpException 5xx ≠ 500).
+
+---
+
+## 7.v13 Calidad 10/10 — snapshots FIFO, caja offline, tx helper único (2026-07-06)
+
+> Cierra los 3 pendientes estructurales del informe de calidad (`INFORME-CALIDAD-2026-07.md`):
+> B1 (ledger FIFO O(n) creciente), B.4b (apertura de caja offline — decisión del dueño:
+> se REVIERTE el diferimiento) y C2 (5 copias del retry Serializable).
+> Verificado: typecheck 13/13, domain 173, POS 40, web 9, api unit 19, e2e 25 suites/191, lint 0, builds 9/9.
+
+### Snapshots mensuales del ledger FIFO (cierra B1)
+- **Domain**: `runLedgerFifo(movements, seed?)` acepta una `LedgerSeed` (lotes restantes + waste/cortesías históricos + costo por cortesía, serializable) y devuelve `endingLots` + flag `needsFullReplay`. La detección de reversa que cruza el corte es por **under-return**: si una reversa no puede devolver toda su cantidad desde los draws de la ventana, el consumo original fue pre-corte (cubre también el caso parcial venta-editada-tras-el-corte). `buildLedgerSeed(fifo, cutoffIso)`. 6 tests de equivalencia matemática (replay completo === seed+incremental, con round-trip JSON).
+- **API**: tabla `ledger_snapshots` (migración `20260706150000`, `cutoff_at` UNIQUE + payload JSONB). `CogsService.runLedger(rangeFrom?)` con caché por modo (incremental/full, TTL 60s): (1) valuación/lotes/cortesías usan SIEMPRE el incremental (el seed preserva agregados completos); (2) P&G/márgenes cuyo rango empiece ANTES del corte → replay completo; (3) `needsFullReplay` → fallback automático a replay completo (nunca dato incorrecto, solo más lento). Cron mensual **día 2, 4:30 AM** + `POST /reports/admin/ledger-snapshot` (Dueño). E2E `ledger-snapshot` (4 casos).
+- Consecuencia: el replay habitual procesa SOLO el mes corriente — memoria y tiempo dejan de crecer con la historia. El deadline "antes del mes 9" quedó cerrado ANTES del lanzamiento.
+
+### Apertura de caja OFFLINE (B.4b — implementada)
+- **Server**: `POST /shifts/sync-offline-open` + columna `shifts.offline_local_id` UNIQUE (migración `20260706160000`). Idempotente por `localId`; `openedAt` se backdatea al momento real; si ya hay caja OPEN de hoy la **adopta** (caja única; fondo distinto queda en bitácora `openingCashMismatch`); caja OPEN de día anterior o caja del día ya cerrada → 409; reloj adelantado >15 min → 400. Si la apertura fue AYER (corte cruzó medianoche) la caja nace stale → el POS obliga al arqueo de ayer antes de operar (flujo honesto). E2E `shifts-offline-open` (5 casos).
+- **POS**: `OpenShiftForm` sin conexión abre LOCAL (IndexedDB singleton `offlineShiftOpen`) y navega a vender (hard nav, el SW sirve la página cacheada); al recargar muestra el estado pendiente. El sync-engine drena la apertura **ANTES** que las ventas en cada drain (las ventas necesitan caja en el server); su fallo no bloquea las ventas. SW **v4**: warm-up de `/shift/open`; fuera `/turnos` (ruta muerta de §7.v10).
+
+### Helper único de tx Serializable (cierra C2)
+- `apps/api/src/common/tx.ts`: `isSerializationFailure` + `runWithSerializationRetry(work, maxAttempts=16)`. Reemplaza 5 copias divergentes (sales/shifts/stock-counts/production/workers-weekly). `SALE_TX_OPTS` (política de timeout del cobro) sigue en sales. NO volver a copiar el predicado — importar de `common/tx`.
 
 ---
 
