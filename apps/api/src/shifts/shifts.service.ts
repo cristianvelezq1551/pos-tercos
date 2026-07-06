@@ -748,7 +748,7 @@ export class ShiftsService {
     // FASE 15.A: link wa.me en metadata para abrir desde /audit. Desde
     // 2026-06-10 además se ENVÍA directo al dueño vía OpenWA.
     const alertLink = buildDiscrepancyAlertLink({
-      ownerPhone: process.env.OWNER_WHATSAPP_PHONE ?? null,
+      ownerPhone: process.env.OWNER_WHATSAPP_PHONE?.trim() ?? null,
       cashierName: closed.cashierName,
       difference,
       shiftId,

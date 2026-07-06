@@ -44,7 +44,7 @@ export class OwnerDigestService {
     reason?: string;
     modelUsed?: string;
   }> {
-    const phone = process.env.OWNER_WHATSAPP_PHONE;
+    const phone = process.env.OWNER_WHATSAPP_PHONE?.trim();
     if (!phone) {
       return { sent: false, reason: 'OWNER_WHATSAPP_PHONE no configurado' };
     }

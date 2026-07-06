@@ -42,7 +42,7 @@ export class OwnerNotificationService {
     text: string,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
-    const phone = process.env.OWNER_WHATSAPP_PHONE;
+    const phone = process.env.OWNER_WHATSAPP_PHONE?.trim();
     if (!phone) return;
     try {
       // Cloud API: la alerta al dueño es business-initiated → con templates
