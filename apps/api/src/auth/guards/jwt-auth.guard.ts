@@ -15,8 +15,9 @@ import { TokenVersionService } from '../token-version/token-version.service';
 const ACCESS_COOKIE_BY_APP: Record<string, string> = {
   admin: 'admin_access',
   pos: 'pos_access',
+  cocina: 'cocina_access',
 };
-const ACCESS_COOKIE_NAMES = ['pos_access', 'admin_access'] as const;
+const ACCESS_COOKIE_NAMES = ['pos_access', 'admin_access', 'cocina_access'] as const;
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {

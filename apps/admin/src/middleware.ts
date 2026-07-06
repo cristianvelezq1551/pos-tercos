@@ -6,9 +6,9 @@ const ACCESS_COOKIE = 'admin_access';
 const REFRESH_COOKIE = 'admin_refresh';
 const APP = 'admin';
 // En dev, localhost comparte cookies entre puertos: el navegador también manda
-// la cookie del POS (pos_*) a esta app. Antes de proxiar al backend dejamos SOLO
-// las cookies de esta app, así el backend nunca recibe la sesión de otra.
-const FOREIGN_COOKIE_PREFIX = 'pos_';
+// las cookies de las otras apps (pos_*, cocina_*). Antes de proxiar al backend
+// dejamos SOLO las cookies de esta app, así el backend nunca recibe la sesión de otra.
+const FOREIGN_COOKIE_PREFIXES = ['pos_', 'cocina_'];
 const API_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
 const PUBLIC_PATHS = ['/login', '/unauthorized'];
@@ -23,7 +23,7 @@ function isPublic(pathname: string): boolean {
 function forwardWithAppCookies(req: NextRequest): NextResponse {
   const kept = req.cookies
     .getAll()
-    .filter((c) => !c.name.startsWith(FOREIGN_COOKIE_PREFIX))
+    .filter((c) => !FOREIGN_COOKIE_PREFIXES.some((p) => c.name.startsWith(p)))
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');
   const headers = new Headers(req.headers);

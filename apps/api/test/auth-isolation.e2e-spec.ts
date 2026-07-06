@@ -1,9 +1,14 @@
 /**
- * E2E de aislamiento de sesiones admin/pos. En dev ambas apps comparten host
- * (localhost — las cookies NO distinguen puerto), así que el backend puede
- * recibir AMBAS cookies en un mismo request. Regla: con `X-Client-App`, SOLO
+ * E2E de aislamiento de sesiones admin/pos/cocina. En dev las apps comparten
+ * host (localhost — las cookies NO distinguen puerto), así que el backend puede
+ * recibir VARIAS cookies en un mismo request. Regla: con `X-Client-App`, SOLO
  * cuenta la cookie de esa app — el dueño logueado en admin y el cajero
  * logueado en el POS nunca se mezclan.
+ *
+ * ⚠️ La sección de cocina es REGRESIÓN de un bug real (2026-07-06): el guard
+ * no conocía `cocina_access` (solo admin/pos) y TODA llamada autenticada por
+ * cookie de la app de cocina daba 401. Los e2e no lo atrapaban porque usan
+ * Bearer. Estos tests ejercitan el camino cookie-only por app.
  */
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
@@ -27,6 +32,7 @@ describe('Aislamiento de sesiones admin/pos E2E', () => {
   let adminRefresh: string;
   let posAccess: string;
   let posRefresh: string;
+  let cocinaAccess: string;
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
@@ -45,6 +51,14 @@ describe('Aislamiento de sesiones admin/pos E2E', () => {
           email: 'cajero-iso@test.local',
           fullName: 'Cajero Iso',
           role: 'CAJERO',
+          passwordHash: hash,
+          mustChangePwd: false,
+          active: true,
+        },
+        {
+          email: 'cocinero-iso@test.local',
+          fullName: 'Cocinero Iso',
+          role: 'COCINERO',
           passwordHash: hash,
           mustChangePwd: false,
           active: true,
@@ -125,6 +139,36 @@ describe('Aislamiento de sesiones admin/pos E2E', () => {
       .set('Cookie', [`admin_access=${cookieValue(cookies, 'admin_access')}`])
       .expect(200);
     expect(me.body.role).toBe('DUENO');
+  });
+
+  it('login con X-Client-App=cocina setea SOLO las cookies cocina_*', async () => {
+    const res = await request
+      .post('/auth/login')
+      .set('X-Client-App', 'cocina')
+      .send({ email: 'cocinero-iso@test.local', password: 'dev12345' })
+      .expect(200);
+    const cookies = res.get('Set-Cookie') ?? [];
+    cocinaAccess = cookieValue(cookies, 'cocina_access');
+    expect(cookies.some((c) => c.startsWith('pos_'))).toBe(false);
+    expect(cookies.some((c) => c.startsWith('admin_'))).toBe(false);
+  });
+
+  it('REGRESIÓN: endpoint de cocina con SOLO la cookie cocina_access → 200', async () => {
+    // Sin Bearer — el camino real del navegador de apps/cocina.
+    const res = await request
+      .get('/kitchen/stock')
+      .set('X-Client-App', 'cocina')
+      .set('Cookie', [`cocina_access=${cocinaAccess}`])
+      .expect(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  it('cookie de cocina con X-Client-App=pos → 401 (aislamiento en ambos sentidos)', async () => {
+    await request
+      .get('/auth/me')
+      .set('X-Client-App', 'pos')
+      .set('Cookie', [`cocina_access=${cocinaAccess}`])
+      .expect(401);
   });
 
   it('Bearer token (KDS) sigue funcionando sin cookies', async () => {
