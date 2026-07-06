@@ -2,7 +2,7 @@ import type { PaymentMethod } from '@pos-tercos/types';
 import { randomUUID } from '../../../lib/uuid';
 import { offlineDb } from './db';
 import { applyConsumptionForSale } from './offline-availability';
-import type { OfflineSale, OfflineSalePayload } from './types';
+import type { OfflineSale, OfflineSalePayload, OfflineShiftOpen } from './types';
 
 function pad(n: number): string {
   return String(n).padStart(2, '0');
@@ -62,4 +62,26 @@ export async function enqueueOfflineSale(input: {
 export async function getCachedCashierName(): Promise<string | null> {
   const session = await offlineDb.getSession();
   return session?.user?.fullName ?? null;
+}
+
+/**
+ * Registra la apertura de caja OFFLINE (B.4b). Singleton: si ya hay una
+ * pendiente, la devuelve (no se abre dos veces — caja única). El sync la
+ * manda al server ANTES que las ventas.
+ */
+export async function enqueueOfflineShiftOpen(input: {
+  openingCash: number;
+  notes?: string;
+}): Promise<OfflineShiftOpen> {
+  const existing = await offlineDb.getShiftOpen();
+  if (existing && existing.status !== 'synced') return existing;
+  const open: OfflineShiftOpen = {
+    localId: randomUUID(),
+    openingCash: input.openingCash,
+    notes: input.notes?.trim() || null,
+    openedOfflineAt: new Date().toISOString(),
+    status: 'queued',
+  };
+  await offlineDb.setShiftOpen(open);
+  return open;
 }

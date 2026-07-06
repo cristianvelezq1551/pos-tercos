@@ -92,6 +92,25 @@ export interface OfflineSale {
   realReceiptNumber?: number;
 }
 
+/**
+ * Apertura de caja registrada OFFLINE (B.4b). Singleton en IndexedDB: solo
+ * puede haber UNA apertura pendiente (caja única, una por día). Se sincroniza
+ * ANTES que las ventas en cada drain — así las ventas tienen caja a la cual
+ * colgarse en el server.
+ */
+export interface OfflineShiftOpen {
+  /** UUID de idempotencia (el server no crea dos cajas por reintentos). */
+  localId: string;
+  openingCash: number;
+  notes: string | null;
+  /** Momento REAL de la apertura (el server backdatea openedAt). */
+  openedOfflineAt: string;
+  status: 'queued' | 'synced' | 'failed';
+  failReason?: string;
+  /** Id real de la caja en el server (tras sincronizar). */
+  realShiftId?: string;
+}
+
 /** Contadores de la jornada offline. */
 export interface OfflineMeta {
   /** Próximo N para OFF-N (reinicia por jornada). */

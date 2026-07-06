@@ -4,6 +4,7 @@ import type {
   CatalogCache,
   OfflineMeta,
   OfflineSale,
+  OfflineShiftOpen,
   SessionSnapshot,
   StockLedgerSnapshot,
 } from './types';
@@ -54,6 +55,7 @@ const KEY_SESSION = 'sessionSnapshot';
 const KEY_CATALOG = 'catalogCache';
 const KEY_LEDGER = 'stockLedger';
 const KEY_META = 'meta';
+const KEY_SHIFT_OPEN = 'offlineShiftOpen';
 
 async function kvGet<T>(key: string): Promise<T | null> {
   try {
@@ -85,6 +87,13 @@ export const offlineDb = {
   // Meta (contadores de jornada)
   getMeta: () => kvGet<OfflineMeta>(KEY_META),
   setMeta: (m: OfflineMeta) => kvSet(KEY_META, m),
+
+  // Apertura de caja offline pendiente (B.4b) — singleton
+  getShiftOpen: () => kvGet<OfflineShiftOpen>(KEY_SHIFT_OPEN),
+  setShiftOpen: (s: OfflineShiftOpen) => kvSet(KEY_SHIFT_OPEN, s),
+  async clearShiftOpen(): Promise<void> {
+    await (await getDb()).delete('kv', KEY_SHIFT_OPEN);
+  },
 
   // Cola de ventas offline (B.2/B.3)
   async putSale(sale: OfflineSale): Promise<void> {

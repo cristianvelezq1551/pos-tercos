@@ -69,6 +69,32 @@ export const OpenShiftSchema = z.object({
 export type OpenShift = z.infer<typeof OpenShiftSchema>;
 
 // ====================================================================
+// SYNC OFFLINE SHIFT OPEN — POST /shifts/sync-offline-open (B.4b)
+// ====================================================================
+
+/**
+ * Apertura de caja registrada OFFLINE en el POS y sincronizada al volver la
+ * red. Idempotente por `localId`. Si mientras tanto alguien abrió la caja
+ * online (caja única), el backend la ADOPTA en vez de crear otra.
+ */
+export const SyncOfflineShiftOpenSchema = z.object({
+  /** UUID generado en el POS al abrir offline — clave de idempotencia. */
+  localId: z.string().uuid(),
+  openingCash: z.number().nonnegative(),
+  notes: z.string().max(200).optional(),
+  /** Momento REAL de la apertura (backdatea openedAt en el server). */
+  openedOfflineAt: z.string().datetime(),
+});
+export type SyncOfflineShiftOpen = z.infer<typeof SyncOfflineShiftOpenSchema>;
+
+export const SyncOfflineShiftOpenResponseSchema = z.object({
+  shift: ShiftSchema,
+  /** true = ya había una caja abierta hoy y la apertura offline se mapeó a ella. */
+  adopted: z.boolean(),
+});
+export type SyncOfflineShiftOpenResponse = z.infer<typeof SyncOfflineShiftOpenResponseSchema>;
+
+// ====================================================================
 // CLOSE SHIFT — POST /shifts/:id/close (FASE 11, schema definido ya)
 // ====================================================================
 

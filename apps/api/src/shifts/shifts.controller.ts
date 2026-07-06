@@ -14,6 +14,7 @@ import {
   CloseShiftSchema,
   CreateCashMovementSchema,
   OpenShiftSchema,
+  SyncOfflineShiftOpenSchema,
   UpdateCashMovementSchema,
   ShiftStatusEnum,
   type AiSummary,
@@ -24,6 +25,8 @@ import {
   type ExpectedCash,
   type OpenShift,
   type Shift,
+  type SyncOfflineShiftOpen,
+  type SyncOfflineShiftOpenResponse,
   type UpdateCashMovement,
   type ShiftSessionDetail,
 } from '@pos-tercos/types';
@@ -54,6 +57,16 @@ export class ShiftsController {
     @Body(new ZodValidationPipe(OpenShiftSchema)) body: OpenShift,
   ): Promise<Shift> {
     return this.shifts.open(body, user.sub);
+  }
+
+  /** B.4b: sincroniza una apertura de caja hecha OFFLINE (idempotente por localId). */
+  @CashierAccess()
+  @Post('sync-offline-open')
+  syncOfflineOpen(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(SyncOfflineShiftOpenSchema)) body: SyncOfflineShiftOpen,
+  ): Promise<SyncOfflineShiftOpenResponse> {
+    return this.shifts.syncOfflineOpen(body, user.sub);
   }
 
   /** FASE 11.A: cierre del turno + cálculo expectedCash + diff. */

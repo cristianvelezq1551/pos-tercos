@@ -23,6 +23,7 @@ import type {
   SaleStatus,
   ShiftSessionDetail,
   ShiftStatus,
+  SyncOfflineShiftOpen,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
@@ -54,6 +55,12 @@ const isRevenueSale = (status: string): boolean =>
  * una corra el check a la vez; la segunda ve la caja ya creada y es rechazada.
  */
 const SHIFT_OPEN_LOCK_KEY = 911_025;
+
+/**
+ * Una apertura offline solo puede haber ocurrido en el PASADO (misma guarda
+ * que las ventas offline en SalesOfflineService).
+ */
+const MAX_FUTURE_CLOCK_DRIFT_MS = 15 * 60 * 1000;
 
 /**
  * Reintenta una tx SERIALIZABLE abortada por un fallo de serialización 40001
@@ -222,6 +229,123 @@ export class ShiftsService {
     });
 
     return toShiftDto(created);
+  }
+
+  /**
+   * Sincroniza una apertura de caja hecha OFFLINE en el POS (B.4b). Reglas:
+   *  - Idempotente por `localId` (reintentos devuelven la misma caja).
+   *  - `openedAt` se backdatea al momento real de la apertura offline. Si la
+   *    apertura fue AYER (corte que cruzó medianoche), la caja nace "stale":
+   *    el POS obliga a cerrarla (arqueo de ayer) antes de operar hoy — flujo
+   *    honesto, no se pierde el registro.
+   *  - Si ya hay una caja OPEN de HOY (alguien abrió online mientras tanto, o
+   *    otro dispositivo sincronizó primero): se ADOPTA esa caja — caja única
+   *    del negocio; la discrepancia de fondo inicial queda en bitácora.
+   *  - Si la caja OPEN es de un día anterior, o la caja del día de la apertura
+   *    ya existe cerrada → Conflict (mismas reglas que la apertura online).
+   *  - Reloj adelantado >15 min → rechazo (misma guarda que las ventas offline).
+   */
+  async syncOfflineOpen(
+    input: SyncOfflineShiftOpen,
+    cashierId: string,
+  ): Promise<{ shift: Shift; adopted: boolean }> {
+    const openedAt = new Date(input.openedOfflineAt);
+    const driftMs = openedAt.getTime() - Date.now();
+    if (driftMs > MAX_FUTURE_CLOCK_DRIFT_MS) {
+      throw new BadRequestException(
+        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corregí la hora del dispositivo y reintentá.`,
+      );
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Mismo lock que open(): serializa contra aperturas concurrentes.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SHIFT_OPEN_LOCK_KEY})`;
+
+      const dup = await tx.shift.findUnique({
+        where: { offlineLocalId: input.localId },
+        include: { cashier: { select: { fullName: true } } },
+      });
+      if (dup) return { row: dup, adopted: false, idempotent: true };
+
+      const openAnywhere = await tx.shift.findFirst({
+        where: { status: 'OPEN' },
+        include: { cashier: { select: { fullName: true } } },
+        orderBy: { openedAt: 'desc' },
+      });
+      if (openAnywhere) {
+        if (openAnywhere.openedAt < this.startOfToday()) {
+          const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
+          throw new ConflictException(
+            `Hay una caja abierta por ${who} desde ${formatOpenedAt(openAnywhere.openedAt)} (día anterior). Hay que cerrarla antes de sincronizar la apertura offline.`,
+          );
+        }
+        // Adoptar la caja del día. Estampar el localId (si está libre) hace
+        // idempotentes los reintentos de ESTE dispositivo.
+        const adopted =
+          openAnywhere.offlineLocalId === null
+            ? await tx.shift.update({
+                where: { id: openAnywhere.id },
+                data: { offlineLocalId: input.localId },
+                include: { cashier: { select: { fullName: true } } },
+              })
+            : openAnywhere;
+        return { row: adopted, adopted: true, idempotent: false };
+      }
+
+      // UNA caja por día calendario DEL DÍA DE LA APERTURA offline.
+      const dayStart = new Date(openedAt);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(openedAt);
+      dayEnd.setHours(23, 59, 59, 999);
+      const sameDay = await tx.shift.findFirst({
+        where: { openedAt: { gte: dayStart, lte: dayEnd } },
+        select: { id: true },
+      });
+      if (sameDay) {
+        throw new ConflictException(
+          'La caja de ese día ya existe y está cerrada. Las ventas offline van a colgarse de la caja abierta de hoy — si falta la apertura, pedí al admin que la reabra.',
+        );
+      }
+
+      const row = await tx.shift.create({
+        data: {
+          cashierId,
+          openingCash: input.openingCash,
+          notes: input.notes ?? null,
+          status: 'OPEN',
+          openedAt,
+          offlineLocalId: input.localId,
+        },
+        include: { cashier: { select: { fullName: true } } },
+      });
+      return { row, adopted: false, idempotent: false };
+    });
+
+    if (!result.idempotent) {
+      await this.audit.log({
+        userId: cashierId,
+        action: 'SHIFT_OPENED',
+        entityType: 'shift',
+        entityId: result.row.id,
+        metadata: {
+          offline: true,
+          localId: input.localId,
+          adopted: result.adopted,
+          openedOfflineAt: input.openedOfflineAt,
+          openingCash: input.openingCash,
+          ...(result.adopted && Number(result.row.openingCash) !== input.openingCash
+            ? {
+                openingCashMismatch: {
+                  offline: input.openingCash,
+                  existing: Number(result.row.openingCash),
+                },
+              }
+            : {}),
+        },
+      });
+    }
+
+    return { shift: toShiftDto(result.row), adopted: result.adopted };
   }
 
   /**

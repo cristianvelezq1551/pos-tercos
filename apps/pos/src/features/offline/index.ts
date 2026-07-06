@@ -1,6 +1,11 @@
 export { OfflineProvider, OfflineStatusBar, useOffline } from './components/OfflineProvider';
 export { useConnectivity } from './hooks/useConnectivity';
-export { enqueueOfflineSale, getCachedCashierName } from './lib/enqueue-sale';
+export {
+  enqueueOfflineSale,
+  enqueueOfflineShiftOpen,
+  getCachedCashierName,
+} from './lib/enqueue-sale';
+export { offlineDb } from './lib/db';
 export { computeOfflineAvailability } from './lib/offline-availability';
 export { drainOfflineQueue } from './lib/sync-engine';
 export type {
@@ -8,4 +13,5 @@ export type {
   OfflineSale,
   OfflineSaleLine,
   OfflineSalePayload,
+  OfflineShiftOpen,
 } from './lib/types';

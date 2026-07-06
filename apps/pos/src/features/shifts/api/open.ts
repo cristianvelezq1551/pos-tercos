@@ -10,11 +10,10 @@ export async function openShift(input: OpenShift): Promise<Shift> {
       credentials: 'include',
     });
   } catch {
-    // La apertura de caja offline está diferida a propósito (B.4b): el
-    // mensaje debe decir QUÉ pasa, no "Error desconocido".
-    throw new Error(
-      'Sin conexión con el servidor. La caja se abre con internet — reconectá e intentá de nuevo.',
-    );
+    // B.4b: el form detecta este nombre y cae a la apertura OFFLINE local.
+    const err = new Error('Sin conexión con el servidor.');
+    err.name = 'NetworkError';
+    throw err;
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { message?: string } | null;

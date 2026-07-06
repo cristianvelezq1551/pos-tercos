@@ -60,7 +60,6 @@ export function assertRequiredEnv(): void {
 
     for (const [key, consequence] of PROD_FEATURE_WARNINGS) {
       if (!process.env[key]) {
-        // eslint-disable-next-line no-console
         console.warn(`⚠️  [env] ${key} no está seteada en producción — ${consequence}.`);
       }
     }

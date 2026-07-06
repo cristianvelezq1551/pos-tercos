@@ -1,5 +1,6 @@
 import { logError } from '../../../lib/client-log';
 import { syncOfflineSale } from '../api/sync-offline';
+import { syncOfflineShiftOpen } from '../api/sync-offline-shift';
 import { offlineDb } from './db';
 import { selectDrainable } from './drain-policy';
 
@@ -41,10 +42,38 @@ export async function drainOfflineQueue(
   }
 }
 
+/**
+ * B.4b: sincroniza la apertura de caja offline pendiente ANTES que las ventas
+ * (sin caja en el server, las ventas fallarían a la bandeja). Idempotente por
+ * localId → se reintenta en cada drain hasta que entre; un fallo NO bloquea
+ * el drain de ventas (si alguien ya abrió caja online, igual se cuelgan de esa).
+ */
+async function syncPendingShiftOpen(): Promise<void> {
+  const open = await offlineDb.getShiftOpen();
+  if (!open || open.status === 'synced') return;
+  try {
+    const res = await syncOfflineShiftOpen(open);
+    await offlineDb.setShiftOpen({
+      ...open,
+      status: 'synced',
+      failReason: undefined,
+      realShiftId: res.shift.id,
+    });
+  } catch (err) {
+    logError('offline-shift-open-sync', err, { localId: open.localId });
+    await offlineDb.setShiftOpen({
+      ...open,
+      status: 'failed',
+      failReason: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function drain(
   onProgress?: () => void,
   opts?: { includeExhausted?: boolean },
 ): Promise<void> {
+  await syncPendingShiftOpen();
   const now = Date.now();
   const pending = selectDrainable(await offlineDb.listSales(), now, opts);
 

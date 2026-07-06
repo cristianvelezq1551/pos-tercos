@@ -15,7 +15,7 @@
  * El cache se versiona con CACHE_VERSION; subirlo en un deploy invalida todo.
  */
 
-const CACHE_VERSION = 'pos-tercos-v3';
+const CACHE_VERSION = 'pos-tercos-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const NAV_CACHE = `${CACHE_VERSION}-nav`;
 const OFFLINE_URL = '/offline.html';
@@ -23,7 +23,8 @@ const OFFLINE_URL = '/offline.html';
 // Pestañas del POS: se precalientan en install para que abran offline aunque
 // nunca se hayan visitado online (el fallback a '/' igual cubre, pero el
 // warm-up evita servir la shell equivocada).
-const NAV_WARMUP = ['/', '/caja', '/historial', '/turnos', '/arqueos'];
+// '/shift/open' entra al warm-up por B.4b (abrir caja offline); '/turnos' murió en §7.v10.
+const NAV_WARMUP = ['/', '/caja', '/historial', '/arqueos', '/shift/open'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
