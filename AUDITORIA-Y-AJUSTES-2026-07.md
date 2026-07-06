@@ -123,13 +123,13 @@ e2e 22/179, lint, builds 9/9):
 
 ### 1.D — SEGURIDAD (APARTADA por decisión del usuario — retomar después)
 
-Documentado completo pero NO se está trabajando ahora. Resumen de lo confirmado:
-- **[MEDIA] Print-agent** `apps/print-agent/src/main.ts` — ✅ **YA ARREGLADO** (bind 127.0.0.1 sin secret; timing-safe con secret). Único de seguridad tocado.
-- [MEDIA] `/ingredients` GET filtra `lastUnitCost` a roles no-admin (inconsistente con products). PENDIENTE.
-- [BAJA] Brute-force PIN de aprobación (throttle solo por IP). PENDIENTE.
-- [BAJA] `reject` de facturas sin Zod. PENDIENTE.
-- [BAJA] Upload de audio del display sin magic-byte. PENDIENTE.
-- [BAJA] Leak de Blob URL en `SlideEditModal.tsx:35` (createObjectURL sin revoke). PENDIENTE.
+Estado a 2026-07-06 (los baratos se cerraron pre-lanzamiento; el resto sigue apartado):
+- **[MEDIA] Print-agent** `apps/print-agent/src/main.ts` — ✅ ARREGLADO (bind 127.0.0.1 sin secret; timing-safe con secret).
+- **[MEDIA] `/ingredients` GET expone `lastUnitCost` a roles no-admin** — ✅ **ARREGLADO (2026-07-06)**: `stripCostForRole` espejo de products en list + getById.
+- **[BAJA] Brute-force PIN de aprobación** — ✅ **ARREGLADO (2026-07-06)**: lockout in-memory (10 intentos fallidos / 5 min, válido con 1 réplica) además del throttle por IP.
+- **[BAJA] Leak de Blob URL en `SlideEditModal`** — ✅ ARREGLADO (2026-07-05, pasada §1.E).
+- [BAJA] `reject` de facturas sin Zod (body `{reason?}` sin pipe; AdminAccess igual lo protege). PENDIENTE.
+- [BAJA] Upload de audio del display sin magic-byte (AdminAccess/Dueño-only). PENDIENTE.
 
 ---
 
