@@ -22,6 +22,7 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
     invoice_items,
     invoices,
     stock_counts,
+    ledger_snapshots,
     inventory_movements,
     supplier_products,
     suppliers,

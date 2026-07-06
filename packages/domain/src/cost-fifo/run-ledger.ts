@@ -70,9 +70,17 @@ export interface LedgerFifo {
    *  `${entityType}:${id}` → [{qty, unitCost}]. Para mostrar "tu inventario
    *  rinde N porciones a $X, M a $Y" sin tocar el costeo. */
   remainingLots: Map<string, { qty: number; unitCost: number | null }[]>;
+  /** Estado FINAL serializable de las colas (para crear un LedgerSeed). */
+  endingLots: Record<string, Lot[]>;
+  /**
+   * true = una REVERSA del replay incremental referencia un consumo ANTERIOR
+   * al corte del seed (sus draws no existen acá) → este resultado es
+   * incompleto y el servicio DEBE recomputar con replay completo.
+   */
+  needsFullReplay: boolean;
 }
 
-interface Lot {
+export interface Lot {
   movementId: string;
   qty: number;
   unitCost: number | null;
@@ -85,11 +93,38 @@ interface Draw {
   createdAt: string;
 }
 
+/**
+ * SEMILLA de un snapshot del ledger (arquitectura de corte mensual): el estado
+ * acumulado hasta un `cutoff`, para que el replay arranque desde ahí en vez de
+ * desde el génesis. Serializable (se persiste como JSON en `ledger_snapshots`).
+ *
+ * Contiene lo que NO se puede reconstruir sin los movimientos previos:
+ *  - `lots`: colas FIFO restantes por stockable al momento del corte.
+ *  - `waste` / `cortesia`: valorizaciones históricas (los reportes filtran por
+ *    fecha sobre estos arrays — sin la semilla, un P&G viejo perdería mermas).
+ *  - `cortesiaCostBySource`: costo acumulado por solicitud de cortesía.
+ *
+ * Lo que NO contiene (a propósito): los costos POR VENTA pre-corte. Un reporte
+ * cuyo rango empiece ANTES del corte debe usar replay completo (regla del
+ * servicio) — las ventas viejas no cambian, así que ese caso es raro.
+ */
+export interface LedgerSeed {
+  /** ISO del corte: el replay incremental procesa movimientos >= cutoff. */
+  cutoffIso: string;
+  lots: Record<string, Lot[]>;
+  waste: { createdAt: string; cost: number; unknownQty: number }[];
+  cortesia: { createdAt: string; cost: number; unknownQty: number }[];
+  cortesiaCostBySource: Record<string, { cost: number; unknownQty: number }>;
+}
+
 type Event =
   | { kind: 'single'; ts: Date; m: LedgerMovement }
   | { kind: 'production'; ts: Date; consumes: LedgerMovement[]; produces: LedgerMovement };
 
-export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo {
+export function runLedgerFifo(
+  movements: readonly LedgerMovement[],
+  seed?: LedgerSeed,
+): LedgerFifo {
   const keyOf = (m: LedgerMovement): string | null => {
     const id =
       m.entityType === 'INGREDIENT' ? m.ingredientId
@@ -190,6 +225,35 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     cortesiaCostBySource: new Map(),
     remaining: new Map(),
     remainingLots: new Map(),
+    endingLots: {},
+    needsFullReplay: false,
+  };
+
+  // Sembrar el estado del snapshot. Las colas se copian PROFUNDO (el replay
+  // las muta); waste/cortesía históricos entran tal cual (los reportes filtran
+  // por fecha sobre el array combinado).
+  if (seed) {
+    for (const [key, lots] of Object.entries(seed.lots)) {
+      queues.set(
+        key,
+        lots.map((l) => ({ ...l })),
+      );
+    }
+    out.waste.push(...seed.waste.map((w) => ({ ...w })));
+    out.cortesia.push(...seed.cortesia.map((c) => ({ ...c })));
+    for (const [sourceId, v] of Object.entries(seed.cortesiaCostBySource)) {
+      out.cortesiaCostBySource.set(sourceId, { ...v });
+    }
+  }
+
+  // Detección de reversa que CRUZA el corte (modo incremental): si una reversa
+  // no logra devolver TODA su cantidad desde los draws de esta ventana, el
+  // consumo original ocurrió antes del corte (total o parcialmente — p.ej.
+  // venta cobrada en el mes M, editada y anulada en M+1) → este resultado es
+  // incompleto y el servicio debe recomputar con replay completo. Epsilon por
+  // acumulación de flotantes en draws fraccionarios.
+  const flagIfCrossCutoff = (returnedQty: number, requestedQty: number): void => {
+    if (seed && returnedQty < requestedQty - 1e-9) out.needsFullReplay = true;
   };
 
   const targetMap = (et: LedgerEntityType): Map<string, Map<string, CostQty>> => {
@@ -372,6 +436,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     if (m.type === 'SALE' && delta > 0) {
       const drawKey = `${m.sourceId ?? ''}:${key}`;
       const { returnedCost, returnedUnknown, returnedQty } = returnDraws(drawKey, key, delta);
+      flagIfCrossCutoff(returnedQty, delta);
       // Atribuir el reverso a la venta: cantidad y costo NEGATIVOS (un-consume).
       if (m.sourceId && returnedQty > 0) {
         const stockableId = key.slice(key.indexOf(':') + 1);
@@ -402,6 +467,7 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     if (m.sourceType === 'cortesia_reversal' && delta > 0) {
       const drawKey = `${m.sourceId ?? ''}:${key}`;
       const { returnedCost, returnedUnknown, returnedQty } = returnDraws(drawKey, key, delta);
+      flagIfCrossCutoff(returnedQty, delta);
       if (returnedQty > 0 && (returnedCost > 0 || returnedUnknown > 0)) {
         out.cortesia.push({
           createdAt: iso,
@@ -467,18 +533,26 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
     // Otro MANUAL_ADJUSTMENT- no se atribuye (sale del libro y listo).
   }
 
-  // Construir remaining + remainingLots a partir del estado final de cada cola.
+  // Construir remaining + remainingLots + endingLots (estado serializable
+  // para snapshot) a partir del estado final de cada cola.
   for (const [key, q] of queues) {
     let value = 0;
     let unknownQty = 0;
     let qty = 0;
     const lots: { qty: number; unitCost: number | null }[] = [];
+    const ending: Lot[] = [];
     for (const l of q) {
       if (l.qty <= 0) continue;
       qty += l.qty;
       if (l.unitCost === null) unknownQty += l.qty;
       else value += l.qty * l.unitCost;
       lots.push({ qty: roundCost(l.qty), unitCost: l.unitCost });
+      ending.push({
+        movementId: l.movementId,
+        qty: roundCost(l.qty),
+        unitCost: l.unitCost,
+        createdAt: l.createdAt,
+      });
     }
     out.remaining.set(key, {
       qty: roundCost(qty),
@@ -486,6 +560,22 @@ export function runLedgerFifo(movements: readonly LedgerMovement[]): LedgerFifo 
       unknownQty: roundCost(unknownQty),
     });
     if (lots.length > 0) out.remainingLots.set(key, lots);
+    if (ending.length > 0) out.endingLots[key] = ending;
   }
   return out;
+}
+
+/**
+ * Arma la SEMILLA serializable a partir de un replay COMPLETO cuyo último
+ * movimiento es anterior a `cutoffIso`. El servicio la persiste como JSON y
+ * los replays posteriores arrancan desde ahí con solo los movimientos nuevos.
+ */
+export function buildLedgerSeed(fifo: LedgerFifo, cutoffIso: string): LedgerSeed {
+  return {
+    cutoffIso,
+    lots: fifo.endingLots,
+    waste: fifo.waste,
+    cortesia: fifo.cortesia,
+    cortesiaCostBySource: Object.fromEntries(fifo.cortesiaCostBySource),
+  };
 }

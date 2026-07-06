@@ -228,6 +228,16 @@ export class ReportsController {
   }
 
   /**
+   * Trigger manual del snapshot mensual del ledger FIFO (el cron corre el
+   * día 2, 4:30 AM). Corte = primer día del mes actual 00:00 local.
+   */
+  @OnlyDueno()
+  @Post('admin/ledger-snapshot')
+  createLedgerSnapshot(): Promise<{ cutoffAt: string; movementsCount: number; lotsCount: number }> {
+    return this.cogs.createLedgerSnapshot();
+  }
+
+  /**
    * Uso y mermas por insumo: consumo por ventas/producción (teórico, sale de
    * recetas) vs mermas declaradas y faltantes de conteo, valorizado.
    * Dueño.

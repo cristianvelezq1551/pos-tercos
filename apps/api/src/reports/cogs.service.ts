@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import type { Prisma } from '@prisma/client';
 import {
+  buildLedgerSeed,
   expandRecipeOneLevel,
   runLedgerFifo,
   type CostQty,
   type LedgerFifo,
   type LedgerMovement,
+  type LedgerSeed,
   type ParentRef,
   type RecipeGraph,
 } from '@pos-tercos/domain';
@@ -34,41 +38,104 @@ export class CogsService {
     private readonly recipes: RecipesService,
   ) {}
 
+  private readonly logger = new Logger(CogsService.name);
+
   // ==================================================================
   // Replay FIFO del ledger — la lógica vive en @pos-tercos/domain
-  // (runLedgerFifo, pura y testeada). Acá solo cargamos los movimientos
-  // ordenados y los mapeamos a datos planos.
+  // (runLedgerFifo, pura y testeada). Acá cargamos los movimientos ordenados,
+  // los mapeamos a datos planos y decidimos DESDE DÓNDE arranca el replay:
+  //
+  //   ARQUITECTURA DE SNAPSHOT (2026-07-06 — cierra el B1 del informe de
+  //   calidad): sin snapshot, cada reporte re-procesaba TODA la historia de
+  //   inventory_movements (O(n) creciente para siempre → a 12-18 meses el
+  //   replay congelaba el event loop que también cobra las ventas). Con el
+  //   snapshot mensual, el replay habitual procesa SOLO el mes corriente.
+  //
+  //   Reglas de corrección (validadas por tests de equivalencia en domain):
+  //   1. El seed lleva lotes restantes + waste/cortesía históricos + costo por
+  //      cortesía → valuación, lotes y cortesías son EXACTOS en incremental.
+  //   2. Los costos POR VENTA pre-corte NO están en el incremental → un
+  //      reporte cuyo rango empiece ANTES del corte usa replay completo
+  //      (parámetro `rangeFrom` de runLedger).
+  //   3. Una reversa (void/edición/anulación de cortesía) que cruza el corte
+  //      enciende `needsFullReplay` → fallback automático a replay completo.
+  //      Nunca hay resultado incorrecto, solo uno más lento.
   // ==================================================================
 
   /**
-   * Caché del ledger con TTL corto. `runLedger` se llamaba varias veces por
-   * request (y se recomputaba entero en cada request): cargar TODOS los
-   * movimientos + replay FIFO es caro. Memoizar la PROMESA además deduplica
-   * llamados concurrentes. Sin invalidación por escritura a propósito: un
-   * reporte de COGS tolera ≤ TTL de staleness (no es dato transaccional vivo).
+   * Caché del ledger con TTL corto, una entrada por modo (incremental / full).
+   * Memoizar la PROMESA deduplica llamados concurrentes. Sin invalidación por
+   * escritura a propósito: un reporte de COGS tolera ≤ TTL de staleness.
    */
-  // 60s: el replay (O(n) tras quitar el O(n²) de tandas) sigue siendo caro a
-  // escala; un reporte financiero tolera 1 min de staleness sin problema. El KPI
-  // de cortesías y el estado mensual leen la MISMA caché → siguen coincidiendo.
   private static readonly LEDGER_TTL_MS = 60_000;
-  private ledgerCache: { promise: Promise<LedgerFifo>; at: number } | null = null;
+  private ledgerCache = new Map<'incremental' | 'full', { promise: Promise<LedgerFifo>; at: number }>();
 
-  private runLedger(): Promise<LedgerFifo> {
+  /** Limpia la caché (tras crear un snapshot, y para tests). */
+  invalidateLedgerCache(): void {
+    this.ledgerCache.clear();
+  }
+
+  /**
+   * @param rangeFrom fecha MÁS TEMPRANA cuyas ventas va a costear el caller.
+   *   Si el snapshot vigente corta después de esa fecha, el incremental no
+   *   tendría los costos de esas ventas → replay completo. Sin `rangeFrom`
+   *   (valuación, lotes, cortesías) el incremental siempre sirve: el seed
+   *   preserva lotes y agregados históricos completos.
+   */
+  private runLedger(rangeFrom?: Date): Promise<LedgerFifo> {
+    return this.cachedLedger('incremental', async () => {
+      const snapshot = await this.latestSnapshot();
+      if (!snapshot) return this.computeLedger(null);
+      if (rangeFrom && rangeFrom < snapshot.cutoffAt) {
+        // Rango histórico: necesita costos de ventas pre-corte.
+        return this.fullLedger();
+      }
+      const incremental = await this.computeLedger(snapshot);
+      if (incremental.needsFullReplay) {
+        // Reversa cruzó el corte (void de una venta del mes pasado): el
+        // incremental es incompleto. Recomputar completo — correcto siempre.
+        this.logger.warn(
+          `Reversa cruza el corte del snapshot (${snapshot.cutoffAt.toISOString()}) → replay completo`,
+        );
+        return this.fullLedger();
+      }
+      return incremental;
+    });
+  }
+
+  /** Replay completo (sin seed), con su propia entrada de caché. */
+  private fullLedger(): Promise<LedgerFifo> {
+    return this.cachedLedger('full', () => this.computeLedger(null));
+  }
+
+  private cachedLedger(
+    mode: 'incremental' | 'full',
+    compute: () => Promise<LedgerFifo>,
+  ): Promise<LedgerFifo> {
     const now = Date.now();
-    if (this.ledgerCache && now - this.ledgerCache.at < CogsService.LEDGER_TTL_MS) {
-      return this.ledgerCache.promise;
-    }
-    const promise = this.computeLedger();
-    this.ledgerCache = { promise, at: now };
+    const hit = this.ledgerCache.get(mode);
+    if (hit && now - hit.at < CogsService.LEDGER_TTL_MS) return hit.promise;
+    const promise = compute();
+    this.ledgerCache.set(mode, { promise, at: now });
     // No cachear un error: si falla, limpiar para reintentar en el próximo call.
     void promise.catch(() => {
-      if (this.ledgerCache?.promise === promise) this.ledgerCache = null;
+      if (this.ledgerCache.get(mode)?.promise === promise) this.ledgerCache.delete(mode);
     });
     return promise;
   }
 
-  private async computeLedger(): Promise<LedgerFifo> {
+  private async latestSnapshot(): Promise<{ cutoffAt: Date; seed: LedgerSeed } | null> {
+    const row = await this.prisma.ledgerSnapshot.findFirst({
+      orderBy: { cutoffAt: 'desc' },
+      select: { cutoffAt: true, payload: true },
+    });
+    if (!row) return null;
+    return { cutoffAt: row.cutoffAt, seed: row.payload as unknown as LedgerSeed };
+  }
+
+  private async loadMovements(where: Prisma.InventoryMovementWhereInput): Promise<LedgerMovement[]> {
     const movements = await this.prisma.inventoryMovement.findMany({
+      where,
       select: {
         id: true,
         createdAt: true,
@@ -87,7 +154,7 @@ export class CogsService {
       // corridas. Con el id el replay es 100% reproducible.
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
-    const plain: LedgerMovement[] = movements.map((m) => ({
+    return movements.map((m) => ({
       id: m.id,
       createdAt: m.createdAt,
       delta: Number(m.delta),
@@ -100,7 +167,71 @@ export class CogsService {
       productId: m.productId,
       subproductId: m.subproductId,
     }));
-    return runLedgerFifo(plain);
+  }
+
+  private async computeLedger(snapshot: { cutoffAt: Date; seed: LedgerSeed } | null): Promise<LedgerFifo> {
+    if (!snapshot) {
+      return runLedgerFifo(await this.loadMovements({}));
+    }
+    const plain = await this.loadMovements({ createdAt: { gte: snapshot.cutoffAt } });
+    return runLedgerFifo(plain, snapshot.seed);
+  }
+
+  // ==================================================================
+  // Creación de snapshots
+  // ==================================================================
+
+  /**
+   * Crea (o reemplaza) el snapshot con corte al primer día del mes ACTUAL
+   * 00:00 local. Replay completo hasta el corte → semilla persistida. Corre
+   * el día 2 a las 4:30 AM: el corte ya tiene >24h — ninguna transacción en
+   * vuelo puede insertar movimientos con created_at anterior al corte.
+   */
+  @Cron('30 4 2 * *')
+  async monthlySnapshotCron(): Promise<void> {
+    try {
+      const result = await this.createLedgerSnapshot();
+      this.logger.log(
+        `Snapshot del ledger creado: corte ${result.cutoffAt}, ${result.movementsCount} movimientos resumidos`,
+      );
+    } catch (err) {
+      // Sin snapshot el sistema sigue correcto (replay completo) — no re-throw.
+      this.logger.error('Fallo el snapshot mensual del ledger', err instanceof Error ? err.stack : err);
+    }
+  }
+
+  async createLedgerSnapshot(
+    cutoff?: Date,
+  ): Promise<{ cutoffAt: string; movementsCount: number; lotsCount: number }> {
+    const now = new Date();
+    const cutoffAt = cutoff ?? new Date(now.getFullYear(), now.getMonth(), 1);
+    // El corte debe estar CERRADO: movimientos nuevos siempre llevan
+    // created_at ≈ now(), así que un corte con >1h de margen no puede recibir
+    // inserciones tardías que lo invaliden silenciosamente.
+    if (now.getTime() - cutoffAt.getTime() < 60 * 60 * 1000) {
+      throw new Error('El corte del snapshot debe ser al menos 1 hora en el pasado');
+    }
+    const movements = await this.loadMovements({ createdAt: { lt: cutoffAt } });
+    const full = runLedgerFifo(movements);
+    const seed = buildLedgerSeed(full, cutoffAt.toISOString());
+    await this.prisma.ledgerSnapshot.upsert({
+      where: { cutoffAt },
+      create: {
+        cutoffAt,
+        payload: seed as unknown as Prisma.InputJsonValue,
+        movementsCount: movements.length,
+      },
+      update: {
+        payload: seed as unknown as Prisma.InputJsonValue,
+        movementsCount: movements.length,
+      },
+    });
+    this.invalidateLedgerCache();
+    return {
+      cutoffAt: cutoffAt.toISOString(),
+      movementsCount: movements.length,
+      lotsCount: Object.keys(seed.lots).length,
+    };
   }
 
   /** Costo FIFO real por solicitud de cortesía (sourceId → costo). Cacheado. */
@@ -157,7 +288,9 @@ export class CogsService {
 
   async getPnl(from: Date, to: Date): Promise<PnlReport> {
     const [ledger, sales, refunded] = await Promise.all([
-      this.runLedger(),
+      // Costos por venta del rango: si arranca antes del corte del snapshot,
+      // runLedger cae a replay completo (regla 2).
+      this.runLedger(from),
       this.prisma.sale.findMany({
         where: { paidAt: { gte: from, lte: to }, status: { notIn: [...EXCLUDED_STATUSES] } },
         select: { id: true, total: true },
@@ -290,7 +423,7 @@ export class CogsService {
 
   async getProductMargins(from: Date, to: Date): Promise<ProductMarginReport> {
     const [ledger, sales] = await Promise.all([
-      this.runLedger(),
+      this.runLedger(from),
       this.prisma.sale.findMany({
         where: { paidAt: { gte: from, lte: to }, status: { notIn: [...EXCLUDED_STATUSES] } },
         select: {

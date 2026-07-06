@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runLedgerFifo, type LedgerMovement } from './run-ledger';
+import { buildLedgerSeed, runLedgerFifo, type LedgerMovement } from './run-ledger';
 
 let seq = 0;
 function mov(p: Partial<LedgerMovement> & { delta: number }): LedgerMovement {
@@ -426,5 +426,138 @@ describe('runLedgerFifo · bordes de producción (auditoría 2026-07-05)', () =>
     ]);
     // Antes se ignoraba el batch entero → remaining 10 (inflado). DB = 6.
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 6, value: 600, unknownQty: 0 });
+  });
+});
+
+describe('runLedgerFifo · snapshot (seed + incremental)', () => {
+  /**
+   * Historia rica pre-corte: compras multi-lote, producción, venta, merma y
+   * cortesía. Post-corte: compra, venta cruza-lotes, cortesía+anulación,
+   * venta anulada (void) y segunda producción — todo DENTRO de la ventana.
+   * Invariante: replay completo === replay(seed) + incremental.
+   */
+  const buildHistory = () => {
+    const pre: LedgerMovement[] = [
+      mov({ delta: 100, unitCost: 10, createdAt: new Date('2026-01-01T10:00:00Z') }),
+      mov({ delta: 50, unitCost: 20, ingredientId: 'ing2', createdAt: new Date('2026-01-02T10:00:00Z') }),
+      // Producción: 20×ing1 + 10×ing2 → 10×sub1 a $40/u.
+      mov({ delta: -20, type: 'PRODUCTION', sourceType: 'production', sourceId: 'run1', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      mov({ delta: -10, type: 'PRODUCTION', sourceType: 'production', sourceId: 'run1', ingredientId: 'ing2', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      mov({ delta: 10, type: 'PRODUCTION', sourceType: 'production', sourceId: 'run1', entityType: 'SUBPRODUCT', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      mov({ delta: -5, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-01-04T10:00:00Z') }),
+      mov({ delta: -2, type: 'SALE', sourceId: 's1', entityType: 'SUBPRODUCT', createdAt: new Date('2026-01-04T10:00:00Z') }),
+      mov({ delta: -3, type: 'WASTE', sourceType: null, createdAt: new Date('2026-01-05T10:00:00Z') }),
+      mov({ delta: -1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'c1', entityType: 'SUBPRODUCT', createdAt: new Date('2026-01-06T10:00:00Z') }),
+    ];
+    const post: LedgerMovement[] = [
+      mov({ delta: 30, unitCost: 12, createdAt: new Date('2026-02-02T10:00:00Z') }),
+      // Cruza lotes: 72 restantes @10 + 8 @12 = 816.
+      mov({ delta: -80, type: 'SALE', sourceId: 's2', createdAt: new Date('2026-02-03T10:00:00Z') }),
+      // Cortesía c2 y su anulación, ambas en ventana.
+      mov({ delta: -1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'c2', entityType: 'SUBPRODUCT', createdAt: new Date('2026-02-04T10:00:00Z') }),
+      mov({ delta: 1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'c2', entityType: 'SUBPRODUCT', createdAt: new Date('2026-02-04T11:00:00Z') }),
+      // Venta anulada (void) en ventana: consume y devuelve.
+      mov({ delta: -3, type: 'SALE', sourceId: 's3', entityType: 'SUBPRODUCT', createdAt: new Date('2026-02-05T10:00:00Z') }),
+      mov({ delta: 3, type: 'SALE', sourceId: 's3', entityType: 'SUBPRODUCT', createdAt: new Date('2026-02-05T11:00:00Z') }),
+      // Segunda producción post-corte consume ing2 sembrado.
+      mov({ delta: -8, type: 'PRODUCTION', sourceType: 'production', sourceId: 'run2', ingredientId: 'ing2', createdAt: new Date('2026-02-06T10:00:00Z') }),
+      mov({ delta: 4, type: 'PRODUCTION', sourceType: 'production', sourceId: 'run2', entityType: 'SUBPRODUCT', createdAt: new Date('2026-02-06T10:00:00Z') }),
+      mov({ delta: -2, type: 'SALE', sourceId: 's4', entityType: 'SUBPRODUCT', createdAt: new Date('2026-02-07T10:00:00Z') }),
+    ];
+    return { pre, post };
+  };
+
+  const CUTOFF = '2026-02-01T00:00:00.000Z';
+
+  it('replay(seed)+incremental === replay completo (remaining, costos, agregados)', () => {
+    const { pre, post } = buildHistory();
+    const full = runLedgerFifo([...pre, ...post]);
+
+    const preResult = runLedgerFifo(pre);
+    // Round-trip JSON: el seed se persiste como Json en la DB.
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, CUTOFF)));
+    const inc = runLedgerFifo(post, seed);
+
+    expect(inc.needsFullReplay).toBe(false);
+    expect(full.needsFullReplay).toBe(false);
+
+    // Estado del inventario idéntico.
+    expect(inc.remaining).toEqual(full.remaining);
+    expect(inc.remainingLots).toEqual(full.remainingLots);
+    expect(inc.endingLots).toEqual(full.endingLots);
+
+    // Costos de las ventas de la ventana idénticos al replay completo.
+    for (const saleId of ['s2', 's3', 's4']) {
+      expect(inc.saleIngredientCost.get(saleId)).toEqual(full.saleIngredientCost.get(saleId));
+      expect(inc.saleSubproductCost.get(saleId)).toEqual(full.saleSubproductCost.get(saleId));
+    }
+
+    // Agregados históricos completos (seed preserva lo pre-corte).
+    expect(inc.waste).toEqual(full.waste);
+    expect(inc.cortesia).toEqual(full.cortesia);
+    expect(inc.cortesiaCostBySource).toEqual(full.cortesiaCostBySource);
+  });
+
+  it('la venta cruza-lotes usa los lotes sembrados con su costo original', () => {
+    const { pre, post } = buildHistory();
+    const preResult = runLedgerFifo(pre);
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, CUTOFF)));
+    const inc = runLedgerFifo(post, seed);
+    // 72 unidades @10 del lote pre-corte + 8 @12 del lote nuevo.
+    expect(inc.saleIngredientCost.get('s2')?.get('ing1')).toEqual({
+      cost: 816,
+      qty: 80,
+      unknownQty: 0,
+    });
+  });
+
+  it('VOID de venta pre-corte en la ventana → needsFullReplay', () => {
+    const { pre } = buildHistory();
+    const preResult = runLedgerFifo(pre);
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, CUTOFF)));
+    // El reverso de s1 llega en febrero; sus draws quedaron antes del corte.
+    const inc = runLedgerFifo(
+      [mov({ delta: 5, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-02-10T10:00:00Z') })],
+      seed,
+    );
+    expect(inc.needsFullReplay).toBe(true);
+  });
+
+  it('anulación de cortesía pre-corte en la ventana → needsFullReplay', () => {
+    const { pre } = buildHistory();
+    const preResult = runLedgerFifo(pre);
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, CUTOFF)));
+    const inc = runLedgerFifo(
+      [mov({ delta: 1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'c1', entityType: 'SUBPRODUCT', createdAt: new Date('2026-02-10T10:00:00Z') })],
+      seed,
+    );
+    expect(inc.needsFullReplay).toBe(true);
+  });
+
+  it('reversa PARCIALMENTE cubierta (venta editada tras el corte) → needsFullReplay', () => {
+    const { pre } = buildHistory();
+    const preResult = runLedgerFifo(pre);
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, CUTOFF)));
+    // s1 consumió 5 pre-corte; en la ventana consume 2 más (edición) y luego
+    // el void devuelve 7. Los draws en ventana solo cubren 2 de 7.
+    const inc = runLedgerFifo(
+      [
+        mov({ delta: -2, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-02-10T10:00:00Z') }),
+        mov({ delta: 7, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-02-10T11:00:00Z') }),
+      ],
+      seed,
+    );
+    expect(inc.needsFullReplay).toBe(true);
+  });
+
+  it('sin reversas cruzadas el flag queda apagado y sin seed nunca se enciende', () => {
+    const { pre, post } = buildHistory();
+    // Reverso "fantasma" SIN seed (defensa de siempre): no debe encender el flag.
+    const full = runLedgerFifo([
+      ...pre,
+      ...post,
+      mov({ delta: 5, type: 'SALE', sourceId: 'nunca-consumió', createdAt: new Date('2026-02-20T10:00:00Z') }),
+    ]);
+    expect(full.needsFullReplay).toBe(false);
   });
 });

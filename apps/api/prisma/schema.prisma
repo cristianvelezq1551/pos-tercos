@@ -1313,6 +1313,27 @@ model BusinessConfig {
   @@map("business_config")
 }
 
+/// Snapshot mensual del ledger FIFO (semilla `LedgerSeed` de @pos-tercos/domain):
+/// lotes restantes + agregados históricos al corte. El replay de COGS arranca
+/// desde el snapshot más reciente y procesa solo movimientos >= cutoff_at —
+/// sin esto, cada reporte re-procesaba TODA la historia de inventory_movements
+/// (O(n) creciente para siempre). Cron mensual (día 2, 4:30 AM) + trigger
+/// manual del Dueño. Una reversa que cruce el corte fuerza replay completo
+/// automáticamente (flag `needsFullReplay` del dominio) — nunca resultado
+/// incorrecto, solo uno más lento.
+model LedgerSnapshot {
+  id             String   @id @default(uuid())
+  /// Corte EXCLUSIVO: la semilla resume movimientos con created_at < cutoff_at.
+  cutoffAt       DateTime @unique @map("cutoff_at")
+  /// LedgerSeed serializado (lots + waste + cortesía + cortesiaCostBySource).
+  payload        Json
+  /// Movimientos resumidos por la semilla (observabilidad del ahorro).
+  movementsCount Int      @map("movements_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("ledger_snapshots")
+}
+
 // ====================================================================
 // COCINA (app del cocinero) — incidencias + checklist apertura/cierre
 // ====================================================================
