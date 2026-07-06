@@ -24,11 +24,9 @@
 | **`pnpm build` (PRODUCCIÓN, 9 tareas: API + 6 apps + packages)** | ✅ **9/9** (primera vez que se corre — atrapó 1 bug real) |
 | Drift Prisma (migraciones vs schema) | ✅ solo renombres de índices + drift documentado de `receipt_seq` — `migrate deploy` no se afecta |
 
-> **DB de dev NO migrada (P3005 conocido):** la DB `pos_tercos_dev` no tiene aplicadas las
-> migraciones del módulo cortesías/kitchen ni las nuevas. Las migraciones se validan en
-> `pos_tercos_test` (el `global-setup` de e2e recrea+migra) y se aplican en prod vía
-> `prisma migrate deploy`. NO correr `migrate deploy` contra dev (falla P3005); si se necesita
-> dev, aplicar el SQL directo.
+> **DB de dev: RESUELTO (2026-07-06).** El esquema de dev ya estaba completo (la nota P3005
+> era stale) y se hizo baseline de las 61 migraciones (`prisma migrate resolve --applied`) →
+> `prisma migrate status` limpio. De acá en más dev usa el flujo normal de migraciones.
 
 ---
 
@@ -314,7 +312,7 @@ apps/api/prisma/migrations/
    a OpenWA; Fases A+B codeadas (adapter + templates + toggle `WHATSAPP_TEMPLATES_ENABLED`).
    El go-live es 100% operativo: **checklist paso a paso en `kapso-setup.md` (sección
    "CHECKLIST GO-LIVE")** — chip +57 → registrar número → 5 templates → env vars → smoke.
-   **#13 (anti-abuso del pedido web) sigue pendiente de charla** antes de codear.
+   **#13 resuelto el 2026-07-06** (ver 3bis).
 5. **#12** (smoke test integral + viabilidad deploy). Nota: el código está verificado por
    suites (179 e2e); falta el smoke MANUAL con las apps corriendo (login→vender→cuenta
    abierta→descuento→cierre de caja) y decidir fecha de deploy.
