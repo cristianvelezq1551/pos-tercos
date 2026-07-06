@@ -22,7 +22,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { runSaleTxWithRetry } from './sales.service';
+import { runWithSerializationRetry } from '../common/tx';
 import { buildComandaData, buildReceiptData, includeFull, toSaleDto } from './sales.mappers';
 
 const PRINTABLE_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
@@ -169,7 +169,7 @@ export class SalesReceiptService {
     // (updateMany condicionado al sentToKitchenQty leído) — si otro envío ganó
     // la carrera, count===0 → se aborta y el reintento recomputa lo pendiente
     // (que ya estará vacío → pendingCount 0, sin comanda).
-    const result = await runSaleTxWithRetry(() =>
+    const result = await runWithSerializationRetry(() =>
      this.prisma.$transaction(async (tx) => {
       const sale = await tx.sale.findUnique({ where: { id: saleId }, include: includeFull() });
       if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
@@ -202,7 +202,7 @@ export class SalesReceiptService {
         });
         if (claim.count === 0) {
           // Otro envío (u otra edición) tocó la línea entre la lectura y acá.
-          // P2034 sintético → runSaleTxWithRetry reintenta con datos frescos.
+          // P2034 sintético → runWithSerializationRetry reintenta con datos frescos.
           throw Object.assign(new Error('could not serialize send-to-kitchen claim'), {
             code: 'P2034',
           });

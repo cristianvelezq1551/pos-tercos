@@ -28,6 +28,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
+import { runWithSerializationRetry } from '../common/tx';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -61,26 +62,6 @@ const SHIFT_OPEN_LOCK_KEY = 911_025;
  * que las ventas offline en SalesOfflineService).
  */
 const MAX_FUTURE_CLOCK_DRIFT_MS = 15 * 60 * 1000;
-
-/**
- * Reintenta una tx SERIALIZABLE abortada por un fallo de serialización 40001
- * (mismo criterio que `isSerializationFailure` de las ventas — un cobro
- * concurrente al cierre lo dispara y el reintento recomputa fresco).
- */
-async function runWithSerializationRetry<T>(work: () => Promise<T>): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await work();
-    } catch (e) {
-      const code = (e as { code?: string }).code;
-      const isSerialization =
-        e instanceof Error &&
-        (code === 'P2034' || /could not serialize|deadlock detected/i.test(e.message));
-      if (attempt < 5 && isSerialization) continue;
-      throw e;
-    }
-  }
-}
 
 type DbShiftWithCashier = Prisma.ShiftGetPayload<{
   include: { cashier: { select: { fullName: true } } };

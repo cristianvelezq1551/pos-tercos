@@ -20,10 +20,10 @@ import { PromotionsService } from '../promotions/promotions.service';
 import { SalesConsumptionService } from './sales-consumption.service';
 import {
   computeLine,
-  runSaleTxWithRetry,
   SALE_TX_OPTS,
   type ComputedSaleItem,
 } from './sales.service';
+import { runWithSerializationRetry } from '../common/tx';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 /** Estados donde el pedido sigue "vivo" en el local y se puede corregir. */
@@ -75,7 +75,7 @@ export class SalesEditService {
     // retry de serialización. Un reintento recomputa los deltas de stock contra
     // los items FRESCOS — antes se computaban afuera y el retry re-aplicaba
     // deltas stale (doble ajuste permanente en el ledger).
-    const updated = await runSaleTxWithRetry(() =>
+    const updated = await runWithSerializationRetry(() =>
       this.prisma.$transaction(async (tx) => {
         const existing = await tx.sale.findUnique({
           where: { id: saleId },

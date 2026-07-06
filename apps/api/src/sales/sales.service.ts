@@ -30,6 +30,7 @@ import type {
 import type { Prisma, SaleStatus as DbSaleStatus } from '@prisma/client';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
+import { runWithSerializationRetry } from '../common/tx';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
@@ -41,29 +42,18 @@ import { SalesConsumptionService } from './sales-consumption.service';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 const SALES_CREATE_ENDPOINT = 'POST /sales';
-// Cota alta: cada ronda de colisión deja pasar al menos un cobro (gana el índice
-// único / la serialización), así que basta con ≥ ráfaga concurrente esperable.
-// En la realidad (1 cajero) las colisiones son 0-1; esto cubre ráfagas grandes
-// sin un 500.
-const MAX_SALE_TX_RETRIES = 16;
 
 /**
  * Transacción de venta (cobro/edición/sync): isolation SERIALIZABLE para que el
  * chequeo de stock (`assertStockSufficient`) y el descuento sean atómicos contra
  * cualquier otra venta/producción concurrente — Postgres aborta con 40001 antes
  * de dejar stock negativo. El timeout cubre el trabajo extra del cobro.
+ * El reintento es el genérico de `common/tx.ts` (C2: helper único).
  */
 export const SALE_TX_OPTS = {
   isolationLevel: 'Serializable',
   timeout: 15_000,
 } as const;
-
-/** Postgres SQLSTATE 40001 (serialization_failure) → Prisma lo expone como P2034. */
-export function isSerializationFailure(e: unknown): boolean {
-  if (!(e instanceof Error)) return false;
-  const code = (e as { code?: string }).code;
-  return code === 'P2034' || /could not serialize|deadlock detected/i.test(e.message);
-}
 
 /**
  * P2002 sobre sales.idempotency_key: dos POST /sales concurrentes con la misma
@@ -77,26 +67,6 @@ export function isIdempotencyKeyConflict(e: unknown): boolean {
   return Array.isArray(target)
     ? target.some((t) => String(t).includes('idempotency_key'))
     : String(target ?? '').includes('idempotency_key');
-}
-
-/**
- * Reintenta una transacción de venta cuando aborta por un fallo de
- * serialización Serializable (otra venta/producción tocó el mismo stock). La tx
- * hace rollback COMPLETO, así que reintentar es seguro: el guard de status
- * (`updateMany WHERE PENDIENTE_PAGO`) impide doble-cobro, y el stock se
- * recomputa fresco en el reintento.
- */
-export async function runSaleTxWithRetry<T>(work: () => Promise<T>): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await work();
-    } catch (e) {
-      if (attempt < MAX_SALE_TX_RETRIES && isSerializationFailure(e)) {
-        continue;
-      }
-      throw e;
-    }
-  }
 }
 
 /** Movement original de una venta (los campos que el reverso necesita leer). */
@@ -465,7 +435,7 @@ export class SalesService {
     );
 
     let movementsCreated = 0;
-    const updated = await runSaleTxWithRetry(() =>
+    const updated = await runWithSerializationRetry(() =>
       this.prisma.$transaction(
         async (tx) => {
           // B1 (auditoría): la verdad final de items/total se lee DENTRO de la

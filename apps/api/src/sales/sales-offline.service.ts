@@ -6,7 +6,8 @@ import { PaymentMethodsService } from '../payment-methods/payment-methods.servic
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import { SalesConsumptionService, type ConsumptionSpec } from './sales-consumption.service';
-import { runSaleTxWithRetry, SALE_TX_OPTS } from './sales.service';
+import { runWithSerializationRetry } from '../common/tx';
+import { SALE_TX_OPTS } from './sales.service';
 import { includeFull, toSaleDto } from './sales.mappers';
 
 /**
@@ -149,7 +150,7 @@ export class SalesOfflineService {
       'Offline venta',
     );
 
-    const updated = await runSaleTxWithRetry(() =>
+    const updated = await runWithSerializationRetry(() =>
      this.prisma.$transaction(async (tx) => {
       const [{ next }] = await tx.$queryRaw<{ next: bigint }[]>`
         SELECT nextval('receipt_seq') AS next

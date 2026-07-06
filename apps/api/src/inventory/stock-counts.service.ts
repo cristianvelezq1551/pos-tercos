@@ -7,6 +7,7 @@ import type {
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { runWithSerializationRetry } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from './inventory.service';
 
@@ -16,12 +17,6 @@ const COUNT_EPSILON = 0.0001;
 /** Reintentos cuando Postgres aborta la tx Serializable por conflicto (40001). */
 const MAX_COUNT_RETRIES = 3;
 
-/** Postgres SQLSTATE 40001 (serialization_failure) → Prisma lo expone como P2034. */
-function isSerializationFailure(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as { code?: string }).code;
-  return code === 'P2034' || /could not serialize|deadlock detected/i.test(err.message);
-}
 
 /**
  * Conteo físico ciclado. La idea: contar POCOS ítems por día, rotando, para
@@ -240,9 +235,9 @@ export class StockCountsService {
     userId: string,
     autoApprove: boolean,
   ): Promise<Prisma.StockCountGetPayload<object>> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.prisma.$transaction(
+    return runWithSerializationRetry(
+      () =>
+        this.prisma.$transaction(
           async (tx) => {
             const ledgerQty = await this.ledgerStock(tx, input.entityType, entityId);
             const difference = input.countedQty - ledgerQty;
@@ -285,12 +280,9 @@ export class StockCountsService {
             return count;
           },
           { isolationLevel: 'Serializable', timeout: 10_000 },
-        );
-      } catch (err) {
-        if (attempt < MAX_COUNT_RETRIES && isSerializationFailure(err)) continue;
-        throw err;
-      }
-    }
+        ),
+      MAX_COUNT_RETRIES,
+    );
   }
 
   /** Historial de conteos (para la sección inferior de la página). */

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { InventoryService } from '../inventory/inventory.service';
+import { isSerializationFailure } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -369,12 +370,6 @@ function round4(n: number): number {
   return roundCost(n);
 }
 
-/** Postgres SQLSTATE 40001 (serialization_failure) lo expone Prisma con `code='P2034'`. */
-function isSerializationFailure(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as { code?: string }).code;
-  return code === 'P2034' || /could not serialize/i.test(err.message);
-}
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && (err as { code?: string }).code === 'P2002';

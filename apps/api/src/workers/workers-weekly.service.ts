@@ -23,6 +23,7 @@ import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
+import { isSerializationFailure } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import { parseYmd, round2, todayUtc, ymd } from './payroll-period';
@@ -39,11 +40,6 @@ import { WorkersService } from './workers.service';
 
 /** Reintentos ante conflicto Serializable (40001 → P2034) en el pago de semana. */
 const MAX_WEEK_PAY_RETRIES = 3;
-function isSerializationFailure(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as { code?: string }).code;
-  return code === 'P2034' || /could not serialize|deadlock detected/i.test(err.message);
-}
 
 @Injectable()
 export class WorkersWeeklyService {
