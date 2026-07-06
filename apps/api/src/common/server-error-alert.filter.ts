@@ -28,7 +28,13 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
     const isHttp = exception instanceof HttpException;
     const status = isHttp ? exception.getStatus() : 500;
 
-    if (status >= 500) {
+    // Un 5xx DELIBERADO del negocio (ej. el 503 del kill-switch de pedidos
+    // web) no es un error del sistema: con el switch apagado, cada intento
+    // bloqueado alertaría al dueño como "🔴 Error". Solo alertan los 5xx
+    // INESPERADOS: excepciones no-HTTP (bugs/DB caída) o un 500 explícito.
+    const deliberate5xx = isHttp && status !== 500;
+
+    if (status >= 500 && !deliberate5xx) {
       const req = host.switchToHttp().getRequest<Request>();
       const message = exception instanceof Error ? exception.message : String(exception);
       const signature = `${req?.method ?? '?'} ${normalizePath(req?.url)} :: ${message.slice(0, 80)}`;

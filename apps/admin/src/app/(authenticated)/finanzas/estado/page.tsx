@@ -8,7 +8,7 @@ import {
   PnlCard,
   TrendCard,
 } from '../../../../features/financial';
-import { MonthCutoffCard, getBusinessConfigServer } from '../../../../features/business-config';
+import { MonthCutoffCard, WebOrdersToggleCard, getBusinessConfigServer } from '../../../../features/business-config';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { requireRole } from '../../../../lib/guards';
 import {
@@ -74,6 +74,7 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
               periodStart={statement.periodStart}
               periodEnd={statement.periodEnd}
             />
+            <WebOrdersToggleCard enabled={businessConfig.webOrdersEnabled} />
             <BreakEvenCard s={statement} />
             <TrendCard trend={trend} />
           </div>

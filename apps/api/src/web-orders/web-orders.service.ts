@@ -3,12 +3,24 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
+  BadRequestException,
 } from '@nestjs/common';
 import type { CreateWebOrder, PublicWebOrder, Sale } from '@pos-tercos/types';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesService } from '../sales/sales.service';
 import { PosGateway } from './pos.gateway';
+
+/**
+ * Anti-abuso (#13): máx pedidos PENDIENTES por teléfono por día. El endpoint
+ * es público y cada pedido dispara un WhatsApp pago → sin tope, un abusador
+ * genera costo + pedidos basura. 3 pendientes simultáneos del mismo número en
+ * un día no es un cliente real (los pagados no cuentan: quien paga puede
+ * seguir pidiendo).
+ */
+const MAX_PENDING_WEB_ORDERS_PER_PHONE_PER_DAY = 3;
 
 @Injectable()
 export class WebOrdersService {
@@ -16,6 +28,7 @@ export class WebOrdersService {
     private readonly prisma: PrismaService,
     private readonly sales: SalesService,
     private readonly notifications: NotificationService,
+    private readonly businessConfig: BusinessConfigService,
     @Inject(forwardRef(() => PosGateway))
     private readonly posGateway: PosGateway,
   ) {}
@@ -27,6 +40,28 @@ export class WebOrdersService {
    * hasta que el cajero confirme el pago vía POS.
    */
   async create(input: CreateWebOrder, idempotencyKey?: string): Promise<PublicWebOrder> {
+    // #13 kill-switch: el dueño puede apagar los pedidos web al instante.
+    if (!(await this.businessConfig.isWebOrdersEnabled())) {
+      throw new ServiceUnavailableException(
+        'Los pedidos web están temporalmente deshabilitados. Podés pedir en el local.',
+      );
+    }
+    // #13 tope por teléfono: N pendientes del día bloquean el siguiente.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const pendingToday = await this.prisma.sale.count({
+      where: {
+        type: 'WEB_PICKUP',
+        status: 'PENDIENTE_PAGO',
+        customerPhone: input.customerPhone,
+        createdAt: { gte: startOfToday },
+      },
+    });
+    if (pendingToday >= MAX_PENDING_WEB_ORDERS_PER_PHONE_PER_DAY) {
+      throw new BadRequestException(
+        'Ya tenés varios pedidos sin pagar hoy con este número. Pagá o esperá a que el local los procese antes de pedir de nuevo.',
+      );
+    }
     // SalesService.create necesita un userId. Para ventas web, usamos el
     // primer DUENO como "system user" — no afecta cashierId/paidByUserId
     // (ambos quedan null hasta confirmPayment).

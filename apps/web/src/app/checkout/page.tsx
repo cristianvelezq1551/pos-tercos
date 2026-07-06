@@ -2,8 +2,28 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { CheckoutForm } from '../../features/checkout';
 import { CheckoutSteps } from '../../components/CheckoutSteps';
+import { getMenuServer } from '../../features/catalog';
 
-export default function CheckoutPage() {
+// Kill-switch (#13): si el dueño apagó los pedidos web, el checkout no se
+// renderiza (el API igual rechaza el POST — esto es la cara amable).
+export const dynamic = 'force-dynamic';
+
+export default async function CheckoutPage() {
+  const menu = await getMenuServer();
+  if (!menu.webOrdersEnabled) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background px-6 text-center text-foreground">
+        <h1 className="font-display text-3xl font-extrabold">Pedidos online pausados</h1>
+        <p className="max-w-md text-sm text-muted-foreground">
+          Los pedidos por la web están temporalmente deshabilitados. ¡Te esperamos en el
+          local!
+        </p>
+        <Link href="/" className="text-sm font-semibold text-primary hover:underline">
+          ← Volver al menú
+        </Link>
+      </div>
+    );
+  }
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">

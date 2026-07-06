@@ -303,6 +303,13 @@ apps/api/prisma/migrations/
 2. ~~**Hardening B5/B6/B8/B9 + limitación FIFO §3.1**~~ ✅ HECHO.
 3. ~~**Auditoría §1.C completa (#9/#10)**~~ ✅ HECHA (2026-07-05) — 6 áreas auditadas con
    agentes, todos los ALTA/MEDIA arreglados, aceptados documentados (ver §1.C).
+3bis. **#13 anti-abuso web — ✅ RESUELTO (2026-07-06, decisión del dueño: límite + kill-switch):**
+   `POST /web/orders` ahora (a) rechaza al 4º pedido PENDIENTE del día del mismo
+   teléfono (los pagados no cuentan) y (b) tiene kill-switch `webOrdersEnabled`
+   en business_config (migración `20260706100000_web_orders_toggle`): el dueño
+   lo apaga desde /finanzas/estado (WebOrdersToggleCard), el API responde 503,
+   la web oculta el checkout (flag en /web/menu) y el 503 deliberado NO dispara
+   la alerta de "error del sistema" al dueño. 2 e2e nuevos (181 total).
 4. **#11 WhatsApp — RESUELTO por código (2026-07-05):** Kapso (Cloud API oficial) reemplaza
    a OpenWA; Fases A+B codeadas (adapter + templates + toggle `WHATSAPP_TEMPLATES_ENABLED`).
    El go-live es 100% operativo: **checklist paso a paso en `kapso-setup.md` (sección

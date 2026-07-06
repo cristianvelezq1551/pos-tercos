@@ -48,6 +48,8 @@ export const PublicMenuResponseSchema = z.object({
   products: z.array(PublicMenuProductSchema),
   /** Categorías únicas (con orden estable: orden de aparición en products). */
   categories: z.array(z.string()),
+  /** Kill-switch (#13): false = la web muestra el menú pero oculta el checkout. */
+  webOrdersEnabled: z.boolean().default(true),
   /** Snapshot timestamp para diagnóstico/cache. */
   asOf: z.string().datetime(),
 });

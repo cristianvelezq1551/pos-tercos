@@ -191,4 +191,62 @@ describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
     });
     expect(count).toBe(1);
   });
+
+  // ================================================================
+  // #13 — anti-abuso del pedido web público
+  // ================================================================
+
+  it('#13 tope por teléfono: al 3er pedido PENDIENTE del día, el siguiente se rechaza', async () => {
+    const phone = '+573009998877';
+    const body = {
+      type: 'WEB_PICKUP',
+      items: [{ productId: gaseosaId, quantity: 1 }],
+      customerName: 'Abusador',
+      customerPhone: phone,
+    };
+    // Los pedidos previos de otros tests usan OTRO teléfono → no cuentan.
+    for (let i = 0; i < 3; i++) {
+      const created = await request.post('/web/orders').send(body).expect(201);
+      // Drenar el WhatsApp fire-and-forget (si queda en vuelo, deadlockea el
+      // TRUNCATE del afterAll).
+      await waitForWhatsApp(created.body.order.id as string, 'payment_instructions');
+    }
+    const res = await request.post('/web/orders').send(body).expect(400);
+    expect(String(res.body.message)).toContain('sin pagar');
+
+    // Pagar uno libera el cupo (los pagados no cuentan).
+    const pending = await prisma.sale.findFirst({
+      where: { customerPhone: phone, status: 'PENDIENTE_PAGO' },
+      select: { id: true, total: true },
+    });
+    await confirmPayment(pending!.id, Number(pending!.total)).expect(201);
+    await waitForWhatsApp(pending!.id, 'payment_received');
+    const freed = await request.post('/web/orders').send(body).expect(201);
+    await waitForWhatsApp(freed.body.order.id as string, 'payment_instructions');
+  });
+
+  it('#13 kill-switch: con webOrdersEnabled=false el pedido se rechaza 503 y al reactivar vuelve', async () => {
+    await prisma.businessConfig.upsert({
+      where: { id: 'singleton' },
+      update: { webOrdersEnabled: false },
+      create: { id: 'singleton', webOrdersEnabled: false },
+    });
+    const body = {
+      type: 'WEB_PICKUP',
+      items: [{ productId: gaseosaId, quantity: 1 }],
+      customerName: 'Cliente Web',
+      customerPhone: '+573001112233',
+    };
+    const res = await request.post('/web/orders').send(body).expect(503);
+    expect(String(res.body.message)).toContain('deshabilitados');
+
+    // El menú público expone el flag para que la web oculte el checkout.
+    // (cache TTL del menú: se consulta directo el config acá)
+    await prisma.businessConfig.update({
+      where: { id: 'singleton' },
+      data: { webOrdersEnabled: true },
+    });
+    const reopened = await request.post('/web/orders').send(body).expect(201);
+    await waitForWhatsApp(reopened.body.order.id as string, 'payment_instructions');
+  });
 });

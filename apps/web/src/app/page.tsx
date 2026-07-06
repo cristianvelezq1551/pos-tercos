@@ -22,6 +22,13 @@ export default async function Home() {
       <ActiveOrderBanner />
       <main className="flex-1">
         {hero.slides.length > 0 ? <HeroCarousel slides={hero.slides} /> : <Hero />}
+        {!menu.webOrdersEnabled ? (
+          <div className="mx-auto mt-6 max-w-2xl px-6">
+            <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
+              Los pedidos online están temporalmente pausados. ¡Te esperamos en el local!
+            </p>
+          </div>
+        ) : null}
         {hasMenu ? (
           <>
             <CategoryMosaic categories={menu.categories} />

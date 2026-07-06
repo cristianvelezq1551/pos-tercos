@@ -1110,6 +1110,10 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 - **Admin/cocina**: doble-submit arreglado en IngredientForm/SubproductForm (`submitting` cubre la red) + `portionSize > 0`; blob leak de SlideEditModal; errores visibles en IncidentsPanel/IncidenciasView/ChecklistItemsPanel; barrels de dashboard/kitchen-admin; borrados `pos/DayHistoryModal.tsx` y `cocina/lib/api-server.ts` (huérfanos).
 - Decisiones aceptadas sin cambio (documentadas en el doc de auditoría): grossMargin no resta waste/cortesía (líneas separadas del P&G), margen por producto usa receta vigente (aproximación), byMethod.count = pagos, endpoints de trigger manual sin caller de UI se conservan.
 
+### #13 Anti-abuso del pedido web (2026-07-06)
+- `POST /web/orders`: máx **3 pedidos PENDIENTES por teléfono por día** (los pagados no cuentan) → 400 con mensaje claro.
+- **Kill-switch** `business_config.web_orders_enabled` (migración `20260706100000_web_orders_toggle`): el dueño pausa/reactiva pedidos web desde `/finanzas/estado` (WebOrdersToggleCard) sin deploy. API → 503; `GET /web/menu` expone `webOrdersEnabled` y la web muestra banner + bloquea `/checkout`. El 503 deliberado NO alerta al dueño como error del sistema (ServerErrorAlertFilter ignora HttpException 5xx ≠ 500).
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)

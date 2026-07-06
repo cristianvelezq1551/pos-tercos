@@ -1289,6 +1289,9 @@ model TreasuryMovement {
 model BusinessConfig {
   id            String   @id @default("singleton")
   monthStartDay Int      @default(1) @map("month_start_day")
+  /// Kill-switch de pedidos web (#13): false = POST /web/orders rechazado y
+  /// la web oculta el checkout. El dueño lo apaga ante abuso, sin deploy.
+  webOrdersEnabled Boolean @default(true) @map("web_orders_enabled")
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("business_config")

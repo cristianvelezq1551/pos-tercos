@@ -22,7 +22,12 @@ export class BusinessConfigService {
       update: {},
       create: { id: SINGLETON_ID },
     });
-    return { monthStartDay: row.monthStartDay };
+    return { monthStartDay: row.monthStartDay, webOrdersEnabled: row.webOrdersEnabled };
+  }
+
+  /** Kill-switch de pedidos web (#13). */
+  async isWebOrdersEnabled(): Promise<boolean> {
+    return (await this.get()).webOrdersEnabled;
   }
 
   /** Atajo para los reportes: día (1–28) en que arranca el mes del negocio. */
@@ -57,19 +62,29 @@ export class BusinessConfigService {
 
   async update(input: UpdateBusinessConfig, actorId: string): Promise<BusinessConfig> {
     const before = await this.get();
+    const patch = {
+      ...(input.monthStartDay !== undefined ? { monthStartDay: input.monthStartDay } : {}),
+      ...(input.webOrdersEnabled !== undefined
+        ? { webOrdersEnabled: input.webOrdersEnabled }
+        : {}),
+    };
     const row = await this.prisma.businessConfig.upsert({
       where: { id: SINGLETON_ID },
-      update: { monthStartDay: input.monthStartDay },
-      create: { id: SINGLETON_ID, monthStartDay: input.monthStartDay },
+      update: patch,
+      create: { id: SINGLETON_ID, ...patch },
     });
+    const after: BusinessConfig = {
+      monthStartDay: row.monthStartDay,
+      webOrdersEnabled: row.webOrdersEnabled,
+    };
     await this.audit.log({
       userId: actorId,
       action: 'BUSINESS_CONFIG_UPDATED',
       entityType: 'business_config',
       entityId: SINGLETON_ID,
       before,
-      after: { monthStartDay: row.monthStartDay },
+      after,
     });
-    return { monthStartDay: row.monthStartDay };
+    return after;
   }
 }

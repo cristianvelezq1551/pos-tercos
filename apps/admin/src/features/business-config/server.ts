@@ -7,6 +7,6 @@ export async function getBusinessConfigServer(): Promise<BusinessConfig> {
   try {
     return await serverFetchJson<BusinessConfig>('/business-config', undefined, BusinessConfigSchema);
   } catch {
-    return { monthStartDay: 1 };
+    return { monthStartDay: 1, webOrdersEnabled: true };
   }
 }

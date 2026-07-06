@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import type { PublicMenuProduct, PublicMenuResponse } from '@pos-tercos/types';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class WebMenuService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly businessConfig: BusinessConfigService,
+  ) {}
 
   /**
    * Caché con TTL: el menú público lo pega internet en cada visita y cambia muy
@@ -74,6 +78,9 @@ export class WebMenuService {
     return {
       products,
       categories,
+      // #13 kill-switch: la web oculta el checkout cuando está apagado (el
+      // create igual lo rechaza fresco; esto puede tardar el TTL del caché).
+      webOrdersEnabled: await this.businessConfig.isWebOrdersEnabled(),
       asOf: new Date().toISOString(),
     };
   }
