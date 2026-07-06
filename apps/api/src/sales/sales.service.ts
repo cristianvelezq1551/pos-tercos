@@ -53,6 +53,14 @@ const SALES_CREATE_ENDPOINT = 'POST /sales';
 export const SALE_TX_OPTS = {
   isolationLevel: 'Serializable',
   timeout: 15_000,
+  // maxWait = cuánto espera la tx para ADQUIRIR una conexión del pool antes de
+  // fallar. El default de Prisma (2s) es muy corto: bajo un burst de cobros
+  // concurrentes con pool chico (Railway hobby / runner de CI), varias txs
+  // SERIALIZABLE agotan el pool y las que esperan >2s revientan con "Unable to
+  // start a transaction" — que NO es un fallo de serialización (40001), así que
+  // el retry de common/tx.ts no lo cubre y burbujea como 5xx. 10s hace que
+  // esperen el turno en vez de fallar.
+  maxWait: 10_000,
 } as const;
 
 /**

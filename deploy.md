@@ -132,6 +132,12 @@ VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcryp
 
 **Database:**
 - `DATABASE_URL=${{Postgres.DATABASE_URL}}` (Railway internal)
+  - **Fijar el pool de conexiones**: agregar `?connection_limit=15` (o `&` si
+    ya hay query). El default de Prisma (num_cpu×2+1) queda en ~3-5 en un plan
+    chico → un burst de cobros concurrentes agota el pool y devuelve "Unable to
+    start a transaction". El cobro ya espera hasta 10s por un slot (`maxWait` en
+    `SALE_TX_OPTS`), pero el pool necesita holgura. Verificar que no supere el
+    `max_connections` del Postgres de Railway.
 
 **Auth:**
 - `JWT_ACCESS_SECRET` — random 64 bytes (`openssl rand -hex 64`)
