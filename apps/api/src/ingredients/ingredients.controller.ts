@@ -4,24 +4,46 @@ import {
   UpdateIngredientSchema,
   type CreateIngredient,
   type Ingredient,
+  type JwtAccessPayload,
   type UpdateIngredient,
 } from '@pos-tercos/types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { IngredientsService } from './ingredients.service';
+
+/** Roles que pueden ver el costo de compra (mismo criterio que /products). */
+const COST_ROLES = new Set(['ADMIN_OPERATIVO', 'DUENO']);
+
+/**
+ * Oculta el costo de compra a roles que no son admin/dueño (cajero/cocinero
+ * necesitan el insumo — recetas, biblia, stock — pero el costo es información
+ * financiera del negocio; espejo de `stripCostForRole` de products).
+ */
+function stripCostForRole(i: Ingredient, role: string): Ingredient {
+  if (COST_ROLES.has(role)) return i;
+  return { ...i, lastUnitCost: null, lastUnitCostDate: null };
+}
 
 @Controller('ingredients')
 export class IngredientsController {
   constructor(private readonly ingredients: IngredientsService) {}
 
   @Get()
-  list(@Query('only_active') onlyActive?: string): Promise<Ingredient[]> {
-    return this.ingredients.list({ onlyActive: onlyActive === 'true' });
+  async list(
+    @CurrentUser() user: JwtAccessPayload,
+    @Query('only_active') onlyActive?: string,
+  ): Promise<Ingredient[]> {
+    const rows = await this.ingredients.list({ onlyActive: onlyActive === 'true' });
+    return rows.map((i) => stripCostForRole(i, user.role));
   }
 
   @Get(':id')
-  getById(@Param('id', ParseUUIDPipe) id: string): Promise<Ingredient> {
-    return this.ingredients.getById(id);
+  async getById(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Ingredient> {
+    return stripCostForRole(await this.ingredients.getById(id), user.role);
   }
 
   @AdminAccess()

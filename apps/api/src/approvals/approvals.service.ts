@@ -11,6 +11,16 @@ import { PrismaService } from '../prisma/prisma.service';
 const BCRYPT_ROUNDS = 10;
 
 /**
+ * Lockout de fuerza bruta del PIN (además del @Throttle por IP de los
+ * endpoints, que se evade rotando IP): máximo de intentos FALLIDOS en la
+ * ventana, contados en memoria a nivel proceso. Suficiente porque el deploy
+ * es de 1 réplica (documentado en deploy.md); un PIN de 6 dígitos con 10
+ * intentos/5min tarda años en fuerza bruta.
+ */
+const MAX_FAILED_PIN_ATTEMPTS = 10;
+const PIN_FAIL_WINDOW_MS = 5 * 60_000;
+
+/**
  * Aprobaciones inline para acciones del cajero que requieren validación
  * de Admin Operativo o Dueño (architecture.md §7.3).
  *
@@ -94,8 +104,26 @@ export class ApprovalsService {
    * porque hay máximo ~5 admins en un negocio. Si crece, indexar por
    * primeros 2 dígitos del PIN o algo parecido (FASE 14).
    */
+  /** Timestamps de intentos FALLIDOS dentro de la ventana (in-memory). */
+  private failedPinAttempts: number[] = [];
+
+  private assertNotLockedOut(): void {
+    const cutoff = Date.now() - PIN_FAIL_WINDOW_MS;
+    this.failedPinAttempts = this.failedPinAttempts.filter((t) => t > cutoff);
+    if (this.failedPinAttempts.length >= MAX_FAILED_PIN_ATTEMPTS) {
+      this.logger.warn(
+        `PIN lockout activo: ${this.failedPinAttempts.length} intentos fallidos en la ventana`,
+      );
+      throw new ForbiddenException(
+        'Demasiados intentos de PIN fallidos. Esperá 5 minutos e intentá de nuevo.',
+      );
+    }
+  }
+
   async verify(pin: string): Promise<string> {
+    this.assertNotLockedOut();
     if (!/^\d{6}$/.test(pin)) {
+      this.failedPinAttempts.push(Date.now());
       throw new ForbiddenException('PIN inválido');
     }
     const candidates = await this.prisma.approvalPin.findMany({
@@ -113,6 +141,7 @@ export class ApprovalsService {
       const ok = await bcrypt.compare(pin, c.pinHash);
       if (ok) return c.userId;
     }
+    this.failedPinAttempts.push(Date.now());
     throw new ForbiddenException('PIN inválido');
   }
 
