@@ -84,3 +84,96 @@ jobs:
       # final: si algo de arriba falla, no gastamos los ~2 min de builds.
       - name: Builds de producción (todas las apps)
         run: pnpm build
+
+  # E2E de NAVEGADOR (Playwright): el sistema como lo usa un humano — POS
+  # (vender/cobrar/cerrar caja), cocina (cookie + producción), flujo cross-app
+  # web→POS y el ciclo OFFLINE completo. Es la capa que atrapa los bugs de
+  # integración que los e2e de API no ven (ej. guard sin la cookie de cocina,
+  # 2026-07-06). Corre en paralelo a `verify` con su propia DB seedeada.
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # JWT_ACCESS_SECRET lo usan también los middleware Edge de las apps Next.
+      JWT_ACCESS_SECRET: ci-jwt-access-secret-not-for-production-0001
+      JWT_REFRESH_SECRET: ci-jwt-refresh-secret-not-for-production-001
+      WEB_ORDER_TOKEN_SECRET: ci-web-order-token-secret-not-for-prod-0001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Generar Prisma Client
+        run: pnpm -F @pos-tercos/api prisma:generate
+
+      - name: Build API + apps del flujo (turbo resuelve types/domain/ui)
+        run: >-
+          pnpm exec turbo build
+          --filter=@pos-tercos/api
+          --filter=@pos-tercos/pos
+          --filter=@pos-tercos/web
+          --filter=@pos-tercos/cocina
+
+      - name: Migrar + seedear la DB
+        run: |
+          pnpm -F @pos-tercos/api exec prisma migrate deploy
+          pnpm -F @pos-tercos/api exec prisma db seed
+
+      - name: Instalar Chromium de Playwright
+        run: pnpm -F @pos-tercos/pos exec playwright install --with-deps chromium
+
+      - name: Levantar API + POS + web + cocina
+        run: |
+          pnpm -F @pos-tercos/api start &
+          pnpm -F @pos-tercos/pos start &
+          pnpm -F @pos-tercos/web start &
+          pnpm -F @pos-tercos/cocina start &
+          for port in 3001 3002 3000 3006; do
+            for i in $(seq 1 60); do
+              if curl -sf "http://localhost:$port/healthz" >/dev/null 2>&1 \
+                 || curl -sf -o /dev/null "http://localhost:$port"; then
+                echo "puerto $port listo"; break
+              fi
+              [ "$i" = 60 ] && { echo "::error::puerto $port nunca levantó"; exit 1; }
+              sleep 2
+            done
+          done
+
+      - name: Tests de navegador (Playwright)
+        run: pnpm -F @pos-tercos/pos test:e2e-ui
+
+      - name: Subir traces si falló
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: apps/pos/test-results/
+          retention-days: 7
