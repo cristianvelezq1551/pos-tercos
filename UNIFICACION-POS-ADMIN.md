@@ -199,7 +199,7 @@ apps/admin/src/app/
 - [x] Fase 0 — checkpoint `fc9810d` pusheado a `main`; rama `feat/unify-pos-admin` creada.
 - [x] Fase 1 — andamiaje `/caja` (ruta gateada a ADMIN_OPERATIVO + entrada sidebar `onlyOperativo`). Sin deps nuevas (se agregan en Fase 2 al portar features). typecheck+lint verdes.
 - [x] Fase 2 — paridad online ✅ (2a-2f: deps+libs+offline+port+cableado+**vitest 63 tests**). Falta solo verificación manual en runtime (dev).
-- [ ] Fase 3 — offline + SW acotado
+- [x] Fase 3 — offline + SW acotado ✅ (`public/sw.js` con guard `isCajaNav`: solo `/caja/*` se cachea/sirve offline, gestión pasa derecho; `manifest.webmanifest` scope `/caja`; `offline.html`; iconos; `CajaServiceWorker` registra solo en prod+operativo+caja; `clear-nav-cache` al logout). typecheck+lint verdes. Falta verificación runtime del offline real.
 - [ ] Fase 4 — launcher + gating dueño
 - [ ] Fase 5 — pruebas profundas
 - [ ] Fase 6 — cutover (roles + borrar `apps/pos`)

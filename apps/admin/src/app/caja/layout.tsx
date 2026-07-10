@@ -1,3 +1,5 @@
+import type { Metadata } from 'next';
+import { CajaServiceWorker } from '../../components/CajaServiceWorker';
 import { CajaTopbar } from '../../components/CajaTopbar';
 import { SessionKeeper } from '../../features/auth';
 import { getAccessTokenServer, requireOperativoServer } from '../../features/auth/server';
@@ -14,6 +16,14 @@ import { saleToPublicWebOrder } from '../../features/web-orders/lib/project';
  * Toda la infra offline/socket/cortesías se monta ACÁ — nunca en el layout de
  * gestión. Adaptado del layout autenticado del POS. Ver UNIFICACION-POS-ADMIN.md.
  */
+/** Manifest + PWA metadata SOLO bajo /caja (la caja es la app instalable; la
+ *  gestión no). Next mergea esta metadata en las rutas del segmento. */
+export const metadata: Metadata = {
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Caja Tercos' },
+  icons: { apple: '/icon-512.png' },
+};
+
 export default async function CajaLayout({ children }: { children: React.ReactNode }) {
   const user = await requireOperativoServer();
   const [shift, webSales, wsToken] = await Promise.all([
@@ -28,6 +38,7 @@ export default async function CajaLayout({ children }: { children: React.ReactNo
     <OfflineProvider user={user} shift={shift}>
       <CortesiaWatchProvider>
         <div className="flex h-dvh flex-col bg-background text-foreground">
+          <CajaServiceWorker />
           <SessionKeeper />
           <OfflineStatusBar />
           <CajaTopbar
