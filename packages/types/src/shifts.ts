@@ -190,10 +190,34 @@ export const ShiftSessionOrderSchema = z.object({
       z.object({
         quantity: z.number().int(),
         name: z.string(),
+        /** Precio unitario al momento de la venta (sin descuentos). */
+        unitPrice: z.number().default(0),
+        /** Descuento aplicado a la línea (promo o descuento manual). */
+        lineDiscount: z.number().default(0),
+        /** true si el descuento vino de una promoción activa (no manual). */
+        hasPromotion: z.boolean().default(false),
         lineTotal: z.number(),
+        /** Costo estimado de la línea. null si es desconocido o el rol no ve costos. */
+        lineCost: z.number().nullable().default(null),
+        /** Ganancia de la línea (lineTotal − lineCost). null si costo desconocido. */
+        lineMargin: z.number().nullable().default(null),
+        /** Margen de la línea como fracción (0..1). null si no aplica. */
+        lineMarginPct: z.number().nullable().default(null),
       }),
     )
     .default([]),
+  /** Descuento total de la venta (Σ líneas + descuento sobre el total). */
+  discountTotal: z.number().default(0),
+  /** Porción del descuento aplicada sobre el total (no por línea). */
+  orderDiscountAmount: z.number().default(0),
+  /** Motivo del descuento manual, si lo hubo. */
+  discountReason: z.string().nullable().default(null),
+  /** Costo total del pedido. null si algún costo es desconocido o el rol no ve costos. */
+  costTotal: z.number().nullable().default(null),
+  /** Ganancia del pedido (total − costTotal). null si no aplica. */
+  marginTotal: z.number().nullable().default(null),
+  /** Margen del pedido como fracción (0..1). null si no aplica. */
+  marginPct: z.number().nullable().default(null),
 });
 export type ShiftSessionOrder = z.infer<typeof ShiftSessionOrderSchema>;
 
@@ -201,6 +225,8 @@ export const ShiftSessionSummarySchema = z.object({
   orderCount: z.number().int(),
   paidCount: z.number().int(),
   voidCount: z.number().int(),
+  /** Pedidos cancelados (CANCELADO_NO_PAGO + CANCELADO_SIN_REEMBOLSO). */
+  canceledCount: z.number().int().default(0),
   totalRevenue: z.number(),
   cashRevenue: z.number(),
   transferRevenue: z.number(),

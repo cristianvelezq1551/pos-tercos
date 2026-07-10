@@ -24,7 +24,7 @@ export function ShiftSessionHeader({ shift }: { shift: ShiftSessionDetail['shift
     <section className="rounded-lg border border-border bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="caps text-xs text-muted-foreground">Cajero</p>
+          <p className="caps text-xs text-muted-foreground">Abrió la caja</p>
           <p className="text-lg font-semibold text-foreground">
             {shift.cashierName ?? '—'}
           </p>

@@ -35,6 +35,7 @@ export interface FormState {
   basePrice: string;
   category: string;
   imageUrl: string;
+  emoji: string;
   modifiersEnabled: boolean;
   isCombo: boolean;
   comboPrice: string;

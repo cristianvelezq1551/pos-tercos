@@ -9,6 +9,7 @@
 
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import { startOfBusinessDay } from '@pos-tercos/domain';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -153,6 +154,96 @@ describe('Shifts E2E', () => {
         .set('Authorization', `Bearer ${staleToken}`)
         .expect(200);
       expect(detail.body.shift.closedAt).toBeTruthy();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Día de NEGOCIO (corte 4 am, 2026-07-09): la caja puede cruzar la medianoche
+  // sin volverse stale; el día de la caja va de 4 am a 4 am. Los openedAt se
+  // derivan del corte ACTUAL (startOfBusinessDay) para que los tests sean
+  // deterministas a cualquier hora en que corra la suite.
+  // ---------------------------------------------------------------------------
+  describe('Día de negocio (corte 4 am): la caja cruza la medianoche', () => {
+    let bizToken: string;
+    let bizUserId: string;
+
+    beforeAll(async () => {
+      const hash = await bcrypt.hash('dev12345', 10);
+      const user = await prisma.user.create({
+        data: {
+          email: 'cajero-bizday@test.local',
+          fullName: 'Cajero BizDay',
+          role: 'CAJERO',
+          passwordHash: hash,
+          mustChangePwd: false,
+          active: true,
+        },
+      });
+      bizUserId = user.id;
+      bizToken = await loginAs(request, 'cajero-bizday@test.local');
+    });
+
+    afterEach(async () => {
+      // Estos tests no crean ventas → delete directo (sin hijos con trigger).
+      await prisma.shift.deleteMany({ where: { cashierId: bizUserId } });
+    });
+
+    it('caja abierta AL inicio del día de negocio (4 am) NO es stale', async () => {
+      // Equivale a la caja de anoche vista de madrugada: mismo día de negocio.
+      await prisma.shift.create({
+        data: {
+          cashierId: bizUserId,
+          openingCash: 30000,
+          status: 'OPEN',
+          openedAt: startOfBusinessDay(new Date()),
+        },
+      });
+      const res = await request
+        .get('/shifts/current-status')
+        .set('Authorization', `Bearer ${bizToken}`)
+        .expect(200);
+      expect(res.body.stalePreviousDay).toBe(false);
+    });
+
+    it('caja abierta justo ANTES del corte (3:59 am) SÍ es stale', async () => {
+      const beforeCutoff = new Date(startOfBusinessDay(new Date()).getTime() - 60_000);
+      await prisma.shift.create({
+        data: {
+          cashierId: bizUserId,
+          openingCash: 30000,
+          status: 'OPEN',
+          openedAt: beforeCutoff,
+        },
+      });
+      const res = await request
+        .get('/shifts/current-status')
+        .set('Authorization', `Bearer ${bizToken}`)
+        .expect(200);
+      expect(res.body.stalePreviousDay).toBe(true);
+    });
+
+    it('una caja CERRADA del día de negocio anterior no consume el cupo de hoy', async () => {
+      // Caja "de anoche" cerrada de madrugada (antes del corte): abrir la de
+      // hoy debe funcionar — antes, con corte a medianoche, un cierre a las
+      // 2 am bloqueaba la apertura de ese mismo día calendario.
+      const boundary = startOfBusinessDay(new Date());
+      await prisma.shift.create({
+        data: {
+          cashierId: bizUserId,
+          openingCash: 30000,
+          status: 'CLOSED',
+          openedAt: new Date(boundary.getTime() - 60 * 60_000),
+          closedAt: new Date(boundary.getTime() - 30 * 60_000),
+          expectedCash: 30000,
+          countedCash: 30000,
+          difference: 0,
+        },
+      });
+      await request
+        .post('/shifts/open')
+        .set('Authorization', `Bearer ${bizToken}`)
+        .send({ openingCash: 20000 })
+        .expect(201);
     });
   });
 

@@ -108,6 +108,7 @@ apps/api/src/<dominio>/
 - ✅ SIEMPRE retornar DTOs explícitos, nunca entidades Prisma crudas.
 - ✅ SIEMPRE registrar acciones sensibles vía `AuditService.log(...)` desde el service.
 - ✅ Tests en `.spec.ts` happy + edge cases.
+- ✅ **Fechas (convención 2026-07-09, `common/local-dates.ts`)**: columnas timestamp (`paidAt`, …) se comparan contra ventanas en hora LOCAL (`getBusinessMonthWindow`/`parseDateRange`); columnas fecha-solo (`@db.Date`/`parseYmd` = medianoche UTC: `hireDate`, `workDate`, `periodStart` nómina, `startedAt` costos fijos, `activeFrom/To` promos, `anchorDate`) se comparan contra `utcDateOfLocalDay(...)`. Serializar un instante local a YYYY-MM-DD SIEMPRE con `ymdLocal` — NUNCA `toISOString().slice(0,10)` (en Bogotá corre el fin de mes al día 1 del mes siguiente). Fecha elegida por el usuario vs timestamps → `localMidnightOfYmd`. **La OPERACIÓN de la caja usa día de NEGOCIO (corte 4 am, `startOfBusinessDay` en domain — ver §7.v14); la atribución contable de ventas sigue en día calendario.**
 
 ### Frontend (`apps/<next>`) — feature-based
 
@@ -436,11 +437,12 @@ _(ninguno — FASE 4 cerrada)_
 - Las 3 notificaciones se disparan automáticamente desde el backend (ver sec 4.10). Métricas de cobertura quedan en tabla `whatsapp_messages` (`status='sent'`), no en `audit_log`.
 - `GET /reports/whatsapp-metrics` ✅ ya lee de `whatsapp_messages` (la "deuda menor" de leer del audit `WHATSAPP_LINK_OPENED` está cerrada — ver `sales-reports.service.ts`).
 
-### Promociones (FASE 5.C + 12.B)
-- `GET /promotions[?only_active=true]` — Cajero+ leen para tachados POS; Admin/Dueño escriben.
+### Promociones (FASE 5.C + 12.B + canal 2026-07-09)
+- **Canal por promo** (`promotions.channel`, enum `PromotionChannel BOTH|POS|WEB`, default BOTH — migración `20260709120000_promotion_channel`): el dueño define dónde aplica cada promo (caja, web o ambos) desde el form del admin ("Dónde aplica", editable como campo meta). `loadActiveAt(at, channel)` filtra server-side (COUNTER→POS, WEB_PICKUP→WEB; también en `editItems`). El POS lista con `?channel=POS`. `GET /web/menu` expone `promotions[]` (subset SAFE `PublicMenuPromotion`, solo WEB/BOTH) y la web muestra badge + precio tachado en el menú y descuento en carrito/checkout client-side con el mismo motor de domain (`getPromoBadge`/`applyPromotion`; feature `apps/web/src/features/promotions/` hidratada por `PromotionsHydrator`). El total autoritativo sigue siendo del backend al crear el pedido. E2E `promotion-channels` (6 casos).
+- `GET /promotions[?only_active=true&channel=POS|WEB]` — Cajero+ leen para tachados POS; Admin/Dueño escriben.
 - `GET /promotions/:id` — Cajero+
 - `POST /promotions` — Admin/Dueño. Body `CreatePromotion` validado por `superRefine` per-type (PERCENT_OFF, FIXED_OFF, BOGO, COMBO_OFF). CHECK constraints DB defensivos (`chk_promo_pct/fixed/bogo/combo`).
-- `PATCH /promotions/:id` — Admin/Dueño. Solo permite cambiar campos meta (name, days, time, dates, isActive, productIds). Campos per-tipo son inmutables.
+- `PATCH /promotions/:id` — Admin/Dueño. Solo permite cambiar campos meta (name, days, time, dates, isActive, productIds, channel). Campos per-tipo son inmutables.
 - `DELETE /promotions/:id` — Admin/Dueño. Soft delete (isActive=false).
 
 ### Sugerencias de compra (FASE 12.C-12.D)
@@ -1134,6 +1136,47 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 
 ### Helper único de tx Serializable (cierra C2)
 - `apps/api/src/common/tx.ts`: `isSerializationFailure` + `runWithSerializationRetry(work, maxAttempts=16)`. Reemplaza 5 copias divergentes (sales/shifts/stock-counts/production/workers-weekly). `SALE_TX_OPTS` (política de timeout del cobro) sigue en sales. NO volver a copiar el predicado — importar de `common/tx`.
+
+---
+
+## 7.v14 Día de NEGOCIO de la caja — corte 4 am (2026-07-09)
+
+> Decisión del dueño: el local vende de madrugada. La CAJA ya no corta a medianoche —
+> su "día" va de **4:00 am a 3:59 am** hora local (`BUSINESS_DAY_CUTOFF_HOUR = 4` en
+> `@pos-tercos/domain/common/business-day.ts`: `startOfBusinessDay` / `businessDayWindow` /
+> `sameBusinessDay`, puros + 12 tests). Verificado: domain 185, e2e 25 suites/208 (+3 del corte),
+> POS 63, typecheck 13/13, lint 0.
+
+### Qué cambió (solo la OPERACIÓN de la caja)
+- **Guard stale** (`ShiftsService.startOfBusinessToday`): la caja abierta el jueves 5 pm sigue operable (vender, cobrar, movimientos) hasta las 3:59 am del viernes. A las 4:00 am pasa a stale → `StaleShiftGate` obliga el arqueo antes de seguir.
+- **"Una caja por día"** (`open` + `syncOfflineOpen`): la ventana es el día de negocio. Cerrar a las 2 am y reabrir a las 3 am sigue bloqueado (mismo día de negocio); la caja del día siguiente abre normal desde las 4 am — cerrar de madrugada YA NO consume el cupo del día siguiente.
+- **B6 offline** (`sales-offline.service`): el audit `cross_day_shift` compara día de negocio (venta 23:50 sincronizada 00:10 ya no alerta falso).
+- **POS `startOfTodayIso`** (`apps/pos/src/lib/dates.ts`): las vistas operativas (historial, panel de pedidos, modal web) muestran "el día" desde el corte de las 4 am — a la 1 am el cajero sigue viendo la operación de la noche.
+
+### Qué NO cambió (decisión explícita del dueño — NO "corregir")
+- **La atribución contable de las ventas sigue en día CALENDARIO por `paidAt`**: lo vendido hasta las 23:59 es de ese día; lo cobrado a la 1 am cae al día siguiente en reportes/P&G/dashboard. El Z-report de la caja del jueves incluye la madrugada (agrupa por `shiftId`) — es esperable que Z-report ≠ reporte diario de ventas en noches que cruzan medianoche; no es un bug.
+- Nómina/costos fijos/tesorería/promos (fecha-solo), checklist cocina, límite anti-abuso web (3/día por teléfono) y crons siguen en día calendario. El snapshot FIFO (día 2, 4:30 am) queda justo después del corte — alineado.
+
+---
+
+## 7.v15 Cuentas abiertas al cerrar caja — resolver antes de cerrar (2026-07-09)
+
+> Decisión del dueño: una cuenta abierta (`isOpenTab` + PENDIENTE_PAGO) que quedó sin cobrar
+> ensuciaba el reporte de la sesión cerrada (colgaba del `shiftId` de una caja muerta). Ahora
+> el modal de cierre **pregunta** por cada cuenta abierta de esa caja antes de dejar cerrar.
+
+### Comportamiento
+- **POS `CloseShiftModal`**: si la caja tiene cuentas abiertas sin cobrar, muestra `OpenTabsResolver` (feature `sales`) y "Cerrar turno" queda deshabilitado hasta que no quede ninguna. Por cuenta, 3 acciones:
+  - **Cobrar** → `CheckoutModal` normal (la plata entra a ESTA caja; el arqueo se recarga vía `loadArqueo`).
+  - **Traspasar** → `POST /sales/:id/carry-over` suelta el `shiftId` (a NULL): sale del arqueo/reporte de la caja que se cierra, sigue PENDIENTE_PAGO y se cobra en la caja abierta cuando se pague (`resolvePaymentShift` la re-cuelga). Escape honesto para "el cliente sigue comiendo".
+  - **Cancelar** → `POST /sales/:id/cancel` (CANCELADO_NO_PAGO); si ya fue a cocina, imprime comanda de anulación (#8).
+- **Backend `SalesService.carryOverOpenTab`**: solo cuentas abiertas sin cobrar; guard condicionado (`updateMany` WHERE PENDIENTE_PAGO+isOpenTab) contra carrera con un cobro concurrente; idempotente; audit `SALE_CARRIED_OVER {fromShiftId}`. No toca stock (la cuenta abierta nunca descontó) ni el efectivo esperado (PENDIENTE_PAGO ya excluido).
+- **El gate es solo de UI**: `close()` del backend sigue permisivo (admin/offline). Sin cambio de esquema.
+
+### Verificado
+- e2e `open-tabs-discounts` 13/13 (traspaso saca de la sesión + idempotencia + cobro re-cuelga + rechazo si no es cuenta abierta). POS 63, typecheck 13/13, lint 0.
+
+> ⚠️ **Deuda de tests ajena a esto (feature de categorías en curso, sin commitear):** `products.create` ahora exige que la categoría exista (`ProductCategoriesService.resolveCanonicalName`) y `cleanDb` NO trunca `product_categories`. Los e2e que crean productos con categorías hardcodeadas **fallan en el `beforeAll`** contra una DB de test recién migrada hasta sembrar las categorías (ver `productCategory.createMany` agregado en `open-tabs-discounts`). Conviene centralizar ese seed en el bootstrap de e2e antes de commitear categorías.
 
 ---
 

@@ -36,6 +36,15 @@ export const UpdateTreasuryConfigSchema = z.object({
 });
 export type UpdateTreasuryConfig = z.infer<typeof UpdateTreasuryConfigSchema>;
 
+/**
+ * Solo la fecha de corte, SIN saldos: la consumen flujos AdminAccess (aviso
+ * "fecha anterior al corte" al registrar pagos) sin exponer datos financieros.
+ */
+export const TreasuryAnchorDateSchema = z.object({
+  anchorDate: DateOnlyNullable,
+});
+export type TreasuryAnchorDate = z.infer<typeof TreasuryAnchorDateSchema>;
+
 // --- Movimientos manuales (traspasos + ajustes) ---
 
 export const TreasuryMovementSchema = z.object({

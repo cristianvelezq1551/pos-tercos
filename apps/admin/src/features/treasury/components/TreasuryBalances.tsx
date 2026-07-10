@@ -33,7 +33,7 @@ export function TreasuryBalances({ summary }: { summary: TreasurySummary }) {
       </div>
 
       {summary.commitmentsByResponsible.length > 0 ? (
-        <Section eyebrow="Compromisos" title="Por pagar, por responsable" size="md">
+        <Section eyebrow="Compromisos" title="Por pagar, por responsable o categoría" size="md">
           <Card className="px-5 py-3">
             <ul className="divide-y divide-border">
               {summary.commitmentsByResponsible.map((c) => (

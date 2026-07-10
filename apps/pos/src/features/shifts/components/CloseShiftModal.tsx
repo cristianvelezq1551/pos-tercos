@@ -2,17 +2,13 @@
 
 import type { CashMovement, Shift } from '@pos-tercos/types';
 import { Button, Dialog, formatDate } from '@pos-tercos/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOffline } from '../../offline';
-import { listSales } from '../../sales';
+import { listSales, OpenTabsResolver } from '../../sales';
 import { closeShift } from '../api/close';
 import { getExpectedCash, listCashMovements } from '../api';
-import {
-  cashMovementsNet,
-  digitalMovementsNet,
-  sumBreakdown,
-  toBreakdownLines,
-} from '../lib/denominations';
+import { cashMovementsNet, digitalMovementsNet, sumBreakdown } from '../lib/denominations';
+import { buildClosePayload } from '../lib/close-payload';
 import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
 import { CloseShiftFields } from './CloseShiftFields';
 import { getErrorMessage } from '../../../lib/errors';
@@ -32,8 +28,8 @@ export function CloseShiftModal({
   const [digitalCounts, setDigitalCounts] = useState<Record<string, number | null>>({});
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [loading, setLoading] = useState(false);
-  // Arqueo por denominación (default) o monto directo.
-  const [arqueo, setArqueo] = useState(true);
+  // Monto directo (default) o arqueo por denominación (opt-in).
+  const [arqueo, setArqueo] = useState(false);
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [manual, setManual] = useState<number | null>(null);
   const [tips, setTips] = useState<number | null>(null);
@@ -42,6 +38,9 @@ export function CloseShiftModal({
   const [pending, setPending] = useState(false);
   // Esperado del server (autoritativo); cae al cálculo cliente si la red falla.
   const [serverExpected, setServerExpected] = useState<number | null>(null);
+  // Cuentas abiertas sin resolver en esta caja (null = aún no reportado por el
+  // resolver). El cierre se destraba cuando llega a 0.
+  const [openTabCount, setOpenTabCount] = useState<number | null>(null);
 
   // El cierre necesita el backend (Z-report + efectivo esperado) y que NO queden
   // ventas offline en cola: si no, el esperado quedaría mal y daría descuadre
@@ -54,11 +53,25 @@ export function CloseShiftModal({
         ? `Hay ${offlinePending} venta(s) offline sin sincronizar. Espera a que terminen de sincronizar antes de cerrar — si no, el efectivo esperado quedaría mal.`
         : null;
 
+  // Carga (o recarga) el Z-report + efectivo esperado del server. Se re-corre
+  // cuando el resolver de cuentas abiertas cobra una (esa plata entra al arqueo).
+  const loadArqueo = useCallback(async (shiftId: string) => {
+    const [sales, movs, exp] = await Promise.all([
+      listSales({ shiftId, limit: 200 }),
+      listCashMovements(shiftId),
+      // Esperado AUTORITATIVO del server (mismo número que usará el cierre).
+      getExpectedCash(shiftId).catch(() => null),
+    ]);
+    setSummary(computeShiftSummary(sales));
+    setMovements(movs);
+    setServerExpected(exp?.expectedCash ?? null);
+  }, []);
+
   useEffect(() => {
     if (!open || !shift) return;
     setSummary(null);
     setMovements([]);
-    setArqueo(true);
+    setArqueo(false);
     setCounts({});
     setManual(null);
     setTips(null);
@@ -66,23 +79,12 @@ export function CloseShiftModal({
     setError(null);
     setPending(false);
     setServerExpected(null);
+    setOpenTabCount(null);
     setLoading(true);
-    Promise.all([
-      listSales({ shiftId: shift.id, limit: 200 }),
-      listCashMovements(shift.id),
-      // Esperado AUTORITATIVO del server (mismo número que usará el cierre).
-      getExpectedCash(shift.id).catch(() => null),
-    ])
-      .then(([sales, movs, exp]) => {
-        setSummary(computeShiftSummary(sales));
-        setMovements(movs);
-        setServerExpected(exp?.expectedCash ?? null);
-      })
-      .catch((err) =>
-        setError(getErrorMessage(err, 'Error cargando el cierre')),
-      )
+    loadArqueo(shift.id)
+      .catch((err) => setError(getErrorMessage(err, 'Error cargando el cierre')))
       .finally(() => setLoading(false));
-  }, [open, shift?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, shift?.id, loadArqueo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const net = useMemo(() => cashMovementsNet(movements), [movements]);
   const digitalNet = useMemo(() => digitalMovementsNet(movements), [movements]);
@@ -95,23 +97,22 @@ export function CloseShiftModal({
   const countedNum = arqueo ? sumBreakdown(counts) : (manual ?? 0);
   const hasCount = arqueo ? Object.values(counts).some((n) => n > 0) : manual !== null;
   const canConfirm =
-    summary !== null && hasCount && countedNum >= 0 && !pending && !blockedReason;
+    summary !== null &&
+    hasCount &&
+    countedNum >= 0 &&
+    (openTabCount ?? 0) === 0 && // no cerrar con cuentas abiertas sin resolver
+    !pending &&
+    !blockedReason;
 
   const handleConfirm = async () => {
     if (!shift || !canConfirm) return;
     setError(null);
     setPending(true);
     try {
-      const digital = Object.entries(digitalCounts)
-        .filter(([, v]) => v !== null)
-        .map(([method, v]) => ({ method: method as never, counted: v! }));
-      const closed = await closeShift(shift.id, {
-        countedCash: countedNum,
-        breakdown: arqueo ? toBreakdownLines(counts) : undefined,
-        digitalCounts: digital.length > 0 ? digital : undefined,
-        tips: tips ?? undefined,
-        notes: notes.trim() || undefined,
-      });
+      const closed = await closeShift(
+        shift.id,
+        buildClosePayload({ countedCash: countedNum, arqueo, counts, digitalCounts, tips, notes }),
+      );
       onClosed(closed);
     } catch (err) {
       setError(getErrorMessage(err, 'Error desconocido'));
@@ -148,6 +149,16 @@ export function CloseShiftModal({
             {blockedReason}
           </p>
         ) : null}
+
+        {/* Cuentas abiertas de esta caja: hay que resolverlas antes de cerrar. */}
+        <OpenTabsResolver
+          shiftId={shift.id}
+          disabled={pending}
+          onCountChange={setOpenTabCount}
+          onChanged={() => {
+            void loadArqueo(shift.id).catch(() => {});
+          }}
+        />
 
         <CloseShiftFields
           loading={loading}

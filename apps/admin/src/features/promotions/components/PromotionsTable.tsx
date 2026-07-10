@@ -24,6 +24,15 @@ const TYPE_CONFIG: Record<
   COMBO_OFF: { label: 'Combo', tone: 'info' },
 };
 
+const CHANNEL_CONFIG: Record<
+  Promotion['channel'],
+  { label: string; tone: 'neutral' | 'info' | 'primary' }
+> = {
+  BOTH: { label: 'Caja y web', tone: 'neutral' },
+  POS: { label: 'Solo caja', tone: 'primary' },
+  WEB: { label: 'Solo web', tone: 'info' },
+};
+
 export function PromotionsTable({ promotions }: PromotionsTableProps) {
   const columns: DataTableColumn<Promotion>[] = [
     {
@@ -48,6 +57,18 @@ export function PromotionsTable({ promotions }: PromotionsTableProps) {
       header: 'Descuento',
       numeric: true,
       cell: (p) => describeDiscount(p),
+    },
+    {
+      key: 'channel',
+      header: 'Canal',
+      cell: (p) => {
+        const cfg = CHANNEL_CONFIG[p.channel];
+        return (
+          <Badge tone={cfg.tone} size="sm">
+            {cfg.label}
+          </Badge>
+        );
+      },
     },
     {
       key: 'days',

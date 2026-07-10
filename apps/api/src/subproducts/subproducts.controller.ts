@@ -32,7 +32,7 @@ import {
   type UpdateSubproduct,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess, KitchenAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { KitchenAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMime } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ProductionService } from './production.service';
@@ -96,14 +96,14 @@ export class SubproductsController {
     return this.subproducts.getById(id);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Post()
   @UsePipes(new ZodValidationPipe(CreateSubproductSchema))
   create(@Body() body: CreateSubproduct): Promise<Subproduct> {
     return this.subproducts.create(body);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -112,7 +112,7 @@ export class SubproductsController {
     return this.subproducts.update(id, body);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Post(':id/deactivate')
   deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<Subproduct> {
     return this.subproducts.deactivate(id);

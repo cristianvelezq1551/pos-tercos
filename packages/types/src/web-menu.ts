@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ProductSizeSchema } from './catalog';
+import { PromotionTypeEnum } from './promotions';
 
 // ====================================================================
 // WEB MENU — endpoint público para el menú online (FASE 7)
@@ -44,8 +45,33 @@ export const PublicMenuProductSchema = z.object({
 });
 export type PublicMenuProduct = z.infer<typeof PublicMenuProductSchema>;
 
+/**
+ * Promoción activa expuesta en el menú público (solo canal WEB/BOTH).
+ * Subset SAFE: definición necesaria para que el cliente calcule el precio
+ * con descuento (mismo motor `applyPromotion` de domain que usa el POS).
+ * NO incluye createdBy ni metadata interna.
+ */
+export const PublicMenuPromotionSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  type: PromotionTypeEnum,
+  discountPct: z.number().min(0).lt(1).nullable(),
+  discountFixed: z.number().min(0).nullable(),
+  bogoBuyQty: z.number().int().min(1).nullable(),
+  bogoGetQty: z.number().int().min(1).nullable(),
+  daysOfWeekMask: z.number().int().min(1).max(127),
+  timeStart: z.string(),
+  timeEnd: z.string(),
+  activeFrom: z.string().date().nullable(),
+  activeTo: z.string().date().nullable(),
+  productIds: z.array(z.string().uuid()),
+});
+export type PublicMenuPromotion = z.infer<typeof PublicMenuPromotionSchema>;
+
 export const PublicMenuResponseSchema = z.object({
   products: z.array(PublicMenuProductSchema),
+  /** Promos activas del canal web, para tachados/badges en el menú. */
+  promotions: z.array(PublicMenuPromotionSchema).default([]),
   /** Categorías únicas (con orden estable: orden de aparición en products). */
   categories: z.array(z.string()),
   /** Kill-switch (#13): false = la web muestra el menú pero oculta el checkout. */

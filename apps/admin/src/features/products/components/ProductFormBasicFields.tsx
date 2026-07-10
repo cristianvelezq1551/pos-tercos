@@ -2,15 +2,23 @@
 
 import { Input, Label, MoneyInput } from '@pos-tercos/ui';
 import { PreparationStepsField } from '../../../components/PreparationStepsField';
+import { ProductFormCategoryField } from './ProductFormCategoryField';
 import type { FormState } from './ProductFormTypes';
 
 interface ProductFormBasicFieldsProps {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   pending: boolean;
+  /** Categorías activas del catálogo curado (nombres) para el selector. */
+  categories: string[];
 }
 
-export function ProductFormBasicFields({ form, setForm, pending }: ProductFormBasicFieldsProps) {
+export function ProductFormBasicFields({
+  form,
+  setForm,
+  pending,
+  categories,
+}: ProductFormBasicFieldsProps) {
   return (
     <>
       <div className="space-y-2">
@@ -71,17 +79,12 @@ export function ProductFormBasicFields({ form, setForm, pending }: ProductFormBa
             )}
           </p>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="category">Categoría</Label>
-          <Input
-            id="category"
-            maxLength={60}
-            disabled={pending}
-            value={form.category}
-            onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-            placeholder="Hamburguesas, Bebidas, Acompañamientos…"
-          />
-        </div>
+        <ProductFormCategoryField
+          value={form.category}
+          onChange={(category) => setForm((f) => ({ ...f, category }))}
+          categories={categories}
+          disabled={pending}
+        />
       </div>
     </>
   );

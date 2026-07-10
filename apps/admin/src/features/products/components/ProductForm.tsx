@@ -20,6 +20,7 @@ import {
 import { ProductTypeSelector } from './ProductTypeSelector';
 import { ProductFormBasicFields } from './ProductFormBasicFields';
 import { ProductFormImageField } from './ProductFormImageField';
+import { ProductFormEmojiField } from './ProductFormEmojiField';
 import { ProductFormDirectResaleSection } from './ProductFormDirectResaleSection';
 import { ProductFormVariantsSection } from './ProductFormVariantsSection';
 import { ProductFormExtrasSection } from './ProductFormExtrasSection';
@@ -31,6 +32,8 @@ interface ProductFormProps {
   initial?: Product;
   /** Productos elegibles como componentes de combo (activos, no combos). */
   comboCandidates?: Product[];
+  /** Categorías activas del catálogo curado (nombres) para el selector. */
+  categories?: string[];
 }
 
 function initFormState(initial?: Product): FormState {
@@ -43,6 +46,7 @@ function initFormState(initial?: Product): FormState {
     basePrice: initial ? String(initial.basePrice) : '',
     category: initial?.category ?? '',
     imageUrl: initial?.imageUrl ?? '',
+    emoji: initial?.emoji ?? '',
     modifiersEnabled: initial?.modifiersEnabled ?? false,
     isCombo: initial?.isCombo ?? false,
     comboPrice:
@@ -80,7 +84,7 @@ function initFormState(initial?: Product): FormState {
   };
 }
 
-export function ProductForm({ initial, comboCandidates = [] }: ProductFormProps) {
+export function ProductForm({ initial, comboCandidates = [], categories = [] }: ProductFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +170,12 @@ export function ProductForm({ initial, comboCandidates = [] }: ProductFormProps)
           disabled={pending || isEdit}
         />
 
-        <ProductFormBasicFields form={form} setForm={setForm} pending={pending} />
+        <ProductFormBasicFields
+          form={form}
+          setForm={setForm}
+          pending={pending}
+          categories={categories}
+        />
 
         {isEdit && initial?.directResale && (
           <ProductFormCostInfoPanel product={initial} basePriceInput={form.basePrice} />
@@ -179,6 +188,12 @@ export function ProductForm({ initial, comboCandidates = [] }: ProductFormProps)
         <ProductFormImageField
           imageUrl={form.imageUrl}
           onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))}
+          disabled={pending}
+        />
+
+        <ProductFormEmojiField
+          emoji={form.emoji}
+          onChange={(emoji) => setForm((f) => ({ ...f, emoji }))}
           disabled={pending}
         />
 

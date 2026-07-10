@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import type { Product, Promotion } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
-import { labelFor } from './PromotionFormHelpers';
+import { channelLabel, labelFor } from './PromotionFormHelpers';
 import { deactivatePromotion } from '../api';
 
 interface PromotionDetailProps {
@@ -44,6 +44,7 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Row label="Tipo" value={labelFor(promotion.type)} />
           <Row label="Estado" value={promotion.isActive ? 'Activa' : 'Inactiva'} />
+          <Row label="Dónde aplica" value={channelLabel(promotion.channel)} />
           <Row label="Descuento" value={describeDiscount(promotion)} mono />
           <Row label="Días" value={describeDays(promotion.daysOfWeekMask)} mono />
           <Row

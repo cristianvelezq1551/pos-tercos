@@ -14,6 +14,8 @@ import {
 import type { SaleStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
+import { localMidnightOfYmd } from '../common/local-dates';
+import { isUniqueViolation } from '../common/tx';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkersWeeklyService } from '../workers/workers-weekly.service';
@@ -43,11 +45,21 @@ export class TreasuryService {
   // --- Config ---
 
   async getConfig(): Promise<TreasuryConfig> {
-    const row = await this.prisma.treasuryConfig.upsert({
-      where: { id: SINGLETON },
-      update: {},
-      create: { id: SINGLETON },
-    });
+    // La página de tesorería pide config y summary EN PARALELO (ambos pasan
+    // por acá): con la tabla vacía los dos upserts intentan crear el singleton
+    // a la vez → el perdedor cae con P2002 y relee la fila ganadora.
+    const row = await this.prisma.treasuryConfig
+      .upsert({
+        where: { id: SINGLETON },
+        update: {},
+        create: { id: SINGLETON },
+      })
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
+          return this.prisma.treasuryConfig.findUniqueOrThrow({ where: { id: SINGLETON } });
+        }
+        throw e;
+      });
     return {
       anchorDate: row.anchorDate ? row.anchorDate.toISOString().slice(0, 10) : null,
       initialCash: Number(row.initialCash),
@@ -187,7 +199,10 @@ export class TreasuryService {
 
   async getSummary(): Promise<TreasurySummary> {
     const cfg = await this.getConfig();
-    const anchor = cfg.anchorDate ? parseYmd(cfg.anchorDate) : new Date(0);
+    // El corte es un día calendario elegido por el dueño y se compara contra
+    // timestamps (paidAt/resolvedAt) → medianoche LOCAL, no UTC (parseYmd
+    // arrancaba el corte a las 19:00 del día anterior en Bogotá).
+    const anchor = cfg.anchorDate ? localMidnightOfYmd(cfg.anchorDate) : new Date(0);
 
     const [incomeRows, invPaid, fcPaid, pqPaid, pwPaid, paPaid, movements] = await Promise.all([
       this.prisma.salePayment.groupBy({
@@ -286,7 +301,7 @@ export class TreasuryService {
     const [pendingInvoices, pendingFixed, pendingPayroll, pendingPayables] = await Promise.all([
       this.prisma.invoice.findMany({
         where: { status: 'CONFIRMED', paymentStatus: 'PENDING' },
-        select: { total: true, responsible: true },
+        select: { total: true, responsible: true, supplier: { select: { name: true } } },
       }),
       this.fixedCosts.getPendingPayments(now),
       this.workersWeekly.getPendingPayments(now),
@@ -306,8 +321,15 @@ export class TreasuryService {
       const key = resp && resp.trim() ? resp.trim() : 'Sin asignar';
       byResp.set(key, (byResp.get(key) ?? 0) + v);
     };
-    for (const i of pendingInvoices) add(i.responsible, i.total !== null ? Number(i.total) : 0);
-    for (const f of pendingFixed) add(respMap.get(f.fixedCostId) ?? null, f.amount);
+    // Sin responsable asignado (hoy el admin no lo expone en los forms), el
+    // compromiso se atribuye a algo legible: la CATEGORÍA del costo fijo o el
+    // PROVEEDOR de la factura — "Sin asignar" queda solo para el caso sin nada.
+    const respOr = (resp: string | null | undefined, fallback: string | null): string | null =>
+      resp && resp.trim() ? resp : fallback;
+    for (const i of pendingInvoices) {
+      add(respOr(i.responsible, i.supplier?.name ?? null), i.total !== null ? Number(i.total) : 0);
+    }
+    for (const f of pendingFixed) add(respOr(respMap.get(f.fixedCostId), f.category), f.amount);
     for (const p of pendingPayables) add(p.beneficiary, Number(p.amount));
     const payrollTotal = pendingPayroll.reduce((a, p) => a + p.total, 0);
     if (payrollTotal > 0) add('Nómina', payrollTotal);

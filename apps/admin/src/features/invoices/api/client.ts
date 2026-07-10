@@ -4,10 +4,13 @@ import {
   ExtractInvoiceResponseSchema,
   InvoiceDraftResponseSchema,
   InvoiceSchema,
+  TreasuryAnchorDateSchema,
+  UploadPaymentProofResponseSchema,
   type ConfirmInvoice,
   type ExtractInvoiceResponse,
   type Invoice,
   type InvoiceDraftResponse,
+  type UploadPaymentProofResponse,
 } from '@pos-tercos/types';
 import { z } from 'zod';
 
@@ -66,6 +69,49 @@ export async function discardPhoto(photoStorageKey: string): Promise<void> {
   });
   if (!res.ok && res.status !== 204) {
     // No throw: la limpieza es best-effort; el cron sweep eventualmente la elimina.
+  }
+}
+
+/**
+ * Pre-sube el comprobante de pago para "nace pagada" (carga manual). El
+ * confirm asocia la key devuelta; si el usuario abandona, `discardPaymentProof`.
+ */
+export function uploadPaymentProof(file: File): Promise<UploadPaymentProofResponse> {
+  const fd = new FormData();
+  fd.append('proof', file);
+  return request(
+    '/invoices/upload-payment-proof',
+    { method: 'POST', body: fd },
+    UploadPaymentProofResponseSchema,
+  );
+}
+
+/** Limpia un comprobante pre-subido que no llegó a confirmarse (best-effort). */
+export async function discardPaymentProof(proofStorageKey: string): Promise<void> {
+  await fetch('/api/invoices/discard-payment-proof', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proofStorageKey }),
+  }).catch(() => {
+    // Best-effort: el sweep semanal de huérfanos lo limpia igual.
+  });
+}
+
+/**
+ * Fecha de corte de Tesorería (sin saldos) — para avisar cuando la fecha del
+ * pago es anterior al corte. Null si falla (el aviso simplemente no aparece).
+ */
+export async function getTreasuryAnchorDate(): Promise<string | null> {
+  try {
+    const { anchorDate } = await request(
+      '/treasury/anchor-date',
+      { method: 'GET' },
+      TreasuryAnchorDateSchema,
+    );
+    return anchorDate;
+  } catch {
+    return null;
   }
 }
 

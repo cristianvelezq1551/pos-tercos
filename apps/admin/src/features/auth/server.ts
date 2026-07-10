@@ -1,5 +1,6 @@
 import { UserSchema, type User } from '@pos-tercos/types';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 const API_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 const ACCESS_COOKIE = 'admin_access';
@@ -26,4 +27,17 @@ export async function getCurrentUserServer(): Promise<User | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Guard de página/layout: exige rol DUEÑO. El ADMIN_OPERATIVO (= cajero de
+ * confianza) no maneja catálogo (precios de venta, promos, recetas) — eso es
+ * del dueño. Si no es dueño lo mandamos a Facturas (su área: compras/inventario).
+ * Enforcement real vive en el backend (@OnlyDueno); esto solo evita mostrarle
+ * páginas que no le sirven y que fallarían con 403 al guardar.
+ */
+export async function requireDuenoServer(): Promise<User> {
+  const user = await getCurrentUserServer();
+  if (!user || user.role !== 'DUENO') redirect('/invoices');
+  return user;
 }

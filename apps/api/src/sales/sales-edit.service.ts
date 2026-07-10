@@ -128,7 +128,12 @@ export class SalesEditService {
             where: { id: { in: allIds } },
             include: { sizes: true, modifiers: true },
           }),
-          hasManualDiscount ? Promise.resolve([]) : this.promotions.loadActiveAt(now),
+          hasManualDiscount
+            ? Promise.resolve([])
+            : this.promotions.loadActiveAt(
+                now,
+                existing.type === 'WEB_PICKUP' ? 'WEB' : 'POS',
+              ),
         ]);
         const productMap = new Map(products.map((p) => [p.id, p]));
 

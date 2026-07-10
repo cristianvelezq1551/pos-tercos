@@ -8,6 +8,7 @@ import type {
 import { useEffect, useMemo, useState } from 'react';
 import { COP } from '../../../lib/format';
 import { displayBasePrice } from '../../../lib/menu-price';
+import { computeCartPromoTotals, getMenuPromoBadge, usePromotions } from '../../promotions';
 import { PickerHeader } from './picker/PickerHeader';
 import { PickerModifiers } from './picker/PickerModifiers';
 import { PickerNotes } from './picker/PickerNotes';
@@ -82,6 +83,8 @@ export function ProductPickerModal({
     [modifierIds, modifiers],
   );
 
+  const promotions = usePromotions((s) => s.promotions);
+
   const unitPrice = useMemo(() => {
     if (!product) return 0;
     const sizeMod = selectedSize?.priceModifier ?? 0;
@@ -89,10 +92,24 @@ export function ProductPickerModal({
     return displayBasePrice(product) + sizeMod + modSum;
   }, [product, selectedSize, selectedModifiers]);
 
+  // Preview con promos del canal web (mismo motor que el carrito/backend): el
+  // badge da el precio por unidad con descuento y el total de la línea el ahorro.
+  const promoPreview = useMemo(() => {
+    if (!product) return { badge: null, lineDiscount: 0 };
+    const badge = getMenuPromoBadge(product.id, unitPrice, promotions);
+    const { discount } = computeCartPromoTotals(
+      [{ productId: product.id, quantity, unitPrice }],
+      promotions,
+    );
+    return { badge, lineDiscount: discount };
+  }, [product, unitPrice, quantity, promotions]);
+
   if (!open || !product) return null;
 
   const canConfirm = (!requiresSize || sizeId !== null) && quantity > 0;
   const totalPrice = unitPrice * quantity;
+  const discountedTotal = totalPrice - promoPreview.lineDiscount;
+  const unitDiscountedPrice = promoPreview.badge?.discountedPrice ?? null;
 
   const toggleModifier = (id: string) => {
     setModifierIds((prev) => {
@@ -151,9 +168,25 @@ export function ProductPickerModal({
             ) : null}
           </div>
 
-          <p className="text-2xl font-bold tabular-nums text-foreground">
-            {COP.format(displayBasePrice(product))}
-          </p>
+          {unitDiscountedPrice != null ? (
+            <div className="flex items-baseline gap-2">
+              {promoPreview.badge?.label ? (
+                <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">
+                  {promoPreview.badge.label}
+                </span>
+              ) : null}
+              <span className="text-lg tabular-nums text-muted-foreground line-through">
+                {COP.format(unitPrice)}
+              </span>
+              <span className="text-2xl font-bold tabular-nums text-emerald-500">
+                {COP.format(unitDiscountedPrice)}
+              </span>
+            </div>
+          ) : (
+            <p className="text-2xl font-bold tabular-nums text-foreground">
+              {COP.format(unitPrice)}
+            </p>
+          )}
 
           <div className="h-px w-full bg-border" />
 
@@ -178,7 +211,15 @@ export function ProductPickerModal({
             disabled={!canConfirm}
             className="press inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-6 text-base font-semibold text-primary-foreground shadow-md transition-colors hover:bg-red-700 hover:shadow-primary/30 active:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Agregar al carrito — {COP.format(totalPrice)}
+            {promoPreview.lineDiscount > 0 ? (
+              <>
+                <span>Agregar al carrito —</span>
+                <span className="text-white/70 line-through">{COP.format(totalPrice)}</span>
+                <span>{COP.format(discountedTotal)}</span>
+              </>
+            ) : (
+              <>Agregar al carrito — {COP.format(totalPrice)}</>
+            )}
           </button>
         </footer>
       </div>

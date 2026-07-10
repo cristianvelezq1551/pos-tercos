@@ -28,6 +28,7 @@ export function saleItemsToEditLines(
     modifierNames: it.modifiers.map((m) => m.name),
     notes: it.notes ?? null,
     unitPrice: it.unitPrice,
+    manualDiscount: it.manualDiscount ?? null,
     locked: kitchenStarted && !(resaleById.get(it.productId) ?? false),
   }));
 }
@@ -44,6 +45,7 @@ export function selectionToEditLine(sel: PickerSelection): EditLine {
     modifierNames: sel.modifiers.map((m) => m.name),
     notes: null,
     unitPrice: sel.unitPrice,
+    manualDiscount: null,
     locked: false,
   };
 }

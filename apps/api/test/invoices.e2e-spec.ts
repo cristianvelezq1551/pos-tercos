@@ -507,4 +507,142 @@ describe('Invoices E2E', () => {
       await pay().expect(400);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // "Nace pagada": el confirm declara el pago (comprobante obligatorio)
+  // ---------------------------------------------------------------------------
+  describe('confirm con payment — la factura nace pagada', () => {
+    const PNG = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
+      'base64',
+    );
+
+    const createDraft = (photoStorageKey?: string) =>
+      prisma.invoice.create({
+        data: {
+          status: 'PENDING_REVIEW',
+          aiModelUsed: 'test-mock',
+          aiExtractionJson: { supplierName: 'Prov Born Paid', total: 50000, items: [], warnings: [] },
+          uploadedById: duenoUserId,
+          photoStorageKey: photoStorageKey ?? null,
+        },
+      });
+
+    const confirmBody = (payment?: Record<string, unknown>) => ({
+      supplierNit: '900888888-1',
+      supplierName: 'Prov Born Paid',
+      invoiceNumber: 'F-BORN',
+      total: 50000,
+      items: [
+        { entityType: 'INGREDIENT', ingredientId, descriptionRaw: 'Harina', quantity: 5, unit: 'kg', unitPrice: 10000, total: 50000 },
+      ],
+      ...(payment ? { payment } : {}),
+    });
+
+    it('manual: nace CONFIRMED+PAID con comprobante pre-subido y reparto EFECTIVO', async () => {
+      const upload = await request
+        .post('/invoices/upload-payment-proof')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .attach('proof', PNG, 'comprobante.png')
+        .expect(201);
+      const proofStorageKey = upload.body.proofStorageKey as string;
+      expect(proofStorageKey).toMatch(/^invoice-payments\/pending\//);
+
+      const draft = await createDraft();
+      const res = await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(confirmBody({ proofStorageKey, cashAmount: 50000, bankAmount: 0, note: 'pago en efectivo' }))
+        .expect(201);
+
+      expect(res.body.status).toBe('CONFIRMED');
+      expect(res.body.paymentStatus).toBe('PAID');
+      expect(res.body.paidAt).toBeTruthy();
+      expect(res.body.hasPaymentProof).toBe(true);
+      expect(res.body.paymentPocket).toBe('EFECTIVO');
+      expect(res.body.paymentCashAmount).toBe(50000);
+      expect(res.body.paymentBankAmount).toBe(0);
+
+      // El comprobante quedó copiado bajo la factura (no en pending/).
+      const row = await prisma.invoice.findUniqueOrThrow({ where: { id: draft.id } });
+      expect(row.paymentProofKey).toMatch(new RegExp(`^invoice-payments/${draft.id}/`));
+    });
+
+    it('foto: useInvoicePhotoAsProof copia la foto de la factura como comprobante', async () => {
+      const { STORAGE_PROVIDER } = await import('../src/adapters/storage/storage.module');
+      const storage = app.get<{ put: (p: string, b: Buffer, m: string, e: string) => Promise<{ key: string }> }>(STORAGE_PROVIDER);
+      const photo = await storage.put('invoices', PNG, 'image/png', 'png');
+
+      const draft = await createDraft(photo.key);
+      const res = await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(confirmBody({ useInvoicePhotoAsProof: true, cashAmount: 0, bankAmount: 50000 }))
+        .expect(201);
+
+      expect(res.body.paymentStatus).toBe('PAID');
+      expect(res.body.paymentPocket).toBe('CUENTA');
+      const row = await prisma.invoice.findUniqueOrThrow({ where: { id: draft.id } });
+      // Copia, NO alias: desmarcar el pago no debe llevarse la foto original.
+      expect(row.paymentProofKey).not.toBe(photo.key);
+      expect(row.paymentProofKey).toMatch(new RegExp(`^invoice-payments/${draft.id}/`));
+      expect(row.photoStorageKey).toBe(photo.key);
+    });
+
+    it('sin comprobante → 400 (el bloque payment exige proofStorageKey XOR useInvoicePhotoAsProof)', async () => {
+      const draft = await createDraft();
+      await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(confirmBody({ cashAmount: 0, bankAmount: 50000 }))
+        .expect(400);
+    });
+
+    it('useInvoicePhotoAsProof sin foto en la factura → 400', async () => {
+      const draft = await createDraft();
+      await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(confirmBody({ useInvoicePhotoAsProof: true, cashAmount: 0, bankAmount: 50000 }))
+        .expect(400);
+    });
+
+    it('fecha de pago futura → 400', async () => {
+      const future = new Date(Date.now() + 48 * 3600 * 1000).toISOString().slice(0, 10);
+      const draft = await createDraft();
+      await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(confirmBody({ useInvoicePhotoAsProof: true, cashAmount: 0, bankAmount: 50000, paidAt: future }))
+        .expect(400);
+    });
+
+    it('reparto que no suma el total → 400 (y la factura NO queda confirmada)', async () => {
+      const upload = await request
+        .post('/invoices/upload-payment-proof')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .attach('proof', PNG, 'p.png')
+        .expect(201);
+      const draft = await createDraft();
+      await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(confirmBody({ proofStorageKey: upload.body.proofStorageKey, cashAmount: 10000, bankAmount: 10000 }))
+        .expect(400);
+      const row = await prisma.invoice.findUniqueOrThrow({ where: { id: draft.id } });
+      expect(row.status).toBe('PENDING_REVIEW');
+    });
+
+    it('sin bloque payment → nace PENDING (flujo clásico intacto)', async () => {
+      const draft = await createDraft();
+      const res = await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(confirmBody())
+        .expect(201);
+      expect(res.body.paymentStatus).toBe('PENDING');
+      expect(res.body.paymentPocket).toBeNull();
+      expect(res.body.hasPaymentProof).toBe(false);
+    });
+  });
 });

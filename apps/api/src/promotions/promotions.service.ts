@@ -7,6 +7,8 @@ import type { PromotionDef } from '@pos-tercos/domain';
 import type {
   CreatePromotion,
   Promotion,
+  PromotionChannel,
+  PublicMenuPromotion,
   UpdatePromotion,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
@@ -20,6 +22,9 @@ type DbPromotionWithRelations = Prisma.PromotionGetPayload<{
   };
 }>;
 
+/** Canal desde el que se origina una venta/lectura de promos (BOTH matchea ambos). */
+export type SaleChannel = Exclude<PromotionChannel, 'BOTH'>;
+
 @Injectable()
 export class PromotionsService {
   constructor(
@@ -31,9 +36,12 @@ export class PromotionsService {
   // READ
   // ==================================================================
 
-  async list(opts: { onlyActive?: boolean } = {}): Promise<Promotion[]> {
+  async list(
+    opts: { onlyActive?: boolean; channel?: SaleChannel } = {},
+  ): Promise<Promotion[]> {
     const where: Prisma.PromotionWhereInput = {};
     if (opts.onlyActive) where.isActive = true;
+    if (opts.channel) where.channel = { in: ['BOTH', opts.channel] };
     const rows = await this.prisma.promotion.findMany({
       where,
       include: includeFull(),
@@ -53,23 +61,14 @@ export class PromotionsService {
 
   /**
    * Carga las promociones que podrían aplicar a una venta en `at`. Pre-filtra
-   * por `is_active=true` y rango de fechas. El motor de domain hace el match
-   * fino (day-of-week + time window + productId).
+   * por `is_active=true`, rango de fechas y CANAL (caja o web; BOTH entra en
+   * ambos). El motor de domain hace el match fino (day-of-week + time window
+   * + productId).
    *
-   * Usado por `SalesService` al crear venta.
+   * Usado por `SalesService` al crear venta (COUNTER → POS, WEB_PICKUP → WEB).
    */
-  async loadActiveAt(at: Date): Promise<PromotionDef[]> {
-    const dayKey = startOfDay(at);
-    const rows = await this.prisma.promotion.findMany({
-      where: {
-        isActive: true,
-        AND: [
-          { OR: [{ activeFrom: null }, { activeFrom: { lte: dayKey } }] },
-          { OR: [{ activeTo: null }, { activeTo: { gte: dayKey } }] },
-        ],
-      },
-      include: { products: { select: { productId: true } } },
-    });
+  async loadActiveAt(at: Date, channel: SaleChannel): Promise<PromotionDef[]> {
+    const rows = await this.loadActiveRows(at, channel);
     return rows.map((r) => ({
       id: r.id,
       type: r.type,
@@ -85,6 +84,46 @@ export class PromotionsService {
       activeTo: r.activeTo,
       productIds: new Set(r.products.map((pp) => pp.productId)),
     }));
+  }
+
+  /**
+   * Promos activas del canal WEB en shape público (subset SAFE) para el menú
+   * online. La web calcula el precio con descuento client-side con el mismo
+   * motor de domain, igual que el POS.
+   */
+  async loadPublicActive(at: Date): Promise<PublicMenuPromotion[]> {
+    const rows = await this.loadActiveRows(at, 'WEB');
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      discountPct: r.discountPct === null ? null : Number(r.discountPct),
+      discountFixed:
+        r.discountFixed === null ? null : Number(r.discountFixed),
+      bogoBuyQty: r.bogoBuyQty,
+      bogoGetQty: r.bogoGetQty,
+      daysOfWeekMask: r.daysOfWeekMask,
+      timeStart: r.timeStart,
+      timeEnd: r.timeEnd,
+      activeFrom: r.activeFrom ? toDateString(r.activeFrom) : null,
+      activeTo: r.activeTo ? toDateString(r.activeTo) : null,
+      productIds: r.products.map((pp) => pp.productId),
+    }));
+  }
+
+  private loadActiveRows(at: Date, channel: SaleChannel) {
+    const dayKey = startOfDay(at);
+    return this.prisma.promotion.findMany({
+      where: {
+        isActive: true,
+        channel: { in: ['BOTH', channel] },
+        AND: [
+          { OR: [{ activeFrom: null }, { activeFrom: { lte: dayKey } }] },
+          { OR: [{ activeTo: null }, { activeTo: { gte: dayKey } }] },
+        ],
+      },
+      include: { products: { select: { productId: true } } },
+    });
   }
 
   // ==================================================================
@@ -108,6 +147,7 @@ export class PromotionsService {
           timeEnd: input.timeEnd,
           activeFrom: input.activeFrom ? new Date(input.activeFrom) : null,
           activeTo: input.activeTo ? new Date(input.activeTo) : null,
+          channel: input.channel,
           createdById: userId,
           products: {
             create: input.productIds.map((pid) => ({ productId: pid })),
@@ -162,6 +202,7 @@ export class PromotionsService {
           ...(input.activeTo !== undefined && {
             activeTo: input.activeTo ? new Date(input.activeTo) : null,
           }),
+          ...(input.channel !== undefined && { channel: input.channel }),
           ...(input.isActive !== undefined && { isActive: input.isActive }),
         },
       });
@@ -243,10 +284,13 @@ export class PromotionsService {
   }
 }
 
+/**
+ * Día calendario LOCAL de `d` en medianoche UTC — coherente con activeFrom /
+ * activeTo (@db.Date, medianoche UTC). Con medianoche LOCAL (+05:00 en Bogotá)
+ * la comparación `activeTo >= dayKey` fallaba y la promo moría un día antes.
+ */
 function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 }
 
 function includeFull() {
@@ -271,6 +315,7 @@ function toPromotionDto(row: DbPromotionWithRelations): Promotion {
     timeEnd: row.timeEnd,
     activeFrom: row.activeFrom ? toDateString(row.activeFrom) : null,
     activeTo: row.activeTo ? toDateString(row.activeTo) : null,
+    channel: row.channel,
     isActive: row.isActive,
     createdById: row.createdById,
     createdByName: row.createdBy?.fullName ?? null,

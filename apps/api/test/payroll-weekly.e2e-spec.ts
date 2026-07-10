@@ -240,4 +240,50 @@ describe('Nómina semanal unificada E2E', () => {
     expect(reverted.days.find((d) => d.date === target.date)!.amount).toBe(60_000);
     expect(reverted.owedTotal).toBe(owedBefore);
   });
+
+  it('la semana EN CURSO entra al pendiente de /finanzas como devengado a hoy (inProgress)', async () => {
+    // El esperado se deriva del propio reporte semanal (días ≤ hoy + ajustes −
+    // abonos), así el test es estable corra el día que corra — incluso en
+    // descanso del negocio (ahí no hay semana en curso y no debe haber fila).
+    const n = new Date();
+    const todayYmd = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+    const wkRes = await request
+      .get(`/workers/weekly?week=${todayYmd}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wk = wkRes.body as WeeklyPayrollReport;
+
+    const fin = await request
+      .get(`/reports/finance-summary?year=${n.getFullYear()}&month=${n.getMonth() + 1}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const inProgressRows = (
+      fin.body.pendingPayroll as Array<{
+        userId: string; total: number; inProgress?: boolean; accruedThrough?: string; periodStart: string;
+      }>
+    ).filter((p) => p.userId === dailyId && p.inProgress === true);
+
+    if (wk.weekStart > todayYmd) {
+      // Hoy es descanso → payrollWeekFor devuelve la semana SIGUIENTE: nada en curso.
+      expect(inProgressRows).toHaveLength(0);
+      return;
+    }
+
+    const entry = wk.entries.find((e) => e.userId === dailyId)!;
+    const accrued = entry.days
+      .filter((d) => d.date <= todayYmd)
+      .reduce((a, d) => a + d.amount, 0);
+    const expected = Math.round((accrued + entry.adjustmentsTotal - entry.paidTotal) * 100) / 100;
+
+    if (expected > 0.01) {
+      expect(inProgressRows).toHaveLength(1);
+      expect(inProgressRows[0].accruedThrough).toBe(todayYmd);
+      expect(inProgressRows[0].periodStart).toBe(wk.weekStart);
+      expect(inProgressRows[0].total).toBeCloseTo(expected, 2);
+      // Los días futuros de la semana NO son deuda: devengado ≤ restante total.
+      expect(inProgressRows[0].total).toBeLessThanOrEqual(entry.remaining + 0.01);
+    } else {
+      expect(inProgressRows).toHaveLength(0);
+    }
+  });
 });

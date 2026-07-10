@@ -36,7 +36,7 @@ import {
   type SetSoldOut,
   type UpdateProduct,
 } from '@pos-tercos/types';
-import { AdminAccess, CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -123,14 +123,14 @@ export class ProductsController {
     return this.products.setSoldOut(id, body.soldOut);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Post()
   @UsePipes(new ZodValidationPipe(CreateProductSchema))
   create(@Body() body: CreateProduct): Promise<Product> {
     return this.products.create(body);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -139,7 +139,7 @@ export class ProductsController {
     return this.products.update(id, body);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Put(':id/options')
   setOptions(
     @Param('id', ParseUUIDPipe) id: string,
@@ -148,7 +148,7 @@ export class ProductsController {
     return this.products.setOptions(id, body);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Put(':id/combo')
   setCombo(
     @Param('id', ParseUUIDPipe) id: string,
@@ -157,7 +157,7 @@ export class ProductsController {
     return this.products.setCombo(id, body);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Post(':id/deactivate')
   deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<Product> {
     return this.products.deactivate(id);
@@ -171,7 +171,7 @@ export class ProductsController {
     await this.products.remove(id);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Post('upload-image')
   @UseInterceptors(
     FileInterceptor('image', {

@@ -13,6 +13,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
+import { utcDateOfLocalDay } from '../common/local-dates';
 import { resolvePocketSplit } from '../common/pocket-split';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -126,15 +127,21 @@ export class FixedCostsService {
    * que la vigencia coincida con el período que muestra la pantalla. Mensual =
    * monto tal cual; Anual = ÷12. El monto NO se prorratea: cuenta UNA vez por
    * ventana.
+   *
+   * startedAt/endedAt son fecha-solo (medianoche UTC): la ventana local se
+   * convierte a límites fecha-solo — sin esto, un gasto puntual fechado el
+   * día 1 caía en el mes ANTERIOR y desaparecía del suyo.
    */
   async getEffectiveForWindow(windowStart: Date, windowEnd: Date): Promise<
     Array<{ id: string; name: string; category: string; monthlyAmount: number; isOneTime: boolean }>
   > {
+    const startDay = utcDateOfLocalDay(windowStart);
+    const endDay = utcDateOfLocalDay(windowEnd);
     const rows = await this.prisma.fixedCost.findMany({
       where: {
         isActive: true,
-        OR: [{ startedAt: null }, { startedAt: { lte: windowEnd } }],
-        AND: [{ OR: [{ endedAt: null }, { endedAt: { gte: windowStart } }] }],
+        OR: [{ startedAt: null }, { startedAt: { lte: endDay } }],
+        AND: [{ OR: [{ endedAt: null }, { endedAt: { gte: startDay } }] }],
       },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
@@ -296,8 +303,12 @@ export class FixedCostsService {
     asOf: Date = new Date(),
     lookbackMonths = 6,
   ): Promise<FinancePendingFixedCost[]> {
-    const asOfY = asOf.getUTCFullYear();
-    const asOfM = asOf.getUTCMonth(); // 0-11
+    // `asOf` llega como instante LOCAL (now o fin de ventana). Se normaliza al
+    // día calendario local en medianoche UTC — con getUTC* directo, el 31 a las
+    // 19:00 Bogotá ya era "el mes siguiente" y listaba sus períodos como deuda.
+    const asOfDay = utcDateOfLocalDay(asOf);
+    const asOfY = asOfDay.getUTCFullYear();
+    const asOfM = asOfDay.getUTCMonth(); // 0-11
     const earliestY = asOfY;
     const earliestM = asOfM - lookbackMonths;
     const earliestStart = new Date(Date.UTC(earliestY, earliestM, 1));
@@ -331,7 +342,7 @@ export class FixedCostsService {
 
     const out: FinancePendingFixedCost[] = [];
     for (const c of costs) {
-      const periods = enumeratePeriodsForCost(c, earliestStart, asOf);
+      const periods = enumeratePeriodsForCost(c, earliestStart, asOfDay);
       for (const p of periods) {
         if (paidSet.has(`${c.id}|${p.year}|${p.month}`)) continue;
         out.push({

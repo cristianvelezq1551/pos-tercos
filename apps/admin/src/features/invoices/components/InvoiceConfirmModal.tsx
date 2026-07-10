@@ -8,6 +8,7 @@ import {
   confirmFromPhoto,
   confirmInvoice,
   confirmManualInvoice,
+  discardPaymentProof,
   discardPhoto,
   rejectInvoice,
 } from '../api/client';
@@ -15,6 +16,12 @@ import { ManualEntryGuide } from './ManualEntryGuide';
 import { SupplierSection } from './SupplierSection';
 import { InvoiceMetaSection } from './InvoiceMetaSection';
 import { ItemsSection } from './ItemsSection';
+import {
+  PaymentAtConfirmSection,
+  initialConfirmPaymentState,
+  type ConfirmPaymentState,
+} from './PaymentAtConfirmSection';
+import { buildPaymentBlock } from './build-payment-block';
 import { validateInvoice } from './validate-invoice';
 import { useInvoiceRows } from '../hooks/useInvoiceRows';
 
@@ -71,6 +78,12 @@ export function InvoiceConfirmModal({
   );
   const [notes, setNotes] = useState('');
 
+  // "Nace pagada" — default sí (el 95% de las facturas ya están pagadas).
+  const hasInvoicePhoto = Boolean(iaContext) || draft.invoice.photoStorageKey !== null;
+  const [payment, setPayment] = useState<ConfirmPaymentState>(() =>
+    initialConfirmPaymentState(hasInvoicePhoto),
+  );
+
   const { rows, updateRow, removeRow, addRow, computedItemsTotal } = useInvoiceRows(draft, stockables);
 
   const handleConfirm = async (): Promise<void> => {
@@ -78,20 +91,26 @@ export function InvoiceConfirmModal({
     const v = validateInvoice({ supplierMode, supplierId, newSupplierNit, newSupplierName, suppliers, rows, total, iva, invoiceNumber, notes });
     if (!v.valid) { setError(v.reason); return; }
     setSubmitting(true);
+    let uploadedProofKey: string | undefined;
     try {
+      const paymentBlock = await buildPaymentBlock(payment, hasInvoicePhoto);
+      uploadedProofKey = paymentBlock?.proofStorageKey;
+      const payload = paymentBlock ? { ...v.payload, payment: paymentBlock } : v.payload;
       if (iaContext) {
         // IA: crea+confirma en un solo paso, asociando la foto previa.
-        await confirmFromPhoto(v.payload, iaContext.photoStorageKey, iaContext.aiModelUsed);
+        await confirmFromPhoto(payload, iaContext.photoStorageKey, iaContext.aiModelUsed);
       } else if (manualMode) {
         // Manual: crea+confirma sin foto. Sin borrador previo.
-        await confirmManualInvoice(v.payload);
+        await confirmManualInvoice(payload);
       } else {
         // Caso legacy: draft persistido (clone) → solo confirma.
-        await confirmInvoice(draft.invoice.id, v.payload);
+        await confirmInvoice(draft.invoice.id, payload);
       }
       onConfirmed();
       startTransition(() => { router.push('/invoices'); router.refresh(); });
     } catch (e) {
+      // El comprobante pre-subido quedó huérfano — limpiarlo (best-effort).
+      if (uploadedProofKey) void discardPaymentProof(uploadedProofKey);
       setError(e instanceof Error ? e.message : 'Error al confirmar');
     } finally {
       setSubmitting(false);
@@ -192,6 +211,14 @@ export function InvoiceConfirmModal({
           onUpdate={updateRow}
           onRemove={removeRow}
           onStockableCreated={onStockableCreated}
+        />
+
+        <PaymentAtConfirmSection
+          state={payment}
+          onChange={setPayment}
+          hasInvoicePhoto={hasInvoicePhoto}
+          total={Number(total) || 0}
+          disabled={submitting}
         />
 
         {error && (

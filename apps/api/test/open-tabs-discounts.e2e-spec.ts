@@ -48,6 +48,17 @@ describe('Open Tabs + Manual Discounts E2E', () => {
     duenoToken = await loginAs(request, 'dueno-tabs@test.local');
     cajeroToken = await loginAs(request, 'cajero-tabs@test.local');
 
+    // Catálogo de categorías (feature 2026-07-09): crear producto exige que la
+    // categoría exista. cleanDb no trunca product_categories, pero sembramos con
+    // skipDuplicates para ser deterministas ante una DB de test recién migrada.
+    await prisma.productCategory.createMany({
+      data: [
+        { name: 'Comidas', sortOrder: 0 },
+        { name: 'Bebidas', sortOrder: 1 },
+      ],
+      skipDuplicates: true,
+    });
+
     const burger = await request
       .post('/products')
       .set('Authorization', `Bearer ${duenoToken}`)
@@ -246,6 +257,73 @@ describe('Open Tabs + Manual Discounts E2E', () => {
         .set('Authorization', `Bearer ${cajeroToken}`)
         .expect(200);
       expect(canceled.body.status).toBe('CANCELADO_NO_PAGO');
+    });
+
+    it('traspasar una cuenta abierta la saca del reporte de la caja (suelta shiftId) y sigue cobrable', async () => {
+      const tab = await request
+        .post('/sales')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          type: 'COUNTER',
+          openTab: true,
+          customerName: 'Cliente Traspaso',
+          items: [{ productId: gaseosaId, quantity: 1 }],
+        })
+        .expect(201);
+      expect(tab.body.shiftId).toBe(shiftId);
+
+      // Traspasar → shiftId null, sigue PENDIENTE_PAGO.
+      const carried = await request
+        .post(`/sales/${tab.body.id}/carry-over`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(carried.body.shiftId).toBeNull();
+      expect(carried.body.status).toBe('PENDIENTE_PAGO');
+
+      // Sale del reporte de la sesión (ya no cuelga de esta caja).
+      const detail = await request
+        .get(`/shifts/${shiftId}/detail`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(
+        (detail.body.orders as { id: string }[]).some((o) => o.id === tab.body.id),
+      ).toBe(false);
+
+      // Queda en bitácora.
+      const log = await prisma.auditLog.findFirst({
+        where: { action: 'SALE_CARRIED_OVER', entityId: tab.body.id },
+      });
+      expect(log).toBeTruthy();
+      expect((log!.metadata as { fromShiftId?: string }).fromShiftId).toBe(shiftId);
+
+      // Idempotente: traspasar de nuevo no rompe.
+      await request
+        .post(`/sales/${tab.body.id}/carry-over`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+
+      // Cobrarla ahora la cuelga de la caja abierta actual (la del cajero).
+      const paid = await request
+        .post(`/sales/${tab.body.id}/confirm-payment`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ method: 'CASH', amountReceived: GASEOSA_PRICE })
+        .expect(201);
+      expect(paid.body.status).toBe('PAGADO');
+      expect(paid.body.shiftId).toBe(shiftId);
+    });
+
+    it('rechaza traspasar una venta que no es cuenta abierta', async () => {
+      const plain = await request
+        .post('/sales')
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId: gaseosaId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${plain.body.id}/carry-over`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(400);
     });
   });
 

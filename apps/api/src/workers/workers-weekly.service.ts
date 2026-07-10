@@ -23,6 +23,7 @@ import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
+import { utcDateOfLocalDay } from '../common/local-dates';
 import { isSerializationFailure } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
@@ -101,18 +102,25 @@ export class WorkersWeeklyService {
   // rango. Reemplaza el cálculo quincenal (que no veía los abonos semanales).
   // ==================================================================
 
-  /** Restante por pagar de cada semana cerrada (fin ≤ asOf) con saldo > 0.
+  /** Restante por pagar de cada semana cerrada (fin ≤ asOf) con saldo > 0,
+   *  MÁS la semana en curso con lo devengado hasta asOf (días ≤ asOf + bonos −
+   *  abonos; marcada `inProgress`) — así "Pendiente por pagar" responde
+   *  "¿cuánto debo realmente a hoy?" y no solo la deuda de semanas cerradas.
    *  Acotado a `lookbackWeeks` semanas hacia atrás (admin-only, negocio chico). */
   async getPendingPayments(
-    asOf: Date = todayUtc(),
+    asOf: Date = new Date(),
     lookbackWeeks = PENDING_LOOKBACK_WEEKS,
   ): Promise<FinancePendingPayroll[]> {
+    // `asOf` llega como instante LOCAL (now o fin de ventana); las semanas
+    // viven en fecha-solo (medianoche UTC) → se normaliza al día calendario
+    // local antes de comparar (mismo criterio que todayUtc()).
+    const asOfDay = utcDateOfLocalDay(asOf);
+    const asOfYmd = ymd(asOfDay);
     const out: FinancePendingPayroll[] = [];
-    let week = payrollWeekFor(asOf);
+    let week = payrollWeekFor(asOfDay);
     for (let i = 0; i < lookbackWeeks; i++) {
-      // Solo semanas ya cerradas: el adeudo es definitivo (la semana en curso
-      // todavía acumula días y se ve en la pantalla de nómina, no acá).
-      if (parseYmd(week.weekEnd).getTime() <= asOf.getTime()) {
+      if (parseYmd(week.weekEnd).getTime() <= asOfDay.getTime()) {
+        // Semana cerrada: el adeudo es definitivo (neto − abonado).
         const report = await this.getWeeklyPayroll(week.weekStart);
         for (const e of report.entries) {
           if (e.remaining > 0.01) {
@@ -122,6 +130,30 @@ export class WorkersWeeklyService {
               periodStart: week.weekStart,
               periodLabel: week.weekLabel,
               total: e.remaining,
+            });
+          }
+        }
+      } else if (parseYmd(week.weekStart).getTime() <= asOfDay.getTime()) {
+        // Semana EN CURSO: solo lo devengado hasta asOf (los días futuros de
+        // la semana NO son deuda todavía). Los bonos/descuentos ya registrados
+        // cuentan completos. Si se abonó por adelantado más de lo devengado,
+        // el filtro > 0 la omite. (Si asOf cae en descanso, payrollWeekFor
+        // devuelve la semana SIGUIENTE — weekStart > asOf — y no entra acá.)
+        const report = await this.getWeeklyPayroll(week.weekStart);
+        for (const e of report.entries) {
+          const accrued = e.days
+            .filter((d) => d.date <= asOfYmd)
+            .reduce((a, d) => a + d.amount, 0);
+          const remaining = round2(accrued + e.adjustmentsTotal - e.paidTotal);
+          if (remaining > 0.01) {
+            out.push({
+              userId: e.userId,
+              userName: e.fullName,
+              periodStart: week.weekStart,
+              periodLabel: week.weekLabel,
+              total: remaining,
+              inProgress: true,
+              accruedThrough: asOfYmd,
             });
           }
         }

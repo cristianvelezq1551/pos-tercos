@@ -130,6 +130,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
 
       <ProductPickerModal
         product={selected}
+        promos={promos}
         open={open}
         onClose={() => setOpen(false)}
         onConfirm={handleConfirm}

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@pos-tercos/brand": "workspace:*",
+    "@pos-tercos/domain": "workspace:*",
     "@pos-tercos/types": "workspace:*",
     "@pos-tercos/ui": "workspace:*",
     "lucide-react": "^0.469.0",

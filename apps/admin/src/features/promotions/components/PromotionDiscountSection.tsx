@@ -1,6 +1,14 @@
 import { MoneyInput } from '@pos-tercos/ui';
 import { PromotionTypeEnum } from '@pos-tercos/types';
-import { Section, Field, inputClass, labelFor, descriptionFor, type FormState } from './PromotionFormHelpers';
+import {
+  Section,
+  Field,
+  inputClass,
+  labelFor,
+  descriptionFor,
+  CHANNEL_OPTIONS,
+  type FormState,
+} from './PromotionFormHelpers';
 
 interface PromotionDiscountSectionProps {
   state: FormState;
@@ -60,6 +68,37 @@ export function PromotionGeneralSection({ state, onUpdate, locked = false }: Pro
             El tipo no se puede cambiar. Para usar otro tipo, desactiva esta promo y crea una nueva.
           </p>
         ) : null}
+      </Field>
+
+      <Field label="Dónde aplica" required>
+        <div className="grid grid-cols-3 gap-2">
+          {CHANNEL_OPTIONS.map((opt) => {
+            const active = state.channel === opt.value;
+            return (
+              <label
+                key={opt.value}
+                className={`cursor-pointer rounded-md border px-3 py-2 text-center text-sm ${
+                  active
+                    ? 'border-primary bg-destructive/10 text-primary font-semibold'
+                    : 'border-border bg-card text-foreground hover:bg-muted/40'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="channel"
+                  className="sr-only"
+                  value={opt.value}
+                  checked={active}
+                  onChange={() => onUpdate('channel', opt.value)}
+                />
+                {opt.label}
+              </label>
+            );
+          })}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {CHANNEL_OPTIONS.find((o) => o.value === state.channel)?.description}
+        </p>
       </Field>
     </Section>
   );

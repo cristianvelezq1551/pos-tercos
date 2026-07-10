@@ -66,8 +66,9 @@ export function CloseShiftFields({
   notes: string;
   onNotesChange: (value: string) => void;
 }) {
-  // Conteo ciego: no mostrar el esperado hasta revelar (anti-sesgo).
-  const [blind, setBlind] = useState(true);
+  // Conteo ciego: opt-in. Por defecto se muestra el esperado; si el cajero lo
+  // activa, se oculta hasta revelar (anti-sesgo).
+  const [blind, setBlind] = useState(false);
   const [revealed, setRevealed] = useState(false);
 
   const countedNum = arqueo ? sumBreakdown(counts) : (manual ?? 0);

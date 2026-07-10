@@ -17,6 +17,16 @@ export function isSerializationFailure(e: unknown): boolean {
 }
 
 /**
+ * P2002 (unique constraint). Caso típico: el `upsert` de Prisma NO es atómico
+ * cuando la fila no existe (hace select → create) — dos requests paralelos que
+ * upsertean un singleton intentan crear a la vez y el perdedor muere con
+ * P2002. El perdedor debe RELEER la fila ganadora, no fallar.
+ */
+export function isUniqueViolation(e: unknown): boolean {
+  return e instanceof Error && (e as { code?: string }).code === 'P2002';
+}
+
+/**
  * Cota alta por defecto: cada ronda de colisión deja pasar al menos una tx
  * (gana el índice único / la serialización), así que basta con ≥ ráfaga
  * concurrente esperable. En la realidad (1 cajero) las colisiones son 0-1.

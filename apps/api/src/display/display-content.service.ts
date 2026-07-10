@@ -265,10 +265,18 @@ export class DisplayContentService {
       tag: s.tag,
       price: s.price,
       description: s.description,
-      imageUrl: `/api/display/slide-image/${s.id}`,
+      // `v` cambia con cada reemplazo de imagen (la key es nueva) — sin esto el
+      // browser sigue mostrando la foto vieja cacheada bajo la misma URL.
+      imageUrl: `/api/display/slide-image/${s.id}?v=${this.assetVersion(s.imageKey)}`,
       sortOrder: s.sortOrder,
       isActive: s.isActive,
     };
+  }
+
+  /** Fingerprint URL-safe del asset (el nombre de archivo de la key en storage). */
+  private assetVersion(key: string): string {
+    const file = key.split('/').pop() ?? key;
+    return encodeURIComponent(file.replace(/\.[a-z0-9]+$/i, ''));
   }
 
   private toTrackDto(t: DbTrack): DisplayTrack {

@@ -5,6 +5,7 @@ import { Button, Dialog, FormField, Input, PinField, formatCop, isValidPin } fro
 import { FileImage } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
+import { ymdLocalToday } from '../../../lib/dates';
 import { markInvoicePaid } from '../api/client';
 
 export function InvoiceMarkPaidDialog({
@@ -18,7 +19,9 @@ export function InvoiceMarkPaidDialog({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  // ymdLocalToday, NO toISOString: de noche en Bogotá daría mañana (el
+  // backend rechaza fecha de pago futura).
+  const [paidAt, setPaidAt] = useState(ymdLocalToday());
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');
   const total = invoice.total ?? 0;

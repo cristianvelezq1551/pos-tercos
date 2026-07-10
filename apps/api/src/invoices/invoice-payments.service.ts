@@ -5,7 +5,8 @@ import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
-import { resolvePocketSplit } from '../common/pocket-split';
+import { ymdLocal } from '../common/local-dates';
+import { pocketOf, resolvePocketSplit } from '../common/pocket-split';
 import { PrismaService } from '../prisma/prisma.service';
 import { includeFull, toInvoiceDto } from './invoices.mappers';
 
@@ -53,6 +54,9 @@ export class InvoicePaymentsService {
     if (existing.paymentStatus === 'PAID') {
       throw new BadRequestException('La factura ya está marcada como pagada.');
     }
+    if (opts.paidAtYmd && opts.paidAtYmd > ymdLocal(new Date())) {
+      throw new BadRequestException('La fecha del pago no puede ser futura.');
+    }
     const paidAt = opts.paidAtYmd ? new Date(`${opts.paidAtYmd}T12:00:00.000Z`) : new Date();
     const total = existing.total !== null ? Number(existing.total) : 0;
     const split = resolvePocketSplit(opts.cashAmount, opts.bankAmount, total);
@@ -80,7 +84,7 @@ export class InvoicePaymentsService {
         paymentProofKey: stored.key,
         paymentActorId: actorId,
         paymentNote: opts.note ?? null,
-        paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
+        paymentPocket: pocketOf(split),
         paymentCashAmount: split.cash,
         paymentBankAmount: split.bank,
       },
@@ -130,6 +134,11 @@ export class InvoicePaymentsService {
         paymentProofKey: null,
         paymentActorId: null,
         paymentNote: null,
+        // Limpia el reparto por bolsillo — dejarlo residual confunde un
+        // re-marcado posterior (Tesorería filtra por PAID, no lo cuenta).
+        paymentPocket: 'CUENTA',
+        paymentCashAmount: 0,
+        paymentBankAmount: 0,
       },
       include: includeFull(),
     });

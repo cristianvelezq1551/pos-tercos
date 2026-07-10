@@ -42,7 +42,7 @@ export function ProductTile({
         disabled={unavailable}
         aria-disabled={unavailable}
         className={cn(
-          'flex h-full min-h-[128px] w-full flex-col rounded-2xl border border-border/60 bg-card p-3.5 text-left transition-[background-color,border-color,transform] duration-150 ease-out',
+          'flex aspect-square w-full flex-col overflow-hidden rounded-2xl border border-border/60 bg-card p-3 text-left transition-[background-color,border-color,transform] duration-150 ease-out',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           unavailable
             ? 'cursor-not-allowed opacity-45 saturate-0'
@@ -50,56 +50,66 @@ export function ProductTile({
           'motion-reduce:transition-none',
         )}
       >
-        {/* Categoría — altura fija (1 línea) para que todas las cards midan igual. */}
-        <span className="caps line-clamp-1 h-3.5 text-[0.625rem] text-muted-foreground">
+        {/* Categoría — deja hueco a la derecha para el botón 86. */}
+        <span className="caps line-clamp-1 pr-9 text-[0.625rem] text-muted-foreground">
           {product.category ?? ''}
         </span>
-        {/* Chip de promo — debajo de la categoría, no compite con stock/86. */}
-        {showPromo ? (
-          <span
-            className={cn(
-              'mt-1 inline-flex w-fit items-center rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide',
-              promo.kind === 'discount'
-                ? 'bg-success/20 text-success'
-                : 'bg-info/20 text-info',
-            )}
-          >
-            {promo.label}
+
+        {/* Ícono para identificar el producto de un vistazo — arriba, tamaño
+            moderado (no compite con el nombre ni el precio). */}
+        {product.emoji ? (
+          <span aria-hidden className="mt-1 text-[1.875rem] leading-none">
+            {product.emoji}
           </span>
         ) : null}
-        {/* Nombre — reserva 2 líneas siempre → cards de igual altura. */}
-        <span className="mt-1 line-clamp-2 min-h-[2.5rem] text-[0.9375rem] font-semibold leading-snug text-foreground">
-          {product.name}
-        </span>
-        <div className="mt-auto pt-3">
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="flex min-w-0 flex-col">
-              {/* Precio base tachado cuando hay descuento que reduce el precio. */}
-              {showPromo && promo.discountedPrice !== null ? (
-                <span className="text-xs leading-none text-muted-foreground line-through tabular-nums">
-                  {formatCop(product.basePrice)}
-                </span>
-              ) : null}
-              <Money
-                amount={
-                  showPromo && promo.discountedPrice !== null
-                    ? promo.discountedPrice
-                    : product.basePrice
-                }
-                size="lg"
-                weight="bold"
-                className={
-                  showPromo && promo.discountedPrice !== null
-                    ? 'text-success'
-                    : 'text-foreground'
-                }
-              />
-            </div>
-            {/* Stock de reventa: chip al lado del precio, sin tapar la categoría. */}
+
+        {/* Aire flexible → ancla el pie abajo y equilibra el cuadrado. */}
+        <div className="min-h-0 flex-1" />
+
+        {/* Pie: nombre + precio con el tag de descuento AL LADO. */}
+        <div className="flex shrink-0 flex-col gap-1">
+          <span className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
+            {product.name}
+          </span>
+          {/* Precio base tachado cuando hay descuento que reduce el precio. */}
+          {showPromo && promo.discountedPrice !== null ? (
+            <span className="text-[0.6875rem] leading-none text-muted-foreground line-through tabular-nums">
+              {formatCop(product.basePrice)}
+            </span>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <Money
+              amount={
+                showPromo && promo.discountedPrice !== null
+                  ? promo.discountedPrice
+                  : product.basePrice
+              }
+              size="lg"
+              weight="bold"
+              className={
+                showPromo && promo.discountedPrice !== null
+                  ? 'text-success'
+                  : 'text-foreground'
+              }
+            />
+            {/* Tag de descuento — junto al precio. */}
+            {showPromo ? (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide',
+                  promo.kind === 'discount'
+                    ? 'bg-success/20 text-success'
+                    : 'bg-info/20 text-info',
+                )}
+              >
+                {promo.label}
+              </span>
+            ) : null}
+            {/* Stock de reventa: chip a la derecha. */}
             {stock !== null && !unavailable ? (
               <span
                 className={cn(
-                  'shrink-0 rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold tabular-nums',
+                  'ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold tabular-nums',
                   lowStock ? 'bg-warning/20 text-warning' : 'bg-ink-800/80 text-muted-foreground',
                 )}
               >
@@ -107,10 +117,11 @@ export function ProductTile({
               </span>
             ) : null}
           </div>
-          {/* Línea reservada (h-4) para que todas las cards midan igual. */}
-          <span className="block h-4 text-[0.6875rem] font-medium leading-4 text-muted-foreground">
-            {hasVariants ? '+ opciones' : ''}
-          </span>
+          {hasVariants ? (
+            <span className="text-[0.6875rem] font-medium leading-4 text-muted-foreground">
+              + opciones
+            </span>
+          ) : null}
         </div>
       </button>
 

@@ -219,6 +219,17 @@ export class SalesController {
     return this.sales.cancelUnpaid(id, user.sub);
   }
 
+  /** Traspasa una cuenta abierta a la próxima caja (suelta el shiftId). */
+  @CashierAccess()
+  @Post(':id/carry-over')
+  @HttpCode(200)
+  carryOverOpenTab(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Sale> {
+    return this.sales.carryOverOpenTab(id, user.sub);
+  }
+
   @CashierAccess()
   @Get()
   list(

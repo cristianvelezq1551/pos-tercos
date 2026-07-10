@@ -212,7 +212,12 @@ export class SalesService {
         where: { id: { in: productIds } },
         include: { sizes: true, modifiers: true },
       }),
-      hasManualDiscount ? Promise.resolve([]) : this.promotions.loadActiveAt(now),
+      hasManualDiscount
+        ? Promise.resolve([])
+        : this.promotions.loadActiveAt(
+            now,
+            input.type === 'WEB_PICKUP' ? 'WEB' : 'POS',
+          ),
     ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -1168,6 +1173,53 @@ export class SalesService {
 
     // Avisa al cliente que su pedido fue cancelado (fire-and-forget).
     void this.notifications.notify(saleId, 'canceled');
+    return toSaleDto(updated);
+  }
+
+  // ==================================================================
+  // CARRY-OVER (traspaso de cuenta abierta a la próxima caja)
+  // ==================================================================
+
+  /**
+   * Traspasa una cuenta abierta a la próxima caja: le suelta el `shiftId` (a
+   * NULL) para que salga del arqueo y del reporte de la caja que se está
+   * cerrando. La cuenta sigue PENDIENTE_PAGO y payable — al cobrarla,
+   * `resolvePaymentShift` la cuelga de la caja abierta de ese momento (la plata
+   * entra donde efectivamente se cobra). No toca stock (una cuenta abierta
+   * nunca descontó) ni el efectivo esperado (PENDIENTE_PAGO ya está excluido).
+   * Solo cuentas abiertas sin cobrar.
+   */
+  async carryOverOpenTab(saleId: string, userId: string): Promise<Sale> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { isOpenTab: true, status: true, shiftId: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (!existing.isOpenTab || existing.status !== 'PENDIENTE_PAGO') {
+      throw new BadRequestException(
+        'Solo una cuenta abierta sin cobrar se puede traspasar a la próxima caja.',
+      );
+    }
+    // Guard condicionado: si entre el check y el update la cuenta se cobró o
+    // canceló (otra terminal), el updateMany no matchea y se rechaza limpio.
+    const res = await this.prisma.sale.updateMany({
+      where: { id: saleId, status: 'PENDIENTE_PAGO', isOpenTab: true },
+      data: { shiftId: null },
+    });
+    if (res.count === 0) {
+      throw new BadRequestException('La cuenta cambió de estado — recargá los pedidos.');
+    }
+    await this.audit.log({
+      userId,
+      action: 'SALE_CARRIED_OVER',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: { fromShiftId: existing.shiftId },
+    });
+    const updated = await this.prisma.sale.findUniqueOrThrow({
+      where: { id: saleId },
+      include: includeFull(),
+    });
     return toSaleDto(updated);
   }
 

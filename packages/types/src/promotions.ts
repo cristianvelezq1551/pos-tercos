@@ -12,6 +12,13 @@ export const PromotionTypeEnum = z.enum([
 ]);
 export type PromotionType = z.infer<typeof PromotionTypeEnum>;
 
+/**
+ * Dónde aplica la promoción (espejo de Prisma PromotionChannel):
+ * `BOTH` = caja y web (default), `POS` = solo caja, `WEB` = solo pedidos web.
+ */
+export const PromotionChannelEnum = z.enum(['BOTH', 'POS', 'WEB']);
+export type PromotionChannel = z.infer<typeof PromotionChannelEnum>;
+
 // ====================================================================
 // HELPERS
 // ====================================================================
@@ -57,6 +64,7 @@ export const PromotionSchema = z.object({
   timeEnd: TimeStringSchema,
   activeFrom: z.string().date().nullable(),
   activeTo: z.string().date().nullable(),
+  channel: PromotionChannelEnum,
   isActive: z.boolean(),
   createdById: z.string().uuid().nullable(),
   createdByName: z.string().nullable().optional(),
@@ -87,6 +95,7 @@ export const CreatePromotionSchema = z
     timeEnd: TimeStringSchema,
     activeFrom: z.string().date().optional(),
     activeTo: z.string().date().optional(),
+    channel: PromotionChannelEnum.default('BOTH'),
     /** Productos a los que aplica. Min 1. */
     productIds: z.array(z.string().uuid()).min(1),
   })
@@ -208,6 +217,7 @@ export const UpdatePromotionSchema = z
     timeEnd: TimeStringSchema.optional(),
     activeFrom: z.string().date().nullable().optional(),
     activeTo: z.string().date().nullable().optional(),
+    channel: PromotionChannelEnum.optional(),
     isActive: z.boolean().optional(),
     productIds: z.array(z.string().uuid()).min(1).optional(),
   })

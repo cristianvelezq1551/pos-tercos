@@ -9,6 +9,8 @@ import {
   SHIFT_CLOSE_SYSTEM,
   buildDiscrepancyAlertLink,
   buildShiftCloseUserPrompt,
+  businessDayWindow,
+  startOfBusinessDay,
 } from '@pos-tercos/domain';
 import { NON_REVENUE_SALE_STATUSES } from '@pos-tercos/types';
 import type {
@@ -31,6 +33,7 @@ import { AuditService } from '../audit/audit.service';
 import { runWithSerializationRetry } from '../common/tx';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RecipesService } from '../recipes/recipes.service';
 
 /**
  * Threshold de descuadre absoluto (COP) que dispara `SHIFT_DISCREPANCY_DETECTED`.
@@ -79,6 +82,7 @@ export class ShiftsService {
     private readonly audit: AuditService,
     private readonly llm: LLMService,
     private readonly ownerNotifications: OwnerNotificationService,
+    private readonly recipes: RecipesService,
   ) {}
 
   /**
@@ -167,7 +171,7 @@ export class ShiftsService {
       });
       if (openAnywhere) {
         const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
-        const sameDay = openAnywhere.openedAt >= this.startOfToday();
+        const sameDay = openAnywhere.openedAt >= this.startOfBusinessToday();
         throw new ConflictException(
           sameDay
             ? `Ya hay una caja abierta por ${who}. Solo puede haber una caja abierta en el negocio.`
@@ -175,13 +179,13 @@ export class ShiftsService {
         );
       }
 
-      // UNA caja por día calendario: si hoy ya hubo una (cerrada), no se abre otra.
+      // UNA caja por día de NEGOCIO (4 am → 4 am): si hoy ya hubo una (cerrada),
+      // no se abre otra — cerrar a las 2 am y reabrir a las 3 am sigue bloqueado
+      // (mismo día de negocio), pero la caja del día siguiente abre normal.
       // Si se cerró por error, el admin la reabre (no se crea una segunda).
-      const startOfDay = this.startOfToday();
-      const endOfDay = new Date();
-      endOfDay.setHours(23, 59, 59, 999);
+      const { start: startOfDay, end: endOfDay } = businessDayWindow(new Date());
       const todays = await tx.shift.findFirst({
-        where: { openedAt: { gte: startOfDay, lte: endOfDay } },
+        where: { openedAt: { gte: startOfDay, lt: endOfDay } },
         select: { id: true },
       });
       if (todays) {
@@ -216,9 +220,9 @@ export class ShiftsService {
    * Sincroniza una apertura de caja hecha OFFLINE en el POS (B.4b). Reglas:
    *  - Idempotente por `localId` (reintentos devuelven la misma caja).
    *  - `openedAt` se backdatea al momento real de la apertura offline. Si la
-   *    apertura fue AYER (corte que cruzó medianoche), la caja nace "stale":
-   *    el POS obliga a cerrarla (arqueo de ayer) antes de operar hoy — flujo
-   *    honesto, no se pierde el registro.
+   *    apertura fue de un día de NEGOCIO anterior (corte 4 am), la caja nace
+   *    "stale": el POS obliga a cerrarla (arqueo de ayer) antes de operar
+   *    hoy — flujo honesto, no se pierde el registro.
    *  - Si ya hay una caja OPEN de HOY (alguien abrió online mientras tanto, o
    *    otro dispositivo sincronizó primero): se ADOPTA esa caja — caja única
    *    del negocio; la discrepancia de fondo inicial queda en bitácora.
@@ -254,7 +258,7 @@ export class ShiftsService {
         orderBy: { openedAt: 'desc' },
       });
       if (openAnywhere) {
-        if (openAnywhere.openedAt < this.startOfToday()) {
+        if (openAnywhere.openedAt < this.startOfBusinessToday()) {
           const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
           throw new ConflictException(
             `Hay una caja abierta por ${who} desde ${formatOpenedAt(openAnywhere.openedAt)} (día anterior). Hay que cerrarla antes de sincronizar la apertura offline.`,
@@ -273,13 +277,10 @@ export class ShiftsService {
         return { row: adopted, adopted: true, idempotent: false };
       }
 
-      // UNA caja por día calendario DEL DÍA DE LA APERTURA offline.
-      const dayStart = new Date(openedAt);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(openedAt);
-      dayEnd.setHours(23, 59, 59, 999);
+      // UNA caja por día de NEGOCIO DEL DÍA DE LA APERTURA offline.
+      const { start: dayStart, end: dayEnd } = businessDayWindow(openedAt);
       const sameDay = await tx.shift.findFirst({
-        where: { openedAt: { gte: dayStart, lte: dayEnd } },
+        where: { openedAt: { gte: dayStart, lt: dayEnd } },
         select: { id: true },
       });
       if (sameDay) {
@@ -341,18 +342,25 @@ export class ShiftsService {
     return row ? toShiftDto(row) : null;
   }
 
-  /** Inicio del día calendario local del server (TZ=America/Bogota en prod). */
-  private startOfToday(): Date {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+  /**
+   * Inicio del día de NEGOCIO actual (corte 4 am, hora local del server —
+   * TZ=America/Bogota en prod). La caja abierta el jueves a la tarde sigue
+   * siendo "la de hoy" hasta las 3:59 am del viernes: el local puede vender
+   * de madrugada sin que la caja se vuelva stale ni bloquee el día siguiente.
+   * OJO: esto NO cambia la atribución contable de las ventas (reportes siguen
+   * en día calendario por `paidAt`) — solo la operación de la caja.
+   */
+  private startOfBusinessToday(): Date {
+    return startOfBusinessDay(new Date());
   }
 
   /**
-   * Turno con el que el cajero puede operar HOY. Si dejó una caja OPEN de un
-   * día anterior (nunca la cerró), lanza Conflict: debe cerrarla (Cerrar turno,
-   * ingresando el efectivo con el que quedó) antes de seguir. Si no hay caja
-   * OPEN, retorna null. Es el guard de "movimientos solo con la caja del día".
+   * Turno con el que el cajero puede operar HOY (día de NEGOCIO, corte 4 am:
+   * la caja del jueves sigue operable hasta las 3:59 am del viernes). Si dejó
+   * una caja OPEN de un día de negocio anterior (nunca la cerró), lanza
+   * Conflict: debe cerrarla (Cerrar turno, ingresando el efectivo con el que
+   * quedó) antes de seguir. Si no hay caja OPEN, retorna null. Es el guard de
+   * "movimientos solo con la caja del día".
    */
   async getActiveTodayShift(_userId: string): Promise<Shift | null> {
     // Caja ÚNICA del negocio (de cualquier usuario): el que esté operando vende
@@ -363,7 +371,7 @@ export class ShiftsService {
       orderBy: { openedAt: 'desc' },
     });
     if (!row) return null;
-    if (row.openedAt < this.startOfToday()) {
+    if (row.openedAt < this.startOfBusinessToday()) {
       throw new ConflictException(
         `La caja sigue abierta desde el ${formatOpenedAt(row.openedAt)}. ` +
           `Cerrala (Cerrar turno) e ingresá el efectivo con el que quedó antes de seguir operando.`,
@@ -389,7 +397,7 @@ export class ShiftsService {
     if (!row) return { shift: null, stalePreviousDay: false };
     return {
       shift: toShiftDto(row),
-      stalePreviousDay: row.openedAt < this.startOfToday(),
+      stalePreviousDay: row.openedAt < this.startOfBusinessToday(),
     };
   }
 
@@ -461,7 +469,7 @@ export class ShiftsService {
    * Detalle consolidado de una sesión/caja: datos de caja + resumen + todos
    * los pedidos del turno. Lo ve el cajero (la suya) y el admin (cualquiera).
    */
-  async getSessionDetail(shiftId: string): Promise<ShiftSessionDetail> {
+  async getSessionDetail(shiftId: string, includeMargin = false): Promise<ShiftSessionDetail> {
     const shift = await this.getById(shiftId);
     const breakdownRow = await this.prisma.shift.findUnique({
       where: { id: shiftId },
@@ -482,10 +490,18 @@ export class ShiftsService {
         paymentMethod: true,
         customerName: true,
         createdAt: true,
+        discountTotal: true,
+        orderDiscountAmount: true,
+        discountReason: true,
         payments: { select: { method: true, amount: true } },
         items: {
           select: {
+            productId: true,
             quantity: true,
+            unitPrice: true,
+            lineDiscount: true,
+            appliedPromotionId: true,
+            manualDiscountKind: true,
             lineTotal: true,
             product: { select: { name: true } },
             size: { select: { name: true } },
@@ -494,22 +510,69 @@ export class ShiftsService {
       },
     });
 
-    const orders = rows.map((r) => ({
-      id: r.id,
-      receiptNumber: Number(r.receiptNumber),
-      type: r.type,
-      status: r.status,
-      total: Number(r.total),
-      paymentMethod: r.paymentMethod,
-      customerName: r.customerName,
-      createdAt: r.createdAt.toISOString(),
-      payments: r.payments.map((p) => ({ method: p.method as string, amount: Number(p.amount) })),
-      items: r.items.map((it) => ({
-        quantity: it.quantity,
-        name: it.size ? `${it.product.name} ${it.size.name}` : it.product.name,
-        lineTotal: Number(it.lineTotal),
-      })),
-    }));
+    // Ganancia (costos) SOLO para roles con visibilidad de costos — nunca al cajero.
+    // Costo BASE por unidad (sin variante de tamaño), en una sola pasada; misma
+    // aproximación que la lista de productos del admin. null si el costo es desconocido.
+    const costByProduct = new Map<string, number | null>();
+    if (includeMargin) {
+      const costs = await this.recipes.listProductCosts();
+      for (const c of costs) costByProduct.set(c.productId, c.totalCost);
+    }
+
+    const orders = rows.map((r) => {
+      // La ganancia solo tiene sentido en ventas que generaron ingreso. Un pedido
+      // cancelado/anulado/pendiente NO dejó plata → margen null (mismo criterio que
+      // el arqueo, `isRevenueSale`), para no mostrar "ganancia" en algo que no vendió.
+      const earnsRevenue = includeMargin && isRevenueSale(r.status);
+      const items = r.items.map((it) => {
+        const unitCost = earnsRevenue ? costByProduct.get(it.productId) ?? null : null;
+        const lineTotal = Number(it.lineTotal);
+        const lineCost = unitCost !== null ? Math.round(unitCost * it.quantity) : null;
+        const lineMargin = lineCost !== null ? lineTotal - lineCost : null;
+        const lineMarginPct =
+          lineMargin !== null && lineTotal > 0 ? lineMargin / lineTotal : null;
+        return {
+          quantity: it.quantity,
+          name: it.size ? `${it.product.name} ${it.size.name}` : it.product.name,
+          unitPrice: Number(it.unitPrice),
+          lineDiscount: Number(it.lineDiscount),
+          // Descuento por promo activa (appliedPromotionId) vs manual (kind sin promo).
+          hasPromotion: it.appliedPromotionId !== null && it.manualDiscountKind === null,
+          lineTotal,
+          lineCost,
+          lineMargin,
+          lineMarginPct,
+        };
+      });
+      // Margen del pedido: solo si TODAS las líneas tienen costo conocido (si falta
+      // uno, el total sería engañoso). Revenue = total real cobrado (neto de descuentos).
+      const orderTotal = Number(r.total);
+      const allCostsKnown = items.length > 0 && items.every((i) => i.lineCost !== null);
+      const costTotal = allCostsKnown
+        ? items.reduce((a, i) => a + (i.lineCost ?? 0), 0)
+        : null;
+      const marginTotal = costTotal !== null ? orderTotal - costTotal : null;
+      const marginPct =
+        marginTotal !== null && orderTotal > 0 ? marginTotal / orderTotal : null;
+      return {
+        id: r.id,
+        receiptNumber: Number(r.receiptNumber),
+        type: r.type,
+        status: r.status,
+        total: orderTotal,
+        paymentMethod: r.paymentMethod,
+        customerName: r.customerName,
+        createdAt: r.createdAt.toISOString(),
+        discountTotal: Number(r.discountTotal),
+        orderDiscountAmount: Number(r.orderDiscountAmount),
+        discountReason: r.discountReason,
+        payments: r.payments.map((p) => ({ method: p.method as string, amount: Number(p.amount) })),
+        items,
+        costTotal,
+        marginTotal,
+        marginPct,
+      };
+    });
 
     // "Pagado" para el resumen = la venta cuenta plata (mismo criterio que el
     // arqueo): todo menos NON_REVENUE_SALE_STATUSES (incluye CANCELADO_SIN_REEMBOLSO).
@@ -543,6 +606,9 @@ export class ShiftsService {
         orderCount: orders.length,
         paidCount: paid.length,
         voidCount: orders.filter((o) => o.status === 'VOID').length,
+        canceledCount: orders.filter(
+          (o) => o.status === 'CANCELADO_NO_PAGO' || o.status === 'CANCELADO_SIN_REEMBOLSO',
+        ).length,
         totalRevenue: paid.reduce((a, o) => a + o.total, 0),
         cashRevenue: byMethodMap.get('CASH')?.total ?? 0,
         transferRevenue: byMethodMap.get('TRANSFER')?.total ?? 0,

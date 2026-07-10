@@ -28,6 +28,13 @@ export function resolvePocketSplit(
   return { cash, bank };
 }
 
+/** Etiqueta canónica del bolsillo según el reparto (única fuente — no re-derivar inline). */
+export function pocketOf(split: { cash: number; bank: number }): 'EFECTIVO' | 'CUENTA' | 'MIXTO' {
+  if (split.cash > 0 && split.bank === 0) return 'EFECTIVO';
+  if (split.cash === 0) return 'CUENTA';
+  return 'MIXTO';
+}
+
 /** Parsea un campo multipart opcional a número (undefined si vacío/ausente). */
 export function parseOptionalAmount(raw: string | undefined): number | undefined {
   if (raw === undefined || raw === '') return undefined;

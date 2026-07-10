@@ -82,7 +82,7 @@ export function sidebarLinkClass(active: boolean, extra?: string): string {
     'group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors duration-150 ease-out',
     active
       ? 'bg-red-50 text-primary before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-primary'
-      : 'text-ink-700 hover:bg-muted hover:text-foreground',
+      : 'text-ink-300 hover:bg-muted hover:text-foreground',
     extra,
   );
 }

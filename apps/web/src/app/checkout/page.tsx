@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { CheckoutForm } from '../../features/checkout';
 import { CheckoutSteps } from '../../components/CheckoutSteps';
 import { getMenuServer } from '../../features/catalog';
+import { PromotionsHydrator } from '../../features/promotions';
 
 // Kill-switch (#13): si el dueño apagó los pedidos web, el checkout no se
 // renderiza (el API igual rechaza el POST — esto es la cara amable).
@@ -26,6 +27,7 @@ export default async function CheckoutPage() {
   }
   return (
     <div className="min-h-dvh bg-background text-foreground">
+      <PromotionsHydrator promotions={menu.promotions} />
       <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
         <Link
           href="/"

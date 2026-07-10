@@ -8,13 +8,14 @@ import {
   type CreateAdjustment,
   type CreateTransfer,
   type JwtAccessPayload,
+  type TreasuryAnchorDate,
   type TreasuryConfig,
   type TreasuryMovement,
   type TreasurySummary,
   type UpdateTreasuryConfig,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { OnlyDueno } from '../auth/decorators/roles.decorator';
+import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TreasuryService } from './treasury.service';
 
@@ -38,6 +39,18 @@ export class TreasuryController {
   @Get('config')
   getConfig(): Promise<TreasuryConfig> {
     return this.treasury.getConfig();
+  }
+
+  /**
+   * Solo la fecha de corte, SIN saldos. AdminAccess (pisa el OnlyDueno de la
+   * clase): la usa el modal de facturas para avisar "fecha anterior al corte"
+   * al registrar un pago, sin exponer datos financieros al admin operativo.
+   */
+  @AdminAccess()
+  @Get('anchor-date')
+  async getAnchorDate(): Promise<TreasuryAnchorDate> {
+    const cfg = await this.treasury.getConfig();
+    return { anchorDate: cfg.anchorDate };
   }
 
   @Patch('config')

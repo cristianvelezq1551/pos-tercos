@@ -1,5 +1,11 @@
 /** Shared primitives used by PromotionForm sub-components. */
-import type { PromotionType, CreatePromotion, Promotion, UpdatePromotion } from '@pos-tercos/types';
+import type {
+  PromotionChannel,
+  PromotionType,
+  CreatePromotion,
+  Promotion,
+  UpdatePromotion,
+} from '@pos-tercos/types';
 
 export const inputClass =
   'block h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring';
@@ -48,6 +54,20 @@ export function labelFor(t: PromotionType): string {
   }[t];
 }
 
+export const CHANNEL_OPTIONS: {
+  value: PromotionChannel;
+  label: string;
+  description: string;
+}[] = [
+  { value: 'BOTH', label: 'Caja y web', description: 'Aplica en el POS y en los pedidos online.' },
+  { value: 'POS', label: 'Solo caja', description: 'Solo en ventas del mostrador (POS).' },
+  { value: 'WEB', label: 'Solo web', description: 'Solo en pedidos de la página web.' },
+];
+
+export function channelLabel(c: PromotionChannel): string {
+  return CHANNEL_OPTIONS.find((o) => o.value === c)?.label ?? c;
+}
+
 export function descriptionFor(t: PromotionType): string {
   return {
     PERCENT_OFF: 'Descuento porcentual sobre el producto (ej. 20% en la Hamburguesa).',
@@ -60,6 +80,7 @@ export function descriptionFor(t: PromotionType): string {
 export interface FormState {
   name: string;
   type: PromotionType;
+  channel: PromotionChannel;
   discountPctPercent: string;
   discountFixed: string;
   bogoBuyQty: string;
@@ -127,6 +148,7 @@ export function stateFromPromotion(p: Promotion): FormState {
   return {
     name: p.name,
     type: p.type,
+    channel: p.channel,
     discountPctPercent: pctStr,
     discountFixed: fixedStr,
     bogoBuyQty: p.bogoBuyQty !== null ? String(p.bogoBuyQty) : '1',
@@ -145,6 +167,7 @@ export function stateFromPromotion(p: Promotion): FormState {
 export function buildUpdatePayload(s: FormState): UpdatePromotion {
   return {
     name: s.name.trim(),
+    channel: s.channel,
     daysOfWeekMask: s.daysMask,
     timeStart: `${s.timeStart}:00`,
     timeEnd: `${s.timeEnd}:00`,
@@ -158,6 +181,7 @@ export function buildPayload(s: FormState): CreatePromotion {
   const base = {
     name: s.name.trim(),
     type: s.type,
+    channel: s.channel,
     daysOfWeekMask: s.daysMask,
     timeStart: `${s.timeStart}:00`,
     timeEnd: `${s.timeEnd}:00`,

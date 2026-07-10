@@ -3,6 +3,12 @@ import type { NextConfig } from 'next';
 const API_TARGET = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Los uploads del admin pasan por el middleware que proxya /api. El default
+    // (10 MB) truncaba el body y el backend moría con "Request aborted" — el
+    // techo real es 50 MB (pistas de audio del turnero y video de publicidad).
+    middlewareClientMaxBodySize: '55mb',
+  },
   transpilePackages: [
     '@pos-tercos/ui',
     '@pos-tercos/brand',

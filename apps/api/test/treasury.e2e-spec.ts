@@ -77,6 +77,21 @@ describe('Treasury E2E', () => {
     await request.get('/treasury/summary').set(auth(cajeroToken)).expect(403);
   });
 
+  it('anchor-date es AdminAccess (sin saldos) pero sigue vedado al cajero', async () => {
+    const hash = await bcrypt.hash('dev12345', 10);
+    await prisma.user.createMany({
+      data: [{ email: 'admin-treasury@test.local', fullName: 'Admin Treasury', role: 'ADMIN_OPERATIVO', passwordHash: hash, mustChangePwd: false, active: true }],
+      skipDuplicates: true,
+    });
+    const adminToken = await loginAs(request, 'admin-treasury@test.local');
+
+    const res = await request.get('/treasury/anchor-date').set(auth(adminToken)).expect(200);
+    expect(res.body).toEqual({ anchorDate: null });
+    // Solo expone la fecha: el resto de tesorería sigue siendo Dueño-only.
+    await request.get('/treasury/summary').set(auth(adminToken)).expect(403);
+    await request.get('/treasury/anchor-date').set(auth(cajeroToken)).expect(403);
+  });
+
   it('la config inicial se refleja en initial de cada bolsillo', async () => {
     const res = await request.get('/treasury/config').set(auth(duenoToken)).expect(200);
     expect(res.body).toEqual({ anchorDate: null, initialCash: 100_000, initialBank: 50_000 });
@@ -189,5 +204,43 @@ describe('Treasury E2E', () => {
     const id = created.body.id as string;
     await request.post(`/treasury/movements/${id}/void`).set(auth(duenoToken)).expect(201);
     await request.post(`/treasury/movements/${id}/void`).set(auth(duenoToken)).expect(201);
+  });
+
+  it('creación concurrente del singleton de config no revienta (P2002 race)', async () => {
+    // Regresión: la página de tesorería pide /config y /summary en paralelo;
+    // con la tabla vacía, ambos upserts intentaban CREAR el singleton a la vez
+    // y el perdedor devolvía 500 (P2002). El perdedor debe releer y responder 200.
+    await prisma.treasuryConfig.deleteMany();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        request.get('/treasury/config').set(auth(duenoToken)),
+      ),
+    );
+    for (const r of results) expect(r.status).toBe(200);
+    expect(await prisma.treasuryConfig.count()).toBe(1);
+    // Restaurar la config fija de la suite (el singleton recreado queda en 0).
+    await request
+      .patch('/treasury/config')
+      .set(auth(duenoToken))
+      .send({ anchorDate: null, initialCash: 100_000, initialBank: 50_000 })
+      .expect(200);
+  });
+
+  it('un costo fijo sin responsable se atribuye a su CATEGORÍA (no "Sin asignar")', async () => {
+    const n = new Date();
+    const todayYmd = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+    const created = await request
+      .post('/fixed-costs')
+      .set(auth(duenoToken))
+      .send({ name: 'Arriendo bodega test', amount: 77_777, frequency: 'ONE_TIME', category: 'AlquilerTest', startedAt: todayYmd })
+      .expect(201);
+
+    const res = await request.get('/treasury/summary').set(auth(duenoToken)).expect(200);
+    const rows = res.body.commitmentsByResponsible as Array<{ responsible: string; total: number }>;
+    const cat = rows.find((r) => r.responsible === 'AlquilerTest');
+    expect(cat).toBeDefined();
+    expect(cat!.total).toBe(77_777);
+
+    await request.delete(`/fixed-costs/${created.body.id as string}`).set(auth(duenoToken)).expect(204);
   });
 });

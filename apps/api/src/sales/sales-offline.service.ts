@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { sameBusinessDay } from '@pos-tercos/domain';
 import type { Sale, SyncOfflineSale } from '@pos-tercos/types';
 import type { PaymentMethod, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -234,13 +235,15 @@ export class SalesOfflineService {
     );
 
     const dto = toSaleDto(updated);
-    // B6: venta offline de un día ANTERIOR colgada de la caja de HOY — el
-    // arqueo de hoy incluye plata cobrada otro día. No se bloquea (la venta
-    // ya ocurrió y no hay caja histórica donde colgarla), pero queda en
-    // bitácora para que el dueño entienda el descuadre al conciliar.
+    // B6: venta offline de un día de NEGOCIO anterior (corte 4 am) colgada de
+    // la caja de HOY — el arqueo de hoy incluye plata cobrada otro día. No se
+    // bloquea (la venta ya ocurrió y no hay caja histórica donde colgarla),
+    // pero queda en bitácora para que el dueño entienda el descuadre al
+    // conciliar. Comparar día de negocio (no calendario) evita alertas falsas
+    // por la operación normal de madrugada (venta 23:50 sincronizada 00:10).
     const soldDay = new Date(input.soldOfflineAt);
     const today = new Date();
-    if (soldDay.toDateString() !== today.toDateString()) {
+    if (!sameBusinessDay(soldDay, today)) {
       await this.audit.log({
         userId,
         action: 'OFFLINE_SYNC_DISCREPANCY',

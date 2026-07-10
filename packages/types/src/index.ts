@@ -4,6 +4,7 @@ export * from './auth';
 export * from './business-config';
 export * from './catalog';
 export * from './cogs';
+export * from './product-categories';
 export * from './cortesias';
 export * from './display';
 export * from './finance';

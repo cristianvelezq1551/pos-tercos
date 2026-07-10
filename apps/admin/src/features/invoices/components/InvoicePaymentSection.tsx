@@ -31,6 +31,14 @@ export function InvoicePaymentSection({
         year: 'numeric',
       })
     : null;
+  const pocketLabel =
+    invoice.paymentPocket === 'EFECTIVO'
+      ? 'Efectivo'
+      : invoice.paymentPocket === 'CUENTA'
+        ? 'Cuenta (transferencia)'
+        : invoice.paymentPocket === 'MIXTO'
+          ? `Mixto — ${formatCop(invoice.paymentCashAmount ?? 0)} efectivo · ${formatCop(invoice.paymentBankAmount ?? 0)} cuenta`
+          : null;
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -53,7 +61,7 @@ export function InvoicePaymentSection({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {isPaid
-              ? `Pagada el ${paidAtLabel}${invoice.paymentActorName ? ` por ${invoice.paymentActorName}` : ''}${invoice.paymentNote ? ` · ${invoice.paymentNote}` : ''}`
+              ? `Pagada el ${paidAtLabel}${invoice.paymentActorName ? ` por ${invoice.paymentActorName}` : ''}${pocketLabel ? ` · ${pocketLabel}` : ''}${invoice.paymentNote ? ` · ${invoice.paymentNote}` : ''}`
               : 'Subí el comprobante de la transferencia para marcarla pagada y sacarla de la lista de pendientes.'}
           </p>
         </div>

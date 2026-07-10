@@ -101,16 +101,47 @@ export async function listTracks(): Promise<DisplayTrack[]> {
   return TrackList.parse(await jsonOrThrow(res));
 }
 
-export async function createTrack(label: string, audio: File): Promise<DisplayTrack> {
+/**
+ * Sube una pista reportando progreso (XHR: `fetch` no expone el progreso de
+ * subida, y con archivos de hasta 50 MB el usuario necesita ver que avanza).
+ */
+export function createTrack(
+  label: string,
+  audio: File,
+  onProgress?: (pct: number) => void,
+): Promise<DisplayTrack> {
   const fd = new FormData();
   fd.append('label', label);
   fd.append('audio', audio);
-  const res = await fetch('/api/display/tracks', {
-    method: 'POST',
-    body: fd,
-    credentials: 'include',
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/display/tracks');
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let body: unknown = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        // sin body JSON — cae al mensaje genérico
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(DisplayTrackSchema.parse(body));
+        } catch {
+          reject(new Error('Respuesta inesperada del servidor.'));
+        }
+      } else {
+        const msg = (body as { message?: string } | null)?.message;
+        reject(new Error(msg ?? `Error ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () =>
+      reject(new Error('Se cortó la conexión durante la subida. Probá de nuevo.'));
+    xhr.send(fd);
   });
-  return DisplayTrackSchema.parse(await jsonOrThrow(res));
 }
 
 export async function updateTrack(

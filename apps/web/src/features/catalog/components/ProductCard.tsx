@@ -5,6 +5,7 @@ import { cn } from '@pos-tercos/ui';
 import { Plus } from 'lucide-react';
 import { COP } from '../../../lib/format';
 import { displayBasePrice } from '../../../lib/menu-price';
+import { getMenuPromoBadge, usePromotions } from '../../promotions';
 
 export function ProductCard({
   product,
@@ -15,6 +16,9 @@ export function ProductCard({
   unavailable?: boolean;
   onClick: () => void;
 }) {
+  const promotions = usePromotions((s) => s.promotions);
+  const price = displayBasePrice(product);
+  const promo = unavailable ? null : getMenuPromoBadge(product.id, price, promotions);
   return (
     <button
       type="button"
@@ -54,6 +58,11 @@ export function ProductCard({
             Agotado
           </span>
         ) : null}
+        {promo ? (
+          <span className="absolute left-1.5 top-1.5 rounded-md bg-emerald-600 px-1.5 py-0.5 text-[0.625rem] font-bold text-white shadow sm:left-2 sm:top-2 sm:px-2 sm:py-1 sm:text-xs">
+            {promo.label}
+          </span>
+        ) : null}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1 sm:gap-2 sm:p-4">
@@ -67,9 +76,20 @@ export function ProductCard({
         ) : null}
 
         <div className="mt-1 flex items-center justify-between gap-3 sm:mt-3">
-          <span className="text-sm font-bold tabular-nums text-foreground sm:order-2 sm:text-base sm:text-primary">
-            {COP.format(displayBasePrice(product))}
-          </span>
+          {promo?.discountedPrice != null ? (
+            <span className="flex flex-col items-start sm:order-2 sm:items-end">
+              <span className="text-xs tabular-nums text-muted-foreground line-through">
+                {COP.format(price)}
+              </span>
+              <span className="text-sm font-bold tabular-nums text-emerald-500 sm:text-base">
+                {COP.format(promo.discountedPrice)}
+              </span>
+            </span>
+          ) : (
+            <span className="text-sm font-bold tabular-nums text-foreground sm:order-2 sm:text-base sm:text-primary">
+              {COP.format(price)}
+            </span>
+          )}
           {unavailable ? (
             <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">
               Agotado

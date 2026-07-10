@@ -85,6 +85,15 @@ export function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
     paymentActorId: row.paymentActorId,
     paymentActorName: row.paymentActor?.fullName ?? null,
     paymentNote: row.paymentNote,
+    // El reparto por bolsillo solo tiene sentido pagada (la columna tiene
+    // default 'CUENTA' aunque no haya pago — sin filtrar mostraría
+    // "Cuenta · $0" en facturas por pagar).
+    paymentPocket:
+      paymentStatus === 'PAID'
+        ? (row.paymentPocket as 'EFECTIVO' | 'CUENTA' | 'MIXTO')
+        : null,
+    paymentCashAmount: paymentStatus === 'PAID' ? Number(row.paymentCashAmount) : null,
+    paymentBankAmount: paymentStatus === 'PAID' ? Number(row.paymentBankAmount) : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     items,

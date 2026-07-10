@@ -23,6 +23,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
+import { ProductCategoriesModule } from './product-categories/product-categories.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { DisplayModule } from './display/display.module';
 import { KitchenModule } from './kitchen/kitchen.module';
@@ -71,6 +72,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     IngredientsModule,
     SubproductsModule,
     ProductsModule,
+    ProductCategoriesModule,
     RecipesModule,
     PromotionsModule,
     InventoryModule,

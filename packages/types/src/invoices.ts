@@ -8,6 +8,10 @@ export type InvoiceStatus = z.infer<typeof InvoiceStatusEnum>;
 export const InvoicePaymentStatusEnum = z.enum(['PENDING', 'PAID']);
 export type InvoicePaymentStatus = z.infer<typeof InvoicePaymentStatusEnum>;
 
+/** Bolsillo de tesorería del que salió el pago al proveedor. */
+export const PaymentPocketEnum = z.enum(['EFECTIVO', 'CUENTA', 'MIXTO']);
+export type PaymentPocket = z.infer<typeof PaymentPocketEnum>;
+
 // ====================================================================
 // IA EXTRACTION (output del LLM, validado en backend antes de guardar)
 // ====================================================================
@@ -92,6 +96,10 @@ export const InvoiceSchema = z.object({
   paymentActorId: z.string().uuid().nullable(),
   paymentActorName: z.string().nullable().optional(),
   paymentNote: z.string().nullable(),
+  /** Bolsillo del que salió el pago. NULL mientras no esté PAID. */
+  paymentPocket: PaymentPocketEnum.nullable(),
+  paymentCashAmount: z.number().nullable(),
+  paymentBankAmount: z.number().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   items: z.array(InvoiceItemSchema).optional(),
@@ -153,6 +161,53 @@ export const ConfirmInvoiceItemSchema = z
   });
 export type ConfirmInvoiceItem = z.infer<typeof ConfirmInvoiceItemSchema>;
 
+/**
+ * Key de storage de un comprobante de pago PRE-subido (aún sin factura):
+ * siempre `invoice-payments/pending/{uuid}.{ext}`. El regex evita pasar la
+ * key de OTRO recurso (foto de factura, comprobante ya asociado) a
+ * discard-payment-proof (delete) o al confirm (get).
+ */
+export const PendingPaymentProofKeySchema = z
+  .string()
+  .regex(
+    /^invoice-payments\/pending\/[0-9a-f-]{36}\.[a-z0-9]{2,5}$/i,
+    'proofStorageKey inválida',
+  );
+
+/**
+ * Pago al proveedor declarado EN la confirmación (la factura nace pagada).
+ * El comprobante es OBLIGATORIO: o una imagen pre-subida vía
+ * `upload-payment-proof` (carga manual), o la propia foto de la factura
+ * (flujo IA — el backend la copia como comprobante). Exactamente uno.
+ */
+export const ConfirmInvoicePaymentSchema = z
+  .object({
+    proofStorageKey: PendingPaymentProofKeySchema.optional(),
+    /** Usar la foto de la factura como comprobante (solo flujo con foto). */
+    useInvoicePhotoAsProof: z.boolean().optional(),
+    cashAmount: z.number().nonnegative(),
+    bankAmount: z.number().nonnegative(),
+    /** YYYY-MM-DD; default hoy. El backend rechaza fechas futuras. */
+    paidAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD')
+      .optional(),
+    note: z.string().max(500).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasKey = data.proofStorageKey !== undefined;
+    const usesPhoto = data.useInvoicePhotoAsProof === true;
+    if (hasKey === usesPhoto) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'El comprobante es obligatorio: enviá proofStorageKey O useInvoicePhotoAsProof (exactamente uno)',
+        path: ['proofStorageKey'],
+      });
+    }
+  });
+export type ConfirmInvoicePayment = z.infer<typeof ConfirmInvoicePaymentSchema>;
+
 export const ConfirmInvoiceSchema = z.object({
   supplierNit: z.string().min(1).max(40),
   supplierName: z.string().min(1).max(120),
@@ -161,6 +216,8 @@ export const ConfirmInvoiceSchema = z.object({
   iva: z.number().nonnegative().optional(),
   items: z.array(ConfirmInvoiceItemSchema).min(1),
   notes: z.string().max(500).optional(),
+  /** Presente = la factura nace CONFIRMED + PAGADA (comprobante obligatorio). */
+  payment: ConfirmInvoicePaymentSchema.optional(),
 });
 export type ConfirmInvoice = z.infer<typeof ConfirmInvoiceSchema>;
 
@@ -198,6 +255,18 @@ export const DiscardPhotoSchema = z.object({
   photoStorageKey: PhotoStorageKeySchema,
 });
 export type DiscardPhoto = z.infer<typeof DiscardPhotoSchema>;
+
+/** Respuesta al pre-subir un comprobante de pago (antes de confirmar). */
+export const UploadPaymentProofResponseSchema = z.object({
+  proofStorageKey: PendingPaymentProofKeySchema,
+});
+export type UploadPaymentProofResponse = z.infer<typeof UploadPaymentProofResponseSchema>;
+
+/** Descartar un comprobante pre-subido que nunca se confirmó. */
+export const DiscardPaymentProofSchema = z.object({
+  proofStorageKey: PendingPaymentProofKeySchema,
+});
+export type DiscardPaymentProof = z.infer<typeof DiscardPaymentProofSchema>;
 
 // Response al clonar (sí persiste un draft, porque el usuario ya conoce la fuente).
 export const InvoiceDraftResponseSchema = z.object({

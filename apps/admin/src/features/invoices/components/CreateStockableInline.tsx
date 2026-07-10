@@ -112,7 +112,16 @@ export function CreateStockableInline({
         });
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error desconocido');
+      const msg = e instanceof Error ? e.message : 'Error desconocido';
+      // Solo el dueño crea PRODUCTOS (definen precio de venta). El cajero/operativo
+      // SÍ puede crear insumos acá. Si el backend rechaza el producto por rol,
+      // mostramos una guía clara en vez del "not allowed" crudo.
+      const forbidden = /not allowed|forbidden|403/i.test(msg);
+      setErr(
+        forbidden && type === 'PRODUCT'
+          ? 'Solo el dueño puede crear productos de reventa (definen precio de venta). Registralo como insumo, o pedile al dueño que cree el producto.'
+          : msg,
+      );
     } finally {
       setSubmitting(false);
     }

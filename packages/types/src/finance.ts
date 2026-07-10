@@ -51,6 +51,10 @@ export const FinancePendingPayrollSchema = z.object({
   /** Ej: "Parte 1 · 1–7 may 2026 · Quincena 1" */
   periodLabel: z.string(),
   total: z.number(),
+  /** Semana EN CURSO: `total` es lo devengado hasta `accruedThrough`, no la
+   *  semana completa. Las semanas cerradas no traen estos campos. */
+  inProgress: z.boolean().optional(),
+  accruedThrough: z.string().optional(), // YYYY-MM-DD
 });
 export type FinancePendingPayroll = z.infer<typeof FinancePendingPayrollSchema>;
 

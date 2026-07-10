@@ -1,7 +1,7 @@
 'use client';
 
 import type { Promotion, Sale } from '@pos-tercos/types';
-import { StatusBadge, Money } from '@pos-tercos/ui';
+import { ConfirmDialog, StatusBadge, Money } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { getErrorMessage } from '../../../lib/errors';
 import { logError } from '../../../lib/client-log';
@@ -36,6 +36,7 @@ export function OrdersPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [payTab, setPayTab] = useState<Sale | null>(null);
   const [editTab, setEditTab] = useState<Sale | null>(null);
+  const [cancelTab, setCancelTab] = useState<Sale | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -97,10 +98,9 @@ export function OrdersPanel() {
     }
   };
 
-  const handleCancel = async (tab: Sale) => {
-    if (!window.confirm(`¿Cancelar la cuenta de ${tab.customerName ?? `#${tab.receiptNumber}`}?`)) {
-      return;
-    }
+  const handleCancel = async () => {
+    const tab = cancelTab;
+    if (!tab) return;
     setBusyId(tab.id);
     try {
       await cancelSale(tab.id);
@@ -112,6 +112,7 @@ export function OrdersPanel() {
         );
       }
       await refresh();
+      setCancelTab(null);
     } catch (err) {
       setError(getErrorMessage(err, 'No se pudo cancelar la cuenta'));
     } finally {
@@ -152,7 +153,7 @@ export function OrdersPanel() {
                   onPay={() => void openWithFresh(tab, setPayTab)}
                   onEdit={() => void openWithFresh(tab, setEditTab)}
                   onSendKitchen={() => void handleSendKitchen(tab)}
-                  onCancel={() => void handleCancel(tab)}
+                  onCancel={() => setCancelTab(tab)}
                 />
               ))}
             </ul>
@@ -208,6 +209,18 @@ export function OrdersPanel() {
           setEditTab(null);
           notifyOrdersChanged();
         }}
+      />
+
+      <ConfirmDialog
+        open={cancelTab !== null}
+        title="¿Cancelar la cuenta?"
+        description={`La cuenta de ${cancelTab?.customerName ?? `#${cancelTab?.receiptNumber ?? ''}`} se marca como no pagada. Esta acción no se puede deshacer.`}
+        confirmLabel="Sí, cancelar cuenta"
+        cancelLabel="Volver"
+        destructive
+        pending={busyId === cancelTab?.id}
+        onCancel={() => setCancelTab(null)}
+        onConfirm={() => void handleCancel()}
       />
     </aside>
   );

@@ -6,9 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import {
   cartLinesToCreateItems,
-  cartSubtotal,
   useCartStore,
 } from '../../cart';
+import { computeCartPromoTotals, usePromotions } from '../../promotions';
 import { createWebOrder } from '../api/create-order';
 import { useCartReconcile } from '../hooks/use-cart-reconcile';
 import { useActiveOrder } from '../store/active-order-store';
@@ -33,7 +33,10 @@ export function CheckoutForm() {
 
   const { change, hasChanges, apply } = useCartReconcile();
 
-  const subtotal = cartSubtotal(items);
+  const promotions = usePromotions((s) => s.promotions);
+  // Preview con promos del canal web; el total autoritativo lo calcula el
+  // backend al crear el pedido con el mismo motor.
+  const totals = computeCartPromoTotals(items, promotions);
   // Celular colombiano: 10 dígitos que empiezan en 3 (los móviles). Es el canal
   // de WhatsApp del pedido, por eso no aceptamos fijos ni números imposibles.
   const phoneValid = /^3\d{9}$/.test(phone10);
@@ -151,12 +154,17 @@ export function CheckoutForm() {
           <div className="flex flex-col gap-1">
             <span className="text-sm font-semibold text-foreground">Total estimado</span>
             <span className="text-xs text-muted-foreground">
-              {items.length === 1 ? '1 producto' : `${items.length} productos`} · sin
-              promociones aplicadas
+              {items.length === 1 ? '1 producto' : `${items.length} productos`}
+              {totals.discount > 0 ? (
+                <span className="font-semibold text-emerald-500">
+                  {' '}
+                  · −{COP.format(totals.discount)} en promos
+                </span>
+              ) : null}
             </span>
           </div>
           <span className="text-3xl font-extrabold tabular-nums text-foreground">
-            {COP.format(subtotal)}
+            {COP.format(totals.total)}
           </span>
         </div>
       </section>

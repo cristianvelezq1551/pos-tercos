@@ -27,6 +27,7 @@ const promo = (over: Partial<Promotion> = {}): Promotion => ({
   timeEnd: '23:59:59',
   activeFrom: null,
   activeTo: null,
+  channel: 'BOTH',
   isActive: true,
   createdById: null,
   createdAt: new Date('2026-01-01T00:00:00Z').toISOString(),

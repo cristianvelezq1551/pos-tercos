@@ -4,7 +4,8 @@ import { z } from 'zod';
 const ListSchema = z.array(PromotionSchema);
 
 export async function fetchActivePromotions(): Promise<Promotion[]> {
-  const res = await fetch('/api/promotions?only_active=true', {
+  // channel=POS: las promos solo-web no aplican en caja (ni tachados ni cobro).
+  const res = await fetch('/api/promotions?only_active=true&channel=POS', {
     credentials: 'include',
     cache: 'no-store',
   });

@@ -20,6 +20,7 @@ import { PromotionProductsSection } from './PromotionProductsSection';
 const INITIAL_STATE: FormState = {
   name: '',
   type: 'PERCENT_OFF',
+  channel: 'BOTH',
   discountPctPercent: '',
   discountFixed: '',
   bogoBuyQty: '1',

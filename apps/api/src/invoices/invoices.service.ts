@@ -14,7 +14,9 @@ import { LLMService } from '../adapters/llm/llm.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
-import { extensionForMime, type SupportedImageMime } from '../common/image-mime';
+import { detectImageMime, extensionForMime, mimeForExtension, type SupportedImageMime } from '../common/image-mime';
+import { ymdLocal } from '../common/local-dates';
+import { pocketOf, resolvePocketSplit } from '../common/pocket-split';
 import { InventoryService } from '../inventory/inventory.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -43,6 +45,19 @@ interface ConfirmProduct {
   unitStock: string | null;
   conversionFactor: Prisma.Decimal | null;
   lastUnitCost: Prisma.Decimal | null;
+}
+
+/** Pago resuelto para escribir en el header al confirmar (factura nace pagada). */
+interface PreparedPayment {
+  proofKey: string;
+  paidAt: Date;
+  cash: number;
+  bank: number;
+  pocket: 'EFECTIVO' | 'CUENTA' | 'MIXTO';
+  note: string | null;
+  /** Key pre-subida a borrar recién cuando la tx confirme (no antes: si la tx
+   *  falla el usuario reintenta sin re-subir). */
+  pendingKeyToCleanup: string | null;
 }
 
 /**
@@ -155,13 +170,18 @@ export class InvoicesService {
     referencedKeys: number;
     deleted: number;
   }> {
-    const [storageKeys, dbRows] = await Promise.all([
+    // Fotos de factura + comprobantes pre-subidos abandonados. Los pendientes
+    // nunca quedan referenciados (el confirm los copia a invoice-payments/{id}
+    // y borra el original) — todo lo que sobreviva en pending/ es huérfano.
+    const [photoKeys, pendingProofKeys, dbRows] = await Promise.all([
       this.storage.listKeys('invoices'),
+      this.storage.listKeys('invoice-payments/pending'),
       this.prisma.invoice.findMany({
         where: { photoStorageKey: { not: null } },
         select: { photoStorageKey: true },
       }),
     ]);
+    const storageKeys = [...photoKeys, ...pendingProofKeys];
     const referenced = new Set(
       dbRows.map((r) => r.photoStorageKey).filter((k): k is string => k !== null),
     );
@@ -270,6 +290,25 @@ export class InvoicesService {
     await this.storage.delete(photoStorageKey).catch(() => {});
   }
 
+  /**
+   * Pre-sube un comprobante de pago (carga manual con "nace pagada"). No toca
+   * DB: el cliente manda la key en `payment.proofStorageKey` al confirmar, o
+   * la descarta si abandona — mismo patrón que upload-photo/discard-photo.
+   */
+  async uploadPendingPaymentProof(
+    buffer: Buffer,
+    mime: string,
+    ext: string,
+  ): Promise<{ proofStorageKey: string }> {
+    const stored = await this.storage.put('invoice-payments/pending', buffer, mime, ext);
+    return { proofStorageKey: stored.key };
+  }
+
+  /** Limpia un comprobante pre-subido que nunca se confirmó (best-effort). */
+  async discardPendingPaymentProof(proofStorageKey: string): Promise<void> {
+    await this.storage.delete(proofStorageKey).catch(() => {});
+  }
+
   async list(opts: { status?: string; supplierId?: string; limit?: number } = {}): Promise<Invoice[]> {
     const where: Prisma.InvoiceWhereInput = {};
     if (opts.status) where.status = opts.status as Prisma.InvoiceWhereInput['status'];
@@ -314,12 +353,30 @@ export class InvoicesService {
 
     const supplier = await this.suppliers.upsertByNit(input.supplierNit, input.supplierName);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const invoiceUpdated = await this.replaceItemsAndHeader(tx, id, input, supplier.id, userId);
-      await this.writePurchaseMovements(tx, id, input, ingredients, products, supplier, userId);
-      await this.upsertSupplierProductsAndCosts(tx, input, ingredients, products, supplier);
-      return invoiceUpdated;
-    });
+    // "Nace pagada": resuelve el comprobante (copia de la foto de la factura o
+    // imagen pre-subida) ANTES de la tx — el CHECK de DB exige comprobante y
+    // fecha en el mismo instante en que payment_status pasa a PAID.
+    const payment = input.payment
+      ? await this.preparePaymentAtConfirm(id, existing.photoStorageKey, input)
+      : null;
+
+    let updated;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        const invoiceUpdated = await this.replaceItemsAndHeader(tx, id, input, supplier.id, userId, payment);
+        await this.writePurchaseMovements(tx, id, input, ingredients, products, supplier, userId);
+        await this.upsertSupplierProductsAndCosts(tx, input, ingredients, products, supplier);
+        return invoiceUpdated;
+      });
+    } catch (err) {
+      // La copia del comprobante quedó huérfana — limpiarla. El pre-subido
+      // original NO se toca (el usuario reintenta sin re-subir).
+      if (payment) await this.storage.delete(payment.proofKey).catch(() => {});
+      throw err;
+    }
+    if (payment?.pendingKeyToCleanup) {
+      await this.storage.delete(payment.pendingKeyToCleanup).catch(() => {});
+    }
 
     await this.audit.log({
       userId,
@@ -333,6 +390,23 @@ export class InvoicesService {
         total: input.total,
       },
     });
+    if (payment) {
+      await this.audit.log({
+        userId,
+        action: 'INVOICE_PAYMENT_MARKED',
+        entityType: 'invoice',
+        entityId: id,
+        metadata: {
+          total: input.total,
+          paidAt: payment.paidAt.toISOString(),
+          proofImageKey: payment.proofKey,
+          pocket: payment.pocket,
+          cashAmount: payment.cash,
+          bankAmount: payment.bank,
+          atConfirm: true,
+        },
+      });
+    }
 
     this.notifyCostIncreases(input, ingredients, products, supplier, id);
 
@@ -421,15 +495,64 @@ export class InvoicesService {
     }
   }
 
+  /**
+   * Resuelve el pago declarado en la confirmación: valida fecha y reparto por
+   * bolsillo, y materializa el comprobante como COPIA en
+   * `invoice-payments/{id}` — nunca aliasa la foto de la factura (desmarcar el
+   * pago borra el comprobante y se llevaría la foto).
+   */
+  private async preparePaymentAtConfirm(
+    invoiceId: string,
+    photoStorageKey: string | null,
+    input: ConfirmInvoice,
+  ): Promise<PreparedPayment> {
+    const p = input.payment as NonNullable<ConfirmInvoice['payment']>;
+    if (p.paidAt && p.paidAt > ymdLocal(new Date())) {
+      throw new BadRequestException('La fecha del pago no puede ser futura.');
+    }
+    const split = resolvePocketSplit(p.cashAmount, p.bankAmount, input.total);
+
+    const sourceKey = p.useInvoicePhotoAsProof ? photoStorageKey : (p.proofStorageKey as string);
+    if (!sourceKey) {
+      throw new BadRequestException(
+        'Esta factura no tiene foto para usar como comprobante — subí una imagen del comprobante.',
+      );
+    }
+    const buffer = await this.storage.get(sourceKey).catch(() => null);
+    if (!buffer) {
+      throw new BadRequestException(
+        p.useInvoicePhotoAsProof
+          ? 'La foto de la factura ya no está disponible. Volvé a subirla.'
+          : 'El comprobante ya no está disponible. Volvé a subirlo.',
+      );
+    }
+    const ext = sourceKey.split('.').pop() ?? 'jpg';
+    const mime = detectImageMime(buffer) ?? mimeForExtension(ext);
+    const stored = await this.storage.put(`invoice-payments/${invoiceId}`, buffer, mime, ext);
+
+    const paidAt = p.paidAt ? new Date(`${p.paidAt}T12:00:00.000Z`) : new Date();
+    return {
+      proofKey: stored.key,
+      paidAt,
+      cash: split.cash,
+      bank: split.bank,
+      pocket: pocketOf(split),
+      note: p.note?.trim() || null,
+      pendingKeyToCleanup: p.useInvoicePhotoAsProof ? null : (p.proofStorageKey as string),
+    };
+  }
+
   /** Reemplaza los invoice_items por los editados y actualiza el header de la
    *  factura a CONFIRMED. paymentStatus arranca en PENDING (confirmar = generó
-   *  la obligación de pagar al proveedor). */
+   *  la obligación de pagar al proveedor), salvo que el confirm declare el
+   *  pago (`payment`) — la factura nace PAGADA con comprobante. */
   private async replaceItemsAndHeader(
     tx: Prisma.TransactionClient,
     id: string,
     input: ConfirmInvoice,
     supplierId: string,
     userId: string,
+    payment: PreparedPayment | null,
   ) {
     await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
     await tx.invoiceItem.createMany({
@@ -458,11 +581,24 @@ export class InvoicesService {
         confirmedById: userId,
         confirmedAt: new Date(),
         notes: input.notes ?? null,
-        paymentStatus: 'PENDING',
-        paidAt: null,
-        paymentProofKey: null,
-        paymentActorId: null,
-        paymentNote: null,
+        ...(payment
+          ? {
+              paymentStatus: 'PAID',
+              paidAt: payment.paidAt,
+              paymentProofKey: payment.proofKey,
+              paymentActorId: userId,
+              paymentNote: payment.note,
+              paymentPocket: payment.pocket,
+              paymentCashAmount: payment.cash,
+              paymentBankAmount: payment.bank,
+            }
+          : {
+              paymentStatus: 'PENDING',
+              paidAt: null,
+              paymentProofKey: null,
+              paymentActorId: null,
+              paymentNote: null,
+            }),
       },
       include: includeFull(),
     });

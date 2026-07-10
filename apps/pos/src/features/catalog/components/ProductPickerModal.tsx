@@ -1,6 +1,6 @@
 'use client';
 
-import type { Product, ProductModifier, ProductSize } from '@pos-tercos/types';
+import type { Product, ProductModifier, ProductSize, Promotion } from '@pos-tercos/types';
 import {
   Button,
   Dialog,
@@ -9,6 +9,7 @@ import {
   NumberInput,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
+import { getLinePromoDiscount } from '../../sales/lib/promo-preview';
 import { SelectableRow } from './SelectableRow';
 
 export type PickerSelection = {
@@ -23,11 +24,14 @@ export type PickerSelection = {
 
 export function ProductPickerModal({
   product,
+  promos = [],
   open,
   onClose,
   onConfirm,
 }: {
   product: Product | null;
+  /** Promos activas del canal caja — para previsualizar el precio con descuento. */
+  promos?: readonly Promotion[];
   open: boolean;
   onClose: () => void;
   onConfirm: (sel: PickerSelection) => void;
@@ -66,11 +70,19 @@ export function ProductPickerModal({
     return product.basePrice + sizeMod + modSum;
   }, [product, selectedSize, selectedModifiers]);
 
+  const qty = quantity ?? 0;
+  // Descuento de promo para la selección actual (mismo motor que el carrito).
+  const lineDiscount = useMemo(
+    () => (product ? getLinePromoDiscount(product.id, unitPrice, qty, promos) : 0),
+    [product, unitPrice, qty, promos],
+  );
+
   if (!product) return null;
 
-  const qty = quantity ?? 0;
   const canConfirm = (!requiresSize || sizeId !== null) && qty > 0;
   const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
+  const lineTotal = unitPrice * qty;
+  const discountedTotal = lineTotal - lineDiscount;
 
   const toggleModifier = (id: string) => {
     setModifierIds((prev) => {
@@ -157,8 +169,23 @@ export function ProductPickerModal({
           <span className="text-sm text-muted-foreground">
             <Money amount={unitPrice} className="text-current" /> × {qty}
           </span>
-          <Money amount={unitPrice * qty} size="xl" weight="bold" />
+          {lineDiscount > 0 ? (
+            <span className="flex items-baseline gap-2">
+              <Money
+                amount={lineTotal}
+                className="text-muted-foreground line-through"
+              />
+              <Money amount={discountedTotal} size="xl" weight="bold" className="text-success" />
+            </span>
+          ) : (
+            <Money amount={lineTotal} size="xl" weight="bold" />
+          )}
         </div>
+        {lineDiscount > 0 ? (
+          <p className="-mt-2 text-right text-xs font-medium text-success">
+            Promo aplicada · ahorrás <Money amount={lineDiscount} className="text-success" />
+          </p>
+        ) : null}
       </div>
     </Dialog>
   );

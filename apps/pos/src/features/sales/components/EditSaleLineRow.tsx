@@ -1,5 +1,6 @@
 'use client';
 
+import type { ManualDiscount } from '@pos-tercos/types';
 import { Money, cn } from '@pos-tercos/ui';
 import { Lock, Minus, Plus, X } from 'lucide-react';
 
@@ -14,6 +15,8 @@ export interface EditLine {
   modifierNames: string[];
   notes: string | null;
   unitPrice: number;
+  /** Descuento manual de la línea (se preserva al editar — se reenvía al server). */
+  manualDiscount: ManualDiscount | null;
   /** Cocina ya la tiene en curso (preparación) — no se puede tocar. */
   locked: boolean;
 }
@@ -22,6 +25,8 @@ export function EditSaleLineRow({
   line,
   busy,
   plusDisabled = false,
+  lineDiscount = 0,
+  lineTotal,
   onQty,
   onRemove,
 }: {
@@ -29,9 +34,15 @@ export function EditSaleLineRow({
   busy: boolean;
   /** Producto agotado: no se puede sumar más (sí bajar o quitar). */
   plusDisabled?: boolean;
+  /** Descuento estimado de la línea (promo o manual) — muestra tachado + total. */
+  lineDiscount?: number;
+  /** Total estimado de la línea YA descontado (cuando lineDiscount > 0). */
+  lineTotal?: number;
   onQty: (delta: number) => void;
   onRemove: () => void;
 }) {
+  const lineSubtotal = line.unitPrice * line.quantity;
+  const discounted = lineDiscount > 0 && lineTotal !== undefined;
   return (
     <li
       className={cn(
@@ -92,12 +103,18 @@ export function EditSaleLineRow({
         </span>
       )}
 
-      <Money
-        amount={line.unitPrice * line.quantity}
-        size="sm"
-        weight="medium"
-        className="w-20 shrink-0 text-right"
-      />
+      <span className="w-24 shrink-0 text-right">
+        {discounted ? (
+          <>
+            <span className="block text-[0.6875rem] text-muted-foreground line-through tabular-nums">
+              <Money amount={lineSubtotal} size="xs" weight="normal" className="text-current" />
+            </span>
+            <Money amount={lineTotal} size="sm" weight="semibold" className="text-success" />
+          </>
+        ) : (
+          <Money amount={lineSubtotal} size="sm" weight="medium" />
+        )}
+      </span>
 
       {!line.locked ? (
         <button

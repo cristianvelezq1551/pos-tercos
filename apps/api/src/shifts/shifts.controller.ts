@@ -40,6 +40,8 @@ import { ShiftsService } from './shifts.service';
 // caja cerrada) es SOLO del Dueño. Un cajero solo VE su propia caja. Decisión
 // 2026-06-25.
 const OVERSIGHT_ROLES = new Set(['DUENO']);
+// Roles que pueden ver costos/ganancias (mismo alcance que @AdminAccess).
+const COST_VISIBLE_ROLES = new Set(['ADMIN_OPERATIVO', 'DUENO']);
 
 // CERRAR la caja del día (incluso si la abrió otro) sí lo puede hacer el
 // encargado operativo: en la práctica es quien hace el cierre. No le da lectura
@@ -165,7 +167,9 @@ export class ShiftsController {
     @CurrentUser() user: JwtAccessPayload,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ShiftSessionDetail> {
-    const detail = await this.shifts.getSessionDetail(id);
+    // La ganancia expone COSTOS: solo para roles admin/dueño, nunca al cajero.
+    const includeMargin = COST_VISIBLE_ROLES.has(user.role);
+    const detail = await this.shifts.getSessionDetail(id, includeMargin);
     if (!OVERSIGHT_ROLES.has(user.role) && detail.shift.cashierId !== user.sub) {
       throw new ForbiddenException('Solo podés ver el detalle de tu propia caja.');
     }

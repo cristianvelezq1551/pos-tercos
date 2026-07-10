@@ -458,6 +458,9 @@ importers:
       '@pos-tercos/brand':
         specifier: workspace:*
         version: link:../../packages/brand
+      '@pos-tercos/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@pos-tercos/types':
         specifier: workspace:*
         version: link:../../packages/types

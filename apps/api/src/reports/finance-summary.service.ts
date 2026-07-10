@@ -9,6 +9,7 @@ import {
   type FinanceSummary,
 } from '@pos-tercos/types';
 import { BusinessConfigService } from '../business-config/business-config.service';
+import { ymdLocal } from '../common/local-dates';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkersWeeklyService } from '../workers/workers-weekly.service';
@@ -178,8 +179,8 @@ export class FinanceSummaryService {
       year,
       month: month1,
       monthLabel: `${MONTHS_ES[month0]} ${year}`,
-      periodStart: ymd(monthStart),
-      periodEnd: ymd(monthEnd),
+      periodStart: ymdLocal(monthStart),
+      periodEnd: ymdLocal(monthEnd),
       revenue: round(revenue),
       paid,
       pending,
@@ -198,7 +199,4 @@ export class FinanceSummaryService {
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
-}
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
 }

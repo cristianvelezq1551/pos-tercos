@@ -1,11 +1,11 @@
 import { CatalogGrid, getMenuServer } from '../features/catalog';
+import { PromotionsHydrator } from '../features/promotions';
 import { WebTopbar } from '../components/WebTopbar';
 import { EmptyState } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
 import { WebFooter } from '../components/WebFooter';
 import { Hero } from '../components/Hero';
 import { HeroCarousel, getHeroServer } from '../features/hero';
-import { CategoryMosaic } from '../components/CategoryMosaic';
 import { MobileTabBar } from '../components/MobileTabBar';
 import { ActiveOrderBanner } from '../features/checkout';
 
@@ -18,6 +18,7 @@ export default async function Home() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background pb-24 text-foreground md:pb-0">
+      <PromotionsHydrator promotions={menu.promotions} />
       <WebTopbar transparent />
       <ActiveOrderBanner />
       <main className="flex-1">
@@ -30,10 +31,7 @@ export default async function Home() {
           </div>
         ) : null}
         {hasMenu ? (
-          <>
-            <CategoryMosaic categories={menu.categories} />
-            <CatalogGrid products={menu.products} categories={menu.categories} />
-          </>
+          <CatalogGrid products={menu.products} categories={menu.categories} />
         ) : (
           <div className="flex flex-1 items-center justify-center p-12">
             <EmptyState

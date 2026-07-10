@@ -4,8 +4,9 @@ import { ArrowLeft, ShoppingBag, Minus, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COP } from '../../../lib/format';
+import { computeCartPromoTotals, usePromotions } from '../../promotions';
 import type { CartLine } from '../lib/cart-types';
-import { cartLineCount, cartSubtotal, useCartStore } from '../store/cart-store';
+import { cartLineCount, useCartStore } from '../store/cart-store';
 
 export function CartDrawer({
   open,
@@ -19,6 +20,7 @@ export function CartDrawer({
   const items = useCartStore((s) => s.items);
   const removeLine = useCartStore((s) => s.removeLine);
   const updateQty = useCartStore((s) => s.updateQty);
+  const promotions = usePromotions((s) => s.promotions);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -41,7 +43,8 @@ export function CartDrawer({
 
   if (!open || !mounted) return null;
 
-  const subtotal = cartSubtotal(items);
+  // Preview con promos del canal web (el backend recalcula al crear el pedido).
+  const totals = computeCartPromoTotals(items, promotions);
   const totalCount = cartLineCount(items);
   const empty = items.length === 0;
 
@@ -107,10 +110,11 @@ export function CartDrawer({
             </div>
           ) : (
             <ul>
-              {items.map((line) => (
+              {items.map((line, idx) => (
                 <CartLineRow
                   key={line.lineId}
                   line={line}
+                  lineDiscount={totals.lineDiscounts[idx] ?? 0}
                   onDecrement={() => {
                     if (line.quantity <= 1) removeLine(line.lineId);
                     else updateQty(line.lineId, line.quantity - 1);
@@ -130,13 +134,21 @@ export function CartDrawer({
                 Subtotal ({totalCount} {totalCount === 1 ? 'producto' : 'productos'})
               </span>
               <span className="font-semibold tabular-nums text-foreground">
-                {COP.format(subtotal)}
+                {COP.format(totals.subtotal)}
               </span>
             </div>
+            {totals.discount > 0 ? (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-emerald-500">Descuento promos</span>
+                <span className="font-semibold tabular-nums text-emerald-500">
+                  −{COP.format(totals.discount)}
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between">
               <span className="text-base font-bold text-foreground">Total estimado</span>
               <span className="text-2xl font-extrabold tabular-nums text-foreground">
-                {COP.format(subtotal)}
+                {COP.format(totals.total)}
               </span>
             </div>
           </div>
@@ -164,11 +176,13 @@ export function CartDrawer({
 
 function CartLineRow({
   line,
+  lineDiscount,
   onDecrement,
   onIncrement,
   onRemove,
 }: {
   line: CartLine;
+  lineDiscount: number;
   onDecrement: () => void;
   onIncrement: () => void;
   onRemove: () => void;
@@ -219,9 +233,20 @@ function CartLineRow({
         ) : null}
 
         <div className="mt-1 flex items-center justify-between gap-3">
-          <span className="text-sm font-bold tabular-nums text-foreground">
-            {COP.format(lineTotal)}
-          </span>
+          {lineDiscount > 0 ? (
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-xs tabular-nums text-muted-foreground line-through">
+                {COP.format(lineTotal)}
+              </span>
+              <span className="text-sm font-bold tabular-nums text-emerald-500">
+                {COP.format(lineTotal - lineDiscount)}
+              </span>
+            </span>
+          ) : (
+            <span className="text-sm font-bold tabular-nums text-foreground">
+              {COP.format(lineTotal)}
+            </span>
+          )}
           <div className="inline-flex items-center gap-2">
             <button
               type="button"

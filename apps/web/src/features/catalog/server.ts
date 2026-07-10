@@ -7,6 +7,7 @@ import { publicFetch } from '../../lib/api-server';
 const EMPTY: PublicMenuResponse = {
   products: [],
   categories: [],
+  promotions: [],
   // Fallback de API caída: no bloquear el checkout por un fetch fallido.
   webOrdersEnabled: true,
   asOf: new Date(0).toISOString(),

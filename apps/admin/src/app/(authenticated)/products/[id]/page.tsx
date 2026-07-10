@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { ProductForm } from '../../../../features/products';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
-import type { Product } from '@pos-tercos/types';
+import type { Product, ProductCategory } from '@pos-tercos/types';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -27,6 +27,14 @@ export default async function EditProductPage({ params }: PageProps) {
     candidates = [];
   }
 
+  let categories: string[] = [];
+  try {
+    const cats = await serverFetchJson<ProductCategory[]>('/product-categories?only_active=true');
+    categories = cats.map((c) => c.name);
+  } catch {
+    categories = [];
+  }
+
   return (
     <>
       <PageHeader
@@ -39,7 +47,7 @@ export default async function EditProductPage({ params }: PageProps) {
         ]}
       />
       <Container size="4xl" padY="md">
-        <ProductForm initial={product} comboCandidates={candidates} />
+        <ProductForm initial={product} comboCandidates={candidates} categories={categories} />
       </Container>
     </>
   );

@@ -18,7 +18,7 @@ import {
   type UpdatePromotion,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess, CashierAccess } from '../auth/decorators/roles.decorator';
+import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PromotionsService } from './promotions.service';
 
@@ -29,8 +29,16 @@ export class PromotionsController {
   /** Cajeros también leen para mostrar tachados de precios en POS. */
   @CashierAccess()
   @Get()
-  list(@Query('only_active') onlyActive?: string): Promise<Promotion[]> {
-    return this.promotions.list({ onlyActive: onlyActive === 'true' });
+  list(
+    @Query('only_active') onlyActive?: string,
+    @Query('channel') channel?: string,
+  ): Promise<Promotion[]> {
+    return this.promotions.list({
+      onlyActive: onlyActive === 'true',
+      // Filtro opcional por canal (el POS pide channel=POS para no mostrar
+      // tachados de promos solo-web). Valor desconocido = sin filtro.
+      channel: channel === 'POS' || channel === 'WEB' ? channel : undefined,
+    });
   }
 
   @CashierAccess()
@@ -39,7 +47,7 @@ export class PromotionsController {
     return this.promotions.getById(id);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Post()
   create(
     @CurrentUser() user: JwtAccessPayload,
@@ -48,7 +56,7 @@ export class PromotionsController {
     return this.promotions.create(body, user.sub);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Patch(':id')
   update(
     @CurrentUser() user: JwtAccessPayload,
@@ -58,7 +66,7 @@ export class PromotionsController {
     return this.promotions.update(id, body, user.sub);
   }
 
-  @AdminAccess()
+  @OnlyDueno()
   @Delete(':id')
   deactivate(
     @CurrentUser() user: JwtAccessPayload,

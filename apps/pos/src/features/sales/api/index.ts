@@ -3,6 +3,7 @@ export { createSale } from './create';
 export { confirmPayment } from './confirm-payment';
 export { printReceipt, printComanda, sendTabToKitchen } from './print';
 export { cancelSale } from './cancel';
+export { carryOverOpenTab } from './carry-over';
 export { editSaleItems, changeSalePayment } from './edit';
 export { getSale } from './get';
 export { listSales, type ListSalesParams } from './list';

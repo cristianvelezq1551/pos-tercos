@@ -14,6 +14,7 @@ import type {
 import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
 import { BusinessConfigService } from '../business-config/business-config.service';
+import { utcDateOfLocalDay, ymdLocal } from '../common/local-dates';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CogsService } from './cogs.service';
@@ -120,8 +121,8 @@ export class FinancialReportsService {
       year,
       month: month1,
       monthLabel: `${MONTHS_ES[month0]} ${year}`,
-      periodStart: ymd(monthStart),
-      periodEnd: ymd(monthEnd),
+      periodStart: ymdLocal(monthStart),
+      periodEnd: ymdLocal(monthEnd),
       revenue: round(revenue),
       cogs: round(cogs),
       cogsPartial: pnl.cogsUnknownQty > 0,
@@ -236,17 +237,23 @@ export class FinancialReportsService {
   }
 
   /**
-   * Suma el costo de nómina del mes calendario. Espeja la lógica semanal de
-   * `WorkersService.computeBase`: MONTHLY = tasa diaria (salary*12/365) por
-   * días empleados; DAILY = suma de días no-descanso, aplicando overrides.
-   * Las novedades cuyo lunes (periodStart) cae dentro del mes se suman.
+   * Suma el costo de nómina de la ventana del mes del negocio. Espeja la lógica
+   * semanal de `WorkersService.computeBase`: MONTHLY = tasa diaria por días
+   * empleados; DAILY = suma de días no-descanso, aplicando overrides.
+   * Las novedades cuyo lunes (periodStart) cae dentro de la ventana se suman.
+   *
+   * ⚠️ hireDate/terminationDate/periodStart/workDate son fecha-solo (medianoche
+   * UTC) — se comparan contra límites `utcDateOfLocalDay`, NO contra la ventana
+   * local: con la ventana local el día 1 del mes se corría al mes vecino.
    */
   private async computePayrollForRange(monthStart: Date, monthEnd: Date): Promise<number> {
+    const startDay = utcDateOfLocalDay(monthStart);
+    const endDay = utcDateOfLocalDay(monthEnd);
     const users = await this.prisma.user.findMany({
       where: {
         payType: { not: null },
-        hireDate: { lte: monthEnd },
-        OR: [{ terminationDate: null }, { terminationDate: { gte: monthStart } }],
+        hireDate: { lte: endDay },
+        OR: [{ terminationDate: null }, { terminationDate: { gte: startDay } }],
       },
       select: {
         id: true,
@@ -260,10 +267,10 @@ export class FinancialReportsService {
 
     let total = 0;
     for (const u of users) {
-      total += await this.computeMonthlyBase(u, monthStart, monthEnd);
-      // Novedades cuyo lunes (periodStart) cae dentro del mes calendario.
+      total += await this.computeMonthlyBase(u, startDay, endDay);
+      // Novedades cuyo lunes (periodStart) cae dentro de la ventana.
       const adjs = await this.prisma.payrollAdjustment.findMany({
-        where: { userId: u.id, periodStart: { gte: monthStart, lte: monthEnd } },
+        where: { userId: u.id, periodStart: { gte: startDay, lte: endDay } },
         select: { amount: true },
       });
       for (const a of adjs) total += Number(a.amount);
@@ -271,7 +278,11 @@ export class FinancialReportsService {
     return total;
   }
 
-  /** Base del mes — mirror de `WorkersService.computeBase` sobre el rango completo. */
+  /**
+   * Base del mes — mirror de `WorkersService.computeBase` sobre el rango
+   * completo. `monthStart`/`monthEnd` llegan como fecha-solo en medianoche UTC
+   * (utcDateOfLocalDay), coherentes con hireDate/terminationDate/workDate.
+   */
   private async computeMonthlyBase(
     user: {
       id: string;
@@ -338,10 +349,6 @@ function round(n: number): number {
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
 }
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 /**
  * Parseo defensivo del JSON que devuelve el LLM. Si viene con code fences,
  * los removemos. Si falta algún campo, lanzamos un error claro (no devolvemos

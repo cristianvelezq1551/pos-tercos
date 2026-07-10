@@ -1,7 +1,7 @@
 'use client';
 
 import type { Sale } from '@pos-tercos/types';
-import { Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
+import { ConfirmDialog, Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { printReceipt } from '../api/print';
 import { cancelSale } from '../api/cancel';
@@ -27,22 +27,17 @@ export function HistoryRow({
   const [reprint, setReprint] = useState<'idle' | 'pending' | 'ok' | 'error'>('idle');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const active = isActiveSale(sale.status);
   const mins = minutesSince(sale.paidAt ?? sale.createdAt);
   const items = sale.items ?? [];
 
   const handleDelete = async () => {
-    if (
-      !window.confirm(
-        'Eliminar este pedido sin pagar. Queda CANCELADO en el historial (auditable). ¿Continuar?',
-      )
-    ) {
-      return;
-    }
     setBusy(true);
     try {
       await cancelSale(sale.id);
       await onChanged();
+      setConfirmDelete(false);
     } finally {
       setBusy(false);
     }
@@ -99,10 +94,22 @@ export function HistoryRow({
           onEdit={onEdit}
           onChangePayment={onChangePayment}
           onRefund={onRefund}
-          onDelete={() => void handleDelete()}
+          onDelete={() => setConfirmDelete(true)}
           onReprint={() => void handleReprint()}
         />
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="¿Eliminar este pedido?"
+        description="El pedido sin pagar queda CANCELADO en el historial (auditable). Esta acción no se puede deshacer."
+        confirmLabel="Sí, eliminar"
+        cancelLabel="Volver"
+        destructive
+        pending={busy}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void handleDelete()}
+      />
 
       {sale.status === 'VOID' && sale.voidReason ? (
         <p className="mt-2 rounded-md bg-destructive/10 px-2.5 py-1.5 text-[0.6875rem] leading-snug text-destructive">

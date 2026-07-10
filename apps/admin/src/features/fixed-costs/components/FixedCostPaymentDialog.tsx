@@ -4,6 +4,7 @@ import { Button, Dialog, FormField, Input, PinField, formatCop, isValidPin } fro
 import { FileImage } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
+import { ymdLocalToday } from '../../../lib/dates';
 import { markFixedCostPaid } from '../api/client';
 
 /** Diálogo de "marcar pagado" un costo fijo. El período (year, month) viene
@@ -29,7 +30,8 @@ export function FixedCostPaymentDialog({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  // ymdLocalToday, NO toISOString: de noche en Bogotá daría mañana.
+  const [paidAt, setPaidAt] = useState(ymdLocalToday());
   const [amount, setAmount] = useState<string>(String(expectedAmount));
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');

@@ -1,5 +1,6 @@
 export { CartPanel } from './components/CartPanel';
 export { OrdersPanel } from './components/OrdersPanel';
+export { OpenTabsResolver } from './components/OpenTabsResolver';
 export { ComandaFailureAlert } from './components/ComandaFailureAlert';
 export { CheckoutModal, type CheckoutSuccess } from './components/CheckoutModal';
 export { TransferSection } from './components/TransferSection';

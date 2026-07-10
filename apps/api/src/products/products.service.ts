@@ -30,6 +30,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
+import { ProductCategoriesService } from '../product-categories/product-categories.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { mimeForExtension } from '../common/image-mime';
 
@@ -48,6 +49,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
+    private readonly categories: ProductCategoriesService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -143,14 +145,16 @@ export class ProductsService {
     if (input.isCombo) {
       await this.assertComboComponentsAreNonComboProducts(input.comboComponents ?? []);
     }
+    const category = await this.categories.resolveCanonicalName(input.category);
     const row = await this.prisma.product.create({
       data: {
         name: input.name,
         description: input.description ?? null,
         preparationSteps: input.preparationSteps ?? [],
         basePrice: input.basePrice,
-        category: input.category ?? null,
+        category,
         imageUrl: input.imageUrl ?? null,
+        emoji: input.emoji?.trim() || null,
         modifiersEnabled: input.modifiersEnabled ?? false,
         isCombo: input.isCombo ?? false,
         comboPrice: input.isCombo ? (input.comboPrice ?? null) : null,
@@ -207,6 +211,12 @@ export class ProductsService {
       throw new BadRequestException('comboPrice must be null when isCombo is false');
     }
 
+    // Normaliza la categoría contra el catálogo curado (evita duplicados por tipeo).
+    const category =
+      input.category !== undefined
+        ? await this.categories.resolveCanonicalName(input.category)
+        : undefined;
+
     const row = await this.prisma.product.update({
       where: { id },
       data: {
@@ -214,8 +224,9 @@ export class ProductsService {
         ...(input.description !== undefined && { description: input.description }),
         ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
         ...(input.basePrice !== undefined && { basePrice: input.basePrice }),
-        ...(input.category !== undefined && { category: input.category }),
+        ...(category !== undefined && { category }),
         ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
+        ...(input.emoji !== undefined && { emoji: input.emoji?.trim() || null }),
         ...(input.modifiersEnabled !== undefined && { modifiersEnabled: input.modifiersEnabled }),
         ...(input.isCombo !== undefined && { isCombo: input.isCombo }),
         ...(input.comboPrice !== undefined && { comboPrice: input.comboPrice }),
@@ -518,6 +529,7 @@ function toProductDto(row: ProductWithChildren): Product {
     basePrice: Number(row.basePrice),
     category: row.category,
     imageUrl: row.imageUrl,
+    emoji: row.emoji,
     modifiersEnabled: row.modifiersEnabled,
     isCombo: row.isCombo,
     comboPrice: row.comboPrice !== null ? Number(row.comboPrice) : null,

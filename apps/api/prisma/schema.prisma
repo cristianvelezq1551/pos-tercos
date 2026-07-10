@@ -92,6 +92,9 @@ model Product {
   basePrice             Decimal             @map("base_price") @db.Decimal(12, 2)
   category              String?
   imageUrl              String?             @map("image_url")
+  /// Emoji representativo del producto (🍔🍟🥤). Alternativa ligera a la foto:
+  /// se muestra en el menú web cuando no hay imageUrl. null = sin emoji.
+  emoji                 String?
   modifiersEnabled      Boolean             @default(false) @map("modifiers_enabled")
   isCombo               Boolean             @default(false) @map("is_combo")
   comboPrice            Decimal?            @map("combo_price") @db.Decimal(12, 2)
@@ -125,6 +128,21 @@ model Product {
   @@index([isActive])
   @@index([directResale, isActive])
   @@map("products")
+}
+
+/// Catálogo curado de categorías de producto. Fuente de verdad para el selector
+/// del admin: los productos guardan el NOMBRE (products.category, denormalizado)
+/// pero solo pueden elegir de esta lista → evita duplicados por tipeo. Renombrar
+/// acá cascada a products.category; borrar se bloquea si hay productos usándola.
+model ProductCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("product_categories")
 }
 
 model ProductSize {
@@ -624,6 +642,7 @@ model Promotion {
   timeEnd        String             @map("time_end")
   activeFrom     DateTime?          @map("active_from") @db.Date
   activeTo       DateTime?          @map("active_to") @db.Date
+  channel        PromotionChannel   @default(BOTH)
   isActive       Boolean            @default(true) @map("is_active")
   createdById    String?            @map("created_by")
   createdAt      DateTime           @default(now()) @map("created_at")
@@ -932,6 +951,13 @@ enum PromotionType {
   BOGO
   FIXED_OFF
   COMBO_OFF
+}
+
+/// Dónde aplica la promoción: caja (POS), web pública, o ambos canales.
+enum PromotionChannel {
+  BOTH
+  POS
+  WEB
 }
 
 /// Estado de una sugerencia de compra (FASE 12.C).

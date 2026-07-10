@@ -274,6 +274,8 @@ export const ProductSchema = z.object({
   basePrice: z.number().nonnegative(),
   category: z.string().nullable(),
   imageUrl: z.string().nullable(),
+  /** Emoji representativo (🍔🍟🥤). Fallback visual cuando no hay imageUrl. */
+  emoji: z.string().nullable(),
   modifiersEnabled: z.boolean(),
   isCombo: z.boolean(),
   comboPrice: z.number().nullable(),
@@ -307,6 +309,10 @@ const ProductImageUrlSchema = z
     { message: 'imageUrl debe ser una URL absoluta o un path relativo a /' },
   );
 
+/** Emoji del producto: string corto (los emoji compuestos con ZWJ ocupan varios
+ *  code units). Vacío se normaliza a null en el service. */
+const ProductEmojiSchema = z.string().max(24);
+
 export const CreateProductSchema = z
   .object({
     name: z.string().min(1).max(120),
@@ -315,6 +321,7 @@ export const CreateProductSchema = z
     basePrice: z.number().nonnegative(),
     category: z.string().max(60).nullable().optional(),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
+    emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),
     comboPrice: z.number().nonnegative().nullable().optional(),
@@ -385,6 +392,7 @@ export const UpdateProductSchema = z
     basePrice: z.number().nonnegative().optional(),
     category: z.string().max(60).nullable().optional(),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
+    emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),
     comboPrice: z.number().nonnegative().nullable().optional(),

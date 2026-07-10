@@ -21,15 +21,18 @@ import {
   CloneInvoiceRequestSchema,
   ConfirmInvoiceSchema,
   CreateFromPhotoSchema,
+  DiscardPaymentProofSchema,
   DiscardPhotoSchema,
   type CloneInvoiceRequest,
   type ConfirmInvoice,
   type CreateFromPhoto,
+  type DiscardPaymentProof,
   type DiscardPhoto,
   type ExtractedInvoice,
   type ExtractInvoiceResponse,
   type Invoice,
   type InvoiceDraftResponse,
+  type UploadPaymentProofResponse,
 } from '@pos-tercos/types';
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -175,6 +178,36 @@ export class InvoicesController {
     @Body(new ZodValidationPipe(DiscardPhotoSchema)) body: DiscardPhoto,
   ): Promise<void> {
     await this.invoices.discardPhoto(body.photoStorageKey);
+  }
+
+  /**
+   * Pre-sube el comprobante de pago para "nace pagada" (carga manual). No crea
+   * nada en DB — el confirm asocia la key (o discard-payment-proof si abandona).
+   */
+  @AdminAccess()
+  @Post('upload-payment-proof')
+  @UseInterceptors(
+    FileInterceptor('proof', { limits: { fileSize: MAX_FILE_SIZE_BYTES } }),
+  )
+  async uploadPaymentProof(
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<UploadPaymentProofResponse> {
+    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
+    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    if (!detected) {
+      throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
+    }
+    return this.invoices.uploadPendingPaymentProof(file.buffer, detected.mime, detected.ext);
+  }
+
+  /** El usuario cerró el modal sin confirmar → limpiar el comprobante pre-subido. */
+  @AdminAccess()
+  @Post('discard-payment-proof')
+  @HttpCode(204)
+  async discardPaymentProof(
+    @Body(new ZodValidationPipe(DiscardPaymentProofSchema)) body: DiscardPaymentProof,
+  ): Promise<void> {
+    await this.invoices.discardPendingPaymentProof(body.proofStorageKey);
   }
 
   @AdminAccess()

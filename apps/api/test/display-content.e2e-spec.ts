@@ -85,6 +85,20 @@ describe('Turnero configurable E2E', () => {
     expect(img.body.length).toBeGreaterThan(0);
   });
 
+  it('reemplazar la imagen cambia el `?v=` de imageUrl (cache-bust del browser)', async () => {
+    const list = await request.get('/display/slides').set(auth()).expect(200);
+    const target = list.body.find((s: { name: string }) => s.name === 'Combo Test');
+    expect(target.imageUrl).toMatch(/\?v=.+$/);
+
+    const replaced = await request
+      .post(`/display/slides/${target.id}/image`)
+      .set(auth())
+      .attach('image', PNG_1X1, { filename: 't2.png', contentType: 'image/png' })
+      .expect(201);
+    expect(replaced.body.imageUrl).toMatch(/\?v=.+$/);
+    expect(replaced.body.imageUrl).not.toBe(target.imageUrl);
+  });
+
   it('un slide oculto desaparece de la config pública', async () => {
     const list = await request.get('/display/slides').set(auth()).expect(200);
     const target = list.body[0];

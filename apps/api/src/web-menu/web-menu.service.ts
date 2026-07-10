@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import type { PublicMenuProduct, PublicMenuResponse } from '@pos-tercos/types';
 import { BusinessConfigService } from '../business-config/business-config.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromotionsService } from '../promotions/promotions.service';
 
 @Injectable()
 export class WebMenuService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly businessConfig: BusinessConfigService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   /**
@@ -78,6 +80,9 @@ export class WebMenuService {
     return {
       products,
       categories,
+      // Promos activas del canal web (definiciones): la web calcula el precio
+      // con descuento client-side con el motor de domain (igual que el POS).
+      promotions: await this.promotions.loadPublicActive(new Date()),
       // #13 kill-switch: la web oculta el checkout cuando está apagado (el
       // create igual lo rechaza fresco; esto puede tardar el TTL del caché).
       webOrdersEnabled: await this.businessConfig.isWebOrdersEnabled(),

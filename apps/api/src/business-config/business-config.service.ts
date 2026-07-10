@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { BusinessConfig, UpdateBusinessConfig } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
+import { isUniqueViolation } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SINGLETON_ID = 'singleton';
@@ -17,11 +18,22 @@ export class BusinessConfigService {
   ) {}
 
   async get(): Promise<BusinessConfig> {
-    const row = await this.prisma.businessConfig.upsert({
-      where: { id: SINGLETON_ID },
-      update: {},
-      create: { id: SINGLETON_ID },
-    });
+    // Muchos endpoints leen la config en paralelo (estado + trend, menú web,
+    // etc.): con la tabla vacía dos upserts concurrentes chocan creando el
+    // singleton (P2002, el upsert de Prisma no es atómico sin fila) → el
+    // perdedor relee la fila ganadora.
+    const row = await this.prisma.businessConfig
+      .upsert({
+        where: { id: SINGLETON_ID },
+        update: {},
+        create: { id: SINGLETON_ID },
+      })
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
+          return this.prisma.businessConfig.findUniqueOrThrow({ where: { id: SINGLETON_ID } });
+        }
+        throw e;
+      });
     return { monthStartDay: row.monthStartDay, webOrdersEnabled: row.webOrdersEnabled };
   }
 
@@ -48,6 +60,12 @@ export class BusinessConfigService {
    * estado, pagos y cortesías coincidan entre sí y con el resto de reportes.
    *
    * startDay=1 (default) ⇒ mes calendario exacto.
+   *
+   * ⚠️ Estos límites son para columnas TIMESTAMP (paidAt, etc.). Para columnas
+   * fecha-solo (@db.Date: hireDate, periodStart de nómina, startedAt de costos
+   * fijos, …) derivar límites con `utcDateOfLocalDay` (common/local-dates) —
+   * y para serializar el período a YYYY-MM-DD usar `ymdLocal`, nunca
+   * toISOString (el 31 jul 23:59 local es 1 ago en UTC).
    */
   async getBusinessMonthWindow(
     year: number,

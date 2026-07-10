@@ -1,16 +1,19 @@
 'use client';
 
-import type { Product, Sale } from '@pos-tercos/types';
+import type { ManualDiscount, Product, Promotion, Sale } from '@pos-tercos/types';
 import { Button, Dialog, Money } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { ProductPickerModal, fetchActiveProducts, useAvailability } from '../../catalog';
 import { notifyCajaChanged } from '../../shifts/lib/caja-events';
 import { editSaleItems } from '../api/edit';
+import { fetchActivePromotions } from '../api';
 import { printComanda, sendTabToKitchen } from '../api/print';
 import { notifyComandaFailed } from '../lib/comanda-events';
 import { AddProductChips } from './AddProductChips';
 import { EditSaleLineRow, type EditLine } from './EditSaleLineRow';
 import { saleItemsToEditLines, selectionToEditLine } from '../lib/edit-sale-lines';
+import type { CartLine } from '../lib/cart-types';
+import { computeCartTotals, type ManualCartDiscounts } from '../lib/totals';
 import { getErrorMessage } from '../../../lib/errors';
 import { logError } from '../../../lib/client-log';
 
@@ -33,6 +36,7 @@ export function EditSaleModal({
 }) {
   const [lines, setLines] = useState<EditLine[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [pickerProduct, setPickerProduct] = useState<Product | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -56,9 +60,42 @@ export function EditSaleModal({
       const resaleMap = new Map(all.map((p) => [p.id, p.directResale] as const));
       setLines(saleItemsToEditLines(sale, resaleMap));
     });
+    // Promos activas para que el estimado coincida con el recálculo del server.
+    // Si falla, el estimado cae a "sin promos" (el server sigue siendo la verdad).
+    void fetchActivePromotions()
+      .then(setPromotions)
+      .catch((e) => {
+        logError('edit-sale-promotions', e, { saleId: sale.id });
+        setPromotions([]);
+      });
   }, [open, sale?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const estimatedTotal = lines.reduce((a, l) => a + l.unitPrice * l.quantity, 0);
+  // Estimado con el MISMO motor que el server usa al guardar (SalesEditService):
+  // descuento manual (de línea u orden) desactiva promos para toda la venta;
+  // sin manual, aplican las promos activas AHORA. El descuento sobre el total
+  // lo preserva el server (no se reenvía); los de línea se reenvían abajo.
+  const cartLines: CartLine[] = lines.map((l, i) => ({
+    lineId: String(i),
+    productId: l.productId,
+    productName: l.productName,
+    size: null,
+    modifiers: [],
+    quantity: l.quantity,
+    unitPrice: l.unitPrice,
+  }));
+  const manual: ManualCartDiscounts | undefined = (() => {
+    if (!sale) return undefined;
+    const lineDiscounts: Record<string, ManualDiscount> = {};
+    lines.forEach((l, i) => {
+      if (l.manualDiscount) lineDiscounts[String(i)] = l.manualDiscount;
+    });
+    const orderDiscount = sale.orderDiscount ?? null;
+    return orderDiscount !== null || Object.keys(lineDiscounts).length > 0
+      ? { lineDiscounts, orderDiscount }
+      : undefined;
+  })();
+  const totals = computeCartTotals(cartLines, promotions, new Date(), manual);
+  const estimatedTotal = totals.total;
   const diff = sale ? estimatedTotal - sale.total : 0;
   const canSave = lines.length > 0 && !pending;
 
@@ -67,6 +104,12 @@ export function EditSaleModal({
     setPending(true);
     setError(null);
     try {
+      // Reenviar los descuentos manuales de línea preserva lo que el cajero ya
+      // otorgó (el server los toma del payload, no de las filas viejas). Exigen
+      // motivo — se reusa el de la venta (existe siempre que hubo descuento).
+      const keepLineDiscounts = sale.discountReason != null;
+      const sendsLineDiscounts =
+        keepLineDiscounts && lines.some((l) => l.manualDiscount !== null);
       const updated = await editSaleItems(sale.id, {
         items: lines.map((l) => ({
           productId: l.productId,
@@ -76,7 +119,10 @@ export function EditSaleModal({
             ? l.modifierIds.map((modifierId) => ({ modifierId }))
             : undefined,
           notes: l.notes ?? undefined,
+          manualDiscount:
+            keepLineDiscounts && l.manualDiscount ? l.manualDiscount : undefined,
         })),
+        discountReason: sendsLineDiscounts ? (sale.discountReason ?? undefined) : undefined,
       });
       // Cuenta abierta sin pagar: lo NUEVO va por comanda incremental (tanda
       // "ADICIÓN"); si se quitó una línea ya enviada, avisar a cocina de voz.
@@ -134,6 +180,8 @@ export function EditSaleModal({
               line={l}
               busy={pending}
               plusDisabled={!isAvailable(l.productId)}
+              lineDiscount={totals.lines[i]?.lineDiscount ?? 0}
+              lineTotal={totals.lines[i]?.lineTotal}
               onQty={(delta) =>
                 setLines((prev) =>
                   prev.map((x, j) =>

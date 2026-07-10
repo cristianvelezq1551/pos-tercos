@@ -8,12 +8,14 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Express, Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
+import type { Express, Request, Response } from 'express';
 import {
   CreateDisplaySlideSchema,
   ReorderSchema,
@@ -30,6 +32,7 @@ import {
 import { AdminAccess } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { detectImageMime } from '../common/image-mime';
+import { sendBufferWithRangeSupport } from '../common/http-range';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { DisplayContentService } from './display-content.service';
 
@@ -55,21 +58,25 @@ export class DisplayContentController {
   ): Promise<void> {
     const { buffer, mime } = await this.content.getSlideImage(id);
     res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'public, max-age=60');
+    // La URL lleva `?v=` que cambia con cada reemplazo → cacheable fuerte.
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     res.send(buffer);
   }
 
+  // Límite holgado: el seeking del <audio> dispara varios range requests.
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 240 } })
   @Get('track-audio/:id')
   async trackAudio(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     const { buffer, mime } = await this.content.getTrackAudio(id);
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.send(buffer);
+    sendBufferWithRangeSupport(req, res, buffer, {
+      mime,
+      cacheControl: 'public, max-age=86400',
+    });
   }
 
   // ── Admin: slides ─────────────────────────────────────────────────
