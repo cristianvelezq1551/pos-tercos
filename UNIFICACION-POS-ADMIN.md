@@ -86,7 +86,7 @@ apps/admin/src/app/
   - **2c** ✅ motor `offline` portado (auto-contenido; base de todo).
   - **2d** ✅ port masivo: `catalog`, `sales`, `web-orders`, `printing` (mismo nombre) + `cortesias→caja-cortesias` y `shifts→caja-shifts` (renombradas; admin ya tiene las suyas de la vista dueño — NO se tocan). `logInfo` agregado. 139 archivos, verde. **Aún sin cablear.**
   - **2e** ✅ **cableado**: `app/caja/*` FUERA de `(authenticated)` (pantalla completa, sin sidebar) — rutas vender/historial/cierre/arqueos(+detalle)/shift·open/configuracion + `caja/layout` monta OfflineProvider + CortesiaWatchProvider + SessionKeeper + OfflineStatusBar + CajaTopbar (CajaNav + web-orders socket + badge). `getAccessTokenServer(admin_access)`. Fixups de ruta en features. typecheck+lint verdes. **Falta verificación en runtime (dev).**
-  - **2f** ⏳ Vitest en admin + restaurar tests de plata (totals/split/denominations/shift-summary) excluidos en 2b-2d.
+  - **2f** ✅ Vitest en admin (config + setup + deps) + **9 tests / 63 casos** restaurados del POS (split, totals, denominations, shift-summary, checkout-validation, drain-policy, useCheckoutFlow, VoidModal, OfflineReviewTray). `pnpm -F admin test` verde. Integrado a `pnpm test` (turbo).
 - **Cambios:**
   - Copiar features del POS a admin: `sales/` (cart-store, checkout, split, void, comanda), `shifts/` (open/close/arqueos/cash-movements/StaleShiftGate), `web-orders/` (socket + drawer), `cortesias/`, `printing/`, `catalog` de venta.
   - `caja/layout.tsx` monta: socket `/ws/pos` (solo operativo), `CortesiaWatchProvider`, `ComandaFailureAlert`, `SessionKeeper` (comportamiento del POS: 2×401→login), badges de caja.
@@ -198,7 +198,7 @@ apps/admin/src/app/
 
 - [x] Fase 0 — checkpoint `fc9810d` pusheado a `main`; rama `feat/unify-pos-admin` creada.
 - [x] Fase 1 — andamiaje `/caja` (ruta gateada a ADMIN_OPERATIVO + entrada sidebar `onlyOperativo`). Sin deps nuevas (se agregan en Fase 2 al portar features). typecheck+lint verdes.
-- [ ] Fase 2 — paridad online (2a-2e ✅ deps+libs+offline+port+**cableado**; falta verificación runtime + 2f vitest)
+- [x] Fase 2 — paridad online ✅ (2a-2f: deps+libs+offline+port+cableado+**vitest 63 tests**). Falta solo verificación manual en runtime (dev).
 - [ ] Fase 3 — offline + SW acotado
 - [ ] Fase 4 — launcher + gating dueño
 - [ ] Fase 5 — pruebas profundas
