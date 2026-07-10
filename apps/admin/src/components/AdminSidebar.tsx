@@ -59,6 +59,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { section: 'Operación', label: 'Inicio', href: '/', icon: LayoutDashboard, onlyDueno: true },
+  { section: 'Operación', label: 'Inicio', href: '/inicio', icon: LayoutDashboard, onlyOperativo: true },
   { section: 'Operación', label: 'Caja', href: '/caja', icon: Wallet, onlyOperativo: true },
   { section: 'Operación', label: 'Turnero', href: '/turnero', icon: MonitorPlay },
   { section: 'Operación', label: 'Publicidad web', href: '/publicidad', icon: Megaphone },

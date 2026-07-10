@@ -34,11 +34,12 @@ async function loadDashboard(): Promise<DashboardSummary | null> {
 
 export default async function InicioPage() {
   // El Inicio es Dueño-only: muestra ingresos, descuadres, dashboards
-  // financieros. El ADMIN_OPERATIVO no lo ve — lo mandamos a Facturas, que es
-  // su área principal (compras/inventario). Catálogo también es Dueño-only.
+  // financieros. El ADMIN_OPERATIVO no lo ve — aterriza en el launcher `/inicio`
+  // donde elige Caja o Gestión (unificación POS+admin, Fase 4).
   const user = await getCurrentUserServer();
-  if (!user || user.role !== 'DUENO') {
-    redirect('/invoices');
+  if (!user) redirect('/login');
+  if (user.role !== 'DUENO') {
+    redirect('/inicio');
   }
 
   const summary = await loadDashboard();

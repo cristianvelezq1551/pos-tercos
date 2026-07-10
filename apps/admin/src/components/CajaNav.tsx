@@ -48,13 +48,13 @@ export function CajaNav() {
           </Link>
         );
       })}
-      {/* Volver al panel de gestión (el switch pulido llega en Fase 4). */}
+      {/* Volver al launcher (elegir Caja/Gestión). */}
       <Link
-        href="/"
+        href="/inicio"
         className="ml-2 flex items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <LayoutGrid className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-        <span className="hidden md:inline">Panel</span>
+        <span className="hidden md:inline">Inicio</span>
       </Link>
     </nav>
   );
