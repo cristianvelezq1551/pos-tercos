@@ -26,7 +26,7 @@ export function StaleShiftGate({ shift }: { shift: Shift }) {
   const handleClosed = () => {
     setOpen(false);
     // Caja cerrada → ya no hay turno OPEN; ir a abrir la de hoy.
-    router.replace('/shift/open');
+    router.replace('/caja/shift/open');
     router.refresh();
   };
 

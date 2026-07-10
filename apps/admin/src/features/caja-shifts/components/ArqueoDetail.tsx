@@ -105,7 +105,7 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
           method={r.method}
           amount={r.amount}
           count={entriesFor(r.method).length}
-          href={`/arqueos/${shiftId}/metodo/${encodeURIComponent(r.method)}`}
+          href={`/caja/arqueos/${shiftId}/metodo/${encodeURIComponent(r.method)}`}
         />
       ))}
 

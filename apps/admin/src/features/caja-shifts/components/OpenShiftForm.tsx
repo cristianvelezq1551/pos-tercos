@@ -64,7 +64,7 @@ export function OpenShiftForm() {
         notes: notes.trim() || undefined,
       });
       startTransition(() => {
-        router.replace('/');
+        router.replace('/caja');
         router.refresh();
       });
     } catch (err) {

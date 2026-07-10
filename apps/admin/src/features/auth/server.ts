@@ -29,6 +29,12 @@ export async function getCurrentUserServer(): Promise<User | null> {
   }
 }
 
+/** Lee el access token de la cookie para el handshake WS (caja unificada, Fase 2e). */
+export async function getAccessTokenServer(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return cookieStore.get(ACCESS_COOKIE)?.value ?? null;
+}
+
 /**
  * Guard de página/layout: exige rol DUEÑO. El ADMIN_OPERATIVO (= cajero de
  * confianza) no maneja catálogo (precios de venta, promos, recetas) — eso es

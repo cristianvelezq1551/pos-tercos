@@ -68,7 +68,7 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <Link
-          href="/arqueos"
+          href="/caja/arqueos"
           className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden /> Arqueos
