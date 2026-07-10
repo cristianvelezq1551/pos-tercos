@@ -56,6 +56,9 @@ importers:
       '@pos-tercos/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      idb:
+        specifier: ^8.0.3
+        version: 8.0.3
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -71,9 +74,15 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.5(react@19.2.5)
+      socket.io-client:
+        specifier: ^4.8.1
+        version: 4.8.3
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+      zustand:
+        specifier: ^5.0.2
+        version: 5.0.12(@types/react@19.2.14)(react@19.2.5)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4.0.0
