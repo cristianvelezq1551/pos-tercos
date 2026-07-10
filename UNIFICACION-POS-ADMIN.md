@@ -174,7 +174,8 @@ apps/admin/src/app/
 ## 5. Estado de avance
 
 - [x] Fase 0 — checkpoint `fc9810d` pusheado a `main`; rama `feat/unify-pos-admin` creada.
-- [ ] Fase 1 — andamiaje `/caja`
+- [x] Fase 1 — andamiaje `/caja` (ruta gateada a ADMIN_OPERATIVO + entrada sidebar `onlyOperativo`). Sin deps nuevas (se agregan en Fase 2 al portar features). typecheck+lint verdes.
+- [ ] Fase 2 — paridad online
 - [ ] Fase 2 — paridad online
 - [ ] Fase 3 — offline + SW acotado
 - [ ] Fase 4 — launcher + gating dueño

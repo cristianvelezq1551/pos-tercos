@@ -53,10 +53,13 @@ interface NavItem {
   icon: LucideIcon;
   /** Solo visible para el Dueño (anti-fraude / auditoría cruda). */
   onlyDueno?: boolean;
+  /** Solo visible para el Admin Operativo (caja — el Dueño no opera caja). */
+  onlyOperativo?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { section: 'Operación', label: 'Inicio', href: '/', icon: LayoutDashboard, onlyDueno: true },
+  { section: 'Operación', label: 'Caja', href: '/caja', icon: Wallet, onlyOperativo: true },
   { section: 'Operación', label: 'Turnero', href: '/turnero', icon: MonitorPlay },
   { section: 'Operación', label: 'Publicidad web', href: '/publicidad', icon: Megaphone },
   { section: 'Operación', label: 'Solicitudes', href: '/solicitudes', icon: Gift },
@@ -162,7 +165,11 @@ export function AdminSidebar({
 }) {
   const pathname = usePathname();
   const pendingCortesias = useCortesiaPendingCount();
-  const items = NAV_ITEMS.filter((i) => !i.onlyDueno || role === 'DUENO');
+  const items = NAV_ITEMS.filter(
+    (i) =>
+      (!i.onlyDueno || role === 'DUENO') &&
+      (!i.onlyOperativo || role === 'ADMIN_OPERATIVO'),
+  );
   const sections = Array.from(new Set(items.map((i) => i.section)));
   // Solo UN item activo: el que mejor matchea (prefijo más largo). Evita que
   // "Existencias" (/inventory) se prenda cuando estás en "Movimientos"

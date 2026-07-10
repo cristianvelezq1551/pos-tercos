@@ -41,3 +41,16 @@ export async function requireDuenoServer(): Promise<User> {
   if (!user || user.role !== 'DUENO') redirect('/invoices');
   return user;
 }
+
+/**
+ * Guard del segmento de Caja (`/caja/*`). La caja es SOLO del ADMIN_OPERATIVO
+ * (el cajero de confianza). El DUEÑO no opera caja (decisión del dueño) — se
+ * redirige al Inicio. Sin sesión → login. Enforcement real en el backend
+ * (@CashierAccess). Ver UNIFICACION-POS-ADMIN.md.
+ */
+export async function requireOperativoServer(): Promise<User> {
+  const user = await getCurrentUserServer();
+  if (!user) redirect('/login');
+  if (user.role !== 'ADMIN_OPERATIVO') redirect('/');
+  return user;
+}
