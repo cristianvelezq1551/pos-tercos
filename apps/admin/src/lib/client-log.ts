@@ -70,6 +70,19 @@ export function logError(
   }
 }
 
+/** Traza informativa (no error) al ring buffer + consola. Portado de apps/pos. */
+export function logInfo(scope: string, message: string, context?: Record<string, unknown>): void {
+  try {
+    console.info(`[admin:${scope}]`, message, context ?? '');
+    if (typeof window === 'undefined') return;
+    const prev = readLogs();
+    prev.push({ at: new Date().toISOString(), scope, message, ...(context ? { context } : {}) });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prev.slice(-MAX_ENTRIES)));
+  } catch {
+    // El logger jamás propaga.
+  }
+}
+
 export function readLogs(): ClientLogEntry[] {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
