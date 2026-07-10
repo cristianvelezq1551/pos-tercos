@@ -35,7 +35,7 @@ export function OpenShiftForm() {
     await enqueueOfflineShiftOpen({ openingCash: cash, notes: notes.trim() || undefined });
     // Navegación DURA: offline el router de Next no puede hacer el fetch RSC;
     // el service worker sirve la página cacheada.
-    window.location.assign('/');
+    window.location.assign('/caja');
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -100,7 +100,7 @@ export function OpenShiftForm() {
             Último intento de sincronización: {offlinePending.failReason}
           </p>
         ) : null}
-        <Button size="lg" className="w-full" onClick={() => window.location.assign('/')}>
+        <Button size="lg" className="w-full" onClick={() => window.location.assign('/caja')}>
           Ir a vender
         </Button>
       </div>

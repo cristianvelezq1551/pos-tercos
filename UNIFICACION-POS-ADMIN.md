@@ -178,6 +178,22 @@ apps/admin/src/app/
 
 ---
 
+## 4.bis Auditoría post-2e (3 agentes: integración / código muerto / runtime)
+
+**Veredicto: bien integrada.** La caja pega al MISMO backend vía el proxy `/api/*` de admin, con cookies `admin_*`, rutas `/caja/*`, y gate operativo antes de montar providers. No es un sistema paralelo. Sin defecto crítico.
+
+**Corregido en el acto:**
+- 🐛 `caja-shifts/OpenShiftForm.tsx:38,103` — `window.location.assign('/')` iba al dashboard; → `/caja` (afectaba camino offline + botón "Ir a vender"). Mi grep de 2e solo cazó el `router.replace`, no los `window.location.assign`.
+- 🧹 Código muerto: `caja-shifts/api/getCurrent.ts` (`getCurrentShift`, sin consumidor — se usan las variantes SSR) eliminado + limpiado de 2 barrels.
+
+**Diferido (documentado, no bloquea):**
+- **Env vars** (dev OK por default): `NEXT_PUBLIC_API_WS_URL` (socket `/ws/pos`, cae a `localhost:3001`) y `NEXT_PUBLIC_PRINT_AGENT_URL` (`localhost:9120`) no están en admin → **setear en `.env`/deploy** para tablet/prod (en la misma máquina de dev funcionan).
+- **SW/manifest no portados** → la cola offline encola pero el app-shell no carga sin red. **Es la Fase 3** (SW acotado a `/caja`). Hasta entonces la caja offline-first está a medio cablear (online 100% OK).
+- **Duplicación con features previas de admin** (MEDIA, deuda de diseño, no bug): `shifts/ShiftSessionDetailView` (dueño) vs `caja-shifts/ArqueoDetail` (cajero) renderizan el mismo `GET /shifts/:id/detail`; dos clientes de `/payment-methods` (config vs habilitados); dos clientes de `/cortesias` (dueño con wrapper `request()` vs cajero con `fetch` crudo). Audiencias distintas → aceptable por ahora; consolidar si divergen.
+- **Barrels mixtos** (BAJA, footgun latente heredado del POS): `caja-shifts/index.ts` y `web-orders/index.ts` re-exportan helpers SSR (`next/headers`) junto a componentes client. Hoy OK (todos los importadores son server components); romperá el build de prod el día que un `'use client'` importe del barrel. Split pendiente.
+- **Tests no portados** (MEDIA): 9 tests de lógica pura del POS (`split`, `totals`, `denominations`, `shift-summary`, `checkout-validation`, `drain-policy`, etc.) quedaron sin red en admin → **Fase 2f** (configurar vitest + restaurarlos).
+- **CAJERO fuera de `/caja`**: el middleware de admin (`ADMIN_ALLOWED_ROLES`) + `requireOperativoServer` dejan la caja solo para ADMIN_OPERATIVO. Es intencional (el rol CAJERO sigue usando `apps/pos` hasta Fase 6). No es regresión.
+
 ## 5. Estado de avance
 
 - [x] Fase 0 — checkpoint `fc9810d` pusheado a `main`; rama `feat/unify-pos-admin` creada.

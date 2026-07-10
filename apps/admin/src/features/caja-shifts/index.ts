@@ -4,7 +4,7 @@ export { CloseShiftAction } from './components/CloseShiftAction';
 export { CajaPanel } from './components/CajaPanel';
 export { ShiftCashBadge } from './components/ShiftCashBadge';
 export { StaleShiftGate } from './components/StaleShiftGate';
-export { getCurrentShift, openShift, closeShift } from './api';
+export { openShift, closeShift } from './api';
 export { getCurrentShiftServer, getCurrentShiftStatusServer } from './server';
 export { ArqueosPanel } from './components/ArqueosPanel';
 export { listClosedShifts, getShiftDetail } from './api/list';
