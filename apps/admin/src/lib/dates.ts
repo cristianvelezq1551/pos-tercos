@@ -1,3 +1,14 @@
+import { startOfBusinessDay } from '@pos-tercos/domain';
+
+/**
+ * Inicio del día de NEGOCIO (corte 4 am, hora local del dispositivo) en ISO —
+ * filtro estándar de "lo del día" en las vistas operativas de la caja (historial,
+ * panel de pedidos). Portado de apps/pos (unificación POS+admin, Fase 2b).
+ */
+export function startOfTodayIso(): string {
+  return startOfBusinessDay(new Date()).toISOString();
+}
+
 /**
  * YYYY-MM-DD del día calendario LOCAL del navegador.
  *
