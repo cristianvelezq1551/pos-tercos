@@ -194,6 +194,28 @@ apps/admin/src/app/
 - **Tests no portados** (MEDIA): 9 tests de lógica pura del POS (`split`, `totals`, `denominations`, `shift-summary`, `checkout-validation`, `drain-policy`, etc.) quedaron sin red en admin → **Fase 2f** (configurar vitest + restaurarlos).
 - **CAJERO fuera de `/caja`**: el middleware de admin (`ADMIN_ALLOWED_ROLES`) + `requireOperativoServer` dejan la caja solo para ADMIN_OPERATIVO. Es intencional (el rol CAJERO sigue usando `apps/pos` hasta Fase 6). No es regresión.
 
+## 4.ter Fase 5 — pruebas profundas
+
+### Automatable — HECHO ✅ (verde)
+- **Unit/lógica**: domain **190**, admin **63** (vitest), pos **63** (intacto). `pnpm test`.
+- **typecheck 13/13** + **lint 0** en todo el monorepo.
+- **Harness e2e de la caja listo** en `apps/admin/e2e/` (Playwright): `smoke` (login→launcher→vender→cobrar→cerrar), `web-order` (cross-app web→caja→listo), `offline` (vender sin red→sync). Adaptados del POS: login operativo `admin@dev.local`, rutas `/caja/*`, navegación del launcher. **Sin ejecutar** (requieren el stack vivo — no corren en este entorno).
+
+### Runtime + hardware — PENDIENTE (lo corrés vos con el stack levantado)
+1. **e2e navegador** (dev servers API :3001 + admin :3004 + web :3000 corriendo):
+   ```
+   pnpm -F @pos-tercos/admin exec playwright install chromium   # 1ra vez
+   pnpm -F @pos-tercos/admin test:e2e-ui
+   ```
+   ⚠️ Corren contra la **DB de dev** y mutan la caja del día (igual que los del POS). Si un selector no matchea (por la nueva UI del launcher), es ajuste menor.
+2. **Smoke manual** (`admin@dev.local`): launcher → Caja → abrir turno → vender → cobrar (efectivo + **cuenta dividida**) → historial → **anular** con PIN → arqueo → **cerrar caja**. Y `dueno@dev.local` → `/caja` debe redirigir (no ve caja).
+3. **Pedidos web**: pedir en la web → confirmar pago en la caja → "marcar listo" → el cliente lo ve.
+4. **Hardware**: impresora Epson (comanda + factura) + cajón monedero + arqueo por denominación + cortesías + editar venta pagada.
+5. **Offline real (build de prod)**: `pnpm -F @pos-tercos/admin build && start`; entrar a `/caja` online (registra el SW + cachea), cortar red y **recargar** → la caja debe abrir; una página de **gestión** offline **NO** debe abrir (confirma el guard `isCajaNav`).
+6. **Convivencia**: `apps/pos` sigue desplegado; confirmar que POS viejo + `/caja` nuevo operan sobre el mismo backend sin pisarse (caja única del día).
+
+Cuando esto pase verde → recién ahí la Fase 6 (eliminar roles + borrar `apps/pos`).
+
 ## 5. Estado de avance
 
 - [x] Fase 0 — checkpoint `fc9810d` pusheado a `main`; rama `feat/unify-pos-admin` creada.
@@ -201,5 +223,5 @@ apps/admin/src/app/
 - [x] Fase 2 — paridad online ✅ (2a-2f: deps+libs+offline+port+cableado+**vitest 63 tests**). Falta solo verificación manual en runtime (dev).
 - [x] Fase 3 — offline + SW acotado ✅ (`public/sw.js` con guard `isCajaNav`: solo `/caja/*` se cachea/sirve offline, gestión pasa derecho; `manifest.webmanifest` scope `/caja`; `offline.html`; iconos; `CajaServiceWorker` registra solo en prod+operativo+caja; `clear-nav-cache` al logout). typecheck+lint verdes. Falta verificación runtime del offline real.
 - [x] Fase 4 — launcher + gating dueño ✅ (`/inicio` launcher fullscreen operativo-only con 2 tarjetas Caja/Gestión; operativo aterriza ahí al entrar; CajaNav "Inicio"→`/inicio`; sidebar operativo gana entrada Inicio→`/inicio`. Dueño: `requireOperativoServer` lo saca de `/inicio` y `/caja` antes de montar nada; SW solo en caja/layout → dueño nunca inicializa caja. typecheck+lint verdes.)
-- [ ] Fase 5 — pruebas profundas
+- [~] Fase 5 — pruebas profundas (automatable ✅; runtime/hardware pendiente de vos — ver §4.ter)
 - [ ] Fase 6 — cutover (roles + borrar `apps/pos`)
