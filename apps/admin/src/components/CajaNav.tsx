@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, History, LayoutGrid, Settings, UtensilsCrossed, Wallet } from 'lucide-react';
+import { Archive, History, LayoutDashboard, Settings, UtensilsCrossed, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useUnseenCortesias } from '../features/caja-cortesias';
@@ -48,13 +48,15 @@ export function CajaNav() {
           </Link>
         );
       })}
-      {/* Volver al launcher (elegir Caja/Gestión). */}
+      {/* Switch directo al modo Gestión (dashboard admin), separado de las
+          pestañas de caja para leerse como "cambiar de modo". */}
       <Link
-        href="/inicio"
-        className="ml-2 flex items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        href="/invoices"
+        aria-label="Cambiar a Gestión (dashboard admin)"
+        className="ml-2 flex items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground"
       >
-        <LayoutGrid className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-        <span className="hidden md:inline">Inicio</span>
+        <LayoutDashboard className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+        <span className="hidden md:inline">Gestión</span>
       </Link>
     </nav>
   );

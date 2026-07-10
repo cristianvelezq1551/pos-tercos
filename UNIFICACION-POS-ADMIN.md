@@ -222,6 +222,9 @@ Cuando esto pase verde → recién ahí la Fase 6 (eliminar roles + borrar `apps
 - [x] Fase 1 — andamiaje `/caja` (ruta gateada a ADMIN_OPERATIVO + entrada sidebar `onlyOperativo`). Sin deps nuevas (se agregan en Fase 2 al portar features). typecheck+lint verdes.
 - [x] Fase 2 — paridad online ✅ (2a-2f: deps+libs+offline+port+cableado+**vitest 63 tests**). Falta solo verificación manual en runtime (dev).
 - [x] Fase 3 — offline + SW acotado ✅ (`public/sw.js` con guard `isCajaNav`: solo `/caja/*` se cachea/sirve offline, gestión pasa derecho; `manifest.webmanifest` scope `/caja`; `offline.html`; iconos; `CajaServiceWorker` registra solo en prod+operativo+caja; `clear-nav-cache` al logout). typecheck+lint verdes. Falta verificación runtime del offline real.
-- [x] Fase 4 — launcher + gating dueño ✅ (`/inicio` launcher fullscreen operativo-only con 2 tarjetas Caja/Gestión; operativo aterriza ahí al entrar; CajaNav "Inicio"→`/inicio`; sidebar operativo gana entrada Inicio→`/inicio`. Dueño: `requireOperativoServer` lo saca de `/inicio` y `/caja` antes de montar nada; SW solo en caja/layout → dueño nunca inicializa caja. typecheck+lint verdes.)
+- [x] Fase 4 — launcher + switch de modos + gating dueño ✅
+  - `/inicio`: launcher fullscreen operativo-only, 2 tarjetas Caja/Gestión **+ Logout**. Es el aterrizaje al loguear (login → `/` → `/inicio`).
+  - **Switch bidireccional directo** (sin volver al launcher): en Caja, botón **"Gestión"** (CajaNav, separado) → `/invoices` (dashboard admin); en Gestión, entrada **"Caja"** del sidebar → `/caja`.
+  - Dueño: `requireOperativoServer` lo saca de `/inicio` y `/caja` antes de montar nada; SW solo en caja/layout → dueño nunca inicializa caja. typecheck+lint verdes.
 - [~] Fase 5 — pruebas profundas (automatable ✅; runtime/hardware pendiente de vos — ver §4.ter)
 - [ ] Fase 6 — cutover (roles + borrar `apps/pos`)

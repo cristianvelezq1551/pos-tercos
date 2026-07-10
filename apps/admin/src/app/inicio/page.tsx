@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, LayoutDashboard, Wallet } from 'lucide-react';
 import { BrandLogo } from '@pos-tercos/brand';
+import { LogoutButton } from '../../features/auth';
 import { requireOperativoServer } from '../../features/auth/server';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,11 @@ export default async function LauncherPage() {
   const firstName = user.fullName?.trim().split(/\s+/)[0] ?? '';
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-10 bg-background px-6 py-12 text-foreground">
+    <main className="relative flex min-h-dvh flex-col items-center justify-center gap-10 bg-background px-6 py-12 text-foreground">
+      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+        <LogoutButton />
+      </div>
+
       <header className="flex flex-col items-center gap-4 text-center">
         <BrandLogo variant="wordmark" theme="dark" size="h-8" />
         <div>
