@@ -81,11 +81,12 @@ apps/admin/src/app/
 ### Fase 2 — Portar las features del POS a `caja/` (paridad funcional online)
 - **Objetivo:** vender, cobrar (simple/dividido), historial, anular, arqueos, cierre de caja, pedidos web — todo funcionando dentro de admin, **en modo online**. Offline se agrega en Fase 3.
 - **Sub-pasos (cada uno verde + commiteado):**
-  - **2a** ✅ deps (`idb`, `socket.io-client`, `zustand`) en admin + este desglose.
-  - **2b** libs compartidas app-agnósticas: `audio.ts`, `use-polling.ts`, `socket-auth.ts` (+ `errors.ts`/`dates.ts` si falta cobertura) a `apps/admin/src/lib/`.
-  - **2c** feature `shifts` (abrir/cerrar/arqueos/cash-movements/StaleShiftGate) + rutas `caja/shift/open`, `caja/arqueos`.
-  - **2d** feature `sales` (cart-store, checkout, split, void, comanda) + `caja/page.tsx` real + `caja/historial`. Portar Vitest de plata (totals/split/denominations/shift-summary) → agregar vitest a admin.
-  - **2e** `web-orders` (socket `/ws/pos`), `cortesias`, `printing` + montaje en `caja/layout.tsx` (SessionKeeper estilo POS, badges, chimes). Ajuste WS-token a `admin_access`.
+  - **2a** ✅ deps (`idb`, `socket.io-client`, `zustand`) en admin.
+  - **2b** ✅ libs compartidas: `audio`, `use-polling`, `socket-auth` (+ `ws-token`), `errors`, `startOfTodayIso` en `dates`.
+  - **2c** ✅ motor `offline` portado (auto-contenido; base de todo).
+  - **2d** ✅ port masivo: `catalog`, `sales`, `web-orders`, `printing` (mismo nombre) + `cortesias→caja-cortesias` y `shifts→caja-shifts` (renombradas; admin ya tiene las suyas de la vista dueño — NO se tocan). `logInfo` agregado. 139 archivos, verde. **Aún sin cablear.**
+  - **2e** ⏳ **cableado**: rutas `caja/{page,historial,arqueos,shift/open,configuracion}` que rendericen las features + `caja/layout.tsx` monta providers (OfflineProvider, socket `/ws/pos`, SessionKeeper estilo POS, badges, chimes) + SSR (shift status, user) + WS-token sobre `admin_access`. Acá "se prende" el comportamiento.
+  - **2f** ⏳ Vitest en admin + restaurar tests de plata (totals/split/denominations/shift-summary) excluidos en 2b-2d.
 - **Cambios:**
   - Copiar features del POS a admin: `sales/` (cart-store, checkout, split, void, comanda), `shifts/` (open/close/arqueos/cash-movements/StaleShiftGate), `web-orders/` (socket + drawer), `cortesias/`, `printing/`, `catalog` de venta.
   - `caja/layout.tsx` monta: socket `/ws/pos` (solo operativo), `CortesiaWatchProvider`, `ComandaFailureAlert`, `SessionKeeper` (comportamiento del POS: 2×401→login), badges de caja.
@@ -181,7 +182,7 @@ apps/admin/src/app/
 
 - [x] Fase 0 — checkpoint `fc9810d` pusheado a `main`; rama `feat/unify-pos-admin` creada.
 - [x] Fase 1 — andamiaje `/caja` (ruta gateada a ADMIN_OPERATIVO + entrada sidebar `onlyOperativo`). Sin deps nuevas (se agregan en Fase 2 al portar features). typecheck+lint verdes.
-- [ ] Fase 2 — paridad online (2a ✅ deps `idb`/`socket.io-client`/`zustand`; 2b-2e pendientes)
+- [ ] Fase 2 — paridad online (2a-2d ✅ deps+libs+offline+port de 139 archivos; **2e cableado de rutas** + 2f vitest pendientes)
 - [ ] Fase 3 — offline + SW acotado
 - [ ] Fase 4 — launcher + gating dueño
 - [ ] Fase 5 — pruebas profundas
