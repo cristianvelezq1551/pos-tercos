@@ -6,6 +6,8 @@ export * from './llm';
 export * from './storage';
 export * from './matching';
 export * from './promotions';
+export * from './geo';
+export * from './schedule';
 export * from './reconciliation';
 export * from './printer';
 export * from './whatsapp';

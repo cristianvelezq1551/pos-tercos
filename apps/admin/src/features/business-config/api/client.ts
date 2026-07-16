@@ -18,3 +18,10 @@ export function updateBusinessConfig(input: UpdateBusinessConfig): Promise<Busin
     BusinessConfigSchema,
   );
 }
+
+/** Foto de "Nosotros". Va por multipart, no por el `request()` de JSON. */
+export function uploadAboutImage(media: File): Promise<BusinessConfig> {
+  const body = new FormData();
+  body.append('media', media);
+  return request('/business-config/about-image', { method: 'POST', body }, BusinessConfigSchema);
+}

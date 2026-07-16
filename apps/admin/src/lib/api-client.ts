@@ -16,7 +16,11 @@ export async function request<T>(
     credentials: 'include',
     ...init,
     headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      // Con FormData NO se setea: el browser tiene que poner el multipart con su
+      // boundary. Forzar el header acá deja al server sin poder parsear el body.
+      ...(init.body && !(init.body instanceof FormData)
+        ? { 'Content-Type': 'application/json' }
+        : {}),
       ...(init.headers ?? {}),
     },
   });

@@ -11,6 +11,14 @@
  *    Ascensión, Corpus Christi y Sagrado Corazón (se trasladan a lunes).
  *
  * Las fechas se manejan en UTC y se devuelven como `YYYY-MM-DD`.
+ *
+ * OJO — son 18 REGLAS, pero no siempre 18 días distintos: dos pueden caer el
+ * mismo día. Pasó en 2025 (San Pedro, 29 jun domingo → lunes 30, cayó sobre
+ * Sagrado Corazón) y ese año hubo 17 festivos. El `Set` lo resuelve solo.
+ *
+ * Lo consumen nómina (`payroll/operating-week`) y los horarios de atención de
+ * la web (`schedule/opening-hours`) — por eso vive en `common` y no en un
+ * dominio puntual.
  */
 
 const DAY_MS = 86_400_000;
@@ -88,7 +96,30 @@ export function colombianHolidays(year: number): Set<string> {
   return out;
 }
 
-/** ¿La fecha (UTC) es festivo en Colombia? */
+/**
+ * ¿La fecha (UTC) es festivo en Colombia?
+ *
+ * Espera un Date a medianoche UTC (los `@db.Date` de Prisma / `parseYmd`). Con
+ * un instante local a última hora del día devolvería el festivo del día
+ * siguiente — para YYYY-MM-DD usá `isColombianHolidayYmd`, que no tiene ese filo.
+ */
 export function isColombianHoliday(date: Date): boolean {
   return colombianHolidays(date.getUTCFullYear()).has(ymd(date));
+}
+
+const yearCache = new Map<number, Set<string>>();
+
+/**
+ * ¿`YYYY-MM-DD` es festivo? Cachea por año — lo llama el motor de horarios en
+ * cada request y recalcular los 18 festivos cada vez no tiene sentido.
+ */
+export function isColombianHolidayYmd(date: string): boolean {
+  const year = Number(date.slice(0, 4));
+  if (!Number.isInteger(year)) return false;
+  let set = yearCache.get(year);
+  if (!set) {
+    set = colombianHolidays(year);
+    yearCache.set(year, set);
+  }
+  return set.has(date);
 }
