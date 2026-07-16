@@ -1,6 +1,6 @@
 'use client';
 
-import type { PaymentMethod } from '@pos-tercos/types';
+import type { PaymentMethod, PaymentMethodSetting } from '@pos-tercos/types';
 import { FormField } from '@pos-tercos/ui';
 import { CashSection } from './CashSection';
 import { PaymentMethodSelector } from './PaymentMethodSelector';
@@ -18,7 +18,7 @@ export function SinglePaymentSection({
   onDoubleVerified,
 }: {
   total: number;
-  methods: readonly PaymentMethod[];
+  methods: readonly PaymentMethodSetting[];
   method: PaymentMethod | null;
   isDigital: boolean;
   cashReceived: number | null;

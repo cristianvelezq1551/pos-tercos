@@ -1110,10 +1110,29 @@ export class ShiftsService {
     return rows.map(toCashMovementDto);
   }
 
-  async list(filter: { cashierId?: string; status?: ShiftStatus; limit?: number } = {}): Promise<Shift[]> {
+  /**
+   * `from`/`to` acotan por `openedAt` (la caja pertenece al día en que ABRIÓ,
+   * aunque cierre de madrugada). `to` es EXCLUSIVO — el controller le suma el
+   * día para incluir la jornada completa. Ambos opcionales: sin ellos el
+   * listado no filtra por fecha (comportamiento previo intacto).
+   */
+  async list(
+    filter: {
+      cashierId?: string;
+      status?: ShiftStatus;
+      limit?: number;
+      from?: Date;
+      to?: Date;
+    } = {},
+  ): Promise<Shift[]> {
     const where: Prisma.ShiftWhereInput = {};
     if (filter.cashierId) where.cashierId = filter.cashierId;
     if (filter.status) where.status = filter.status;
+    if (filter.from || filter.to) {
+      where.openedAt = {};
+      if (filter.from) where.openedAt.gte = filter.from;
+      if (filter.to) where.openedAt.lt = filter.to;
+    }
     const rows = await this.prisma.shift.findMany({
       where,
       include: { cashier: { select: { fullName: true } } },

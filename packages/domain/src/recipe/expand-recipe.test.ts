@@ -209,6 +209,44 @@ describe('expandRecipeOneLevel', () => {
     expect(result.ingredients.has('tomate')).toBe(false);
   });
 
+  // REGLA DURA: el flag se ANOTA, nunca filtra. Esta función alimenta el
+  // CONSUMO — si filtrara, las servilletas dejarían de descontarse y su costo
+  // desaparecería del COGS. El filtro vive solo en evaluateAvailability.
+  it('un child no-bloqueante SIGUE consumiendo (solo se anota el flag)', () => {
+    const graph = buildGraph({
+      products: ['burger'],
+      subproducts: [sub('salsa', 10)],
+      ingredients: [ing('pan'), ing('servilleta')],
+      edges: [
+        edge(P('burger'), { kind: 'ingredient', id: 'pan' }, 1),
+        { ...edge(P('burger'), { kind: 'ingredient', id: 'servilleta' }, 2), blocksAvailability: false },
+        { ...edge(P('burger'), { kind: 'subproduct', id: 'salsa' }, 3), blocksAvailability: false },
+      ],
+    });
+    const result = expandRecipeOneLevel(graph, P('burger'));
+    // Las servilletas se consumen igual que el pan…
+    expect(result.ingredients.get('servilleta')?.totalQuantity).toBe(2);
+    expect(result.subproducts.get('salsa')?.totalQuantity).toBe(3);
+    // …y quedan anotadas como no-bloqueantes para que SOLO la disponibilidad las ignore.
+    expect(result.ingredients.get('servilleta')?.blocksAvailability).toBe(false);
+    expect(result.subproducts.get('salsa')?.blocksAvailability).toBe(false);
+    expect(result.ingredients.get('pan')?.blocksAvailability).toBe(true);
+  });
+
+  it('mismo insumo por dos edges con flags distintos → gana el bloqueante', () => {
+    const graph = buildGraph({
+      products: ['burger'],
+      ingredients: [ing('lechuga')],
+      edges: [
+        { ...edge(P('burger'), { kind: 'ingredient', id: 'lechuga' }, 5), blocksAvailability: false },
+        edge(P('burger'), { kind: 'ingredient', id: 'lechuga' }, 3),
+      ],
+    });
+    const result = expandRecipeOneLevel(graph, P('burger'));
+    expect(result.ingredients.get('lechuga')?.totalQuantity).toBe(8);
+    expect(result.ingredients.get('lechuga')?.blocksAvailability).toBe(true);
+  });
+
   it('aplica merma en el primer nivel', () => {
     const graph = buildGraph({
       products: ['burger'],

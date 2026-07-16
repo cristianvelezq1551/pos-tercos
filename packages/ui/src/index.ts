@@ -103,6 +103,7 @@ export {
   formatPercent,
   formatDate,
   formatDuration,
+  pluralizeUnit,
   onlyDigits,
   groupDigits,
   type DateFormat,

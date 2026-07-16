@@ -170,11 +170,49 @@ export class CogsService {
   }
 
   private async computeLedger(snapshot: { cutoffAt: Date; seed: LedgerSeed } | null): Promise<LedgerFifo> {
+    const opts = { fallbackUnitCost: await this.loadFallbackUnitCost() };
     if (!snapshot) {
-      return runLedgerFifo(await this.loadMovements({}));
+      return runLedgerFifo(await this.loadMovements({}), undefined, opts);
     }
     const plain = await this.loadMovements({ createdAt: { gte: snapshot.cutoffAt } });
-    return runLedgerFifo(plain, snapshot.seed);
+    return runLedgerFifo(plain, snapshot.seed, opts);
+  }
+
+  /**
+   * Respaldo para ESTIMAR el faltante de una venta sin stock cuando el replay
+   * todavía no vio ninguna entrada de ese stockable (primera venta, sin compras
+   * previas). Solo insumos y productos de reventa: los subproductos no tienen
+   * precio histórico (su costo se deriva de la producción, y el replay ya lo
+   * recuerda solo).
+   *
+   * ⚠️ `lastUnitCost` está en unit_PURCHASE ($/bulto) y el ledger trabaja en
+   * unit_STOCK ($/gramo) → se divide por `conversionFactor` (mismo criterio que
+   * el reporte de uso y mermas).
+   */
+  private async loadFallbackUnitCost(): Promise<Record<string, number>> {
+    const [ingredients, products] = await Promise.all([
+      this.prisma.ingredient.findMany({
+        where: { lastUnitCost: { not: null } },
+        select: { id: true, lastUnitCost: true, conversionFactor: true },
+      }),
+      this.prisma.product.findMany({
+        where: { directResale: true, lastUnitCost: { not: null } },
+        select: { id: true, lastUnitCost: true, conversionFactor: true },
+      }),
+    ]);
+    const out: Record<string, number> = {};
+    for (const i of ingredients) {
+      const factor = Number(i.conversionFactor);
+      if (!(factor > 0)) continue;
+      out[`INGREDIENT:${i.id}`] = Number(i.lastUnitCost) / factor;
+    }
+    for (const p of products) {
+      // conversionFactor null en reventa = 1 (se compra y vende por unidad).
+      const factor = p.conversionFactor !== null ? Number(p.conversionFactor) : 1;
+      if (!(factor > 0)) continue;
+      out[`PRODUCT:${p.id}`] = Number(p.lastUnitCost) / factor;
+    }
+    return out;
   }
 
   // ==================================================================
@@ -212,7 +250,11 @@ export class CogsService {
       throw new Error('El corte del snapshot debe ser al menos 1 hora en el pasado');
     }
     const movements = await this.loadMovements({ createdAt: { lt: cutoffAt } });
-    const full = runLedgerFifo(movements);
+    // Mismo fallback que el replay normal: si no, una deuda sembrada guardaría
+    // un estimado distinto al que calcula `runLedger` y el corte movería costos.
+    const full = runLedgerFifo(movements, undefined, {
+      fallbackUnitCost: await this.loadFallbackUnitCost(),
+    });
     const seed = buildLedgerSeed(full, cutoffAt.toISOString());
     await this.prisma.ledgerSnapshot.upsert({
       where: { cutoffAt },

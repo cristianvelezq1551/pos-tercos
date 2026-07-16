@@ -31,6 +31,11 @@ export function RangeFilter({
     setTo(searchParams.get('to') ?? '');
   }, [searchParams]);
 
+  const activePreset = matchPreset(
+    searchParams.get('from'),
+    searchParams.get('to'),
+  );
+
   const apply = (params: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(params)) {
@@ -62,7 +67,12 @@ export function RangeFilter({
             key={p.label}
             type="button"
             onClick={() => handlePreset(p.days)}
-            className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted/40"
+            aria-pressed={activePreset === p.days}
+            className={`rounded-md border px-3 py-1.5 text-sm ${
+              activePreset === p.days
+                ? 'border-primary bg-destructive/10 text-primary font-semibold'
+                : 'border-border text-foreground hover:bg-muted/40'
+            }`}
           >
             {p.label}
           </button>
@@ -120,6 +130,23 @@ export function RangeFilter({
       )}
     </div>
   );
+}
+
+/**
+ * Devuelve los `days` del preset que corresponde al rango from/to actual, o
+ * null si es un rango manual. Un preset activo tiene `to` = hoy y
+ * `from` = hoy − (days − 1).
+ */
+function matchPreset(from: string | null, to: string | null): number | null {
+  if (!from || !to) return null;
+  const today = new Date();
+  if (to !== toISO(today)) return null;
+  for (const p of PRESETS) {
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - (p.days - 1));
+    if (from === toISO(fromDate)) return p.days;
+  }
+  return null;
 }
 
 function toISO(d: Date): string {

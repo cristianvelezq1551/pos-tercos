@@ -48,17 +48,6 @@ describe('Open Tabs + Manual Discounts E2E', () => {
     duenoToken = await loginAs(request, 'dueno-tabs@test.local');
     cajeroToken = await loginAs(request, 'cajero-tabs@test.local');
 
-    // Catálogo de categorías (feature 2026-07-09): crear producto exige que la
-    // categoría exista. cleanDb no trunca product_categories, pero sembramos con
-    // skipDuplicates para ser deterministas ante una DB de test recién migrada.
-    await prisma.productCategory.createMany({
-      data: [
-        { name: 'Comidas', sortOrder: 0 },
-        { name: 'Bebidas', sortOrder: 1 },
-      ],
-      skipDuplicates: true,
-    });
-
     const burger = await request
       .post('/products')
       .set('Authorization', `Bearer ${duenoToken}`)

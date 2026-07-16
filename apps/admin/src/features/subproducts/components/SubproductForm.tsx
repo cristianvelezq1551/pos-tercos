@@ -10,7 +10,7 @@ import {
 } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import type { Subproduct } from '@pos-tercos/types';
+import { UNIT_LABEL_ERROR, isValidUnitLabel, type Subproduct } from '@pos-tercos/types';
 import { createSubproduct, deactivateSubproduct, updateSubproduct } from '../api/client';
 import { PreparationStepsField } from '../../../components/PreparationStepsField';
 
@@ -25,6 +25,7 @@ interface FormState {
   thresholdMin: number | null;
   portionSize: number | null;
   preparationSteps: string[];
+  blocksAvailability: boolean;
   isActive: boolean;
 }
 
@@ -45,6 +46,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     thresholdMin: initial?.thresholdMin ?? null,
     portionSize: initial?.portionSize ?? null,
     preparationSteps: initial?.preparationSteps ?? [],
+    blocksAvailability: initial?.blocksAvailability ?? true,
     isActive: initial?.isActive ?? true,
   }));
 
@@ -63,6 +65,10 @@ export function SubproductForm({ initial }: SubproductFormProps) {
       setError('El tamaño de porción debe ser mayor a 0 (o dejarse vacío).');
       return;
     }
+    if (!isValidUnitLabel(form.unit)) {
+      setError(UNIT_LABEL_ERROR);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -74,6 +80,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           thresholdMin: form.thresholdMin ?? 0,
           portionSize: form.portionSize,
           preparationSteps: form.preparationSteps,
+          blocksAvailability: form.blocksAvailability,
           isActive: form.isActive,
         });
       } else {
@@ -84,6 +91,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           thresholdMin: form.thresholdMin ?? 0,
           portionSize: form.portionSize,
           preparationSteps: form.preparationSteps,
+          blocksAvailability: form.blocksAvailability,
         });
       }
       startTransition(() => {
@@ -193,6 +201,14 @@ export function SubproductForm({ initial }: SubproductFormProps) {
         <PreparationStepsField
           value={form.preparationSteps}
           onChange={(steps) => setForm((f) => ({ ...f, preparationSteps: steps }))}
+        />
+
+        <Checkbox
+          label="Frena la venta si no hay stock"
+          description="Destildá esto si es opcional (ej. una salsa de acompañamiento): no frena la venta de los productos que lo usan y no aparece en Deudas de inventario. Se sigue descontando y costeando igual."
+          disabled={pending}
+          checked={form.blocksAvailability}
+          onChange={(e) => setForm((f) => ({ ...f, blocksAvailability: e.target.checked }))}
         />
 
         {isEdit ? (

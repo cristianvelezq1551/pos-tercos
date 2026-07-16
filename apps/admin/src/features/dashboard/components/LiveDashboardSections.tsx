@@ -15,6 +15,7 @@ import {
   ChefHat,
   PackageCheck,
   Sparkles,
+  TrendingDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
@@ -71,6 +72,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
 
   return (
     <>
+      <NegativeStockAlert count={summary.negativeStockCount} />
       <Section
         eyebrow="Hoy en números"
         title="Pulso del local"
@@ -172,6 +174,40 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
         </div>
       </Section>
     </>
+  );
+}
+
+/**
+ * Deuda de inventario: solo aparece cuando hay algo que arreglar (no es un KPI
+ * que deba mirarse en 0 todo el día). Es la señal de "te falta subir una
+ * factura" — la causa raíz de que el inventario se desincronice.
+ */
+function NegativeStockAlert({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <Link href="/inventory/negativos" className="group block">
+      <Card
+        variant="accent"
+        tone="warning"
+        interactive
+        className="mb-4 flex items-center gap-3 px-5 py-4"
+      >
+        <TrendingDown className="h-5 w-5 shrink-0 text-warning" strokeWidth={1.75} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">
+            {count === 1 ? '1 insumo en negativo' : `${count} insumos en negativo`}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Se vendió más de lo registrado. Probablemente falta subir una factura o registrar una
+            producción.
+          </p>
+        </div>
+        <span className="caps hidden shrink-0 items-center gap-1 text-[0.6875rem] text-primary group-hover:underline sm:inline-flex">
+          Revisar
+          <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
+        </span>
+      </Card>
+    </Link>
   );
 }
 

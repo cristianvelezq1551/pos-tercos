@@ -47,7 +47,18 @@ export interface LedgerMovement {
 export interface CostQty {
   cost: number;
   qty: number;
+  /** Unidades cuyo costo NO se pudo determinar (nunca se asume $0). */
   unknownQty: number;
+  /**
+   * Unidades incluidas en `cost` con un costo ESTIMADO (último precio conocido),
+   * no con su lote FIFO real: la venta consumió sin stock registrado. Se corrige
+   * solo (baja a 0 y el costo pasa al real) cuando se registra la compra o la
+   * producción que salda la deuda.
+   *
+   * Sirve para que los reportes puedan decir "X% de este COGS es estimado" en vez
+   * de mostrar un margen exacto que no lo es.
+   */
+  estimatedQty: number;
 }
 
 /** Resultado del replay, indexado para los reportes. */
@@ -73,6 +84,20 @@ export interface LedgerFifo {
   /** Estado FINAL serializable de las colas (para crear un LedgerSeed). */
   endingLots: Record<string, Lot[]>;
   /**
+   * Último costo unitario conocido por stockable al final del replay. Se sirve
+   * en el snapshot para que un faltante posterior al corte se pueda estimar sin
+   * re-leer toda la historia.
+   */
+  endingLastKnownUnitCost: Record<string, number>;
+  /**
+   * Deudas de stock pendientes al final (inventario NEGATIVO): unidades que una
+   * venta consumió sin lote disponible ("forzar disponible" / offline). La
+   * PRÓXIMA entrada (compra/producción) las salda y su costo se atribuye
+   * retroactivamente a la venta que las debe. Se sirven en el snapshot para que
+   * una compra posterior al corte pueda saldar una deuda anterior a él.
+   */
+  endingDebts: Record<string, Debt[]>;
+  /**
    * true = una REVERSA del replay incremental referencia un consumo ANTERIOR
    * al corte del seed (sus draws no existen acá) → este resultado es
    * incompleto y el servicio DEBE recomputar con replay completo.
@@ -91,6 +116,24 @@ interface Draw {
   unitCost: number | null;
   movementId: string;
   createdAt: string;
+}
+
+/**
+ * Deuda de stock (inventario negativo): unidades que una venta consumió sin
+ * lote. Guarda a QUÉ venta atribuir el costo cuando una entrada futura la salde.
+ */
+export interface Debt {
+  qty: number;
+  saleId: string;
+  entityType: LedgerEntityType;
+  createdAt: string;
+  /**
+   * Costo unitario ESTIMADO que la venta ya cargó por estas unidades (último
+   * precio conocido al momento de vender). Al saldar la deuda, el costo real se
+   * atribuye por DIFERENCIA (real − estimado) para no contar dos veces.
+   * null = no había historial → la venta quedó en unknownQty.
+   */
+  estimatedUnitCost: number | null;
 }
 
 /**
@@ -115,6 +158,23 @@ export interface LedgerSeed {
   waste: { createdAt: string; cost: number; unknownQty: number }[];
   cortesia: { createdAt: string; cost: number; unknownQty: number }[];
   cortesiaCostBySource: Record<string, { cost: number; unknownQty: number }>;
+  /** Deudas de stock (inventario negativo) pendientes al corte. Opcional para
+   *  compat con snapshots viejos (default = sin deudas). */
+  debts?: Record<string, Debt[]>;
+  /** Último costo unitario conocido por stockable al corte — para estimar el
+   *  faltante de una venta sin stock. Opcional (snapshots viejos). */
+  lastKnownUnitCost?: Record<string, number>;
+}
+
+export interface LedgerOptions {
+  /**
+   * Costo unitario de respaldo por stockable (`${entityType}:${id}`), en unidad
+   * de STOCK. Lo arma la API desde `lastUnitCost / conversionFactor` del
+   * catálogo. Solo se usa para estimar un faltante cuando el replay todavía no
+   * vio ninguna entrada de ese stockable (primera venta sin compras previas).
+   * El historial del replay SIEMPRE tiene prioridad.
+   */
+  fallbackUnitCost?: Record<string, number>;
 }
 
 type Event =
@@ -124,6 +184,7 @@ type Event =
 export function runLedgerFifo(
   movements: readonly LedgerMovement[],
   seed?: LedgerSeed,
+  opts?: LedgerOptions,
 ): LedgerFifo {
   const keyOf = (m: LedgerMovement): string | null => {
     const id =
@@ -200,6 +261,14 @@ export function runLedgerFifo(
   });
 
   const queues = new Map<string, Lot[]>();
+  // Deudas de stock (inventario NEGATIVO) por stockable, en orden FIFO: la
+  // entrada más vieja se salda primero. Solo las ventas crean deudas.
+  const debts = new Map<string, Debt[]>();
+  // Último costo unitario visto por stockable (de la última entrada con costo
+  // conocido). Es la base del ESTIMADO cuando una venta consume sin stock.
+  // Se deriva del propio replay → funciona igual para subproductos, que no
+  // tienen columna de precio histórico (su costo sale de la producción).
+  const lastKnownUnitCost = new Map<string, number>();
   // Para revertir consumo de venta al anular: key = `${saleId}:${stockableKey}`.
   // ACOTADO por pre-scan (mitigación de memoria, informe de calidad B1): los
   // draws solo se usan cuando llega una REVERSA (void/edición con delta>0, o
@@ -226,6 +295,8 @@ export function runLedgerFifo(
     remaining: new Map(),
     remainingLots: new Map(),
     endingLots: {},
+    endingDebts: {},
+    endingLastKnownUnitCost: {},
     needsFullReplay: false,
   };
 
@@ -244,7 +315,26 @@ export function runLedgerFifo(
     for (const [sourceId, v] of Object.entries(seed.cortesiaCostBySource)) {
       out.cortesiaCostBySource.set(sourceId, { ...v });
     }
+    // Deudas pendientes al corte (opcional en snapshots viejos): una compra
+    // posterior al corte puede saldar una deuda anterior a él.
+    for (const [key, ds] of Object.entries(seed.debts ?? {})) {
+      debts.set(
+        key,
+        ds.map((d) => ({ ...d })),
+      );
+    }
+    for (const [key, c] of Object.entries(seed.lastKnownUnitCost ?? {})) {
+      lastKnownUnitCost.set(key, c);
+    }
   }
+
+  /**
+   * Costo unitario para ESTIMAR un faltante: lo último que vimos en el replay y,
+   * si el stockable nunca tuvo una entrada, el respaldo del catálogo.
+   * null = sin historial → la venta queda en unknownQty (nunca se asume $0).
+   */
+  const estimateFor = (key: string): number | null =>
+    lastKnownUnitCost.get(key) ?? opts?.fallbackUnitCost?.[key] ?? null;
 
   // Detección de reversa que CRUZA el corte (modo incremental): si una reversa
   // no logra devolver TODA su cantidad desde los draws de esta ventana, el
@@ -268,22 +358,32 @@ export function runLedgerFifo(
     cost: number,
     qty: number,
     unknownQty: number,
+    estimatedQty = 0,
   ): void => {
     const t = targetMap(et);
     const bySale = t.get(saleId) ?? new Map<string, CostQty>();
-    const prev = bySale.get(stockableId) ?? { cost: 0, qty: 0, unknownQty: 0 };
+    const prev = bySale.get(stockableId) ?? { cost: 0, qty: 0, unknownQty: 0, estimatedQty: 0 };
     prev.cost += cost;
     prev.qty += qty;
     prev.unknownQty += unknownQty;
+    prev.estimatedQty += estimatedQty;
     bySale.set(stockableId, prev);
     t.set(saleId, bySale);
   };
 
-  /** Consume FIFO de la cola del stockable. Devuelve costo + lotes tocados. */
+  /**
+   * Consume FIFO de la cola del stockable.
+   *
+   * `unknownQty` = unidades tomadas de lotes SIN costo conocido.
+   * `shortfall`  = unidades que NO había en stock (inventario negativo).
+   * Los dos son "sin costo" pero se devuelven SEPARADOS: el faltante de una
+   * venta se ESTIMA al último precio conocido y se registra como deuda; los
+   * demás callers (producción/merma/cortesía) lo suman a unknownQty.
+   */
   const consumeFifo = (
     key: string,
     qtyNeeded: number,
-  ): { cost: number; unknownQty: number; draws: Draw[] } => {
+  ): { cost: number; unknownQty: number; draws: Draw[]; shortfall: number } => {
     const q = queues.get(key) ?? [];
     let remaining = qtyNeeded;
     let cost = 0;
@@ -304,15 +404,72 @@ export function runLedgerFifo(
       remaining -= take;
       if (lot.qty <= 0) q.shift();
     }
-    if (remaining > 0) unknownQty += remaining;
+    const shortfall = remaining > 0 ? remaining : 0;
     queues.set(key, q);
-    return { cost: roundCost(cost), unknownQty: roundCost(unknownQty), draws };
+    return {
+      cost: roundCost(cost),
+      unknownQty: roundCost(unknownQty),
+      draws,
+      shortfall: roundCost(shortfall),
+    };
   };
 
+  /**
+   * Agrega un lote. Si el stockable tiene DEUDA pendiente (inventario negativo
+   * por ventas forzadas/offline), el lote la salda PRIMERO —FIFO, la más vieja—
+   * y su costo se atribuye RETROACTIVAMENTE a la venta que la debe. Recién el
+   * remanente queda disponible como stock. Así el replay corrige solo el costo
+   * de la venta forzada en cuanto se registra el inventario (compra/producción).
+   */
   const addLot = (key: string, lot: Lot): void => {
-    const q = queues.get(key) ?? [];
-    q.push(lot);
-    queues.set(key, q);
+    // Base del estimado para futuros faltantes de este stockable.
+    if (lot.unitCost !== null) lastKnownUnitCost.set(key, lot.unitCost);
+    let incoming = lot.qty;
+    const ds = debts.get(key);
+    if (ds && ds.length > 0 && incoming > 0) {
+      const stockableId = key.slice(key.indexOf(':') + 1);
+      while (ds.length > 0 && incoming > 1e-9) {
+        const d = ds[0]!;
+        const fill = Math.min(incoming, d.qty);
+        if (lot.unitCost !== null) {
+          // Salda la deuda con el costo REAL. Si la venta ya había cargado un
+          // ESTIMADO, se atribuye solo la DIFERENCIA (real − estimado): sumar
+          // el real completo contaría el insumo dos veces.
+          const already = d.estimatedUnitCost ?? 0;
+          const delta = roundCost(fill * (lot.unitCost - already));
+          attributeToSale(
+            d.entityType,
+            stockableId,
+            d.saleId,
+            delta,
+            0,
+            // Si estaba estimado, su unknownQty ya era 0; si no, se resuelve ahora.
+            d.estimatedUnitCost !== null ? 0 : -fill,
+            // El estimado deja de serlo: ahora es costo real.
+            d.estimatedUnitCost !== null ? -fill : 0,
+          );
+          // Registrar un draw en la venta para que un void POSTERIOR lo revierta.
+          if (reversedSources.has(d.saleId)) {
+            const drawKey = `${d.saleId}:${key}`;
+            const acc = drawsBySource.get(drawKey) ?? [];
+            acc.push({ qty: fill, unitCost: lot.unitCost, movementId: lot.movementId, createdAt: lot.createdAt });
+            drawsBySource.set(drawKey, acc);
+          }
+        }
+        // Lote de costo desconocido: salda físicamente la deuda pero el costo de
+        // la venta sigue como estaba (estimado o desconocido — honesto).
+        d.qty -= fill;
+        incoming -= fill;
+        if (d.qty <= 1e-9) ds.shift();
+      }
+      if (ds.length === 0) debts.delete(key);
+      else debts.set(key, ds);
+    }
+    if (incoming > 1e-9) {
+      const q = queues.get(key) ?? [];
+      q.push(incoming === lot.qty ? lot : { ...lot, qty: roundCost(incoming) });
+      queues.set(key, q);
+    }
   };
 
   /**
@@ -362,6 +519,43 @@ export function runLedgerFifo(
     return { returnedCost, returnedUnknown, returnedQty };
   };
 
+  /**
+   * Cancela hasta `qty` unidades de DEUDA de `saleId` en `key` (al anular una
+   * venta forzada cuya deuda aún NO se saldó). Devuelve exactamente qué cargó
+   * la venta por esas unidades, para que el void lo revierta sin residuos:
+   * el costo ESTIMADO si lo hubo, o el unknownQty si no había historial.
+   */
+  const cancelDebt = (
+    key: string,
+    saleId: string,
+    qty: number,
+  ): { qty: number; cost: number; unknownQty: number; estimatedQty: number } => {
+    const out = { qty: 0, cost: 0, unknownQty: 0, estimatedQty: 0 };
+    const ds = debts.get(key);
+    if (!ds || ds.length === 0) return out;
+    let toCancel = qty;
+    for (const d of ds) {
+      if (toCancel <= 1e-9) break;
+      if (d.saleId !== saleId) continue;
+      const take = Math.min(d.qty, toCancel);
+      if (take <= 0) continue;
+      d.qty -= take;
+      toCancel -= take;
+      out.qty += take;
+      if (d.estimatedUnitCost !== null) {
+        out.cost += take * d.estimatedUnitCost;
+        out.estimatedQty += take;
+      } else {
+        out.unknownQty += take;
+      }
+    }
+    const kept = ds.filter((d) => d.qty > 1e-9);
+    if (kept.length === 0) debts.delete(key);
+    else debts.set(key, kept);
+    out.cost = roundCost(out.cost);
+    return out;
+  };
+
   for (const e of events) {
     if (e.kind === 'production') {
       // 1. Consumir insumos / sub-subproductos.
@@ -371,9 +565,11 @@ export function runLedgerFifo(
       for (const c of e.consumes) {
         const cKey = keyOf(c);
         if (!cKey) continue;
-        const { cost, unknownQty } = consumeFifo(cKey, Math.abs(c.delta));
+        const { cost, unknownQty, shortfall } = consumeFifo(cKey, Math.abs(c.delta));
         totalCost += cost;
-        totalUnknownQty += unknownQty;
+        // La producción NO estima ni crea deuda (solo las ventas): su faltante
+        // sigue siendo costo desconocido, como hasta ahora.
+        totalUnknownQty += unknownQty + shortfall;
         totalConsumedQty += Math.abs(c.delta);
       }
       // 2. Crear el/los lote(s) del +N con costo derivado de los insumos.
@@ -436,17 +632,26 @@ export function runLedgerFifo(
     if (m.type === 'SALE' && delta > 0) {
       const drawKey = `${m.sourceId ?? ''}:${key}`;
       const { returnedCost, returnedUnknown, returnedQty } = returnDraws(drawKey, key, delta);
-      flagIfCrossCutoff(returnedQty, delta);
+      // El sobrante (delta > draws devueltos) que quede es DEUDA aún no saldada
+      // de esta venta forzada: se cancela (las unidades fantasma nunca se
+      // consumieron realmente) y se revierte su unknownQty provisional.
+      const leftover = delta - returnedQty;
+      const cancelled =
+        leftover > 1e-9 && m.sourceId
+          ? cancelDebt(key, m.sourceId, leftover)
+          : { qty: 0, cost: 0, unknownQty: 0, estimatedQty: 0 };
+      flagIfCrossCutoff(returnedQty + cancelled.qty, delta);
       // Atribuir el reverso a la venta: cantidad y costo NEGATIVOS (un-consume).
-      if (m.sourceId && returnedQty > 0) {
+      if (m.sourceId && (returnedQty > 0 || cancelled.qty > 0)) {
         const stockableId = key.slice(key.indexOf(':') + 1);
         attributeToSale(
           m.entityType,
           stockableId,
           m.sourceId,
-          -roundCost(returnedCost),
-          -returnedQty,
-          -returnedUnknown,
+          -roundCost(returnedCost + cancelled.cost),
+          -(returnedQty + cancelled.qty),
+          -(returnedUnknown + cancelled.unknownQty),
+          -cancelled.estimatedQty,
         );
       }
       continue;
@@ -496,8 +701,33 @@ export function runLedgerFifo(
     }
 
     // Consumo (SALE, WASTE, MANUAL_ADJUSTMENT-).
-    const { cost, unknownQty, draws } = consumeFifo(key, -delta);
+    const { cost, unknownQty, draws, shortfall } = consumeFifo(key, -delta);
     if (m.type === 'SALE' && m.sourceId) {
+      // Faltante de stock (venta forzada / offline / consumible): se ESTIMA al
+      // último precio conocido para que la venta tenga un costo razonable ya, y
+      // queda como DEUDA para que la próxima entrada lo corrija al costo REAL.
+      // Sin historial → unknownQty (nunca se asume $0).
+      let estimatedCost = 0;
+      let estimatedQty = 0;
+      let extraUnknown = 0;
+      if (shortfall > 1e-9) {
+        const unitEstimate = estimateFor(key);
+        if (unitEstimate !== null) {
+          estimatedCost = roundCost(shortfall * unitEstimate);
+          estimatedQty = shortfall;
+        } else {
+          extraUnknown = shortfall;
+        }
+        const ds = debts.get(key) ?? [];
+        ds.push({
+          qty: shortfall,
+          saleId: m.sourceId,
+          entityType: m.entityType,
+          createdAt: iso,
+          estimatedUnitCost: unitEstimate,
+        });
+        debts.set(key, ds);
+      }
       // ACUMULAR los draws de este consumo (no sobrescribir): una venta puede
       // consumir el mismo stockable más de una vez (cobro inicial + ajuste por
       // edición que agrega producto). Sobrescribir perdía los draws previos →
@@ -509,9 +739,18 @@ export function runLedgerFifo(
         drawsBySource.set(drawKey, acc);
       }
       const stockableId = key.slice(key.indexOf(':') + 1);
-      attributeToSale(m.entityType, stockableId, m.sourceId, cost, -delta, unknownQty);
+      attributeToSale(
+        m.entityType,
+        stockableId,
+        m.sourceId,
+        roundCost(cost + estimatedCost),
+        -delta,
+        roundCost(unknownQty + extraUnknown),
+        estimatedQty,
+      );
     } else if (m.type === 'WASTE') {
-      out.waste.push({ createdAt: iso, cost, unknownQty });
+      // Merma/cortesía no estiman ni crean deuda: su faltante sigue desconocido.
+      out.waste.push({ createdAt: iso, cost, unknownQty: roundCost(unknownQty + shortfall) });
     } else if (m.sourceType === 'cortesia') {
       // Cortesía AUTORIZADA: producto regalado → costo FIFO real (no es venta
       // ni merma; se reporta aparte en el estado financiero). Los draws se
@@ -522,11 +761,12 @@ export function runLedgerFifo(
         for (const d of draws) acc.push(d);
         drawsBySource.set(drawKey, acc);
       }
-      out.cortesia.push({ createdAt: iso, cost, unknownQty });
+      const cortesiaUnknown = roundCost(unknownQty + shortfall);
+      out.cortesia.push({ createdAt: iso, cost, unknownQty: cortesiaUnknown });
       if (m.sourceId) {
         const prev = out.cortesiaCostBySource.get(m.sourceId) ?? { cost: 0, unknownQty: 0 };
         prev.cost = roundCost(prev.cost + cost);
-        prev.unknownQty = roundCost(prev.unknownQty + unknownQty);
+        prev.unknownQty = roundCost(prev.unknownQty + cortesiaUnknown);
         out.cortesiaCostBySource.set(m.sourceId, prev);
       }
     }
@@ -562,6 +802,12 @@ export function runLedgerFifo(
     if (lots.length > 0) out.remainingLots.set(key, lots);
     if (ending.length > 0) out.endingLots[key] = ending;
   }
+  // Deudas pendientes → estado serializable para el snapshot.
+  for (const [key, ds] of debts) {
+    const kept = ds.filter((d) => d.qty > 1e-9).map((d) => ({ ...d, qty: roundCost(d.qty) }));
+    if (kept.length > 0) out.endingDebts[key] = kept;
+  }
+  for (const [key, c] of lastKnownUnitCost) out.endingLastKnownUnitCost[key] = c;
   return out;
 }
 
@@ -577,5 +823,7 @@ export function buildLedgerSeed(fifo: LedgerFifo, cutoffIso: string): LedgerSeed
     waste: fifo.waste,
     cortesia: fifo.cortesia,
     cortesiaCostBySource: Object.fromEntries(fifo.cortesiaCostBySource),
+    debts: fifo.endingDebts,
+    lastKnownUnitCost: fifo.endingLastKnownUnitCost,
   };
 }

@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import supertest from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { seedProductCategories } from './db-cleaner';
 
 export interface AppContext {
   app: INestApplication;
@@ -22,6 +23,9 @@ export async function bootstrapApp(): Promise<AppContext> {
 
   const prisma = app.get(PrismaService);
   const request = supertest(app.getHttpServer());
+
+  // Reference data que los tests dan por sentada (crear producto exige categoría).
+  await seedProductCategories(prisma);
 
   return { app, prisma, request };
 }

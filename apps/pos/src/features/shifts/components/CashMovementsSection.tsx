@@ -4,6 +4,7 @@ import type {
   CashMovement,
   CashMovementType,
   PaymentMethod,
+  PaymentMethodSetting,
 } from '@pos-tercos/types';
 import { useCallback, useEffect, useState } from 'react';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../../sales';
@@ -35,7 +36,7 @@ export function CashMovementsSection({
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [type, setType] = useState<CashMovementType>('OUT');
   const [method, setMethod] = useState<PaymentMethod>('CASH');
-  const [methods, setMethods] = useState<readonly PaymentMethod[]>(FALLBACK_METHODS);
+  const [methods, setMethods] = useState<readonly PaymentMethodSetting[]>(FALLBACK_METHODS);
   const [amount, setAmount] = useState<number | null>(null);
   const [reason, setReason] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);

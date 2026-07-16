@@ -21,6 +21,10 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const BCRYPT_ROUNDS = 10;
 const PIN_ROLES = ['ADMIN_OPERATIVO', 'DUENO'];
+// El negocio cierra los lunes: todo empleado nuevo nace descansando el lunes
+// (1 = lunes, 0=domingo … 6=sábado) para que la nómina/P&G no lo cuente por
+// defecto. Se ajusta después en el perfil si el trabajador sí opera los lunes.
+const DEFAULT_REST_DAYS = [1];
 
 @Injectable()
 export class UsersService {
@@ -126,6 +130,7 @@ export class UsersService {
         hireDate: dto.hireDate ? new Date(`${dto.hireDate}T00:00:00.000Z`) : null,
         payType: dto.payType ?? null,
         salaryAmount: dto.salaryAmount ?? null,
+        restDaysOfWeek: DEFAULT_REST_DAYS,
       },
     });
 

@@ -1,9 +1,9 @@
 /**
  * fixed-costs.e2e-spec.ts
  *
- * Costos fijos del negocio: CRUD, marcar pagado un período (requiere PIN +
+ * Costos fijos del negocio: CRUD, marcar pagado un período (requiere
  * comprobante, reparto por bolsillo) y que ese pago se refleje como gasto en la
- * Tesorería. Dueño-only.
+ * Tesorería. Dueño-only (el rol es el control de acceso; sin PIN).
  */
 
 import * as bcrypt from 'bcrypt';
@@ -18,7 +18,6 @@ const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
   'base64',
 );
-const PIN = '424242';
 
 describe('Fixed Costs E2E', () => {
   let app: INestApplication;
@@ -53,15 +52,6 @@ describe('Fixed Costs E2E', () => {
     });
     duenoToken = await loginAs(request, 'dueno-fc@test.local');
     cajeroToken = await loginAs(request, 'cajero-fc@test.local');
-
-    // PIN de aprobación del dueño (lo exige marcar pagado).
-    await request
-      .post('/approvals/pin')
-      .set(auth(duenoToken))
-      .send({ pin: PIN, password: 'dev12345' })
-      .expect((res) => {
-        if (res.status >= 300) throw new Error(`PIN setup falló: ${res.status} ${JSON.stringify(res.body)}`);
-      });
   });
 
   afterAll(async () => {
@@ -98,7 +88,9 @@ describe('Fixed Costs E2E', () => {
     await request.delete(`/fixed-costs/${id}`).set(auth(duenoToken)).expect(204);
   });
 
-  it('marcar pagado sin PIN es rechazado (400)', async () => {
+  // El endpoint es @OnlyDueno: el rol YA es el control de acceso, el PIN era
+  // un segundo factor redundante sobre una acción que solo el dueño alcanza.
+  it('marca pagado sin PIN (el rol Dueño alcanza)', async () => {
     const id = await createCost(300_000, 'Luz');
     await request
       .post(`/fixed-costs/${id}/payment`)
@@ -109,10 +101,10 @@ describe('Fixed Costs E2E', () => {
       .field('cashAmount', '0')
       .field('bankAmount', '300000')
       .attach('proof', PNG_1X1, 'proof.png')
-      .expect(400);
+      .expect(201);
   });
 
-  it('marca pagado con PIN + comprobante y se refleja como gasto en Tesorería', async () => {
+  it('marca pagado con comprobante y se refleja como gasto en Tesorería', async () => {
     await request
       .patch('/treasury/config')
       .set(auth(duenoToken))
@@ -126,7 +118,6 @@ describe('Fixed Costs E2E', () => {
     const paid = await request
       .post(`/fixed-costs/${id}/payment`)
       .set(auth(duenoToken))
-      .set('X-Approval-Pin', PIN)
       .field('periodYear', '2026')
       .field('periodMonth', '6')
       .field('amount', '300000')

@@ -1,4 +1,5 @@
 import type { Ingredient, Subproduct } from '@pos-tercos/types';
+import { pluralizeUnit } from '@pos-tercos/ui';
 import { Th, Td, TypeBadge, formatRecipeNumber } from './RecipeTablePrimitives';
 
 export interface DraftEdge {
@@ -7,6 +8,8 @@ export interface DraftEdge {
   quantityNeta: number;
   /** stored as fraction in [0,1) (eg 0.05 = 5%) */
   mermaPct: number;
+  /** Override por receta de si frena la venta. null = hereda del insumo. */
+  blocksAvailability: boolean | null;
 }
 
 interface RecipeDraftTableProps {
@@ -14,6 +17,7 @@ interface RecipeDraftTableProps {
   ingredientById: Map<string, Ingredient>;
   subproductById: Map<string, Subproduct>;
   onRemove: (index: number) => void;
+  onChangeBlocks: (index: number, value: boolean | null) => void;
 }
 
 export function RecipeDraftTable({
@@ -21,6 +25,7 @@ export function RecipeDraftTable({
   ingredientById,
   subproductById,
   onRemove,
+  onChangeBlocks,
 }: RecipeDraftTableProps) {
   if (draft.length === 0) {
     return (
@@ -44,6 +49,7 @@ export function RecipeDraftTable({
             <Th>Unidad</Th>
             <Th align="right">Merma</Th>
             <Th align="right">Se descuenta</Th>
+            <Th>¿Frena la venta?</Th>
             <Th align="right">Acción</Th>
           </tr>
         </thead>
@@ -55,6 +61,8 @@ export function RecipeDraftTable({
             const name = ing?.name ?? sub?.name ?? '(item eliminado)';
             const unit = ing?.unitRecipe ?? sub?.unit ?? '?';
             const gross = edge.mermaPct < 1 ? edge.quantityNeta / (1 - edge.mermaPct) : 0;
+            // Lo que haría el flag del insumo/subproducto si esta línea hereda.
+            const inheritedBlocks = (ing ?? sub)?.blocksAvailability ?? true;
             return (
               <tr
                 key={`${edge.childType}-${edge.childId}-${index}`}
@@ -71,12 +79,33 @@ export function RecipeDraftTable({
                 <Td align="right" mono>
                   {formatRecipeNumber(edge.quantityNeta)}
                 </Td>
-                <Td>{unit}</Td>
+                <Td>{unit === '?' ? unit : pluralizeUnit(unit, edge.quantityNeta)}</Td>
                 <Td align="right" mono>
                   {(edge.mermaPct * 100).toLocaleString('es-CO', { maximumFractionDigits: 2 })}%
                 </Td>
                 <Td align="right" mono>
                   {formatRecipeNumber(gross)}
+                </Td>
+                <Td>
+                  <select
+                    value={
+                      edge.blocksAvailability === null ? 'inherit' : String(edge.blocksAvailability)
+                    }
+                    onChange={(e) =>
+                      onChangeBlocks(
+                        index,
+                        e.target.value === 'inherit' ? null : e.target.value === 'true',
+                      )
+                    }
+                    aria-label={`¿${name} frena la venta?`}
+                    className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="inherit">
+                      Hereda ({inheritedBlocks ? 'frena' : 'no frena'})
+                    </option>
+                    <option value="true">Sí, frena</option>
+                    <option value="false">No frena</option>
+                  </select>
                 </Td>
                 <Td align="right">
                   <button

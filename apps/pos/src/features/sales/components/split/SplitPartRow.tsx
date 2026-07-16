@@ -1,14 +1,8 @@
 'use client';
 
-import {
-  DIGITAL_PAYMENT_METHODS,
-  PAYMENT_METHOD_LABELS,
-  type PaymentMethod,
-} from '@pos-tercos/types';
+import type { PaymentMethod, PaymentMethodSetting } from '@pos-tercos/types';
 import { MoneyInput, formatCop } from '@pos-tercos/ui';
 import type { SplitPart } from '../../lib/split';
-
-const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
 /**
  * Una persona de la cuenta dividida: su monto, su método y la validación
@@ -21,12 +15,14 @@ export function SplitPartRow({
   onChange,
 }: {
   part: SplitPart;
-  methods: readonly PaymentMethod[];
+  methods: readonly PaymentMethodSetting[];
   /** true en modo "montos libres" (en iguales/productos el monto es derivado). */
   amountEditable: boolean;
   onChange: (patch: Partial<SplitPart>) => void;
 }) {
-  const isDigital = part.method !== null && DIGITAL_SET.has(part.method);
+  const isDigital =
+    part.method !== null &&
+    (methods.find((m) => m.code === part.method)?.requiresVerification ?? false);
   const change =
     part.method === 'CASH' && part.cashReceived !== null
       ? Math.max(0, part.cashReceived - part.amount)
@@ -81,8 +77,8 @@ export function SplitPartRow({
         >
           <option value="">Método…</option>
           {methods.map((m) => (
-            <option key={m} value={m}>
-              {PAYMENT_METHOD_LABELS[m]}
+            <option key={m.code} value={m.code}>
+              {m.name}
             </option>
           ))}
         </select>

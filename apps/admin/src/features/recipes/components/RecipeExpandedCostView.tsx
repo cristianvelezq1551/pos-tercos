@@ -1,5 +1,5 @@
 import type { ExpandedCostResponse, FifoLotsResponse } from '@pos-tercos/types';
-import { formatCop } from '@pos-tercos/ui';
+import { formatCop, pluralizeUnit } from '@pos-tercos/ui';
 import { FifoYieldBreakdown } from './FifoYieldBreakdown';
 import { Th, Td, formatRecipeNumber } from './RecipeTablePrimitives';
 
@@ -125,7 +125,7 @@ export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: Recip
                 <Td align="right" mono>
                   {formatRecipeNumber(t.totalQuantity)}
                 </Td>
-                <Td>{t.unitRecipe}</Td>
+                <Td>{pluralizeUnit(t.unitRecipe, t.totalQuantity)}</Td>
                 <Td align="right" mono>
                   {t.unitCostInRecipe !== null ? (
                     <span className="inline-flex items-center justify-end gap-1.5">

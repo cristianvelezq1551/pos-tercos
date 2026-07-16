@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { FixedCostsModule } from '../fixed-costs/fixed-costs.module';
+import { InventoryModule } from '../inventory/inventory.module';
 import { RecipesModule } from '../recipes/recipes.module';
 import { WorkersModule } from '../workers/workers.module';
 import { CogsService } from './cogs.service';
@@ -13,7 +14,7 @@ import { ReportsService } from './reports.service';
 import { SalesReportsService } from './sales-reports.service';
 
 @Module({
-  imports: [RecipesModule, FixedCostsModule, WorkersModule],
+  imports: [RecipesModule, FixedCostsModule, WorkersModule, InventoryModule],
   controllers: [ReportsController],
   providers: [
     ReportsService,

@@ -8,6 +8,7 @@ import {
   Input,
   NumberInput,
   formatNumber,
+  pluralizeUnit,
 } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { produceSubproduct } from '../api/client';
@@ -97,7 +98,7 @@ export function ProductionDialog({
           label={`Cantidad producida (${subproduct.unit})`}
           hint={
             subproduct.yield !== 1
-              ? `La receta rinde ${formatNumber(subproduct.yield)} ${subproduct.unit} por preparación.`
+              ? `La receta rinde ${formatNumber(subproduct.yield)} ${pluralizeUnit(subproduct.unit, subproduct.yield)} por preparación.`
               : undefined
           }
           required

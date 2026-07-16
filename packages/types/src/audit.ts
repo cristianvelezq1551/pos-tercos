@@ -37,6 +37,9 @@ export const AuditActionEnum = z.enum([
   // Sales / cash (FASE 5+)
   'SALE_CREATED',
   'SALE_PAID',
+  // Venta con un producto "forzado disponible": se salta el guard de stock y
+  // algún insumo/subproducto queda en negativo (stock físico no registrado).
+  'SALE_FORCED_STOCK',
   'SALE_VOIDED',
   'SALE_REFUNDED',
   'CORTESIA_REQUESTED',

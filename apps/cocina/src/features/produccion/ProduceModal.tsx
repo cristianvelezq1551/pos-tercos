@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProductionRun, SubproductProductionStatus } from '@pos-tercos/types';
-import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
+import { Button, Dialog, Input, Label, pluralizeUnit } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { getErrorMessage } from '../../lib/errors';
 import { randomUUID } from '../../lib/uuid';
@@ -92,7 +92,8 @@ export function ProduceModal({
       {done ? (
         <div className="space-y-3 text-sm">
           <p className="text-foreground">
-            +{done.quantityProduced} {done.unit} de <b>{done.subproductName}</b>.
+            +{done.quantityProduced} {pluralizeUnit(done.unit, done.quantityProduced)} de{' '}
+            <b>{done.subproductName}</b>.
           </p>
           {done.consumed.length > 0 ? (
             <div>
@@ -104,7 +105,7 @@ export function ProduceModal({
                   <li key={`${c.entityType}-${c.entityId}`} className="flex justify-between gap-2">
                     <span className="text-foreground">{c.name}</span>
                     <span className="tabular-nums text-muted-foreground">
-                      −{fmt(c.quantityConsumed)} {c.unit}
+                      −{fmt(c.quantityConsumed)} {pluralizeUnit(c.unit, c.quantityConsumed)}
                     </span>
                   </li>
                 ))}
@@ -116,7 +117,8 @@ export function ProduceModal({
         <div className="space-y-4">
           <p className="text-xs text-muted-foreground">
             Stock actual: <b className="text-foreground">{fmt(subproduct.currentStock)}</b>{' '}
-            {subproduct.unit} · una tanda rinde {subproduct.yield} {subproduct.unit}
+            {pluralizeUnit(subproduct.unit, subproduct.currentStock)} · una tanda rinde{' '}
+            {subproduct.yield} {pluralizeUnit(subproduct.unit, subproduct.yield)}
           </p>
           <div>
             <Label htmlFor="qty">Cantidad producida ({subproduct.unit})</Label>

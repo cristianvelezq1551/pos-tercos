@@ -62,9 +62,9 @@ describe('Pagos divididos E2E', () => {
 
     // NEQUI viene deshabilitado por defecto (medios de pago configurables).
     await request
-      .put('/payment-methods')
+      .patch('/payment-methods/NEQUI')
       .set('Authorization', `Bearer ${duenoToken}`)
-      .send({ methods: [{ method: 'NEQUI', enabled: true }] })
+      .send({ enabled: true })
       .expect(200);
 
     const prodRes = await request

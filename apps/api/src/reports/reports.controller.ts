@@ -29,6 +29,7 @@ import {
   type ProductMarginReport,
   type ReconciliationReport,
   type ReconciliationSource,
+  type Sale,
   type SalesSummary,
   type SavedReconciliation,
   type SavedReconciliationDetail,
@@ -202,6 +203,25 @@ export class ReportsController {
         ? (granularity as 'daily' | 'hourly')
         : 'daily';
     return this.salesReports.getSalesSummary(range.from, range.to, g);
+  }
+
+  /**
+   * Listado detallado de ventas (mismo universo que el resumen: solo pagadas).
+   * Con `shift_id` lista lo cobrado en ESA caja (la sesión puede cruzar
+   * medianoche); sin él, el período por fechas. Default: últimos 7 días. Dueño.
+   */
+  @OnlyDueno()
+  @Get('sales-detail')
+  getSalesDetail(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('shift_id', new ParseUUIDPipe({ optional: true })) shiftId?: string,
+  ): Promise<Sale[]> {
+    if (shiftId) {
+      return this.salesReports.getSalesDetailByShift(shiftId);
+    }
+    const range = parseDateRange(from, to);
+    return this.salesReports.getSalesDetail(range.from, range.to);
   }
 
   /** Top productos por revenue (con costo y margen estimado). Dueño. */

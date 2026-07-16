@@ -1,4 +1,4 @@
-import type { CreateProduct, UpdateProduct } from '@pos-tercos/types';
+import { UNIT_LABEL_ERROR, isValidUnitLabel, type CreateProduct, type UpdateProduct } from '@pos-tercos/types';
 import type { FormState } from './ProductFormTypes';
 
 type DrFields = {
@@ -118,6 +118,9 @@ export function parseFormValues(form: FormState): ParsedFormResult {
     }
     if (!form.unitStock.trim()) {
       return { ok: false, error: 'En reventa, "Unidad de stock" es requerido.' };
+    }
+    if (!isValidUnitLabel(form.unitPurchase) || !isValidUnitLabel(form.unitStock)) {
+      return { ok: false, error: UNIT_LABEL_ERROR };
     }
     if (!Number.isFinite(factor) || factor <= 0) {
       return { ok: false, error: 'Factor de conversión debe ser un número > 0.' };

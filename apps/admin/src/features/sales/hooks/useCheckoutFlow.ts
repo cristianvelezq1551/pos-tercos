@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  DIGITAL_PAYMENT_METHODS,
-  type PaymentMethod,
-  type Promotion,
-  type Sale,
-} from '@pos-tercos/types';
+import { type PaymentMethod, type Promotion, type Sale } from '@pos-tercos/types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import { getErrorMessage } from '../../../lib/errors';
@@ -26,8 +21,6 @@ import {
 import { validateCheckout } from '../lib/checkout-validation';
 import type { CartTotalsResult } from '../lib/totals';
 import { useEnabledPaymentMethods } from './useEnabledPaymentMethods';
-
-const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 
 // Estado + secuencia completa del cobro: confirmar pago → comanda → factura.
 // `sale` presente = cobro de una venta EXISTENTE (cuenta abierta): no se crea
@@ -70,6 +63,12 @@ export function useCheckoutFlow({
   const submittingRef = useRef(false);
 
   const enabledMethods = useEnabledPaymentMethods(open, offline);
+  // Un método es "digital" (pide verificar comprobante) según el catálogo, no
+  // por su code — lo define el admin al crear/editar el método.
+  const requiresVerificationCodes = useMemo(
+    () => new Set(enabledMethods.filter((m) => m.requiresVerification).map((m) => m.code)),
+    [enabledMethods],
+  );
 
   // Si la red cae con la cuenta dividida abierta, el split queda inalcanzable
   // (el toggle se oculta offline) y confirmar intentaría el flujo online →
@@ -105,7 +104,7 @@ export function useCheckoutFlow({
     onClose();
   };
 
-  const isDigital = method !== null && DIGITAL_SET.has(method);
+  const isDigital = method !== null && requiresVerificationCodes.has(method);
   const cashNum = cashReceived ?? 0;
   const changeDue = method === 'CASH' ? Math.max(0, cashNum - total) : 0;
 

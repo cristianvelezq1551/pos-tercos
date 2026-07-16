@@ -27,7 +27,7 @@ describe('runLedgerFifo · consumo básico', () => {
       mov({ delta: -2, type: 'SALE', sourceId: 'sale1' }),
     ]);
     const cq = r.saleIngredientCost.get('sale1')?.get('ing1');
-    expect(cq).toEqual({ cost: 16000, qty: 2, unknownQty: 0 });
+    expect(cq).toEqual({ cost: 16000, qty: 2, unknownQty: 0, estimatedQty: 0 });
   });
 
   it('cruza lotes en orden FIFO (el viejo primero)', () => {
@@ -134,7 +134,7 @@ describe('runLedgerFifo · anulaciones', () => {
     const voided = r.saleIngredientCost.get('sale1')?.get('ing1');
     expect(voided?.cost).toBe(0); // 30 − 30
     const next = r.saleIngredientCost.get('sale2')?.get('ing1');
-    expect(next).toEqual({ cost: 100, qty: 10, unknownQty: 0 });
+    expect(next).toEqual({ cost: 100, qty: 10, unknownQty: 0, estimatedQty: 0 });
   });
 });
 
@@ -152,6 +152,7 @@ describe('runLedgerFifo · edición de pedidos (ajustes de consumo)', () => {
       cost: 75, // 15 × $5
       qty: 15,
       unknownQty: 0,
+      estimatedQty: 0,
     });
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 5, value: 25, unknownQty: 0 });
   });
@@ -166,6 +167,7 @@ describe('runLedgerFifo · edición de pedidos (ajustes de consumo)', () => {
       cost: 35, // 7 × $5
       qty: 7,
       unknownQty: 0,
+      estimatedQty: 0,
     });
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 13, value: 65, unknownQty: 0 });
   });
@@ -181,6 +183,7 @@ describe('runLedgerFifo · edición de pedidos (ajustes de consumo)', () => {
       cost: 50, // 100 − 50
       qty: 5,
       unknownQty: 0,
+      estimatedQty: 0,
     });
     // Quedan 11: 1@10 + 2@20 (devueltos al frente) + 8@20.
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 11, value: 210, unknownQty: 0 });
@@ -202,8 +205,8 @@ describe('runLedgerFifo · edición de pedidos (ajustes de consumo)', () => {
       mov({ delta: 7, type: 'SALE', sourceId: 'sale1' }), // void: reverso del NETO consumido (7)
       mov({ delta: -10, type: 'SALE', sourceId: 'sale2' }), // otra venta: como si la 1ra nunca pasó
     ]);
-    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({ cost: 0, qty: 0, unknownQty: 0 });
-    expect(r.saleIngredientCost.get('sale2')?.get('ing1')).toEqual({ cost: 50, qty: 10, unknownQty: 0 });
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({ cost: 0, qty: 0, unknownQty: 0, estimatedQty: 0 });
+    expect(r.saleIngredientCost.get('sale2')?.get('ing1')).toEqual({ cost: 50, qty: 10, unknownQty: 0, estimatedQty: 0 });
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 50, unknownQty: 0 });
   });
 
@@ -214,7 +217,7 @@ describe('runLedgerFifo · edición de pedidos (ajustes de consumo)', () => {
       mov({ delta: -5, type: 'SALE', sourceId: 'sale1' }), // edición: agrega 5 (neto 15)
       mov({ delta: 15, type: 'SALE', sourceId: 'sale1' }), // void: reverso del neto (15)
     ]);
-    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({ cost: 0, qty: 0, unknownQty: 0 });
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({ cost: 0, qty: 0, unknownQty: 0, estimatedQty: 0 });
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 20, value: 100, unknownQty: 0 });
   });
 });
@@ -291,6 +294,7 @@ describe('runLedgerFifo · desempate por timestamp idéntico (causalidad)', () =
       cost: 200,
       qty: 2,
       unknownQty: 0,
+      estimatedQty: 0,
     });
   });
 
@@ -356,6 +360,7 @@ describe('runLedgerFifo · anulación de cortesía (base de costo real)', () => 
       cost: 500,
       qty: 5,
       unknownQty: 0,
+      estimatedQty: 0,
     });
     // La cortesía queda neteada a 0 (consumo +300, reversa −300).
     expect(r.cortesiaCostBySource.get('corA')).toEqual({ cost: 0, unknownQty: 0 });
@@ -508,6 +513,7 @@ describe('runLedgerFifo · snapshot (seed + incremental)', () => {
       cost: 816,
       qty: 80,
       unknownQty: 0,
+      estimatedQty: 0,
     });
   });
 
@@ -559,5 +565,227 @@ describe('runLedgerFifo · snapshot (seed + incremental)', () => {
       mov({ delta: 5, type: 'SALE', sourceId: 'nunca-consumió', createdAt: new Date('2026-02-20T10:00:00Z') }),
     ]);
     expect(full.needsFullReplay).toBe(false);
+  });
+});
+
+describe('runLedgerFifo · costo ESTIMADO por historial (último precio)', () => {
+  it('venta sin stock CON historial → costo estimado al último precio, no desconocido', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 500, createdAt: new Date('2026-01-01T10:00:00Z') }),
+      // Se consume todo el stock…
+      mov({ delta: -10, type: 'SALE', sourceId: 'previa', createdAt: new Date('2026-01-02T10:00:00Z') }),
+      // …y esta venta va forzada, sin stock: se estima a $500 (lo último conocido).
+      mov({ delta: -3, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-03T10:00:00Z') }),
+    ]);
+    expect(r.saleIngredientCost.get('forzada')?.get('ing1')).toEqual({
+      cost: 1500, // 3 × $500 estimado
+      qty: 3,
+      unknownQty: 0, // ya no es "no sé"…
+      estimatedQty: 3, // …pero queda marcado como estimado (honesto).
+    });
+  });
+
+  it('sin NINGÚN historial → unknownQty (nunca inventa un precio)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: -3, type: 'SALE', sourceId: 'forzada' }),
+    ]);
+    expect(r.saleIngredientCost.get('forzada')?.get('ing1')).toEqual({
+      cost: 0,
+      qty: 3,
+      unknownQty: 3,
+      estimatedQty: 0,
+    });
+  });
+
+  it('usa el fallback del catálogo (lastUnitCost) cuando el replay no vio entradas', () => {
+    const r = runLedgerFifo(
+      [mov({ delta: -2, type: 'SALE', sourceId: 'forzada' })],
+      undefined,
+      { fallbackUnitCost: { 'INGREDIENT:ing1': 300 } },
+    );
+    expect(r.saleIngredientCost.get('forzada')?.get('ing1')).toEqual({
+      cost: 600,
+      qty: 2,
+      unknownQty: 0,
+      estimatedQty: 2,
+    });
+  });
+
+  it('el historial del replay GANA sobre el fallback del catálogo', () => {
+    const r = runLedgerFifo(
+      [
+        mov({ delta: 1, unitCost: 900, createdAt: new Date('2026-01-01T10:00:00Z') }),
+        mov({ delta: -1, type: 'SALE', sourceId: 's0', createdAt: new Date('2026-01-02T10:00:00Z') }),
+        mov({ delta: -2, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      ],
+      undefined,
+      { fallbackUnitCost: { 'INGREDIENT:ing1': 300 } },
+    );
+    // 2 × $900 (lo último REAL visto), no el $300 del catálogo.
+    expect(r.saleIngredientCost.get('forzada')?.get('ing1')?.cost).toBe(1800);
+  });
+
+  it('CRÍTICO: al subir la factura el estimado se corrige a REAL por diferencia (sin doble conteo)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1, unitCost: 500, createdAt: new Date('2026-01-01T10:00:00Z') }),
+      mov({ delta: -1, type: 'SALE', sourceId: 's0', createdAt: new Date('2026-01-02T10:00:00Z') }),
+      // Forzada: estima 3 × $500 = $1.500.
+      mov({ delta: -3, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      // Llega la factura olvidada: el precio REAL era $600.
+      mov({ delta: 10, unitCost: 600, createdAt: new Date('2026-01-04T10:00:00Z') }),
+    ]);
+    expect(r.saleIngredientCost.get('forzada')?.get('ing1')).toEqual({
+      // $1.800 = 3 × $600 REAL. NO $1.500 + $1.800 = $3.300 (doble conteo).
+      cost: 1800,
+      qty: 3,
+      unknownQty: 0,
+      estimatedQty: 0, // ya no es estimado: es el costo real.
+    });
+    // Y solo quedan 7 disponibles (3 saldaron la deuda).
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(7);
+  });
+
+  it('void de una venta estimada (antes de reponer) revierte el estimado → neto 0', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1, unitCost: 500, createdAt: new Date('2026-01-01T10:00:00Z') }),
+      mov({ delta: -1, type: 'SALE', sourceId: 's0', createdAt: new Date('2026-01-02T10:00:00Z') }),
+      mov({ delta: -3, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      mov({ delta: 3, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-03T11:00:00Z') }),
+    ]);
+    expect(r.saleIngredientCost.get('forzada')?.get('ing1')).toEqual({
+      cost: 0,
+      qty: 0,
+      unknownQty: 0,
+      estimatedQty: 0,
+    });
+    // La deuda se canceló → una compra posterior queda 100% disponible.
+    expect(r.endingDebts['INGREDIENT:ing1']).toBeUndefined();
+  });
+
+  it('el último precio conocido sobrevive el corte del snapshot', () => {
+    const pre = [mov({ delta: 5, unitCost: 700, createdAt: new Date('2026-01-10T10:00:00Z') })];
+    const preResult = runLedgerFifo(pre);
+    expect(preResult.endingLastKnownUnitCost['INGREDIENT:ing1']).toBe(700);
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, '2026-02-01T00:00:00.000Z')));
+    // Post-corte: se agota el stock y una venta forzada estima con el precio sembrado.
+    const inc = runLedgerFifo(
+      [
+        mov({ delta: -5, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-02-02T10:00:00Z') }),
+        mov({ delta: -2, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-02-03T10:00:00Z') }),
+      ],
+      seed,
+    );
+    expect(inc.saleIngredientCost.get('forzada')?.get('ing1')).toEqual({
+      cost: 1400, // 2 × $700 sembrado
+      qty: 2,
+      unknownQty: 0,
+      estimatedQty: 2,
+    });
+  });
+});
+
+describe('runLedgerFifo · deuda de stock (forzar disponible / inventario negativo)', () => {
+  it('venta forzada sin stock → la COMPRA posterior salda la deuda y costea la venta', () => {
+    const r = runLedgerFifo([
+      // Venta forzada: consume 3 sin stock → costo desconocido provisional.
+      mov({ delta: -3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-01T10:00:00Z') }),
+      // Se registra el inventario recién después (llegó, no estaba cargado).
+      mov({ delta: 10, unitCost: 8000, createdAt: new Date('2026-01-02T10:00:00Z') }),
+    ]);
+    // La venta forzada queda costeada al precio de la compra (retroactivo).
+    expect(r.saleIngredientCost.get('sale1')?.get('ing1')).toEqual({
+      cost: 24000,
+      qty: 3,
+      unknownQty: 0,
+      estimatedQty: 0,
+    });
+    // Solo quedan 7 disponibles (3 saldaron la deuda, no son stock).
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 7, value: 56000, unknownQty: 0 });
+    expect(r.endingDebts['INGREDIENT:ing1']).toBeUndefined();
+  });
+
+  it('una venta NORMAL posterior no hereda el costo de la deuda ajena', () => {
+    const r = runLedgerFifo([
+      mov({ delta: -3, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-01T10:00:00Z') }),
+      mov({ delta: 10, unitCost: 8000, createdAt: new Date('2026-01-02T10:00:00Z') }),
+      mov({ delta: -4, type: 'SALE', sourceId: 'normal', createdAt: new Date('2026-01-03T10:00:00Z') }),
+    ]);
+    // La forzada tomó su costo; la normal toma de los 7 restantes, sin solaparse.
+    expect(r.saleIngredientCost.get('forzada')?.get('ing1')?.cost).toBe(24000);
+    expect(r.saleIngredientCost.get('normal')?.get('ing1')).toEqual({
+      cost: 32000,
+      qty: 4,
+      unknownQty: 0,
+      estimatedQty: 0,
+    });
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(3);
+  });
+
+  it('venta forzada de un preparado → la PRODUCCIÓN del subproducto la salda', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 100, unitCost: 10, ingredientId: 'ing1', createdAt: new Date('2026-01-01T10:00:00Z') }),
+      // Forzada: consume 2 del subproducto sin stock producido.
+      mov({ delta: -2, type: 'SALE', sourceId: 'sale1', entityType: 'SUBPRODUCT', createdAt: new Date('2026-01-02T10:00:00Z') }),
+      // Producción posterior: 20×ing1 → 5×sub1 a $40/u.
+      mov({ delta: -20, type: 'PRODUCTION', sourceType: 'production', sourceId: 'run1', ingredientId: 'ing1', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      mov({ delta: 5, type: 'PRODUCTION', sourceType: 'production', sourceId: 'run1', entityType: 'SUBPRODUCT', createdAt: new Date('2026-01-03T10:00:00Z') }),
+    ]);
+    expect(r.saleSubproductCost.get('sale1')?.get('sub1')).toEqual({
+      cost: 80,
+      qty: 2,
+      unknownQty: 0,
+      estimatedQty: 0,
+    });
+    // 3 subproductos quedan (5 producidos − 2 que saldaron la deuda).
+    expect(r.remaining.get('SUBPRODUCT:sub1')?.qty).toBe(3);
+  });
+
+  it('void ANTES de reponer cancela la deuda (sin lote fantasma)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: -3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-01T10:00:00Z') }),
+      // Void del consumo forzado.
+      mov({ delta: 3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-01T11:00:00Z') }),
+      // La compra posterior queda 100% disponible (la deuda ya no existe).
+      mov({ delta: 10, unitCost: 8000, createdAt: new Date('2026-01-02T10:00:00Z') }),
+    ]);
+    const cq = r.saleIngredientCost.get('sale1')?.get('ing1');
+    expect(cq).toEqual({ cost: 0, qty: 0, unknownQty: 0, estimatedQty: 0 });
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 80000, unknownQty: 0 });
+    expect(r.endingDebts['INGREDIENT:ing1']).toBeUndefined();
+  });
+
+  it('void DESPUÉS de reponer revierte el costo saldado (neto 0)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: -3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-01T10:00:00Z') }),
+      mov({ delta: 10, unitCost: 8000, createdAt: new Date('2026-01-02T10:00:00Z') }),
+      // Void después de que la compra saldó la deuda.
+      mov({ delta: 3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-03T10:00:00Z') }),
+    ]);
+    const cq = r.saleIngredientCost.get('sale1')?.get('ing1');
+    expect(cq).toEqual({ cost: 0, qty: 0, unknownQty: 0, estimatedQty: 0 });
+    // El void devuelve las 3 unidades saldadas → 10 disponibles de nuevo.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 80000, unknownQty: 0 });
+  });
+
+  it('la deuda cruza el corte del snapshot y la COMPRA post-corte la salda', () => {
+    const pre = [
+      mov({ delta: -3, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-31T10:00:00Z') }),
+    ];
+    const post = [
+      mov({ delta: 10, unitCost: 8000, createdAt: new Date('2026-02-02T10:00:00Z') }),
+    ];
+    const CUTOFF = '2026-02-01T00:00:00.000Z';
+    const full = runLedgerFifo([...pre, ...post]);
+
+    const preResult = runLedgerFifo(pre);
+    // La deuda queda en el seed (serializable) para saldarse después del corte.
+    expect(preResult.endingDebts['INGREDIENT:ing1']?.[0]?.qty).toBe(3);
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, CUTOFF)));
+    const inc = runLedgerFifo(post, seed);
+
+    expect(inc.needsFullReplay).toBe(false);
+    // El inventario cuadra con el replay completo (3 saldaron la deuda → 7).
+    expect(inc.remaining).toEqual(full.remaining);
+    expect(inc.endingLots).toEqual(full.endingLots);
   });
 });

@@ -43,6 +43,18 @@ export interface RecipeEdgeNode {
   quantityNeta: number;
   /** Pérdida proporcional esperada en el proceso. Rango: [0, 1). */
   mermaPct: number;
+  /**
+   * Valor EFECTIVO ya resuelto por la API (`edge ?? insumo/subproducto ?? true`):
+   * si este child frena la venta del parent cuando no alcanza su stock.
+   *
+   * `false` = consumible (servilletas, sal): NO bloquea la disponibilidad, pero
+   * SÍ se descuenta y SÍ se costea igual que cualquier otro.
+   *
+   * Opcional a propósito: `undefined` = bloquea. Así un snapshot offline viejo
+   * (cacheado antes de este campo) sigue comportándose como antes en vez de
+   * volver todo no-bloqueante. Solo un `false` explícito libera.
+   */
+  blocksAvailability?: boolean;
 }
 
 export interface RecipeGraph {

@@ -1,6 +1,6 @@
 'use client';
 
-import type { PaymentMethod } from '@pos-tercos/types';
+import type { PaymentMethodSetting } from '@pos-tercos/types';
 import { Button, formatCop } from '@pos-tercos/ui';
 import { MAX_PARTS, type SplitMode } from '../../lib/split';
 import type { CartTotalsResult } from '../../lib/totals';
@@ -30,7 +30,7 @@ export function SplitPaymentSection({
 }: {
   total: number;
   totals: CartTotalsResult;
-  methods: readonly PaymentMethod[];
+  methods: readonly PaymentMethodSetting[];
   onChange: (result: SplitResult | null, reason: string | null) => void;
 }) {
   const { mode, setMode, count, setCount, units, setUnits, parts, setParts, setPartAmount, assigned } =

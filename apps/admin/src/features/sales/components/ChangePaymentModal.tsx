@@ -3,7 +3,7 @@
 import {
   MAX_SPLIT_PARTS,
   PAYMENT_METHOD_LABELS,
-  type PaymentMethod,
+  type PaymentMethodSetting,
   type Sale,
 } from '@pos-tercos/types';
 import { Button, Dialog, Money, cn } from '@pos-tercos/ui';
@@ -32,7 +32,7 @@ export function ChangePaymentModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [methods, setMethods] = useState<readonly PaymentMethod[]>(FALLBACK_METHODS);
+  const [methods, setMethods] = useState<readonly PaymentMethodSetting[]>(FALLBACK_METHODS);
   const [parts, setParts] = useState<Part[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);

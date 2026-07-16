@@ -1,6 +1,6 @@
 'use client';
 
-import { PAYMENT_METHOD_LABELS, type PaymentMethod } from '@pos-tercos/types';
+import type { PaymentMethod, PaymentMethodSetting } from '@pos-tercos/types';
 import { NumberInput, cn } from '@pos-tercos/ui';
 import { X } from 'lucide-react';
 
@@ -25,7 +25,7 @@ export function PaymentPartRow({
 }: {
   part: Part;
   index: number;
-  methods: readonly PaymentMethod[];
+  methods: readonly PaymentMethodSetting[];
   pending: boolean;
   single: boolean;
   onMethodChange: (method: PaymentMethod) => void;
@@ -37,19 +37,19 @@ export function PaymentPartRow({
       <div className="flex flex-1 flex-wrap gap-1">
         {methods.map((m) => (
           <button
-            key={m}
+            key={m.code}
             type="button"
             disabled={pending}
-            onClick={() => onMethodChange(m)}
-            aria-pressed={part.method === m}
+            onClick={() => onMethodChange(m.code)}
+            aria-pressed={part.method === m.code}
             className={cn(
               'rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors',
-              part.method === m
+              part.method === m.code
                 ? 'border-primary bg-destructive/10 text-primary'
                 : 'border-border bg-card text-muted-foreground hover:bg-muted/40',
             )}
           >
-            {PAYMENT_METHOD_LABELS[m]}
+            {m.name}
           </button>
         ))}
       </div>

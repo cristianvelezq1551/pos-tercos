@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -33,6 +34,7 @@ import {
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { localMidnightOfYmd, ymdLocal } from '../common/local-dates';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ShiftsService } from './shifts.service';
 
@@ -207,14 +209,28 @@ export class ShiftsController {
     @Query('cashier_id') cashierId?: string,
     @Query('status') status?: string,
     @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ): Promise<Shift[]> {
     const parsedStatus = status ? ShiftStatusEnum.parse(status) : undefined;
     // El cajero solo ve SUS cajas (no los Z-report de otros); solo el Dueño ve todas.
     const scopedCashier = OVERSIGHT_ROLES.has(user.role) ? cashierId : user.sub;
+    const fromDate = from ? parseLocalDay('from', from) : undefined;
+    // Bound exclusivo: el día `to` entra completo (hasta las 23:59:59.999).
+    let toDate: Date | undefined;
+    if (to) {
+      toDate = parseLocalDay('to', to);
+      toDate.setDate(toDate.getDate() + 1);
+    }
+    if (fromDate && toDate && fromDate >= toDate) {
+      throw new BadRequestException("'from' debe ser <= 'to'");
+    }
     return this.shifts.list({
       cashierId: scopedCashier,
       status: parsedStatus,
       limit: limit ? Math.min(Number(limit), 200) : undefined,
+      from: fromDate,
+      to: toDate,
     });
   }
 
@@ -226,4 +242,19 @@ export class ShiftsController {
       throw new ForbiddenException('Solo podés ver tu propia caja.');
     }
   }
+}
+
+/**
+ * YYYY-MM-DD → medianoche LOCAL. `openedAt` es timestamp, así que la ventana
+ * va en hora local (convención de `common/local-dates`). Inválido → 400 del
+ * cliente, nunca un Invalid Date que Prisma convierta en 500.
+ */
+function parseLocalDay(label: string, value: string): Date {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? localMidnightOfYmd(value) : null;
+  // Roundtrip: `new Date(2026, 12, 45)` NO es NaN — JS desborda en silencio a
+  // otro mes. Solo comparando el YMD de vuelta se detecta la fecha irreal.
+  if (!d || Number.isNaN(d.getTime()) || ymdLocal(d) !== value) {
+    throw new BadRequestException(`Parámetro '${label}' inválido: ${value}`);
+  }
+  return d;
 }

@@ -79,7 +79,15 @@ export class InventoryService {
    * Lista unificada: insumos + productos direct-resale + subproductos.
    * Los 3 son stockables de primera clase con su propio inventario.
    */
-  async listStockables(opts: { onlyActive?: boolean; lowStock?: boolean } = {}): Promise<Stockable[]> {
+  /**
+   * `negative` = stock por DEBAJO de cero: se vendió/consumió más de lo
+   * registrado (venta forzada, offline o cortesía). Es una DEUDA de inventario
+   * y casi siempre significa que falta subir una factura o registrar una
+   * producción. Independiente de `lowStock` (que compara contra el umbral).
+   */
+  async listStockables(
+    opts: { onlyActive?: boolean; lowStock?: boolean; negative?: boolean } = {},
+  ): Promise<Stockable[]> {
     const ingredientWhere: Prisma.IngredientWhereInput = opts.onlyActive ? { isActive: true } : {};
     const productWhere: Prisma.ProductWhereInput = {
       directResale: true,
@@ -106,6 +114,13 @@ export class InventoryService {
 
     let merged = [...ingrItems, ...prodItems, ...subItems];
     if (opts.lowStock) merged = merged.filter((s) => s.lowStock);
+    // Los negativos se ordenan por el faltante MÁS grande primero (la deuda
+    // más urgente arriba), no alfabéticamente.
+    if (opts.negative) {
+      return merged
+        .filter((s) => s.currentStock < 0)
+        .sort((a, b) => a.currentStock - b.currentStock);
+    }
     return merged.sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -285,6 +300,7 @@ function ingredientToStockable(row: DbIngredient, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    blocksAvailability: row.blocksAvailability,
     portionSize,
     portions: portionsOf(portionSize, current),
     category: null,
@@ -305,6 +321,8 @@ function productToStockable(row: DbProduct, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    // Reventa directa: su stock ES lo que se vende → nunca es un consumible.
+    blocksAvailability: true,
     // Reventa directa: se vende por unidad, no aplica "porciones".
     portionSize: null,
     portions: null,
@@ -328,6 +346,7 @@ function subproductToStockable(row: DbSubproduct, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    blocksAvailability: row.blocksAvailability,
     portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
     portions: portionsOf(row.portionSize, current),
     category: null,

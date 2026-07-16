@@ -108,6 +108,12 @@ export const StockableSchema = z.object({
   currentStock: z.number(),
   lowStock: z.boolean(),
   isActive: z.boolean(),
+  /**
+   * false = CONSUMIBLE (servilletas, sal): no frena la venta de los productos
+   * que lo usan y se oculta del panel de deudas (su negativo es esperable).
+   * Siempre true en productos de reventa directa: su stock ES lo que se vende.
+   */
+  blocksAvailability: z.boolean(),
   /** Tamaño de porción (en unidad de stock). Null en productos direct-resale y
    *  en ítems sin porción definida. */
   portionSize: z.number().positive().nullable().optional(),

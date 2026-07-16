@@ -1,5 +1,21 @@
 import { z } from 'zod';
 
+/**
+ * Etiqueta de unidad (de compra, receta, stock…): una palabra como "g", "ml",
+ * "unidad", "porción". NUNCA un número puro ("1", "2"): un número como unidad se
+ * renderiza pegado a la cantidad ("2 1") y es ilegible. Debe tener al menos una
+ * letra.
+ */
+export const UNIT_LABEL_ERROR = 'La unidad debe ser una palabra (g, ml, unidad…), no un número.';
+
+/** Una unidad válida tiene al menos una letra (no es un número puro "1"). */
+export function isValidUnitLabel(s: string): boolean {
+  return /\p{L}/u.test(s.trim());
+}
+
+export const unitLabel = (max = 20) =>
+  z.string().trim().min(1).max(max).refine(isValidUnitLabel, { message: UNIT_LABEL_ERROR });
+
 // ====================================================================
 // INGREDIENTS
 // ====================================================================
@@ -18,6 +34,13 @@ export const IngredientSchema = z.object({
   // al confirmar facturas (espejo de Product.lastUnitCost).
   lastUnitCost: z.number().nullable(),
   lastUnitCostDate: z.string().datetime().nullable(),
+  /**
+   * Si al faltar su stock se frena la venta del producto que lo usa.
+   * false = CONSUMIBLE (servilletas, sal): nunca bloquea y se oculta del panel
+   * de deudas. Se sigue descontando y costeando igual. Default por insumo —
+   * cada receta puede pisarlo (`RecipeEdge.blocksAvailability`).
+   */
+  blocksAvailability: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -26,11 +49,12 @@ export type Ingredient = z.infer<typeof IngredientSchema>;
 
 export const CreateIngredientSchema = z.object({
   name: z.string().min(1).max(120),
-  unitPurchase: z.string().min(1).max(20),
-  unitRecipe: z.string().min(1).max(20),
+  unitPurchase: unitLabel(),
+  unitRecipe: unitLabel(),
   conversionFactor: z.number().positive(),
   thresholdMin: z.number().nonnegative().optional(),
   portionSize: z.number().positive().nullable().optional(),
+  blocksAvailability: z.boolean().optional(),
 });
 export type CreateIngredient = z.infer<typeof CreateIngredientSchema>;
 
@@ -54,6 +78,8 @@ export const SubproductSchema = z.object({
   portionSize: z.number().positive().nullable(),
   /** Paso a paso de preparación (biblia del cocinero). */
   preparationSteps: z.array(z.string()),
+  /** Ver `Ingredient.blocksAvailability`. false = no frena la venta. */
+  blocksAvailability: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -66,10 +92,11 @@ export const PreparationStepsSchema = z.array(z.string().trim().min(1).max(500))
 export const CreateSubproductSchema = z.object({
   name: z.string().min(1).max(120),
   yield: z.number().positive(),
-  unit: z.string().min(1).max(20).optional(),
+  unit: unitLabel().optional(),
   thresholdMin: z.number().nonnegative().optional(),
   portionSize: z.number().positive().nullable().optional(),
   preparationSteps: PreparationStepsSchema.optional(),
+  blocksAvailability: z.boolean().optional(),
 });
 export type CreateSubproduct = z.infer<typeof CreateSubproductSchema>;
 
@@ -282,6 +309,12 @@ export const ProductSchema = z.object({
   isActive: z.boolean(),
   /** "86" manual: agotado, no vendible (cajero + web) sin tocar el catálogo. */
   soldOut: z.boolean(),
+  /**
+   * "Forzar disponible": vendible aunque el stock de sus insumos/subproductos
+   * no alcance en el sistema (stock físico no registrado). Pisa el cómputo de
+   * disponibilidad y salta el guard de stock al cobrar. Excluyente con soldOut.
+   */
+  forceAvailable: z.boolean(),
   // Direct-resale fields (FASE 4 refactor)
   directResale: z.boolean(),
   unitPurchase: z.string().nullable(),
@@ -328,8 +361,8 @@ export const CreateProductSchema = z
     // Direct-resale fields. Si directResale=true → los 3 (unitPurchase,
     // unitStock, conversionFactor) son requeridos.
     directResale: z.boolean().optional(),
-    unitPurchase: z.string().min(1).max(20).optional(),
-    unitStock: z.string().min(1).max(20).optional(),
+    unitPurchase: unitLabel().optional(),
+    unitStock: unitLabel().optional(),
     conversionFactor: z.number().positive().optional(),
     thresholdMin: z.number().nonnegative().optional(),
     sizes: z.array(ProductSizeInputSchema).optional(),
@@ -398,8 +431,8 @@ export const UpdateProductSchema = z
     comboPrice: z.number().nonnegative().nullable().optional(),
     isActive: z.boolean().optional(),
     directResale: z.boolean().optional(),
-    unitPurchase: z.string().min(1).max(20).nullable().optional(),
-    unitStock: z.string().min(1).max(20).nullable().optional(),
+    unitPurchase: unitLabel().nullable().optional(),
+    unitStock: unitLabel().nullable().optional(),
     conversionFactor: z.number().positive().nullable().optional(),
     thresholdMin: z.number().nonnegative().optional(),
   })
@@ -458,6 +491,10 @@ export const ProductAvailabilityResponseSchema = z.array(ProductAvailabilitySche
 export const SetSoldOutSchema = z.object({ soldOut: z.boolean() });
 export type SetSoldOut = z.infer<typeof SetSoldOutSchema>;
 
+/** Forzar disponible (o revertir a automático). Excluyente con soldOut. */
+export const SetForceAvailableSchema = z.object({ forceAvailable: z.boolean() });
+export type SetForceAvailable = z.infer<typeof SetForceAvailableSchema>;
+
 // ====================================================================
 // RECIPES
 // ====================================================================
@@ -479,6 +516,12 @@ export const RecipeEdgeInputSchema = z.intersection(
   z.object({
     quantityNeta: z.number().positive(),
     mermaPct: z.number().min(0).lt(1).optional(),
+    /**
+     * Override POR RECETA de si este child frena la venta cuando falta su stock.
+     * null/ausente = hereda el flag del insumo/subproducto.
+     * NO afecta el consumo ni el costo — solo la disponibilidad del catálogo.
+     */
+    blocksAvailability: z.boolean().nullable().optional(),
   }),
 );
 export type RecipeEdgeInput = z.infer<typeof RecipeEdgeInputSchema>;
@@ -498,6 +541,8 @@ export const RecipeEdgeSchema = z.object({
   childSubproductId: z.string().uuid().nullable(),
   quantityNeta: z.number(),
   mermaPct: z.number(),
+  /** Override por receta. null = hereda del insumo/subproducto. */
+  blocksAvailability: z.boolean().nullable(),
   createdAt: z.string().datetime(),
 });
 export type RecipeEdge = z.infer<typeof RecipeEdgeSchema>;

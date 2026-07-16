@@ -84,6 +84,33 @@ export function formatPercent(
   return `${sign}${formatNumber(value, { decimals: opts?.decimals ?? 1 })} %`;
 }
 
+/** Símbolos de medida — invariables, NO se pluralizan (g, ml, kg…). */
+const MEASUREMENT_SYMBOLS = new Set(['g', 'kg', 'mg', 'ml', 'l', 'cl', 'cc', 'oz', 'lb']);
+const NUMERIC_UNIT = /^\d+(?:[.,]\d+)?$/;
+
+function spanishPlural(word: string): string {
+  if (/s$/i.test(word)) return word; // ya termina en s → asumimos plural
+  const last = word.at(-1)!.toLowerCase();
+  if ('aeiou'.includes(last)) return `${word}s`; // taza → tazas, litro → litros
+  if (/ón$/i.test(word)) return `${word.slice(0, -2)}ones`; // porción → porciones
+  if (last === 'z') return `${word.slice(0, -1)}ces`;
+  return `${word}es`; // unidad → unidades
+}
+
+/**
+ * Pluraliza una unidad de conteo según la cantidad (es-CO).
+ * - Los símbolos de medida (g, ml, kg…) son invariables.
+ * - Una unidad vacía o numérica ("1", "2" — dato heredado sucio) se trata como
+ *   "unidad" (nunca dejamos que un número se muestre como unidad).
+ */
+export function pluralizeUnit(unit: string | null | undefined, quantity: number): string {
+  const u = (unit ?? '').trim();
+  const singular = Math.abs(quantity) === 1;
+  if (u === '' || NUMERIC_UNIT.test(u)) return singular ? 'unidad' : 'unidades';
+  if (MEASUREMENT_SYMBOLS.has(u.toLowerCase())) return u;
+  return singular ? u : spanishPlural(u);
+}
+
 export type DateFormat = 'short' | 'long' | 'datetime' | 'time' | 'time-short' | 'relative';
 
 /**

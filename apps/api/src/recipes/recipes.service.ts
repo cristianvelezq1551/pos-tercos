@@ -81,6 +81,8 @@ export class RecipesService {
               childSubproductId: e.childType === 'subproduct' ? e.childId : null,
               quantityNeta: e.quantityNeta,
               mermaPct: e.mermaPct ?? 0,
+              // null = hereda el flag del insumo/subproducto.
+              blocksAvailability: e.blocksAvailability ?? null,
             },
           }),
         ),
@@ -128,6 +130,8 @@ export class RecipesService {
               childSubproductId: e.childType === 'subproduct' ? e.childId : null,
               quantityNeta: e.quantityNeta,
               mermaPct: e.mermaPct ?? 0,
+              // null = hereda el flag del insumo/subproducto.
+              blocksAvailability: e.blocksAvailability ?? null,
             },
           }),
         ),
@@ -180,6 +184,7 @@ export class RecipesService {
               : { kind: 'subproduct', id: e.childSubproductId as string },
           quantityNeta: Number(e.quantityNeta),
           mermaPct: Number(e.mermaPct),
+          blocksAvailability: e.blocksAvailability ?? undefined,
         }))
       : [];
 
@@ -200,11 +205,10 @@ export class RecipesService {
           { id: i.id, name: i.name, unitRecipe: i.unitRecipe },
         ]),
       ),
-      edgesByParent: groupEdgesByParent([
-        ...productEdges,
-        ...sizeNodes,
-        ...subproductEdges,
-      ]),
+      edgesByParent: groupEdgesByParent(
+        [...productEdges, ...sizeNodes, ...subproductEdges],
+        buildBlocksDefaults(ingredients, subproducts),
+      ),
     };
 
     return { graph, root: { kind: 'product', id: productId } };
@@ -246,7 +250,7 @@ export class RecipesService {
           { id: i.id, name: i.name, unitRecipe: i.unitRecipe },
         ]),
       ),
-      edgesByParent: groupEdgesByParent(edges),
+      edgesByParent: groupEdgesByParent(edges, buildBlocksDefaults(ingredients, subproducts)),
     };
   }
 
@@ -825,16 +829,43 @@ function toRecipeEdgeDto(row: DbRecipeEdge): RecipeEdge {
     childSubproductId: row.childSubproductId,
     quantityNeta: Number(row.quantityNeta),
     mermaPct: Number(row.mermaPct),
+    blocksAvailability: row.blocksAvailability,
     createdAt: row.createdAt.toISOString(),
   };
 }
 
+/**
+ * Defaults de `blocksAvailability` por child (`i:<id>` / `s:<id>`), para que
+ * `groupEdgesByParent` resuelva el valor EFECTIVO de cada edge.
+ */
+export function buildBlocksDefaults(
+  ingredients: Array<{ id: string; blocksAvailability: boolean }>,
+  subproducts: Array<{ id: string; blocksAvailability: boolean }>,
+): Map<string, boolean> {
+  const m = new Map<string, boolean>();
+  for (const i of ingredients) m.set(`i:${i.id}`, i.blocksAvailability);
+  for (const s of subproducts) m.set(`s:${s.id}`, s.blocksAvailability);
+  return m;
+}
+
+/**
+ * ÚNICO lugar donde se resuelve `blocksAvailability`: `edge ?? insumo ?? true`.
+ * El dominio recibe siempre el valor efectivo ya resuelto (y así viaja también
+ * al snapshot offline). Sin defaults → todo bloquea (comportamiento histórico).
+ */
 function groupEdgesByParent(
   edges: Array<DbRecipeEdge | RecipeEdgeNode>,
+  blocksDefaults?: Map<string, boolean>,
 ): Map<string, RecipeEdgeNode[]> {
   const map = new Map<string, RecipeEdgeNode[]>();
   for (const e of edges) {
-    const node: RecipeEdgeNode = isDbEdge(e) ? dbEdgeToNode(e) : e;
+    const raw: RecipeEdgeNode = isDbEdge(e) ? dbEdgeToNode(e) : e;
+    const childKey = `${raw.child.kind === 'ingredient' ? 'i' : 's'}:${raw.child.id}`;
+    const node: RecipeEdgeNode = {
+      ...raw,
+      blocksAvailability:
+        raw.blocksAvailability ?? blocksDefaults?.get(childKey) ?? true,
+    };
     const key =
       node.parent.kind === 'product' ? `p:${node.parent.id}` : `s:${node.parent.id}`;
     const list = map.get(key);
@@ -865,5 +896,7 @@ function dbEdgeToNode(row: DbRecipeEdge): RecipeEdgeNode {
     child,
     quantityNeta: Number(row.quantityNeta),
     mermaPct: Number(row.mermaPct),
+    // null en DB = "hereda" → undefined para que groupEdgesByParent resuelva.
+    blocksAvailability: row.blocksAvailability ?? undefined,
   };
 }

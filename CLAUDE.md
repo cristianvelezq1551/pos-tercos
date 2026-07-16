@@ -1180,6 +1180,91 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 
 ---
 
+## 7.v16 Medios de pago DINÁMICOS — el enum PaymentMethod deja de existir (2026-07-16)
+
+> Decisión del dueño: poder **crear/editar/borrar** medios de pago desde el admin (no solo
+> habilitar los del enum). Se retiran **Daviplata** y **QR Bancolombia**. Verificado:
+> typecheck 13/13, lint 0, domain 190, POS 63, e2e payment-methods 9/9 + split 7/7 + live smoke.
+> Migración: `20260716120000_dynamic_payment_methods`. **Supersede** §7.v7 ("catálogo = enum
+> PaymentMethod") y la línea de §5 que lista el enum `PaymentMethod`.
+
+### Qué cambió
+- **`payment_method_settings` es la fuente de verdad de la IDENTIDAD del método.** El enum
+  Prisma `PaymentMethod` **se eliminó**; `sale_payments.method`, `cash_movements.method` y
+  `sales.payment_method` pasaron a **texto** (los valores históricos `DAVIPLATA`/`QR_BANCOLOMBIA`
+  quedan legibles como texto). Columnas nuevas: `code` (PK, era `method`), `name` (label editable),
+  `is_cash`, `requires_verification`, `reconciliation_source` (`NEQUI_CSV|BANCOLOMBIA_CSV|null`,
+  CHECK), `is_system`. Built-ins tras la migración: **CASH** (Efectivo, sistema, efectivo, no
+  borrable), **TRANSFER** (Transferencia, digital, recon Bancolombia), **CARD** (Tarjeta, digital,
+  off), **NEQUI** (Nequi, digital, recon Nequi, off). Daviplata/QR **borrados del catálogo**.
+- **Tipos** (`packages/types/src/sales.ts`): `PaymentMethod = string`; `PaymentMethodCodeSchema`
+  (`z.string`); `PaymentMethodEnum` queda como alias deprecado (= string) para compat. Se ELIMINÓ
+  el hardcode `DIGITAL_PAYMENT_METHODS` — la "digitalidad" (pide verificar comprobante) la define
+  el flag `requiresVerification` **por método**, no el code. `PAYMENT_METHOD_LABELS` queda solo
+  como **fallback** de built-ins + históricos; el label vivo sale del catálogo (`paymentMethodLabel`).
+  Schemas nuevos: `CreatePaymentMethodSchema`, `UpdatePaymentMethodSchema`.
+- **API** (`payment-methods` module): `GET /payment-methods` (habilitados, cajero) · `GET /all`
+  (admin) · **`POST`** (crear custom: siempre digital, `code` = slug UPPER_SNAKE del nombre, único)
+  · **`PATCH /:code`** (name/enabled/requiresVerification/reconciliationSource/sortOrder) ·
+  **`DELETE /:code`** (rechaza `isSystem`; nunca deja 0 habilitados). Se eliminó el bulk `PUT`.
+  El service expone `enabledSet`/`requiresVerificationSet`/`methodsForReconciliation(source)`;
+  `SalesService.assertPaymentParts` y `ReconciliationService` leen del catálogo (ya no hardcodean).
+- **UI**: admin `/medios-pago` con CRUD completo (agregar/editar/borrar/habilitar + verificación +
+  reconciliación). Cobro POS/admin (selector, cuenta dividida, cambiar-pago, movimientos de caja,
+  confirmar pago web) rinden el **nombre** del catálogo y derivan digital de `requiresVerification`.
+  Offline: el POS cachea el catálogo habilitado (localStorage) y cae a CASH+TRANSFER.
+
+### Regla dura (NO violar)
+- `CASH` es **built-in de sistema**: no se borra (cajón + arqueo de efectivo + fallback offline
+  dependen de él). Los métodos custom son **siempre digitales** (`isCash=false`).
+- **Deuda menor documentada**: en arqueos/reportes históricos y en el recibo térmico (ESC/POS), un
+  método custom se muestra por su **code** (ej. `RAPPI`); el nombre vivo solo se resuelve en el
+  cobro. Built-ins (y Daviplata/QR históricos) muestran su label siempre.
+
+---
+
+## 7.v17 La nómina en efectivo deja de tocar el cajón (2026-07-16)
+
+> Bug reportado por el dueño: pagó nómina desde tesorería (bolsillo **Efectivo**, con su
+> `initialCash`) y el arqueo del turno mostró **"Salidas de efectivo −$765.000"** → `expectedCash`
+> negativo (−$522.500) sobre una caja abierta con $100.000. Esa plata nunca salió del cajón.
+> Verificado: typecheck 13/13, lint 0, e2e 27 suites/259 (+1 de regresión).
+
+### Causa
+`WorkersWeeklyService.payWeekDays` era el **único** gasto del sistema que escribía en
+`cash_movements`: con `cashAmount > 0` exigía caja abierta y creaba un `OUT`/CASH colgado del
+turno (`reason = "Nómina X · semana Y"`). Costos fijos, facturas y compromisos **nunca** lo
+hicieron — pagan y listo, cada uno con su `cashAmount`/`bankAmount`. La nómina era el outlier.
+
+El modal admite además defaulteaba a `EFECTIVO`, así que el camino al cajón se disparaba solo.
+
+### Regla dura (NO violar)
+- **Los movimientos de caja son inherentes a la CAJA**: solo se crean a mano desde el POS
+  (`/caja`) o por la devolución cross-caja de un void (`sales.service.ts`). **Ningún módulo
+  financiero (nómina, costos fijos, facturas, compromisos, tesorería) escribe `cash_movements`.**
+- El bolsillo **Efectivo de tesorería ≠ el cajón del turno**. Tesorería es la plata del negocio
+  (incluye el cajón como subconjunto); el arqueo es solo el cajón de ESE turno. Si el dueño
+  físicamente sacó el efectivo del cajón, **registra la salida a mano** en el POS.
+- Sigue vigente el contrato de `treasury.service.ts`: tesorería **NO lee `cash_movements`**
+  (evita "dos verdades"). Ya descontaba la nómina vía `payroll_week_payments.cashAmount` — el
+  movement del turno era un **segundo descuento contra un saldo distinto**.
+
+### Cambios
+- `payWeekDays`: fuera el gate de caja abierta y el `cashMovement.create`. Ya no necesita
+  `ShiftsService` (ni `WorkersModule` importa `ShiftsModule`). Pagar en efectivo **sin caja
+  abierta ahora funciona** (antes era 400).
+- `voidWeekPayment`: fuera el `IN` compensatorio y su gate de caja. Anular = `status: VOIDED`
+  (idempotente por claim `WHERE status='PAID'`); la plata vuelve al bolsillo por dejar de contar
+  como gasto pagado.
+- `payroll_week_payments.cash_movement_id`/`shift_id` quedan **legacy** (sin migración): no se
+  escriben más; los abonos viejos conservan su rastro. Nadie fuera del service los leía.
+- `PayWeekModal`: el aviso ámbar "sale de la caja abierta" pasa a explicar que sale del bolsillo
+  de tesorería y que si la sacó del cajón registre además la salida en el POS.
+- E2E `payroll-weekly`: caso "un abono EN EFECTIVO no toca la caja" (0 movimientos +
+  `expectedCash` intacto + `cashMovementId` null + pago en efectivo con la caja cerrada).
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

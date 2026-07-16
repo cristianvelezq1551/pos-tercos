@@ -1,5 +1,5 @@
 import type { DirectRecipeComponent, FifoLotsResponse } from '@pos-tercos/types';
-import { formatCop } from '@pos-tercos/ui';
+import { formatCop, pluralizeUnit } from '@pos-tercos/ui';
 import { formatRecipeNumber } from './RecipeTablePrimitives';
 
 interface Tier {
@@ -166,7 +166,8 @@ export function FifoYieldBreakdown({
             <p className="text-xs text-foreground">
               <strong>{c.name}</strong>{' '}
               <span className="text-muted-foreground">
-                · {formatRecipeNumber(c.per)} {c.unitRecipe}/u · stock {formatRecipeNumber(c.stock)} {c.unitRecipe}
+                · {formatRecipeNumber(c.per)} {pluralizeUnit(c.unitRecipe, c.per)}/u · stock{' '}
+                {formatRecipeNumber(c.stock)} {pluralizeUnit(c.unitRecipe, c.stock)}
               </span>
             </p>
             <div className="mt-1">

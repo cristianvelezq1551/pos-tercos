@@ -1,9 +1,9 @@
 'use client';
 
-import {
-  PAYMENT_METHOD_LABELS,
-  type CashMovementType,
-  type PaymentMethod,
+import type {
+  CashMovementType,
+  PaymentMethod,
+  PaymentMethodSetting,
 } from '@pos-tercos/types';
 import { Button, Input, NumberInput, cn } from '@pos-tercos/ui';
 
@@ -32,7 +32,7 @@ export function CashMovementForm({
   onTypeChange: (type: CashMovementType) => void;
   method: PaymentMethod;
   onMethodChange: (method: PaymentMethod) => void;
-  methods: readonly PaymentMethod[];
+  methods: readonly PaymentMethodSetting[];
   amount: number | null;
   onAmountChange: (value: number | null) => void;
   reason: string;
@@ -57,18 +57,18 @@ export function CashMovementForm({
       <div className="mt-2 flex flex-wrap gap-1.5">
         {methods.map((m) => (
           <button
-            key={m}
+            key={m.code}
             type="button"
-            onClick={() => onMethodChange(m)}
-            aria-pressed={method === m}
+            onClick={() => onMethodChange(m.code)}
+            aria-pressed={method === m.code}
             className={cn(
               'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-              method === m
+              method === m.code
                 ? 'border-primary bg-destructive/10 text-primary'
                 : 'border-border bg-card text-muted-foreground hover:bg-muted/40',
             )}
           >
-            {PAYMENT_METHOD_LABELS[m]}
+            {m.name}
           </button>
         ))}
       </div>

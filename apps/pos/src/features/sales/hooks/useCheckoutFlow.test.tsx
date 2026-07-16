@@ -35,7 +35,10 @@ vi.mock('../../offline', () => ({
   useOffline: () => ({ status: 'online', refreshPending: vi.fn() }),
 }));
 vi.mock('./useEnabledPaymentMethods', () => ({
-  useEnabledPaymentMethods: () => ['CASH', 'TRANSFER'],
+  useEnabledPaymentMethods: () => [
+    { code: 'CASH', name: 'Efectivo', enabled: true, isCash: true, requiresVerification: false, reconciliationSource: null, isSystem: true, sortOrder: 1 },
+    { code: 'TRANSFER', name: 'Transferencia', enabled: true, isCash: false, requiresVerification: true, reconciliationSource: 'BANCOLOMBIA_CSV', isSystem: false, sortOrder: 2 },
+  ],
 }));
 vi.mock('../../shifts/lib/caja-events', () => ({ notifyCajaChanged: vi.fn() }));
 vi.mock('../../../lib/client-log', () => ({ logError: vi.fn() }));

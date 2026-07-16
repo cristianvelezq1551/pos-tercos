@@ -34,10 +34,12 @@ export class InventoryController {
   listStock(
     @Query('only_active') onlyActive?: string,
     @Query('low_stock') lowStock?: string,
+    @Query('negative') negative?: string,
   ): Promise<Stockable[]> {
     return this.inventory.listStockables({
       onlyActive: onlyActive === 'true',
       lowStock: lowStock === 'true',
+      negative: negative === 'true',
     });
   }
 

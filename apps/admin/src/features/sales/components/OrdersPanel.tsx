@@ -20,6 +20,7 @@ import { totalsFromSale } from '../lib/totals';
 import { CheckoutModal } from './CheckoutModal';
 import { EditSaleModal } from './EditSaleModal';
 import { OpenTabCard, anySentToKitchen } from './OpenTabCard';
+import { SaleDetailModal } from './SaleDetailModal';
 
 const REFRESH_MS = 15_000;
 const RECENT_LIMIT = 12;
@@ -37,6 +38,7 @@ export function OrdersPanel() {
   const [payTab, setPayTab] = useState<Sale | null>(null);
   const [editTab, setEditTab] = useState<Sale | null>(null);
   const [cancelTab, setCancelTab] = useState<Sale | null>(null);
+  const [detailSale, setDetailSale] = useState<Sale | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -169,15 +171,21 @@ export function OrdersPanel() {
           ) : (
             <ul className="divide-y divide-border">
               {recent.map((s) => (
-                <li key={s.id} className="flex items-center justify-between gap-2 py-1.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-foreground">
-                      #{s.receiptNumber}
-                      {s.customerName ? ` · ${s.customerName}` : ''}
-                    </p>
-                    <StatusBadge status={s.status} mapping={SALE_STATUS_MAPPING} size="sm" />
-                  </div>
-                  <Money amount={s.total} size="sm" weight="medium" />
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => setDetailSale(s)}
+                    className="flex w-full items-center justify-between gap-2 py-1.5 text-left transition-colors hover:bg-muted/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-foreground">
+                        #{s.receiptNumber}
+                        {s.customerName ? ` · ${s.customerName}` : ''}
+                      </p>
+                      <StatusBadge status={s.status} mapping={SALE_STATUS_MAPPING} size="sm" />
+                    </div>
+                    <Money amount={s.total} size="sm" weight="medium" />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -210,6 +218,8 @@ export function OrdersPanel() {
           notifyOrdersChanged();
         }}
       />
+
+      <SaleDetailModal sale={detailSale} onClose={() => setDetailSale(null)} />
 
       <ConfirmDialog
         open={cancelTab !== null}
