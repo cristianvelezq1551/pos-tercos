@@ -4,6 +4,7 @@ import type { Sale } from '@pos-tercos/types';
 import { Button, Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { SALE_STATUS_MAPPING } from '../../sales';
+import { DeliveryAddress } from './DeliveryAddress';
 import { cancelWebOrder, markWebOrderReady } from '../api';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -63,6 +64,8 @@ export function WebOrderCard({
       </p>
       <Money amount={sale.total} size="lg" weight="bold" className="mt-2" />
 
+      <DeliveryAddress sale={sale} />
+
       <div className="mt-3">
         {sale.status === 'PENDIENTE_PAGO' ? (
           <div className="grid grid-cols-2 gap-2">
@@ -100,8 +103,9 @@ export function WebOrderCard({
             )}
           </div>
         ) : sale.status === 'PAGADO' ? (
-          // Pagado → el cajero marca "listo para retirar": avisa al cliente por
-          // WhatsApp (pickup_ready). LISTO_DESPACHO es el estado final.
+          // Pagado → el cajero marca listo: avisa al cliente por WhatsApp
+          // (pickup_ready). LISTO_DESPACHO es el estado final. Un domicilio no
+          // se "retira" — el texto acompaña lo que realmente pasa.
           <Button
             variant="success"
             size="sm"
@@ -109,7 +113,11 @@ export function WebOrderCard({
             disabled={busy}
             onClick={() => run(() => markWebOrderReady(sale.id))}
           >
-            {busy ? 'Marcando…' : 'Marcar listo para retirar'}
+            {busy
+              ? 'Marcando…'
+              : sale.type === 'WEB_DELIVERY'
+                ? 'Marcar despachado'
+                : 'Marcar listo para retirar'}
           </Button>
         ) : null}
       </div>

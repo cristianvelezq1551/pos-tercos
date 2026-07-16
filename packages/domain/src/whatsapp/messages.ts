@@ -10,7 +10,14 @@ import type {
   WhatsAppSaleSnapshot,
 } from './types';
 
-/** Cajero aceptó el pedido → pedimos pago + comprobante. */
+/**
+ * Cajero aceptó el pedido → pedimos pago + comprobante.
+ *
+ * En domicilio se aclara que el total NO incluye el envío: el costo del
+ * domicilio se paga aparte al repartidor y NO entra al sistema (decisión del
+ * dueño 2026-07-16). Sin esta línea el cliente transferiría de más y el cobro
+ * —que valida monto exacto— no cuadraría.
+ */
 export function buildPaymentInstructionsMessage(
   sale: WhatsAppSaleSnapshot,
   opts: WhatsAppMessageOptions,
@@ -18,9 +25,12 @@ export function buildPaymentInstructionsMessage(
   const instr = opts.paymentInstructions?.trim()
     ? `\n\n${opts.paymentInstructions.trim()}`
     : '';
+  const delivery = sale.deliveryAddress?.trim()
+    ? `\n\nEse total es solo de tu pedido: el domicilio se paga aparte al repartidor cuando llegue. Te confirmamos el valor por este chat.`
+    : '';
   return (
     `${greet(sale.customerName)}, recibimos tu pedido #${sale.receiptNumber} en ${opts.businessName}. ` +
-    `Total: ${formatCop(sale.total)}.${instr}\n\n` +
+    `Total: ${formatCop(sale.total)}.${instr}${delivery}\n\n` +
     `Cuando pagues, enviános el comprobante por este chat para confirmarlo. ¡Gracias!`
   );
 }
@@ -36,11 +46,22 @@ export function buildPaymentReceivedMessage(
   );
 }
 
-/** Cocina marcó listo → retirar en el local. */
+/**
+ * El pedido está listo. Un domicilio NO se retira: va en camino, así que el
+ * texto se bifurca por la dirección de entrega. La dirección se repite en el
+ * mensaje para que el cliente pueda corregirla antes de que salga.
+ */
 export function buildPickupReadyMessage(
   sale: WhatsAppSaleSnapshot,
   opts: WhatsAppMessageOptions,
 ): string {
+  const deliveryAddress = sale.deliveryAddress?.trim();
+  if (deliveryAddress) {
+    return (
+      `${greet(sale.customerName)}, tu pedido #${sale.receiptNumber} va en camino 🛵 ` +
+      `Lo llevamos a: ${deliveryAddress}. — ${opts.businessName}`
+    );
+  }
   const addr = opts.businessAddressShort?.trim()
     ? ` Te esperamos en ${opts.businessAddressShort.trim()}.`
     : '';

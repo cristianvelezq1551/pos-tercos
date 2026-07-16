@@ -1,4 +1,4 @@
-import { SaleSchema, type Sale } from '@pos-tercos/types';
+import { isWebSaleType, SaleSchema, type Sale } from '@pos-tercos/types';
 import { z } from 'zod';
 
 const ListSchema = z.array(SaleSchema);
@@ -16,5 +16,5 @@ export async function fetchPendingWebOrders(): Promise<Sale[]> {
   if (!res.ok) throw new Error(`fetchPendingWebOrders failed: ${res.status}`);
   const json = (await res.json()) as unknown;
   const all = ListSchema.parse(json);
-  return all.filter((s) => s.type === 'WEB_PICKUP');
+  return all.filter((s) => isWebSaleType(s.type));
 }

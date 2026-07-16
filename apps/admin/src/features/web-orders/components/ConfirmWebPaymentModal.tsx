@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  DIGITAL_PAYMENT_METHODS,
-  type PaymentMethod,
-  type PublicWebOrder,
-  type Sale,
-} from '@pos-tercos/types';
+import { type PaymentMethod, type PublicWebOrder, type Sale } from '@pos-tercos/types';
 import { Button, Checkbox, Dialog, FormField, Money } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { confirmPayment, TransferSection } from '../../sales';
@@ -14,7 +9,6 @@ import { OrderItemsList } from './OrderItemsList';
 import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
 import { getErrorMessage } from '../../../lib/errors';
 
-const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 /** Solo a partir de este tiempo sin cobrarse ofrecemos "no avisar". */
 const STALE_MIN = 15;
 
@@ -57,7 +51,8 @@ export function ConfirmWebPaymentModal({
       .finally(() => setLoadingSale(false));
   }, [open, order?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isDigital = method !== null && DIGITAL_SET.has(method);
+  // Los pedidos web se pagan por transferencia (digital) — nunca efectivo online.
+  const isDigital = method !== null && method !== 'CASH';
   const total = order?.total ?? 0;
   // El toggle "no avisar" solo aparece para pedidos viejos (≥15 min sin cobrarse)
   // — cobros retroactivos. Para uno fresco, siempre se avisa (sin ruido en UI).
@@ -113,13 +108,32 @@ export function ConfirmWebPaymentModal({
       <div className="space-y-5">
         <section className="rounded-xl bg-muted/40 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-muted-foreground">Recoger en tienda</span>
+            <span className="text-sm text-muted-foreground">
+              {order.type === 'WEB_DELIVERY' ? 'Entrega a domicilio' : 'Recoger en tienda'}
+            </span>
             <Money amount={total} size="lg" weight="bold" />
           </div>
           <p className="mt-1 text-xs text-warning">
             Verifica el comprobante en WhatsApp antes de confirmar.
           </p>
+          {order.type === 'WEB_DELIVERY' ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Este total es solo del pedido: el domicilio se le cobra aparte al repartidor.
+            </p>
+          ) : null}
         </section>
+
+        {order.deliveryAddress ? (
+          <section className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-primary">Entregar en</p>
+            <p className="mt-1 text-sm font-semibold leading-snug text-foreground">
+              {order.deliveryAddress}
+            </p>
+            {order.deliveryNotes ? (
+              <p className="mt-0.5 text-xs text-muted-foreground">{order.deliveryNotes}</p>
+            ) : null}
+          </section>
+        ) : null}
 
         <OrderItemsList loading={loadingSale} sale={fullSale} />
 

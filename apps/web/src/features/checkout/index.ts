@@ -10,3 +10,4 @@ export { getWebOrderServer } from './server';
 export { useActiveOrder, isTerminalStatus } from './store/active-order-store';
 export type { ActiveOrder } from './store/active-order-store';
 export { ActiveOrderBanner } from './components/ActiveOrderBanner';
+export { SendOrderByWhatsApp } from './components/SendOrderByWhatsApp';

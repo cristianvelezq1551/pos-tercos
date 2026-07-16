@@ -9,9 +9,17 @@ export interface ComandaData {
   receiptNumber: number;
   /** ISO datetime de la venta. */
   createdAt: string;
-  /** COUNTER | WEB_PICKUP — la cocina distingue pedidos web. */
+  /** COUNTER | WEB_PICKUP | WEB_DELIVERY — la cocina distingue pedidos web. */
   type: string;
   customerName: string | null;
+  /**
+   * Solo WEB_DELIVERY. Se imprime GRANDE: este papel es lo que se lleva quien
+   * reparte. Sin dirección en la comanda, el domicilio no sale.
+   */
+  deliveryAddress?: string | null;
+  deliveryNotes?: string | null;
+  /** Teléfono del cliente: si el repartidor no encuentra, llama. */
+  customerPhone?: string | null;
   items: Array<{
     productName: string;
     sizeName: string | null;
@@ -65,7 +73,14 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
   out.push(BOLD_OFF);
   out.push(SIZE_NORMAL);
   out.push(LF);
-  if (comanda.type === 'WEB_PICKUP') {
+  if (comanda.type === 'WEB_DELIVERY') {
+    out.push(SIZE_2H);
+    out.push(BOLD_ON);
+    out.push(latin1('*** DOMICILIO ***'));
+    out.push(BOLD_OFF);
+    out.push(SIZE_NORMAL);
+    out.push(LF);
+  } else if (comanda.type === 'WEB_PICKUP') {
     out.push(BOLD_ON);
     out.push(latin1('PEDIDO WEB'));
     out.push(BOLD_OFF);
@@ -78,6 +93,35 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
     out.push(LF);
   }
   out.push(ALIGN_LEFT);
+
+  // La dirección va ARRIBA de los ítems y en doble alto: es lo primero que
+  // busca quien reparte, y este papel es su única guía.
+  if (comanda.type === 'WEB_DELIVERY' && comanda.deliveryAddress) {
+    out.push(SEPARATOR);
+    out.push(BOLD_ON);
+    out.push(latin1('ENTREGAR EN:'));
+    out.push(BOLD_OFF);
+    out.push(LF);
+    out.push(SIZE_2H);
+    for (const line of wrap(comanda.deliveryAddress, 32)) {
+      out.push(latin1(line));
+      out.push(LF);
+    }
+    out.push(SIZE_NORMAL);
+    if (comanda.deliveryNotes) {
+      for (const line of wrap(comanda.deliveryNotes, 32)) {
+        out.push(latin1(line));
+        out.push(LF);
+      }
+    }
+    if (comanda.customerPhone) {
+      out.push(BOLD_ON);
+      out.push(latin1(truncate(`Tel: ${comanda.customerPhone}`, 32)));
+      out.push(BOLD_OFF);
+      out.push(LF);
+    }
+  }
+
   out.push(SEPARATOR);
 
   // Ítems: cantidad + producto en doble alto (legible a un metro).
@@ -145,6 +189,34 @@ function latin1(s: string): Buffer {
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1) + '…';
+}
+
+/**
+ * Parte el texto en líneas de `max` chars sin cortar palabras. La dirección NO
+ * se puede truncar: "Cra 43A #5-15, torre 2, apto 502" recortado a 32 pierde
+ * justo el apartamento, que es lo único que el repartidor necesita al final.
+ * Una palabra más larga que el ancho (una URL, un pegote sin espacios) se corta
+ * a la fuerza — es eso o descartarla.
+ */
+function wrap(text: string, max: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.trim().split(/\s+/)) {
+    if (!line) {
+      line = word;
+    } else if (line.length + 1 + word.length <= max) {
+      line += ` ${word}`;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+    while (line.length > max) {
+      lines.push(line.slice(0, max));
+      line = line.slice(max);
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 function formatTime(iso: string): string {

@@ -28,7 +28,7 @@ export function ActiveOrderBanner() {
             Tu pedido #{order.receiptNumber} en curso
           </span>
           <span className="truncate text-xs text-muted-foreground">
-            Recoger en tienda · Toca para ver el estado
+            Toca para ver el estado de tu pedido
           </span>
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.25} />

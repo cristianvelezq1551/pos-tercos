@@ -52,13 +52,15 @@ export class NotificationService {
           customerPhone: true,
           total: true,
           type: true,
+          deliveryAddress: true,
           notified_payment_instructions: true,
           notified_payment_received: true,
           notified_ready_for_pickup: true,
           notified_canceled: true,
         },
       });
-      if (!sale || sale.type !== 'WEB_PICKUP' || !sale.customerPhone) return;
+      // Los dos tipos web se notifican. COUNTER no: el cliente está en el mostrador.
+      if (!sale || sale.type === 'COUNTER' || !sale.customerPhone) return;
       if (this.alreadySent(sale, stage)) return;
 
       // Claim atómico del flag ANTES de enviar: si dos notify() concurrentes
@@ -77,6 +79,8 @@ export class NotificationService {
         customerName: sale.customerName,
         customerPhone: sale.customerPhone,
         total: Number(sale.total),
+        // Presente ⇒ el mensaje de "listo" dice "va en camino", no "retirar".
+        deliveryAddress: sale.deliveryAddress,
       };
       const msgOpts = {
         businessName: this.businessName,

@@ -3,7 +3,9 @@
 import { cn, FormField, Input } from '@pos-tercos/ui';
 import { MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
+import type { WebOrderType } from '@pos-tercos/types';
+import { LocationCheck } from '../../business';
 import {
   cartLinesToCreateItems,
   useCartStore,
@@ -14,6 +16,7 @@ import { useCartReconcile } from '../hooks/use-cart-reconcile';
 import { useActiveOrder } from '../store/active-order-store';
 import { randomUUID } from '../../../lib/uuid';
 import { CartChangesBanner } from './CartChangesBanner';
+import { FulfillmentPicker } from './FulfillmentPicker';
 import { OrderSummaryCard } from './OrderSummaryCard';
 import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
 import { COP } from '../../../lib/format';
@@ -28,8 +31,22 @@ export function CheckoutForm() {
   const [name, setName] = useState('');
   const [phone10, setPhone10] = useState('');
   const [notes, setNotes] = useState('');
+  const [type, setType] = useState<WebOrderType>('WEB_PICKUP');
+  const [address, setAddress] = useState('');
+  const [addressNotes, setAddressNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Ubicación del cliente + si quedó fuera de la zona (lo resuelve LocationCheck). */
+  const [geo, setGeo] = useState<{
+    coords: { lat: number; lng: number } | null;
+    blocked: boolean;
+  }>({ coords: null, blocked: false });
+
+  const onGeoResolved = useCallback(
+    (coords: { lat: number; lng: number } | null, blocked: boolean) =>
+      setGeo({ coords, blocked }),
+    [],
+  );
 
   const { change, hasChanges, apply } = useCartReconcile();
 
@@ -41,9 +58,16 @@ export function CheckoutForm() {
   // de WhatsApp del pedido, por eso no aceptamos fijos ni números imposibles.
   const phoneValid = /^3\d{9}$/.test(phone10);
   const nameValid = name.trim().length >= 2;
-  // No dejar pagar mientras haya cambios sin revisar (precio viejo / producto
-  // desactivado) — el cliente confirma el pedido actualizado primero.
-  const canSubmit = items.length > 0 && nameValid && phoneValid && !hasChanges;
+  // Un domicilio sin dirección no lo puede entregar nadie.
+  const addressValid = type !== 'WEB_DELIVERY' || address.trim().length >= 8;
+  /**
+   * No dejar pedir con: cambios del carrito sin revisar (precio viejo / producto
+   * desactivado), un domicilio sin dirección, o una ubicación verificada fuera
+   * del radio. El backend rechaza los tres igual — esto es la cara amable, para
+   * que el cliente no llegue hasta el submit para enterarse.
+   */
+  const canSubmit =
+    items.length > 0 && nameValid && phoneValid && addressValid && !hasChanges && !geo.blocked;
 
   if (hydrated && items.length === 0) {
     return (
@@ -69,11 +93,20 @@ export function CheckoutForm() {
       const idempotencyKey = randomUUID();
       const result = await createWebOrder(
         {
-          type: 'WEB_PICKUP',
+          type,
           items: cartLinesToCreateItems(items),
           customerName: name.trim(),
           customerPhone: `+57${phone10}`,
           notes: notes.trim() || undefined,
+          ...(type === 'WEB_DELIVERY'
+            ? {
+                deliveryAddress: address.trim(),
+                deliveryNotes: addressNotes.trim() || undefined,
+              }
+            : {}),
+          // Solo si el cliente compartió su ubicación. Sin esto el server no
+          // valida el radio y acepta (el permiso se puede negar).
+          ...(geo.coords ? { customerLat: geo.coords.lat, customerLng: geo.coords.lng } : {}),
         },
         idempotencyKey,
       );
@@ -96,6 +129,17 @@ export function CheckoutForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-8">
       {hasChanges ? <CartChangesBanner change={change} onApply={apply} /> : null}
+      <FulfillmentPicker
+        type={type}
+        address={address}
+        addressNotes={addressNotes}
+        onType={setType}
+        onAddress={setAddress}
+        onAddressNotes={setAddressNotes}
+      />
+      {/* El radio es la zona de cobertura del domicilio: a quien viene a
+          recoger no se le pide la ubicación ni se lo bloquea por vivir lejos. */}
+      {type === 'WEB_DELIVERY' ? <LocationCheck onResolved={onGeoResolved} /> : null}
 
       <OrderSummaryCard items={items} />
 

@@ -11,6 +11,7 @@
 
 import { formatCop } from './format';
 import type { WhatsAppLinkResult } from './types';
+import { normalizeWaPhone, toWaLink } from './wa-link';
 
 export function buildDiscrepancyAlertLink(input: {
   ownerPhone: string | null;
@@ -20,7 +21,7 @@ export function buildDiscrepancyAlertLink(input: {
   closedAt: Date;
   businessName: string;
 }): WhatsAppLinkResult | null {
-  const phone = normalizePhone(input.ownerPhone);
+  const phone = normalizeWaPhone(input.ownerPhone);
   if (!phone) return null;
 
   const sign = input.difference >= 0 ? '+' : '';
@@ -35,18 +36,5 @@ export function buildDiscrepancyAlertLink(input: {
     `(${input.difference >= 0 ? 'sobrante' : 'faltante'})\n` +
     `Shift: ${input.shiftId.slice(0, 8)}\n\n` +
     `Revisar el detalle en /shifts/${input.shiftId}.`;
-  return toLink(phone, messagePlain);
-}
-
-function normalizePhone(phone: string | null): string | null {
-  if (!phone) return null;
-  const digits = phone.replace(/\D+/g, '');
-  if (digits.length < 10) return null;
-  if (digits.length === 10) return `57${digits}`;
-  return digits;
-}
-
-function toLink(phone: string, messagePlain: string): WhatsAppLinkResult {
-  const encoded = encodeURIComponent(messagePlain);
-  return { url: `https://wa.me/${phone}?text=${encoded}`, messagePlain };
+  return toWaLink(phone, messagePlain);
 }

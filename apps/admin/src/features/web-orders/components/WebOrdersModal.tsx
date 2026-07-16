@@ -1,6 +1,6 @@
 'use client';
 
-import type { PublicWebOrder, Sale } from '@pos-tercos/types';
+import { WEB_SALE_TYPES, type PublicWebOrder, type Sale } from '@pos-tercos/types';
 import { Button, Dialog, EmptyState, LoadingSkeleton, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../../sales';
@@ -38,7 +38,8 @@ export function WebOrdersModal({
     try {
       // Todos los pedidos web de hoy → permite el selector por estado con conteos.
       const all = await listSales({
-        type: 'WEB_PICKUP',
+        // CSV: los dos tipos web en una consulta (el backend lo soporta).
+        type: WEB_SALE_TYPES.join(','),
         from: startOfTodayIso(),
         limit: 200,
       });

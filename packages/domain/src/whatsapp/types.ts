@@ -9,7 +9,13 @@
  * OpenWA / mock).
  */
 
-/** Etapas que disparan una notificación al cliente (solo WEB_PICKUP). */
+/**
+ * Etapas que disparan una notificación al cliente (pedidos web).
+ *
+ * `pickup_ready` = "el pedido está listo". El TEXTO cambia según sea para
+ * recoger o domicilio (ver `buildPickupReadyMessage`), pero la etapa es la
+ * misma: comparte el flag de idempotencia `notified_ready_for_pickup`.
+ */
 export type WhatsAppNotificationStage =
   | 'payment_instructions'
   | 'payment_received'
@@ -25,6 +31,8 @@ export interface WhatsAppSaleSnapshot {
   customerPhone: string | null;
   /** Total del pedido en COP (ya con descuentos). */
   total: number;
+  /** Dirección de entrega. Presente ⇒ es domicilio y NO se retira en el local. */
+  deliveryAddress?: string | null;
 }
 
 export interface WhatsAppMessageOptions {

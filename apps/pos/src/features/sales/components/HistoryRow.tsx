@@ -1,6 +1,6 @@
 'use client';
 
-import type { Sale } from '@pos-tercos/types';
+import { isWebSaleType, type Sale } from '@pos-tercos/types';
 import { ConfirmDialog, Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { printReceipt } from '../api/print';
@@ -69,7 +69,7 @@ export function HistoryRow({
               #{sale.receiptNumber}
             </span>
             <span className="truncate text-sm font-semibold text-foreground">
-              {sale.customerName ?? (sale.type === 'WEB_PICKUP' ? 'Pedido web' : 'Mostrador')}
+              {sale.customerName ?? (isWebSaleType(sale.type) ? 'Pedido web' : 'Mostrador')}
             </span>
           </div>
           <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">

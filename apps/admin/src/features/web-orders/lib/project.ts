@@ -1,8 +1,9 @@
-import type { PublicWebOrder, Sale } from '@pos-tercos/types';
+import { isWebSaleType, type PublicWebOrder, type Sale } from '@pos-tercos/types';
 
 /** Proyecta un Sale (full) al subset PublicWebOrder para uniformar el state. */
 export function saleToPublicWebOrder(sale: Sale): PublicWebOrder | null {
-  if (sale.type !== 'WEB_PICKUP') return null;
+  // Los dos tipos web: un domicilio también entra al panel de pedidos del cajero.
+  if (!isWebSaleType(sale.type)) return null;
   return {
     id: sale.id,
     receiptNumber: sale.receiptNumber,
@@ -13,6 +14,8 @@ export function saleToPublicWebOrder(sale: Sale): PublicWebOrder | null {
     subtotal: sale.subtotal,
     discountTotal: sale.discountTotal,
     total: sale.total,
+    deliveryAddress: sale.deliveryAddress ?? null,
+    deliveryNotes: sale.deliveryNotes ?? null,
     createdAt: sale.createdAt,
     items: (sale.items ?? []).map((it) => ({
       productName: it.productName ?? 'Producto',

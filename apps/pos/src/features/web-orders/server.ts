@@ -1,4 +1,4 @@
-import { SaleSchema, type Sale } from '@pos-tercos/types';
+import { isWebSaleType, SaleSchema, type Sale } from '@pos-tercos/types';
 import { z } from 'zod';
 import { serverFetch } from '../../lib/api-server';
 
@@ -10,5 +10,6 @@ export async function getPendingWebOrdersServer(): Promise<Sale[]> {
   const json = (await res.json().catch(() => null)) as unknown;
   const parsed = ListSchema.safeParse(json);
   if (!parsed.success) return [];
-  return parsed.data.filter((s) => s.type === 'WEB_PICKUP');
+  // Los DOS tipos web: sin esto el cajero nunca vería un domicilio.
+  return parsed.data.filter((s) => isWebSaleType(s.type));
 }

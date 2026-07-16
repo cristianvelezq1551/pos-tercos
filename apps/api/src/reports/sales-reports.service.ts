@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { WEB_SALE_TYPES, type SaleType } from '@pos-tercos/types';
 import {
   DAILY_SUMMARY_SYSTEM,
   buildDailySummaryUserPrompt,
@@ -9,6 +10,7 @@ import {
   type AiSummary,
   type DashboardSummary,
   type HourHeatmapReport,
+  type Sale,
   type SalesGranularity,
   type SalesSummary,
   type SuggestionsMetrics,
@@ -17,8 +19,13 @@ import {
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
+import { includeFull, toSaleDto } from '../sales/sales.mappers';
+
+/** Techo del listado detallado — evita cargar miles de filas de golpe. */
+const SALES_DETAIL_MAX = 1000;
 
 /**
  * Reportes operativos / de negocio (FASE 13.A).
@@ -41,6 +48,7 @@ export class SalesReportsService {
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
     private readonly llm: LLMService,
+    private readonly inventory: InventoryService,
   ) {}
 
   // ==================================================================
@@ -182,21 +190,52 @@ export class SalesReportsService {
           discount: round(v.discount),
         })),
       byType: Array.from(byType.entries()).map(([type, v]) => ({
-        type: type as 'COUNTER' | 'WEB_PICKUP',
+        type: type as SaleType,
         count: v.count,
         revenue: round(v.revenue),
       })),
       byMethod: Array.from(byMethod.entries()).map(([method, v]) => ({
-        method: method as
-          | 'CASH'
-          | 'NEQUI'
-          | 'DAVIPLATA'
-          | 'QR_BANCOLOMBIA'
-          | 'TRANSFER',
+        method,
         count: v.count,
         revenue: round(v.revenue),
       })),
     };
+  }
+
+  // ==================================================================
+  // DETALLE DE VENTAS (listado del reporte, mismo universo que el resumen)
+  // ==================================================================
+
+  /**
+   * Ventas pagadas del período (mismo filtro `paidSalesWhere` que el resumen),
+   * con items + pagos, ordenadas por `paidAt` desc. Alimenta el listado
+   * detallado bajo el resumen en `/reports/sales`.
+   */
+  async getSalesDetail(from: Date, to: Date): Promise<Sale[]> {
+    return this.findSalesDetail(paidSalesWhere(from, to));
+  }
+
+  /**
+   * Ventas pagadas de UNA caja (arqueo), sin ventana de fechas: la sesión
+   * puede cruzar medianoche y ese es justamente el punto — muestra lo que
+   * entró en esa caja tal como lo cuadra el Z-report (agrupa por shiftId).
+   */
+  async getSalesDetailByShift(shiftId: string): Promise<Sale[]> {
+    return this.findSalesDetail({
+      shiftId,
+      paidAt: { not: null },
+      status: { notIn: [...NON_REVENUE_SALE_STATUSES] },
+    });
+  }
+
+  private async findSalesDetail(where: Prisma.SaleWhereInput): Promise<Sale[]> {
+    const rows = await this.prisma.sale.findMany({
+      where,
+      include: includeFull(),
+      orderBy: { paidAt: 'desc' },
+      take: SALES_DETAIL_MAX,
+    });
+    return rows.map(toSaleDto);
   }
 
   // ==================================================================
@@ -330,10 +369,10 @@ export class SalesReportsService {
   // ==================================================================
 
   async getWhatsAppMetrics(from: Date, to: Date): Promise<WhatsAppMetrics> {
-    // Sales WEB_PICKUP en el período.
+    // Ambos tipos web: un domicilio también dispara notificaciones.
     const webSales = await this.prisma.sale.findMany({
       where: {
-        type: 'WEB_PICKUP',
+        type: { in: [...WEB_SALE_TYPES] },
         createdAt: { gte: from, lte: to },
       },
       select: { id: true, status: true, paidAt: true },
@@ -455,7 +494,7 @@ export class SalesReportsService {
     // pasada (si no, en la mañana el WoW% siempre se ve fuertemente negativo).
     const lastWeekEnd = addDays(now, -7);
 
-    const [today, lastWeekSameDay, pendingWeb, toPrepare, ready, lowStock, pendingSugg] = await Promise.all([
+    const [today, lastWeekSameDay, pendingWeb, toPrepare, ready, lowStock, pendingSugg, negativeStock] = await Promise.all([
       this.prisma.sale.aggregate({
         where: paidSalesWhere(dayStart, dayEnd),
         _sum: { total: true, discountTotal: true },
@@ -467,21 +506,21 @@ export class SalesReportsService {
       }),
       this.prisma.sale.count({
         where: {
-          type: 'WEB_PICKUP',
+          type: { in: [...WEB_SALE_TYPES] },
           status: 'PENDIENTE_PAGO',
         },
       }),
-      // Pedidos WEB pagados que el cajero aún debe marcar "listo". Solo
-      // WEB_PICKUP: el mostrador (COUNTER) termina en PAGADO y NO entra a esta
-      // cola (si no, cada venta de caja inflaría el contador para siempre).
+      // Pedidos WEB pagados que el cajero aún debe marcar "listo". Solo los
+      // web: el mostrador (COUNTER) termina en PAGADO y NO entra a esta cola
+      // (si no, cada venta de caja inflaría el contador para siempre).
       this.prisma.sale.count({
-        where: { type: 'WEB_PICKUP', status: 'PAGADO' },
+        where: { type: { in: [...WEB_SALE_TYPES] }, status: 'PAGADO' },
       }),
-      // Pedidos WEB marcados "listos para retirar" hoy (acotado al día para que
-      // no acumule indefinidamente — LISTO_DESPACHO es terminal).
+      // Pedidos WEB marcados "listos" hoy (acotado al día para que no acumule
+      // indefinidamente — LISTO_DESPACHO es terminal).
       this.prisma.sale.count({
         where: {
-          type: 'WEB_PICKUP',
+          type: { in: [...WEB_SALE_TYPES] },
           status: 'LISTO_DESPACHO',
           readyAt: { gte: dayStart, lte: dayEnd },
         },
@@ -490,6 +529,11 @@ export class SalesReportsService {
       this.prisma.purchaseSuggestion.count({
         where: { status: { in: ['PENDING', 'EVALUATED'] } },
       }),
+      // Deuda de inventario (stock < 0). Se delega en InventoryService para que
+      // el contador del dashboard NO pueda divergir de la lista de /inventory
+      // /negativos (incluye subproductos e ignora el umbral, a diferencia de
+      // computeLowStockCount).
+      this.computeNegativeStockCount(),
     ]);
 
     const todayRevenue = Number(today._sum.total ?? 0);
@@ -511,7 +555,18 @@ export class SalesReportsService {
       webOrdersReady: ready,
       lowStockCount: lowStock,
       pendingSuggestions: pendingSugg,
+      negativeStockCount: negativeStock,
     };
+  }
+
+  /**
+   * Stockables con stock NEGATIVO (deuda de inventario). Excluye los
+   * CONSUMIBLES (servilletas, sal): su negativo es esperable y taparía la
+   * señal que importa ("falta subir la factura del pollo").
+   */
+  private async computeNegativeStockCount(): Promise<number> {
+    const negatives = await this.inventory.listStockables({ negative: true });
+    return negatives.filter((s) => s.blocksAvailability).length;
   }
 
   private async computeLowStockCount(): Promise<number> {

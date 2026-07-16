@@ -19,6 +19,7 @@ import { isTerminalStatus, useActiveOrder } from '../store/active-order-store';
 import { useOrderPoller } from './OrderStatusPoller';
 import { PaymentInstructionsView } from './PaymentInstructionsView';
 import { StatusTimeline } from './StatusTimeline';
+import { SendOrderByWhatsApp } from './SendOrderByWhatsApp';
 import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
 
 interface StatusMeta {
@@ -194,6 +195,9 @@ export function OrderStatusView({
 
       {showPayment ? (
         <div className="flex w-full max-w-[420px] flex-col gap-4">
+          {/* Primero el botón: abrir el chat es la acción que queremos que haga.
+              Las instrucciones quedan abajo por si no lo toca. */}
+          <SendOrderByWhatsApp order={order} />
           <WhatsAppPaymentInfo />
           <PaymentInstructionsView text={paymentInstructions} />
         </div>
@@ -230,7 +234,11 @@ function DetailsCard({
 }) {
   const rows: { label: string; value: string }[] = [
     { label: 'Total', value: COP.format(order.total) },
-    { label: 'Recoger en', value: businessName },
+    // Un domicilio no se recoge en el local: decirle "Recoger en TERCOS" a
+    // quien pidió a domicilio es directamente información falsa.
+    order.deliveryAddress
+      ? { label: 'Entregamos en', value: order.deliveryAddress }
+      : { label: 'Recoger en', value: businessName },
   ];
   if (order.status === 'PAGADO' || order.status === 'EN_PREPARACION') {
     rows.push({ label: 'Tiempo estimado', value: 'Listo en ~20 min' });

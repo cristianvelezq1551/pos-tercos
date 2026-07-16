@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
+import { BusinessHydrator } from '../../../../features/business';
 import {
   getWebOrderServer,
   OrderStatusView,
 } from '../../../../features/checkout';
+import { getHeroServer } from '../../../../features/hero';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +52,9 @@ export default async function CheckoutSuccessPage({
   }
 
   const order = result.order;
+  // El botón de WhatsApp necesita el teléfono del negocio, que vive en la
+  // config: sin hidratar el store, no se renderiza.
+  const { business } = await getHeroServer();
 
   // El backend (GET /web/orders/:id) es la única fuente de las instrucciones
   // de pago. Sobrevive a reload / device distinto / share del URL sin que el
@@ -58,6 +63,7 @@ export default async function CheckoutSuccessPage({
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
+      <BusinessHydrator business={business} />
       <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
         <Link
           href="/"

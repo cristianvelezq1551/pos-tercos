@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SaleTypeEnum } from './sales';
 
 // ====================================================================
 // REPORTS — anomalías por cajero (FASE 11.D)
@@ -141,14 +142,17 @@ export const SalesBucketSchema = z.object({
 export type SalesBucket = z.infer<typeof SalesBucketSchema>;
 
 export const SalesByTypeSchema = z.object({
-  type: z.enum(['COUNTER', 'WEB_PICKUP']),
+  // El enum canónico, no una copia: al reponer WEB_DELIVERY una lista duplicada
+  // acá habría hecho que el reporte rechazara los domicilios.
+  type: SaleTypeEnum,
   count: z.number().int().nonnegative(),
   revenue: z.number().nonnegative(),
 });
 export type SalesByType = z.infer<typeof SalesByTypeSchema>;
 
 export const SalesByMethodSchema = z.object({
-  method: z.enum(['CASH', 'NEQUI', 'DAVIPLATA', 'QR_BANCOLOMBIA', 'TRANSFER']),
+  // Método dinámico (catálogo de medios de pago): cualquier code habilitado.
+  method: z.string().min(1),
   count: z.number().int().nonnegative(),
   revenue: z.number().nonnegative(),
 });
@@ -281,6 +285,12 @@ export const DashboardSummarySchema = z.object({
   /** Stockables bajo threshold (ingredient/product directResale activos). */
   lowStockCount: z.number().int().nonnegative(),
   pendingSuggestions: z.number().int().nonnegative(),
+  /**
+   * Stockables con stock NEGATIVO = deuda de inventario (se vendió/consumió más
+   * de lo registrado). Señal de que falta subir una factura o registrar una
+   * producción. Incluye subproductos e ignora el umbral.
+   */
+  negativeStockCount: z.number().int().nonnegative(),
 });
 export type DashboardSummary = z.infer<typeof DashboardSummarySchema>;
 

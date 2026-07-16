@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  DIGITAL_PAYMENT_METHODS,
-  type PaymentMethod,
-  type PublicWebOrder,
-  type Sale,
-} from '@pos-tercos/types';
+import { type PaymentMethod, type PublicWebOrder, type Sale } from '@pos-tercos/types';
 import { Button, Checkbox, Dialog, FormField, Money } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { confirmPayment, TransferSection } from '../../sales';
@@ -14,7 +9,6 @@ import { OrderItemsList } from './OrderItemsList';
 import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
 import { getErrorMessage } from '../../../lib/errors';
 
-const DIGITAL_SET = new Set<PaymentMethod>(DIGITAL_PAYMENT_METHODS);
 /** Solo a partir de este tiempo sin cobrarse ofrecemos "no avisar". */
 const STALE_MIN = 15;
 
@@ -57,7 +51,8 @@ export function ConfirmWebPaymentModal({
       .finally(() => setLoadingSale(false));
   }, [open, order?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isDigital = method !== null && DIGITAL_SET.has(method);
+  // Los pedidos web se pagan por transferencia (digital) — nunca efectivo online.
+  const isDigital = method !== null && method !== 'CASH';
   const total = order?.total ?? 0;
   // El toggle "no avisar" solo aparece para pedidos viejos (≥15 min sin cobrarse)
   // — cobros retroactivos. Para uno fresco, siempre se avisa (sin ruido en UI).

@@ -28,3 +28,5 @@ export type {
   WhatsAppTemplateMessage,
   WhatsAppLinkResult,
 } from './types';
+export { buildWebOrderLink, type OrderLinkInput, type OrderLinkItem } from './order-link';
+export { normalizeWaPhone, toWaLink } from './wa-link';
