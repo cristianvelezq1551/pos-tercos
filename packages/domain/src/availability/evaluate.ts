@@ -11,6 +11,8 @@ export interface AvailabilityProduct {
   directResale: boolean;
   isCombo: boolean;
   soldOut: boolean;
+  /** Forzado disponible por el dueño: pisa el cómputo de stock. */
+  forceAvailable: boolean;
   comboComponents: Array<{ productId: string; quantity: number }>;
 }
 
@@ -39,6 +41,7 @@ export interface AvailabilityInput {
  *                        para ≥1 unidad (NO se expanden recetas anidadas)
  *  - combo            → todos sus componentes alcanzan para ≥1 combo
  *  - "86" manual (soldOut) invalida cualquier producto
+ *  - "forzar disponible" (forceAvailable) lo deja vendible pese al stock
  *
  * Si falta un subproducto, el mensaje dice el nombre del subproducto
  * ("Sin Pollo Apanado") en vez de los insumos profundos ("Sin pollo crudo").
@@ -56,6 +59,17 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           available: false,
           stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
           reason: 'Agotado (manual)',
+        };
+      }
+
+      // Forzado disponible: el dueño lo vende aunque el stock no alcance en el
+      // sistema. Pisa el cómputo por tipo (no bloquea por faltantes).
+      if (p.forceAvailable) {
+        return {
+          productId: p.id,
+          available: true,
+          stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
+          reason: null,
         };
       }
 
@@ -107,10 +121,14 @@ function evalRecipeShortages(
   }
   const missing: string[] = [];
   for (const ing of needs.ingredients.values()) {
+    // Consumible (servilletas, sal): se descuenta y se costea, pero NO frena
+    // la venta. El único filtro de no-bloqueantes de todo el sistema vive acá.
+    if (!ing.blocksAvailability) continue;
     const have = ingStock.get(ing.ingredientId) ?? 0;
     if (have + STOCK_EPSILON < ing.totalQuantity) missing.push(ing.name);
   }
   for (const sub of needs.subproducts.values()) {
+    if (!sub.blocksAvailability) continue;
     const have = subStock.get(sub.subproductId) ?? 0;
     if (have + STOCK_EPSILON < sub.totalQuantity) missing.push(sub.name);
   }
@@ -140,6 +158,8 @@ function evalComboShortages(
     const cp = productById.get(comp.productId);
     if (!cp) return 'Combo mal configurado';
     if (cp.soldOut) return `Sin ${cp.name}`;
+    // Componente forzado disponible → no bloquea el combo por su stock.
+    if (cp.forceAvailable) continue;
     if (cp.directResale) {
       drNeeds.set(comp.productId, (drNeeds.get(comp.productId) ?? 0) + comp.quantity);
       continue;
@@ -151,10 +171,13 @@ function evalComboShortages(
         comp.quantity,
       );
       for (const ing of needs.ingredients.values()) {
+        // Consumible: no frena el combo (mismo criterio que el preparado suelto).
+        if (!ing.blocksAvailability) continue;
         aggIng.set(ing.ingredientId, (aggIng.get(ing.ingredientId) ?? 0) + ing.totalQuantity);
         ingName.set(ing.ingredientId, ing.name);
       }
       for (const sub of needs.subproducts.values()) {
+        if (!sub.blocksAvailability) continue;
         aggSub.set(sub.subproductId, (aggSub.get(sub.subproductId) ?? 0) + sub.totalQuantity);
         subName.set(sub.subproductId, sub.name);
       }

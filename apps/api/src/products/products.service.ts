@@ -390,6 +390,7 @@ export class ProductsService {
           directResale: true,
           isCombo: true,
           soldOut: true,
+          forceAvailable: true,
           comboComponents: { select: { productId: true, quantity: true } },
         },
       }),
@@ -449,7 +450,27 @@ export class ProductsService {
     if (!exists) throw new NotFoundException(`Product ${id} not found`);
     const row = await this.prisma.product.update({
       where: { id },
-      data: { soldOut },
+      // 86 y forzado son excluyentes: agotar a mano limpia el forzado.
+      data: { soldOut, ...(soldOut ? { forceAvailable: false } : {}) },
+      include: { sizes: true, modifiers: true, comboComponents: true },
+    });
+    return toProductDto(row);
+  }
+
+  /**
+   * Fuerza (o revierte) que un producto sea vendible aunque su stock de
+   * insumos/subproductos no alcance en el sistema. Excluyente con soldOut:
+   * forzar limpia el 86 manual.
+   */
+  async setForceAvailable(id: string, forceAvailable: boolean): Promise<Product> {
+    const exists = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException(`Product ${id} not found`);
+    const row = await this.prisma.product.update({
+      where: { id },
+      data: { forceAvailable, ...(forceAvailable ? { soldOut: false } : {}) },
       include: { sizes: true, modifiers: true, comboComponents: true },
     });
     return toProductDto(row);
@@ -535,6 +556,7 @@ function toProductDto(row: ProductWithChildren): Product {
     comboPrice: row.comboPrice !== null ? Number(row.comboPrice) : null,
     isActive: row.isActive,
     soldOut: row.soldOut,
+    forceAvailable: row.forceAvailable,
     directResale: row.directResale,
     unitPurchase: row.unitPurchase,
     unitStock: row.unitStock,

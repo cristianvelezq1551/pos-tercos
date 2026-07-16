@@ -1,5 +1,6 @@
 import {
   ProductAvailabilityResponseSchema,
+  SetForceAvailableSchema,
   SetSoldOutSchema,
   type ProductAvailability,
 } from '@pos-tercos/types';
@@ -29,5 +30,26 @@ export async function setSoldOut(productId: string, soldOut: boolean): Promise<v
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(err.message ?? `setSoldOut failed: ${res.status}`);
+  }
+}
+
+/**
+ * Fuerza disponible (o revierte a automático). Deja vendible el producto aunque
+ * el stock de sus insumos/subproductos no alcance en el sistema.
+ */
+export async function setForceAvailable(
+  productId: string,
+  forceAvailable: boolean,
+): Promise<void> {
+  const body = SetForceAvailableSchema.parse({ forceAvailable });
+  const res = await fetch(`/api/products/${productId}/force-available`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err.message ?? `setForceAvailable failed: ${res.status}`);
   }
 }

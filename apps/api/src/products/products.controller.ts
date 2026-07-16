@@ -24,6 +24,7 @@ import type { Response } from 'express';
 import {
   CreateProductSchema,
   SetComboComponentsSchema,
+  SetForceAvailableSchema,
   SetProductOptionsSchema,
   SetSoldOutSchema,
   UpdateProductSchema,
@@ -32,6 +33,7 @@ import {
   type Product,
   type ProductAvailability,
   type SetComboComponents,
+  type SetForceAvailable,
   type SetProductOptions,
   type SetSoldOut,
   type UpdateProduct,
@@ -121,6 +123,20 @@ export class ProductsController {
     @Body(new ZodValidationPipe(SetSoldOutSchema)) body: SetSoldOut,
   ): Promise<Product> {
     return this.products.setSoldOut(id, body.soldOut);
+  }
+
+  /**
+   * Fuerza disponible (o revierte a automático). Cajero o admin. Permite
+   * vender aunque el stock del sistema no alcance — para no frenar ventas
+   * cuando el stock físico existe pero no se registró.
+   */
+  @CashierAccess()
+  @Post(':id/force-available')
+  setForceAvailable(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetForceAvailableSchema)) body: SetForceAvailable,
+  ): Promise<Product> {
+    return this.products.setForceAvailable(id, body.forceAvailable);
   }
 
   @OnlyDueno()

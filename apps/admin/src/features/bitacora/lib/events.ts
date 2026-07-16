@@ -17,6 +17,8 @@ const CAJA: AuditAction[] = [
   'CASH_MOVEMENT_OUT',
 ];
 const ANULACIONES: AuditAction[] = ['SALE_VOIDED', 'SALE_REFUNDED'];
+/** Ventas que dejaron el stock en negativo (deuda de inventario). */
+const STOCK_FORZADO: AuditAction[] = ['SALE_FORCED_STOCK', 'OFFLINE_NEGATIVE_STOCK'];
 const CAJON: AuditAction[] = ['CASH_DRAWER_OPENED', 'CASH_DRAWER_OPENED_NO_SALE'];
 const APROBACIONES: AuditAction[] = ['APPROVAL_GRANTED', 'APPROVAL_DENIED', 'APPROVAL_PIN_SET'];
 const SESIONES: AuditAction[] = ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED', 'AUTH_LOGOUT'];
@@ -38,9 +40,10 @@ const PERSONAL: AuditAction[] = [
 ];
 
 export const BITACORA_GROUPS: BitacoraGroup[] = [
-  { key: 'todo', label: 'Todo', actions: [...CAJA, ...ANULACIONES, ...CORTESIAS, ...CAJON, ...APROBACIONES, ...SESIONES, ...PERSONAL, ...COCINA] },
+  { key: 'todo', label: 'Todo', actions: [...CAJA, ...ANULACIONES, ...STOCK_FORZADO, ...CORTESIAS, ...CAJON, ...APROBACIONES, ...SESIONES, ...PERSONAL, ...COCINA] },
   { key: 'caja', label: 'Caja', actions: CAJA },
   { key: 'anulaciones', label: 'Anulaciones', actions: ANULACIONES },
+  { key: 'stock-forzado', label: 'Stock forzado', actions: STOCK_FORZADO },
   { key: 'cortesias', label: 'Cortesías', actions: CORTESIAS },
   { key: 'cajon', label: 'Cajón', actions: CAJON },
   { key: 'aprobaciones', label: 'Aprobaciones', actions: APROBACIONES },
@@ -111,6 +114,27 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
         detail: `${m.reason ? `Motivo: ${String(m.reason)}` : 'Sin motivo'}${m.oldStatus ? ` · estado previo: ${String(m.oldStatus)}` : ''}`,
         tone: 'danger',
       };
+    case 'SALE_FORCED_STOCK': {
+      // metadata.products = [{ id, name }] — los productos forzados disponibles.
+      const products = Array.isArray(m.products) ? (m.products as { name?: unknown }[]) : [];
+      const names = products.map((p) => String(p.name ?? '')).filter(Boolean);
+      return {
+        label: 'Vendió con stock forzado',
+        detail:
+          (names.length > 0 ? `${names.join(', ')} · ` : '') +
+          'el stock quedó en negativo (falta cargar la compra/producción)',
+        tone: 'warning',
+      };
+    }
+    case 'OFFLINE_NEGATIVE_STOCK': {
+      // metadata.items = [{ entityType, entityId, stock }] — ya resueltos.
+      const count = Number(m.count ?? 0);
+      return {
+        label: 'Venta offline dejó stock en negativo',
+        detail: `${count} ${count === 1 ? 'insumo' : 'insumos'} en negativo — revisá Deudas de inventario`,
+        tone: 'warning',
+      };
+    }
     case 'CORTESIA_REQUESTED':
       return {
         label: 'Registró cortesía',

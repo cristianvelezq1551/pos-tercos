@@ -14,11 +14,12 @@ const StockListSchema = z.array(StockableSchema);
 const MovementsListSchema = z.array(InventoryMovementSchema);
 
 export function listStock(
-  filter: { onlyActive?: boolean; lowStock?: boolean } = {},
+  filter: { onlyActive?: boolean; lowStock?: boolean; negative?: boolean } = {},
 ): Promise<Stockable[]> {
   const params = new URLSearchParams();
   if (filter.onlyActive) params.set('only_active', 'true');
   if (filter.lowStock) params.set('low_stock', 'true');
+  if (filter.negative) params.set('negative', 'true');
   const qs = params.toString() ? `?${params.toString()}` : '';
   return request(`/inventory/stock${qs}`, { method: 'GET' }, StockListSchema);
 }

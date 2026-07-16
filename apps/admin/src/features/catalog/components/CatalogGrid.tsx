@@ -35,7 +35,8 @@ export function CatalogGrid({ products }: { products: Product[] }) {
       // sin red: se mantienen las últimas promos conocidas
     }
   }, PROMO_REFRESH_MS);
-  const { soldOutOverride, togglingId, toggleSoldOut } = useSoldOutToggle(refresh);
+  const { soldOutOverride, forceAvailableOverride, togglingId, toggleSoldOut, toggleForceAvailable } =
+    useSoldOutToggle(refresh);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -107,8 +108,12 @@ export function CatalogGrid({ products }: { products: Product[] }) {
           {visible.map((p) => {
             const avail = byId.get(p.id);
             const manualSoldOut = soldOutOverride.get(p.id) ?? p.soldOut;
-            const unavailable = manualSoldOut || (avail ? !avail.available : false);
-            const reason = manualSoldOut ? null : (avail?.reason ?? null);
+            const forced = forceAvailableOverride.get(p.id) ?? p.forceAvailable;
+            // Sin stock por cómputo del backend (insumo/subproducto no alcanza).
+            const computedUnavailable = avail ? !avail.available : false;
+            // 86 manual pisa todo; forzar disponible pisa la falta de stock.
+            const unavailable = manualSoldOut || (!forced && computedUnavailable);
+            const reason = manualSoldOut ? null : forced ? null : (avail?.reason ?? null);
             const promoBadge = getActivePromoBadge(p.id, p.basePrice, promos);
             return (
               <ProductTile
@@ -116,12 +121,15 @@ export function CatalogGrid({ products }: { products: Product[] }) {
                 product={p}
                 availability={avail}
                 manualSoldOut={manualSoldOut}
+                forced={forced}
+                computedUnavailable={computedUnavailable}
                 unavailable={unavailable}
                 reason={reason}
                 toggling={togglingId === p.id}
                 promo={promoBadge}
                 onClick={() => openPicker(p)}
                 onToggleSoldOut={() => void toggleSoldOut(p, !manualSoldOut)}
+                onToggleForceAvailable={(next) => void toggleForceAvailable(p, next)}
               />
             );
           })}

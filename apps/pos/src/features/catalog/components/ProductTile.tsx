@@ -8,22 +8,30 @@ export function ProductTile({
   product,
   availability,
   manualSoldOut,
+  forced,
+  computedUnavailable,
   unavailable,
   reason,
   toggling,
   promo,
   onClick,
   onToggleSoldOut,
+  onToggleForceAvailable,
 }: {
   product: Product;
   availability: ProductAvailability | undefined;
   manualSoldOut: boolean;
+  /** Forzado disponible por el dueño (pisa la falta de stock). */
+  forced: boolean;
+  /** Sin stock según el backend (insumo/subproducto no alcanza). */
+  computedUnavailable: boolean;
   unavailable: boolean;
   reason: string | null;
   toggling: boolean;
   promo: ProductPromoBadge | null;
   onClick: () => void;
   onToggleSoldOut: () => void;
+  onToggleForceAvailable: (next: boolean) => void;
 }) {
   const hasVariants =
     (product.sizes && product.sizes.length > 0) ||
@@ -33,6 +41,39 @@ export function ProductTile({
   const lowStock = stock !== null && stock > 0 && stock <= 3;
   // Mostrar el chip de promo solo si está disponible (si no, queda raro).
   const showPromo = promo !== null && !unavailable;
+
+  // Control de disponibilidad manual, contextual al estado del producto:
+  //  · 86 manual        → "Reactivar" (vuelve a automático)
+  //  · forzado          → "Forzado"   (tocar para volver a automático)
+  //  · agotado x stock   → "Forzar"    (vender aunque el stock no alcance)
+  //  · normal            → "86"        (marcar agotado)
+  const override = manualSoldOut
+    ? {
+        label: 'Reactivar',
+        title: 'Reactivar producto (volver a automático)',
+        onClick: onToggleSoldOut,
+        tone: 'bg-success/20 text-success hover:bg-success/30',
+      }
+    : forced
+      ? {
+          label: 'Forzado',
+          title: 'Forzado disponible — tocar para volver a automático',
+          onClick: () => onToggleForceAvailable(false),
+          tone: 'bg-warning/20 text-warning hover:bg-warning/30',
+        }
+      : computedUnavailable
+        ? {
+            label: 'Forzar',
+            title: 'Forzar disponible (vender aunque el stock no alcance)',
+            onClick: () => onToggleForceAvailable(true),
+            tone: 'bg-success/20 text-success hover:bg-success/30',
+          }
+        : {
+            label: '86',
+            title: 'Marcar agotado (86)',
+            onClick: onToggleSoldOut,
+            tone: 'bg-ink-800 text-muted-foreground hover:bg-destructive/15 hover:text-destructive',
+          };
 
   return (
     <div className="relative h-full">
@@ -139,22 +180,28 @@ export function ProductTile({
         </div>
       ) : null}
 
-      {/* Toggle manual "86" (agotar / reactivar). */}
+      {/* Chip "Forzado": el producto se vende pese a que el stock no alcanza
+          (auto-agotado desactivado hasta volver a automático). */}
+      {forced ? (
+        <span className="pointer-events-none absolute left-2 top-2 rounded-md bg-warning/20 px-1.5 py-0.5 text-[0.5625rem] font-bold uppercase tracking-wide text-warning">
+          Forzado
+        </span>
+      ) : null}
+
+      {/* Control de disponibilidad manual (86 / reactivar / forzar). */}
       <button
         type="button"
-        onClick={onToggleSoldOut}
+        onClick={override.onClick}
         disabled={toggling}
-        title={manualSoldOut ? 'Reactivar producto' : 'Marcar agotado (86)'}
+        title={override.title}
         className={cn(
           'absolute right-2 top-2 rounded-md px-1.5 py-0.5 text-[0.5625rem] font-bold uppercase tracking-wide transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           toggling && 'opacity-50',
-          manualSoldOut
-            ? 'bg-success/20 text-success hover:bg-success/30'
-            : 'bg-ink-800 text-muted-foreground hover:bg-destructive/15 hover:text-destructive',
+          override.tone,
         )}
       >
-        {manualSoldOut ? 'Reactivar' : '86'}
+        {override.label}
       </button>
     </div>
   );
