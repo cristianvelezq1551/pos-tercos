@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { COP } from '../../../lib/format';
 import { displayBasePrice } from '../../../lib/menu-price';
 import { getMenuPromoBadge, usePromotions } from '../../promotions';
+import { ProductImage } from './ProductImage';
 
 export function ProductCard({
   product,
@@ -37,22 +38,15 @@ export function ProductCard({
       <div
         className={cn(
           'relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-muted',
-          'sm:aspect-[4/3] sm:h-auto sm:w-full sm:rounded-none',
+          'sm:aspect-square sm:h-auto sm:w-full sm:rounded-none',
         )}
       >
-        {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className={cn(
-              'h-full w-full object-cover sm:transition-transform sm:duration-300',
-              unavailable ? 'grayscale' : 'sm:group-hover:scale-105',
-            )}
-            loading="lazy"
-          />
-        ) : (
-          <ImageFallback label={product.name} />
-        )}
+        <ProductImage
+          src={product.imageUrl}
+          alt={product.name}
+          unavailable={unavailable}
+          zoomOnHover
+        />
         {unavailable ? (
           <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-destructive px-2 py-1 text-[0.625rem] font-bold uppercase tracking-wide text-destructive-foreground shadow">
             Agotado
@@ -109,16 +103,5 @@ export function ProductCard({
         </div>
       </div>
     </button>
-  );
-}
-
-function ImageFallback({ label }: { label: string }) {
-  const initial = label.trim().charAt(0).toUpperCase() || 'T';
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-background">
-      <span className="font-display text-5xl font-extrabold uppercase tracking-[0.04em] text-white/10 sm:text-7xl">
-        {initial}
-      </span>
-    </div>
   );
 }

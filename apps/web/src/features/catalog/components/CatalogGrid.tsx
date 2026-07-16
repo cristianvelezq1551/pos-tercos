@@ -103,7 +103,7 @@ export function CatalogGrid({
           No hay productos {query ? `para "${query}"` : 'disponibles en esta categoría'}.
         </div>
       ) : (
-        <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
+        <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
           {visible.map((p) => {
             const avail = availability.get(p.id);
             const unavailable = avail ? !avail.available : false;

@@ -1,6 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
+import { ProductImage } from '../ProductImage';
 
 /** Cabecera del picker: foto del producto (o inicial) + botón cerrar. */
 export function PickerHeader({
@@ -13,16 +14,8 @@ export function PickerHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="relative aspect-[520/280] w-full overflow-hidden bg-muted sm:aspect-[520/240]">
-      {imageUrl ? (
-        <img src={imageUrl} alt={name} className="h-full w-full object-cover" />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-background">
-          <span className="font-display text-8xl font-extrabold uppercase tracking-[0.04em] text-white/10">
-            {name.charAt(0).toUpperCase()}
-          </span>
-        </div>
-      )}
+    <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
+      <ProductImage src={imageUrl} alt={name} />
       <button
         type="button"
         onClick={onClose}
