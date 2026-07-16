@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { colombianHolidays, easterSunday } from './colombia-holidays';
+import { colombianHolidays, easterSunday } from '../common/colombia-holidays';
 import { nextWeekRef, payrollWeekFor, prevWeekRef } from './operating-week';
 
 const utc = (s: string): Date => new Date(`${s}T12:00:00.000Z`);

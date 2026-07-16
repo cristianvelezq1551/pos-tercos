@@ -76,6 +76,7 @@ export function CreateStockableInline({
           isActive: created.isActive,
           currentStock: 0,
           lowStock: false,
+          blocksAvailability: created.blocksAvailability,
           category: null,
           basePrice: null,
         });
@@ -107,6 +108,8 @@ export function CreateStockableInline({
           isActive: created.isActive,
           currentStock: 0,
           lowStock: false,
+          // Reventa directa: su stock ES lo que se vende → siempre bloquea.
+          blocksAvailability: true,
           category: created.category,
           basePrice: created.basePrice,
         });

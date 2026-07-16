@@ -4,7 +4,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   Param,
   ParseUUIDPipe,
   Post,
@@ -81,17 +80,15 @@ export class WorkersController {
     return this.weekly.getWeeklyPayroll(ref);
   }
 
-  /** Paga días seleccionados de la semana con comprobante. Solo Dueño + PIN. */
+  /** Paga días seleccionados de la semana. Solo Dueño. Comprobante opcional. */
   @OnlyDueno()
   @Post('weekly/pay')
   @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async payWeek(
-    @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
     @Body('payload') payloadRaw: string | undefined,
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<PayrollWeekPayment> {
-    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
     if (!payloadRaw) throw new BadRequestException('Falta el payload del pago.');
     let parsed: unknown;
     try {
@@ -100,25 +97,23 @@ export class WorkersController {
       throw new BadRequestException('Payload inválido.');
     }
     const input = PayWeekDaysSchema.parse(parsed);
-    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
-    if (!detected) throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
-    return this.weekly.payWeekDays(
-      input,
-      { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
-      requirePin(pin),
-      user.sub,
-    );
+    let proof: { buffer: Buffer; mime: string; ext: string } | null = null;
+    if (file) {
+      const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+      if (!detected) throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
+      proof = { buffer: file.buffer, mime: detected.mime, ext: detected.ext };
+    }
+    return this.weekly.payWeekDays(input, proof, user.sub);
   }
 
-  /** Anula un abono semanal (reversa la caja si fue efectivo). Solo Dueño + PIN. */
+  /** Anula un abono semanal (reversa la caja si fue efectivo). Solo Dueño. */
   @OnlyDueno()
   @Post('weekly/payment/:id/void')
   voidWeekPayment(
     @Param('id', ParseUUIDPipe) id: string,
-    @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
   ): Promise<void> {
-    return this.weekly.voidWeekPayment(id, requirePin(pin), user.sub);
+    return this.weekly.voidWeekPayment(id, user.sub);
   }
 
   /** Comprobante binario de un abono semanal (Dueño). */
@@ -140,38 +135,28 @@ export class WorkersController {
   // DESPUÉS de las estáticas `weekly/...` para no shadowearlas.
   // ----------------------------------------------------------------
 
-  /** Setea/edita el valor de un día de un DIARIO. Solo Dueño + PIN. */
+  /** Setea/edita el valor de un día de un DIARIO. Solo Dueño. */
   @OnlyDueno()
   @Post(':userId/day')
   setDay(
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
     @Body(new ZodValidationPipe(SetPayrollDaySchema)) body: SetPayrollDay,
   ): Promise<PayrollDay> {
-    return this.weekly.setPayrollDay(userId, body, requirePin(pin), user.sub);
+    return this.weekly.setPayrollDay(userId, body, user.sub);
   }
 
-  /** Borra la excepción de un día (vuelve al valor por defecto). Solo Dueño + PIN. */
+  /** Borra la excepción de un día (vuelve al valor por defecto). Solo Dueño. */
   @OnlyDueno()
   @Delete(':userId/day')
   deleteDay(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Query('date') date: string,
-    @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
   ): Promise<void> {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new BadRequestException('?date=YYYY-MM-DD requerido.');
     }
-    return this.weekly.deletePayrollDay(userId, date, requirePin(pin), user.sub);
+    return this.weekly.deletePayrollDay(userId, date, user.sub);
   }
-}
-
-/** Exige el PIN de aprobación; toda acción de nómina afecta plata. */
-function requirePin(pin: string | undefined): string {
-  if (!pin) {
-    throw new BadRequestException('Se requiere el PIN de aprobación (header X-Approval-Pin).');
-  }
-  return pin;
 }

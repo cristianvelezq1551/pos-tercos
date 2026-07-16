@@ -9,15 +9,21 @@ import { InvoiceProofDialog } from './InvoiceProofDialog';
 import { InvoiceUnmarkDialog } from './InvoiceUnmarkDialog';
 
 /** Acciones de pago al proveedor. Compacto = icon-only (para tablas);
- *  default = botones con texto. Solo Dueño (gate del caller). */
+ *  default = botones con texto. El caller decide qué habilita cada gate:
+ *  `canManage` = marcar/desmarcar (Dueño o el admin que creó la factura),
+ *  `canViewProof` = ver comprobante (cualquier admin). */
 export function InvoicePaymentActions({
   invoice,
   onChanged,
   compact = false,
+  canManage = true,
+  canViewProof = true,
 }: {
   invoice: Invoice;
   onChanged: () => void;
   compact?: boolean;
+  canManage?: boolean;
+  canViewProof?: boolean;
 }) {
   const [modal, setModal] = useState<'paid' | 'unmark' | 'proof' | null>(null);
 
@@ -45,25 +51,27 @@ export function InvoicePaymentActions({
       )}
 
       {!isPaid ? (
-        compact ? (
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => setModal('paid')}
-            aria-label="Marcar pagada"
-            title="Subir comprobante y marcar pagada"
-            className="-my-1 h-7 px-2"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-          </Button>
-        ) : (
-          <Button size="sm" variant="default" onClick={() => setModal('paid')}>
-            <CheckCircle2 className="h-3.5 w-3.5" /> Marcar pagada
-          </Button>
-        )
+        canManage ? (
+          compact ? (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => setModal('paid')}
+              aria-label="Marcar pagada"
+              title="Subir comprobante y marcar pagada"
+              className="-my-1 h-7 px-2"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button size="sm" variant="default" onClick={() => setModal('paid')}>
+              <CheckCircle2 className="h-3.5 w-3.5" /> Marcar pagada
+            </Button>
+          )
+        ) : null
       ) : (
         <>
-          {invoice.hasPaymentProof ? (
+          {invoice.hasPaymentProof && canViewProof ? (
             compact ? (
               <Button
                 size="sm"
@@ -81,22 +89,24 @@ export function InvoicePaymentActions({
               </Button>
             )
           ) : null}
-          {compact ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setModal('unmark')}
-              title="Desmarcar pago"
-              aria-label="Desmarcar"
-              className="-my-1 h-7 px-2"
-            >
-              <Undo2 className="h-3.5 w-3.5" />
-            </Button>
-          ) : (
-            <Button size="sm" variant="ghost" onClick={() => setModal('unmark')}>
-              Desmarcar
-            </Button>
-          )}
+          {canManage ? (
+            compact ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setModal('unmark')}
+                title="Desmarcar pago"
+                aria-label="Desmarcar"
+                className="-my-1 h-7 px-2"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </Button>
+            ) : (
+              <Button size="sm" variant="ghost" onClick={() => setModal('unmark')}>
+                Desmarcar
+              </Button>
+            )
+          ) : null}
         </>
       )}
 

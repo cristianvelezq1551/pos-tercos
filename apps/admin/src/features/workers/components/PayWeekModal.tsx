@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Dialog, FormField, Input, MoneyInput, PinField, Select, formatCop, isValidPin } from '@pos-tercos/ui';
+import { Button, Dialog, FormField, Input, MoneyInput, Select, formatCop } from '@pos-tercos/ui';
 import { useState, type ChangeEvent } from 'react';
 import { payWeekDays } from '../api/client';
 
@@ -34,7 +34,6 @@ export function PayWeekModal({
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [note, setNote] = useState('');
-  const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -54,14 +53,10 @@ export function PayWeekModal({
   };
 
   const submit = async (): Promise<void> => {
-    if (!file) {
-      setError('Seleccioná el comprobante (imagen).');
-      return;
-    }
     setError(null);
     setPending(true);
     try {
-      await payWeekDays({ userId, weekStart, days, cashAmount, bankAmount, note: note.trim() || undefined }, file, pin);
+      await payWeekDays({ userId, weekStart, days, cashAmount, bankAmount, note: note.trim() || undefined }, file);
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar el pago.');
@@ -71,14 +66,14 @@ export function PayWeekModal({
   };
 
   const mixOk = mode !== 'MIXTO' || (cashAmount > 0 && bankAmount > 0);
-  const valid = file !== null && isValidPin(pin) && total > 0 && !overRemaining && mixOk;
+  const valid = total > 0 && !overRemaining && mixOk;
 
   return (
     <Dialog
       open
       onClose={pending ? () => {} : onClose}
       title={`Abonar a ${workerName}`}
-      description={`Restante de la semana: ${formatCop(remaining)}. La porción en efectivo sale de la caja abierta; queda con comprobante.`}
+      description={`Restante de la semana: ${formatCop(remaining)}. Se descuenta del bolsillo de tesorería que elijas; queda con comprobante.`}
       maxWidth="max-w-md"
       footer={
         <>
@@ -140,12 +135,13 @@ export function PayWeekModal({
           </div>
         ) : null}
         {mode === 'EFECTIVO' || mode === 'MIXTO' ? (
-          <p className="text-[11px] text-amber-500">
-            La parte en efectivo ({formatCop(cashAmount)}) sale de la caja abierta. Si no hay caja abierta, no se puede.
+          <p className="text-[11px] text-muted-foreground">
+            La parte en efectivo ({formatCop(cashAmount)}) sale del bolsillo Efectivo de tesorería, no del cajón del
+            turno. Si la sacaste de la caja, registrá además la salida en el POS.
           </p>
         ) : null}
 
-        <FormField label="Comprobante (imagen)" required>
+        <FormField label="Comprobante (imagen)" hint="Opcional">
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
@@ -160,10 +156,6 @@ export function PayWeekModal({
 
         <FormField label="Nota" hint="Opcional">
           <Input value={note} onChange={(e) => setNote(e.target.value)} disabled={pending} maxLength={300} />
-        </FormField>
-
-        <FormField label="PIN de aprobación (Dueño)" required>
-          <PinField value={pin} onChange={setPin} disabled={pending} />
         </FormField>
 
         {error ? (

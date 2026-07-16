@@ -1,7 +1,7 @@
 'use client';
 
 import type { PayrollWeekPayment } from '@pos-tercos/types';
-import { Button, Dialog, FormField, PinField, formatCop, isValidPin } from '@pos-tercos/ui';
+import { Button, Dialog, formatCop } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { voidWeekPayment } from '../api/client';
@@ -14,7 +14,6 @@ export function VoidWeekPaymentDialog({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -22,7 +21,7 @@ export function VoidWeekPaymentDialog({
     setError(null);
     setPending(true);
     try {
-      await voidWeekPayment(payment.id, pin);
+      await voidWeekPayment(payment.id);
       onClose();
       router.refresh();
     } catch (e) {
@@ -44,17 +43,14 @@ export function VoidWeekPaymentDialog({
           <Button variant="outline" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>
-          <Button variant="destructive" onClick={submit} disabled={pending || !isValidPin(pin)}>
+          <Button variant="destructive" onClick={submit} disabled={pending}>
             {pending ? 'Anulando…' : 'Anular abono'}
           </Button>
         </>
       }
     >
-      <FormField label="PIN de aprobación (Dueño)" required>
-        <PinField value={pin} onChange={setPin} disabled={pending} />
-      </FormField>
       {error ? (
-        <p role="alert" className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       ) : null}

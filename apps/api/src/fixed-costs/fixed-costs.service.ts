@@ -9,7 +9,6 @@ import type {
   UpdateFixedCost,
 } from '@pos-tercos/types';
 import type { FixedCost as DbFixedCost, Prisma } from '@prisma/client';
-import { ApprovalsService } from '../approvals/approvals.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
@@ -27,7 +26,6 @@ export class FixedCostsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly approvals: ApprovalsService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -163,12 +161,10 @@ export class FixedCostsService {
     fixedCostId: string,
     periodYear: number,
     periodMonth: number,
-    pin: string,
     actorId: string,
     proof: { buffer: Buffer; mime: string; ext: string },
     opts: { paidAtYmd?: string; amount?: number; note?: string; cashAmount?: number; bankAmount?: number },
   ): Promise<FinancePaidFixedCost> {
-    const approverId = await this.approvals.verify(pin);
     const cost = await this.prisma.fixedCost.findUnique({ where: { id: fixedCostId } });
     if (!cost) throw new NotFoundException(`FixedCost ${fixedCostId} not found`);
     if (periodMonth < 1 || periodMonth > 12) {
@@ -234,7 +230,6 @@ export class FixedCostsService {
       entityType: 'fixed_cost_payment',
       entityId: row.id,
       metadata: {
-        approverId,
         fixedCostId,
         fixedCostName: cost.name,
         periodYear,
@@ -263,10 +258,8 @@ export class FixedCostsService {
     fixedCostId: string,
     periodYear: number,
     periodMonth: number,
-    pin: string,
     actorId: string,
   ): Promise<void> {
-    const approverId = await this.approvals.verify(pin);
     const existing = await this.prisma.fixedCostPayment.findUnique({
       where: {
         fixedCostId_periodYear_periodMonth: { fixedCostId, periodYear, periodMonth },
@@ -282,7 +275,7 @@ export class FixedCostsService {
       action: 'FIXED_COST_PAYMENT_UNMARKED',
       entityType: 'fixed_cost_payment',
       entityId: existing.id,
-      metadata: { approverId, fixedCostId, periodYear, periodMonth },
+      metadata: { fixedCostId, periodYear, periodMonth },
     });
   }
 

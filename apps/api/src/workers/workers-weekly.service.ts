@@ -20,13 +20,11 @@ import type {
   WeeklyPayrollReport,
 } from '@pos-tercos/types';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
-import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
 import { utcDateOfLocalDay } from '../common/local-dates';
 import { isSerializationFailure } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
-import { ShiftsService } from '../shifts/shifts.service';
 import { parseYmd, round2, todayUtc, ymd } from './payroll-period';
 import { WorkersService } from './workers.service';
 
@@ -34,9 +32,14 @@ import { WorkersService } from './workers.service';
  * Nómina SEMANAL para empleados DIARIO (v6). La "semana" es la corrida de días
  * laborables entre descansos (el negocio cierra los lunes; el descanso se corre
  * al martes si el lunes es festivo, así que un lunes festivo CIERRA la semana y
- * se paga). El dueño paga por días seleccionados con abonos parciales — cada
- * abono pide comprobante y, si tiene parte en efectivo, genera un CashMovement
- * OUT en la caja abierta para que el arqueo cuadre.
+ * se paga). El dueño paga por días seleccionados con abonos parciales; cada
+ * abono acepta comprobante opcional y se reparte por bolsillo (cashAmount +
+ * bankAmount), igual que costos fijos, facturas y compromisos.
+ *
+ * NO toca `cash_movements` (§7.v17): el bolsillo EFECTIVO de tesorería es la
+ * plata del negocio, no el cajón del turno. Si el dueño sacó el efectivo del
+ * cajón, registra la salida a mano en la caja del POS — los movimientos de caja
+ * son inherentes a la caja y solo se crean desde ahí.
  */
 
 /** Reintentos ante conflicto Serializable (40001 → P2034) en el pago de semana. */
@@ -47,10 +50,8 @@ export class WorkersWeeklyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly approvals: ApprovalsService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     private readonly workers: WorkersService,
-    private readonly shifts: ShiftsService,
   ) {}
 
   /** Reporte de la semana que contiene `weekRefYmd` (cualquier día de la semana). */
@@ -328,11 +329,9 @@ export class WorkersWeeklyService {
   /** Registra un abono de días seleccionados de la semana (con comprobante). */
   async payWeekDays(
     input: PayWeekDays,
-    proof: { buffer: Buffer; mime: string; ext: string },
-    pin: string,
+    proof: { buffer: Buffer; mime: string; ext: string } | null,
     actorId: string,
   ): Promise<PayrollWeekPayment> {
-    const approverId = await this.approvals.verify(pin);
     const week = payrollWeekFor(parseYmd(input.weekStart));
     if (week.weekStart !== input.weekStart) {
       throw new BadRequestException(
@@ -383,30 +382,17 @@ export class WorkersWeeklyService {
       );
     }
 
-    // Comprobante: subir ANTES de la tx (sin side-effect de DB; si la tx falla,
-    // nada queda commiteado y la key es determinística por usuario → se pisa).
-    const stored = await this.storage.put(`payroll-week/${user.id}`, proof.buffer, proof.mime, proof.ext);
-
-    // Si hay efectivo, la caja debe estar abierta (el egreso sale del cajón).
-    let openShiftId: string | null = null;
-    if (cashAmount > 0) {
-      const shift = await this.shifts.getCurrent(actorId);
-      if (!shift) {
-        throw new BadRequestException(
-          'Para pagar nómina en efectivo debe haber una caja abierta (el egreso sale del cajón).',
-        );
-      }
-      openShiftId = shift.id;
-    }
+    // Comprobante (opcional): subir ANTES de la tx (sin side-effect de DB; si la
+    // tx falla, nada queda commiteado y la key es determinística por usuario → se pisa).
+    const stored = proof
+      ? await this.storage.put(`payroll-week/${user.id}`, proof.buffer, proof.mime, proof.ext)
+      : null;
 
     // Tx SERIALIZABLE con retry: recomputa lo ya abonado de la semana DENTRO de
     // la tx (anti doble-abono concurrente — antes el check usaba un `remaining`
-    // leído fuera de la tx) y crea el egreso de caja + la fila de pago JUNTOS
-    // (atómico: si algo falla NO queda un egreso fantasma del cajón). El
-    // reason del egreso queda atado al pago.
+    // leído fuera de la tx).
     const weekStartDate = parseYmd(week.weekStart);
-    const reason = `Nómina ${user.fullName} · semana ${input.weekStart}`;
-    let result: { rowId: string; cashMovementId: string | null; shiftId: string | null } | null = null;
+    let result: { rowId: string } | null = null;
     let lastErr: unknown;
     for (let attempt = 1; attempt <= MAX_WEEK_PAY_RETRIES; attempt++) {
       try {
@@ -422,19 +408,6 @@ export class WorkersWeeklyService {
                 `El abono (${amount}) supera lo que falta de la semana (${remainingNow}).`,
               );
             }
-            let cashMovementId: string | null = null;
-            let shiftId: string | null = null;
-            if (cashAmount > 0 && openShiftId) {
-              const sh = await tx.shift.findUnique({ where: { id: openShiftId }, select: { status: true } });
-              if (!sh || sh.status !== 'OPEN') {
-                throw new BadRequestException('La caja se cerró; reabrila para pagar nómina en efectivo.');
-              }
-              const mv = await tx.cashMovement.create({
-                data: { shiftId: openShiftId, type: 'OUT', method: 'CASH', amount: cashAmount, reason, userId: actorId },
-              });
-              cashMovementId = mv.id;
-              shiftId = openShiftId;
-            }
             const row = await tx.payrollWeekPayment.create({
               data: {
                 userId: user.id,
@@ -444,15 +417,13 @@ export class WorkersWeeklyService {
                 cashAmount,
                 bankAmount,
                 status: 'PAID',
-                proofImageKey: stored.key,
+                proofImageKey: stored?.key ?? null,
                 actorId,
-                cashMovementId,
-                shiftId,
                 note: input.note ?? null,
                 paidAt: new Date(),
               },
             });
-            return { rowId: row.id, cashMovementId, shiftId };
+            return { rowId: row.id };
           },
           { isolationLevel: 'Serializable', timeout: 10_000 },
         );
@@ -465,30 +436,19 @@ export class WorkersWeeklyService {
     }
     if (!result) throw lastErr ?? new Error('payWeekDays falló');
 
-    // Audits (best-effort, fuera de la tx).
-    if (result.cashMovementId && result.shiftId) {
-      await this.audit.log({
-        userId: actorId,
-        action: 'CASH_MOVEMENT_OUT',
-        entityType: 'shift',
-        entityId: result.shiftId,
-        metadata: { amount: cashAmount, reason, method: 'CASH' },
-      });
-    }
+    // Audit (best-effort, fuera de la tx).
     await this.audit.log({
       userId: actorId,
       action: 'PAYROLL_WEEK_PAID',
       entityType: 'payroll_week_payment',
       entityId: result.rowId,
       metadata: {
-        approverId,
         workerId: user.id,
         weekStart: input.weekStart,
         days: uniqueDays,
         amount,
         cashAmount,
         bankAmount,
-        cashMovementId: result.cashMovementId,
       },
     });
 
@@ -497,67 +457,28 @@ export class WorkersWeeklyService {
     return this.toWeekPaymentDto(created, actorName);
   }
 
-  /** Anula un abono (marca VOIDED + reversa el egreso de caja si fue efectivo). */
-  async voidWeekPayment(paymentId: string, pin: string, actorId: string): Promise<void> {
-    const approverId = await this.approvals.verify(pin);
+  /**
+   * Anula un abono (marca VOIDED). No toca el cajón: la plata vuelve al bolsillo
+   * de tesorería solo por dejar de contar este abono como gasto pagado (§7.v17).
+   */
+  async voidWeekPayment(paymentId: string, actorId: string): Promise<void> {
     const row = await this.prisma.payrollWeekPayment.findUnique({ where: { id: paymentId } });
     if (!row) throw new NotFoundException('Abono no encontrado.');
     if (row.status === 'VOIDED') return; // idempotente
 
-    // El abono tuvo porción en efectivo → la reversa devuelve esa plata al cajón.
-    // Si NO hay caja abierta, NO se puede reintegrar el efectivo: antes el código
-    // marcaba VOIDED igual y la plata nunca volvía al arqueo (faltante permanente).
-    // Ahora se exige caja abierta cuando hay efectivo que reintegrar.
-    const cashPortion = Number(row.cashAmount);
-    const needsCashReversal = Boolean(row.cashMovementId) && cashPortion > 0;
-    let openShiftId: string | null = null;
-    if (needsCashReversal) {
-      const shift = await this.shifts.getCurrent(actorId);
-      if (!shift) {
-        throw new BadRequestException(
-          'Para anular un abono pagado en efectivo debe haber una caja abierta (el reintegro vuelve al cajón).',
-        );
-      }
-      openShiftId = shift.id;
-    }
-
-    // Atómico: el claim por status='PAID' previene doble-void; el IN compensatorio
-    // y el cambio de estado van en la MISMA tx (o ambos, o ninguno).
-    const reason = `Reversa nómina · abono ${row.id.slice(0, 8)}`;
-    const didVoid = await this.prisma.$transaction(async (tx) => {
-      const claim = await tx.payrollWeekPayment.updateMany({
-        where: { id: paymentId, status: 'PAID' },
-        data: { status: 'VOIDED' },
-      });
-      if (claim.count === 0) return false; // ya anulado en paralelo → idempotente
-      if (needsCashReversal && openShiftId) {
-        const sh = await tx.shift.findUnique({ where: { id: openShiftId }, select: { status: true } });
-        if (!sh || sh.status !== 'OPEN') {
-          throw new BadRequestException('La caja se cerró; reabrila para anular el abono en efectivo.');
-        }
-        await tx.cashMovement.create({
-          data: { shiftId: openShiftId, type: 'IN', method: 'CASH', amount: cashPortion, reason, userId: actorId },
-        });
-      }
-      return true;
+    // El claim por status='PAID' previene doble-void (idempotente ante carrera).
+    const claim = await this.prisma.payrollWeekPayment.updateMany({
+      where: { id: paymentId, status: 'PAID' },
+      data: { status: 'VOIDED' },
     });
-    if (!didVoid) return;
+    if (claim.count === 0) return; // ya anulado en paralelo
 
-    if (needsCashReversal && openShiftId) {
-      await this.audit.log({
-        userId: actorId,
-        action: 'CASH_MOVEMENT_IN',
-        entityType: 'shift',
-        entityId: openShiftId,
-        metadata: { amount: cashPortion, reason, method: 'CASH' },
-      });
-    }
     await this.audit.log({
       userId: actorId,
       action: 'PAYROLL_WEEK_PAYMENT_VOIDED',
       entityType: 'payroll_week_payment',
       entityId: paymentId,
-      metadata: { approverId, workerId: row.userId, amount: Number(row.amount) },
+      metadata: { workerId: row.userId, amount: Number(row.amount) },
     });
   }
 
@@ -602,8 +523,7 @@ export class WorkersWeeklyService {
   /** Setea/edita el valor de UN día de un DIARIO (llegada tarde, ausencia $0,
    *  monto distinto). El cálculo semanal aplica el override (gana sobre el
    *  valor/día y sobre el descanso). Solo Dueño + PIN. */
-  async setPayrollDay(userId: string, input: SetPayrollDay, pin: string, actorId: string): Promise<PayrollDay> {
-    const approverId = await this.approvals.verify(pin);
+  async setPayrollDay(userId: string, input: SetPayrollDay, actorId: string): Promise<PayrollDay> {
     const user = await this.workers.getEmploymentUser(userId);
     if (user.payType !== 'DAILY') {
       throw new BadRequestException('Solo los empleados con pago DIARIO tienen días editables.');
@@ -619,7 +539,7 @@ export class WorkersWeeklyService {
       action: 'PAYROLL_DAY_SET',
       entityType: 'payroll_day',
       entityId: row.id,
-      metadata: { approverId, workerId: userId, workDate: input.workDate, amount: input.amount },
+      metadata: { workerId: userId, workDate: input.workDate, amount: input.amount },
     });
     return {
       id: row.id,
@@ -632,15 +552,14 @@ export class WorkersWeeklyService {
   }
 
   /** Borra la excepción de un día (vuelve al valor por defecto). Solo Dueño + PIN. */
-  async deletePayrollDay(userId: string, workDateYmd: string, pin: string, actorId: string): Promise<void> {
-    const approverId = await this.approvals.verify(pin);
+  async deletePayrollDay(userId: string, workDateYmd: string, actorId: string): Promise<void> {
     const workDate = parseYmd(workDateYmd);
     await this.prisma.payrollDay.deleteMany({ where: { userId, workDate } });
     await this.audit.log({
       userId: actorId,
       action: 'PAYROLL_DAY_SET',
       entityType: 'payroll_day',
-      metadata: { approverId, workerId: userId, workDate: workDateYmd, removed: true },
+      metadata: { workerId: userId, workDate: workDateYmd, removed: true },
     });
   }
 
@@ -661,6 +580,7 @@ export class WorkersWeeklyService {
   async getWeekPaymentProof(paymentId: string): Promise<{ buffer: Buffer; mime: string }> {
     const row = await this.prisma.payrollWeekPayment.findUnique({ where: { id: paymentId } });
     if (!row) throw new NotFoundException('Comprobante no encontrado.');
+    if (!row.proofImageKey) throw new NotFoundException('Este abono no tiene comprobante.');
     const buffer = await this.storage.get(row.proofImageKey);
     const ext = row.proofImageKey.split('.').pop() ?? '';
     return { buffer, mime: mimeForExtension(ext) };

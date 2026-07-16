@@ -12,7 +12,9 @@ export function PayPayableModal({
   onClose,
   onSuccess,
 }: {
-  payable: PayableCommitment;
+  // Solo se usan estos 4 campos → acepta tanto PayableCommitment (vista de
+  // compromisos) como FinancePendingPayable (cockpit de Pagos y cobros).
+  payable: Pick<PayableCommitment, 'id' | 'beneficiary' | 'description' | 'amount'>;
   onClose: () => void;
   onSuccess: () => void;
 }) {

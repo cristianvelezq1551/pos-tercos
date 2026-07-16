@@ -76,7 +76,7 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
           <PendingPayrollCard rows={summary.pendingPayroll} />
           <PendingInvoicesCard rows={summary.pendingInvoices} />
           <PendingFixedCostsCard rows={summary.pendingFixedCosts} onChanged={refresh} />
-          <PendingPayablesCard rows={summary.pendingPayables} />
+          <PendingPayablesCard rows={summary.pendingPayables} onChanged={refresh} />
         </div>
       </section>
 

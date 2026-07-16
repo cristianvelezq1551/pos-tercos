@@ -4,16 +4,24 @@ import { FixedCostsManager } from '../../../../features/fixed-costs';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
 import { requireRole } from '../../../../lib/guards';
-import type { FixedCost } from '@pos-tercos/types';
+import type { FinancePendingFixedCost, FixedCost } from '@pos-tercos/types';
 
 export default async function CostosFijosPage() {
   await requireRole(['DUENO']);
 
   let costs: FixedCost[] | { error: string };
+  let pending: FinancePendingFixedCost[] = [];
   try {
     costs = await serverFetchJson<FixedCost[]>('/fixed-costs');
   } catch (err) {
     costs = { error: friendlyApiError(err) };
+  }
+  // El panel de pendientes NO debe tumbar el catálogo: si el endpoint falla
+  // (ej. API sin reiniciar), se ve la tabla igual y el panel queda vacío.
+  try {
+    pending = await serverFetchJson<FinancePendingFixedCost[]>('/fixed-costs/pending');
+  } catch {
+    pending = [];
   }
 
   return (
@@ -26,7 +34,7 @@ export default async function CostosFijosPage() {
       />
       <Container size="7xl" padY="md">
         {Array.isArray(costs) ? (
-          <FixedCostsManager costs={costs} />
+          <FixedCostsManager costs={costs} pending={pending} />
         ) : (
           <p
             role="alert"

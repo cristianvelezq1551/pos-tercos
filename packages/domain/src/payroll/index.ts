@@ -1,9 +1,4 @@
 export {
-  colombianHolidays,
-  isColombianHoliday,
-  easterSunday,
-} from './colombia-holidays';
-export {
   payrollWeekFor,
   nextWeekRef,
   prevWeekRef,

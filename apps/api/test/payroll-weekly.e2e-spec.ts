@@ -114,14 +114,6 @@ describe('Nómina semanal unificada E2E', () => {
   it('un abono semanal aparece en /finanzas (paidPayroll) y baja el pendiente del cash-flow', async () => {
     // /finanzas ahora lee los abonos SEMANALES (payrollWeekPayment), no las
     // quincenas. El abono se paga 100% por cuenta (sin caja abierta).
-    await request
-      .post('/approvals/pin')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ pin: '135790', password: 'dev12345' })
-      .expect((res) => {
-        if (res.status >= 300) throw new Error(`PIN setup falló: ${res.status} ${JSON.stringify(res.body)}`);
-      });
-
     const wk = await getWeek();
     // El abono cae con paidAt = ahora → consultamos /finanzas del mes actual.
     const now = new Date();
@@ -141,7 +133,6 @@ describe('Nómina semanal unificada E2E', () => {
     const payRes = await request
       .post('/workers/weekly/pay')
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: ABONO }))
       .attach('proof', png, 'proof.png')
       .expect(201);
@@ -154,14 +145,72 @@ describe('Nómina semanal unificada E2E', () => {
     expect(pendingOf(after.body)).toBe(pendingBefore - ABONO);
   });
 
-  it('rechaza un abono que supera lo que falta de la semana (anti doble-abono)', async () => {
-    await request
-      .post('/approvals/pin')
+  it('un abono EN EFECTIVO no toca la caja: sin movimientos y el esperado no se mueve', async () => {
+    // Regresión (§7.v17): la nómina en efectivo creaba un CashMovement OUT en la
+    // caja abierta, así que el arqueo del cajero mostraba una salida que nunca
+    // salió del cajón (el dueño paga del bolsillo EFECTIVO de tesorería, que NO
+    // es el cajón). Los movimientos de caja son inherentes a la caja: solo se
+    // crean a mano desde el POS.
+    const OPENING = 100_000;
+    const openRes = await request
+      .post('/shifts/open')
       .set('Authorization', `Bearer ${token}`)
-      .send({ pin: '135790', password: 'dev12345' })
-      .expect((r) => {
-        if (r.status >= 300) throw new Error(`PIN: ${r.status}`);
-      });
+      .send({ openingCash: OPENING })
+      .expect(201);
+    const shiftId = openRes.body.id as string;
+
+    const wk = await getWeek();
+    const ana = wk.entries.find((e) => e.userId === monthlyId)!;
+    const ABONO = Math.min(50_000, ana.remaining);
+    expect(ABONO).toBeGreaterThan(0);
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
+      'base64',
+    );
+    await request
+      .post('/workers/weekly/pay')
+      .set('Authorization', `Bearer ${token}`)
+      .field('payload', JSON.stringify({ userId: monthlyId, weekStart: wk.weekStart, days: [], cashAmount: ABONO, bankAmount: 0 }))
+      .attach('proof', png, 'p.png')
+      .expect(201);
+
+    // El cajón no se enteró: ni un movimiento, y el esperado sigue siendo la apertura.
+    const movs = await request
+      .get(`/shifts/${shiftId}/cash-movements`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(movs.body).toHaveLength(0);
+
+    const expected = await request
+      .get(`/shifts/${shiftId}/expected-cash`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(expected.body.expectedCash).toBe(OPENING);
+
+    // Pero tesorería SÍ lo cuenta como gasto del bolsillo efectivo.
+    const paid = await prisma.payrollWeekPayment.findFirst({
+      where: { userId: monthlyId, status: 'PAID' },
+      orderBy: { paidAt: 'desc' },
+    });
+    expect(Number(paid!.cashAmount)).toBe(ABONO);
+    expect(paid!.cashMovementId).toBeNull();
+
+    // Sin caja abierta tampoco falla (antes exigía caja para pagar en efectivo).
+    await request
+      .post(`/shifts/${shiftId}/close`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ countedCash: OPENING })
+      .expect(201);
+    await request
+      .post('/workers/weekly/pay')
+      .set('Authorization', `Bearer ${token}`)
+      .field('payload', JSON.stringify({ userId: monthlyId, weekStart: wk.weekStart, days: [], cashAmount: 1_000, bankAmount: 0 }))
+      .attach('proof', png, 'p.png')
+      .expect(201);
+  });
+
+  it('rechaza un abono que supera lo que falta de la semana (anti doble-abono)', async () => {
     const png = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
       'base64',
@@ -173,7 +222,6 @@ describe('Nómina semanal unificada E2E', () => {
       await request
         .post('/workers/weekly/pay')
         .set('Authorization', `Bearer ${token}`)
-        .set('X-Approval-Pin', '135790')
         .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: luis.remaining }))
         .attach('proof', png, 'p.png')
         .expect(201);
@@ -183,7 +231,6 @@ describe('Nómina semanal unificada E2E', () => {
     await request
       .post('/workers/weekly/pay')
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: 1_000 }))
       .attach('proof', png, 'p.png')
       .expect(400);
@@ -219,7 +266,6 @@ describe('Nómina semanal unificada E2E', () => {
     await request
       .post(`/workers/${dailyId}/day`)
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .send({ workDate: target.date, amount: 20_000, note: 'llegó tarde' })
       .expect(201);
 
@@ -233,7 +279,6 @@ describe('Nómina semanal unificada E2E', () => {
     await request
       .delete(`/workers/${dailyId}/day?date=${target.date}`)
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .expect(200);
 
     const reverted = (await getWeek()).entries.find((e) => e.userId === dailyId)!;

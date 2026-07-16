@@ -1,4 +1,4 @@
-import { colombianHolidays } from './colombia-holidays';
+import { colombianHolidays } from '../common/colombia-holidays';
 
 /**
  * Semana de nómina para empleados DIARIO. El negocio descansa los LUNES; ese

@@ -1,7 +1,8 @@
 'use client';
 
 import { POCKET_LABELS, PocketEnum, type Pocket } from '@pos-tercos/types';
-import { Button, Dialog, FormField, Input, MoneyInput, Select } from '@pos-tercos/ui';
+import { Button, Dialog, FormField, MoneyInput, Select } from '@pos-tercos/ui';
+import { ArrowLeftRight } from 'lucide-react';
 import { useState } from 'react';
 import { createTransfer } from '../api/client';
 
@@ -11,15 +12,24 @@ export function TransferModal({ onClose, onSuccess }: { onClose: () => void; onS
   const [from, setFrom] = useState<Pocket>('EFECTIVO');
   const [to, setTo] = useState<Pocket>('CUENTA');
   const [amount, setAmount] = useState('');
-  const [reason, setReason] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const swap = (): void => {
+    setFrom(to);
+    setTo(from);
+  };
 
   const submit = async (): Promise<void> => {
     setError(null);
     setPending(true);
     try {
-      await createTransfer({ fromPocket: from, toPocket: to, amount: Number(amount) || 0, reason: reason.trim() });
+      await createTransfer({
+        fromPocket: from,
+        toPocket: to,
+        amount: Number(amount) || 0,
+        reason: `Traspaso ${POCKET_LABELS[from]} → ${POCKET_LABELS[to]}`,
+      });
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar el traspaso.');
@@ -28,7 +38,7 @@ export function TransferModal({ onClose, onSuccess }: { onClose: () => void; onS
     }
   };
 
-  const valid = from !== to && Number(amount) > 0 && reason.trim().length >= 3;
+  const valid = from !== to && Number(amount) > 0;
 
   return (
     <Dialog
@@ -45,7 +55,7 @@ export function TransferModal({ onClose, onSuccess }: { onClose: () => void; onS
       }
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
           <FormField label="Desde" required>
             <Select value={from} onChange={(e) => setFrom(e.target.value as Pocket)} disabled={pending}>
               {POCKETS.map((p) => (
@@ -53,6 +63,16 @@ export function TransferModal({ onClose, onSuccess }: { onClose: () => void; onS
               ))}
             </Select>
           </FormField>
+          <button
+            type="button"
+            onClick={swap}
+            disabled={pending}
+            aria-label="Intercambiar origen y destino"
+            title="Intercambiar"
+            className="mt-7 flex h-10 w-10 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <ArrowLeftRight className="h-4 w-4" />
+          </button>
           <FormField label="Hacia" required error={from === to ? 'Debe ser distinto al origen' : undefined}>
             <Select value={to} onChange={(e) => setTo(e.target.value as Pocket)} disabled={pending}>
               {POCKETS.map((p) => (
@@ -63,9 +83,6 @@ export function TransferModal({ onClose, onSuccess }: { onClose: () => void; onS
         </div>
         <FormField label="Monto" required>
           <MoneyInput value={amount} onChange={setAmount} disabled={pending} placeholder="0" />
-        </FormField>
-        <FormField label="Motivo" required hint="Ej: consigné efectivo al banco">
-          <Input value={reason} onChange={(e) => setReason(e.target.value)} disabled={pending} maxLength={200} />
         </FormField>
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       </div>

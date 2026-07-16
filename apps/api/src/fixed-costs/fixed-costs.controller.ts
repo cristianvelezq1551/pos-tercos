@@ -4,7 +4,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   Param,
   ParseIntPipe,
@@ -23,6 +22,7 @@ import {
   UpdateFixedCostSchema,
   type CreateFixedCost,
   type FinancePaidFixedCost,
+  type FinancePendingFixedCost,
   type FixedCost,
   type JwtAccessPayload,
   type UpdateFixedCost,
@@ -46,6 +46,13 @@ export class FixedCostsController {
   @Get()
   list(@Query('only_active') onlyActive?: string): Promise<FixedCost[]> {
     return this.costs.list({ onlyActive: onlyActive === 'true' });
+  }
+
+  /** Períodos pendientes por pagar (mismo cálculo que el cockpit de Pagos y
+   *  cobros). Se declara ANTES de `:id` para que no lo capture el param. */
+  @Get('pending')
+  pending(): Promise<FinancePendingFixedCost[]> {
+    return this.costs.getPendingPayments();
   }
 
   @Get(':id')
@@ -80,7 +87,7 @@ export class FixedCostsController {
   }
 
   // ==================================================================
-  // CONTROL DE PAGO (Dueño + PIN)
+  // CONTROL DE PAGO (Dueño)
   // ==================================================================
 
   /** Marca pagado un costo fijo para (año, mes) con comprobante. */
@@ -90,7 +97,6 @@ export class FixedCostsController {
   )
   async markPaid(
     @Param('id', ParseUUIDPipe) id: string,
-    @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
     @Body('periodYear', ParseIntPipe) periodYear: number,
     @Body('periodMonth', ParseIntPipe) periodMonth: number,
@@ -120,7 +126,6 @@ export class FixedCostsController {
       id,
       periodYear,
       periodMonth,
-      requirePin(pin),
       user.sub,
       { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
       {
@@ -137,7 +142,6 @@ export class FixedCostsController {
   @Delete(':id/payment')
   async unmarkPayment(
     @Param('id', ParseUUIDPipe) id: string,
-    @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
     @Query('year') yearStr: string | undefined,
     @Query('month') monthStr: string | undefined,
@@ -147,7 +151,7 @@ export class FixedCostsController {
     if (!Number.isFinite(periodYear) || !Number.isFinite(periodMonth)) {
       throw new BadRequestException('?year y ?month requeridos.');
     }
-    await this.costs.unmarkPayment(id, periodYear, periodMonth, requirePin(pin), user.sub);
+    await this.costs.unmarkPayment(id, periodYear, periodMonth, user.sub);
     return { ok: true };
   }
 
@@ -162,11 +166,4 @@ export class FixedCostsController {
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);
   }
-}
-
-function requirePin(pin: string | undefined): string {
-  if (!pin) {
-    throw new BadRequestException('Se requiere el PIN de aprobación (header X-Approval-Pin).');
-  }
-  return pin;
 }

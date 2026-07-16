@@ -270,8 +270,10 @@ export class InvoicesController {
   // CONTROL DE PAGO AL PROVEEDOR (solo Dueño + PIN)
   // ==================================================================
 
-  /** Marca pagada con comprobante (multipart). PIN del Dueño en header. */
-  @OnlyDueno()
+  /** Marca pagada con comprobante (multipart). PIN de aprobación en header.
+   *  El Dueño puede sobre cualquier factura; el Admin Operativo solo sobre las
+   *  que él creó (el service valida la propiedad por rol). */
+  @AdminAccess()
   @Post(':id/payment/paid')
   @UseInterceptors(
     FileInterceptor('proof', { limits: { fileSize: MAX_FILE_SIZE_BYTES } }),
@@ -298,6 +300,7 @@ export class InvoicesController {
       id,
       requirePin(pin),
       user.sub,
+      user.role,
       { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
       {
         paidAtYmd: paidAt,
@@ -308,19 +311,20 @@ export class InvoicesController {
     );
   }
 
-  /** Desmarca el pago (borra registro + comprobante). Vuelve a PENDING. */
-  @OnlyDueno()
+  /** Desmarca el pago (borra registro + comprobante). Vuelve a PENDING.
+   *  Dueño sobre cualquiera; Admin Operativo solo sobre las que él creó. */
+  @AdminAccess()
   @Delete(':id/payment')
   unmarkPayment(
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('x-approval-pin') pin: string | undefined,
     @CurrentUser() user: JwtAccessPayload,
   ): Promise<Invoice> {
-    return this.invoicePayments.unmarkPayment(id, requirePin(pin), user.sub);
+    return this.invoicePayments.unmarkPayment(id, requirePin(pin), user.sub, user.role);
   }
 
-  /** Comprobante de transferencia al proveedor (binario). Dueño. */
-  @OnlyDueno()
+  /** Comprobante de transferencia al proveedor (binario). Cualquier admin lo ve. */
+  @AdminAccess()
   @Get(':id/payment-proof')
   async getPaymentProof(
     @Param('id', ParseUUIDPipe) id: string,

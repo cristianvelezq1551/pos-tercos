@@ -1,10 +1,12 @@
 import {
   CreateFixedCostSchema,
   FinancePaidFixedCostSchema,
+  FinancePendingFixedCostSchema,
   FixedCostSchema,
   UpdateFixedCostSchema,
   type CreateFixedCost,
   type FinancePaidFixedCost,
+  type FinancePendingFixedCost,
   type FixedCost,
   type UpdateFixedCost,
 } from '@pos-tercos/types';
@@ -12,10 +14,16 @@ import { z } from 'zod';
 import { request } from '../../../lib/api-client';
 
 const FixedCostListSchema = z.array(FixedCostSchema);
+const FixedCostPendingListSchema = z.array(FinancePendingFixedCostSchema);
 
 export function listFixedCosts(opts: { onlyActive?: boolean } = {}): Promise<FixedCost[]> {
   const qs = opts.onlyActive ? '?only_active=true' : '';
   return request(`/fixed-costs${qs}`, { method: 'GET' }, FixedCostListSchema);
+}
+
+/** Períodos pendientes por pagar (para el botón "Pagar" en la vista de costos). */
+export function listPendingFixedCosts(): Promise<FinancePendingFixedCost[]> {
+  return request('/fixed-costs/pending', { method: 'GET' }, FixedCostPendingListSchema);
 }
 
 export function getFixedCost(id: string): Promise<FixedCost> {
@@ -45,18 +53,13 @@ export async function deleteFixedCost(id: string): Promise<void> {
 }
 
 // ====================================================================
-// PAGO MENSUAL DEL COSTO FIJO (Dueño + PIN)
+// PAGO MENSUAL DEL COSTO FIJO (Dueño)
 // ====================================================================
-
-function pinHeader(pin: string): Record<string, string> {
-  return { 'X-Approval-Pin': pin };
-}
 
 /** Marca pagado un costo fijo para (año, mes) con comprobante. */
 export async function markFixedCostPaid(
   fixedCostId: string,
   proof: File,
-  pin: string,
   body: {
     periodYear: number;
     periodMonth: number;
@@ -79,7 +82,6 @@ export async function markFixedCostPaid(
   const res = await fetch(`/api/fixed-costs/${fixedCostId}/payment`, {
     method: 'POST',
     credentials: 'include',
-    headers: pinHeader(pin),
     body: fd,
   });
   if (!res.ok) {
@@ -93,11 +95,10 @@ export function unmarkFixedCostPayment(
   fixedCostId: string,
   periodYear: number,
   periodMonth: number,
-  pin: string,
 ): Promise<{ ok: true }> {
   return request(
     `/fixed-costs/${fixedCostId}/payment?year=${periodYear}&month=${periodMonth}`,
-    { method: 'DELETE', headers: pinHeader(pin) },
+    { method: 'DELETE' },
     z.object({ ok: z.literal(true) }),
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Dialog, FormField, Input, PinField, formatCop, isValidPin } from '@pos-tercos/ui';
+import { Button, Dialog, FormField, Input, MoneyInput, formatCop } from '@pos-tercos/ui';
 import { FileImage } from 'lucide-react';
 import { useState, type ChangeEvent } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
@@ -8,7 +8,7 @@ import { ymdLocalToday } from '../../../lib/dates';
 import { markFixedCostPaid } from '../api/client';
 
 /** Diálogo de "marcar pagado" un costo fijo. El período (year, month) viene
- *  preseteado desde el cockpit; el dueño solo sube el comprobante + PIN. */
+ *  preseteado desde el cockpit; el dueño solo sube el comprobante. */
 export function FixedCostPaymentDialog({
   fixedCostId,
   fixedCostName,
@@ -34,7 +34,6 @@ export function FixedCostPaymentDialog({
   const [paidAt, setPaidAt] = useState(ymdLocalToday());
   const [amount, setAmount] = useState<string>(String(expectedAmount));
   const [note, setNote] = useState('');
-  const [pin, setPin] = useState('');
   const [split, setSplit] = useState({ cashAmount: 0, bankAmount: expectedAmount });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -59,7 +58,7 @@ export function FixedCostPaymentDialog({
     setError(null);
     setPending(true);
     try {
-      await markFixedCostPaid(fixedCostId, file, pin, {
+      await markFixedCostPaid(fixedCostId, file, {
         periodYear,
         periodMonth,
         paidAt,
@@ -76,7 +75,7 @@ export function FixedCostPaymentDialog({
     }
   };
 
-  const valid = file !== null && isValidPin(pin) && Number.isFinite(Number(amount));
+  const valid = file !== null && Number.isFinite(Number(amount));
 
   return (
     <Dialog
@@ -91,7 +90,7 @@ export function FixedCostPaymentDialog({
             Cancelar
           </Button>
           <Button onClick={submit} disabled={!valid || pending}>
-            {pending ? 'Subiendo…' : 'Confirmar con PIN'}
+            {pending ? 'Subiendo…' : 'Confirmar pago'}
           </Button>
         </>
       }
@@ -124,14 +123,7 @@ export function FixedCostPaymentDialog({
             />
           </FormField>
           <FormField label="Monto real" hint="Si pagaste distinto al esperado.">
-            <Input
-              type="number"
-              min={0}
-              step="1"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={pending}
-            />
+            <MoneyInput value={amount} onChange={setAmount} disabled={pending} />
           </FormField>
         </div>
         <PocketPaymentField total={Number(amount) || 0} disabled={pending} onChange={(c, b) => setSplit({ cashAmount: c, bankAmount: b })} />
@@ -145,7 +137,6 @@ export function FixedCostPaymentDialog({
             disabled={pending}
           />
         </FormField>
-        <PinField value={pin} onChange={setPin} disabled={pending} />
         {error ? (
           <p
             role="alert"
