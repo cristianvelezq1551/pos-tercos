@@ -102,6 +102,11 @@ model Product {
   /// "86" manual: el cajero/admin lo marca agotado y desaparece como vendible
   /// (cajero + web) sin tocar el catálogo. Independiente del stock de insumos.
   soldOut               Boolean             @default(false) @map("sold_out")
+  /// "Forzar disponible": el dueño lo vende aunque el stock de sus insumos/
+  /// subproductos NO alcance en el sistema (stock físico no registrado). Pisa
+  /// el cómputo de disponibilidad Y salta el guard de stock al cobrar (el
+  /// faltante queda en negativo + bitácora). Excluyente con soldOut.
+  forceAvailable        Boolean             @default(false) @map("force_available")
   createdAt             DateTime            @default(now()) @map("created_at")
   updatedAt             DateTime            @updatedAt @map("updated_at")
   conversionFactor      Decimal?            @map("conversion_factor") @db.Decimal(14, 6)
@@ -198,6 +203,10 @@ model Subproduct {
   thresholdMin        Decimal             @default(0) @db.Decimal(14, 4) @map("threshold_min")
   /// Tamaño de una porción, en `unit`. Null = sin porción definida.
   portionSize         Decimal?            @db.Decimal(14, 4) @map("portion_size")
+  /// Si al faltar stock de este subproducto se frena la venta del producto que
+  /// lo usa. false = no bloquea (ej. una salsa opcional). DEFAULT del
+  /// subproducto; cada receta puede pisarlo (recipe_edges). Ver Ingredient.
+  blocksAvailability  Boolean             @default(true) @map("blocks_availability")
   isActive            Boolean             @default(true) @map("is_active")
   createdAt           DateTime            @default(now()) @map("created_at")
   updatedAt           DateTime            @updatedAt @map("updated_at")
@@ -222,6 +231,11 @@ model Ingredient {
   /// Costo histórico (FASE 4 ajustes 2.2). En unitPurchase. Auto-actualizado al confirmar facturas.
   lastUnitCost     Decimal?            @map("last_unit_cost") @db.Decimal(14, 4)
   lastUnitCostDate DateTime?           @map("last_unit_cost_date")
+  /// Si al faltar stock de este insumo se frena la venta del producto que lo usa.
+  /// false = CONSUMIBLE (servilletas, sal): nunca bloquea y se oculta del panel
+  /// de deudas de inventario. Se sigue descontando y costeando igual.
+  /// Es el DEFAULT del insumo; cada receta puede pisarlo (recipe_edges).
+  blocksAvailability Boolean           @default(true) @map("blocks_availability")
   isActive         Boolean             @default(true) @map("is_active")
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
@@ -245,6 +259,11 @@ model RecipeEdge {
   childSubproductId  String?      @map("child_subproduct_id")
   quantityNeta       Decimal      @map("quantity_neta") @db.Decimal(14, 4)
   mermaPct           Decimal      @default(0) @map("merma_pct") @db.Decimal(5, 4)
+  /// Override POR RECETA de si este child frena la venta del parent cuando no
+  /// alcanza su stock. NULL = hereda el flag del insumo/subproducto.
+  /// Caso de uso: la lechuga es crítica en la ensalada pero adorno en la
+  /// hamburguesa. NO afecta el consumo ni el costo — solo la disponibilidad.
+  blocksAvailability Boolean?     @map("blocks_availability")
   createdAt          DateTime     @default(now()) @map("created_at")
   childIngredient    Ingredient?  @relation("IngredientChild", fields: [childIngredientId], references: [id], onDelete: Restrict)
   childSubproduct    Subproduct?  @relation("SubproductChild", fields: [childSubproductId], references: [id], onDelete: Restrict)
@@ -469,7 +488,7 @@ model Sale {
   /// Monto resultante del descuento sobre el total (0 si no hay).
   /// discount_total = Σ line_discount + order_discount_amount.
   orderDiscountAmount           Decimal         @default(0) @map("order_discount_amount") @db.Decimal(14, 2)
-  paymentMethod                 PaymentMethod?  @map("payment_method")
+  paymentMethod                 String?         @map("payment_method")
   paidAt                        DateTime?       @map("paid_at")
   /// Momento en que la cocina marcó LISTO_DESPACHO. Ordena la cola de
   /// "listos por llamar" del cajero. Null hasta que esté listo.
@@ -483,6 +502,16 @@ model Sale {
   notes                         String?
   /// Motivo de anulación (solo cuando status=VOID). Se muestra en el historial.
   voidReason                    String?         @map("void_reason")
+  /// ── Entrega a domicilio (solo type=WEB_DELIVERY; CHECK en DB) ──
+  /// Dirección escrita por el cliente. TEXTO LIBRE: el repartidor necesita
+  /// "torre 2, apto 502, portería azul", no coordenadas.
+  deliveryAddress               String?         @map("delivery_address")
+  /// Referencias extra (punto de encuentro, "timbre roto", etc.).
+  deliveryNotes                 String?         @map("delivery_notes")
+  /// GPS del cliente al pedir. Valida la zona y abre el mapa; NO reemplaza a
+  /// la dirección. Van juntas o ninguna (CHECK).
+  deliveryLat                   Float?          @map("delivery_lat")
+  deliveryLng                   Float?          @map("delivery_lng")
   idempotencyKey                String?         @unique @map("idempotency_key")
   createdAt                     DateTime        @default(now()) @map("created_at")
   public_token                  String?         @unique
@@ -605,7 +634,7 @@ model CashMovement {
   shiftId   String           @map("shift_id")
   type      CashMovementType
   /// CASH = cajón físico; digital = cuenta del negocio (arqueo digital).
-  method PaymentMethod @default(CASH)
+  method String @default("CASH")
   amount    Decimal          @db.Decimal(14, 2)
   reason    String
   userId    String           @map("user_id")
@@ -903,6 +932,10 @@ enum InvoiceStatus {
 enum SaleType {
   COUNTER
   WEB_PICKUP
+  /// Domicilio (2026-07-16). Vuelve tras la v2, que lo había eliminado. NO
+  /// revive el módulo de reparto: no hay repartidor asignable ni estados de
+  /// ruta — el pedido lleva la dirección del cliente y se entrega.
+  WEB_DELIVERY
 }
 
 /// Estado del ciclo de vida de una venta (solo COUNTER + WEB_PICKUP).
@@ -922,15 +955,6 @@ enum SaleStatus {
   CANCELADO_NO_PAGO
   CANCELADO_SIN_REEMBOLSO
   VOID
-}
-
-enum PaymentMethod {
-  CASH
-  NEQUI
-  DAVIPLATA
-  QR_BANCOLOMBIA
-  TRANSFER
-  CARD
 }
 
 enum ShiftStatus {
@@ -1123,7 +1147,7 @@ enum CountStatus {
 model SalePayment {
   id             String        @id @default(uuid())
   saleId         String        @map("sale_id")
-  method         PaymentMethod
+  method         String
   amount         Decimal       @db.Decimal(12, 2)
   /// Efectivo recibido para ESTA parte (>= amount → vuelto). Null en digital.
   amountReceived Decimal?      @db.Decimal(12, 2) @map("amount_received")
@@ -1135,13 +1159,23 @@ model SalePayment {
   @@map("sale_payments")
 }
 
-/// Qué métodos de pago están habilitados en el POS (los administra el admin).
-/// El catálogo es el enum PaymentMethod; acá solo enabled + orden.
+/// Catálogo de medios de pago — fuente de verdad de la IDENTIDAD del método (ya
+/// no es un enum: el dueño crea/edita/borra métodos desde el admin). `code` es el
+/// slug estable (CASH, TRANSFER, o custom RAPPI…) que persisten sale_payments /
+/// cash_movements / sales; `name` es el label editable. `isCash` maneja cajón +
+/// arqueo de efectivo (solo el método sistema CASH). `requiresVerification` pide
+/// doble-verificación de comprobante (digitales). `reconciliationSource` ata el
+/// método al CSV del banco. `isSystem` protege CASH de borrado.
 model PaymentMethodSetting {
-  method    PaymentMethod @id
-  enabled   Boolean       @default(false)
-  sortOrder Int           @default(0) @map("sort_order")
-  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at")
+  code                 String   @id
+  name                 String
+  enabled              Boolean  @default(false)
+  isCash               Boolean  @default(false) @map("is_cash")
+  requiresVerification Boolean  @default(true) @map("requires_verification")
+  reconciliationSource String?  @map("reconciliation_source")
+  isSystem             Boolean  @default(false) @map("is_system")
+  sortOrder            Int      @default(0) @map("sort_order")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("payment_method_settings")
 }
@@ -1226,9 +1260,12 @@ model PayrollWeekPayment {
   method         String?
   /// 'PAID' | 'VOIDED'.
   status         String   @default("PAID")
-  proofImageKey  String   @map("proof_image_key")
+  /// Comprobante (opcional): imagen del abono. Puede ir sin comprobante.
+  proofImageKey  String?  @map("proof_image_key")
   actorId        String?  @map("actor_id")
-  /// Movimiento de caja generado por la porción en efectivo (para revertir).
+  /// Legacy (§7.v17): la nómina en efectivo generaba un CashMovement OUT en el
+  /// turno abierto, lo que descuadraba el arqueo (el bolsillo EFECTIVO de
+  /// tesorería no es el cajón). Ya NO se escriben; quedan por los abonos viejos.
   cashMovementId String?  @map("cash_movement_id")
   shiftId        String?  @map("shift_id")
   note           String?
@@ -1337,6 +1374,40 @@ model BusinessConfig {
   /// Kill-switch de pedidos web (#13): false = POST /web/orders rechazado y
   /// la web oculta el checkout. El dueño lo apaga ante abuso, sin deploy.
   webOrdersEnabled Boolean @default(true) @map("web_orders_enabled")
+
+  /// ── Config de la web del cliente (2026-07-16) ──
+  /// Sale por `GET /web-hero/config`. El dueño la edita desde el admin; antes
+  /// estaba hardcodeada en apps/web o en variables de entorno de Vercel.
+  phone         String   @default("") @map("phone")
+  phoneDisplay  String   @default("") @map("phone_display")
+  address       String   @default("") @map("address")
+  mapsUrl       String   @default("") @map("maps_url")
+  /// "lat,lng". Lo deduce el server del link de Maps; alimenta el mapa
+  /// embebido y el deeplink de Waze.
+  coords        String   @default("") @map("coords")
+  /// `OpeningHours` de @pos-tercos/types: {weekly, overrides, restDayHolidayShift}.
+  hours         Json     @default("{}") @map("hours")
+  /// El switch del dueño: true = fuera de horario NO se toman pedidos web.
+  /// Default false a propósito — que prenderlo sea un acto deliberado y no
+  /// empiece a rechazar pedidos reales por un horario mal cargado.
+  ordersRespectSchedule Boolean @default(false) @map("orders_respect_schedule")
+  /// Domicilios activos. Default false: el toggle no aparece en la web hasta
+  /// que el dueño diga que reparte.
+  deliveryEnabled Boolean @default(false) @map("delivery_enabled")
+  /// Zona de cobertura: radio en km desde `coords`. CHECK (0, 100].
+  orderRadiusKm Float    @default(10) @map("order_radius_km")
+  /// El switch del dueño: true = un pedido fuera del radio se rechaza. Default
+  /// false por lo mismo que el horario — prenderlo es un acto deliberado.
+  ordersRespectRadius Boolean @default(false) @map("orders_respect_radius")
+  instagramUrl  String   @default("") @map("instagram_url")
+  tiktokUrl     String   @default("") @map("tiktok_url")
+  aboutHeadline String   @default("") @map("about_headline")
+  aboutStory    String   @default("") @map("about_story")
+  /// [{title, description}] — los valores de la página "Nosotros".
+  aboutValues   Json     @default("[]") @map("about_values")
+  aboutImageKey  String? @map("about_image_key")
+  aboutImageMime String? @map("about_image_mime")
+
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("business_config")

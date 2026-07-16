@@ -13,7 +13,7 @@ import {
   roundsToZeroAt4,
   type PromotionDef,
 } from '@pos-tercos/domain';
-import { DIGITAL_PAYMENT_METHODS, REFUND_VOID_REASON_PREFIX } from '@pos-tercos/types';
+import { isWebSaleType, REFUND_VOID_REASON_PREFIX } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -23,6 +23,7 @@ import type {
   PaymentMethod,
   Sale,
   SaleStatus,
+  SaleType,
   SaleStatusLogEntry,
   Shift,
   VoidSale,
@@ -216,7 +217,7 @@ export class SalesService {
         ? Promise.resolve([])
         : this.promotions.loadActiveAt(
             now,
-            input.type === 'WEB_PICKUP' ? 'WEB' : 'POS',
+            isWebSaleType(input.type) ? 'WEB' : 'POS',
           ),
     ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
@@ -265,6 +266,13 @@ export class SalesService {
             customerName: input.customerName ?? null,
             customerPhone: input.customerPhone ?? null,
             customerNit: input.customerNit ?? null,
+            // Defensa en profundidad además del Zod y del CHECK de la DB: los
+            // datos de entrega SOLO existen en un domicilio.
+            deliveryAddress:
+              input.type === 'WEB_DELIVERY' ? (input.deliveryAddress ?? null) : null,
+            deliveryNotes: input.type === 'WEB_DELIVERY' ? (input.deliveryNotes ?? null) : null,
+            deliveryLat: input.type === 'WEB_DELIVERY' ? (input.deliveryLat ?? null) : null,
+            deliveryLng: input.type === 'WEB_DELIVERY' ? (input.deliveryLng ?? null) : null,
             subtotal,
             discountTotal,
             total,
@@ -448,6 +456,7 @@ export class SalesService {
     );
 
     let movementsCreated = 0;
+    let forcedProductIds: string[] = [];
     const updated = await runWithSerializationRetry(() =>
       this.prisma.$transaction(
         async (tx) => {
@@ -482,13 +491,14 @@ export class SalesService {
               );
             }
           }
-          const stockMovementsToCreate = await this.buildSaleStockMovements(
+          const built = await this.buildSaleStockMovements(
             fresh.items,
             saleId,
             fresh.id,
             userId,
           );
-          movementsCreated = stockMovementsToCreate.length;
+          movementsCreated = built.movements.length;
+          forcedProductIds = built.forcedProductIds;
           return this.applyConfirmPaymentTx(tx, {
             saleId,
             summaryMethod,
@@ -497,7 +507,8 @@ export class SalesService {
             cashierId,
             userId,
             notes: input.notes,
-            stockMovementsToCreate,
+            stockMovementsToCreate: built.movements,
+            tolerateStockKeys: built.tolerateKeys,
           });
         },
         SALE_TX_OPTS,
@@ -517,6 +528,23 @@ export class SalesService {
       },
     });
 
+    // Bitácora: la venta incluyó productos "forzados disponibles" → se saltó el
+    // guard de stock y algún insumo/subproducto pudo quedar en negativo. Queda
+    // registrado para que el dueño lo concilie (stock físico no registrado).
+    if (forcedProductIds.length > 0) {
+      const forcedProducts = await this.prisma.product.findMany({
+        where: { id: { in: forcedProductIds } },
+        select: { id: true, name: true },
+      });
+      await this.audit.log({
+        userId,
+        action: 'SALE_FORCED_STOCK',
+        entityType: 'sale',
+        entityId: saleId,
+        metadata: { products: forcedProducts.map((p) => ({ id: p.id, name: p.name })) },
+      });
+    }
+
     const dto = toSaleDto(updated);
     // Notifica al cliente via WhatsApp que el pago fue verificado (WEB_PICKUP).
     // `silent` (cobro retroactivo offline) lo omite — el cliente ya retiró.
@@ -535,7 +563,7 @@ export class SalesService {
    *    venta se cuelga de la caja abierta del que cobra (la plata entra AHÍ).
    */
   private async resolvePaymentShift(
-    type: string,
+    type: SaleType,
     currentShiftId: string | null,
     currentCashierId: string | null,
     userId: string,
@@ -554,7 +582,7 @@ export class SalesService {
     const shift = await this.shifts.getActiveTodayShift(userId);
     if (!shift) {
       throw new BadRequestException(
-        type === 'WEB_PICKUP'
+        isWebSaleType(type)
           ? 'Abrí la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).'
           : 'La caja de esta venta ya cerró y no hay caja abierta. Abrí caja antes de cobrar.',
       );
@@ -574,7 +602,12 @@ export class SalesService {
     saleId: string,
     saleShortRef: string,
     userId: string,
-  ): Promise<Prisma.InventoryMovementCreateManyInput[]> {
+  ): Promise<{
+    movements: Prisma.InventoryMovementCreateManyInput[];
+    /** Claves TYPE:id de consumos de productos "forzados disponibles". */
+    tolerateKeys: Set<string>;
+    forcedProductIds: string[];
+  }> {
     const consumptionSpecs = await this.consumption.computeConsumptionSpecs(
       items.map((it) => ({
         productId: it.productId,
@@ -586,18 +619,31 @@ export class SalesService {
       })),
       `Sale ${saleShortRef.slice(0, 8)}`,
     );
-    return consumptionSpecs.map((s) => ({
+    // Faltantes que NO frenan el cobro: productos forzados disponibles +
+    // consumibles (servilletas). El negativo resultante se audita.
+    const lineProductIds = Array.from(new Set(items.map((it) => it.productId)));
+    const forced = await this.prisma.product.findMany({
+      where: { id: { in: lineProductIds }, forceAvailable: true },
+      select: { id: true },
+    });
+    const forcedProductIds = forced.map((p) => p.id);
+    const tolerateKeys = this.consumption.tolerableKeys(
+      consumptionSpecs,
+      new Set(forcedProductIds),
+    );
+    const movements = consumptionSpecs.map((s) => ({
       entityType: s.entityType,
       ingredientId: s.ingredientId ?? null,
       productId: s.productId ?? null,
       subproductId: s.subproductId ?? null,
       delta: s.delta,
-      type: 'SALE',
+      type: 'SALE' as const,
       sourceType: 'sale',
       sourceId: saleId,
       userId,
       notes: s.note,
     }));
+    return { movements, tolerateKeys, forcedProductIds };
   }
 
   /**
@@ -617,10 +663,20 @@ export class SalesService {
       userId: string;
       notes: string | undefined;
       stockMovementsToCreate: Prisma.InventoryMovementCreateManyInput[];
+      tolerateStockKeys: ReadonlySet<string>;
     },
   ): Promise<Prisma.SaleGetPayload<{ include: ReturnType<typeof includeFull> }>> {
-    const { saleId, summaryMethod, parts, shiftId, cashierId, userId, notes, stockMovementsToCreate } =
-      args;
+    const {
+      saleId,
+      summaryMethod,
+      parts,
+      shiftId,
+      cashierId,
+      userId,
+      notes,
+      stockMovementsToCreate,
+      tolerateStockKeys,
+    } = args;
     const res = await tx.sale.updateMany({
       where: { id: saleId, status: 'PENDIENTE_PAGO' },
       data: {
@@ -659,7 +715,7 @@ export class SalesService {
       // Defensa contra stock negativo: el cajero ya pasó por el sold-out gate del
       // POS, pero si la ventana de availability se desactualizó, bloqueamos acá
       // antes de crear el movement.
-      await this.consumption.assertStockSufficient(tx, stockMovementsToCreate);
+      await this.consumption.assertStockSufficient(tx, stockMovementsToCreate, tolerateStockKeys);
       await tx.inventoryMovement.createMany({ data: stockMovementsToCreate });
     }
     return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
@@ -676,8 +732,8 @@ export class SalesService {
       select: { type: true, status: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (existing.type !== 'WEB_PICKUP') {
-      throw new BadRequestException('Solo los pedidos web se marcan listos para retirar.');
+    if (!isWebSaleType(existing.type)) {
+      throw new BadRequestException('Solo los pedidos web se marcan listos.');
     }
     if (existing.status !== 'PAGADO') {
       throw new BadRequestException(`No se puede marcar listo en estado ${existing.status}.`);
@@ -728,6 +784,8 @@ export class SalesService {
         `El medio de pago ${disabledPart.method} no está habilitado. Configuralo en el admin.`,
       );
     }
+    // Qué métodos exigen verificar comprobante lo define el catálogo, no el code.
+    const requiresVerification = await this.paymentMethods.requiresVerificationSet();
     const sum = parts.reduce((acc, p) => acc + p.amount, 0);
     if (Math.abs(sum - total) > 0.005) {
       throw new BadRequestException(
@@ -735,9 +793,7 @@ export class SalesService {
       );
     }
     for (const p of parts) {
-      const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
-        p.method as PaymentMethod,
-      );
+      const isDigital = requiresVerification.has(p.method);
       if (isDigital) {
         if (!p.digitalVerified) {
           throw new BadRequestException(
@@ -1150,7 +1206,7 @@ export class SalesService {
           statusTo: 'CANCELADO_NO_PAGO',
           userId: cashierId,
           notes:
-            existing.type === 'WEB_PICKUP'
+            isWebSaleType(existing.type)
               ? 'Pedido web rechazado por el cajero'
               : existing.isOpenTab
                 ? 'Cuenta abierta cancelada por el cajero'
@@ -1232,7 +1288,16 @@ export class SalesService {
     if (filter.status) where.status = filter.status as DbSaleStatus;
     if (filter.cashierId) where.cashierId = filter.cashierId;
     if (filter.shiftId) where.shiftId = filter.shiftId;
-    if (filter.type) where.type = filter.type as Prisma.SaleWhereInput['type'];
+    // Acepta CSV ("WEB_PICKUP,WEB_DELIVERY"), igual que `GET /audit?action=`:
+    // el panel del cajero pide los DOS tipos web en una sola consulta.
+    if (filter.type) {
+      const types = filter.type
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean) as SaleType[];
+      if (types.length === 1) where.type = types[0];
+      else if (types.length > 1) where.type = { in: types };
+    }
     if (filter.from || filter.to) {
       where.createdAt = {};
       if (filter.from) where.createdAt.gte = filter.from;

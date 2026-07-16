@@ -1,17 +1,17 @@
 'use client';
 
-import type { PaymentMethod } from '@pos-tercos/types';
+import type { PaymentMethodSetting } from '@pos-tercos/types';
 import { useEffect, useState } from 'react';
-import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
+import { cachedEnabledMethods, fetchEnabledMethods } from '../api/payment-methods';
 
-// Métodos habilitados por el admin (offline cae al fallback).
-export function useEnabledPaymentMethods(open: boolean, offline: boolean): PaymentMethod[] {
-  const [methods, setMethods] = useState<PaymentMethod[]>(FALLBACK_METHODS);
+// Métodos habilitados por el admin (offline cae al cache/fallback).
+export function useEnabledPaymentMethods(open: boolean, offline: boolean): PaymentMethodSetting[] {
+  const [methods, setMethods] = useState<PaymentMethodSetting[]>(() => cachedEnabledMethods());
 
   useEffect(() => {
     if (!open) return;
     if (offline) {
-      setMethods(FALLBACK_METHODS);
+      setMethods(cachedEnabledMethods());
       return;
     }
     let cancelled = false;

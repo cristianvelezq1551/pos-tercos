@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { sameBusinessDay } from '@pos-tercos/domain';
 import type { Sale, SyncOfflineSale } from '@pos-tercos/types';
-import type { PaymentMethod, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -169,7 +169,7 @@ export class SalesOfflineService {
           subtotal: input.payload.subtotal,
           discountTotal: input.payload.discount,
           total: input.payload.total,
-          paymentMethod: input.payment.method as PaymentMethod,
+          paymentMethod: input.payment.method,
           paidAt: new Date(input.soldOfflineAt),
           paidByUserId: userId,
           cashierId: userId,
@@ -200,7 +200,7 @@ export class SalesOfflineService {
           // Fuente única de verdad del método: el cobro offline es 1 parte.
           payments: {
             create: {
-              method: input.payment.method as PaymentMethod,
+              method: input.payment.method,
               amount: input.payload.total,
               amountReceived:
                 input.payment.method === 'CASH' ? input.payment.amountReceived : null,

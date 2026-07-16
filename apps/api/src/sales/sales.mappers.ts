@@ -96,6 +96,10 @@ export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
     createdAt: sale.createdAt,
     type: sale.type,
     customerName: sale.customerName,
+    // El repartidor se lleva ESTE papel: sin dirección no sale el domicilio.
+    deliveryAddress: sale.deliveryAddress ?? null,
+    deliveryNotes: sale.deliveryNotes ?? null,
+    customerPhone: sale.customerPhone,
     items: (sale.items ?? []).map((it) => ({
       productName: it.productName ?? '(sin nombre)',
       sizeName: it.sizeName ?? null,
@@ -164,6 +168,10 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     orderDiscountAmount: Number(row.orderDiscountAmount),
     discountReason: row.discountReason,
     voidReason: row.voidReason,
+    deliveryAddress: row.deliveryAddress,
+    deliveryNotes: row.deliveryNotes,
+    deliveryLat: row.deliveryLat === null ? null : Number(row.deliveryLat),
+    deliveryLng: row.deliveryLng === null ? null : Number(row.deliveryLng),
     idempotencyKey: row.idempotencyKey,
     payments: (row.payments ?? []).map((p) => ({
       id: p.id,

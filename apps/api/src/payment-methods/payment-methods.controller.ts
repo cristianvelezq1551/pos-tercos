@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import {
-  UpdatePaymentMethodsSchema,
+  CreatePaymentMethodSchema,
+  UpdatePaymentMethodSchema,
+  type CreatePaymentMethod,
   type PaymentMethodSetting,
-  type UpdatePaymentMethods,
+  type UpdatePaymentMethod,
   type JwtAccessPayload,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -28,13 +30,35 @@ export class PaymentMethodsController {
     return this.methods.listAll();
   }
 
-  /** Habilitar/deshabilitar métodos. Admin/Dueño. */
+  /** Crear un medio de pago custom (digital). Admin/Dueño. */
   @AdminAccess()
-  @Put()
+  @Post()
+  create(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(CreatePaymentMethodSchema)) body: CreatePaymentMethod,
+  ): Promise<PaymentMethodSetting> {
+    return this.methods.create(body, user.sub);
+  }
+
+  /** Editar un medio de pago (nombre, habilitado, verificación, reconciliación, orden). */
+  @AdminAccess()
+  @Patch(':code')
   update(
     @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(UpdatePaymentMethodsSchema)) body: UpdatePaymentMethods,
-  ): Promise<PaymentMethodSetting[]> {
-    return this.methods.update(body, user.sub);
+    @Param('code') code: string,
+    @Body(new ZodValidationPipe(UpdatePaymentMethodSchema)) body: UpdatePaymentMethod,
+  ): Promise<PaymentMethodSetting> {
+    return this.methods.update(code, body, user.sub);
+  }
+
+  /** Borrar un medio de pago (no built-in de sistema). Admin/Dueño. */
+  @AdminAccess()
+  @Delete(':code')
+  async remove(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('code') code: string,
+  ): Promise<{ ok: true }> {
+    await this.methods.remove(code, user.sub);
+    return { ok: true };
   }
 }

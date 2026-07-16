@@ -229,6 +229,9 @@ export class SalesReceiptService {
         createdAt: now.toISOString(),
         type: sale.type,
         customerName: sale.customerName,
+        deliveryAddress: sale.deliveryAddress ?? null,
+        deliveryNotes: sale.deliveryNotes ?? null,
+        customerPhone: sale.customerPhone,
         items: lines.map(({ directResale: _drop, ...line }) => line),
         title,
         // Tanda 2+ → rótulo ADICIÓN: cocina sabe que se SUMA al pedido anterior.

@@ -17,6 +17,17 @@ export interface ConsumptionSpec {
   subproductId?: string;
   delta: number;
   note: string;
+  /**
+   * Producto (línea de la venta) que originó este consumo. Permite tolerar el
+   * faltante de stock cuando ese producto está "forzado disponible".
+   */
+  originProductId: string;
+  /**
+   * Si este consumo frena la venta cuando no alcanza el stock. `false` =
+   * consumible (servilletas): se descuenta y se costea, pero no bloquea.
+   * La reventa directa siempre bloquea (su stock ES el producto vendido).
+   */
+  blocksAvailability: boolean;
 }
 
 /**
@@ -100,7 +111,7 @@ export class SalesConsumptionService {
     );
 
     const consumeModifiers = (
-      line: { quantity: number; modifiers?: ReadonlyArray<{ modifierId: string }> },
+      line: { productId: string; quantity: number; modifiers?: ReadonlyArray<{ modifierId: string }> },
     ): void => {
       for (const applied of line.modifiers ?? []) {
         const def = modifierMap.get(applied.modifierId);
@@ -113,6 +124,10 @@ export class SalesConsumptionService {
               : { subproductId: c.childId }),
             delta: -(c.quantity * line.quantity),
             note: `${notePrefix} extra "${def.name}"`,
+            originProductId: line.productId,
+            // El extra de un modificador es un pedido explícito del cliente:
+            // si no hay, la venta debe frenar (no es un consumible de fondo).
+            blocksAvailability: true,
           });
         }
       }
@@ -121,6 +136,7 @@ export class SalesConsumptionService {
     const consume = async (
       p: { id: string; name: string; directResale: boolean },
       qty: number,
+      originProductId: string,
       sizeId?: string | null,
     ): Promise<void> => {
       if (p.directResale) {
@@ -129,6 +145,9 @@ export class SalesConsumptionService {
           productId: p.id,
           delta: -qty,
           note: `${notePrefix} item ${p.name}`,
+          originProductId,
+          // Reventa directa: su stock ES lo que se vende → siempre bloquea.
+          blocksAvailability: true,
         });
         return;
       }
@@ -145,12 +164,16 @@ export class SalesConsumptionService {
           cause: err instanceof Error ? err.message : String(err),
         });
       }
+      // OJO: se consumen TODOS los children, bloqueantes o no. El flag solo se
+      // propaga para que el guard de stock no frene por un consumible.
       for (const ing of expanded.ingredients.values()) {
         specs.push({
           entityType: 'INGREDIENT',
           ingredientId: ing.ingredientId,
           delta: -ing.totalQuantity,
           note: `${notePrefix} via "${p.name}"`,
+          originProductId,
+          blocksAvailability: ing.blocksAvailability,
         });
       }
       for (const sub of expanded.subproducts.values()) {
@@ -159,6 +182,8 @@ export class SalesConsumptionService {
           subproductId: sub.subproductId,
           delta: -sub.totalQuantity,
           note: `${notePrefix} via "${p.name}"`,
+          originProductId,
+          blocksAvailability: sub.blocksAvailability,
         });
       }
     };
@@ -182,14 +207,48 @@ export class SalesConsumptionService {
               `Combo anidado no soportado en "${product.name}".`,
             );
           }
-          await consume(cp, line.quantity * comp.quantity);
+          // El origen es el combo (line.productId): si el combo está forzado,
+          // se toleran los faltantes de todos sus componentes.
+          await consume(cp, line.quantity * comp.quantity, line.productId);
         }
       } else {
-        await consume(product, line.quantity, line.sizeId);
+        await consume(product, line.quantity, line.productId, line.sizeId);
       }
     }
 
     return specs;
+  }
+
+  /**
+   * Claves `TYPE:id` cuyo faltante NO debe frenar la venta:
+   *  - consumos de productos "forzados disponibles" (el dueño los reactivó),
+   *  - consumibles (`blocksAvailability=false`: servilletas, sal).
+   *
+   * Una entidad se tolera SOLO si NINGÚN consumo bloqueante de esta venta la
+   * usa: la lechuga sigue frenando la ensalada aunque sea adorno en la
+   * hamburguesa del mismo ticket.
+   *
+   * Compartido por el cobro y la edición para que no puedan divergir (si la UI
+   * muestra disponible y el guard rechaza, el cajero queda trabado).
+   */
+  tolerableKeys(
+    specs: readonly ConsumptionSpec[],
+    forcedProductIds: ReadonlySet<string>,
+  ): Set<string> {
+    const blocking = new Set<string>();
+    const tolerable = new Set<string>();
+    for (const s of specs) {
+      const id = s.ingredientId ?? s.productId ?? s.subproductId;
+      if (!id) continue;
+      const key = `${s.entityType}:${id}`;
+      if (forcedProductIds.has(s.originProductId) || !s.blocksAvailability) {
+        tolerable.add(key);
+      } else {
+        blocking.add(key);
+      }
+    }
+    for (const k of blocking) tolerable.delete(k);
+    return tolerable;
   }
 
   /**
@@ -210,6 +269,12 @@ export class SalesConsumptionService {
   async assertStockSufficient(
     tx: Prisma.TransactionClient,
     movements: Prisma.InventoryMovementCreateManyInput[],
+    /**
+     * Claves `TYPE:id` cuyo faltante se TOLERA (no bloquea): consumos de
+     * productos "forzados disponibles". Su stock queda en negativo (auditado
+     * por el caller) para no frenar la venta cuando el stock no se registró.
+     */
+    tolerateKeys?: ReadonlySet<string>,
   ): Promise<void> {
     // Agrupar por entidad la cantidad TOTAL que se va a consumir.
     type Key = string;
@@ -267,6 +332,7 @@ export class SalesConsumptionService {
     // Para nombres legibles cuando hay shortage, miramos en lookups baratos.
     const shortageKeys: { key: Key; need: number; have: number }[] = [];
     for (const [k, n] of needs) {
+      if (tolerateKeys?.has(k)) continue; // forzado disponible → se permite negativo
       const have = stock.get(k) ?? 0;
       if (have < n.qty) {
         shortageKeys.push({ key: k, need: n.qty, have });

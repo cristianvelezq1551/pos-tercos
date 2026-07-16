@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { manualDiscountAmount, roundMoney, type ManualDiscountSpec } from '@pos-tercos/domain';
+import { isWebSaleType } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ChangeSalePayment,
@@ -132,7 +133,7 @@ export class SalesEditService {
             ? Promise.resolve([])
             : this.promotions.loadActiveAt(
                 now,
-                existing.type === 'WEB_PICKUP' ? 'WEB' : 'POS',
+                isWebSaleType(existing.type) ? 'WEB' : 'POS',
               ),
         ]);
         const productMap = new Map(products.map((p) => [p.id, p]));
@@ -204,34 +205,44 @@ export class SalesEditService {
         const stockWasDeducted = STOCK_DEDUCTED_STATUSES.includes(
           existing.status as (typeof STOCK_DEDUCTED_STATUSES)[number],
         );
-        const deltaMovements = stockWasDeducted
-          ? this.consumptionDelta(
-              ...(await Promise.all([
-                this.consumption.computeConsumptionSpecs(
-                  existing.items.map((it) => ({
-                    productId: it.productId,
-                    quantity: it.quantity,
-                    sizeId: it.sizeId,
-                    modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map(
-                      (m) => ({ modifierId: m.modifierId }),
-                    ),
-                  })),
-                  `Sale ${saleId.slice(0, 8)}`,
-                ),
-                this.consumption.computeConsumptionSpecs(
-                  input.items.map((it) => ({
-                    productId: it.productId,
-                    quantity: it.quantity,
-                    sizeId: it.sizeId ?? null,
-                    modifiers: it.modifiers,
-                  })),
-                  `Sale ${saleId.slice(0, 8)}`,
-                ),
-              ])),
-              saleId,
-              userId,
-            )
-          : [];
+        let deltaMovements: Prisma.InventoryMovementCreateManyInput[] = [];
+        // Faltantes tolerados al ajustar (mismo criterio que el cobro):
+        // productos forzados disponibles + consumibles.
+        let tolerateStockKeys = new Set<string>();
+        if (stockWasDeducted) {
+          const [oldSpecs, newSpecs] = await Promise.all([
+            this.consumption.computeConsumptionSpecs(
+              existing.items.map((it) => ({
+                productId: it.productId,
+                quantity: it.quantity,
+                sizeId: it.sizeId,
+                modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
+                  modifierId: m.modifierId,
+                })),
+              })),
+              `Sale ${saleId.slice(0, 8)}`,
+            ),
+            this.consumption.computeConsumptionSpecs(
+              input.items.map((it) => ({
+                productId: it.productId,
+                quantity: it.quantity,
+                sizeId: it.sizeId ?? null,
+                modifiers: it.modifiers,
+              })),
+              `Sale ${saleId.slice(0, 8)}`,
+            ),
+          ]);
+          deltaMovements = this.consumptionDelta(oldSpecs, newSpecs, saleId, userId);
+          const lineProductIds = Array.from(new Set(input.items.map((it) => it.productId)));
+          const forced = await this.prisma.product.findMany({
+            where: { id: { in: lineProductIds }, forceAvailable: true },
+            select: { id: true },
+          });
+          tolerateStockKeys = this.consumption.tolerableKeys(
+            newSpecs,
+            new Set(forced.map((p) => p.id)),
+          );
+        }
 
         // Comanda incremental (#3): preservar lo YA enviado a cocina. Las filas
         // se recrean, así que la cantidad enviada se transfiere por huella de
@@ -328,7 +339,7 @@ export class SalesEditService {
         }
 
         if (deltaMovements.length > 0) {
-          await this.consumption.assertStockSufficient(tx, deltaMovements);
+          await this.consumption.assertStockSufficient(tx, deltaMovements, tolerateStockKeys);
           await tx.inventoryMovement.createMany({ data: deltaMovements });
         }
 

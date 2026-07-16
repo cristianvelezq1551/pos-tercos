@@ -10,6 +10,7 @@ import {
 } from '@pos-tercos/types';
 import type { PaymentReconciliation, Prisma, User } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Tolerancia para considerar match temporal: ±N horas entre CSV y sale.paidAt. */
@@ -20,6 +21,7 @@ export class ReconciliationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly paymentMethods: PaymentMethodsService,
   ) {}
 
   // ==================================================================
@@ -143,10 +145,10 @@ export class ReconciliationService {
       Math.min(periodFrom.getTime() - bufferMs, periodStart.getTime()),
     );
     const fetchTo = new Date(Math.max(periodTo.getTime() + bufferMs, periodEndExcl.getTime()));
-    const compatibleMethods = methodsForSource(source);
+    const compatibleMethods = await this.paymentMethods.methodsForReconciliation(source);
     const paymentRows = await this.prisma.salePayment.findMany({
       where: {
-        method: { in: compatibleMethods as Prisma.EnumPaymentMethodFilter['in'] },
+        method: { in: compatibleMethods },
         sale: {
           status: {
             in: [
@@ -262,12 +264,6 @@ export class ReconciliationService {
       rows,
     };
   }
-}
-
-function methodsForSource(source: ReconciliationSource): string[] {
-  if (source === 'NEQUI_CSV') return ['NEQUI'];
-  // Bancolombia CSV puede traer transferencias y QR Bancolombia.
-  return ['DAVIPLATA', 'QR_BANCOLOMBIA', 'TRANSFER'];
 }
 
 type SavedRowWithUser = PaymentReconciliation & {
