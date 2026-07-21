@@ -314,13 +314,157 @@ Comportamientos deliberados que el dueño debe conocer al firmar QA (no son bugs
 5. **PIN del operativo sin UI self-serve** — el operativo depende del dueño para (re)configurar su PIN de
    aprobación (`ChangeMyPinDialog` solo se monta en `/users`, Dueño-only). Aceptable para v1.
 
-### 5.4 — Follow-ups menores diferidos (no bloquean prod)
+### 5.4 — Follow-ups menores diferidos ✅ CERRADOS (2026-07-21, commit `003500c`)
 
-- e2e de IA de facturas con LLM mockeado (parsing cubierto por tests de dominio en §4.4).
-- Anomalías 2σ e2e (necesita baseline de 5+ turnos).
-- `next/image` / Cloudflare Image Resizing para los thumbnails del menú (§3.7 — depende del delivery de
-  media de prod).
-- Retención de `sale_status_log` (insert-only sin purga; `audit_log` sí tiene purga).
+- ✅ e2e de IA de facturas con LLM mockeado — `test/invoices-ai.e2e-spec.ts` (4 casos: upload PNG→extracción,
+  PNG renombrado .jpg aceptado por magic-bytes, no-imagen→400, sin archivo→400). `bootstrapApp` ganó un
+  param `configure` para sustituir providers (mockear `LLMService`) antes de compilar.
+- ✅ Anomalías 2σ e2e — `test/anomalies.e2e-spec.ts` (2 casos: 6 turnos → flag `diff_high` en el reciente +
+  caso sin baseline → null).
+- ✅ `next/image` en los thumbnails del menú — `ProductImage`/`PickerHeader` migrados (fill + sizes;
+  imágenes same-origin `/api/products/images/*`, build web 6/6).
+- ⏭️ Retención de `sale_status_log` — OMITIDO A PROPÓSITO. La migración `20260706140000_audit_log_retention`
+  lo deja insert-only estricto deliberado (es fuente de FIFO/reportes, agrupado con `inventory_movements`).
+
+---
+
+## FASE 6 — Re-auditoría de viabilidad a producción ✅ (2026-07-21)
+
+Segunda pasada, con **4 agentes paralelos** verificando contra el código real: **seguridad**, **estabilidad/SRE**,
+**cobertura de tests**, **infra/suscripciones**. Objetivo: garantizar estabilidad antes de prod.
+
+### 6.0 — Veredicto
+
+**VIABLE para producción. CERO bloqueantes de código.** No se encontró ninguna vulnerabilidad explotable
+(sin SQLi, sin IDOR abierto, sin endpoint sensible sin guard, sin secreto commiteado). Transacciones
+TOCTOU-safe, integraciones externas todas con timeout (ninguna tumba el flujo), cobertura de tests
+financieros por encima del promedio, CI corre todo (incluido Playwright) en cada PR. Lo que falta para
+lanzar es **configuración operativa + 4 fixes chicos + crear cuentas/hardware**, no reescritura.
+
+| Severidad | Seguridad | Estabilidad | Tests |
+|---|---|---|---|
+| Bloqueante | 0 | 0 | 0 |
+| Alto | 1 (config) | 2 | 1 (test faltante) |
+| Medio | 3 | 4 | 1 |
+| Bajo | 4 | 2 | 2 |
+
+### 6.1 — Fixes de hardening APLICADOS (commit `829d759`)
+
+- **A1 · Graceful shutdown** (`apps/api/src/main.ts`): `app.enableShutdownHooks()`. Railway manda SIGTERM en
+  cada deploy; sin hooks las requests en vuelo se cortan con 5xx y `PrismaService.onModuleDestroy`
+  ($disconnect limpio) nunca corre. Ahora Nest drena el server HTTP y cierra Prisma dentro del grace period.
+- **M1 · Start command versionado** (`apps/api/railway.json` + script `start:prod`): build/start command con
+  `prisma migrate deploy`, `healthcheckPath:/healthz`, `numReplicas:1`, restart ON_FAILURE. La aplicación de
+  migraciones deja de depender de un string escrito a mano en el dashboard de Railway (reproducible + revisable
+  en PR). `deploy.md` §1.1 documenta el invariante de 1 réplica.
+- **M2 · Tope diario por IP** (`WebOrderDailyLimitGuard`, 25 pedidos/día por IP en `POST /web/orders`): el
+  anti-abuso por teléfono (3/día) es evadible rotando números `+57` falsos y cada pedido cuesta un WhatsApp;
+  el guard acota el daño. En memoria (consistente con la invariante de instancia única).
+- **Tests ALTO · Race de cierre de caja** (`test/shift-close-concurrency.e2e-spec.ts`): ejerce el invariante
+  financiero declarado como cerrado en §1.C pero sin test — dispara en paralelo un cobro CASH y el cierre de la
+  misma caja (`listen(0)`) y verifica que *la plata cobrada en la caja SIEMPRE entra al esperado del arqueo, o
+  el cobro se rechaza y la venta queda PENDIENTE_PAGO*. Nunca plata invisible.
+
+Verificado: typecheck 12/12, lint 0, e2e afectadas 35/35 + race 1/1.
+
+### 6.2 — Hallazgos ALTO que quedan (config/operativo, NO código)
+
+- **`TRUST_PROXY_HOPS` (seguridad A1):** todo el rate-limit (login 10/min, PINs 5/5min, pedidos web) es por IP,
+  derivada de `X-Forwarded-For` según `trust proxy`. Con Cloudflare→Railway son **2 hops**; el default es 1.
+  Valor muy bajo → todos los clientes caen en un bucket → DoS del login. Valor muy alto → el cliente spoofea
+  `X-Forwarded-For` → **bypass total de fuerza bruta** sobre PINs de 6 dígitos. **Acción obligatoria del deploy:**
+  verificar `req.ip` real en QA y fijar `TRUST_PROXY_HOPS=2` exacto.
+- **Instancia única (estabilidad A2 + seguridad M1):** throttler, rooms WS (`/ws/pos`) y crons viven en memoria.
+  Con >1 réplica: rate-limit evadible, pedido web no suena en todas las instancias, cada cron corre N veces.
+  Ya mitigado por `InstanceGuardService` (alerta al dueño por WhatsApp si detecta >1 instancia) + resync REST
+  12s + claim atómico del flag de notificación. **Acción:** fijar `numReplicas:1` sin autoscale (ya en
+  `railway.json`; documentado en `deploy.md`).
+
+### 6.3 — Hallazgos MEDIO (checklist go-live o mejora post-launch)
+
+- **WhatsApp puede degradar en silencio en el go-live (estab. M3):** sin templates de Meta aprobados +
+  `WHATSAPP_TEMPLATES_ENABLED=true`, las instrucciones de pago salen como texto libre fuera de la ventana de
+  24h → Kapso no entrega → `failed` → el cliente nunca sabe cómo pagar. Degrada con gracia (no rompe la venta).
+  **Checklist go-live:** validar templates aprobados antes de aceptar pedidos web reales (`kapso-setup.md`).
+- **Full-replay FIFO O(n) sincrónico en el path frío (estab. M2):** `cogs.service.ts loadMovements({})` sin
+  `take:`. Mitigado por snapshots mensuales + caché-por-promesa TTL 60s (99% de las llamadas). Residual a
+  12-18 meses: un reporte histórico o un void del mes pasado puede congelar el event loop unos segundos.
+  Post-launch: cap/paginación o worker separado del path transaccional.
+- **Reinicio del gateway pierde eventos WS del downtime (estab. M4):** mitigado por reconnect + re-join + resync
+  REST 12s (exposición máx ~12s, ningún pedido queda invisible). Informativo.
+- **Reconciliación CSV a nivel servicio sin e2e (tests MEDIO):** solo `parse-csv.test.ts` (parser puro) + 1
+  assertion en split. Falta e2e de flags `matched`/`unmatched_csv`/`unmatched_sale` + ventana por día calendario.
+
+### 6.4 — Deuda BAJO diferida (post-launch, no bloquea)
+
+- Rotación de refresh sin detección de reuso de familia de tokens (hoy solo se audita).
+- 4 pollers con `setInterval` crudo que no pausan en tab oculta (`useAvailability` público, `usePendingCount`,
+  `LiveDashboardSections`, `useBrollConfig`) → migrar a `usePolling`.
+- Fallback cross-app de cookies en el guard cuando falta `X-Client-App` (mitigado por los role guards).
+- Middleware Edge no valida `tokenVersion` (el backend sí lo valida → sin exposición de datos).
+- PrismaClient sin logging estructurado (`log:['warn','error']` + Sentry en prod).
+- Lecturas financieras bajo `@CashierAccess` sin scoping por cajero (aceptable para 1 local; escrituras sí
+  verifican ownership).
+- `PublicWebOrder` expone nombre/teléfono/dirección vía link con token HMAC 24h (por diseño; opcional enmascarar).
+- e2e del borde de baseline de anomalías 2σ (`<5` turnos) y del disparo por `voidCount`/`noSaleCount`.
+
+### 6.5 — Lo verificado y BIEN RESUELTO (los 4 agentes coinciden — no re-trabajar)
+
+- **Seguridad:** refresh tokens opacos (48 bytes random + SHA-256 en DB) con rotación atómica race-safe,
+  revocación por `tokenVersion`, cookies httpOnly+secure aisladas por app, helmet, CORS allowlist obligatoria
+  en prod, HMAC del pedido web timing-safe con throw en prod, uploads con MIME por magic-bytes + SVG rechazado
+  + anti-traversal, secrets con piso de entropía 32 chars + seed con guard anti-prod, DTOs públicos sin filtrar
+  costos, `POST /client-logs` con `@CashierAccess` + throttle.
+- **Estabilidad:** todas las transiciones de estado con claim `updateMany({where:{id,status}})`, cobro/cierre
+  serializable con `pg_advisory_xact_lock` + retry único (`common/tx.ts`), 11 crons no-throwing con re-entry
+  guards, integraciones externas todas con timeout (Kapso 10s, LLM 60s+fallback, R2 15s+retry, print 5s+backup
+  HTML), `/healthz` devuelve 503 con DB caída, `assertRequiredEnv` mata el boot si faltan secrets, fire-and-forget
+  de WhatsApp verificado (no revierte negocio).
+- **Tests:** ~365 e2e + ~290 domain + frontend Vitest; motor FIFO blindado (51 tests domain + snapshot e2e),
+  concurrencia de cobro con paralelismo real (`listen(0)`), double-verify digital, delivery fee, cuentas abiertas,
+  nómina §7.v17, offline sync, borde de negocio 4am; higiene impecable (0 skips, 36/36 suites con `cleanDb`,
+  ninguna asume seed); CI corre typecheck→lint→unit→e2e(Postgres real)→builds + Playwright en cada PR.
+- **Backups:** `pg_dump -Fc` cada 6h que **verifica el dump** (`pg_restore --list`, ≥10 tablas), retención 30d,
+  dead-man's-switch, abre GitHub Issue si falla.
+
+### 6.6 — Pendientes a producción (priorizados, NO son código)
+
+**Release:** push + merge a `main` (la rama va ~28 commits adelante sin pushear; Railway/Vercel despliegan de
+rama trackeada).
+
+**Infra/cuentas:** crear servicios Railway (Healthcheck `/healthz` — no `/health`=404; `replicas=1`;
+`DATABASE_URL?connection_limit=15`) + 4 proyectos Vercel (admin **necesita** `NEXT_PUBLIC_API_WS_URL` +
+`NEXT_PUBLIC_PRINT_AGENT_URL` o el socket y la impresión caen a localhost); fijar `TRUST_PROXY_HOPS=2`;
+dominio + DNS Cloudflare (SSL Full strict); 5 secrets de GitHub del backup + corrida de prueba + **simulacro de
+restore**; UptimeRobot sobre `/healthz`; `pg_dump` antes del 1er `migrate deploy` con datos
+(`dynamic_payment_methods` reescribe tabla con lock exclusivo).
+
+**Operativo día 1 (el seed no corre en prod):** crear usuario dueño a mano; cajeros como `ADMIN_OPERATIVO` (rol
+CAJERO retirado, el Edge del admin lo bloquea fail-closed); sembrar categorías de producto; producir todas las
+tandas de subproductos antes de abrir (o los preparados salen "Agotado"); validar WhatsApp Kapso (chip +57,
+5 templates aprobados, `WHATSAPP_TEMPLATES_ENABLED=true`); confirmar gates de la web (`web_orders_enabled`,
+horario, radio, delivery on/off).
+
+**Hardware:** Epson TM-T20III + cajón RJ-11 + tablet/PC de caja + TV/tablet de pantalla + Raspberry Pi 4;
+instalar print-agent (systemd :9120, `PRINT_AGENT_SECRET`) + túnel al backend (Cloudflare Tunnel o Tailscale).
+
+### 6.7 — Suscripciones requeridas (con costo estimado)
+
+| Servicio | Para qué | Plan | Costo estimado | Estado |
+|---|---|---|---|---|
+| Railway | Backend API + Postgres 16 | Pro recomendado | ~$10–25 USD/mes | Pendiente |
+| Vercel | 4 frontends Next.js | **Pro** (Hobby prohíbe uso comercial) | $20 USD/mes | Pendiente |
+| Cloudflare R2 | Fotos facturas + backups | Pago por uso (egress gratis) | ~$0–1 USD/mes | ✅ Bucket + token creados |
+| Kapso (WhatsApp Cloud API) | Notificaciones + alertas | Free 2.000 msgs/mes | $0 + Meta templates ~$1–5 | Pendiente (código listo) |
+| Chip prepago +57 | Número dedicado del WABA (1 vez) | Prepago mínimo | ~$5–10.000 COP una vez | Decisión del dueño |
+| Anthropic API | IA facturas + resúmenes + sugerencias | Pay-as-you-go | ~$1–3 USD/mes | Pendiente (cargar saldo) |
+| OpenAI API | Fallback IA (opcional) | Pay-as-you-go | ~$0–1 USD/mes | Opcional (~$5) |
+| Dominio + DNS | `tercos.co` + subdominios | Cloudflare Registrar | ~$10–30 USD/año | Pendiente |
+| UptimeRobot | Monitoreo externo `/healthz` | Free | $0 | Pendiente |
+| GitHub Actions | Backups + CI | Incluido (repo privado) | $0 | ✅ Workflows / faltan secrets |
+
+**Recurrente total: ~$50–75 USD/mes** (dominado por Vercel Pro + Railway; WhatsApp + IA + R2 + dominio < $10).
+**Hardware one-time: ~$1.5–2.5M COP.**
 
 ---
 
