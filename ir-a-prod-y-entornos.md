@@ -35,6 +35,38 @@ Todo separado. Un bug en QA jamás puede tocar plata o datos reales.
 
 ---
 
+## 0.bis Planes y costo real (un solo comercio)
+
+El sistema NO necesita planes caros para 1 local. El costo real, siendo honesto:
+
+| Servicio | Mínimo real | Plan "cómodo" | Nota |
+|---|---|---|---|
+| Railway (API + Postgres) | **~$5–10/mes** (Hobby) | ~$20 (Pro) | Hobby alcanza para 1 local de bajo tráfico. Pro = más recursos y sin límites de uso. |
+| Frontends (4 Next.js) | **$0** | $20 (Vercel Pro) | Vercel Pro es lo cómodo. Evitable: Cloudflare Pages (gratis, permite uso comercial) o consolidar en Railway. Vercel Hobby es gratis pero su licencia restringe uso comercial. |
+| WhatsApp (Kapso + Meta) | **~$0–5/mes** | igual | Kapso **$0** a este volumen (free tier 2.000 msg/mes). Solo se paga la tarifa de Meta por plantilla (~centavos c/u). |
+| Anthropic (IA facturas) | **$0–3/mes** | igual | Opcional: si cargás facturas a mano, $0. |
+| Cloudflare R2 | **~$0–1/mes** | igual | Ya creado. Egress gratis. |
+| Dominio | **~$1/mes** | igual | ~$10–12/año en registrar at-cost. |
+| UptimeRobot + GitHub Actions | **$0** | $0 | Free tier. |
+
+- **Mínimo cuidando el bolsillo: ~$10–20 USD/mes.**
+- **Cómodo (Railway Pro + Vercel Pro): ~$30–45 USD/mes.**
+
+**Podés arrancar aún más chico:** el núcleo es **admin (caja) + API + Postgres**. La web pública,
+`public-display` (TV) y WhatsApp son *add-ons*. Si al principio operás solo mostrador, corrés con el
+`MockWhatsAppAdapter` (a $0, no envía nada) y sumás web+WhatsApp después.
+
+**Sobre Kapso:** el envío automático de WhatsApp necesita la API oficial de Meta (Cloud API). Configurarla
+directo con Meta es engorroso (verificación de negocio, webhooks, registro de número); **Kapso es un
+intermediario (BSP) que lo simplifica** y es gratis a tu volumen. La alternativa gratis (OpenWA, no oficial)
+arriesga que Meta **banee tu número** — por eso el proyecto usa Kapso. El adapter ya habla el shape de la
+Cloud API, así que si algún día querés ir directo a Meta y saltarte Kapso, es un cambio de adapter mínimo.
+
+**Recomendación:** arrancá con **Railway Hobby + Cloudflare Pages (o Vercel Hobby para probar) + WhatsApp en
+mock**, quedás en ~$10/mes, y subís a planes pagos solo cuando el volumen lo justifique.
+
+---
+
 ## 1. Estrategia de ramas y despliegue
 
 Ya existen las ramas `main` y `prod`. El flujo:
@@ -94,10 +126,10 @@ Config QA (difiere de prod):
 
 ### 2.3 Datos de QA
 - [ ] Migraciones: se aplican solas (`migrate deploy` en el start command).
-- [ ] Seed: en QA **sí** podés correr el seed (el guard anti-prod bloquea por `NODE_ENV=production` + hostname;
-      para QA, o corré con `FORCE_SEED=1`, o creá los usuarios a mano igual que en prod). Usuarios de prueba
-      con `dev12345`.
-- [ ] Sembrá categorías + productos + producí subproductos de prueba para poder vender.
+- [ ] Dueño + categorías: corré el **mismo** `pnpm bootstrap:prod` que en prod (§Paso 4), con credenciales de
+      QA. Sirve idéntico y es seguro (rechaza credenciales de dev). Alternativa: el seed completo de dev
+      (`FORCE_SEED=1 pnpm prisma db seed`) si querés catálogo de prueba ya cargado.
+- [ ] Cargá productos + producí subproductos de prueba para poder vender.
 
 ### 2.4 Costo QA
 Railway Hobby (~$5 crédito) suele cubrir un QA de uso esporádico (api + Postgres que duermen). Vercel Preview
@@ -148,11 +180,23 @@ Cargar TODAS las de `deploy.md §1.2`. Las que **no se pueden olvidar**:
 - [ ] `GET https://api.tercos.co/healthz` → 200.
 
 ### Paso 4 — Datos operativos día 1 (el seed NO corre en prod)
-- [ ] Crear el **usuario dueño** a mano (via API o script puntual).
-- [ ] Crear cajeros con rol **`ADMIN_OPERATIVO`** (el rol `CAJERO` fue retirado; el Edge del admin lo bloquea).
-- [ ] Sembrar **categorías de producto** (sin ellas no se pueden crear productos).
+El **dueño + PIN + categorías base** se crean con un solo comando seguro (idempotente, rechaza
+credenciales de dev). Corré desde `apps/api` apuntando a la DB del entorno:
+
+```bash
+BOOTSTRAP_OWNER_EMAIL="dueno@tudominio.co" \
+BOOTSTRAP_OWNER_PASSWORD="<clave-fuerte-10+>" \
+BOOTSTRAP_OWNER_NAME="Nombre Apellido" \
+BOOTSTRAP_OWNER_PIN="472913" \
+BOOTSTRAP_CATEGORIES="Burgers,Papas,Bebidas,Combos" \
+pnpm bootstrap:prod
+# En Railway: railway run --environment production pnpm bootstrap:prod
+```
+
+- [ ] Correr `bootstrap:prod` (crea Dueño + PIN + categorías). Sirve idéntico en QA y prod.
+- [ ] Crear cajeros con rol **`ADMIN_OPERATIVO`** (el rol `CAJERO` fue retirado; el Edge del admin lo bloquea)
+      desde el admin `/users`.
 - [ ] Cargar productos/insumos + **producir todas las tandas de subproductos** (o los preparados salen "Agotado").
-- [ ] Setear PIN del dueño (`POST /approvals/pin`).
 
 ### Paso 5 — Frontends Vercel (production)
 Los 4 proyectos (`admin`, `web`, `cocina`, `public-display`), rama `prod`, con sus `vercel.json` ya commiteados.
@@ -209,6 +253,37 @@ Env vars con **scope Production** (`deploy.md §2.1`). Críticas:
 
 Ventaja: un bug o feature nueva **siempre** se prueba en QA (o en el Preview del PR) antes de tocar el local
 real. Nunca experimentás en producción.
+
+### 5.1 Promover un cambio de QA a producción (paso a paso)
+
+Cuando un cambio ya está sano en QA y lo querés en el local real:
+
+1. **Verificá QA:** el cambio está en `main`, desplegado en el entorno QA, y lo probaste (vender, cobrar,
+   cerrar caja, o lo que toque el cambio).
+2. **Migraciones nuevas:** si el cambio trae migraciones, confirmá que ya corrieron limpias en QA (el
+   `migrate deploy` de QA las aplicó sin error). Si alguna reescribe una tabla grande, hacé `pg_dump` de prod
+   antes (paso 4).
+3. **Promoví la rama:**
+   ```bash
+   git checkout prod && git merge --ff-only main && git push origin prod
+   ```
+   (Si no es fast-forward porque hubo un hotfix en `prod`, mergeá normal y resolvé.)
+4. **Backup previo (si hay migración riesgosa):** `pg_dump -Fc` de la DB de prod, o corré el workflow de
+   backup manual antes de que el deploy aplique migraciones.
+5. **Deploy automático:** Railway (env production) y Vercel (Production) detectan el push a `prod` y despliegan.
+   El start command corre `migrate deploy` en el backend.
+6. **Verificá prod:** `GET /healthz` → 200, y un **smoke rápido** del cambio (login → la pantalla afectada).
+   Si algo sale mal → **rollback** (§5.2).
+7. **Back-merge de hotfix:** si el deploy fue un hotfix hecho sobre `prod`, traelo de vuelta a `main`
+   (`git checkout main && git merge prod`) para que QA no quede atrás.
+
+### 5.2 Rollback
+
+- **App (sin migración):** en Railway/Vercel, "Redeploy" del deploy anterior (ambos guardan el historial).
+  O `git revert` del merge en `prod` + push.
+- **Con migración:** las migraciones NO se auto-revierten. Volvé el código al deploy anterior y, si la
+  migración rompió datos, restaurá desde el `pg_dump` del paso 4. Por eso el backup previo a una migración
+  riesgosa es obligatorio.
 
 ---
 
