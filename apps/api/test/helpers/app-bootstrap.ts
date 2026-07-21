@@ -12,10 +12,19 @@ export interface AppContext {
   request: ReturnType<typeof supertest>;
 }
 
-export async function bootstrapApp(): Promise<AppContext> {
-  const moduleFixture: TestingModule = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
+/**
+ * `configure` (opcional) permite a un test sustituir providers ANTES de compilar
+ * (ej. mockear el LLM para no pegarle a Anthropic). Recibe el builder de Nest y
+ * debe devolverlo encadenado.
+ */
+type ModuleBuilder = ReturnType<typeof Test.createTestingModule>;
+
+export async function bootstrapApp(
+  configure?: (builder: ModuleBuilder) => ModuleBuilder,
+): Promise<AppContext> {
+  let builder = Test.createTestingModule({ imports: [AppModule] });
+  if (configure) builder = configure(builder);
+  const moduleFixture: TestingModule = await builder.compile();
 
   const app = moduleFixture.createNestApplication();
   app.use(cookieParser());

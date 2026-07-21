@@ -15,7 +15,9 @@ export function PickerHeader({
 }) {
   return (
     <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
-      <ProductImage src={imageUrl} alt={name} />
+      {/* El picker es más grande que las tarjetas → pedile a next/image un
+          candidato mayor del srcset. */}
+      <ProductImage src={imageUrl} alt={name} sizes="(max-width: 640px) 90vw, 480px" />
       <button
         type="button"
         onClick={onClose}
