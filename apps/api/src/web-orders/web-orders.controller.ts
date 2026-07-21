@@ -8,8 +8,10 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { WebOrderDailyLimitGuard } from './web-order-daily-limit.guard';
 import {
   CreateWebOrderResponseSchema,
   CreateWebOrderSchema,
@@ -32,8 +34,9 @@ export class WebOrdersController {
     private readonly tokens: WebOrderTokenService,
   ) {}
 
-  /** 30 reqs / 60s por IP. */
+  /** 30 reqs / 60s por IP + tope diario de 25 pedidos por IP (anti-abuso). */
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @UseGuards(WebOrderDailyLimitGuard)
   @Post()
   async create(
     @Headers(IDEMPOTENCY_HEADER) idemKeyRaw: string | undefined,

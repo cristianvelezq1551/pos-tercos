@@ -47,6 +47,12 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Graceful shutdown: Railway manda SIGTERM en cada deploy/restart. Sin esto,
+  // Node muere de inmediato → las requests en vuelo se cortan con 5xx y
+  // `PrismaService.onModuleDestroy` ($disconnect limpio) nunca corre. Con los
+  // hooks, Nest drena el server HTTP y cierra Prisma dentro del grace period.
+  app.enableShutdownHooks();
+
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
   const host = process.env.API_HOST ?? '0.0.0.0';
   await app.listen(port, host);

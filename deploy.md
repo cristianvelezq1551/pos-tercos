@@ -153,8 +153,18 @@ El cliente pide desde `tercos.co`. Antes de abrir, confirmar en admin
 
 `pos-tercos-api` Build settings:
 - Root directory: `apps/api`
+- **Estos comandos ya están versionados en `apps/api/railway.json`** (builder,
+  build/start command, `healthcheckPath: /healthz`, `numReplicas: 1`). Railway lo
+  lee del root del servicio — no hace falta escribirlos a mano en el dashboard, y
+  quedan revisables en PR. Si el dashboard los sobreescribe, deben coincidir:
 - Build command: `pnpm install --frozen-lockfile && pnpm prisma generate && pnpm build`
 - Start command: `pnpm prisma migrate deploy && pnpm start`
+
+> ⚠️ **`numReplicas: 1` es invariante, NO autoscale.** El throttler, los rooms de
+> WebSocket (`/ws/pos`) y los crons viven en memoria; con >1 réplica el rate-limit
+> se evade, un pedido web no suena en todas las instancias y cada cron corre N
+> veces. `InstanceGuardService` alerta al dueño por WhatsApp si detecta >1
+> instancia sostenida — pero la config debe nacer en 1.
 
 > El `migrate deploy` del start command aplica **todas** las migrations
 > pendientes en orden. Ver §5 para el detalle de las que entran en un

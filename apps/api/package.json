@@ -6,6 +6,7 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
+    "start:prod": "prisma migrate deploy && node dist/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "test": "jest --config ./test/jest-unit.json --passWithNoTests",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --forceExit",
