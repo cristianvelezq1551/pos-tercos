@@ -363,6 +363,20 @@ export class InvoicesService {
     let updated;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
+        // Claim ATÓMICO: el check de status de arriba corre FUERA de la tx, así que
+        // dos confirms concurrentes (doble-click / auto-retry — no hay idempotency
+        // key acá) lo pasarían los dos y escribirían los PURCHASE movements DOS
+        // veces (inventory_movements es insert-only → stock doble-contado,
+        // lastUnitCost doble-aplicado, lotes fantasma en el FIFO). El updateMany
+        // condicionado toma el lock de fila: el 2º confirm matchea 0 (status ya
+        // CONFIRMED) y aborta — mismo patrón que todo el money-path.
+        const claim = await tx.invoice.updateMany({
+          where: { id, status: 'PENDING_REVIEW' },
+          data: { status: 'CONFIRMED' },
+        });
+        if (claim.count === 0) {
+          throw new BadRequestException('La factura ya fue confirmada o rechazada');
+        }
         const invoiceUpdated = await this.replaceItemsAndHeader(tx, id, input, supplier.id, userId, payment);
         await this.writePurchaseMovements(tx, id, input, ingredients, products, supplier, userId);
         await this.upsertSupplierProductsAndCosts(tx, input, ingredients, products, supplier);

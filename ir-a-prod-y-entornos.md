@@ -291,7 +291,13 @@ Cuando un cambio ya está sano en QA y lo querés en el local real:
 
 Todo el rate-limiting (anti-fuerza-bruta de login y PINs) cuenta por IP, y la IP se saca de `X-Forwarded-For`
 según cuántos proxies confiables hay delante. Con **Cloudflare proxied → Railway = 2 hops**, hay que setear
-`TRUST_PROXY_HOPS=2`. Cómo verificarlo en QA:
+`TRUST_PROXY_HOPS=2`.
+
+> **En producción el boot FALLA** si `TRUST_PROXY_HOPS` está ausente o no es un entero ≥ 1
+> (`assertRequiredEnv`) — es una decisión obligatoria, no un default silencioso. Igual hay que **verificar el
+> valor correcto** en QA:
+
+Cómo verificarlo en QA:
 
 - Temporalmente logueá `req.ip` en un endpoint, pegale desde tu casa, y confirmá que ves **tu IP pública**, no
   una IP de Cloudflare (rango `104.x`/`172.x` de CF). Si ves la de CF, subí los hops; si ves IPs distintas por

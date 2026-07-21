@@ -108,6 +108,22 @@ export function assertRequiredEnv(): void {
       );
     }
 
+    // TRUST_PROXY_HOPS: el rate-limit (anti-fuerza-bruta de login y PINs) cuenta
+    // por IP, derivada de X-Forwarded-For según cuántos proxies confiables hay
+    // delante. En prod DEBE estar seteada a un entero >= 1 EXACTO (Cloudflare→
+    // Railway = 2). Sin ella `main.ts` caía a 1 en silencio → o auto-DoS del login
+    // (todos en el bucket del edge de CF), o si se sube de más, X-Forwarded-For
+    // spoofeable → bypass de fuerza bruta. Fallar el boot obliga a decidirlo.
+    const hopsRaw = process.env.TRUST_PROXY_HOPS;
+    const hops = Number(hopsRaw);
+    if (!hopsRaw || !Number.isInteger(hops) || hops < 1) {
+      throw new Error(
+        `TRUST_PROXY_HOPS debe ser un entero >= 1 en producción (Cloudflare→Railway = 2); ` +
+          `valor actual: ${hopsRaw ?? 'ausente'}. Verificá req.ip real en QA ` +
+          '(ver ir-a-prod-y-entornos.md §6).',
+      );
+    }
+
     // Print-agent accesible por red SIN secret = cualquier web que visite el
     // operador puede abrir el cajón monedero. Si se eligió escpos en prod, el
     // secret es OBLIGATORIO (checklist humano → invariante del boot).
