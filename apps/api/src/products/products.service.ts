@@ -369,8 +369,42 @@ export class ProductsService {
    * Hace ~3 queries + 1 grafo (sin N+1): stock de productos, stock de insumos
    * y el grafo completo de recetas; la expansión por producto es en memoria.
    */
+  /** SIEMPRE fresco. Lo usa el endpoint INTERNO (cajero) y el snapshot offline,
+   *  donde reponer stock / agotar debe reflejarse al instante. */
   async getAvailability(): Promise<ProductAvailability[]> {
     return evaluateAvailability(await this.loadAvailabilityData());
+  }
+
+  /**
+   * §2.8: variante con caché TTL corto para el endpoint `@Public` (web).
+   * `loadAvailabilityData` hace 3 groupBy FULL-TABLE sobre inventory_movements
+   * (insert-only → crece para siempre) + el grafo de recetas. El público lo
+   * pollea cualquier cliente anónimo → sin caché, a 12-18 meses de historia cada
+   * hit son 3 seq-scans que degradan el API entero. Memoizar la PROMESA dedupe
+   * además los hits concurrentes. El cajero (interno) NO pasa por acá → ve el
+   * cambio al instante; la web tolera ≤ TTL de staleness (86/forzado invalidan).
+   */
+  async getAvailabilityCached(): Promise<ProductAvailability[]> {
+    const now = Date.now();
+    if (this.availabilityCache && now - this.availabilityCache.at < ProductsService.AVAILABILITY_TTL_MS) {
+      return this.availabilityCache.promise;
+    }
+    const promise = this.getAvailability();
+    this.availabilityCache = { promise, at: now };
+    // No cachear un error: si falla, limpiar para reintentar en el próximo hit.
+    void promise.catch(() => {
+      if (this.availabilityCache?.promise === promise) this.availabilityCache = null;
+    });
+    return promise;
+  }
+
+  private static readonly AVAILABILITY_TTL_MS = 15_000;
+  private availabilityCache: { promise: Promise<ProductAvailability[]>; at: number } | null = null;
+
+  /** Invalida el caché público de disponibilidad (86 manual / forzar disponible
+   *  se reflejan en la web al instante; ventas/producciones, dentro del TTL). */
+  private invalidateAvailability(): void {
+    this.availabilityCache = null;
   }
 
   /** Productos + stock (productos/insumos/subproductos) + grafo (sin N+1). */
@@ -454,6 +488,7 @@ export class ProductsService {
       data: { soldOut, ...(soldOut ? { forceAvailable: false } : {}) },
       include: { sizes: true, modifiers: true, comboComponents: true },
     });
+    this.invalidateAvailability();
     return toProductDto(row);
   }
 
@@ -473,6 +508,7 @@ export class ProductsService {
       data: { forceAvailable, ...(forceAvailable ? { soldOut: false } : {}) },
       include: { sizes: true, modifiers: true, comboComponents: true },
     });
+    this.invalidateAvailability();
     return toProductDto(row);
   }
 

@@ -27,3 +27,5 @@ export type { CartLine, CartLineSize, CartLineModifier } from './lib/cart-types'
 export type { CartLineTotals, CartTotalsResult } from './lib/totals';
 export { FALLBACK_METHODS, fetchEnabledMethods } from './api/payment-methods';
 export { getSale } from './api/get';
+export { notifyComandaFailed } from './lib/comanda-events';
+export { sendTabToKitchen } from './api/print';

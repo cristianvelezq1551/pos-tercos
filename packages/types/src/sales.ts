@@ -264,6 +264,13 @@ export const SaleSchema = z.object({
   discountReason: z.string().nullable().optional(),
   /** Motivo de anulación (solo cuando status=VOID). */
   voidReason: z.string().nullable().optional(),
+  /**
+   * Costo del envío (solo WEB_DELIVERY). Lo carga el cajero a mano tras
+   * preguntarle la tarifa al domiciliario. Entra al `total` porque el cliente
+   * transfiere UN solo monto, y cuenta como ingreso: el reparto es un servicio
+   * que se vende. Lo que se le paga al domiciliario es un gasto aparte.
+   */
+  deliveryFee: z.number().nonnegative().default(0),
   /** Entrega a domicilio (solo WEB_DELIVERY). El POS la muestra al cajero. */
   deliveryAddress: z.string().nullable().optional(),
   deliveryNotes: z.string().nullable().optional(),
@@ -293,10 +300,15 @@ export const CreateSaleItemModifierSchema = z.object({
 });
 export type CreateSaleItemModifier = z.infer<typeof CreateSaleItemModifierSchema>;
 
+/** Tope de unidades por línea. Un pedido real nunca lo alcanza; sin él, un
+ *  `quantity` gigante en `POST /web/orders` (público) desborda int4/Decimal(14,2)
+ *  y tira un 500. */
+export const MAX_SALE_LINE_QTY = 999;
+
 export const CreateSaleItemSchema = z.object({
   productId: z.string().uuid(),
   sizeId: z.string().uuid().optional(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().int().positive().max(MAX_SALE_LINE_QTY),
   modifiers: z.array(CreateSaleItemModifierSchema).optional(),
   /** Notas de cocina por línea (ej. "sin cebolla"). */
   notes: z.string().max(200).optional(),
@@ -381,6 +393,16 @@ export const CreateSaleSchema = z
           path: ['customerPhone'],
         });
       }
+    }
+    // Un domicilio SIN dirección viola el CHECK `chk_sale_delivery_address` a
+    // nivel DB → PrismaError → 500 + hueco de recibo (el nextval ya se consumió).
+    // Espeja la regla de `CreateWebOrderSchema` para el POST /sales interno.
+    if (data.type === 'WEB_DELIVERY' && !data.deliveryAddress) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Un domicilio requiere la dirección de entrega.',
+        path: ['deliveryAddress'],
+      });
     }
   });
 export type CreateSale = z.infer<typeof CreateSaleSchema>;
@@ -562,7 +584,7 @@ export type ConfirmPayment = z.infer<typeof ConfirmPaymentSchema>;
 export const SyncOfflineLineSchema = z.object({
   productId: z.string().uuid(),
   sizeId: z.string().uuid().nullable(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().int().positive().max(MAX_SALE_LINE_QTY),
   unitPrice: z.number().nonnegative(),
   modifiers: z.array(AppliedModifierSchema).default([]),
   notes: z.string().nullable().optional(),
@@ -632,3 +654,16 @@ export const SaleStatusLogEntrySchema = z.object({
   changedAt: z.string().datetime(),
 });
 export type SaleStatusLogEntry = z.infer<typeof SaleStatusLogEntrySchema>;
+
+/**
+ * El cajero asigna el costo del envío a un domicilio ya creado. Recalcula el
+ * total y recién ahí sale el WhatsApp con el número real: pedirle plata al
+ * cliente antes de saber el envío sería pedirle un total que va a cambiar.
+ */
+export const SetDeliveryFeeSchema = z.object({
+  /** COP. DEBE ser > 0: un domicilio tiene costo. "Envío gratis" se maneja como
+   *  descuento sobre el total, no como fee 0 (que era indistinguible de "sin
+   *  cotizar" y dejaba la web trabada + el envío incobrable). Tope defensivo. */
+  fee: z.number().int().positive().max(200_000),
+});
+export type SetDeliveryFee = z.infer<typeof SetDeliveryFeeSchema>;

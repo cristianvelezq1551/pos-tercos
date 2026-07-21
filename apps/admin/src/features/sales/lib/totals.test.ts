@@ -11,6 +11,7 @@ const line = (over: Partial<CartLine> = {}): CartLine => ({
   modifiers: [],
   quantity: 1,
   unitPrice: 10_000,
+  isCombo: false,
   ...over,
 });
 
@@ -109,6 +110,24 @@ describe('computeCartTotals', () => {
     );
     expect(r.total).toBeCloseTo(r.subtotal - r.discount, 2);
     expect(r.lines.reduce((a, l) => a + l.lineTotal, 0)).toBeCloseTo(r.total, 2);
+  });
+
+  // COMBO_OFF (auditoría §0.7): el preview del carrito DEBE aplicar el mismo
+  // descuento que cobra el backend. El bug histórico: isCombo estaba fijo en
+  // false → el combo se cobraba con descuento pero se mostraba sin él →
+  // descuadre de caja en efectivo. El motor solo aplica si la línea es combo.
+  it('COMBO_OFF aplica si la línea es combo (isCombo=true)', () => {
+    const combo = promo({ type: 'COMBO_OFF', discountPct: 0.15, discountFixed: null });
+    const r = computeCartTotals([line({ isCombo: true })], [combo], AT);
+    expect(r.discount).toBe(1_500); // 15% de 10.000
+    expect(r.lines[0]!.appliedPromotionId).toBe(combo.id);
+  });
+
+  it('COMBO_OFF NO aplica si la línea no es combo (isCombo=false)', () => {
+    const combo = promo({ type: 'COMBO_OFF', discountPct: 0.15, discountFixed: null });
+    const r = computeCartTotals([line({ isCombo: false })], [combo], AT);
+    expect(r.discount).toBe(0);
+    expect(r.lines[0]!.appliedPromotionId).toBeNull();
   });
 });
 

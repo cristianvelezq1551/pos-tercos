@@ -503,6 +503,11 @@ model Sale {
   /// Motivo de anulación (solo cuando status=VOID). Se muestra en el historial.
   voidReason                    String?         @map("void_reason")
   /// ── Entrega a domicilio (solo type=WEB_DELIVERY; CHECK en DB) ──
+  /// Costo del envío. El cajero lo carga a mano tras preguntarle la tarifa al
+  /// domiciliario; entra al `total` porque el cliente transfiere UN solo monto.
+  /// SÍ cuenta como ingreso (el reparto es un servicio que se vende); lo que se
+  /// le paga al domiciliario es un gasto aparte en su módulo.
+  deliveryFee                   Decimal         @default(0) @map("delivery_fee") @db.Decimal(14, 2)
   /// Dirección escrita por el cliente. TEXTO LIBRE: el repartidor necesita
   /// "torre 2, apto 502, portería azul", no coordenadas.
   deliveryAddress               String?         @map("delivery_address")
@@ -643,6 +648,10 @@ model CashMovement {
   user      User             @relation(fields: [userId], references: [id])
 
   @@index([shiftId, createdAt])
+  // §2.7: este índice YA existe en la DB (migración 20260611140000) pero faltaba
+  // en el schema → el próximo `migrate dev` lo DROPeaba. Sirve los groupBy(method)
+  // del arqueo digital y de computeExpectedCash. NO quitar.
+  @@index([shiftId, method], map: "cash_movements_shift_id_method_idx")
   @@map("cash_movements")
 }
 

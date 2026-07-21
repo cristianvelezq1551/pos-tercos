@@ -66,3 +66,22 @@ describe('buildWebOrderLink', () => {
     }
   });
 });
+
+describe('buildWebOrderLink — el envío todavía no se sabe', () => {
+  it('en domicilio NO dice "Total": el envío falta y el local lo cotiza', () => {
+    const { messagePlain } = buildWebOrderLink({
+      ...BASE,
+      deliveryAddress: 'Cra 43A #5-15, apto 502',
+    })!;
+    // "Total: $59.000" sería mentira: falta el domicilio.
+    expect(messagePlain).toContain('Pedido: $59.000');
+    expect(messagePlain).not.toContain('Total:');
+    expect(messagePlain).toContain('¿Cuánto sale el domicilio?');
+  });
+
+  it('para recoger el total SÍ es final', () => {
+    const { messagePlain } = buildWebOrderLink(BASE)!;
+    expect(messagePlain).toContain('Total: $59.000');
+    expect(messagePlain).not.toContain('domicilio');
+  });
+});

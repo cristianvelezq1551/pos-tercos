@@ -14,7 +14,14 @@ async function bootstrap() {
   // Detrás del proxy de Railway/Cloudflare: confiar en X-Forwarded-For para que
   // el rate-limit (ThrottlerGuard) cuente por IP REAL del cliente y no por la
   // del proxy (si no, todos comparten un bucket y el throttle es evadible/DoS).
-  app.set('trust proxy', 1);
+  //
+  // §2.9: el nº de saltos es CONFIGURABLE. Con Cloudflare DELANTE de Railway hay
+  // DOS proxies → `trust proxy 1` resolvería `req.ip` a la IP del edge de CF y
+  // agruparía a TODOS los clientes en un bucket (auto-DoS del login). Verificar
+  // `req.ip` real en QA y setear `TRUST_PROXY_HOPS` según la topología (1 = solo
+  // Railway; 2 = Cloudflare→Railway). Default 1 (dev/sin CF proxied).
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '1');
+  app.set('trust proxy', Number.isFinite(trustProxyHops) && trustProxyHops > 0 ? trustProxyHops : 1);
 
   // Headers de seguridad. `crossOriginResourcePolicy: false` porque servimos
   // imágenes (menú, recibos) que las apps consumen cross-origin.

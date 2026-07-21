@@ -53,7 +53,9 @@ function slugUuid(slug: string): string {
 const SEED_USERS: Array<{ email: string; fullName: string; role: UserRole }> = [
   { email: 'dueno@dev.local', fullName: 'Dueño Dev', role: 'DUENO' },
   { email: 'admin@dev.local', fullName: 'Admin Operativo Dev', role: 'ADMIN_OPERATIVO' },
-  { email: 'cajero@dev.local', fullName: 'Cajero Dev', role: 'CAJERO' },
+  // Operador de caja de dev: ADMIN_OPERATIVO (el rol CAJERO se retiró de la
+  // operación en el cutover POS→admin — no entra a ninguna app).
+  { email: 'cajero@dev.local', fullName: 'Cajero Dev', role: 'ADMIN_OPERATIVO' },
   { email: 'cocinero@dev.local', fullName: 'Cocinero Dev', role: 'COCINERO' },
   { email: 'trabajador@dev.local', fullName: 'Trabajador Dev', role: 'TRABAJADOR' },
 ];

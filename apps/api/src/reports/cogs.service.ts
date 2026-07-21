@@ -82,25 +82,32 @@ export class CogsService {
    *   (valuación, lotes, cortesías) el incremental siempre sirve: el seed
    *   preserva lotes y agregados históricos completos.
    */
-  private runLedger(rangeFrom?: Date): Promise<LedgerFifo> {
-    return this.cachedLedger('incremental', async () => {
-      const snapshot = await this.latestSnapshot();
-      if (!snapshot) return this.computeLedger(null);
-      if (rangeFrom && rangeFrom < snapshot.cutoffAt) {
-        // Rango histórico: necesita costos de ventas pre-corte.
-        return this.fullLedger();
-      }
-      const incremental = await this.computeLedger(snapshot);
-      if (incremental.needsFullReplay) {
-        // Reversa cruzó el corte (void de una venta del mes pasado): el
-        // incremental es incompleto. Recomputar completo — correcto siempre.
-        this.logger.warn(
-          `Reversa cruza el corte del snapshot (${snapshot.cutoffAt.toISOString()}) → replay completo`,
-        );
-        return this.fullLedger();
-      }
-      return incremental;
-    });
+  private async runLedger(rangeFrom?: Date): Promise<LedgerFifo> {
+    // ⚠️ La decisión full-vs-incremental se resuelve ANTES de tocar la caché.
+    // La caché tiene UNA entrada por modo; si `rangeFrom` se evaluara dentro
+    // del closure, un cache-hit de otro caller (p.ej. la valuación, que llama
+    // sin rango y cachea el incremental) le devolvería el incremental a un
+    // reporte histórico → COGS de ventas pre-corte = $0 (margen inflado).
+    const snapshot = await this.latestSnapshot();
+    if (!snapshot) {
+      return this.cachedLedger('full', () => this.computeLedger(null));
+    }
+    if (rangeFrom && rangeFrom < snapshot.cutoffAt) {
+      // Rango histórico: el incremental no lleva costos de ventas pre-corte.
+      return this.fullLedger();
+    }
+    const incremental = await this.cachedLedger('incremental', () =>
+      this.computeLedger(snapshot),
+    );
+    if (incremental.needsFullReplay) {
+      // Reversa cruzó el corte (void de una venta del mes pasado): el
+      // incremental es incompleto. Recomputar completo — correcto siempre.
+      this.logger.warn(
+        `Reversa cruza el corte del snapshot (${snapshot.cutoffAt.toISOString()}) → replay completo`,
+      );
+      return this.fullLedger();
+    }
+    return incremental;
   }
 
   /** Replay completo (sin seed), con su propia entrada de caché. */
@@ -315,17 +322,25 @@ export class CogsService {
   // P&L del período
   // ==================================================================
 
-  /** Suma el costo FIFO atribuido a una venta (insumos + reventa + subproductos). */
-  private saleCost(ledger: LedgerFifo, saleId: string): { cost: number; unknownQty: number } {
+  /** Suma el costo FIFO atribuido a una venta (insumos + reventa + subproductos).
+   *  `estimatedQty` = unidades costeadas con un ESTIMADO (venta forzada sin stock,
+   *  aún sin factura que confirme el precio real) → el COGS de esa venta no es
+   *  exacto todavía; se corrige al subir la factura. */
+  private saleCost(
+    ledger: LedgerFifo,
+    saleId: string,
+  ): { cost: number; unknownQty: number; estimatedQty: number } {
     let cost = 0;
     let unknownQty = 0;
+    let estimatedQty = 0;
     for (const m of [ledger.saleIngredientCost, ledger.saleProductCost, ledger.saleSubproductCost]) {
       for (const e of m.get(saleId)?.values() ?? []) {
         cost += e.cost;
         unknownQty += e.unknownQty;
+        estimatedQty += e.estimatedQty;
       }
     }
-    return { cost, unknownQty };
+    return { cost, unknownQty, estimatedQty };
   }
 
   async getPnl(from: Date, to: Date): Promise<PnlReport> {
@@ -354,11 +369,13 @@ export class CogsService {
     let revenue = 0;
     let cogs = 0;
     let unknownQty = 0;
+    let estimatedQty = 0;
     for (const s of sales) {
       revenue += Number(s.total);
       const c = this.saleCost(ledger, s.id);
       cogs += c.cost;
       unknownQty += c.unknownQty;
+      estimatedQty += c.estimatedQty;
     }
 
     let refundCost = 0;
@@ -391,6 +408,10 @@ export class CogsService {
       refundCost: round(refundCost),
       salesCount: sales.length,
       cogsUnknownQty: Math.round((unknownQty + refundUnknownQty) * 10000) / 10000,
+      // §1.12: unidades costeadas con ESTIMADO (venta forzada sin stock). El COGS
+      // aún NO es exacto para esas unidades — se corrige al subir la factura. Un
+      // COGS 100% estimado se veía como exacto (cogsPartial=false).
+      cogsEstimatedQty: Math.round(estimatedQty * 10000) / 10000,
     };
   }
 

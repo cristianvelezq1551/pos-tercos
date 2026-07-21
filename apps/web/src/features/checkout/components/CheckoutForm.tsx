@@ -48,6 +48,20 @@ export function CheckoutForm() {
     [],
   );
 
+  // §3.2: la idempotency-key se genera UNA vez por sesión de checkout (no por
+  // intento). Si el POST llegó al server pero la respuesta se perdió, reintentar
+  // con la MISMA key hace que el backend devuelva el pedido ganador — antes se
+  // regeneraba en cada submit y un reintento creaba un SEGUNDO pedido real.
+  const [idempotencyKey] = useState(() => randomUUID());
+
+  // §3.1: al cambiar de "A domicilio" a "Recoger", limpiar el estado de geo — si
+  // no, un `blocked` viejo (quedó fuera del radio) dejaba el botón Confirmar
+  // deshabilitado para SIEMPRE sin ningún mensaje (LocationCheck ya desmontado).
+  const onType = useCallback((next: WebOrderType) => {
+    setType(next);
+    if (next !== 'WEB_DELIVERY') setGeo({ coords: null, blocked: false });
+  }, []);
+
   const { change, hasChanges, apply } = useCartReconcile();
 
   const promotions = usePromotions((s) => s.promotions);
@@ -66,8 +80,12 @@ export function CheckoutForm() {
    * del radio. El backend rechaza los tres igual — esto es la cara amable, para
    * que el cliente no llegue hasta el submit para enterarse.
    */
+  // §3.1: `geo.blocked` solo aplica a domicilios (el radio no bloquea a quien
+  // viene a recoger). Sin este gate por tipo, cambiar a "Recoger" dejaba el
+  // botón trabado por un blocked residual del flujo de domicilio.
+  const geoBlocking = type === 'WEB_DELIVERY' && geo.blocked;
   const canSubmit =
-    items.length > 0 && nameValid && phoneValid && addressValid && !hasChanges && !geo.blocked;
+    items.length > 0 && nameValid && phoneValid && addressValid && !hasChanges && !geoBlocking;
 
   if (hydrated && items.length === 0) {
     return (
@@ -90,7 +108,6 @@ export function CheckoutForm() {
     setError(null);
     setPending(true);
     try {
-      const idempotencyKey = randomUUID();
       const result = await createWebOrder(
         {
           type,
@@ -133,7 +150,7 @@ export function CheckoutForm() {
         type={type}
         address={address}
         addressNotes={addressNotes}
-        onType={setType}
+        onType={onType}
         onAddress={setAddress}
         onAddressNotes={setAddressNotes}
       />

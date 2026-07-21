@@ -20,7 +20,9 @@ export function UserFormDialog({ open, user, onClose, onSuccess }: UserFormDialo
   const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
-  const [role, setRole] = useState<UserRole>(user?.role ?? 'CAJERO');
+  // El operador de caja es ADMIN_OPERATIVO (el rol CAJERO se retiró de la
+  // operación en el cutover POS→admin; ver roles.ts).
+  const [role, setRole] = useState<UserRole>(user?.role ?? 'ADMIN_OPERATIVO');
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
   const [active, setActive] = useState(user?.active ?? true);

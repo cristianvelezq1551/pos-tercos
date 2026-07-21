@@ -14,6 +14,7 @@ export function saleToPublicWebOrder(sale: Sale): PublicWebOrder | null {
     subtotal: sale.subtotal,
     discountTotal: sale.discountTotal,
     total: sale.total,
+    deliveryFee: sale.deliveryFee,
     deliveryAddress: sale.deliveryAddress ?? null,
     deliveryNotes: sale.deliveryNotes ?? null,
     createdAt: sale.createdAt,

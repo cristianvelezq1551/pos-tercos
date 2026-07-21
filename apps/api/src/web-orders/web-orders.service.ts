@@ -155,10 +155,13 @@ export class WebOrdersService {
 
     const dto = this.toPublicDto(sale);
     this.posGateway.emit('web-order.created', dto);
-    // El cliente recibe las instrucciones de pago apenas crea el pedido
-    // (Nequi/transferencia + total + "enviá comprobante"). Fire-and-forget +
-    // idempotente por flag: no bloquea la creación ni reenvía en reintentos.
-    void this.notifications.notify(sale.id, 'payment_instructions');
+    // Instrucciones de pago apenas se crea el pedido... EXCEPTO a domicilio: ahí
+    // el total todavía NO es real (falta el envío, que el cajero pregunta al
+    // domiciliario). Mandarlo ahora sería darle un número que va a cambiar; sale
+    // en `setDeliveryFee`. Fire-and-forget + idempotente por flag.
+    if (sale.type !== 'WEB_DELIVERY') {
+      void this.notifications.notify(sale.id, 'payment_instructions');
+    }
     return dto;
   }
 
@@ -189,6 +192,7 @@ export class WebOrdersService {
       subtotal: sale.subtotal,
       discountTotal: sale.discountTotal,
       total: sale.total,
+      deliveryFee: sale.deliveryFee,
       // El cliente ve a dónde se entrega para poder corregirlo por WhatsApp
       // antes de que salga el repartidor.
       deliveryAddress: sale.deliveryAddress ?? null,

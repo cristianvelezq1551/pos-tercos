@@ -16,6 +16,7 @@ describe('Medios de pago dinámicos E2E', () => {
   let prisma: PrismaService;
   let request: ReturnType<typeof supertest>;
   let duenoToken: string;
+  let operativoToken: string;
   let cocaId: string;
 
   const auth = () => ({ Authorization: `Bearer ${duenoToken}` });
@@ -23,17 +24,14 @@ describe('Medios de pago dinámicos E2E', () => {
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
     const hash = await bcrypt.hash('dev12345', 10);
-    await prisma.user.create({
-      data: {
-        email: 'dueno-pm@test.local',
-        fullName: 'Dueño Medios',
-        role: 'DUENO',
-        passwordHash: hash,
-        mustChangePwd: false,
-        active: true,
-      },
+    await prisma.user.createMany({
+      data: [
+        { email: 'dueno-pm@test.local', fullName: 'Dueño Medios', role: 'DUENO', passwordHash: hash, mustChangePwd: false, active: true },
+        { email: 'operativo-pm@test.local', fullName: 'Op Medios', role: 'ADMIN_OPERATIVO', passwordHash: hash, mustChangePwd: false, active: true },
+      ],
     });
     duenoToken = await loginAs(request, 'dueno-pm@test.local');
+    operativoToken = await loginAs(request, 'operativo-pm@test.local');
 
     const prod = await request
       .post('/products')
@@ -60,6 +58,17 @@ describe('Medios de pago dinámicos E2E', () => {
   afterAll(async () => {
     await cleanDb(prisma);
     await app.close();
+  });
+
+  // §3.8: el operativo que cobra NO configura los medios de pago (no debe poder
+  // apagar la verificación de un método digital y auto-confirmarse pagos).
+  it('un ADMIN_OPERATIVO no puede crear/editar/borrar medios de pago (403)', async () => {
+    const op = () => ({ Authorization: `Bearer ${operativoToken}` });
+    await request.post('/payment-methods').set(op()).send({ name: 'Rappi' }).expect(403);
+    await request.patch('/payment-methods/TRANSFER').set(op()).send({ requiresVerification: false }).expect(403);
+    await request.delete('/payment-methods/TRANSFER').set(op()).expect(403);
+    // Pero SÍ puede leer los habilitados (los necesita para cobrar).
+    await request.get('/payment-methods').set(op()).expect(200);
   });
 
   const sellWith = async (method: string) => {

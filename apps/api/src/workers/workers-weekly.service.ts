@@ -523,12 +523,39 @@ export class WorkersWeeklyService {
   /** Setea/edita el valor de UN día de un DIARIO (llegada tarde, ausencia $0,
    *  monto distinto). El cálculo semanal aplica el override (gana sobre el
    *  valor/día y sobre el descanso). Solo Dueño + PIN. */
+  /**
+   * §1.7: bloquea un cambio que dejaría la semana con saldo NEGATIVO — se abonó
+   * más de lo que quedaría debiendo. Sin esto, editar/borrar un override o un
+   * bono de una semana YA ABONADA regalaba plata en silencio (el "pendiente"
+   * filtra `remaining > 0` y lo ocultaba). El dueño debe anular el abono primero.
+   */
+  private async assertNoNegativeRemaining(
+    userId: string,
+    weekRef: string,
+    owedDelta: (entry: WeeklyPayrollEntry) => number,
+  ): Promise<void> {
+    const report = await this.getWeeklyPayroll(weekRef);
+    const entry = report.entries.find((e) => e.userId === userId);
+    if (!entry || entry.paidTotal <= 0) return;
+    const newRemaining = round2(entry.remaining + owedDelta(entry));
+    if (newRemaining < -0.01) {
+      throw new BadRequestException(
+        `Este cambio dejaría a ${entry.fullName} con saldo NEGATIVO ($${newRemaining.toLocaleString('es-CO')}): ya se le abonó más de lo que quedaría debiendo esta semana. Anulá primero el abono correspondiente.`,
+      );
+    }
+  }
+
   async setPayrollDay(userId: string, input: SetPayrollDay, actorId: string): Promise<PayrollDay> {
     const user = await this.workers.getEmploymentUser(userId);
     if (user.payType !== 'DAILY') {
       throw new BadRequestException('Solo los empleados con pago DIARIO tienen días editables.');
     }
     const workDate = parseYmd(input.workDate);
+    const week = payrollWeekFor(workDate);
+    await this.assertNoNegativeRemaining(userId, week.weekStart, (entry) => {
+      const cur = entry.days.find((d) => d.date === input.workDate)?.amount ?? 0;
+      return input.amount - cur; // el override cambia lo debido del día
+    });
     const row = await this.prisma.payrollDay.upsert({
       where: { userId_workDate: { userId, workDate } },
       create: { userId, workDate, amount: input.amount, note: input.note ?? null, createdById: actorId },
@@ -554,7 +581,32 @@ export class WorkersWeeklyService {
   /** Borra la excepción de un día (vuelve al valor por defecto). Solo Dueño + PIN. */
   async deletePayrollDay(userId: string, workDateYmd: string, actorId: string): Promise<void> {
     const workDate = parseYmd(workDateYmd);
-    await this.prisma.payrollDay.deleteMany({ where: { userId, workDate } });
+    const existing = await this.prisma.payrollDay.findUnique({
+      where: { userId_workDate: { userId, workDate } },
+    });
+    if (!existing) return; // nada que borrar (idempotente)
+    await this.prisma.payrollDay.delete({ where: { userId_workDate: { userId, workDate } } });
+    // §1.7: quitar la excepción vuelve el día a su valor default (que puede ser
+    // MAYOR — reponía un día que estaba en $0). Si eso deja la semana ya abonada
+    // en negativo, se DESHACE y se bloquea (no hay delta directo del default).
+    const week = payrollWeekFor(workDate);
+    const entry = (await this.getWeeklyPayroll(week.weekStart)).entries.find(
+      (e) => e.userId === userId,
+    );
+    if (entry && entry.paidTotal > 0 && entry.remaining < -0.01) {
+      await this.prisma.payrollDay.create({
+        data: {
+          userId,
+          workDate,
+          amount: existing.amount,
+          note: existing.note,
+          createdById: existing.createdById,
+        },
+      });
+      throw new BadRequestException(
+        `Quitar esta excepción dejaría a ${entry.fullName} con saldo NEGATIVO: ya se le abonó de más esta semana. Anulá el abono primero.`,
+      );
+    }
     await this.audit.log({
       userId: actorId,
       action: 'PAYROLL_DAY_SET',
@@ -567,6 +619,8 @@ export class WorkersWeeklyService {
   async deleteWeeklyAdjustment(adjustmentId: string, actorId: string): Promise<void> {
     const row = await this.prisma.payrollAdjustment.findUnique({ where: { id: adjustmentId } });
     if (!row) throw new NotFoundException('Ajuste no encontrado.');
+    // §1.7: quitar el ajuste cambia lo debido en −amount (un bono baja el neto).
+    await this.assertNoNegativeRemaining(row.userId, ymd(row.periodStart), () => -Number(row.amount));
     await this.prisma.payrollAdjustment.delete({ where: { id: adjustmentId } });
     await this.audit.log({
       userId: actorId,
@@ -620,8 +674,10 @@ export class WorkersWeeklyService {
 }
 
 /** Ventana de semanas hacia atrás que el cash-flow considera "pendiente".
- *  Acota el costo (admin-only) sin esconder atrasos recientes (~4 meses). */
-const PENDING_LOOKBACK_WEEKS = 16;
+ *  §1.8: 26 semanas (~6 meses) para no esconder atrasos de nómina de medio año.
+ *  Es admin-only (no hot path). Una deuda MÁS vieja que esto no aparece en el
+ *  pendiente automático — improbable en un negocio con empleados. */
+const PENDING_LOOKBACK_WEEKS = 26;
 
 /** Cantidad de días del mes calendario al que pertenece la fecha YYYY-MM-DD.
  *  Para prorratear MENSUAL: salario/díasDelMes por día → mes completo = salario. */

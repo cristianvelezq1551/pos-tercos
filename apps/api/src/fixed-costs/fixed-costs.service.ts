@@ -291,10 +291,13 @@ export class FixedCostsService {
   // CASH-FLOW HELPERS (usados por FinanceSummaryService).
   // ==================================================================
 
-  /** Períodos sin pago, mirando hasta `lookbackMonths` meses atrás (default 6). */
+  /** Períodos sin pago, mirando hasta `lookbackMonths` meses atrás.
+   *  §1.8: 24 meses (default) para no esconder deuda vieja (ej. un arriendo
+   *  impago de hace 7 meses). La enumeración por período es barata (sin queries
+   *  pesadas por mes), así que el horizonte amplio no cuesta. */
   async getPendingPayments(
     asOf: Date = new Date(),
-    lookbackMonths = 6,
+    lookbackMonths = 24,
   ): Promise<FinancePendingFixedCost[]> {
     // `asOf` llega como instante LOCAL (now o fin de ventana). Se normaliza al
     // día calendario local en medianoche UTC — con getUTC* directo, el 31 a las

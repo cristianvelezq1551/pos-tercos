@@ -1,10 +1,14 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { CreditCard } from 'lucide-react';
+import { requireRole } from '../../../lib/guards';
 import { PaymentMethodsManager } from '../../../features/payment-methods';
 
 export const dynamic = 'force-dynamic';
 
-export default function MediosPagoPage() {
+export default async function MediosPagoPage() {
+  // §3.8: solo el Dueño configura los medios de pago (la verificación de pagos
+  // digitales es un control antifraude; el operativo que cobra no lo debilita).
+  await requireRole(['DUENO']);
   return (
     <>
       <PageHeader

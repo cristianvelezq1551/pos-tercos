@@ -58,6 +58,7 @@ export function FulfillmentPicker({
               onChange={(e) => onAddress(e.target.value)}
               placeholder="Cra 43A #5-15, torre 2, apto 502"
               autoComplete="street-address"
+              maxLength={300}
             />
           </FormField>
           <FormField label="Referencias (opcional)">
@@ -66,10 +67,12 @@ export function FulfillmentPicker({
               onChange={(e) => onAddressNotes(e.target.value)}
               rows={2}
               placeholder="Portería azul, el timbre no suena, llamar al llegar…"
+              maxLength={300}
             />
           </FormField>
           <p className="text-xs text-muted-foreground">
-            El costo del domicilio se paga aparte al repartidor. Te lo confirmamos por WhatsApp.
+            Te confirmamos el costo del domicilio por WhatsApp y ahí te pasamos el total a
+            pagar.
           </p>
         </div>
       ) : null}

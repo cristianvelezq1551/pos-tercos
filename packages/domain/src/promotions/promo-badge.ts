@@ -22,12 +22,14 @@ export function getPromoBadge(
   basePrice: number,
   defs: readonly PromotionDef[],
   at: Date = new Date(),
+  isCombo = false,
 ): PromoBadge | null {
   if (basePrice <= 0 || defs.length === 0) return null;
 
   // 1) Probar con qty=1: dispara PERCENT_OFF, FIXED_OFF, COMBO_OFF (no BOGO).
+  //    `isCombo` habilita COMBO_OFF: sin él, un combo nunca mostraba su badge.
   const r = applyPromotion(
-    { productId, lineSubtotal: basePrice, quantity: 1, isCombo: false, at },
+    { productId, lineSubtotal: basePrice, quantity: 1, isCombo, at },
     defs,
   );
   if (r.lineDiscount > 0) {

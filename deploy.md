@@ -2,26 +2,34 @@
 
 > **Quién lo lee:** vos (dueño / dev) cuando arme la prod por primera
 > vez. Doc self-contained — todo lo que el deploy necesita está acá.
-> Refleja la reorientación v2: sin delivery/Mapbox,
-> WhatsApp automático vía OpenWA, print-agent en :9120.
 >
-> ⚠️ **Actualización 2026-06-27 (CLAUDE.md §7.v10): turnero + KDS ELIMINADOS.**
-> La `apps/kds-flutter` se borró; NO hay turnero. La pantalla
-> `apps/public-display` queda SOLO como kiosko de **productos + publicidad +
-> música** (sin turnos). COUNTER termina en PAGADO; el cajero marca los pedidos
-> WEB como "listo" desde el POS.
+> ⚠️ **Actualización 2026-07-21 (auditoría pre-QA):**
+> - **Cutover POS→admin:** `apps/pos` **NO va a producción**. Toda la operación
+>   de caja vive en `apps/admin` (ruta `/caja`). El rol **CAJERO se retiró**: el
+>   operador de caja es **ADMIN_OPERATIVO** (ver §0.5). Se despliegan 4
+>   frontends: admin (unificado), web, cocina, public-display.
+> - **Delivery volvió** (`WEB_DELIVERY`): el cliente puede pedir a domicilio; el
+>   cajero asigna el costo del envío (> 0) antes de cobrar. Gates de horario y
+>   radio GPS configurables desde el admin (ver §0.6). (Ya NO hay Mapbox: el
+>   radio se valida por distancia haversine.)
+> - **WhatsApp por KAPSO** (Cloud API oficial de Meta), no OpenWA. Print-agent
+>   en :9120.
 >
-> ✅ **Actualización 2026-06-27 (CLAUDE.md §7.v11): la app WEB de cocina SÍ
-> existe** (`apps/cocina`, construida el mismo día) — se despliega como 5º
-> frontend en Vercel, ver §2.2.
+> ⚠️ **turnero + KDS ELIMINADOS (§7.v10).** `apps/kds-flutter` borrada; NO hay
+> turnero. `apps/public-display` es kiosko de **productos + publicidad + música**
+> (sin turnos). COUNTER termina en PAGADO; el cajero marca los pedidos WEB como
+> "listo" desde `admin/caja`.
+>
+> ✅ **App WEB de cocina** (`apps/cocina`, §7.v11) — 4º/5º frontend, ver §2.2.
 >
 > **Pre-requisitos cumplidos** (ver `pendientes-externos-y-deploy.md`):
 > - Cuenta Cloudflare R2 + bucket `pos-tercos-prod`.
 > - Cuentas Railway + Vercel + Cloudflare DNS.
-> - Gateway OpenWA self-hosted (VPS o máquina local) con número de
->   WhatsApp propio del negocio — ver `openwa-setup.md`.
-> - Hardware local: tablet/PC POS, tablet/TV para la pantalla del local,
->   Raspberry Pi o mini-PC para Print Agent, impresora Epson TM-T20III
+> - Cuenta **Kapso** (Cloud API de Meta) con chip +57 dedicado, número
+>   registrado y templates aprobados — ver `kapso-setup.md`. (OpenWA es el
+>   camino legacy, no usar en prod nueva.)
+> - Hardware local: tablet/PC de caja (admin), tablet/TV para la pantalla del
+>   local, Raspberry Pi o mini-PC para Print Agent, impresora Epson TM-T20III
 >   + cajón monedero RJ-11.
 
 ---
@@ -34,12 +42,22 @@
 
 ### 0.1 Operacional (obligatorio el día 1)
 
+- [ ] **Categorías de producto** — crear las categorías en admin `/categories`
+      **ANTES** de cargar productos: `products.create` exige una categoría
+      existente y la DB fría no trae ninguna (el seed no corre en prod). 🔴
 - [ ] **Cold-start de subproductos** — antes de abrir, producir todas las tandas
       en admin `/subproducts`. Si no, todo producto preparado sale
       **"Agotado"** y el cobro lo rechaza con 409. Ver §6.bis. 🔴
-- [ ] **Usuario dueño con password fuerte** — NO correr `prisma db seed` en prod
-      (crea 5 usuarios con `dev12345`/`mustChangePwd:false`). Crear el dueño a
-      mano con password fuerte. Ver §0.4. 🔴
+- [ ] **Usuario dueño con password fuerte** — NO correr `prisma db seed` ni
+      `seed-dueno.ts` en prod (ambos tienen guard anti-prod, pero igual: crean
+      usuarios `dev12345`). Crear el dueño a mano. Ver §0.4. 🔴
+- [ ] **Operador de caja = rol ADMIN_OPERATIVO** — el rol CAJERO se retiró (no
+      entra a ninguna app). Crear los cajeros con rol **ADMIN_OPERATIVO**; el
+      admin ya no ofrece CAJERO. Ver §0.5. 🔴
+- [ ] **Gates web en el estado deseado** — horario, radio de cobertura, delivery
+      on/off y kill-switch de pedidos web arrancan **apagados/abiertos** según la
+      migración; confirmarlos en admin `/finanzas/estado` y `/web-hero/config`
+      antes de abrir. Ver §0.6. 🟠
 - [ ] **Railway en 1 réplica fija** (sin autoscale) — hay estado in-memory
       (throttle, rooms WS de pedidos web `/ws/pos`) que asume single-instance. 🔴
 - [ ] **Healthcheck de Railway = `/healthz`** (NO `/health`, que da 404). 🟠
@@ -71,14 +89,16 @@
       por WhatsApp (el servicio que más probablemente cae); un monitor externo
       independiente es la red de seguridad real. Ver §8. 🟠
 
-### 0.3 Deuda de escala (no bloquea el día 1; resolver antes de ~6 meses)
+### 0.3 Deuda de escala (no bloquea el día 1)
 
-- [ ] **Replay FIFO + índice `paidAt`** — los reportes (`/finanzas`, dashboard)
-      hacen replay de TODA la tabla `inventory_movements` en cada request, con un
-      bug O(n²) en el agrupado de producciones, sobre el mismo event loop que
-      cobra. A ~1 año de datos congela el POS al abrir finanzas. Plan: snapshot
-      FIFO con fecha de corte + `@@index([paidAt])` + pre-agrupar tandas.
-- [ ] **Retención** de `audit_log` / `sale_status_log` (insert-only sin purga).
+- [x] **Replay FIFO acotado** — RESUELTO (§7.v13): snapshots mensuales del ledger
+      (`ledger_snapshots`, cron día 2 4:30) → el replay procesa solo el mes
+      corriente; memoria/tiempo dejan de crecer con la historia. ✅
+- [x] **`GET /products/availability` con caché** — RESUELTO (§2.8): el endpoint
+      público (polleado por anónimos) tiene caché TTL 15s; el interno (cajero)
+      queda fresco. Antes hacía 3 groupBy full-table por hit. ✅
+- [ ] **Retención** de `audit_log` (con purga: `audit_log_retention`) /
+      `sale_status_log` (insert-only sin purga aún). 🟠
 
 ### 0.4 Crear el usuario dueño en prod (sin seed)
 
@@ -88,6 +108,37 @@
 INSERT INTO users (id, email, full_name, role, password_hash, must_change_pwd, active, created_at, updated_at)
 VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcrypt>', false, true, now(), now());
 ```
+
+Después, el dueño crea el resto de usuarios desde admin `/users`.
+
+### 0.5 Cutover de roles POS→admin
+
+`apps/pos` no va a prod: la caja vive en `admin.tercos.co/caja`, que solo admite
+**ADMIN_OPERATIVO** y **DUENO**. El rol **CAJERO se retiró** de la operación (no
+entra a ninguna app).
+
+- La migración `reassign_cajero_to_operativo` reasigna cualquier usuario CAJERO
+  existente → ADMIN_OPERATIVO (idempotente; corre sola en el `migrate deploy`).
+- Al crear cajeros nuevos en `/users`, elegir rol **ADMIN_OPERATIVO** (el form ya
+  no ofrece CAJERO; el default es ADMIN_OPERATIVO).
+- El DUEÑO **no** opera la caja (decisión: separación de funciones). Si el único
+  operativo falta, el dueño puede crear otro operativo o, en emergencia, cambiarse
+  el rol — pero por diseño no cobra.
+
+### 0.6 Gates de la web pública (confirmar el estado)
+
+El cliente pide desde `tercos.co`. Antes de abrir, confirmar en admin
+(`/finanzas/estado` + `/web-hero/config`):
+
+- **Kill-switch de pedidos web** (`web_orders_enabled`) — si querés recibir
+  pedidos web, encendido.
+- **Horario** — si está activo, fuera de hora el checkout responde 503.
+- **Radio de cobertura** (`ordersRespectRadius` + `orderRadiusKm` + coords del
+  local) — solo aplica a **domicilios**; a quien viene a recoger no lo bloquea.
+- **Delivery on/off** (`deliveryEnabled`) — si está apagado, la web solo ofrece
+  "recoger". Un domicilio se cobra con el **envío asignado (> 0)** por el cajero;
+  el WhatsApp con el total real sale al asignarlo (fee 0 = sin asignar, bloquea el
+  cobro).
 
 ---
 
@@ -126,9 +177,14 @@ VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcryp
 - `TZ=America/Bogota` — **obligatoria**: los crons (digest 21:30, purga
   idempotency 3 AM, gap-check 4 AM, scan de sugerencias horario, sweep de
   ventas stale) usan hora local del server.
-- `CORS_ORIGINS=https://pos.tercos.co,https://admin.tercos.co,https://tercos.co,https://tv.tercos.co,https://cocina.tercos.co`
-  — **obligatoria en prod** (lista separada por comas de los orígenes de los
-  frontends; sin ella el boot CRASHEA a propósito).
+- `CORS_ORIGINS=https://admin.tercos.co,https://tercos.co,https://display.tercos.co,https://cocina.tercos.co`
+  — **obligatoria en prod** (lista separada por comas de los orígenes de los 4
+  frontends reales; sin ella el boot CRASHEA a propósito). Ya NO incluye
+  `pos.tercos.co` salvo que lo aliasees a `admin.tercos.co/caja`.
+- `TRUST_PROXY_HOPS=1` — nº de proxies delante del API (§2.9). Con **Cloudflare
+  proxied delante de Railway** hay DOS saltos → poner **`2`** (si no, el throttler
+  agrupa a todos los clientes en la IP del edge de CF = auto-DoS del login).
+  **Verificar `req.ip` real en QA** antes de fijarlo. Default 1.
 
 **Database:**
 - `DATABASE_URL=${{Postgres.DATABASE_URL}}` (Railway internal)
@@ -151,7 +207,11 @@ VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcryp
 - `LLM_PROVIDER=anthropic`
 
 **Storage R2:**
-- `STORAGE_PROVIDER=r2`
+- `STORAGE_PROVIDER=r2` — **debe ser `r2` en prod**. El boot valida el valor
+  (§2.4): un typo (`"R2 "`, `cloudflare`) mata el arranque en vez de degradar a
+  `local` en silencio. Y `STORAGE_PROVIDER=local` en prod **crashea** (las fotos
+  se perderían en el filesystem efímero de Railway en cada redeploy) salvo
+  `ALLOW_LOCAL_STORAGE=1` explícito.
 - `R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com`
 - `R2_ACCESS_KEY_ID=...`
 - `R2_SECRET_ACCESS_KEY=...`
@@ -161,7 +221,13 @@ VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcryp
 **WhatsApp automático — KAPSO (Cloud API oficial; derrotero en `kapso-setup.md`):**
 - `KAPSO_API_KEY=...` — API key de producción de Kapso
 - `KAPSO_PHONE_NUMBER_ID=...` — phone number id del número de producción
-- `WHATSAPP_TEMPLATES_ENABLED=true` — recién cuando los 5 templates estén APROBADOS en Meta
+- `WHATSAPP_REQUIRED=true` — **recomendado en prod** (§2.5): sin proveedor
+  configurado el boot CRASHEA en vez de arrancar en Mock (el pedido web y las
+  alertas dependen 100% de WhatsApp — arrancar mudo es peor que no arrancar).
+- `WHATSAPP_TEMPLATES_ENABLED=true` — recién cuando los templates estén APROBADOS
+  en Meta. Registrar **6 templates** (los 5 + el nuevo `delivery_en_camino` para
+  el "va en camino" de domicilios — §2.6; sin él un domicilio "listo" recibiría el
+  template de retiro en el local). Ver `kapso-setup.md`.
 - `WHATSAPP_TEMPLATE_LANG=es` — o `es_CO` según el language code aprobado
 - `OWNER_WHATSAPP_PHONE=+57XXXXXXXXXX` — E.164; recibe el **digest
   diario 21:30** y las **alertas antifraude** (descuadre de caja, etc.)
@@ -196,20 +262,25 @@ VALUES (gen_random_uuid(), 'dueno@tunegocio.co', 'Dueño', 'DUENO', '<hash-bcryp
 
 ### 1.3 Health check
 
-`GET /health` debe responder 200. Railway lo usa como liveness.
+**`GET /healthz`** debe responder 200 (el controller es `@Controller('healthz')`).
+Railway lo usa como liveness — configurar el **Healthcheck Path a `/healthz`**.
+⚠️ `/health` (sin `z`) da **404** → Railway mataría el servicio en un loop de
+reinicios. `/healthz` devuelve 200 y `503` si la DB está caída.
 
 ---
 
 ## 2. Frontends en Vercel
 
 **4 proyectos** Next.js, cada uno con su domain:
-- `admin.tercos.co` → `apps/admin`
-- `pos.tercos.co` → `apps/pos`
-- `display.tercos.co` → `apps/public-display`
+- `admin.tercos.co` → `apps/admin` — **app unificada**: gestión (dueño) +
+  operación de caja (ADMIN_OPERATIVO, ruta `/caja`). Es PWA offline en `/caja`.
+- `display.tercos.co` → `apps/public-display` (kiosko productos+publicidad+música)
+- `cocina.tercos.co` → `apps/cocina` (§2.2)
 - `tercos.co` → `apps/web` (público)
 
-> El KDS ya **NO** se despliega en Vercel: es `apps/kds-flutter`,
-> app nativa Android. Ver §2.2.
+> **`apps/pos` NO se despliega** (cutover POS→admin): la caja vive en
+> `admin.tercos.co/caja`. Opcional: aliasear `pos.tercos.co` → `admin.tercos.co/caja`
+> como acceso directo para el mostrador. El KDS Flutter tampoco: ya no existe.
 
 Build settings (cada uno):
 - Framework: Next.js
@@ -222,15 +293,16 @@ Build settings (cada uno):
 **Todos (server-side fetch + rewrites `/api/*`):**
 - `API_INTERNAL_URL=https://api.tercos.co`
 
-**Admin y POS (verify JWT en edge middleware):**
+**Admin, cocina (verify JWT en edge middleware):**
 - `JWT_ACCESS_SECRET` — mismo valor que el API
 
-**POS:**
+**Admin (la caja vive acá — §2.9 auditoría: SIN estas dos, el socket de pedidos
+web y la impresión apuntan a `localhost` y la comanda falla EN LA VENTA):**
 - `NEXT_PUBLIC_API_WS_URL=wss://api.tercos.co` (socket.io `/ws/pos`)
 - `NEXT_PUBLIC_PRINT_AGENT_URL=http://<host-agent>:9120` — el navegador
-  del POS le habla **directo** al print-agent en la red del local
+  de la caja le habla **directo** al print-agent en la red del local
   (default `http://localhost:9120` si el agent corre en la misma PC
-  del mostrador). Necesario para impresión offline.
+  del mostrador). Necesario para impresión (comanda + recibo + cajón).
 
 **Web pública:**
 - `NEXT_PUBLIC_BUSINESS_NAME=Tercos`
@@ -341,15 +413,18 @@ Dos clientes le pegan al agent:
 
 ```
 A    api.tercos.co       → Railway IP (proxy on)
-A    admin.tercos.co     → Vercel    (proxy on)
-A    pos.tercos.co       → Vercel    (proxy on)
+A    admin.tercos.co     → Vercel    (proxy on)   ← incluye la caja (/caja)
 A    display.tercos.co   → Vercel    (proxy on)
+A    cocina.tercos.co    → Vercel    (proxy on)
 A    tercos.co           → Vercel    (proxy on)
 A    media.tercos.co     → R2 custom domain (CF Workers)
 A    printer.tercos.co   → CF Tunnel al host del agent (si se usa esa opción)
 ```
 
-> No existe `kds.tercos.co` — no hay app de cocina (eliminada en §7.v10).
+> `apps/cocina` SÍ existe (`cocina.tercos.co`, §7.v11). `apps/pos` NO se
+> despliega (cutover POS→admin); si querés un acceso directo al mostrador,
+> aliaseá `pos.tercos.co` → `admin.tercos.co/caja` (opcional).
+> ⚠️ Con **proxy on** en Cloudflare, revisar `TRUST_PROXY_HOPS=2` (§1.2/§2.9).
 
 SSL: "Full (strict)" en CF. Vercel y Railway entregan certs válidos.
 
@@ -366,48 +441,56 @@ deploy. Para correrlo a mano:
 DATABASE_URL=$RAILWAY_DB pnpm -F @pos-tercos/api prisma migrate deploy
 ```
 
-Desde la última edición de este doc (que listaba 4 pendientes de FASE
-12/14) entraron **~20 migrations nuevas**, agrupadas por bloque:
+Un deploy **cold** (DB nueva) aplica las **~82 migrations** en orden. No hace
+falta enumerarlas — `migrate deploy` es idempotente y aplica solo las que
+falten. Bloques nuevos desde la v2 (los más recientes primero):
 
-- **Reorientación v2**: `remove_delivery_repartidor`,
-  `whatsapp_messages`, `add_sale_item_notes`,
-  `turn_numbering_and_call_queue`, `recipe_per_variant`
-- **Cajero v2.1**: `product_sold_out`, `sale_void_reason`,
-  `cash_movements_and_arqueo`
-- **Costeo FIFO**: `fifo_unit_cost`
-- **Nómina v2**: `employment_fields_drop_commissions`,
-  `payroll_paytype`, `payroll_weekly_and_rest_days`,
-  `payroll_payment_periods`, `payroll_payments`
-- **Costos fijos y pagos**: `fixed_costs`, `invoice_payments`,
-  `fixed_cost_payments`
-- **Inventario de producción**: `subproduct_inventory`,
-  `subproduct_inventory_use` (ver cold start §6.bis)
-- **Conteo físico**: `stock_counts`
+- **Delivery (§Fase 0-1)**: `web_delivery_enum`, `web_delivery_fields`,
+  `delivery_toggle`, `delivery_fee`, `order_radius`, `web_business_config`
+- **Cutover roles**: `reassign_cajero_to_operativo` (UPDATE idempotente:
+  CAJERO→ADMIN_OPERATIVO — no queda ningún CAJERO operando)
+- **Medios de pago dinámicos**: `dynamic_payment_methods` ⚠️ ver aviso abajo
+- **Catálogo**: `product_categories` (backfill), `product_emoji`,
+  `product_force_available`, `blocks_availability`, `promotion_channel`
+- **Cuentas abiertas + descuentos**: `open_tabs_and_manual_discounts`,
+  `money_invariants_and_indexes`
+- **FIFO snapshot + offline + hardening**: `ledger_snapshots`,
+  `shift_offline_open`, `app_instances`, `audit_log_retention`
+- Más los bloques v2 previos (reorientación v2, cajero v2.1, FIFO, nómina v2,
+  costos fijos/pagos, inventario de producción, conteo físico).
 
-> No hace falta enumerarlas en cada deploy: `migrate deploy` es
-> idempotente y aplica solo las que falten, en orden.
+> ⚠️ **`dynamic_payment_methods` sobre una DB CON DATOS** (QA ya poblada, no cold)
+> hace `ALTER COLUMN ... TYPE TEXT` en `sales`/`sale_payments`/`cash_movements` +
+> `DROP TYPE "PaymentMethod"` = reescritura de tabla con **lock ACCESS EXCLUSIVE**.
+> En DB fría es trivial; sobre datos, aplicarla en **ventana muerta** y con
+> `pg_dump` manual previo. Las migraciones con `ADD VALUE` en enum
+> (`web_delivery_enum`, `subproduct_inventory`) están correctamente aisladas.
 
 ---
 
 ## 6. Smoke test post-deploy
 
-1. `GET https://api.tercos.co/health` → `{ ok: true }`.
+1. `GET https://api.tercos.co/healthz` → 200 (`503` si la DB está caída).
 2. `GET https://api.tercos.co/web/menu` → JSON con productos públicos.
-3. Login en `admin.tercos.co` con un user real (cambiar contraseñas de
-   seed antes).
-4. **Venta COUNTER**: abrir caja en `pos.tercos.co` (efectivo de
+3. Login en `admin.tercos.co` con el usuario dueño real (creado a mano en §0.4;
+   **el seed NO corre en prod** — tiene guard anti-prod). El operador de caja
+   entra con rol **ADMIN_OPERATIVO** (el rol CAJERO se retiró en el cutover
+   POS→admin; ver §0.5).
+4. **Venta COUNTER**: abrir caja en `admin.tercos.co/caja` (efectivo de
    apertura) → vender un producto → cobrar CASH → la venta queda en
    **PAGADO** (estado terminal de mostrador) y el recibo sale por el
    print-agent (papel + cajón abre) con el **# de recibo**.
 5. **Pantalla del local**: `display.tercos.co` muestra el carrusel de
    productos + publicidad + música (sin turnos).
 6. **Pedido web**: hacer pedido en `tercos.co` → el cliente recibe
-   **automáticamente** las instrucciones de pago por WhatsApp (OpenWA;
+   **automáticamente** las instrucciones de pago por WhatsApp (Kapso;
    verificar fila `sent` en `whatsapp_messages`) → el pedido aparece en
-   el modal de pedidos web del POS.
-7. **Confirmar pago** del pedido web en el POS → WhatsApp "pago
-   recibido" automático → **"Marcar listo para retirar"** en el modal →
-   WhatsApp "listo para retirar" automático → el tracking en
+   el modal de pedidos web de `admin.tercos.co/caja`. **Si es domicilio**,
+   el cajero primero **asigna el costo del envío** (obligatorio, > 0) antes de
+   cobrar; el WhatsApp con el total real sale al asignarlo.
+7. **Confirmar pago** del pedido web en la caja → WhatsApp "pago
+   recibido" automático → **"Marcar listo"** → WhatsApp "listo para retirar"
+   (pickup) o "va en camino" (domicilio) automático → el tracking en
    `tercos.co/checkout/success/[id]?token=` refleja cada estado
    (termina en LISTO_DESPACHO).
 8. **Conteo físico**: en admin `/inventory/counts` crear un conteo de
@@ -433,9 +516,9 @@ Desde la última edición de este doc (que listaba 4 pendientes de FASE
    - Click "Producir" (icon-only verde en la fila o botón grande en `/subproducts/[id]`).
    - Ingresar la cantidad en cocina (en la unidad del subproducto: piezas, gramos, etc).
    - El backend valida que hay stock de insumos suficiente. Si rechaza, conseguir más insumos o reducir la cantidad.
-4. Alternativa: el cocinero registra las tandas desde la **ProductionScreen del KDS Flutter** en la tablet.
+4. Alternativa: el cocinero registra las tandas desde `cocina.tercos.co/produccion`.
 5. Verificar que cada subproducto producido aparezca con stock > 0 en `/inventory`.
-6. Abrir `pos.tercos.co` → productos preparados deberían estar disponibles.
+6. Abrir `admin.tercos.co/caja` → los productos preparados deberían estar disponibles.
 
 **Si se omite este paso:** el cajero verá todos los productos preparados como "Agotado" y no podrá vender hasta producir.
 

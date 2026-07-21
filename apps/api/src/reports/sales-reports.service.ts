@@ -136,6 +136,10 @@ export class SalesReportsService {
     const byMethod = new Map<string, { count: number; revenue: number }>();
 
     for (const s of sales) {
+      // El envío SÍ cuenta: el reparto es un servicio que el negocio vende
+      // (decisión del dueño 2026-07-17). Lo que se le paga al domiciliario es un
+      // GASTO aparte, registrado en su módulo — así tesorería cuadra sola sin
+      // que nadie tenga que excluir nada.
       const total = Number(s.total);
       const disc = Number(s.discountTotal);
       revenue += total;
@@ -247,6 +251,13 @@ export class SalesReportsService {
     to: Date,
     limit: number,
   ): Promise<TopProductsReport> {
+    // §5.4 (aproximación documentada): el ranking (qué productos entran al top-N
+    // y su orden) se hace por Σ lineTotal BRUTO en la DB. El revenue MOSTRADO
+    // resta el prorrateo del descuento de orden (abajo). En ventas sin descuento
+    // sobre el total —el caso común— ambos coinciden; con descuentos de orden
+    // grandes y muy desparejos el orden del ranking puede diferir levemente del
+    // revenue neto. Ordenar por neto exigiría traer TODOS los productos (sin
+    // `take`) y re-ordenar en memoria — no vale el costo para este reporte.
     const grouped = await this.prisma.saleItem.groupBy({
       by: ['productId'],
       where: { sale: paidSalesWhere(from, to) },

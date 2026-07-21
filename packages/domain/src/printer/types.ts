@@ -26,6 +26,8 @@ export interface ReceiptData {
   }>;
   subtotal: number;
   discountTotal: number;
+  /** Costo del domicilio (WEB_DELIVERY). 0 = sin envío → no se imprime la línea. */
+  deliveryFee?: number;
   total: number;
   /** Pagos de la venta. Con >1 elemento el recibo imprime el desglose de la
    *  cuenta dividida (método + monto por parte, vuelto en efectivo). */

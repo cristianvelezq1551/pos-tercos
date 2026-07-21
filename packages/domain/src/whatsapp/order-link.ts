@@ -60,9 +60,11 @@ export function buildWebOrderLink(input: OrderLinkInput): WhatsAppLinkResult | n
   }
 
   lines.push('');
-  lines.push(`Total: ${formatCop(input.total)}`);
-
   const address = input.deliveryAddress?.trim();
+  // En domicilio el total NO es final: falta el envío, que el local cotiza con
+  // el domiciliario. Decir "Total: $27.000" a secas sería mentirle al cliente.
+  lines.push(address ? `Pedido: ${formatCop(input.total)}` : `Total: ${formatCop(input.total)}`);
+
   if (address) {
     lines.push('');
     lines.push('🛵 A domicilio');
@@ -79,7 +81,11 @@ export function buildWebOrderLink(input: OrderLinkInput): WhatsAppLinkResult | n
   }
 
   lines.push('');
-  lines.push('Quedo atento al pago 🙌');
+  lines.push(
+    address
+      ? '¿Cuánto sale el domicilio? Quedo atento para pagar 🙌'
+      : 'Quedo atento al pago 🙌',
+  );
 
   return toWaLink(phone, lines.join('\n'));
 }

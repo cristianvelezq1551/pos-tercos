@@ -80,8 +80,9 @@ export class PromotionsService {
       daysOfWeekMask: r.daysOfWeekMask,
       timeStart: r.timeStart,
       timeEnd: r.timeEnd,
-      activeFrom: r.activeFrom,
-      activeTo: r.activeTo,
+      // @db.Date (medianoche UTC) → día calendario `YYYY-MM-DD` sin ambigüedad.
+      activeFrom: r.activeFrom ? toDateString(r.activeFrom) : null,
+      activeTo: r.activeTo ? toDateString(r.activeTo) : null,
       productIds: new Set(r.products.map((pp) => pp.productId)),
     }));
   }

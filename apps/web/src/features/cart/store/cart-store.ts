@@ -81,6 +81,15 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: 'pos-tercos-web-cart',
+      // §5.4: `version` + `migrate` como red de seguridad. Sin versión, un cambio
+      // futuro del shape de `CartLine` (agregar/quitar un campo) chocaría con
+      // carritos viejos en localStorage y podría romper el checkout. Hoy no hay
+      // migración pendiente; al cambiar el shape, subir la versión y migrar acá.
+      version: 1,
+      migrate: (persisted, version) => {
+        if (version < 1) return { items: [] }; // shape desconocido → carrito limpio
+        return persisted as { items: CartLine[] };
+      },
       partialize: (s) => ({ items: s.items }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);

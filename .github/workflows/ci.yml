@@ -134,11 +134,14 @@ jobs:
       - name: Generar Prisma Client
         run: pnpm -F @pos-tercos/api prisma:generate
 
+      # §4.2: el smoke de navegador corre sobre apps/ADMIN (la app de caja que va
+      # a prod), NO apps/pos (retirada en el cutover). Los specs viven en
+      # apps/admin/e2e/ (login→vender→cobrar→cerrar caja en /caja).
       - name: Build API + apps del flujo (turbo resuelve types/domain/ui)
         run: >-
           pnpm exec turbo build
           --filter=@pos-tercos/api
-          --filter=@pos-tercos/pos
+          --filter=@pos-tercos/admin
           --filter=@pos-tercos/web
           --filter=@pos-tercos/cocina
 
@@ -148,15 +151,15 @@ jobs:
           pnpm -F @pos-tercos/api exec prisma db seed
 
       - name: Instalar Chromium de Playwright
-        run: pnpm -F @pos-tercos/pos exec playwright install --with-deps chromium
+        run: pnpm -F @pos-tercos/admin exec playwright install --with-deps chromium
 
-      - name: Levantar API + POS + web + cocina
+      - name: Levantar API + admin + web + cocina
         run: |
           pnpm -F @pos-tercos/api start &
-          pnpm -F @pos-tercos/pos start &
+          pnpm -F @pos-tercos/admin start &
           pnpm -F @pos-tercos/web start &
           pnpm -F @pos-tercos/cocina start &
-          for port in 3001 3002 3000 3006; do
+          for port in 3001 3004 3000 3006; do
             for i in $(seq 1 60); do
               if curl -sf "http://localhost:$port/healthz" >/dev/null 2>&1 \
                  || curl -sf -o /dev/null "http://localhost:$port"; then
@@ -167,13 +170,13 @@ jobs:
             done
           done
 
-      - name: Tests de navegador (Playwright)
-        run: pnpm -F @pos-tercos/pos test:e2e-ui
+      - name: Tests de navegador (Playwright · apps/admin /caja)
+        run: pnpm -F @pos-tercos/admin test:e2e-ui
 
       - name: Subir traces si falló
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces
-          path: apps/pos/test-results/
+          path: apps/admin/test-results/
           retention-days: 7

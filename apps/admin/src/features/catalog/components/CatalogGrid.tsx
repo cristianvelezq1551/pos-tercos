@@ -70,6 +70,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
       })),
       quantity: sel.quantity,
       unitPrice: sel.unitPrice,
+      isCombo: sel.isCombo,
     });
   };
 
@@ -114,7 +115,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
             // 86 manual pisa todo; forzar disponible pisa la falta de stock.
             const unavailable = manualSoldOut || (!forced && computedUnavailable);
             const reason = manualSoldOut ? null : forced ? null : (avail?.reason ?? null);
-            const promoBadge = getActivePromoBadge(p.id, p.basePrice, promos);
+            const promoBadge = getActivePromoBadge(p.id, p.basePrice, promos, undefined, p.isCombo);
             return (
               <ProductTile
                 key={p.id}

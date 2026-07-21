@@ -69,8 +69,8 @@ export function toPromotionDef(p: Promotion): PromotionDef {
     daysOfWeekMask: p.daysOfWeekMask,
     timeStart: p.timeStart,
     timeEnd: p.timeEnd,
-    activeFrom: p.activeFrom ? new Date(`${p.activeFrom}T00:00:00`) : null,
-    activeTo: p.activeTo ? new Date(`${p.activeTo}T00:00:00`) : null,
+    activeFrom: p.activeFrom ?? null,
+    activeTo: p.activeTo ?? null,
     productIds: new Set(p.productIds),
   };
 }
@@ -104,9 +104,10 @@ export function computeCartTotals(
           productId: it.productId,
           lineSubtotal,
           quantity: it.quantity,
-          // Cart line del POS hoy no rastrea isCombo per-product. COMBO_OFF
-          // no aplica desde POS hasta que el carrito traquee el flag (FASE 12.B).
-          isCombo: false,
+          // COMBO_OFF: la línea traquea isCombo desde el catálogo, así el
+          // preview del carrito iguala lo que cobra el backend (antes fijo en
+          // false → combo sin descuento en pantalla pero cobrado → descuadre).
+          isCombo: it.isCombo,
           at,
         },
         defs,

@@ -25,6 +25,11 @@ export function ProduceModal({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<ProductionRun | null>(null);
+  // §3.2: una key por SESIÓN del modal (no por intento). Un reintento tras
+  // respuesta perdida reusa la misma → el backend devuelve la tanda ganadora en
+  // vez de registrar una SEGUNDA (que descontaría insumos dos veces). Se renueva
+  // al cerrar (nueva producción = nueva key).
+  const [idempotencyKey, setIdempotencyKey] = useState(() => randomUUID());
 
   if (!subproduct) return null;
 
@@ -35,6 +40,7 @@ export function ProduceModal({
     setError(null);
     setDone(null);
     setPending(false);
+    setIdempotencyKey(randomUUID());
   };
 
   const close = () => {
@@ -57,7 +63,7 @@ export function ProduceModal({
         quantityProduced: n,
         notes: notes.trim() || undefined,
         evidenceKey,
-        idempotencyKey: randomUUID(),
+        idempotencyKey,
       });
       setDone(run);
       onProduced();

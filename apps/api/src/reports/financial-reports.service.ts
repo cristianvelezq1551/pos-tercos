@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   FINANCIAL_ANALYSIS_SYSTEM,
   buildFinancialAnalysisUserPrompt,
+  nextWeekRef,
+  payrollWeekFor,
   type FinancialAnalysisInput,
 } from '@pos-tercos/domain';
 import type {
@@ -105,8 +107,13 @@ export class FinancialReportsService {
     // void normal no la tiene porque revierte stock). pnl.refundCost ya la trae.
     const refundCost = pnl.refundCost;
 
+    // Merma (§1.2): insumo/producto tirado = plata perdida real. Baja el neto
+    // igual que cortesías y reembolsos (decisión del dueño 2026-07-21). Se
+    // muestra como línea aparte del grossMargin (no se mezcla con el COGS).
+    const wasteCost = round(pnl.wasteCost);
+
     const netResult = round(
-      grossMargin - totalFixed - oneTimeCost - cortesiasCost - refundCost,
+      grossMargin - totalFixed - oneTimeCost - cortesiasCost - refundCost - wasteCost,
     );
 
     // Break-even = costos fijos / margen bruto %. Solo válido si hay margen %.
@@ -126,6 +133,7 @@ export class FinancialReportsService {
       revenue: round(revenue),
       cogs: round(cogs),
       cogsPartial: pnl.cogsUnknownQty > 0,
+      cogsEstimated: pnl.cogsEstimatedQty > 0,
       grossMargin: round(grossMargin),
       grossMarginPct: round4(grossMarginPct),
       fixedCosts: fixedCostLines,
@@ -134,6 +142,7 @@ export class FinancialReportsService {
       cortesiasCost,
       cortesiasCostPartial: cortesiasUnknownQty > 0,
       refundCost: round(refundCost),
+      wasteCost,
       netResult,
       breakEven,
       breakEvenCoverage: breakEvenCoverage === null ? null : round4(breakEvenCoverage),
@@ -301,7 +310,6 @@ export class FinancialReportsService {
     const effStart = hire > monthStart ? hire : monthStart;
     const effEnd = term < monthEnd ? term : monthEnd;
     if (effStart > effEnd) return 0;
-    const DAY_MS = 86_400_000;
     const salary = Number(user.salaryAmount);
 
     if (user.payType === 'MONTHLY') {
@@ -319,7 +327,13 @@ export class FinancialReportsService {
       }
       return Math.round(base * 100) / 100;
     }
-    // DAILY: suma por día, saltando descansos cíclicos. Override gana siempre.
+    // DAILY (§1.1): mirror EXACTO de `WorkersWeeklyService.buildEntry`. NO se
+    // recorren todos los días calendario: solo los días LABORABLES de la nómina
+    // (`payrollWeekFor` ya excluye el descanso sistémico del lunes y corre los
+    // festivos), menos el descanso propio del trabajador (salvo festivo), más
+    // overrides. Recorrer día calendario saltando solo `restDaysOfWeek` (default
+    // vacío) devengaba el lunes de descanso → "Nómina (auto)" inflada y el P&G
+    // no conciliaba con la nómina semanal (que es la obligación real).
     const restSet = new Set(user.restDaysOfWeek);
     const overrides = await this.prisma.payrollDay.findMany({
       where: { userId: user.id, workDate: { gte: effStart, lte: effEnd } },
@@ -328,16 +342,31 @@ export class FinancialReportsService {
     const ovMap = new Map(
       overrides.map((o) => [o.workDate.toISOString().slice(0, 10), Number(o.amount)]),
     );
+    const startYmd = effStart.toISOString().slice(0, 10);
+    const endYmd = effEnd.toISOString().slice(0, 10);
+    const toUtc = (s: string): Date => new Date(`${s}T00:00:00.000Z`);
+
     let base = 0;
-    for (let t = effStart.getTime(); t <= effEnd.getTime(); t += DAY_MS) {
-      const d = new Date(t);
-      const ov = ovMap.get(d.toISOString().slice(0, 10));
-      if (ov !== undefined) {
-        base += ov;
-        continue;
+    let week = payrollWeekFor(effStart);
+    // Recorre las semanas de nómina que solapan [effStart, effEnd]. `week.days`
+    // trae solo los días laborables (sin el lunes de descanso). El filtro por
+    // string acota a la ventana del mes (una semana puede cruzar el borde).
+    let guard = 0;
+    while (week.weekStart <= endYmd && guard++ < 60) {
+      for (const d of week.days) {
+        if (d.date < startYmd || d.date > endYmd) continue;
+        const ov = ovMap.get(d.date);
+        if (ov !== undefined) {
+          base += ov;
+          continue;
+        }
+        if (restSet.has(d.weekday) && !d.isHoliday) continue;
+        if (d.status === 'WORKDAY') base += salary;
       }
-      if (restSet.has(d.getUTCDay())) continue;
-      base += salary;
+      const nextRef = nextWeekRef(week);
+      const next = payrollWeekFor(toUtc(nextRef));
+      if (next.weekStart === week.weekStart) break; // salvaguarda anti-loop
+      week = next;
     }
     return Math.round(base * 100) / 100;
   }

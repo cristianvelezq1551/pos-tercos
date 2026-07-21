@@ -41,6 +41,9 @@ export const RegisterWasteSchema = z
     quantity: z.number().positive(),
     /** Motivo obligatorio (auditable): "se quemó", "vencido", "se cayó", etc. */
     reason: z.string().min(3).max(300),
+    /** §3.3: idempotencia — un reintento tras respuesta perdida NO registra una
+     *  segunda merma (movements insert-only → sería doble descuento). */
+    idempotencyKey: z.string().uuid().optional(),
   })
   .superRefine(requireMatchingId);
 export type RegisterWaste = z.infer<typeof RegisterWasteSchema>;

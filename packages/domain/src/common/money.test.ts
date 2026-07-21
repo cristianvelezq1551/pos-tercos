@@ -2,24 +2,29 @@ import { describe, expect, it } from 'vitest';
 import { roundCost, roundMoney, roundsToZeroAt4 } from './money';
 
 /**
- * Casos ADVERSARIALES de redondeo (informe de calidad A6): los inputs de las
- * demás suites son COP enteros, así que un flip del MODO de redondeo a nivel
- * centavo (round→floor/ceil) sobrevivía a todos los tests. Estos lo matan.
+ * roundMoney redondea a PESO ENTERO (COP no tiene centavos en la operación).
+ * Casos ADVERSARIALES a nivel peso: un flip del modo (round→floor/ceil)
+ * sobreviviría a las demás suites (inputs enteros); estos lo matan.
  */
-describe('roundMoney — modo de redondeo a nivel centavo', () => {
-  it('redondea hacia ARRIBA el medio centavo alto (floor fallaría)', () => {
-    expect(roundMoney(1.006)).toBe(1.01);
-    expect(roundMoney(34.965000000000003)).toBe(34.97);
+describe('roundMoney — peso entero (COP sin centavos)', () => {
+  it('redondea hacia ARRIBA el medio peso alto (floor fallaría)', () => {
+    expect(roundMoney(1342.5)).toBe(1343); // 15% de $8.950
+    expect(roundMoney(7607.6)).toBe(7608);
   });
 
-  it('redondea hacia ABAJO el medio centavo bajo (ceil fallaría)', () => {
-    expect(roundMoney(1.004)).toBe(1.0);
-    expect(roundMoney(99.991)).toBe(99.99);
+  it('redondea hacia ABAJO el medio peso bajo (ceil fallaría)', () => {
+    expect(roundMoney(7607.4)).toBe(7607);
+    expect(roundMoney(99.49)).toBe(99);
+  });
+
+  it('un total con centavos queda entero (cuadra el split/arqueo)', () => {
+    expect(roundMoney(7607.5)).toBe(7608);
+    expect(Number.isInteger(roundMoney(1234.567))).toBe(true);
   });
 
   it('negativos: simétrico con Math.round (deudas/reversos)', () => {
-    expect(roundMoney(-1.006)).toBe(-1.01);
-    expect(roundMoney(-1.004)).toBe(-1.0);
+    expect(roundMoney(-1342.6)).toBe(-1343);
+    expect(roundMoney(-1342.4)).toBe(-1342);
   });
 });
 

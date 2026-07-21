@@ -42,6 +42,8 @@ export class KitchenInventoryService {
         delta: -Math.abs(input.quantity),
         type: 'WASTE',
         notes: input.reason,
+        // §3.3: un reintento tras respuesta perdida reusa la key → no duplica la merma.
+        idempotencyKey: input.idempotencyKey,
       },
       userId,
     );

@@ -17,6 +17,12 @@ const CERCA = { customerLat: 6.1705, customerLng: -75.5835 }; // ~0.6 km
 const LEJOS = { customerLat: 4.711, customerLng: -74.0721 }; // Bogotá, ~232 km
 const DIRECCION = 'Cra 43A #5-15, torre 2, apto 502';
 
+/** Hoy en YYYY-MM-DD local (nunca toISOString: en Bogotá corre el día). */
+const ymdLocalToday = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 describe('Pedidos a domicilio E2E', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -216,6 +222,199 @@ describe('Pedidos a domicilio E2E', () => {
     });
   });
 
+  describe('el costo del envío', () => {
+    const crearDom = () =>
+      order({ type: 'WEB_DELIVERY', deliveryAddress: DIRECCION, ...CERCA }).expect(201);
+
+    it('el pedido nace SIN envío: el total es solo la comida', async () => {
+      const { body } = await crearDom();
+      expect(body.order.total).toBe(5000);
+      const sale = await prisma.sale.findUniqueOrThrow({ where: { id: body.order.id } });
+      expect(Number(sale.deliveryFee)).toBe(0);
+    });
+
+    it('NO le manda instrucciones de pago al crearlo: el total todavía no es real', async () => {
+      const { body } = await crearDom();
+      // §4.1: assertar el ESTADO, no el timing. El flag `notified_payment_instructions`
+      // queda en false al crear un domicilio (a diferencia del pickup, que lo prende
+      // al instante); antes un sleep(800) probaba la ausencia por carrera → falso
+      // verde si el dispatch fire-and-forget tardaba > 800ms en CI.
+      const sale = await prisma.sale.findUniqueOrThrow({ where: { id: body.order.id } });
+      expect(sale.notified_payment_instructions).toBe(false);
+      // Y no hay ninguna fila del stage todavía.
+      const msg = await prisma.whatsAppMessage.findFirst({
+        where: { saleId: body.order.id, stage: 'payment_instructions' },
+      });
+      expect(msg).toBeNull();
+    });
+
+    it('el cajero asigna el envío → el total lo suma y SALE el WhatsApp', async () => {
+      const { body } = await crearDom();
+      const res = await request
+        .patch(`/sales/${body.order.id}/delivery-fee`)
+        .set(auth())
+        .send({ fee: 6000 })
+        .expect(200);
+
+      expect(res.body.deliveryFee).toBe(6000);
+      expect(res.body.total).toBe(11000); // 5000 comida + 6000 envío
+      expect(res.body.subtotal).toBe(5000); // el subtotal NO se toca
+
+      const msg = await waitForMessage(body.order.id, 'payment_instructions');
+      expect(msg.body).toContain('11.000'); // el total REAL, no el de la comida
+    });
+
+    it('y el cobro valida contra ese total, no contra el de la comida', async () => {
+      const { body } = await crearDom();
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+
+      // Pagar solo la comida ya no alcanza.
+      await request
+        .post(`/sales/${body.order.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 5000 })
+        .expect(400);
+
+      await request
+        .post(`/sales/${body.order.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 11000 })
+        .expect(201);
+    });
+
+    it('el envío SÍ cuenta como ingreso: el reparto es un servicio que se vende', async () => {
+      const hoy = ymdLocalToday();
+      const revenueDe = async (): Promise<number> =>
+        (await request.get(`/reports/sales-summary?from=${hoy}&to=${hoy}`).set(auth()).expect(200))
+          .body.totals.revenue;
+      // Delta, no valor absoluto: otros tests de la suite ya cobraron ventas.
+      const antes = await revenueDe();
+
+      const { body } = await crearDom();
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+      await request
+        .post(`/sales/${body.order.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 11000 })
+        .expect(201);
+
+      // El cliente pagó 11.000 y los 11.000 son ingreso: 5.000 de comida y 6.000
+      // de reparto. Lo que se le paga al domiciliario es un GASTO aparte — así
+      // tesorería cuadra sola (deriva ingresos de sale_payments, gastos de los
+      // módulos) sin excluir nada en ningún lado.
+      expect((await revenueDe()) - antes).toBe(11000);
+    });
+
+    it('un pedido para recoger no puede llevar envío', async () => {
+      const { body } = await order({ type: 'WEB_PICKUP' }).expect(201);
+      await request
+        .patch(`/sales/${body.order.id}/delivery-fee`)
+        .set(auth())
+        .send({ fee: 6000 })
+        .expect(400);
+    });
+
+    it('ya cobrado, el envío no se toca', async () => {
+      const { body } = await crearDom();
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+      await request
+        .post(`/sales/${body.order.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 11000 })
+        .expect(201);
+      await request
+        .patch(`/sales/${body.order.id}/delivery-fee`)
+        .set(auth())
+        .send({ fee: 9000 })
+        .expect(400);
+    });
+
+    it('rechaza un envío negativo, cero o absurdo', async () => {
+      const { body } = await crearDom();
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: -1 }).expect(400);
+      // §1.4: fee=0 ya NO es válido (un domicilio tiene costo; "gratis" va como descuento).
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 0 }).expect(400);
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 999999 }).expect(400);
+    });
+
+    // §1.4: cobrar un domicilio SIN cotizar el envío deja el envío incobrable → se bloquea.
+    it('no se puede cobrar un domicilio sin el envío asignado', async () => {
+      const { body } = await crearDom();
+      await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+      const res = await request
+        .post(`/sales/${body.order.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 5000 })
+        .expect(400);
+      expect(JSON.stringify(res.body)).toContain('envío');
+    });
+
+    // §0.2: editar un domicilio con envío asignado NO debe perder el envío del
+    // total (el recálculo omitía deliveryFee → violaba el CHECK → 500 en loop).
+    it('editar los ítems preserva el envío en el total (no revienta con 500)', async () => {
+      const { body } = await crearDom();
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+
+      // Sube a 2 unidades: subtotal 10.000 + envío 6.000 = 16.000.
+      const edited = await request
+        .patch(`/sales/${body.order.id}/items`)
+        .set(auth())
+        .send({ items: [{ productId, quantity: 2 }] })
+        .expect(200);
+
+      expect(edited.body.subtotal).toBe(10000);
+      expect(edited.body.deliveryFee).toBe(6000);
+      expect(edited.body.total).toBe(16000);
+    });
+
+    // §0.3: corregir la tarifa debe REENVIAR el WhatsApp (antes el flag
+    // idempotente lo bloqueaba y el cliente se quedaba con el total viejo).
+    it('cambiar el envío reenvía las instrucciones con el total nuevo', async () => {
+      const { body } = await crearDom();
+      const saleId = body.order.id as string;
+
+      await request.patch(`/sales/${saleId}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await waitForMessage(saleId, 'payment_instructions'); // 1er envío ($11.000)
+
+      // Corrección de tarifa: 6.000 → 9.000 (total 14.000).
+      const res = await request
+        .patch(`/sales/${saleId}/delivery-fee`)
+        .set(auth())
+        .send({ fee: 9000 })
+        .expect(200);
+      expect(res.body.total).toBe(14000);
+
+      // Debe existir un SEGUNDO mensaje con el total nuevo.
+      let second: { body: string } | null = null;
+      for (let i = 0; i < 50; i++) {
+        const msgs = await prisma.whatsAppMessage.findMany({
+          where: { saleId, stage: 'payment_instructions' },
+        });
+        second = msgs.find((m) => m.body.includes('14.000')) ?? null;
+        if (msgs.length >= 2 && second) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(second).not.toBeNull();
+    });
+
+    // §0.3 (contraparte): reasignar el MISMO envío no debe duplicar el WhatsApp.
+    it('reasignar el mismo envío NO reenvía (idempotente)', async () => {
+      const { body } = await crearDom();
+      const saleId = body.order.id as string;
+      await request.patch(`/sales/${saleId}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await waitForMessage(saleId, 'payment_instructions');
+      await request.patch(`/sales/${saleId}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await new Promise((r) => setTimeout(r, 500));
+      const msgs = await prisma.whatsAppMessage.findMany({
+        where: { saleId, stage: 'payment_instructions' },
+      });
+      expect(msgs).toHaveLength(1);
+    });
+  });
+
   describe('el WhatsApp de "listo"', () => {
     it('a un domicilio le dice que va en camino, no que lo retire', async () => {
       const created = await order({
@@ -225,10 +424,11 @@ describe('Pedidos a domicilio E2E', () => {
       }).expect(201);
 
       await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+      await request.patch(`/sales/${created.body.order.id}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
       await request
         .post(`/sales/${created.body.order.id}/confirm-payment`)
         .set(auth())
-        .send({ method: 'CASH', amountReceived: 5000 })
+        .send({ method: 'CASH', amountReceived: 11000 })
         .expect(201);
       await request.post(`/sales/${created.body.order.id}/mark-ready`).set(auth()).expect(201);
 

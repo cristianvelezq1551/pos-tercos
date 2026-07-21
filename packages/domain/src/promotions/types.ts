@@ -32,8 +32,12 @@ export type PromotionTypeKind = 'PERCENT_OFF' | 'BOGO' | 'FIXED_OFF' | 'COMBO_OF
  * `timeStart` / `timeEnd` formato `HH:MM:SS` 24h. Si `timeStart > timeEnd`,
  * la ventana cruza medianoche (ej. start=22:00, end=02:00 cubre 22:00-02:00).
  *
- * `activeFrom` / `activeTo` son fechas (sin hora). Si están seteadas, la
- * promo aplica solo en ese rango cerrado de fechas.
+ * `activeFrom` / `activeTo` son días calendario en formato `YYYY-MM-DD` (sin
+ * hora ni zona). Si están seteados, la promo aplica solo en ese rango cerrado.
+ * Se usa string —no Date— a propósito: una Date de "medianoche" es ambigua
+ * (UTC vs local) y el backend (@db.Date UTC) y el frontend (local) la
+ * construían distinto → la promo moría un día antes/después según la zona.
+ * El día calendario en string es inequívoco y se compara lexicográficamente.
  *
  * Campos por tipo (FASE 12):
  *  - PERCENT_OFF: `discountPct` requerido.
@@ -59,8 +63,10 @@ export interface PromotionDef {
   daysOfWeekMask: number;
   timeStart: string;
   timeEnd: string;
-  activeFrom: Date | null;
-  activeTo: Date | null;
+  /** Día calendario `YYYY-MM-DD` inclusive (o null = sin límite inferior). */
+  activeFrom: string | null;
+  /** Día calendario `YYYY-MM-DD` inclusive (o null = sin límite superior). */
+  activeTo: string | null;
   /** Productos a los que aplica. Set para lookup O(1). */
   productIds: Set<string>;
 }

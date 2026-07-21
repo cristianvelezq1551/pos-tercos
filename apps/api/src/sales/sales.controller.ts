@@ -24,6 +24,8 @@ import {
   IdempotencyKeySchema,
   OpenDrawerSchema,
   SaleStatusEnum,
+  SaleTypeEnum,
+  SetDeliveryFeeSchema,
   SyncOfflineSaleSchema,
   VoidSaleSchema,
   type ChangeSalePayment,
@@ -36,6 +38,7 @@ import {
   type SaleStatus,
   type SaleStatusLogEntry,
   type SendToKitchenResponse,
+  type SetDeliveryFee,
   type SyncOfflineSale,
   type VoidSale,
 } from '@pos-tercos/types';
@@ -126,6 +129,20 @@ export class SalesController {
     @Body(new ZodValidationPipe(ConfirmPaymentSchema)) body: ConfirmPayment,
   ): Promise<Sale> {
     return this.sales.confirmPayment(id, body, user.sub);
+  }
+
+  /**
+   * El cajero asigna el costo del envío (lo pregunta al domiciliario por chat).
+   * Recalcula el total y dispara el WhatsApp con el número real.
+   */
+  @CashierAccess()
+  @Patch(':id/delivery-fee')
+  setDeliveryFee(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetDeliveryFeeSchema)) body: SetDeliveryFee,
+  ): Promise<Sale> {
+    return this.sales.setDeliveryFee(id, body.fee, user.sub);
   }
 
   /** Pedido WEB pagado → "listo para retirar": dispara el WhatsApp al cliente. */
@@ -246,6 +263,15 @@ export class SalesController {
       const r = SaleStatusEnum.safeParse(status);
       if (!r.success) throw new BadRequestException(`Status inválido: ${status}`);
       parsedStatus = r.data;
+    }
+    // §2.15: `type` (acepta CSV) se validaba crudo → `?type=FOO` daba un 500 de
+    // Prisma (enum inválido en el WHERE). Mismo trato que `status`: 400 limpio.
+    if (type) {
+      for (const t of type.split(',').map((s) => s.trim())) {
+        if (!SaleTypeEnum.safeParse(t).success) {
+          throw new BadRequestException(`Tipo de venta inválido: ${t}`);
+        }
+      }
     }
     // B9: fechas/límite inválidos son 400 del cliente, no un 500 de Prisma
     // (Invalid Date / take: NaN).

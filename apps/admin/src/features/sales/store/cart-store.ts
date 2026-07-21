@@ -12,6 +12,7 @@ interface AddInput {
   quantity: number;
   unitPrice: number;
   notes?: string;
+  isCombo: boolean;
 }
 
 export interface LastSaleSummary {
@@ -89,6 +90,7 @@ export const useCartStore = create<CartState>((set) => ({
             quantity: input.quantity,
             unitPrice: input.unitPrice,
             notes: input.notes,
+            isCombo: input.isCombo,
           },
         ],
       };

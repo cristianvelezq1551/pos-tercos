@@ -44,6 +44,23 @@ export function assertRequiredEnv(): void {
     );
   }
 
+  // §2.4: los selectores de adapter deben ser uno de los valores conocidos. Un
+  // typo (ej. "R2 " con espacio, "cloudflare") caía a `local` con solo un log →
+  // en prod eso es pérdida de fotos/recibos en el filesystem EFÍMERO de Railway.
+  // Se valida SIEMPRE (dev y prod): un valor inválido mata el boot.
+  const enumEnv: ReadonlyArray<[string, readonly string[]]> = [
+    ['STORAGE_PROVIDER', ['local', 'r2']],
+    ['PRINTER_PROVIDER', ['local', 'escpos']],
+  ];
+  for (const [key, allowed] of enumEnv) {
+    const v = process.env[key];
+    if (v !== undefined && !allowed.includes(v)) {
+      throw new Error(
+        `${key}="${v}" no es un valor válido. Permitidos: ${allowed.join(' | ')}.`,
+      );
+    }
+  }
+
   // Piso de entropía en prod: un secret presente pero trivial (ej. "secret")
   // arrancaría sin alarma y firma tokens triviales de forjar.
   if (process.env.NODE_ENV === 'production') {
@@ -62,6 +79,33 @@ export function assertRequiredEnv(): void {
       if (!process.env[key]) {
         console.warn(`⚠️  [env] ${key} no está seteada en producción — ${consequence}.`);
       }
+    }
+
+    // §2.4: STORAGE_PROVIDER=local en prod escribe al filesystem efímero de
+    // Railway → las fotos de facturas/comprobantes se pierden en cada redeploy.
+    // Debe ser una elección EXPLÍCITA (ALLOW_LOCAL_STORAGE=1), no un default.
+    if (process.env.STORAGE_PROVIDER === 'local' && process.env.ALLOW_LOCAL_STORAGE !== '1') {
+      throw new Error(
+        'STORAGE_PROVIDER=local en producción pierde las fotos en cada redeploy ' +
+          '(filesystem efímero). Usá `r2` + R2_* (deploy.md §1.2). Si de verdad ' +
+          'querés local a propósito: ALLOW_LOCAL_STORAGE=1.',
+      );
+    }
+
+    // §2.5: el pedido web y las alertas antifraude dependen 100% de WhatsApp.
+    // Con WHATSAPP_REQUIRED=true (recomendado en prod) la ausencia TOTAL de
+    // proveedor deja de ser un warning y mata el boot — mejor no arrancar que
+    // arrancar mudo (el cliente nunca recibiría cómo pagar).
+    if (
+      process.env.WHATSAPP_REQUIRED === 'true' &&
+      !process.env.KAPSO_API_KEY &&
+      !process.env.OPENWA_URL
+    ) {
+      throw new Error(
+        'WHATSAPP_REQUIRED=true pero no hay proveedor configurado: seteá KAPSO_* ' +
+          '(o OPENWA_*). Sin WhatsApp el cliente nunca recibe cómo pagar y no ' +
+          'salen alertas al dueño.',
+      );
     }
 
     // Print-agent accesible por red SIN secret = cualquier web que visite el

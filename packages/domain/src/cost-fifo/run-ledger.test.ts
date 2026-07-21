@@ -767,6 +767,39 @@ describe('runLedgerFifo · deuda de stock (forzar disponible / inventario negati
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 80000, unknownQty: 0 });
   });
 
+  it('§1.6: void tras un lote SIN costo (cold start) que saldó la deuda restaura las unidades', () => {
+    const r = runLedgerFifo([
+      // Venta forzada sin stock → deuda de 3 (sin historial → desconocida).
+      mov({ delta: -3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-01T10:00:00Z') }),
+      // Carga INICIAL sin costo (cold start) que salda físicamente la deuda.
+      mov({ delta: 10, unitCost: null, type: 'INITIAL', createdAt: new Date('2026-01-02T10:00:00Z') }),
+      // Void: las 3 unidades saldadas deben volver a la cola (antes se perdían).
+      mov({ delta: 3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-03T10:00:00Z') }),
+    ]);
+    const cq = r.saleIngredientCost.get('sale1')?.get('ing1');
+    expect(cq).toEqual({ cost: 0, qty: 0, unknownQty: 0, estimatedQty: 0 });
+    // 10 disponibles de nuevo (7 sobrantes + 3 devueltas), todas de costo desconocido.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 0, unknownQty: 10 });
+  });
+
+  it('§1.6: con estimado previo, el void tras el lote sin costo netea el costo a 0 y devuelve las unidades', () => {
+    const r = runLedgerFifo(
+      [
+        mov({ delta: -3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-01T10:00:00Z') }),
+        mov({ delta: 10, unitCost: null, type: 'INITIAL', createdAt: new Date('2026-01-02T10:00:00Z') }),
+        mov({ delta: 3, type: 'SALE', sourceId: 'sale1', createdAt: new Date('2026-01-03T10:00:00Z') }),
+      ],
+      undefined,
+      { fallbackUnitCost: { 'INGREDIENT:ing1': 300 } },
+    );
+    const cq = r.saleIngredientCost.get('sale1')?.get('ing1');
+    // El estimado cargó 3×300=900; el void lo revierte → costo neto 0.
+    expect(cq?.cost).toBe(0);
+    expect(cq?.qty).toBe(0);
+    // Unidades restauradas (re-inyectadas con la base del estimado).
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(10);
+  });
+
   it('la deuda cruza el corte del snapshot y la COMPRA post-corte la salda', () => {
     const pre = [
       mov({ delta: -3, type: 'SALE', sourceId: 'forzada', createdAt: new Date('2026-01-31T10:00:00Z') }),

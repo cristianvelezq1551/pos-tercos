@@ -13,10 +13,9 @@ import type {
 /**
  * Cajero aceptó el pedido → pedimos pago + comprobante.
  *
- * En domicilio se aclara que el total NO incluye el envío: el costo del
- * domicilio se paga aparte al repartidor y NO entra al sistema (decisión del
- * dueño 2026-07-16). Sin esta línea el cliente transferiría de más y el cobro
- * —que valida monto exacto— no cuadraría.
+ * En domicilio esto sale recién cuando el cajero asigna el envío: el total ya
+ * lo incluye (el cliente transfiere UN solo monto). Antes de eso el número no
+ * sería real.
  */
 export function buildPaymentInstructionsMessage(
   sale: WhatsAppSaleSnapshot,
@@ -26,7 +25,7 @@ export function buildPaymentInstructionsMessage(
     ? `\n\n${opts.paymentInstructions.trim()}`
     : '';
   const delivery = sale.deliveryAddress?.trim()
-    ? `\n\nEse total es solo de tu pedido: el domicilio se paga aparte al repartidor cuando llegue. Te confirmamos el valor por este chat.`
+    ? `\n\nEse total ya incluye el domicilio.`
     : '';
   return (
     `${greet(sale.customerName)}, recibimos tu pedido #${sale.receiptNumber} en ${opts.businessName}. ` +

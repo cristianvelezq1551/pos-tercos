@@ -66,7 +66,7 @@ export function RadiusSection({
         label="Hacemos domicilios"
         description={
           config.deliveryEnabled
-            ? 'La web ofrece “A domicilio” y le pide la dirección al cliente. El costo del envío NO entra al pedido: se le cobra aparte al repartidor.'
+            ? 'La web ofrece “A domicilio” y le pide la dirección al cliente. El costo del envío lo cargás vos en cada pedido, antes de cobrar.'
             : 'La web solo ofrece “Recoger en el local”.'
         }
       />

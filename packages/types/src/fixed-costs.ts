@@ -104,6 +104,10 @@ export const MonthlyFinancialStatementSchema = z.object({
    *  faltante) → el costo está SUBESTIMADO y la utilidad neta sobreestimada.
    *  Mostrar aviso de "COGS parcial" para que el dueño no lea una ganancia falsa. */
   cogsPartial: z.boolean(),
+  /** §1.12: true si parte del COGS se costeó con un ESTIMADO (venta forzada sin
+   *  stock, sin factura aún). El costo se corrige al subir la factura → hasta
+   *  entonces el margen es aproximado. */
+  cogsEstimated: z.boolean(),
   grossMargin: z.number(),
   /** grossMargin / revenue. 0 si revenue=0. */
   grossMarginPct: z.number(),
@@ -121,6 +125,9 @@ export const MonthlyFinancialStatementSchema = z.object({
   /** Costo (a COGS FIFO) de los pedidos reembolsados en el período: la comida se
    *  preparó pero se devolvió la plata → pérdida real que baja el neto. */
   refundCost: z.number(),
+  /** Costo (a COGS FIFO) de la merma del período: insumo/producto tirado → pérdida
+   *  real que baja el neto (decisión del dueño 2026-07-21). Línea aparte del COGS. */
+  wasteCost: z.number(),
   netResult: z.number(),
   /** Ventas necesarias para cubrir todo (≈ totalFixed / grossMarginPct). null si no se puede calcular. */
   breakEven: z.number().nullable(),

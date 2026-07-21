@@ -74,6 +74,7 @@ export function EditSaleModal({
   // descuento manual (de línea u orden) desactiva promos para toda la venta;
   // sin manual, aplican las promos activas AHORA. El descuento sobre el total
   // lo preserva el server (no se reenvía); los de línea se reenvían abajo.
+  const comboById = new Map(products.map((p) => [p.id, p.isCombo] as const));
   const cartLines: CartLine[] = lines.map((l, i) => ({
     lineId: String(i),
     productId: l.productId,
@@ -82,6 +83,8 @@ export function EditSaleModal({
     modifiers: [],
     quantity: l.quantity,
     unitPrice: l.unitPrice,
+    // COMBO_OFF: el estimado debe usar el mismo isCombo que el server (computeLine).
+    isCombo: comboById.get(l.productId) ?? false,
   }));
   const manual: ManualCartDiscounts | undefined = (() => {
     if (!sale) return undefined;

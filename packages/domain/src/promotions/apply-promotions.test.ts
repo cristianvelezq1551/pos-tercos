@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { applyPromotion } from './apply-promotions';
-import type { ApplyPromotionInput, PromotionDef } from './types';
+import { applyPromotion, getDayOfWeekBit, withinTimeWindow } from './apply-promotions';
+import { DAY_BIT, type ApplyPromotionInput, type PromotionDef } from './types';
 
 const NOW = new Date('2026-05-04T15:00:00');
 
@@ -211,4 +211,106 @@ it('mejor descuento absoluto gana: PERCENT 10% ($1k) vs FIXED $2k → gana FIXED
   eq(r.lineDiscount, 2000);
 });
 
+// Rango de fechas activeFrom/activeTo (auditoría §0.6). activeFrom/activeTo son
+// `YYYY-MM-DD`; la comparación es contra el día calendario LOCAL de la venta.
+// El bug histórico: con Date de medianoche (UTC vs local) la promo moría un día
+// antes en Bogotá. Con string ISO es inequívoco corra en la zona que corra.
+describe('rango de fechas (activeFrom / activeTo)', () => {
+  const dated = (activeFrom: string | null, activeTo: string | null): PromotionDef[] => [
+    {
+      ...PROMO_BASE,
+      id: 'dpct',
+      type: 'PERCENT_OFF',
+      discountPct: 0.1,
+      productIds: new Set(['p1']),
+      activeFrom,
+      activeTo,
+    },
+  ];
+  // Mediodía local del último día de la ventana — la hora del día NO debe
+  // importar (antes, a las 19:00 local ya "caía" al día siguiente en UTC).
+  const lastDayNoon = new Date('2026-07-31T12:00:00');
+  const lastDayLateNight = new Date('2026-07-31T23:30:00');
+  const nextDay = new Date('2026-08-01T00:30:00');
+  const firstDay = new Date('2026-07-01T00:30:00');
+  const beforeFirst = new Date('2026-06-30T23:30:00');
+
+  it('aplica el ÚLTIMO día de activeTo (mediodía)', () => {
+    const r = applyPromotion(input({ at: lastDayNoon }), dated(null, '2026-07-31'));
+    eq(r.lineDiscount, 1000);
+  });
+  it('aplica el último día de activeTo aun de noche (23:30 local)', () => {
+    const r = applyPromotion(input({ at: lastDayLateNight }), dated(null, '2026-07-31'));
+    eq(r.lineDiscount, 1000);
+  });
+  it('NO aplica el día siguiente a activeTo', () => {
+    const r = applyPromotion(input({ at: nextDay }), dated(null, '2026-07-31'));
+    eq(r.lineDiscount, 0);
+    eq(r.appliedPromotionId, null);
+  });
+  it('aplica el PRIMER día de activeFrom', () => {
+    const r = applyPromotion(input({ at: firstDay }), dated('2026-07-01', null));
+    eq(r.lineDiscount, 1000);
+  });
+  it('NO aplica el día anterior a activeFrom', () => {
+    const r = applyPromotion(input({ at: beforeFirst }), dated('2026-07-01', null));
+    eq(r.lineDiscount, 0);
+  });
+  it('rango cerrado [from, to]: dentro aplica, fuera no', () => {
+    const promos = dated('2026-07-01', '2026-07-31');
+    eq(applyPromotion(input({ at: lastDayNoon }), promos).lineDiscount, 1000);
+    eq(applyPromotion(input({ at: nextDay }), promos).lineDiscount, 0);
+    eq(applyPromotion(input({ at: beforeFirst }), promos).lineDiscount, 0);
+  });
+});
+
 }); // describe('applyPromotion')
+
+// §4.9: ventana horaria (incluye cruce de medianoche) y máscara de días — antes
+// sin tests directos. `at` usa hora/día LOCAL del runtime.
+describe('withinTimeWindow', () => {
+  const at = (h: number, m = 0) => new Date(2026, 4, 4, h, m, 0); // lunes 4-may
+  it('ventana normal [start, end): dentro true, bordes correctos', () => {
+    expect(withinTimeWindow('18:00:00', '20:00:00', at(19))).toBe(true);
+    expect(withinTimeWindow('18:00:00', '20:00:00', at(18))).toBe(true); // inclusivo abajo
+    expect(withinTimeWindow('18:00:00', '20:00:00', at(20))).toBe(false); // exclusivo arriba
+    expect(withinTimeWindow('18:00:00', '20:00:00', at(12))).toBe(false);
+  });
+  it('cruce de medianoche 22:00→02:00 cubre [22,24) ∪ [0,2)', () => {
+    expect(withinTimeWindow('22:00:00', '02:00:00', at(23))).toBe(true);
+    expect(withinTimeWindow('22:00:00', '02:00:00', at(1))).toBe(true);
+    expect(withinTimeWindow('22:00:00', '02:00:00', at(2))).toBe(false); // exclusivo
+    expect(withinTimeWindow('22:00:00', '02:00:00', at(21))).toBe(false);
+    expect(withinTimeWindow('22:00:00', '02:00:00', at(12))).toBe(false);
+  });
+  it('start === end = ventana vacía (defensivo)', () => {
+    expect(withinTimeWindow('12:00:00', '12:00:00', at(12))).toBe(false);
+  });
+});
+
+describe('getDayOfWeekBit + máscara de días', () => {
+  it('mapea el día calendario local al bit correcto', () => {
+    expect(getDayOfWeekBit(new Date(2026, 4, 4))).toBe(DAY_BIT.MONDAY); // 4-may-2026 = lunes
+    expect(getDayOfWeekBit(new Date(2026, 4, 3))).toBe(DAY_BIT.SUNDAY);
+    expect(getDayOfWeekBit(new Date(2026, 4, 9))).toBe(DAY_BIT.SATURDAY);
+  });
+  it('la promo NO aplica si su máscara excluye el día de la venta', () => {
+    const monday = new Date(2026, 4, 4, 15, 0, 0);
+    const base = {
+      id: 'd',
+      type: 'PERCENT_OFF' as const,
+      discountPct: 0.1,
+      timeStart: '00:00:00',
+      timeEnd: '23:59:59',
+      activeFrom: null,
+      activeTo: null,
+      productIds: new Set(['p1']),
+    };
+    // Solo martes (bit 2): un lunes NO aplica.
+    const onlyTue: PromotionDef = { ...base, daysOfWeekMask: DAY_BIT.TUESDAY };
+    eq(applyPromotion(input({ at: monday }), [onlyTue]).lineDiscount, 0);
+    // Incluye lunes: SÍ aplica.
+    const withMon: PromotionDef = { ...base, daysOfWeekMask: DAY_BIT.MONDAY | DAY_BIT.TUESDAY };
+    eq(applyPromotion(input({ at: monday }), [withMon]).lineDiscount, 1000);
+  });
+});

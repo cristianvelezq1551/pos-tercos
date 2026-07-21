@@ -8,7 +8,7 @@ import {
   type JwtAccessPayload,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess, CashierAccess } from '../auth/decorators/roles.decorator';
+import { AdminAccess, CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PaymentMethodsService } from './payment-methods.service';
 
@@ -30,8 +30,11 @@ export class PaymentMethodsController {
     return this.methods.listAll();
   }
 
-  /** Crear un medio de pago custom (digital). Admin/Dueño. */
-  @AdminAccess()
+  // §3.8: las ESCRITURAS son Dueño-only. El operativo que cobra no debe poder
+  // apagar `requiresVerification` de un método digital y auto-confirmarse pagos
+  // sin doble verificación (era AdminAccess → superficie de fraude).
+  /** Crear un medio de pago custom (digital). Solo Dueño. */
+  @OnlyDueno()
   @Post()
   create(
     @CurrentUser() user: JwtAccessPayload,
@@ -40,8 +43,8 @@ export class PaymentMethodsController {
     return this.methods.create(body, user.sub);
   }
 
-  /** Editar un medio de pago (nombre, habilitado, verificación, reconciliación, orden). */
-  @AdminAccess()
+  /** Editar un medio de pago (nombre, habilitado, verificación, reconciliación, orden). Solo Dueño. */
+  @OnlyDueno()
   @Patch(':code')
   update(
     @CurrentUser() user: JwtAccessPayload,
@@ -51,8 +54,8 @@ export class PaymentMethodsController {
     return this.methods.update(code, body, user.sub);
   }
 
-  /** Borrar un medio de pago (no built-in de sistema). Admin/Dueño. */
-  @AdminAccess()
+  /** Borrar un medio de pago (no built-in de sistema). Solo Dueño. */
+  @OnlyDueno()
   @Delete(':code')
   async remove(
     @CurrentUser() user: JwtAccessPayload,

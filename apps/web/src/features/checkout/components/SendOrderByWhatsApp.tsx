@@ -36,8 +36,18 @@ export function SendOrderByWhatsApp({ order }: { order: PublicWebOrder }) {
     deliveryNotes: order.deliveryNotes,
   });
 
-  // Sin teléfono configurado no hay a dónde escribir.
-  if (!link) return null;
+  // §3.6: sin teléfono configurado (o SSR del hero caído) no hay a dónde
+  // escribir. Antes devolvía null → si además faltaba el envío, la pantalla
+  // quedaba SIN ningún call-to-action (dead-end). Mostramos un reaseguro:
+  // el local igual contacta al cliente.
+  if (!link) {
+    return (
+      <p className="rounded-xl border border-border bg-card p-4 text-center text-sm text-muted-foreground">
+        Te vamos a escribir por WhatsApp para coordinar el pago de tu pedido{' '}
+        <strong className="text-foreground">#{order.receiptNumber}</strong>.
+      </p>
+    );
+  }
 
   return (
     <a

@@ -78,7 +78,7 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements', icon: PackageOpen },
   { section: 'Inventario', label: 'Conteo físico', href: '/inventory/counts', icon: ClipboardCheck },
   { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet, onlyDueno: true },
-  { section: 'Caja', label: 'Medios de pago', href: '/medios-pago', icon: CreditCard },
+  { section: 'Caja', label: 'Medios de pago', href: '/medios-pago', icon: CreditCard, onlyDueno: true },
   { section: 'Personal', label: 'Usuarios', href: '/users', icon: Users, onlyDueno: true },
   { section: 'Personal', label: 'Nómina', href: '/workers/semana', icon: CalendarDays, onlyDueno: true },
   {

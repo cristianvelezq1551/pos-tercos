@@ -133,10 +133,12 @@ function promoMatches(p: PromotionDef, input: ApplyPromotionInput): boolean {
 }
 
 function withinActiveDates(p: PromotionDef, at: Date): boolean {
-  // Comparar a nivel de día (ignorar hora para activeFrom/activeTo).
-  const dayKey = startOfDay(at).getTime();
-  if (p.activeFrom && dayKey < startOfDay(p.activeFrom).getTime()) return false;
-  if (p.activeTo && dayKey > startOfDay(p.activeTo).getTime()) return false;
+  // Día calendario LOCAL de la venta (mismo criterio local que day-of-week y
+  // time-window). activeFrom/activeTo son `YYYY-MM-DD` → comparación de strings
+  // ISO, lexicográfica = cronológica. Sin ambigüedad de zona horaria.
+  const day = ymdLocal(at);
+  if (p.activeFrom && day < p.activeFrom) return false;
+  if (p.activeTo && day > p.activeTo) return false;
   return true;
 }
 
@@ -204,9 +206,11 @@ function timeAsSeconds(h: number, m: number, s: number): number {
   return h * 3600 + m * 60 + s;
 }
 
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+/** Día calendario LOCAL de `d` en formato `YYYY-MM-DD` (getters locales). */
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 

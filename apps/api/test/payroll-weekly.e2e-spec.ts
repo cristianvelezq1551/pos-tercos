@@ -257,19 +257,30 @@ describe('Nómina semanal unificada E2E', () => {
   });
 
   it('editar el valor de un día (llegada tarde / ausencia) cambia el adeudo y se revierte', async () => {
-    const entry = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    // Trabajador FRESCO sin abonos: el guard §1.7 solo actúa sobre semanas con
+    // pagos (dailyId ya quedó 100% pagado en el test anterior → editar su día a
+    // la baja sería overpay, cubierto por el test siguiente).
+    const hash = await bcrypt.hash('dev12345', 10);
+    const fresh = await prisma.user.create({
+      data: {
+        email: 'diario-edit@test.local', fullName: 'Edu Editable', role: 'TRABAJADOR',
+        passwordHash: hash, mustChangePwd: false, active: true,
+        payType: 'DAILY', salaryAmount: 60_000, hireDate: new Date(Date.UTC(2020, 0, 1)),
+      },
+    });
+    const entry = (await getWeek()).entries.find((e) => e.userId === fresh.id)!;
     const target = entry.days.find((d) => d.amount === 60_000 && !d.isPaid && !d.isFuture)!;
     expect(target).toBeDefined();
     const owedBefore = entry.owedTotal;
 
     // Llegada tarde: el día vale 20.000 en vez de 60.000.
     await request
-      .post(`/workers/${dailyId}/day`)
+      .post(`/workers/${fresh.id}/day`)
       .set('Authorization', `Bearer ${token}`)
       .send({ workDate: target.date, amount: 20_000, note: 'llegó tarde' })
       .expect(201);
 
-    const edited = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    const edited = (await getWeek()).entries.find((e) => e.userId === fresh.id)!;
     const dayEdited = edited.days.find((d) => d.date === target.date)!;
     expect(dayEdited.amount).toBe(20_000);
     expect(dayEdited.hasOverride).toBe(true);
@@ -277,13 +288,29 @@ describe('Nómina semanal unificada E2E', () => {
 
     // Quitar la excepción → vuelve al valor/día.
     await request
-      .delete(`/workers/${dailyId}/day?date=${target.date}`)
+      .delete(`/workers/${fresh.id}/day?date=${target.date}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    const reverted = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    const reverted = (await getWeek()).entries.find((e) => e.userId === fresh.id)!;
     expect(reverted.days.find((d) => d.date === target.date)!.amount).toBe(60_000);
     expect(reverted.owedTotal).toBe(owedBefore);
+  });
+
+  it('§1.7: editar un día a la baja en una semana YA PAGADA se bloquea (evita overpay)', async () => {
+    // dailyId quedó 100% pagado en "rechaza un abono que supera lo que falta".
+    // Bajar un día ahora dejaría el restante NEGATIVO (plata de más ya entregada)
+    // → se bloquea. El dueño debe anular el abono primero.
+    const entry = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    expect(entry.paidTotal).toBeGreaterThan(0);
+    const target = entry.days.find((d) => d.amount === 60_000 && !d.isFuture)!;
+    expect(target).toBeDefined();
+    const res = await request
+      .post(`/workers/${dailyId}/day`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ workDate: target.date, amount: 20_000, note: 'llegó tarde' })
+      .expect(400);
+    expect(JSON.stringify(res.body)).toContain('NEGATIVO');
   });
 
   it('la semana EN CURSO entra al pendiente de /finanzas como devengado a hoy (inProgress)', async () => {
@@ -302,15 +329,20 @@ describe('Nómina semanal unificada E2E', () => {
       .get(`/reports/finance-summary?year=${n.getFullYear()}&month=${n.getMonth() + 1}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    const inProgressRows = (
+    // §4.1: filtrar la fila de la SEMANA ACTUAL por su periodStart (NO por el
+    // flag inProgress). El último día de la semana `weekEnd <= hoy` ya la cuenta
+    // como CERRADA → misma fila y mismo MONTO pero SIN el flag; el test fallaba
+    // los domingos/último-día. dailyId acumula muchas semanas viejas impagas →
+    // filtrar solo por userId daría N filas; por eso se acota a la semana actual.
+    const currentWeekRows = (
       fin.body.pendingPayroll as Array<{
         userId: string; total: number; inProgress?: boolean; accruedThrough?: string; periodStart: string;
       }>
-    ).filter((p) => p.userId === dailyId && p.inProgress === true);
+    ).filter((p) => p.userId === dailyId && p.periodStart === wk.weekStart);
 
     if (wk.weekStart > todayYmd) {
       // Hoy es descanso → payrollWeekFor devuelve la semana SIGUIENTE: nada en curso.
-      expect(inProgressRows).toHaveLength(0);
+      expect(currentWeekRows).toHaveLength(0);
       return;
     }
 
@@ -321,14 +353,18 @@ describe('Nómina semanal unificada E2E', () => {
     const expected = Math.round((accrued + entry.adjustmentsTotal - entry.paidTotal) * 100) / 100;
 
     if (expected > 0.01) {
-      expect(inProgressRows).toHaveLength(1);
-      expect(inProgressRows[0].accruedThrough).toBe(todayYmd);
-      expect(inProgressRows[0].periodStart).toBe(wk.weekStart);
-      expect(inProgressRows[0].total).toBeCloseTo(expected, 2);
+      expect(currentWeekRows).toHaveLength(1);
+      expect(currentWeekRows[0].total).toBeCloseTo(expected, 2);
       // Los días futuros de la semana NO son deuda: devengado ≤ restante total.
-      expect(inProgressRows[0].total).toBeLessThanOrEqual(entry.remaining + 0.01);
+      expect(currentWeekRows[0].total).toBeLessThanOrEqual(entry.remaining + 0.01);
+      // En curso (todavía NO es el último día) → flag inProgress + accruedThrough.
+      // El último día ya cuenta cerrada (sin flag), pero el monto es el mismo.
+      if (todayYmd < wk.weekEnd) {
+        expect(currentWeekRows[0].inProgress).toBe(true);
+        expect(currentWeekRows[0].accruedThrough).toBe(todayYmd);
+      }
     } else {
-      expect(inProgressRows).toHaveLength(0);
+      expect(currentWeekRows).toHaveLength(0);
     }
   });
 });

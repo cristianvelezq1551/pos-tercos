@@ -455,6 +455,18 @@ export function runLedgerFifo(
             acc.push({ qty: fill, unitCost: lot.unitCost, movementId: lot.movementId, createdAt: lot.createdAt });
             drawsBySource.set(drawKey, acc);
           }
+        } else if (reversedSources.has(d.saleId)) {
+          // §1.6: lote de costo DESCONOCIDO saldando la deuda (cold start con
+          // INITIAL sin costo, producción sin costo). El costo de la venta NO
+          // cambia (sigue estimado/desconocido — honesto), pero IGUAL hay que
+          // registrar el draw para que un void POSTERIOR re-inyecte estas
+          // unidades: antes no se registraba y la valuación las perdía para
+          // siempre. El draw lleva lo que la venta CARGÓ (el estimado, o null si
+          // era desconocida) ⇒ el void netea su costo a 0 y devuelve las unidades.
+          const drawKey = `${d.saleId}:${key}`;
+          const acc = drawsBySource.get(drawKey) ?? [];
+          acc.push({ qty: fill, unitCost: d.estimatedUnitCost, movementId: lot.movementId, createdAt: lot.createdAt });
+          drawsBySource.set(drawKey, acc);
         }
         // Lote de costo desconocido: salda físicamente la deuda pero el costo de
         // la venta sigue como estaba (estimado o desconocido — honesto).

@@ -100,7 +100,14 @@ export class ShiftsController {
 
   @CashierAccess()
   @Get(':id/cash-movements')
-  cashMovements(@Param('id', ParseUUIDPipe) id: string): Promise<CashMovement[]> {
+  async cashMovements(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CashMovement[]> {
+    // §2.14: los movimientos de una caja (montos + motivos) son de SU cajero.
+    // Era el único endpoint de caja sin el check — cualquier cajero leía las
+    // entradas/salidas de cajas ajenas. El dueño ve cualquiera.
+    await this.assertShiftOwnership(user, id);
     return this.shifts.listCashMovements(id);
   }
 

@@ -14,9 +14,10 @@ export function getActivePromoBadge(
   basePrice: number,
   promos: readonly Promotion[],
   at: Date = new Date(),
+  isCombo = false,
 ): ProductPromoBadge | null {
   const defs = promos.filter((p) => p.isActive).map(toPromotionDef);
-  return getPromoBadge(productId, basePrice, defs, at);
+  return getPromoBadge(productId, basePrice, defs, at, isCombo);
 }
 
 /**
@@ -30,6 +31,7 @@ export function getLinePromoDiscount(
   quantity: number,
   promos: readonly Promotion[],
   at: Date = new Date(),
+  isCombo = false,
 ): number {
   const defs = promos.filter((p) => p.isActive).map(toPromotionDef);
   if (defs.length === 0 || quantity <= 0) return 0;
@@ -38,7 +40,7 @@ export function getLinePromoDiscount(
       productId,
       lineSubtotal: roundMoney(unitPrice * quantity),
       quantity,
-      isCombo: false,
+      isCombo,
       at,
     },
     defs,

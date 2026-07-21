@@ -27,6 +27,10 @@ export const PnlReportSchema = z.object({
   salesCount: z.number().int().nonnegative(),
   /** Unidades de insumo consumidas sin costo conocido (termómetro de datos). */
   cogsUnknownQty: z.number(),
+  /** Unidades costeadas con ESTIMADO (venta forzada sin stock, sin factura que
+   *  confirme el precio real). El COGS de esas unidades NO es exacto todavía; se
+   *  corrige al subir la factura. >0 ⇒ mostrar "COGS parcialmente estimado". */
+  cogsEstimatedQty: z.number(),
 });
 export type PnlReport = z.infer<typeof PnlReportSchema>;
 

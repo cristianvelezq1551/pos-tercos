@@ -20,6 +20,8 @@ export type PickerSelection = {
   quantity: number;
   /** unitPrice = base + sizeModifier + sum(modifierDeltas). Sin promos. */
   unitPrice: number;
+  /** Product.isCombo — necesario para que COMBO_OFF se previsualice/cobre igual. */
+  isCombo: boolean;
 };
 
 export function ProductPickerModal({
@@ -73,7 +75,10 @@ export function ProductPickerModal({
   const qty = quantity ?? 0;
   // Descuento de promo para la selección actual (mismo motor que el carrito).
   const lineDiscount = useMemo(
-    () => (product ? getLinePromoDiscount(product.id, unitPrice, qty, promos) : 0),
+    () =>
+      product
+        ? getLinePromoDiscount(product.id, unitPrice, qty, promos, undefined, product.isCombo)
+        : 0,
     [product, unitPrice, qty, promos],
   );
 
@@ -102,6 +107,7 @@ export function ProductPickerModal({
       modifiers: selectedModifiers,
       quantity: qty,
       unitPrice,
+      isCombo: product.isCombo,
     });
     onClose();
   };

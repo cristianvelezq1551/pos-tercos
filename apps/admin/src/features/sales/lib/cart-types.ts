@@ -22,4 +22,7 @@ export interface CartLine {
   unitPrice: number;
   /** Nota de cocina para la línea (ej. "sin cebolla"). */
   notes?: string;
+  /** Product.isCombo — habilita COMBO_OFF (el backend lo cobra; sin este flag
+   *  el preview del carrito no lo mostraba → descuadre de caja en efectivo). */
+  isCombo: boolean;
 }

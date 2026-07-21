@@ -55,6 +55,13 @@ describe('buildNotificationTemplate', () => {
     expect(t.variables).toEqual(['Pedro Pérez', '123', 'Tercos', 'el local']);
   });
 
+  it('§2.6 pickup_ready de un DOMICILIO usa el template "va en camino" con la dirección de entrega', () => {
+    const delivery = { ...SALE, deliveryAddress: 'Cra 43A #5-15, apto 502' };
+    const t = buildNotificationTemplate('pickup_ready', delivery, OPTS);
+    expect(t.name).toBe(WHATSAPP_TEMPLATE_NAMES.delivery_on_way);
+    expect(t.variables).toEqual(['Pedro Pérez', '123', 'Tercos', 'Cra 43A #5-15, apto 502']);
+  });
+
   it('payment_received y canceled: 3 variables; nombre con fallback "Cliente"', () => {
     const anon = { ...SALE, customerName: null };
     expect(buildNotificationTemplate('payment_received', anon, OPTS).variables).toEqual([

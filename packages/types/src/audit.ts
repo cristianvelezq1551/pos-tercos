@@ -75,6 +75,8 @@ export const AuditActionEnum = z.enum([
   'COMANDA_CANCELLED',
   'SALE_ITEMS_EDITED',
   'SALE_PAYMENT_CHANGED',
+  /** El cajero asignó el costo del envío a un domicilio (2026-07-17). */
+  'SALE_DELIVERY_FEE_SET',
   'SALE_CARRIED_OVER',
   'STALE_SALES_SWEPT',
   'OFFLINE_SYNC_CLOCK_DRIFT',

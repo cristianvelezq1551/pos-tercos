@@ -433,6 +433,14 @@ export class SalesService {
         `Sale está en status ${existing.status}, no se puede cobrar (solo PENDIENTE_PAGO).`,
       );
     }
+    // Un domicilio se cobra CON el envío ya cotizado (el fee es > 0 por regla).
+    // fee 0 = "sin asignar" → cobrar ahora dejaría el envío incobrable (después
+    // ya no se puede setear). Bloquear evita la pérdida silenciosa.
+    if (existing.type === 'WEB_DELIVERY' && Number(existing.deliveryFee) <= 0) {
+      throw new BadRequestException(
+        'Asigná el costo del envío antes de cobrar el domicilio.',
+      );
+    }
     const total = Number(existing.total);
     // Normalizar: el pago simple es una cuenta de UNA parte; la dividida trae
     // 2..N. Validación y persistencia idénticas para ambos modos.
@@ -719,6 +727,84 @@ export class SalesService {
       await tx.inventoryMovement.createMany({ data: stockMovementsToCreate });
     }
     return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
+  }
+
+  /**
+   * El cajero asigna el costo del envío a un domicilio (2026-07-17).
+   *
+   * El sistema NO calcula la tarifa: el cajero se la pregunta al domiciliario
+   * por otro chat y la carga acá. El envío entra al `total` porque el cliente
+   * transfiere UN solo monto — sin esto, `confirmPayment` (que valida monto
+   * exacto) rechazaría los $33.000 esperando $27.000.
+   *
+   * Recién al asignarlo sale el WhatsApp con las instrucciones de pago: pedirle
+   * plata antes de saber el envío sería pedirle un total que va a cambiar.
+   *
+   * Solo antes de cobrar: después el monto ya se validó contra el pago.
+   */
+  async setDeliveryFee(saleId: string, fee: number, userId: string): Promise<Sale> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { type: true, status: true, subtotal: true, discountTotal: true, deliveryFee: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (existing.type !== 'WEB_DELIVERY') {
+      throw new BadRequestException('Solo un pedido a domicilio lleva costo de envío.');
+    }
+    if (existing.status !== 'PENDIENTE_PAGO') {
+      throw new BadRequestException(
+        'El envío se asigna antes de cobrar: este pedido ya está cobrado.',
+      );
+    }
+
+    const rounded = roundMoney(fee);
+    const total = roundMoney(
+      Number(existing.subtotal) - Number(existing.discountTotal) + rounded,
+    );
+    // Si el envío CAMBIA (corrección de tarifa), el cliente ya recibió un total
+    // viejo → hay que reenviarle el nuevo. Se libera el flag idempotente en la
+    // MISMA escritura para que el notify() de abajo vuelva a disparar. Sin esto
+    // el 2º WhatsApp nunca salía (flag ya en true) y el cliente transfería mal.
+    const feeChanged = rounded !== Number(existing.deliveryFee);
+    // Guard condicionado por status Y por subtotal/descuento: si un cobro o una
+    // EDICIÓN de ítems entró entre la lectura y esta escritura, el `total` que
+    // calculamos quedó stale → lo condicionamos también por subtotal/discount
+    // para no escribir un total incoherente (violaría el CHECK → 500). count=0
+    // = "el pedido cambió, recargá" (400 limpio, no 500).
+    const claim = await this.prisma.sale.updateMany({
+      where: {
+        id: saleId,
+        status: 'PENDIENTE_PAGO',
+        subtotal: existing.subtotal,
+        discountTotal: existing.discountTotal,
+      },
+      data: {
+        deliveryFee: rounded,
+        total,
+        ...(feeChanged ? { notified_payment_instructions: false } : {}),
+      },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException('El pedido cambió — recargá y volvé a intentar.');
+    }
+
+    await this.audit.log({
+      userId,
+      action: 'SALE_DELIVERY_FEE_SET',
+      entityType: 'sale',
+      entityId: saleId,
+      before: { deliveryFee: Number(existing.deliveryFee) },
+      after: { deliveryFee: rounded, total },
+    });
+
+    // AHORA sí: el cliente recibe el total real (comida + envío).
+    void this.notifications.notify(saleId, 'payment_instructions');
+
+    const row = await this.prisma.sale.findUniqueOrThrow({
+      where: { id: saleId },
+      include: includeFull(),
+    });
+    return toSaleDto(row);
   }
 
   /**

@@ -84,7 +84,9 @@ export class ProductsController {
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get('availability')
   async availability(): Promise<ProductAvailability[]> {
-    const full = await this.products.getAvailability();
+    // §2.8: la variante cacheada (TTL corto) — endpoint público polleado por
+    // anónimos; el cajero usa el interno, siempre fresco.
+    const full = await this.products.getAvailabilityCached();
     return full.map((r) => ({
       productId: r.productId,
       available: r.available,

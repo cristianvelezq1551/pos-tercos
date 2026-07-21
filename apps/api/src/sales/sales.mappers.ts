@@ -69,6 +69,7 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
     })),
     subtotal: sale.subtotal,
     discountTotal: sale.discountTotal,
+    deliveryFee: sale.deliveryFee ?? 0,
     total: sale.total,
     payments: (sale.payments ?? []).map((p) => ({
       method: p.method,
@@ -168,6 +169,7 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     orderDiscountAmount: Number(row.orderDiscountAmount),
     discountReason: row.discountReason,
     voidReason: row.voidReason,
+    deliveryFee: Number(row.deliveryFee),
     deliveryAddress: row.deliveryAddress,
     deliveryNotes: row.deliveryNotes,
     deliveryLat: row.deliveryLat === null ? null : Number(row.deliveryLat),

@@ -5,6 +5,7 @@ import { Button, Money, StatusBadge, cn, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { SALE_STATUS_MAPPING } from '../../sales';
 import { DeliveryAddress } from './DeliveryAddress';
+import { DeliveryFeeField } from './DeliveryFeeField';
 import { cancelWebOrder, markWebOrderReady } from '../api';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -65,6 +66,11 @@ export function WebOrderCard({
       <Money amount={sale.total} size="lg" weight="bold" className="mt-2" />
 
       <DeliveryAddress sale={sale} />
+
+      {/* El envío se asigna ANTES de cobrar: después el monto ya se validó. */}
+      {sale.type === 'WEB_DELIVERY' && sale.status === 'PENDIENTE_PAGO' ? (
+        <DeliveryFeeField sale={sale} onChanged={onChanged} />
+      ) : null}
 
       <div className="mt-3">
         {sale.status === 'PENDIENTE_PAGO' ? (

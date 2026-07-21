@@ -62,8 +62,14 @@ const STATUS_MAP: Record<string, StatusMeta> = {
   LISTO_DESPACHO: {
     icon: PackageCheck,
     iconBg: 'bg-[#16A34A]',
+    // §3.4: un DOMICILIO no se retira — va en camino. El copy se bifurca por
+    // `deliveryAddress` (antes decía "Acércate al mostrador" a todos, mintiéndole
+    // al cliente que pidió a domicilio; el WhatsApp ya bifurca "va en camino").
     title: '¡Listo para retirar!',
-    subtitle: (o) => `Pedido #${o.receiptNumber} · Acércate al mostrador`,
+    subtitle: (o) =>
+      o.deliveryAddress
+        ? `Pedido #${o.receiptNumber} · Va en camino 🛵`
+        : `Pedido #${o.receiptNumber} · Acércate al mostrador`,
     timelineActive: 3,
   },
   ENTREGADO: {
@@ -99,6 +105,15 @@ const STATUS_MAP: Record<string, StatusMeta> = {
     isFailed: true,
   },
 };
+
+/**
+ * En domicilio, mientras el local no cotice el envío con el domiciliario, el
+ * `total` NO es final: mostrarlo como "Total" haría que el cliente transfiera
+ * de menos y el cobro —que valida monto exacto— lo rechazaría.
+ */
+function waitingDeliveryFee(order: PublicWebOrder): boolean {
+  return Boolean(order.deliveryAddress) && order.deliveryFee === 0;
+}
 
 export function OrderStatusView({
   initial,
@@ -140,8 +155,12 @@ export function OrderStatusView({
   }, [order.status, order.createdAt, initial.id, token, order.receiptNumber]);
 
   const showPayment = order.status === 'PENDIENTE_PAGO';
+  const esperandoEnvio = waitingDeliveryFee(order);
   const showPickupBanner = order.status === 'LISTO_DESPACHO';
   const stepsCurrent: 1 | 2 | 3 = order.status === 'PENDIENTE_PAGO' ? 2 : 3;
+  // §3.4: un domicilio no se retira. Todo el copy de "listo/retirar" se bifurca.
+  const isDelivery = Boolean(order.deliveryAddress);
+  const readyTitle = isDelivery ? '¡Va en camino!' : '¡Listo para retirar!';
 
   return (
     <div className="flex flex-col" aria-live="polite">
@@ -158,7 +177,7 @@ export function OrderStatusView({
 
       <div className="flex flex-col gap-2 text-center">
         <h1 className="reveal-up stagger-1 text-3xl font-extrabold leading-tight text-foreground sm:text-4xl">
-          {meta.title}
+          {order.status === 'LISTO_DESPACHO' ? readyTitle : meta.title}
         </h1>
         <p className="reveal-up stagger-2 text-sm text-muted-foreground sm:text-base">{meta.subtitle(order)}</p>
         {conn === 'reconnecting' ? (
@@ -175,7 +194,9 @@ export function OrderStatusView({
             #{order.receiptNumber}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Te avisamos por WhatsApp cuando esté listo para retirar.
+            {isDelivery
+              ? 'Te avisamos por WhatsApp cuando salga hacia tu dirección.'
+              : 'Te avisamos por WhatsApp cuando esté listo para retirar.'}
           </p>
         </div>
       ) : null}
@@ -187,19 +208,49 @@ export function OrderStatusView({
       {showPickupBanner ? (
         <div className="w-full max-w-[420px] rounded-xl border border-[#16A34A] bg-[#16A34A]/10 p-4 text-center">
           <p className="text-sm text-foreground">
-            Acércate al mostrador con tu pedido{' '}
-            <strong className="text-[#16A34A]">#{order.receiptNumber}</strong>.
+            {isDelivery ? (
+              <>
+                Tu pedido{' '}
+                <strong className="text-[#16A34A]">#{order.receiptNumber}</strong> va en
+                camino 🛵 a: {order.deliveryAddress}
+              </>
+            ) : (
+              <>
+                Acércate al mostrador con tu pedido{' '}
+                <strong className="text-[#16A34A]">#{order.receiptNumber}</strong>.
+              </>
+            )}
           </p>
         </div>
       ) : null}
 
       {showPayment ? (
         <div className="flex w-full max-w-[420px] flex-col gap-4">
-          {/* Primero el botón: abrir el chat es la acción que queremos que haga.
-              Las instrucciones quedan abajo por si no lo toca. */}
+          {/* Primero el botón: abrir el chat es la acción que queremos que haga. */}
           <SendOrderByWhatsApp order={order} />
-          <WhatsAppPaymentInfo />
-          <PaymentInstructionsView text={paymentInstructions} />
+          {/* Sin el envío cotizado, el total no es final: pedirle que pague
+              ahora sería pedirle un número que va a cambiar. */}
+          {esperandoEnvio ? (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-center">
+              <p className="text-sm font-semibold text-amber-500">
+                Falta el costo del domicilio
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Mandanos tu pedido por WhatsApp y te confirmamos el total con el envío. Recién
+                ahí hacés la transferencia.
+              </p>
+            </div>
+          ) : (
+            <>
+              <WhatsAppPaymentInfo />
+              {/* El poller trae paymentInstructions FRESCO (incluye el total con
+                  envío una vez cotizado); el prop de SSR quedó con el total de la
+                  creación (sin envío) y solo sirve de fallback. */}
+              <PaymentInstructionsView
+                text={order.paymentInstructions ?? paymentInstructions}
+              />
+            </>
+          )}
         </div>
       ) : null}
 
@@ -232,14 +283,23 @@ function DetailsCard({
   order: PublicWebOrder;
   businessName: string;
 }) {
+  const esperandoEnvio = waitingDeliveryFee(order);
   const rows: { label: string; value: string }[] = [
-    { label: 'Total', value: COP.format(order.total) },
+    {
+      label: esperandoEnvio ? 'Tu pedido' : 'Total',
+      value: COP.format(order.total),
+    },
     // Un domicilio no se recoge en el local: decirle "Recoger en TERCOS" a
     // quien pidió a domicilio es directamente información falsa.
     order.deliveryAddress
       ? { label: 'Entregamos en', value: order.deliveryAddress }
       : { label: 'Recoger en', value: businessName },
   ];
+  if (esperandoEnvio) {
+    rows.splice(1, 0, { label: 'Domicilio', value: 'te lo confirmamos por WhatsApp' });
+  } else if (order.deliveryFee > 0) {
+    rows.splice(1, 0, { label: 'Domicilio', value: COP.format(order.deliveryFee) });
+  }
   if (order.status === 'PAGADO' || order.status === 'EN_PREPARACION') {
     rows.push({ label: 'Tiempo estimado', value: 'Listo en ~20 min' });
   }

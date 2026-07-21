@@ -97,6 +97,7 @@ export function renderReceiptHtml(r: ReceiptData): string {
   <div class="totals">
     <div class="row"><span>Subtotal</span><span>${formatCop(r.subtotal)}</span></div>
     ${r.discountTotal > 0 ? `<div class="row"><span>Descuento</span><span>-${formatCop(r.discountTotal)}</span></div>` : ''}
+    ${r.deliveryFee && r.deliveryFee > 0 ? `<div class="row"><span>Domicilio</span><span>${formatCop(r.deliveryFee)}</span></div>` : ''}
     <div class="row grand"><span>TOTAL</span><span>${formatCop(r.total)}</span></div>
   </div>
 

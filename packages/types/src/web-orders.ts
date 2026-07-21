@@ -106,6 +106,11 @@ export const PublicWebOrderSchema = z.object({
   total: z.number().nonnegative(),
   /** Detalle del pedido (con adiciones) — para el tracking del cliente. */
   items: z.array(PublicWebOrderItemSchema).default([]),
+  /**
+   * Costo del envío, ya incluido en `total`. 0 = todavía no cotizado (el local
+   * lo pregunta al domiciliario) ⇒ en domicilio, el `total` NO es final.
+   */
+  deliveryFee: z.number().nonnegative().default(0),
   /** A dónde se entrega. null en WEB_PICKUP. El cliente la ve para verificarla. */
   deliveryAddress: z.string().nullable().default(null),
   deliveryNotes: z.string().nullable().default(null),

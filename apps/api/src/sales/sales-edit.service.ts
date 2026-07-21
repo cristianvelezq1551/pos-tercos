@@ -188,7 +188,12 @@ export class SalesEditService {
           ? manualDiscountAmount(roundMoney(subtotal - lineDiscountTotal), orderDiscountSpec)
           : 0;
         const discountTotal = roundMoney(lineDiscountTotal + orderDiscountAmount);
-        const total = roundMoney(subtotal - discountTotal);
+        // El envío (WEB_DELIVERY) es parte del total y NO se recalcula al editar
+        // ítems: entra tal cual al breakdown (CHECK sales_total_matches_breakdown =
+        // subtotal − descuento + envío). Omitirlo violaba el CHECK → 500 en cada
+        // edición de un domicilio con envío asignado.
+        const deliveryFee = Number(existing.deliveryFee);
+        const total = roundMoney(subtotal - discountTotal + deliveryFee);
         const oldTotal = Number(existing.total);
 
         // Cuenta dividida + total distinto: no hay forma única de repartir la

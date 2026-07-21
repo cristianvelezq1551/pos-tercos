@@ -19,8 +19,27 @@ export async function createWebOrder(
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? `Error ${res.status}`);
+    throw new Error(friendlyOrderError(res.status, body?.message));
   }
   const json = (await res.json()) as unknown;
   return CreateWebOrderResponseSchema.parse(json);
+}
+
+/**
+ * §3.5: traduce los errores genéricos del backend a algo que el cliente entienda.
+ * Los mensajes de NEGOCIO (radio, horario, kill-switch, límite 3/día) ya vienen
+ * en español y claros → se respetan tal cual. Solo se reemplazan los técnicos.
+ */
+function friendlyOrderError(status: number, raw?: string): string {
+  if (status === 429) {
+    return 'Estamos recibiendo muchos pedidos. Esperá unos segundos y volvé a intentar.';
+  }
+  const msg = (raw ?? '').trim();
+  if (/validation failed|invalid|too_big|demasiado/i.test(msg)) {
+    return 'Revisá los datos del pedido: algún campo es inválido o el carrito es muy grande.';
+  }
+  if (/not found/i.test(msg)) {
+    return 'Un producto de tu carrito ya no está disponible. Volvé al menú y armá el pedido de nuevo.';
+  }
+  return msg || `No se pudo crear el pedido (error ${status}).`;
 }

@@ -3,11 +3,16 @@
 import { type PaymentMethod, type PublicWebOrder, type Sale } from '@pos-tercos/types';
 import { Button, Checkbox, Dialog, FormField, Money } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { confirmPayment, TransferSection } from '../../sales';
+import { confirmPayment, notifyComandaFailed, sendTabToKitchen, TransferSection } from '../../sales';
 import { fetchSaleById } from '../api/get-sale';
 import { OrderItemsList } from './OrderItemsList';
+import { StockShortageNotice } from './StockShortageNotice';
 import { WebPaymentMethodSelector } from './WebPaymentMethodSelector';
+import { logError } from '../../../lib/client-log';
 import { getErrorMessage } from '../../../lib/errors';
+
+/** El 409 del backend arranca con este texto (sales-consumption.service). */
+const STOCK_SHORTAGE = 'stock insuficiente';
 
 /** Solo a partir de este tiempo sin cobrarse ofrecemos "no avisar". */
 const STALE_MIN = 15;
@@ -34,6 +39,8 @@ export function ConfirmWebPaymentModal({
   const [silent, setSilent] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Faltó stock al aprobar: no es un error del sistema, es un rechazo. */
+  const shortage = error && error.toLowerCase().includes(STOCK_SHORTAGE) ? error : null;
 
   useEffect(() => {
     if (!open || !order) return;
@@ -60,6 +67,14 @@ export function ConfirmWebPaymentModal({
 
   const validation = useMemo(() => {
     if (!order || !method) return { ok: false, reason: 'Elige un método' };
+    // Un domicilio se cobra con el envío YA cotizado (el backend lo bloquea si
+    // no). fee 0 = sin asignar → avisar y deshabilitar antes de intentar.
+    if (order.type === 'WEB_DELIVERY' && order.deliveryFee <= 0) {
+      return {
+        ok: false,
+        reason: 'Asigná el costo del envío en la tarjeta del pedido antes de cobrar.',
+      };
+    }
     if (method === 'CASH') return { ok: true, reason: null };
     if (!doubleVerified) {
       return { ok: false, reason: 'Confirma que la transferencia llegó' };
@@ -80,6 +95,18 @@ export function ConfirmWebPaymentModal({
         digitalDoubleVerified: isDigital ? true : undefined,
         silent: stale && silent ? true : undefined,
       });
+      // Aprobado ⇒ recién ahora la cocina ve el pedido. Antes de esto era una
+      // solicitud sin efecto. Fire-and-forget: un fallo de impresión NO puede
+      // revertir un cobro ya hecho — `ComandaFailureAlert` (en el layout) avisa
+      // y ofrece reintentar, que es lo mismo que hace el mostrador.
+      void sendTabToKitchen(order.id).catch((e: unknown) => {
+        logError('web-orders.comanda', e);
+        notifyComandaFailed({
+          saleId: order.id,
+          receiptNumber: order.receiptNumber,
+          kind: 'comanda',
+        });
+      });
       onConfirmed(paid);
     } catch (err) {
       setError(getErrorMessage(err, 'Error desconocido'));
@@ -99,7 +126,7 @@ export function ConfirmWebPaymentModal({
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>
-          <Button onClick={handleConfirm} disabled={!validation.ok || pending}>
+          <Button onClick={handleConfirm} disabled={!validation.ok || pending || shortage !== null}>
             {pending ? 'Confirmando…' : <>Confirmar <Money amount={total} weight="bold" className="ml-1 text-current" /></>}
           </Button>
         </>
@@ -116,9 +143,9 @@ export function ConfirmWebPaymentModal({
           <p className="mt-1 text-xs text-warning">
             Verifica el comprobante en WhatsApp antes de confirmar.
           </p>
-          {order.type === 'WEB_DELIVERY' ? (
+          {order.deliveryFee > 0 ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              Este total es solo del pedido: el domicilio se le cobra aparte al repartidor.
+              Incluye ${order.deliveryFee.toLocaleString('es-CO')} de domicilio.
             </p>
           ) : null}
         </section>
@@ -165,7 +192,16 @@ export function ConfirmWebPaymentModal({
             {validation.reason}
           </p>
         ) : null}
-        {error ? (
+        {shortage ? (
+          <StockShortageNotice
+            saleId={order.id}
+            message={shortage}
+            onRejected={() => {
+              setError(null);
+              onClose();
+            }}
+          />
+        ) : error ? (
           <p
             role="alert"
             className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
