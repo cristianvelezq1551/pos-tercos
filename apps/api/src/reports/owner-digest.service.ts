@@ -7,7 +7,7 @@ import { SalesReportsService } from './sales-reports.service';
 
 /**
  * Resumen diario del negocio al WhatsApp del DUEÑO (no al cliente). Reusa
- * el generador IA de `daily-ai-summary` y el WhatsAppProvider (OpenWA real
+ * el generador IA de `daily-ai-summary` y el WhatsAppProvider (Kapso real
  * en prod, mock en dev). El dueño "controla" el día sin abrir el admin.
  *
  * Requiere `OWNER_WHATSAPP_PHONE` (E.164). Sin la var, el cron no hace nada.
@@ -30,7 +30,7 @@ export class OwnerDigestService {
     try {
       await this.sendDailyDigest();
     } catch (err) {
-      // Cron non-throwing: un fallo del LLM o de OpenWA no debe tumbar nada.
+      // Cron non-throwing: un fallo del LLM o de WhatsApp no debe tumbar nada.
       this.logger.warn(`Digest diario falló: ${err instanceof Error ? err.message : err}`);
     }
   }

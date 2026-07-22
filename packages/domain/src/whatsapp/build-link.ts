@@ -2,7 +2,7 @@
  * Alerta interna al Dueño cuando se detecta un descuadre en cierre de
  * turno (FASE 11.A → 15.A). NO es notificación al cliente: es un link
  * wa.me que se persiste en `audit_log.metadata.whatsappAlertUrl` para que
- * el Dueño lo abra desde /audit. (El canal al cliente es OpenWA — ver
+ * el Dueño lo abra desde /audit. (El canal al cliente es Kapso — ver
  * `messages.ts`.)
  *
  * Devuelve null si no hay `ownerPhone` (env `OWNER_WHATSAPP_PHONE`) o el

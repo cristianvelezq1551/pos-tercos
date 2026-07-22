@@ -39,7 +39,9 @@ async function verifyRole(token: string): Promise<'ok' | 'forbidden' | 'invalid'
     return 'invalid';
   }
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+      algorithms: ['HS256'],
+    });
     const role = payload['role'];
     if (typeof role !== 'string' || !ADMIN_ALLOWED_ROLES.includes(role as never)) {
       return 'forbidden';

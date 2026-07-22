@@ -1,12 +1,12 @@
 /**
- * Notificaciones WhatsApp al cliente vía OpenWA (gateway self-hosted).
+ * Notificaciones WhatsApp al cliente vía Kapso (Cloud API oficial de Meta).
  * El backend ENVÍA los mensajes automáticamente en las transiciones de la
  * venta web (aceptar → instrucciones de pago, confirmar → recibido, listo
  * → retirar). El operador ya no abre wa.me manual.
  *
  * El domain solo construye el TEXTO del mensaje (puro, sin IO). El envío
  * real lo hace un `WhatsAppProvider` implementado en apps/api (adapter
- * OpenWA / mock).
+ * Kapso / mock).
  */
 
 /**
@@ -68,10 +68,9 @@ export interface WhatsAppTemplateMessage {
 
 /**
  * Puerto de envío. Implementado en apps/api por KapsoWhatsAppAdapter (Cloud
- * API oficial), OpenWaWhatsAppAdapter (legacy) y MockWhatsAppAdapter (dev).
+ * API oficial) y MockWhatsAppAdapter (dev).
  * Recibe phone E.164; el adapter lo convierte al formato del proveedor.
- * `sendTemplate` es opcional: solo la Cloud API lo soporta (OpenWA no tiene
- * concepto de template).
+ * `sendTemplate` es opcional: solo la Cloud API lo soporta.
  */
 export interface WhatsAppProvider {
   sendText(phoneE164: string, text: string): Promise<WhatsAppSendResult>;

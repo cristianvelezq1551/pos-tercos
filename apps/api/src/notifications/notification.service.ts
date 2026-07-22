@@ -25,7 +25,7 @@ export function templatesEnabled(): boolean {
 
 /**
  * Envía notificaciones WhatsApp al cliente vía el WhatsAppProvider activo
- * (Kapso/OpenWA/Mock según env) en las transiciones de un pedido web (solo
+ * (Kapso/Mock según env) en las transiciones de un pedido web (solo
  * WEB_PICKUP). Idempotente por los flags notified_* de Sale. NUNCA lanza: un
  * fallo de WhatsApp no debe tumbar la transición de negocio (el caller la
  * llama fire-and-forget).
@@ -96,7 +96,7 @@ export class NotificationService {
       try {
         // Producción con Cloud API: business-initiated fuera de la ventana de
         // 24h SOLO llega por template pre-aprobado. Con el flag apagado
-        // (sandbox/dev/OpenWA) va como texto libre.
+        // (sandbox/dev) va como texto libre.
         if (templatesEnabled() && this.wa.sendTemplate) {
           const template = buildNotificationTemplate(
             stage,

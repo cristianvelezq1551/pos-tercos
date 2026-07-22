@@ -43,6 +43,7 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const decoded = await this.jwt.verifyAsync<Record<string, unknown>>(token, {
         secret: process.env.JWT_ACCESS_SECRET,
+        algorithms: ['HS256'],
       });
       const payload = JwtAccessPayloadSchema.parse(decoded);
       // Revocación de sesión: el `tv` del token debe coincidir con la versión

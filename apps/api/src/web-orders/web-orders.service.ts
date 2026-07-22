@@ -175,7 +175,7 @@ export class WebOrdersService {
   }
 
   // Flujo cajero-driven: el cliente nunca afirma pago. El cajero acepta
-  // (instrucciones por WhatsApp/OpenWA), verifica el comprobante y confirma
+  // (instrucciones por WhatsApp), verifica el comprobante y confirma
   // el pago desde POS.
 
   private toPublicDto(sale: Sale): PublicWebOrder {

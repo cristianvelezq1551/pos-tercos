@@ -20,7 +20,7 @@ const PROD_FEATURE_WARNINGS: ReadonlyArray<[string, string]> = [
   ['OWNER_WHATSAPP_PHONE', 'sin ella NO salen alertas antifraude ni el digest diario al dueño'],
   ['PRINTER_PROVIDER', 'sin `escpos` los recibos se "imprimen" a archivos locales efímeros'],
   ['TZ', 'los crons y cortes de día asumen TZ=America/Bogota; sin ella corren en UTC'],
-  ['KAPSO_API_KEY', 'sin KAPSO_* (ni OPENWA_*) el WhatsApp queda en MOCK: cero notificaciones reales'],
+  ['KAPSO_API_KEY', 'sin KAPSO_* el WhatsApp queda en MOCK: cero notificaciones reales'],
 ];
 
 /** Secretos que en prod deben tener entropía mínima (no un placeholder débil). */
@@ -96,15 +96,10 @@ export function assertRequiredEnv(): void {
     // Con WHATSAPP_REQUIRED=true (recomendado en prod) la ausencia TOTAL de
     // proveedor deja de ser un warning y mata el boot — mejor no arrancar que
     // arrancar mudo (el cliente nunca recibiría cómo pagar).
-    if (
-      process.env.WHATSAPP_REQUIRED === 'true' &&
-      !process.env.KAPSO_API_KEY &&
-      !process.env.OPENWA_URL
-    ) {
+    if (process.env.WHATSAPP_REQUIRED === 'true' && !process.env.KAPSO_API_KEY) {
       throw new Error(
-        'WHATSAPP_REQUIRED=true pero no hay proveedor configurado: seteá KAPSO_* ' +
-          '(o OPENWA_*). Sin WhatsApp el cliente nunca recibe cómo pagar y no ' +
-          'salen alertas al dueño.',
+        'WHATSAPP_REQUIRED=true pero no hay proveedor configurado: seteá KAPSO_*. ' +
+          'Sin WhatsApp el cliente nunca recibe cómo pagar y no salen alertas al dueño.',
       );
     }
 

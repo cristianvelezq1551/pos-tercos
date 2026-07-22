@@ -15,6 +15,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN (CWE-732): CI solo lee código. Los build-scripts
+# de deps (bcrypt/prisma/sharp/usb) corren acá; sin esto heredarían el default
+# read-write del repo. Subir el scope por-job solo si alguno lo necesita.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest

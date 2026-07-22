@@ -398,7 +398,7 @@ export class SalesReportsService {
       ['LISTO_DESPACHO', 'ENTREGADO'].includes(s.status),
     ).length;
 
-    // Mensajes OpenWA realmente enviados (status='sent') de estos pedidos web.
+    // Mensajes WhatsApp realmente enviados (status='sent') de estos pedidos web.
     // Filtramos por saleId (no por createdAt del mensaje) para no perder mensajes
     // de etapas tardías — p. ej. "listo" se envía horas después de crear el pedido.
     const messages = webSaleIds.size

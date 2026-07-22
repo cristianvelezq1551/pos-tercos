@@ -7,7 +7,7 @@ import type {
 
 /**
  * Dev: no envía nada real. Loggea el mensaje para inspección. Default cuando
- * no hay vars KAPSO ni OPENWA configuradas. Implementa también `sendTemplate`
+ * no hay vars KAPSO configuradas. Implementa también `sendTemplate`
  * para poder probar el branch de templates sin Kapso
  * (WHATSAPP_TEMPLATES_ENABLED=true en dev).
  */

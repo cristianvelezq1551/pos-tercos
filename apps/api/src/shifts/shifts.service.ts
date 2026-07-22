@@ -812,7 +812,7 @@ export class ShiftsService {
     closed: { cashierName: string; closedAt: Date },
   ): Promise<void> {
     // FASE 15.A: link wa.me en metadata para abrir desde /audit. Desde
-    // 2026-06-10 además se ENVÍA directo al dueño vía OpenWA.
+    // 2026-06-10 además se ENVÍA directo al dueño vía WhatsApp (Kapso).
     const alertLink = buildDiscrepancyAlertLink({
       ownerPhone: process.env.OWNER_WHATSAPP_PHONE?.trim() ?? null,
       cashierName: closed.cashierName,

@@ -45,6 +45,7 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       payload = await this.jwt.verifyAsync(token, {
         secret: process.env.JWT_ACCESS_SECRET,
+        algorithms: ['HS256'],
       });
     } catch {
       this.deny(client, 'invalid token');

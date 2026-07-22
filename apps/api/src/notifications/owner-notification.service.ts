@@ -47,7 +47,7 @@ export class OwnerNotificationService {
     try {
       // Cloud API: la alerta al dueño es business-initiated → con templates
       // activos va por `alerta_negocio` (texto aplanado a una línea); si no,
-      // texto libre (OpenWA/mock/sandbox).
+      // texto libre (mock/sandbox).
       const result =
         templatesEnabled() && this.wa.sendTemplate
           ? await this.wa.sendTemplate(

@@ -12,7 +12,10 @@ export function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const redirectAfterLogin = params.get('redirect') ?? '/';
+  const rawRedirect = params.get('redirect') ?? '/';
+  // Open-redirect guard (CWE-601): solo aceptamos rutas relativas same-origin.
+  // Rechaza URLs absolutas (`https://evil…`) y protocol-relative (`//evil…`).
+  const redirectAfterLogin = /^\/(?!\/)/.test(rawRedirect) ? rawRedirect : '/';
 
   const handleSubmit = async ({ email, password }: { email: string; password: string }) => {
     setError(null);

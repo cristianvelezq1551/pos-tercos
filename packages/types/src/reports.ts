@@ -222,14 +222,14 @@ export const HourHeatmapReportSchema = z.object({
 export type HourHeatmapReport = z.infer<typeof HourHeatmapReportSchema>;
 
 // ====================================================================
-// WHATSAPP METRICS — cobertura por stage desde tabla whatsapp_messages (v2/OpenWA)
+// WHATSAPP METRICS — cobertura por stage desde tabla whatsapp_messages
 // ====================================================================
 
 export const WhatsAppStageCoverageSchema = z.object({
   stage: z.enum(['payment_instructions', 'payment_received', 'pickup_ready']),
   /** Cantidad de sales web elegibles para este stage en el período. */
   eligible: z.number().int().nonnegative(),
-  /** Cantidad de sales con al menos 1 mensaje OpenWA enviado (status=sent). */
+  /** Cantidad de sales con al menos 1 mensaje WhatsApp enviado (status=sent). */
   reached: z.number().int().nonnegative(),
   /** % cobertura = reached / eligible. 0..1. null si eligible=0. */
   coveragePct: z.number().nullable(),
