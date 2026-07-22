@@ -543,3 +543,41 @@ P&G/tesorería con montos sembrados, migraciones a fondo. No cambian el veredict
 **Neto FASE 7:** el código está listo, cero bloqueantes; lo pendiente es config/operación de deploy (§6.6).
 El único ítem de código a considerar antes de exponer `apps/web` a internet es la **CSP baseline (MED)**,
 como fast-follow.
+
+### 7.5 — Deep-dives completados (2026-07-21, 20:00, 2ª tanda tras reset de sesión)
+Estabilidad backend full · P&G/tesorería/COGS con verificación de montos · migraciones/integridad a fondo.
+**Ratifican VIABLE, cero bloqueantes.** Nuevos hallazgos (ninguno de día 1):
+
+- **HIGH (escala, no día 1) · FIFO full-replay es el camino POR DEFECTO del P&G/márgenes del dueño.**
+  `cogs.service.ts:95-98,182`: con rango que empieza antes del corte del snapshot del mes corriente,
+  `runLedger` hace `loadMovements({})` (sin `where`/`take`) + replay síncrono `O(n log n)` en el event loop.
+  Los endpoints default a 30 días → `hoy−30d < cutoff` dispara replay casi siempre; 90 días siempre. El
+  comentario que lo llama "raro" es falso para los defaults. **Mitigado** por caché 60s por-modo + endpoints
+  Dueño/Admin (baja concurrencia) + volumen bajo al inicio. Se vuelve real a 12–24 meses (~0.5–1M filas →
+  stall de varios segundos). El camino incremental de valuación/lotes SÍ está acotado al mes corriente (OK).
+  *Follow-up:* que el seed sirva rangos pre-corte, o defaultear esos reportes al mes de negocio corriente.
+- **MED · `cortesias.create` sin idempotencia en un create que descuenta stock.** `cortesias.service.ts:114-135`:
+  la tx es atómica pero NO hay idempotency-key/unique/claim, y el controller no threadea `Idempotency-Key`.
+  Doble-click / retry en `POST /cortesias` → dos cortesías APPROVED, cada una descuenta inventario a costo
+  FIFO → stock y COGS doble-contados. Sus hermanos `approve`/`reverse` SÍ están guardados. *Fix chico:*
+  threadear `Idempotency-Key` (patrón ya usado en treasury/payables). **Único hallazgo que un cajero podría
+  disparar solo — candidato a fix pre-launch.**
+- **MED · Agregados de stock sin caché re-escanean `inventory_movements` cada 20s.** `products.service.ts:431-445`
+  (3× `groupBy` sum-of-all-deltas) respalda el endpoint interno de disponibilidad que el POS/admin pollea cada
+  20s; ídem dashboard low/negative-stock. Memoria acotada, pero latencia DB crece `O(total movimientos)`.
+  Sub-segundo por un par de años. El endpoint PÚBLICO `/products/availability` SÍ tiene caché 15s (OK).
+  *Follow-up:* snapshot de saldo-inicial por `createdAt`.
+- **LOW · R2 sin timeout explícito de request** (los demás adapters sí; no está dentro de ninguna tx →
+  peor caso un hilo lento, no una tx colgada). **LOW · `fixed-costs.markPaid`** puede tirar P2002→500 al
+  perdedor en un doble markPaid simultáneo (Dueño-only, ~0 concurrencia; cosmético).
+- **LOW (P&G) · el `deliveryFee` se excluye del revenue por-producto** (`getProductMargins`/`getTopProducts`
+  suman `lineTotal`; el fee vive a nivel venta e SÍ entra al revenue del P&G). Cada número es defendible (un
+  domicilio no tiene COGS de producto), pero los reportes por-producto no cuadran al peso con el P&G cuando
+  hay domicilios. *Follow-up:* documentar la exclusión o agregar una línea "ingreso por domicilio".
+
+**Verificado con montos (todo OK):** paridad de revenue /finanzas↔P&G↔tesorería (misma ventana de mes de
+negocio + `NON_REVENUE_SALE_STATUSES`), `netResult` resta merma (1.2), accrual de nómina DAILY espeja
+`buildEntry` (1.1 cerrado), caché COGS resuelve modo full/incremental ANTES de leer (0.1 cerrado),
+reconciliación por PAGO con ventana por día calendario, split/CHECKs de dinero, XOR polimórfico three-way,
+`dynamic_payment_methods` data-preserving, `users`→nómina es **RESTRICT** (no CASCADE — `20260706130000`
+superseó el CASCADE; la historia de nómina no puede desaparecer). Domain 290/290, e2e 336/37 suites.
