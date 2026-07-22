@@ -10,11 +10,20 @@ import { notifyCortesiaActivity } from '../lib/cortesia-events';
 
 const ListSchema = z.array(CortesiaRequestSchema);
 
-/** El cajero registra una cortesía: se aplica al instante y avisa al dueño (sin aprobación). */
-export async function createCortesia(input: CreateCortesia): Promise<CortesiaRequest> {
+/** El cajero registra una cortesía: se aplica al instante y avisa al dueño (sin aprobación).
+ *  `idempotencyKey` (UUID estable por línea) hace que un reintento de red o un
+ *  reenvío tras fallo parcial NO vuelva a descontar stock: el server devuelve la
+ *  cortesía ya creada. */
+export async function createCortesia(
+  input: CreateCortesia,
+  idempotencyKey?: string,
+): Promise<CortesiaRequest> {
   const res = await fetch('/api/cortesias', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
     body: JSON.stringify(input),
     credentials: 'include',
   });

@@ -9,6 +9,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { BusinessConfigService } from '../business-config/business-config.service';
+import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
@@ -38,6 +39,7 @@ export class CortesiasService {
     private readonly ownerNotifications: OwnerNotificationService,
     private readonly cogs: CogsService,
     private readonly businessConfig: BusinessConfigService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   /**
@@ -64,7 +66,23 @@ export class CortesiasService {
     };
   }
 
-  async create(input: CreateCortesia, userId: string): Promise<CortesiaRequest> {
+  async create(
+    input: CreateCortesia,
+    userId: string,
+    idempotencyKey?: string,
+  ): Promise<CortesiaRequest> {
+    // Idempotencia: `create` es un POST que DESCUENTA stock a costo FIFO y no
+    // tiene una fila previa que reclamar con un `updateMany` (a diferencia de
+    // approve/reverse). Sin esto, un doble-click o un retry de red creaba DOS
+    // cortesías APPROVED → stock y COGS doble-contados. Con la key, el retry
+    // devuelve la cortesía ya registrada sin re-descontar (mismo patrón que
+    // POST /payables/:id/pay).
+    const endpoint = 'cortesias/create';
+    if (idempotencyKey) {
+      const cached = await this.idempotency.findCached<CortesiaRequest>(idempotencyKey, endpoint);
+      if (cached) return cached.body;
+    }
+
     const product = await this.prisma.product.findUnique({
       where: { id: input.productId },
       select: { id: true, name: true, basePrice: true, comboPrice: true, isCombo: true },
@@ -147,7 +165,11 @@ export class CortesiasService {
       { cortesiaId: created.id },
     );
 
-    return (await this.toDtos([created]))[0]!;
+    const dto = (await this.toDtos([created]))[0]!;
+    if (idempotencyKey) {
+      await this.idempotency.cache({ key: idempotencyKey, endpoint, body: dto, statusCode: 201, userId });
+    }
+    return dto;
   }
 
   /**

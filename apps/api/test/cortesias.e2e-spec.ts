@@ -8,6 +8,7 @@
  * Cubre la máquina de estados, el efecto sobre el inventario y los guards.
  */
 
+import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
@@ -89,6 +90,36 @@ describe('Cortesías E2E', () => {
     expect(movements).toHaveLength(1);
     expect(movements[0]!.productId).toBe(productId);
     expect(Number(movements[0]!.delta)).toBe(-2); // 2 unidades consumidas ya
+  });
+
+  it('el mismo Idempotency-Key no crea una segunda cortesía (retry seguro)', async () => {
+    const key = randomUUID();
+    const body = { productId, quantity: 2, reason: 'Doble-click / retry' };
+
+    const first = await request
+      .post('/cortesias')
+      .set(auth(cajeroToken))
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    const second = await request
+      .post('/cortesias')
+      .set(auth(cajeroToken))
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+
+    // El retry devuelve la MISMA cortesía, no una nueva.
+    expect(second.body.id).toBe(first.body.id);
+    // Y el stock se descontó UNA sola vez (no dos movimientos por el doble envío).
+    const movements = await consumeMovements(first.body.id as string);
+    expect(movements).toHaveLength(1);
+    expect(Number(movements[0]!.delta)).toBe(-2);
+    // No quedó una segunda fila colgada para ese producto.
+    const total = await prisma.cortesiaRequest.count({
+      where: { productId, reason: 'Doble-click / retry' },
+    });
+    expect(total).toBe(1);
   });
 
   it('un rol no-admin no puede anular (403)', async () => {

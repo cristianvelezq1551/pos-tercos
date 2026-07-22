@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getErrorMessage } from '../../../lib/errors';
 import type { CartLine } from '../../sales/lib/cart-types';
 import { createCortesia } from '../api/client';
@@ -26,11 +26,26 @@ export function OrderCortesiaModal({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  // Key idempotente ESTABLE por línea para esta apertura del modal. El registro
+  // recorre las líneas una por una (no es atómico): si una falla a mitad y el
+  // cajero reintenta, las ya creadas vuelven cacheadas del server (misma key) y
+  // NO se re-descuenta stock — solo avanza la que faltó. Se renueva en cada open.
+  const idemKeys = useRef<Map<string, string>>(new Map());
+  const keyForLine = (lineId: string): string => {
+    let k = idemKeys.current.get(lineId);
+    if (!k) {
+      k = crypto.randomUUID();
+      idemKeys.current.set(lineId, k);
+    }
+    return k;
+  };
+
   useEffect(() => {
     if (!open) return;
     setReason('');
     setError(null);
     setPending(false);
+    idemKeys.current = new Map();
   }, [open]);
 
   const reasonValid = reason.trim().length >= 3 && reason.trim().length <= 200;
@@ -42,12 +57,15 @@ export function OrderCortesiaModal({
     setError(null);
     try {
       for (const it of items) {
-        await createCortesia({
-          productId: it.productId,
-          sizeId: it.size?.id ?? null,
-          quantity: it.quantity,
-          reason: reason.trim(),
-        });
+        await createCortesia(
+          {
+            productId: it.productId,
+            sizeId: it.size?.id ?? null,
+            quantity: it.quantity,
+            reason: reason.trim(),
+          },
+          keyForLine(it.lineId),
+        );
       }
       onDone();
       onClose();

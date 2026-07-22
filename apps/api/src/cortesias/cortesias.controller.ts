@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import {
   CortesiaStatusEnum,
   CreateCortesiaSchema,
+  IDEMPOTENCY_HEADER,
+  IdempotencyKeySchema,
   ResolveCortesiaSchema,
   type CortesiaGivenSummary,
   type CortesiaRequest,
@@ -26,8 +28,11 @@ export class CortesiasController {
   create(
     @CurrentUser() user: JwtAccessPayload,
     @Body(new ZodValidationPipe(CreateCortesiaSchema)) body: CreateCortesia,
+    @Headers(IDEMPOTENCY_HEADER) idemKey?: string,
   ): Promise<CortesiaRequest> {
-    return this.cortesias.create(body, user.sub);
+    const idempotencyKey =
+      idemKey && IdempotencyKeySchema.safeParse(idemKey).success ? idemKey : undefined;
+    return this.cortesias.create(body, user.sub, idempotencyKey);
   }
 
   /** Cortesías del cajero actual (estado + novedades para acusar). */
