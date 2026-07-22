@@ -479,3 +479,67 @@ deuda de stock sin doble conteo (test "CRÍTICO" en run-ledger), snapshot mensua
 equivalente al replay (el bug 0.1 es la CACHÉ del service, no el motor), token HMAC timing-safe con throw
 en prod, CORS allowlist, cookies aisladas por app, autorización barrida en los 33 controllers sin fugas
 financieras, paridad funcional POS→admin completa (SW acotado a `/caja` que nunca cachea gestión).
+
+---
+
+## FASE 7 — Validación independiente, 2ª pasada (2026-07-21)
+
+> Tercera auditoría, disparada por el dueño ("auditar todo con mucho detalle para desplegar seguro y
+> estable"). Verificación **adversarial** (leer el camino completo, no snippets) tras detectar que la
+> pasada de FASE 6 produjo 2 FALSOS POSITIVOS. Ground-truth re-ejecutado + agentes por dimensión.
+> **Ratifica el veredicto: VIABLE, cero bloqueantes de código.**
+
+### 7.0 — Ground truth re-ejecutado (no leído de docs)
+typecheck **12/12** (el "13" es conteo viejo, 0 errores) · lint **0** · unit **376** (domain 290 + admin 65
++ web 21) · e2e API **336/37 suites** (el "flaky de payroll" NO falló) · `nest build` prod ✅ · git limpio,
+**30 commits adelante de origin/main SIN pushear**. CI Playwright apunta a **apps/admin** (no al apps/pos
+borrado) — la sospecha de FASE 6 quedó descartada.
+
+### 7.1 — Falsos positivos de FASE 6, corregidos con prueba
+- **Race del invoice `confirm()`** → FALSO POSITIVO. El claim atómico `updateMany({where:{id,
+  status:'PENDING_REVIEW'}})` + `throw si count===0` YA existe (`invoices.service.ts:373`), dentro de la tx,
+  mismo patrón que todo el money-path. Sin acción.
+- **`TRUST_PROXY_HOPS` "cae en silencio a 1"** → FALSO POSITIVO. El guardarraíl de boot YA existe
+  (`assert-env.ts:117-125`): en prod falla el arranque si está ausente/no-entero/<1. El fallback de
+  `main.ts:24` solo aplica en dev. Queda SOLO el paso operativo (setear a 2 + verificar `req.ip` en QA).
+
+### 7.2 — Verificado sólido en esta pasada (con prueba, no re-litigar)
+- **Seguridad (9 superficies, todas OK):** guards en 31 controllers, `@Public` solo en rutas públicas,
+  fotos de factura/comprobante bajo `@AdminAccess`, ownership en shifts, PIN+throttle en void/refund/cajón,
+  refresh opaco hasheado con rotación atómica + `tokenVersion`, 0 `$queryRawUnsafe`, uploads magic-byte +
+  SVG rechazado + anti-traversal doble, CORS allowlist + helmet, HMAC timing-safe con throw en prod. Sin
+  secretos logueados ni stack al cliente.
+- **Caja/arqueo (7 invariantes, todas OK):** `expectedCash` CASH-only y split-aware desde `sale_payments`,
+  VOID/pendientes fuera, propinas aparte, digital arqueado por separado, nómina efectivo no toca el cajón
+  (§7.v17), devolución cross-caja method-aware, `close()` serializable + advisory lock + claim.
+- **Integridad de datos (grep directo en migraciones):** triggers insert-only presentes
+  (`inventory_movements`, `audit_log`, `sale_status_log`), 8 CHECK polimórficos XOR, 6 CHECK de coherencia
+  de dinero, UNIQUE en `idempotency_key`/`receipt_number`/`offline_local_id`. `dynamic_payment_methods` es
+  **data-preserving** (`ALTER COLUMN … TYPE TEXT USING method::TEXT`).
+- **Frontend:** falla CLOSED en el Edge, cookies aisladas por app, matcher `/api/:path*` presente, 0
+  `dangerouslySetInnerHTML`, ningún `NEXT_PUBLIC_*` filtra secreto, recibos = bytes ESC/POS al print-agent
+  (no HTML en el DOM), offline con idempotency por `localId` + Web Locks, bug de freeze de modales resuelto.
+
+### 7.3 — Hallazgos de esta pasada (ninguno bloqueante)
+- **MED · Sin CSP en las 4 apps.** HSTS/X-Frame/nosniff sí; CSP diferida explícitamente. Riesgo hoy bajo
+  (0 `dangerouslySetInnerHTML`), pero para un POS con plata/PII una CSP baseline (`default-src 'self'`) es
+  el backstop estándar. Priorizar `apps/web` (la expuesta a internet). **Fast-follow post-launch** — NO se
+  rushea al árbol pre-deploy (la CSP en Next necesita nonce/middleware y prueba en navegador).
+- **LOW · print-agent sin `X-Agent-Secret` desde el cliente.** El admin postea a `localhost:9120` sin el
+  header. Matiz de diseño: el secreto no puede ser realmente secreto en el bundle del browser; mitigado por
+  localhost + seguridad física. Revisar la política del agent.
+- **LOW · SW `CACHE_VERSION` (`admin-caja-v1`) nunca bumpeado** — housekeeping al agregar rutas de warm-up.
+- **LOW · `apps/cocina` y `apps/public-display` sin `error.tsx`** — kiosko muestra la pantalla default de Next.
+- **INFO · `GET /sales` no scopeado por cajero** (cualquier cajero ve todas las ventas + nombre/teléfono).
+  Consistente con 1 terminal; role-gated. OK para v1.
+- **INFO · `ON DELETE CASCADE` de `users`→pagos de nómina.** Solo importa con hard-delete de usuario (la app
+  hace "terminate" soft). Sin exposición hoy.
+
+### 7.4 — Cobertura de esta pasada
+Completas: seguridad backend, caja/arqueo, frontend, integridad de datos (grep directo), promos (parcial+ok).
+Cortadas por límite de sesión (positivas en su parte corrida + verdes en FASE 0-6): estabilidad backend full,
+P&G/tesorería con montos sembrados, migraciones a fondo. No cambian el veredicto.
+
+**Neto FASE 7:** el código está listo, cero bloqueantes; lo pendiente es config/operación de deploy (§6.6).
+El único ítem de código a considerar antes de exponer `apps/web` a internet es la **CSP baseline (MED)**,
+como fast-follow.
