@@ -1,5 +1,13 @@
 # QA guiado — Derrotero de punta a punta (base limpia)
 
+> ## ⛔ DOCUMENTO SUPERADO (2026-07-25)
+>
+> Usá **`CHECKLIST-QA-DESPLIEGUE.md`**, que cubre la app actual módulo por módulo.
+>
+> Este derrotero quedó desactualizado: habla del POS en el puerto 3002 y del KDS,
+> los dos eliminados (§7.v10 — el POS se unificó dentro del admin y la cocina es
+> ahora una app web en el 3006). Se conserva como historial del proceso de QA.
+
 > **Estado de partida:** base de datos de desarrollo **vacía**, solo con 4 usuarios de acceso.
 > Sigue las fases **en orden** (cada una depende de la anterior). Marca cada casilla y revisa el **Esperado**.
 >

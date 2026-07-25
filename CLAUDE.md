@@ -16,8 +16,9 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 4. `implementation-plan.md` — fases de implementación local-first (15 fases; algunas obsoletas por reorientación v2)
 5. `kickoff-plan.md` — pendientes externos (hardware, contador, etc.)
 6. `testing-guide.md` — checklist e2e ~50 tests sec 1-11 (FASES 0-3)
-7. `openwa-setup.md` — guía para levantar el gateway OpenWA self-hosted
-8. `probar-backend-sin-apps.md` — flujo para testear el backend (venta web + WhatsApp) sin abrir las apps
+7. `CHECKLIST-QA-DESPLIEGUE.md` — checklist de QA manual módulo por módulo antes de desplegar (supersede `qa-guiado.md`)
+8. `openwa-setup.md` — guía para levantar el gateway OpenWA self-hosted
+9. `probar-backend-sin-apps.md` — flujo para testear el backend (venta web + WhatsApp) sin abrir las apps
 
 ---
 
