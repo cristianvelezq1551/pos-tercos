@@ -90,9 +90,14 @@ export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: Recip
             </ul>
           </div>
         )}
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          Usa el <strong>último costo de compra</strong> de cada insumo (no un promedio). Cambia
-          cuando confirmas una factura con un precio distinto.
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          Es un <strong>estimado</strong>: usa el <strong>último costo de compra</strong> de cada
+          insumo (no un promedio) y cambia cuando confirmas una factura con un precio distinto.
+          <br />
+          El costo <strong>real</strong> de lo que ya vendiste puede ser otro y lo ves en{' '}
+          <strong>Reportes → Costos</strong>: ahí se calcula por FIFO, gastando primero el lote
+          más viejo. Si compraste el mismo insumo a dos precios, lo vendido sale al precio del
+          lote que se consumió, no al último que pagaste.
         </p>
       </div>
 

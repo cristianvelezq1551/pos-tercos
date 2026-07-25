@@ -98,7 +98,17 @@ export function ProductsTable({ products, costsById, userRole }: ProductsTablePr
     },
     {
       key: 'costPerStock',
-      header: <span title="Último costo unitario registrado al confirmar una factura.">Costo / u</span>,
+      // "Estimado" no es un adorno: este número usa el ÚLTIMO precio de compra
+      // de cada insumo, y el costo REAL de lo vendido sale por FIFO (el lote
+      // más viejo primero), que puede ser otro. Sin la palabra, los dos
+      // números se leen como una contradicción — pasó en el QA: la lista
+      // decía $8.100 y el reporte de costos $7.100 para el mismo producto,
+      // por un pan comprado antes más barato.
+      header: (
+        <span title="Estimado con el ÚLTIMO precio de compra de cada insumo. El costo REAL de lo que se vendió sale por FIFO (lote más viejo primero) y está en Reportes → Costos.">
+          Costo est. / u
+        </span>
+      ),
       align: 'right',
       numeric: true,
       hideOnMobile: true,
@@ -113,7 +123,11 @@ export function ProductsTable({ products, costsById, userRole }: ProductsTablePr
     },
     {
       key: 'margin',
-      header: <span title="Margen estimado = (precio de venta − costo) / precio de venta. Para reventa usa el último costo de compra; para preparados usa el costo de receta (último costo de cada insumo).">Margen %</span>,
+      header: (
+        <span title="Margen ESTIMADO = (precio de venta − costo estimado) / precio de venta. Usa el último precio de compra de cada insumo. El margen REAL de lo vendido está en Reportes → Costos.">
+          Margen est. %
+        </span>
+      ),
       align: 'right',
       numeric: true,
       hideOnMobile: true,
