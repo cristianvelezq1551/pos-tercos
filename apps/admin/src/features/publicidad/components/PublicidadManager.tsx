@@ -8,6 +8,7 @@ import { logError } from '../../../lib/client-log';
 import { listAds, reorderAds } from '../api/client';
 import { AdCard } from './AdCard';
 import { AdEditModal } from './AdEditModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Administra la publicidad del storefront: grilla de piezas + alta + orden. */
 export function PublicidadManager() {
@@ -19,7 +20,7 @@ export function PublicidadManager() {
     listAds()
       .then(setAds)
       .catch((e) => {
-        setError(e instanceof Error ? e.message : 'Error cargando');
+        setError(getErrorMessage(e, 'Error cargando'));
         setAds([]);
       });
   }, []);

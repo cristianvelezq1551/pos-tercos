@@ -4,6 +4,7 @@ import { Button, Dialog, FormField, Input, MoneyInput, formatCop } from '@pos-te
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { deletePayrollDay, setPayrollDay } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Edita el valor de UN día de un trabajador DIARIO: llegada tarde (monto
  *  menor), ausencia ($0) o un monto distinto. El valor por defecto es el
@@ -44,7 +45,7 @@ export function DayOverrideDialog({
       router.refresh();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
       setPending(false);
     }
   };

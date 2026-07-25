@@ -4,6 +4,7 @@ import type { FixedCost } from '@pos-tercos/types';
 import { ConfirmDialog } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { deleteFixedCost } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function DeleteFixedCostDialog({
   cost,
@@ -23,7 +24,7 @@ export function DeleteFixedCostDialog({
       await deleteFixedCost(cost.id);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo eliminar.');
+      setError(getErrorMessage(e, 'No se pudo eliminar.'));
       setPending(false);
     }
   };

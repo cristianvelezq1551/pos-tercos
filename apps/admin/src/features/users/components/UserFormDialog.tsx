@@ -5,6 +5,7 @@ import { Button, Dialog, FormField, Input, MoneyInput, Select } from '@pos-terco
 import { useState } from 'react';
 import { createUser, updateUser } from '../api/client';
 import { ROLE_OPTIONS, PIN_ROLES } from '../lib/roles';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -59,7 +60,7 @@ export function UserFormDialog({ open, user, onClose, onSuccess }: UserFormDialo
       }
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar el usuario.');
+      setError(getErrorMessage(e, 'No se pudo guardar el usuario.'));
     } finally {
       setPending(false);
     }

@@ -8,6 +8,7 @@ import { logError } from '../../../lib/client-log';
 import { updateBusinessConfig } from '../api/client';
 import { formatDayRanges } from '../lib/hours-format';
 import { ScheduleModal } from './ScheduleModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
@@ -35,7 +36,7 @@ export function ScheduleSection({
       setOpen(false);
     } catch (e) {
       logError('web-config.schedule', e);
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
     } finally {
       setSaving(false);
     }

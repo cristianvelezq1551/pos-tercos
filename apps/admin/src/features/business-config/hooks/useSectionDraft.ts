@@ -4,6 +4,7 @@ import type { BusinessConfig, UpdateBusinessConfig } from '@pos-tercos/types';
 import { useEffect, useRef, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import type { SaveState } from '../components/SectionCard';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Borrador local de una sección + guardado. Cada sección maneja SUS campos y
@@ -57,7 +58,7 @@ export function useSectionDraft<T>({
       onSaved(config);
     } catch (e) {
       logError('web-config.save', e);
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
       setState('error');
     }
   };

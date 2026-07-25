@@ -5,6 +5,7 @@ import { CalendarRange } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { updateBusinessConfig } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface MonthCutoffCardProps {
   /** Día de corte actual (1–28). */
@@ -40,7 +41,7 @@ export function MonthCutoffCard({ monthStartDay, periodStart, periodEnd }: Month
       setOk(true);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
     } finally {
       setPending(false);
     }

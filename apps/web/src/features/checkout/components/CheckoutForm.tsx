@@ -20,6 +20,7 @@ import { FulfillmentPicker } from './FulfillmentPicker';
 import { OrderSummaryCard } from './OrderSummaryCard';
 import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
 import { COP } from '../../../lib/format';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function CheckoutForm() {
   const router = useRouter();
@@ -138,7 +139,7 @@ export function CheckoutForm() {
         `/checkout/success/${result.order.id}?token=${encodeURIComponent(result.token)}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
   };

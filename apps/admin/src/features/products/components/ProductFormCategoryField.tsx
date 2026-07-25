@@ -4,6 +4,7 @@ import { Button, Input, Label, Select } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { useState } from 'react';
 import { createCategory } from '../../categories';
+import { getErrorMessage } from '../../../lib/errors';
 
 const NEW_OPTION = '__new__';
 
@@ -43,7 +44,7 @@ export function ProductFormCategoryField({
       setCreating(false);
       setNewName('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo crear la categoría.');
+      setError(getErrorMessage(e, 'No se pudo crear la categoría.'));
     } finally {
       setBusy(false);
     }

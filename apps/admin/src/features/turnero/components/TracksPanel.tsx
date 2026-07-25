@@ -6,6 +6,7 @@ import { Music, Trash2, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import { createTrack, deleteTrack, listTracks, updateTrack } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 const MAX_MB = 50;
 
@@ -37,7 +38,7 @@ export function TracksPanel({
       );
       onChange(await listTracks());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error subiendo');
+      setError(getErrorMessage(e, 'Error subiendo'));
     } finally {
       setBusy(false);
       setUploading(null);

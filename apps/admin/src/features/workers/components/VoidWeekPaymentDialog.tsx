@@ -5,6 +5,7 @@ import { Button, Dialog, formatCop } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { voidWeekPayment } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function VoidWeekPaymentDialog({
   payment,
@@ -25,7 +26,7 @@ export function VoidWeekPaymentDialog({
       onClose();
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo anular el abono.');
+      setError(getErrorMessage(e, 'No se pudo anular el abono.'));
     } finally {
       setPending(false);
     }

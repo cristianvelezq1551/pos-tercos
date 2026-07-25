@@ -24,6 +24,7 @@ import {
 import { buildPaymentBlock } from './build-payment-block';
 import { validateInvoice } from './validate-invoice';
 import { useInvoiceRows } from '../hooks/useInvoiceRows';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface InvoiceConfirmModalProps {
   draft: InvoiceDraftResponse;
@@ -111,7 +112,7 @@ export function InvoiceConfirmModal({
     } catch (e) {
       // El comprobante pre-subido quedó huérfano — limpiarlo (best-effort).
       if (uploadedProofKey) void discardPaymentProof(uploadedProofKey);
-      setError(e instanceof Error ? e.message : 'Error al confirmar');
+      setError(getErrorMessage(e, 'Error al confirmar'));
     } finally {
       setSubmitting(false);
     }
@@ -132,7 +133,7 @@ export function InvoiceConfirmModal({
       onClose();
       startTransition(() => { router.refresh(); });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al rechazar');
+      setError(getErrorMessage(e, 'Error al rechazar'));
     } finally {
       setSubmitting(false);
     }

@@ -4,6 +4,7 @@ import type { HistoricalSupplier, PurchaseSuggestion } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, Select, formatCop } from '@pos-tercos/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { listSuggestionSuppliers, sendToSupplier } from '../api';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface Props {
   suggestion: PurchaseSuggestion;
@@ -43,7 +44,7 @@ export function SendToSupplierDialog({ suggestion, onClose, onSuccess }: Props) 
         if (last) setSupplierId(last.supplierId);
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudieron cargar los proveedores.');
+        if (!cancelled) setError(getErrorMessage(e, 'No se pudieron cargar los proveedores.'));
       });
     return () => {
       cancelled = true;
@@ -76,7 +77,7 @@ export function SendToSupplierDialog({ suggestion, onClose, onSuccess }: Props) 
       }
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo enviar el pedido.');
+      setError(getErrorMessage(e, 'No se pudo enviar el pedido.'));
     } finally {
       setPending(false);
     }

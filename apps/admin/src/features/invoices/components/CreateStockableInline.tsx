@@ -7,6 +7,7 @@ import { createIngredient } from '../../ingredients';
 import { createProduct } from '../../products';
 import { StockableTypeSelector } from './StockableTypeSelector';
 import { ProductPricingFields } from './ProductPricingFields';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface CreateStockableInlineProps {
   defaultName: string;
@@ -115,7 +116,7 @@ export function CreateStockableInline({
         });
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Error desconocido';
+      const msg = getErrorMessage(e);
       // Solo el dueño crea PRODUCTOS (definen precio de venta). El cajero/operativo
       // SÍ puede crear insumos acá. Si el backend rechaza el producto por rol,
       // mostramos una guía clara en vez del "not allowed" crudo.

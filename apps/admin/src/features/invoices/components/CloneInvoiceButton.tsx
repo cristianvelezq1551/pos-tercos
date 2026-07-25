@@ -4,6 +4,7 @@ import { Button } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { cloneInvoice } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface CloneInvoiceButtonProps {
   sourceInvoiceId: string;
@@ -29,7 +30,7 @@ export function CloneInvoiceButton({ sourceInvoiceId }: CloneInvoiceButtonProps)
         router.push(`/invoices/${draft.invoice.id}/edit`);
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al clonar');
+      setError(getErrorMessage(e, 'Error al clonar'));
       setBusy(false);
     }
   };

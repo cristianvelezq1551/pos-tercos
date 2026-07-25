@@ -4,6 +4,7 @@ import type { ManagedUser } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, PinField, isValidPin } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { terminateEmployment } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface TerminateDialogProps {
   user: Pick<ManagedUser, 'id' | 'fullName'>;
@@ -34,7 +35,7 @@ export function TerminateDialog({ user, onClose, onSuccess }: TerminateDialogPro
       const updated = await terminateEmployment(user.id, { date, note: note.trim() || undefined }, pin);
       onSuccess(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo terminar el empleo.');
+      setError(getErrorMessage(e, 'No se pudo terminar el empleo.'));
     } finally {
       setPending(false);
     }

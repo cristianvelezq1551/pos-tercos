@@ -4,6 +4,7 @@ import type { WebHeroSlide } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useEffect, useRef, useState } from 'react';
 import { createAd, listAds, replaceAdMedia, updateAd } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024; // 50 MB (igual que el backend)
 
@@ -78,7 +79,7 @@ export function AdEditModal({
       }
       onSaved(await listAds());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error guardando');
+      setError(getErrorMessage(e, 'Error guardando'));
       setBusy(false);
     }
   };

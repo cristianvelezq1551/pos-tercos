@@ -5,6 +5,7 @@ import { Button, Input, Money, MoneyInput, Select, cn } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { addWeeklyAdjustment, deleteWeeklyAdjustment } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Bonos / descuentos de la semana de un empleado (suman/restan al neto). */
 export function WeeklyAdjustments({
@@ -44,7 +45,7 @@ export function WeeklyAdjustments({
       setOpen(false);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo agregar.');
+      setError(getErrorMessage(e, 'No se pudo agregar.'));
     } finally {
       setBusy(false);
     }

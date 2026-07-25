@@ -4,6 +4,7 @@ import { POCKET_LABELS, PocketEnum, type Pocket } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, MoneyInput, Select } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { createAdjustment } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 const POCKETS = PocketEnum.options as Pocket[];
 
@@ -24,7 +25,7 @@ export function AdjustmentModal({ onClose, onSuccess }: { onClose: () => void; o
       await createAdjustment({ pocket, amount: signed, reason: reason.trim() });
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar el ajuste.');
+      setError(getErrorMessage(e, 'No se pudo registrar el ajuste.'));
     } finally {
       setPending(false);
     }

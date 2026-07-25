@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { cancelPayable, createPayable, payableProofUrl } from '../api/client';
 import { PayPayableModal } from './PayPayableModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
   const router = useRouter();
@@ -22,7 +23,7 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
       await cancelPayable(id);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo cancelar el compromiso.');
+      setError(getErrorMessage(e, 'No se pudo cancelar el compromiso.'));
     } finally {
       setCancelling(null);
     }
@@ -122,7 +123,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
       setAmount('');
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo crear.');
+      setError(getErrorMessage(e, 'No se pudo crear.'));
     } finally {
       setPending(false);
     }

@@ -3,6 +3,7 @@ import { syncOfflineSale } from '../api/sync-offline';
 import { syncOfflineShiftOpen } from '../api/sync-offline-shift';
 import { offlineDb } from './db';
 import { selectDrainable } from './drain-policy';
+import { getErrorMessage } from '../../../lib/errors';
 
 const DRAIN_LOCK = 'pos-tercos-offline-drain';
 
@@ -64,7 +65,10 @@ async function syncPendingShiftOpen(): Promise<void> {
     await offlineDb.setShiftOpen({
       ...open,
       status: 'failed',
-      failReason: err instanceof Error ? err.message : String(err),
+      // El motivo se le muestra al cajero en la bandeja: tiene que poder
+      // decidir si reintenta o llama a alguien. El detalle técnico ya fue al
+      // `logError` de arriba.
+      failReason: getErrorMessage(err, 'No se pudo sincronizar.'),
     });
   }
 }
@@ -108,7 +112,10 @@ async function drain(
         status: 'failed',
         attempts,
         lastAttemptAt,
-        failReason: err instanceof Error ? err.message : String(err),
+        // El motivo se le muestra al cajero en la bandeja: tiene que poder
+      // decidir si reintenta o llama a alguien. El detalle técnico ya fue al
+      // `logError` de arriba.
+      failReason: getErrorMessage(err, 'No se pudo sincronizar.'),
       });
     }
     onProgress?.();

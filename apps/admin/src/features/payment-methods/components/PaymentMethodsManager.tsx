@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { deletePaymentMethod, listAllPaymentMethods, updatePaymentMethod } from '../api/client';
 import { PaymentMethodFormDialog } from './PaymentMethodFormDialog';
 import { PaymentMethodRow } from './PaymentMethodRow';
+import { getErrorMessage } from '../../../lib/errors';
 
 type FormState =
   | { open: false }
@@ -23,7 +24,7 @@ export function PaymentMethodsManager() {
   useEffect(() => {
     listAllPaymentMethods()
       .then(setMethods)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Error cargando'));
+      .catch((e) => setError(getErrorMessage(e, 'Error cargando')));
   }, []);
 
   const upsert = (m: PaymentMethodSetting) =>
@@ -38,7 +39,7 @@ export function PaymentMethodsManager() {
     try {
       upsert(await updatePaymentMethod(m.code, { enabled: !m.enabled }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error guardando');
+      setError(getErrorMessage(e, 'Error guardando'));
     } finally {
       setPending(null);
     }
@@ -53,7 +54,7 @@ export function PaymentMethodsManager() {
       setMethods((prev) => (prev ?? []).filter((x) => x.code !== deleteTarget.code));
       setDeleteTarget(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo borrar');
+      setError(getErrorMessage(e, 'No se pudo borrar'));
     } finally {
       setPending(null);
     }

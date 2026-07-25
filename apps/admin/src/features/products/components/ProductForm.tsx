@@ -27,6 +27,7 @@ import { ProductFormExtrasSection } from './ProductFormExtrasSection';
 import { ProductFormComboSection } from './ProductFormComboSection';
 import { ProductFormCostInfoPanel } from './ProductFormCostInfoPanel';
 import { ProductFormPreparedCostPanel } from './ProductFormPreparedCostPanel';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface ProductFormProps {
   initial?: Product;
@@ -143,7 +144,7 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
         router.refresh();
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
     }
   };
 
@@ -157,7 +158,7 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     }
   };
 

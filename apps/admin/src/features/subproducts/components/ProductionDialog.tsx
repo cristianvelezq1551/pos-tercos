@@ -12,6 +12,7 @@ import {
 } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { produceSubproduct } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Diálogo para registrar una tanda de producción de un subproducto.
@@ -63,7 +64,7 @@ export function ProductionDialog({
       });
       onSuccess(run);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar la producción.');
+      setError(getErrorMessage(e, 'No se pudo registrar la producción.'));
     } finally {
       setPending(false);
     }

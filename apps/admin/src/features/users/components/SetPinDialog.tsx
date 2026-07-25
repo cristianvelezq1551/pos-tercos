@@ -4,6 +4,7 @@ import type { ManagedUser } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { setUserPin } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface SetPinDialogProps {
   user: ManagedUser;
@@ -29,7 +30,7 @@ export function SetPinDialog({ user, onClose, onSuccess }: SetPinDialogProps) {
       await setUserPin(user.id, pin, password);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar el PIN.');
+      setError(getErrorMessage(e, 'No se pudo guardar el PIN.'));
     } finally {
       setPending(false);
     }

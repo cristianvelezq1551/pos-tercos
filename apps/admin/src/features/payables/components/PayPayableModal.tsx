@@ -4,6 +4,7 @@ import type { PayableCommitment } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, MoneyInput, Select, formatCop } from '@pos-tercos/ui';
 import { useState, type ChangeEvent } from 'react';
 import { payPayable } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 type PayMode = 'EFECTIVO' | 'CUENTA' | 'MIXTO';
 
@@ -38,7 +39,7 @@ export function PayPayableModal({
       await payPayable(payable.id, { cashAmount, bankAmount, note: note.trim() || undefined }, file);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar el pago.');
+      setError(getErrorMessage(e, 'No se pudo registrar el pago.'));
     } finally {
       setPending(false);
     }

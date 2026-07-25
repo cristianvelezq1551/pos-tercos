@@ -4,6 +4,7 @@ import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { deleteIngredient } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface Props {
   id: string;
@@ -28,7 +29,7 @@ export function DeleteIngredientAction({ id, name }: Props) {
       setOpen(false);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo eliminar el insumo.');
+      setError(getErrorMessage(e, 'No se pudo eliminar el insumo.'));
     } finally {
       setPending(false);
     }

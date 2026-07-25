@@ -6,6 +6,7 @@ import { useState, type ChangeEvent } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
 import { ymdLocalToday } from '../../../lib/dates';
 import { markFixedCostPaid } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Diálogo de "marcar pagado" un costo fijo. El período (year, month) viene
  *  preseteado desde el cockpit; el dueño solo sube el comprobante. */
@@ -69,7 +70,7 @@ export function FixedCostPaymentDialog({
       });
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo marcar pagado.');
+      setError(getErrorMessage(e, 'No se pudo marcar pagado.'));
     } finally {
       setPending(false);
     }

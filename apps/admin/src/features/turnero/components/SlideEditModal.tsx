@@ -3,6 +3,7 @@
 import type { DisplaySlide } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, Textarea } from '@pos-tercos/ui';
 import { useEffect, useRef, useState } from 'react';
+import { getErrorMessage } from '../../../lib/errors';
 import {
   createSlide,
   listSlides,
@@ -67,7 +68,7 @@ export function SlideEditModal({
       }
       onSaved(await listSlides());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error guardando');
+      setError(getErrorMessage(e, 'Error guardando'));
     } finally {
       setBusy(false);
     }

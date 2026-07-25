@@ -13,6 +13,7 @@ import { useState, useTransition } from 'react';
 import { UNIT_LABEL_ERROR, isValidUnitLabel, type Subproduct } from '@pos-tercos/types';
 import { createSubproduct, deactivateSubproduct, updateSubproduct } from '../api/client';
 import { PreparationStepsField } from '../../../components/PreparationStepsField';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface SubproductFormProps {
   initial?: Subproduct;
@@ -99,7 +100,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
     }
@@ -116,7 +117,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
       setConfirmDeactivate(false);

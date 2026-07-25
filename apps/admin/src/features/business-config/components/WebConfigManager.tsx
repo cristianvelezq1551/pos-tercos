@@ -10,6 +10,7 @@ import { ContactSection } from './ContactSection';
 import { RadiusSection } from './RadiusSection';
 import { ScheduleSection } from './ScheduleSection';
 import { SocialSection } from './SocialSection';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Config de la web del cliente. Todo lo de acá sale por `GET /web-hero/config`
@@ -24,7 +25,7 @@ export function WebConfigManager() {
       .then(setConfig)
       .catch((e: unknown) => {
         logError('web-config.load', e);
-        setError(e instanceof Error ? e.message : 'No se pudo cargar la configuración.');
+        setError(getErrorMessage(e, 'No se pudo cargar la configuración.'));
       });
   }, []);
 

@@ -14,6 +14,7 @@ import { useMemo, useState, useTransition } from 'react';
 import type { Stockable } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
 import { createMovement } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface AdjustStockFormProps {
   stockable: Stockable;
@@ -94,7 +95,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
     }

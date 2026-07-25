@@ -5,6 +5,7 @@ import { FIXED_COST_CATEGORIES } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, MoneyInput, Select } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { createFixedCost, updateFixedCost } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function FixedCostFormDialog({
   initial,
@@ -54,7 +55,7 @@ export function FixedCostFormDialog({
       }
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
     } finally {
       setPending(false);
     }

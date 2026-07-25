@@ -7,6 +7,7 @@ import {
 import { Badge, Button } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { listIncidents, resolveIncident } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function IncidentsPanel() {
   const [items, setItems] = useState<KitchenIncident[]>([]);
@@ -21,7 +22,7 @@ export function IncidentsPanel() {
       setItems(await listIncidents(onlyOpen));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudieron cargar las incidencias');
+      setError(getErrorMessage(e, 'No se pudieron cargar las incidencias'));
     }
   }, [onlyOpen]);
 
@@ -35,7 +36,7 @@ export function IncidentsPanel() {
       await resolveIncident(id);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo resolver la incidencia');
+      setError(getErrorMessage(e, 'No se pudo resolver la incidencia'));
     } finally {
       setBusy(null);
     }

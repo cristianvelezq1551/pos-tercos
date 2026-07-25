@@ -4,6 +4,7 @@ import type { PaymentMethodSetting } from '@pos-tercos/types';
 import { Button, Dialog, Input, Label, Select, Switch } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { createPaymentMethod, updatePaymentMethod } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 type Mode = 'create' | 'edit';
 
@@ -62,7 +63,7 @@ export function PaymentMethodFormDialog({ open, mode, initial, onClose, onSaved 
       onSaved(saved);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar');
+      setError(getErrorMessage(e, 'No se pudo guardar'));
     } finally {
       setSaving(false);
     }

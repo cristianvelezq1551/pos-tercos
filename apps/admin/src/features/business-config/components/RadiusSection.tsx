@@ -6,6 +6,7 @@ import { Bike, Loader2, MapPin } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import { updateBusinessConfig } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Domicilios: si se reparte y hasta dónde. Sin `SectionCard` porque no hay
@@ -33,7 +34,7 @@ export function RadiusSection({
       onSaved(await updateBusinessConfig(body));
     } catch (e) {
       logError('web-config.radius', e);
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
       setKm(config.orderRadiusKm); // revertir a lo que sigue guardado
     } finally {
       setSaving(false);

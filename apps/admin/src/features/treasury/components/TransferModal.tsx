@@ -5,6 +5,7 @@ import { Button, Dialog, FormField, MoneyInput, Select } from '@pos-tercos/ui';
 import { ArrowLeftRight } from 'lucide-react';
 import { useState } from 'react';
 import { createTransfer } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 const POCKETS = PocketEnum.options as Pocket[];
 
@@ -32,7 +33,7 @@ export function TransferModal({ onClose, onSuccess }: { onClose: () => void; onS
       });
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar el traspaso.');
+      setError(getErrorMessage(e, 'No se pudo registrar el traspaso.'));
     } finally {
       setPending(false);
     }

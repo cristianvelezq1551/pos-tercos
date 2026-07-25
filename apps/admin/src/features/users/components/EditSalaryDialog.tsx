@@ -4,6 +4,7 @@ import type { ManagedUser, PayType } from '@pos-tercos/types';
 import { Button, Checkbox, Dialog, FormField, Input, MoneyInput, Select } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { setEmployment } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface EditSalaryDialogProps {
   user: Pick<ManagedUser, 'id' | 'fullName' | 'payType' | 'salaryAmount' | 'hireDate'> & {
@@ -68,7 +69,7 @@ export function EditSalaryDialog({ user, onClose, onSuccess }: EditSalaryDialogP
       );
       onSuccess(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar el salario.');
+      setError(getErrorMessage(e, 'No se pudo guardar el salario.'));
     } finally {
       setPending(false);
     }

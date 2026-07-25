@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { InventoryMovement } from '@pos-tercos/types';
 import { Button, Dialog, Label, NumberInput, Textarea } from '@pos-tercos/ui';
 import { reverseWaste } from '../api';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface ReverseWasteModalProps {
   movement: InventoryMovement;
@@ -49,7 +50,7 @@ export function ReverseWasteModal({ movement, open, onClose }: ReverseWasteModal
       onClose();
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo anular la merma.');
+      setError(getErrorMessage(e, 'No se pudo anular la merma.'));
     } finally {
       setSubmitting(false);
     }

@@ -6,6 +6,7 @@ import { ImagePlus, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import { uploadAboutImage } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Foto de "Nosotros". Sube al toque (no espera al Guardar de la sección): son
@@ -34,7 +35,7 @@ export function AboutImagePicker({
       setVersion((v) => v + 1);
     } catch (e) {
       logError('web-config.about-image', e);
-      setError(e instanceof Error ? e.message : 'No se pudo subir la foto.');
+      setError(getErrorMessage(e, 'No se pudo subir la foto.'));
     } finally {
       setBusy(false);
       if (input.current) input.current.value = '';

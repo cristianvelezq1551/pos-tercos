@@ -6,6 +6,7 @@ import { Settings2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { updateTreasuryConfig } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** "Celdas amarillas": fecha de corte + saldos iniciales de cada bolsillo. */
 export function TreasuryConfigCard({ config }: { config: TreasuryConfig }) {
@@ -30,7 +31,7 @@ export function TreasuryConfigCard({ config }: { config: TreasuryConfig }) {
       setOk(true);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
     } finally {
       setPending(false);
     }

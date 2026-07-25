@@ -4,6 +4,7 @@ import type { ChecklistItem, ChecklistType } from '@pos-tercos/types';
 import { Button, Input } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { createChecklistItem, listChecklistItems, updateChecklistItem } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function ChecklistItemsPanel() {
   const [items, setItems] = useState<ChecklistItem[]>([]);
@@ -18,7 +19,7 @@ export function ChecklistItemsPanel() {
       setItems(await listChecklistItems());
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudieron cargar las tareas');
+      setError(getErrorMessage(e, 'No se pudieron cargar las tareas'));
     }
   }, []);
 
@@ -34,7 +35,7 @@ export function ChecklistItemsPanel() {
       setLabel('');
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo crear la tarea');
+      setError(getErrorMessage(e, 'No se pudo crear la tarea'));
     } finally {
       setBusy(false);
     }
@@ -47,7 +48,7 @@ export function ChecklistItemsPanel() {
       await updateChecklistItem(item.id, { isActive: !item.isActive });
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo actualizar la tarea');
+      setError(getErrorMessage(e, 'No se pudo actualizar la tarea'));
     } finally {
       setBusy(false);
     }

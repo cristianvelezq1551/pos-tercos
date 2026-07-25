@@ -3,6 +3,7 @@
 import type { CortesiaRequest, CortesiaStatus } from '@pos-tercos/types';
 import { Badge, Button, Card, EmptyState, Input, Money, cn, formatCop, formatDate } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { getErrorMessage } from '../../../lib/errors';
 import {
   approveCortesia,
   getCortesiaGivenSummary,
@@ -49,7 +50,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
       setRows(await listCortesias(status));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando solicitudes');
+      setError(getErrorMessage(e, 'Error cargando solicitudes'));
     }
   }, []);
 
@@ -81,7 +82,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
       else await reverseCortesia(id, note);
       await Promise.all([refresh(tab), loadSummary()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error resolviendo la cortesía');
+      setError(getErrorMessage(e, 'Error resolviendo la cortesía'));
     } finally {
       setBusyId(null);
     }

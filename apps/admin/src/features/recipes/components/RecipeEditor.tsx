@@ -23,6 +23,7 @@ import {
 import { RecipeDraftTable, type DraftEdge } from './RecipeDraftTable';
 import { RecipeAddEdgeForm } from './RecipeAddEdgeForm';
 import { RecipeExpandedCostView } from './RecipeExpandedCostView';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface RecipeEditorProps {
   parentType: 'product' | 'subproduct';
@@ -120,7 +121,7 @@ export function RecipeEditor({
       .catch((err) => {
         if (!cancelled) {
           setExpandedCost(null);
-          setExpandedCostError(err instanceof Error ? err.message : 'Error');
+          setExpandedCostError(getErrorMessage(err, 'No se pudo calcular el costo.'));
         }
       });
     // Lotes FIFO (best-effort): solo para el rendimiento por lote, no bloquea el costo.
@@ -197,7 +198,7 @@ export function RecipeEditor({
       setSavedSnapshot(next);
       startTransition(() => { router.refresh(); });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al guardar');
+      setError(getErrorMessage(e, 'Error al guardar'));
     } finally {
       setSavingState('idle');
     }

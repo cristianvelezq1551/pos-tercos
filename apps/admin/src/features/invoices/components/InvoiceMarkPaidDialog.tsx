@@ -7,6 +7,7 @@ import { useState, type ChangeEvent } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
 import { ymdLocalToday } from '../../../lib/dates';
 import { markInvoicePaid } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function InvoiceMarkPaidDialog({
   invoice,
@@ -52,7 +53,7 @@ export function InvoiceMarkPaidDialog({
       });
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo marcar pagada.');
+      setError(getErrorMessage(e, 'No se pudo marcar pagada.'));
     } finally {
       setPending(false);
     }

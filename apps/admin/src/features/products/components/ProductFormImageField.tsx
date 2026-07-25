@@ -3,6 +3,7 @@
 import { Button, Label } from '@pos-tercos/ui';
 import { useRef, useState } from 'react';
 import { uploadProductImage } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface ProductFormImageFieldProps {
   imageUrl: string;
@@ -22,7 +23,7 @@ export function ProductFormImageField({ imageUrl, onChange, disabled }: ProductF
       const result = await uploadProductImage(file);
       onChange(result.imageUrl);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al subir imagen.');
+      setError(getErrorMessage(e, 'Error al subir imagen.'));
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = '';

@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { UNIT_LABEL_ERROR, isValidUnitLabel, type Ingredient } from '@pos-tercos/types';
 import { createIngredient, deactivateIngredient, updateIngredient } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface IngredientFormProps {
   initial?: Ingredient;
@@ -102,7 +103,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
     }
@@ -119,7 +120,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
       setConfirmDeactivate(false);

@@ -11,6 +11,7 @@ import {
   updateCategory,
 } from '../api/client';
 import { CategoryRow } from './CategoryRow';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function CategoriesManager({ initial }: { initial: ProductCategory[] }) {
   const [cats, setCats] = useState<ProductCategory[]>(initial);
@@ -26,7 +27,7 @@ export function CategoriesManager({ initial }: { initial: ProductCategory[] }) {
       await fn();
       setCats(await listCategories());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error inesperado');
+      setError(getErrorMessage(e, 'Error inesperado'));
     } finally {
       setBusy(false);
     }

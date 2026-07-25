@@ -5,6 +5,7 @@ import { Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { updateBusinessConfig } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Kill-switch de pedidos web (#13): ante abuso del formulario público (cada
@@ -24,7 +25,7 @@ export function WebOrdersToggleCard({ enabled }: { enabled: boolean }) {
       await updateBusinessConfig({ webOrdersEnabled: !enabled });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
     } finally {
       setPending(false);
     }

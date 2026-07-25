@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { importDefaults, listSlides, reorderSlides } from '../api/client';
 import { SlideCard } from './SlideCard';
 import { SlideEditModal } from './SlideEditModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Sección "Productos del turnero": grilla de slides + alta + import por defecto. */
 export function SlidesPanel({
@@ -27,7 +28,7 @@ export function SlidesPanel({
       await importDefaults();
       onChange(await listSlides());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error importando');
+      setError(getErrorMessage(e, 'Error importando'));
     } finally {
       setBusy(false);
     }

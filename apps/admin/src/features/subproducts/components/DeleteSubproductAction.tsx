@@ -4,6 +4,7 @@ import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { deleteSubproduct } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface Props {
   id: string;
@@ -24,7 +25,7 @@ export function DeleteSubproductAction({ id, name }: Props) {
       setOpen(false);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo eliminar el subproducto.');
+      setError(getErrorMessage(e, 'No se pudo eliminar el subproducto.'));
     } finally {
       setPending(false);
     }
