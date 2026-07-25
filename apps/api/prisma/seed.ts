@@ -189,7 +189,28 @@ const MENU: MenuProduct[] = [
   },
 ];
 
+/**
+ * Las categorías que usan los productos del menú, como filas propias.
+ *
+ * El seed escribe los productos con Prisma directo, salteándose el servicio
+ * —que exige que la categoría exista—, así que `product_categories` quedaba
+ * VACÍA con 19 productos cargados. Consecuencia: la pantalla de Categorías se
+ * veía sin nada y crear un producto nuevo tecleando "Burgers" fallaba con
+ * "la categoría no existe". El bootstrap de producción sí las crea; el de dev
+ * no, y es el que se usa para probar.
+ */
+async function seedCategories(): Promise<void> {
+  const names = [...new Set(MENU.map((m) => m.category))];
+  const result = await prisma.productCategory.createMany({
+    data: names.map((name, sortOrder) => ({ name, sortOrder })),
+    skipDuplicates: true,
+  });
+  console.log(`✓ ${result.count} categorías: ${names.join(', ')}`);
+}
+
 async function seedMenu(): Promise<void> {
+  await seedCategories();
+
   // 1ra pasada: productos simples + variantes + bebidas (los combos los
   // referencian, así que van antes).
   for (const p of MENU.filter((m) => !m.combo)) {
