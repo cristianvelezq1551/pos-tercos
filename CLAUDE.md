@@ -1265,6 +1265,73 @@ El modal admite además defaulteaba a `EFECTIVO`, así que el camino al cajón s
 
 ---
 
+## 7.v18 Reversa de merma + hardening de seguridad y mobile (2026-07-25)
+
+> Sesión de auditoría completa (viabilidad prod + ciberseguridad + mobile).
+> Verificado: typecheck 13/13, lint 0, unit 933, e2e 40 suites/354, builds 8/8,
+> `pnpm audit --prod` sin vulnerabilidades, 5 tests de navegador (Playwright).
+
+### La merma ahora se puede anular (única pérdida sin camino de vuelta)
+- `inventory_movements` es insert-only: una merma mal tecleada ("10 kg" en vez
+  de "1 kg") solo se corregía con un ajuste manual que devolvía la CANTIDAD,
+  pero el costo seguía restando del neto del P&G **para siempre**.
+- El movimiento compensatorio lleva `sourceType='waste_reversal'` + `sourceId`
+  = id del movimiento de merma original (una merma no tiene entidad padre, a
+  diferencia de una cortesía). `runLedgerFifo` lo trata como a
+  `cortesia_reversal`: devuelve las unidades con su base de costo REAL y netea
+  la pérdida en `waste`. Sin lotes fantasma si la merma sobre-consumió.
+- `POST /inventory/movements/:id/reverse-waste` (`@AdminAccess`), motivo
+  obligatorio, reversas **parciales acumulables** (nunca más de lo mermado),
+  audit `INVENTORY_MOVEMENT_WASTE_REVERSED`. Botón "Anular" en la tabla de
+  movimientos, oculto cuando ya se devolvió todo.
+- ⚠️ El ledger tiene caché de 60s: tras anular, el P&G refleja el cambio
+  cuando vence el TTL (staleness deliberada, ver `CogsService`).
+
+### Seguridad
+- **Next 15.5.19 → 15.5.21**: traía SSRF en `rewrites` y las 4 apps proxian
+  `/api` con un rewrite. **bcrypt 5 → 6** (la v6 no usa `node-pre-gyp`, que
+  arrastraba `brace-expansion` vulnerable; los hashes `$2b` existentes siguen
+  validando). SCA de producción: 10 avisos → **0**.
+- **Cadena de suministro**: GitHub Actions clavadas a commit SHA (un tag es
+  movible y el workflow de backup tiene las credenciales de R2) +
+  `minimumReleaseAge: 10080`, `blockExoticSubdeps`, `trustPolicy: no-downgrade`
+  en `pnpm-workspace.yaml`.
+- **CSP en admin, cocina y pantalla** (la web ya la tenía; el admin, donde vive
+  la plata, era la única sin ella). El `connect-src` del admin incluye el
+  origen del WS de pedidos web, que en prod es otro dominio — sin eso el
+  socket muere en silencio. Verificada en Chromium sobre 11 pantallas.
+- SSRF en el resolvedor de links de Maps: el allowlist solo cubría el primer
+  salto; ahora se revalida el destino del redirect (16 tests).
+- Log injection en `POST /client-logs` (se aplanan los caracteres de control).
+- **Verificado y NO era problema** (documentado para no re-auditarlo): los 259
+  endpoints están gateados por rol; `GET /ingredients|/products` anulan
+  `lastUnitCost` para quien no es admin/dueño (`stripCostForRole`) — el
+  cocinero NO ve costos; gitleaks sobre 345 commits: cero secretos reales.
+
+### Mobile
+- La barra de la caja se desbordaba 29px en 375px ("Cerrar sesión" cortado):
+  abajo de `sm` el botón pasa a ícono y "Pedidos web" a "Web".
+- El botón "Agregar" del menú medía **32px en teléfono y 36px en escritorio**
+  (al revés de lo que pide un pulgar) → 44px en móvil, igual los chips de
+  categoría. El pie de la web reserva el alto de la barra flotante + safe-area.
+- Resultado: 0 pantallas con scroll horizontal en web, caja y cocina.
+
+### Deuda conocida (no bloquea el lanzamiento)
+- **Snapshot FIFO**: `needsFullReplay` se dispara cuando una anulación revierte
+  una venta anterior al corte, y es **pegajoso todo el período** (una sola
+  reversa que cruce el borde del mes ⇒ todos los reportes de ese mes replican
+  la historia completa). No da datos incorrectos, solo más lento. Medido a
+  escala real: 12 meses = 219k movimientos = **180 ms / ~200 MB de heap**. Lo
+  que hay que vigilar hacia el año 2-3 es la MEMORIA (~18 MB por mes de
+  historia), no el tiempo.
+- **Deriva de redondeo FIFO**: acotada en **$0,48 por cada $1.000.000** movido
+  (acumulación del `roundCost` de 4 decimales). Inmaterial en COP.
+- El envío cuenta como ingreso (decisión del dueño 2026-07-17): el revenue de
+  *top productos* difiere del de *resumen de ventas* exactamente por la suma de
+  los envíos. Es esperado — pero si el pago al domiciliario no se registra como
+  gasto, el neto queda inflado.
+
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
