@@ -148,7 +148,9 @@ function CategoryTab({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'inline-flex h-9 shrink-0 items-center rounded-full px-4 text-xs font-semibold transition-colors sm:h-8',
+        // Los chips se tocan con el pulgar mientras se scrollea la fila: 44px
+        // en móvil evita el toque fallado. En escritorio quedan compactos.
+        'inline-flex h-11 shrink-0 items-center rounded-full px-4 text-xs font-semibold transition-colors sm:h-8',
         active
           ? 'bg-primary text-primary-foreground sm:bg-background sm:text-foreground sm:shadow-sm'
           : 'border border-border bg-card text-muted-foreground hover:text-foreground sm:border-0 sm:bg-transparent',

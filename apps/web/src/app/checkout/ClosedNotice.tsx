@@ -39,7 +39,10 @@ export function ClosedNotice({ business }: { business: PublicBusinessInfo }) {
         </ul>
       ) : null}
 
-      <Link href="/" className="text-sm font-semibold text-primary hover:underline">
+      <Link
+        href="/"
+        className="-my-2 inline-flex min-h-11 items-center py-2 text-sm font-semibold text-primary hover:underline"
+      >
         ← Volver al menú
       </Link>
     </div>

@@ -72,7 +72,10 @@ export function WebOrdersAction({
             connection === 'connected' ? 'bg-success' : 'bg-warning motion-safe:animate-pulse',
           )}
         />
-        {pulse ? '🔔 ¡Nuevo pedido!' : 'Pedidos web'}
+        {/* En teléfono el texto largo desborda la barra: queda "Web" (el punto
+            de estado y el contador siguen contando la historia completa). */}
+        <span className="hidden sm:inline">{pulse ? '🔔 ¡Nuevo pedido!' : 'Pedidos web'}</span>
+        <span className="sm:hidden">{pulse ? '🔔' : 'Web'}</span>
         {total > 0 ? (
           <span
             aria-label={`${total} pedidos pendientes por confirmar pago`}

@@ -27,7 +27,8 @@ export default async function CheckoutPage() {
       <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
+          // -my-2/py-2: crece el área de toque a 44px sin mover el diseño.
+          className="-my-2 inline-flex min-h-11 items-center gap-2 py-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
         >
           <ArrowLeft className="h-4 w-4" strokeWidth={2} />
           Volver al menú

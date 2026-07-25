@@ -91,7 +91,9 @@ export function ProductCard({
           ) : (
             <span
               className={cn(
-                'inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors sm:order-1 sm:h-9',
+                // 44px en móvil: es el botón que convierte y se toca con el
+                // pulgar. Estaba al revés (32px con el dedo, 36px con el mouse).
+                'inline-flex h-11 items-center gap-1 rounded-full px-4 text-xs font-semibold transition-colors sm:order-1 sm:h-9 sm:px-3',
                 'bg-primary text-primary-foreground hover:bg-red-700',
                 'sm:bg-muted sm:text-foreground sm:hover:bg-background',
               )}

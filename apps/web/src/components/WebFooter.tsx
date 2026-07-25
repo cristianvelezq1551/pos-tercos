@@ -27,7 +27,10 @@ export function WebFooter() {
   ].filter((s): s is { label: string; url: string } => Boolean(s.url));
 
   return (
-    <footer className="flex flex-col gap-4 border-t border-border bg-[#111111] px-6 py-5 text-sm text-muted-foreground sm:px-12 lg:px-20">
+    // pb extra en móvil: la barra de navegación flota fija sobre el contenido
+    // (62px + safe-area) y tapaba la última línea del pie. En `md` la barra no
+    // existe y el padding vuelve a lo normal.
+    <footer className="flex flex-col gap-4 border-t border-border bg-[#111111] px-6 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-sm text-muted-foreground sm:px-12 md:pb-5 lg:px-20">
       {links.length > 0 ? (
         <nav className="flex flex-wrap items-center gap-x-6 gap-y-3">
           {links.map(({ label, href, icon: Icon, external }) => (
