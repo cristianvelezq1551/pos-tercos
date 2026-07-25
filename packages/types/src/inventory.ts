@@ -90,6 +90,20 @@ export const CreateInventoryMovementSchema = z
 export type CreateInventoryMovement = z.infer<typeof CreateInventoryMovementSchema>;
 
 /**
+ * Anulación de una merma registrada por error (dedo pesado: "10 kg" en vez de
+ * "1 kg"). `inventory_movements` es insert-only, así que la corrección es un
+ * movimiento compensatorio; sin él la pérdida quedaba fija para siempre en el
+ * P&G (el ajuste manual devolvía la cantidad pero no el costo).
+ *
+ * `quantity` permite devolver SOLO lo que no se tiró: null = la merma entera.
+ */
+export const ReverseWasteSchema = z.object({
+  reason: z.string().min(5).max(200),
+  quantity: z.number().positive().nullable().optional(),
+});
+export type ReverseWaste = z.infer<typeof ReverseWasteSchema>;
+
+/**
  * Vista unificada de stock — incluye insumos, productos direct-resale y
  * subproductos (producción interna). El frontend muestra los 3 en la misma
  * tabla distinguidos por `type`.

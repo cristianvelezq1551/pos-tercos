@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { roundCost, roundsToZeroAt4 } from '@pos-tercos/domain';
 import type {
   CreateInventoryMovement,
   InventoryMovement,
@@ -242,6 +243,86 @@ export class InventoryService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Anula (total o parcialmente) una merma registrada por error.
+   *
+   * `inventory_movements` es insert-only, así que la corrección es un
+   * movimiento compensatorio con `sourceType='waste_reversal'` apuntando al id
+   * de la merma original. El ledger FIFO lo reconoce y devuelve las unidades
+   * con su base de costo REAL, neteando la pérdida en el P&G — un
+   * `MANUAL_ADJUSTMENT` suelto devolvía la cantidad pero dejaba el costo
+   * restando del neto para siempre, sin camino de corrección.
+   *
+   * Reversas parciales acumulables: el dueño puede devolver de a poco, pero
+   * nunca más de lo que se tiró.
+   */
+  async reverseWaste(
+    movementId: string,
+    input: { reason: string; quantity?: number | null },
+    userId: string,
+  ): Promise<InventoryMovement> {
+    const original = await this.prisma.inventoryMovement.findUnique({
+      where: { id: movementId },
+      select: {
+        id: true,
+        type: true,
+        delta: true,
+        entityType: true,
+        ingredientId: true,
+        productId: true,
+        subproductId: true,
+      },
+    });
+    if (!original) throw new NotFoundException(`Movimiento ${movementId} no encontrado`);
+    if (original.type !== 'WASTE') {
+      throw new BadRequestException(
+        'Solo se anulan movimientos de MERMA. Para corregir otro movimiento usá un ajuste manual.',
+      );
+    }
+
+    const wasted = Math.abs(Number(original.delta));
+    // Lo ya devuelto por reversas previas (acumulables).
+    const prior = await this.prisma.inventoryMovement.aggregate({
+      where: { sourceType: 'waste_reversal', sourceId: movementId },
+      _sum: { delta: true },
+    });
+    const alreadyReturned = Number(prior._sum.delta ?? 0);
+    const pending = roundCost(wasted - alreadyReturned);
+    if (pending <= 0) {
+      throw new BadRequestException('Esta merma ya fue anulada por completo.');
+    }
+
+    const requested = input.quantity ?? pending;
+    if (requested > pending + 1e-9) {
+      throw new BadRequestException(
+        `No se puede devolver ${requested}: la merma tiene ${pending} sin anular.`,
+      );
+    }
+    const delta = roundCost(requested);
+    if (roundsToZeroAt4(delta)) {
+      throw new BadRequestException('La cantidad a devolver redondea a cero.');
+    }
+
+    const created = await this.prisma.inventoryMovement.create({
+      data: {
+        entityType: original.entityType,
+        ingredientId: original.ingredientId,
+        productId: original.productId,
+        subproductId: original.subproductId,
+        delta,
+        // El costo lo resuelve el ledger devolviendo los lotes originales.
+        unitCost: null,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'waste_reversal',
+        sourceId: movementId,
+        notes: `Anulación de merma: ${input.reason}`.slice(0, 500),
+        userId,
+      },
+      include: includeFull(),
+    });
+    return toMovementDto(created);
   }
 
   async listMovements(filter: ListMovementsFilter = {}): Promise<InventoryMovement[]> {

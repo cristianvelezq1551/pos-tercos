@@ -347,6 +347,75 @@ describe('runLedgerFifo · producción con costo mixto (parcial)', () => {
   });
 });
 
+describe('runLedgerFifo · anulación de merma (base de costo real)', () => {
+  it('la reversa devuelve las unidades con su costo FIFO original y netea la merma', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({ id: 'w1', delta: -3, type: 'WASTE' }),
+      mov({ delta: 3, type: 'MANUAL_ADJUSTMENT', sourceType: 'waste_reversal', sourceId: 'w1' }),
+    ]);
+    // La merma costó 300 y la reversa lo devuelve: neto 0 en el P&G.
+    expect(r.waste.reduce((s, w) => s + w.cost, 0)).toBe(0);
+    // El stock vuelve a 10 con su valor original (no un lote sin costo).
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 1000, unknownQty: 0 });
+  });
+
+  it('reversa PARCIAL solo netea lo devuelto (el dedo pesado se corrige a lo real)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      // El cocinero registra 10 kg de merma cuando en realidad fue 1.
+      mov({ id: 'w2', delta: -10, type: 'WASTE' }),
+      // El admin devuelve los 9 kg que nunca se tiraron.
+      mov({ delta: 9, type: 'MANUAL_ADJUSTMENT', sourceType: 'waste_reversal', sourceId: 'w2' }),
+    ]);
+    // Pérdida real en el P&G: 1 kg × $100.
+    expect(r.waste.reduce((s, w) => s + w.cost, 0)).toBe(100);
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 9, value: 900, unknownQty: 0 });
+  });
+
+  it('devuelve lo más recién consumido primero cuando la merma cruzó lotes', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 2, unitCost: 10 }),
+      mov({ delta: 2, unitCost: 20 }),
+      // Merma cruza lotes: 2×10 + 1×20 = 40.
+      mov({ id: 'w3', delta: -3, type: 'WASTE' }),
+      // Reversa de 1 → devuelve la del lote de $20 (lo último consumido).
+      mov({ delta: 1, type: 'MANUAL_ADJUSTMENT', sourceType: 'waste_reversal', sourceId: 'w3' }),
+    ]);
+    expect(r.waste.reduce((s, w) => s + w.cost, 0)).toBe(20);
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 2, value: 40, unknownQty: 0 });
+  });
+
+  it('reversa de una merma que sobre-consumió NO crea lotes fantasma', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1, unitCost: 50 }),
+      mov({ id: 'w4', delta: -3, type: 'WASTE' }),
+      mov({ delta: 3, type: 'MANUAL_ADJUSTMENT', sourceType: 'waste_reversal', sourceId: 'w4' }),
+    ]);
+    // DB: 1 − 3 + 3 = 1. El FIFO dice lo mismo.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 1, value: 50, unknownQty: 0 });
+    expect(r.waste.reduce((s, w) => s + w.cost, 0)).toBe(0);
+  });
+
+  it('reversa sin draws (movimiento inexistente) no toca los agregados', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 4, type: 'MANUAL_ADJUSTMENT', sourceType: 'waste_reversal', sourceId: 'noExiste' }),
+    ]);
+    expect(r.waste).toEqual([]);
+    // No inyecta unidades fantasma: la cola queda en cero, no en 4.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 0, value: 0, unknownQty: 0 });
+  });
+
+  it('una merma NO revertida no paga el costo de registrar draws', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({ id: 'w5', delta: -3, type: 'WASTE' }),
+    ]);
+    expect(r.waste.reduce((s, w) => s + w.cost, 0)).toBe(300);
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 7, value: 700, unknownQty: 0 });
+  });
+});
+
 describe('runLedgerFifo · anulación de cortesía (base de costo real)', () => {
   it('la reversa devuelve las unidades con su costo FIFO original y netea la cortesía', () => {
     const r = runLedgerFifo([

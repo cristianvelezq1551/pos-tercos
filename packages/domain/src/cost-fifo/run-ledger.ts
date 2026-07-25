@@ -276,10 +276,17 @@ export function runLedgerFifo(
   // retenía ~1M objetos en el pico del replay. Con el pre-scan, solo se
   // registran los de los sourceIds que efectivamente tienen reversas (un
   // puñado), y el pico de memoria deja de crecer con la historia de ventas.
+  // Para la merma el `sourceId` de la reversa apunta al ID del MOVIMIENTO de
+  // merma original (una merma no tiene entidad padre, a diferencia de una
+  // cortesía), así que la clave de sus draws es el id del propio movimiento.
   const reversedSources = new Set<string>();
   for (const m of movements) {
     if (!m.sourceId) continue;
-    if ((m.type === 'SALE' && m.delta > 0) || m.sourceType === 'cortesia_reversal') {
+    if (
+      (m.type === 'SALE' && m.delta > 0) ||
+      m.sourceType === 'cortesia_reversal' ||
+      m.sourceType === 'waste_reversal'
+    ) {
       reversedSources.add(m.sourceId);
     }
   }
@@ -701,6 +708,31 @@ export function runLedgerFifo(
       continue;
     }
 
+    // Anulación de MERMA: el admin corrige una merma registrada por error
+    // (dedo pesado del cocinero: "10 kg" en vez de "1 kg"). Devuelve las
+    // unidades con su base de costo REAL y NETEA el costo en `waste`, que es
+    // lo que el P&G resta del neto. Sin esto, el ajuste compensatorio entraba
+    // como lote unitCost=null y la pérdida quedaba fija para siempre en el
+    // estado financiero, sin camino de corrección (`inventory_movements` es
+    // insert-only). Espeja `cortesia_reversal`.
+    //
+    // El faltante (delta > draws devueltos) NO se re-inyecta, por la misma
+    // razón que el void y la cortesía: el replay cubre toda la historia, así
+    // que "sin draws" significa que la merma consumió unidades fantasma.
+    if (m.sourceType === 'waste_reversal' && delta > 0) {
+      const drawKey = `${m.sourceId ?? ''}:${key}`;
+      const { returnedCost, returnedUnknown, returnedQty } = returnDraws(drawKey, key, delta);
+      flagIfCrossCutoff(returnedQty, delta);
+      if (returnedQty > 0 && (returnedCost > 0 || returnedUnknown > 0)) {
+        out.waste.push({
+          createdAt: iso,
+          cost: -roundCost(returnedCost),
+          unknownQty: -roundCost(returnedUnknown),
+        });
+      }
+      continue;
+    }
+
     // Entrada (PURCHASE, INITIAL, MANUAL_ADJUSTMENT+).
     if (delta > 0) {
       addLot(key, {
@@ -762,6 +794,14 @@ export function runLedgerFifo(
       );
     } else if (m.type === 'WASTE') {
       // Merma/cortesía no estiman ni crean deuda: su faltante sigue desconocido.
+      // Los draws se registran (bajo el id del PROPIO movimiento) para que una
+      // ANULACIÓN devuelva la base de costo exacta — ver `waste_reversal`.
+      if (reversedSources.has(m.id)) {
+        const drawKey = `${m.id}:${key}`;
+        const acc = drawsBySource.get(drawKey) ?? [];
+        for (const d of draws) acc.push(d);
+        drawsBySource.set(drawKey, acc);
+      }
       out.waste.push({ createdAt: iso, cost, unknownQty: roundCost(unknownQty + shortfall) });
     } else if (m.sourceType === 'cortesia') {
       // Cortesía AUTORIZADA: producto regalado → costo FIFO real (no es venta

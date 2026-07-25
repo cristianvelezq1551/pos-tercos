@@ -1,1 +1,1 @@
-export { listStock, getStock, listMovements, createMovement } from './client';
+export { listStock, getStock, listMovements, createMovement, reverseWaste } from './client';
