@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { sameBusinessDay } from '@pos-tercos/domain';
 
 /**
  * Helpers de los e2e de navegador de la CAJA unificada (admin). El
@@ -66,14 +67,21 @@ export async function getCurrentShift(
   return text ? (JSON.parse(text) as ApiShift) : null;
 }
 
-export function isToday(iso: string): boolean {
-  const d = new Date(iso);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+/**
+ * ¿La caja es de la jornada VIGENTE?
+ *
+ * Tiene que ser el mismo criterio que usa el backend para marcarla stale: el
+ * día de NEGOCIO, con corte a las 4 am (§7.v14), no el día calendario. El
+ * local vende de madrugada, así que una caja abierta a la 1 am pertenece a la
+ * jornada del día ANTERIOR.
+ *
+ * Comparando por día calendario, esa caja parecía "de hoy" y el harness no la
+ * cerraba; el backend sí la veía stale y bloqueaba la venta. La suite fallaba
+ * entera, pero solo si se corría de madrugada o después del corte — el peor
+ * tipo de test intermitente: falla por la hora, no por el código.
+ */
+export function isCurrentBusinessDay(iso: string): boolean {
+  return sameBusinessDay(new Date(iso), new Date());
 }
 
 export async function computeExpectedCash(
@@ -117,7 +125,7 @@ export async function ensureOpenShiftToday(
   dueno: Session,
 ): Promise<ApiShift> {
   let current = await getCurrentShift(api, operativo);
-  if (current && !isToday(current.openedAt)) {
+  if (current && !isCurrentBusinessDay(current.openedAt)) {
     const counted = await computeExpectedCash(api, dueno, current);
     const closeRes = await api.post(`${API}/shifts/${current.id}/close`, {
       headers: authHeaders(dueno),
@@ -138,7 +146,7 @@ export async function ensureOpenShiftToday(
   const listRes = await api.get(`${API}/shifts?limit=10`, { headers: authHeaders(dueno) });
   expect(listRes.ok()).toBeTruthy();
   const shifts = (await listRes.json()) as ApiShift[];
-  const closedToday = shifts.find((s) => s.status === 'CLOSED' && isToday(s.openedAt));
+  const closedToday = shifts.find((s) => s.status === 'CLOSED' && isCurrentBusinessDay(s.openedAt));
   expect(closedToday, 'no encontré la caja CLOSED de hoy para reabrir').toBeTruthy();
   const reopenRes = await api.post(`${API}/shifts/${closedToday!.id}/reopen`, {
     headers: authHeaders(dueno),
@@ -154,7 +162,7 @@ export async function reopenTodayIfClosed(api: APIRequestContext, dueno: Session
     const listRes = await api.get(`${API}/shifts?limit=10`, { headers: authHeaders(dueno) });
     if (!listRes.ok()) return;
     const shifts = (await listRes.json()) as ApiShift[];
-    const closedToday = shifts.find((s) => s.status === 'CLOSED' && isToday(s.openedAt));
+    const closedToday = shifts.find((s) => s.status === 'CLOSED' && isCurrentBusinessDay(s.openedAt));
     if (closedToday) {
       await api.post(`${API}/shifts/${closedToday.id}/reopen`, { headers: authHeaders(dueno) });
     }
