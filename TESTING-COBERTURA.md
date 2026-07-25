@@ -1,6 +1,6 @@
 # Cobertura de tests — estado y cómo medirla
 
-> Medición real del 2026-07-22. Reproducila con los comandos de abajo, no confíes en este número si pasaron semanas.
+> Medición real del 2026-07-25. Reproducila con los comandos de abajo, no confíes en este número si pasaron semanas.
 
 ## Cómo medir
 
@@ -19,9 +19,9 @@ El HTML detallado queda en `<paquete>/coverage/index.html`.
 
 | Paquete | Tests | Líneas | Ramas | Qué mide |
 |---|---:|---:|---:|---|
-| `packages/domain` | 308 | **94.9%** | 87.6% | lógica pura de negocio |
-| `apps/api` (backend, e2e) | 338 | **76.3%** | 61.9% | e2e contra Postgres real |
-| `apps/api` (`common/`, unit) | 90 | 58.5% | 91.9% | invariantes de arranque, tx, rangos HTTP |
+| `packages/domain` | 314 | **94.9%** | 87.6% | lógica pura de negocio |
+| `apps/api` (backend, e2e) | 354 | **76.8%** | 62.1% | e2e contra Postgres real |
+| `apps/api` (`common/`, unit) | 106 | 58.5% | 91.9% | invariantes de arranque, tx, rangos HTTP, SSRF de Maps |
 | `packages/types` | 162 | 57.8% | 80.3% | contratos Zod |
 | `apps/print-agent` | 70 | 49.5% | 100% | auth, cola, ruteo, `.env`, contratos |
 | `packages/ui` | 106 | 19.0% | 87.1% | formatters + inputs de plata + PIN + login |
@@ -29,7 +29,7 @@ El HTML detallado queda en `<paquete>/coverage/index.html`.
 | `apps/cocina` | 32 | — | 93.4% | middleware (aislamiento de cookies) + uuid |
 | `apps/web` | 21 | — | 88.2% | `lib/` |
 | `apps/public-display` | 10 | — | 100% | fallback del B-roll |
-| **Total** | **1.249** | | | 911 unit + 338 e2e |
+| **Total** | **1.287** | | | 933 unit + 354 e2e |
 
 `packages/brand` no tiene tests **a propósito**: son logos, marquesinas y
 carruseles decorativos. Un test de "el tagline cambia a los 8 segundos" existiría
@@ -42,7 +42,7 @@ paquete, y la mayoría son componentes React que ningún test unitario importa. 
 grueso de `admin/src` es UI, y la UI se verifica con Playwright
 (`apps/admin/e2e/`). **En esos paquetes mirá la columna de RAMAS**, que se
 calcula sobre el código que los tests sí ejecutan. Los números comparables contra
-un objetivo son `domain` (94.9%) y el backend vía e2e (76.3%).
+un objetivo son `domain` (94.9%) y el backend vía e2e (76.8%).
 
 En `print-agent` el 49.5% restante es IO de hardware real (`writeWindowsRaw` por
 el spooler de Windows, `writeUsb` por libusb): no se puede ejercitar sin la

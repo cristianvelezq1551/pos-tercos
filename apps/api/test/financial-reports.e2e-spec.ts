@@ -31,7 +31,13 @@ describe('Reportes financieros del dueño E2E', () => {
     // ledger-snapshot.e2e; en prod lo refresca el cron/snapshot o el paso del TTL.
     cogs.invalidateLedgerCache();
     return (await request.get(`/reports/financial/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`).set(auth()).expect(200))
-      .body as { revenue: number; cogs: number; netResult: number; wasteCost: number; cogsEstimated: boolean; cogsPartial: boolean };
+      .body as {
+      revenue: number; cogs: number; grossMargin: number; grossMarginPct: number;
+      netResult: number; wasteCost: number; cortesiasCost: number; refundCost: number;
+      totalFixed: number; oneTimeCost: number; breakEven: number | null;
+      fixedCosts: Array<{ name: string; monthlyAmount: number; isPayroll: boolean; isOneTime: boolean }>;
+      cogsEstimated: boolean; cogsPartial: boolean;
+    };
   };
 
   const dashboardRevenue = async () =>
@@ -112,5 +118,121 @@ describe('Reportes financieros del dueño E2E', () => {
     expect(after.wasteCost - before.wasteCost).toBe(3000);
     // El neto BAJA por la merma (decisión del dueño: la merma resta).
     expect(after.netResult - before.netResult).toBe(-3000);
+  });
+  it('anular una merma mal registrada la borra del neto (queda solo lo que se tiró)', async () => {
+    const before = await monthly();
+    // El cocinero teclea 4 unidades cuando en realidad se cayó 1.
+    const merma = await request
+      .post('/inventory/movements')
+      .set(auth())
+      .send({ entityType: 'PRODUCT', productId, delta: -4, type: 'WASTE', notes: 'dedo pesado' })
+      .expect(201);
+    const conMerma = await monthly();
+    expect(conMerma.wasteCost - before.wasteCost).toBe(6000); // 4 × $1.500
+
+    // El dueño devuelve las 3 que nunca se tiraron.
+    await request
+      .post(`/inventory/movements/${merma.body.id}/reverse-waste`)
+      .set(auth())
+      .send({ reason: 'Fue una unidad, no cuatro', quantity: 3 })
+      .expect(201);
+
+    const after = await monthly();
+    // Pérdida real: 1 × $1.500. Sin la reversa, el P&G arrastraba $6.000 para siempre.
+    expect(after.wasteCost - before.wasteCost).toBe(1500);
+    expect(after.netResult - before.netResult).toBe(-1500);
+    expect(after.revenue).toBe(before.revenue);
+  });
+
+  it('un salario MENSUAL entra completo como "Nómina (auto)" y baja el neto', async () => {
+    const before = await monthly();
+    const SALARIO = 3_000_000;
+    // Contratado antes del mes y sin salida ⇒ el mes se devenga entero.
+    await prisma.user.create({
+      data: {
+        email: 'mensual-fr@test.local',
+        fullName: 'Empleado Mensual',
+        role: 'TRABAJADOR',
+        passwordHash: 'x',
+        mustChangePwd: false,
+        active: true,
+        payType: 'MONTHLY',
+        salaryAmount: SALARIO,
+        hireDate: new Date(Date.UTC(now.getFullYear() - 1, 0, 1)),
+      },
+    });
+
+    const after = await monthly();
+    // Suma exacta del salario: el prorrateo por día debe cerrar en el mes completo,
+    // sea de 28, 30 o 31 días.
+    expect(after.totalFixed - before.totalFixed).toBe(SALARIO);
+    expect(after.netResult - before.netResult).toBe(-SALARIO);
+    const nomina = after.fixedCosts.find((l) => l.isPayroll);
+    expect(nomina?.monthlyAmount).toBe(SALARIO);
+  });
+
+  it('un empleado que se fue antes del mes NO devenga nada', async () => {
+    const before = await monthly();
+    await prisma.user.create({
+      data: {
+        email: 'retirado-fr@test.local',
+        fullName: 'Ya no trabaja acá',
+        role: 'TRABAJADOR',
+        passwordHash: 'x',
+        mustChangePwd: false,
+        active: false,
+        payType: 'MONTHLY',
+        salaryAmount: 2_000_000,
+        hireDate: new Date(Date.UTC(now.getFullYear() - 2, 0, 1)),
+        terminationDate: new Date(Date.UTC(now.getFullYear() - 1, 0, 31)),
+      },
+    });
+    const after = await monthly();
+    expect(after.totalFixed).toBe(before.totalFixed);
+    expect(after.netResult).toBe(before.netResult);
+  });
+
+  it('un costo fijo recurrente baja el neto y entra al break-even; uno puntual NO', async () => {
+    const before = await monthly();
+    const ARRIENDO = 1_500_000;
+    await request
+      .post('/fixed-costs')
+      .set(auth())
+      .send({ name: 'Arriendo', amount: ARRIENDO, frequency: 'MONTHLY', category: 'Local' })
+      .expect(201);
+
+    const conArriendo = await monthly();
+    expect(conArriendo.totalFixed - before.totalFixed).toBe(ARRIENDO);
+    expect(conArriendo.netResult - before.netResult).toBe(-ARRIENDO);
+
+    // Gasto puntual: pega al neto pero se reporta aparte y NO infla el
+    // break-even (que representa el piso RECURRENTE que hay que vender).
+    const COMPRA_HORNO = 800_000;
+    const hoy = new Date().toISOString().slice(0, 10);
+    await request
+      .post('/fixed-costs')
+      .set(auth())
+      .send({ name: 'Horno nuevo', amount: COMPRA_HORNO, frequency: 'ONE_TIME', category: 'Equipos', startedAt: hoy })
+      .expect(201);
+
+    const after = await monthly();
+    expect(after.oneTimeCost - conArriendo.oneTimeCost).toBe(COMPRA_HORNO);
+    expect(after.totalFixed).toBe(conArriendo.totalFixed); // el puntual NO es recurrente
+    expect(after.netResult - conArriendo.netResult).toBe(-COMPRA_HORNO);
+
+    // Break-even = costos recurrentes / margen bruto %.
+    if (after.grossMarginPct > 0) {
+      expect(after.breakEven).toBeCloseTo(after.totalFixed / after.grossMarginPct, 0);
+    }
+  });
+
+  it('el estado financiero cierra: neto = margen bruto − fijos − puntuales − cortesías − reembolsos − merma', async () => {
+    const m = await monthly();
+    expect(m.grossMargin).toBeCloseTo(m.revenue - m.cogs, 2);
+    const esperado =
+      m.grossMargin - m.totalFixed - m.oneTimeCost - m.cortesiasCost - m.refundCost - m.wasteCost;
+    // Es LA identidad del reporte: si esto se rompe, el dueño decide con un
+    // número que no corresponde a ninguna suma.
+    expect(m.netResult).toBeCloseTo(esperado, 2);
   });
 });
