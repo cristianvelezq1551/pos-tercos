@@ -1,11 +1,14 @@
 import { Container, PageHeader, Section } from '@pos-tercos/ui';
 import { Coins } from 'lucide-react';
+import { z } from 'zod';
 import {
   InventoryValuationReportSchema,
   PnlReportSchema,
+  ProductCostSummarySchema,
   ProductMarginReportSchema,
   type InventoryValuationReport,
   type PnlReport,
+  type ProductCostSummary,
   type ProductMarginReport,
 } from '@pos-tercos/types';
 import {
@@ -22,16 +25,22 @@ interface Data {
   pnl: PnlReport;
   margins: ProductMarginReport;
   valuation: InventoryValuationReport;
+  /** Costo "para poner precio" (último precio de compra) por producto. Va acá
+   *  para que el costo real y el de referencia se lean juntos: verlos en
+   *  pantallas distintas hacía que dos números correctos parecieran una
+   *  contradicción. */
+  costosParaPrecio: ProductCostSummary[];
 }
 
 async function load(qs: string): Promise<Data | { error: string }> {
   try {
-    const [pnl, margins, valuation] = await Promise.all([
+    const [pnl, margins, valuation, costosParaPrecio] = await Promise.all([
       serverFetchJson(`/reports/cogs/pnl${qs}`, undefined, PnlReportSchema),
       serverFetchJson(`/reports/cogs/product-margins${qs}`, undefined, ProductMarginReportSchema),
       serverFetchJson('/reports/cogs/inventory-valuation', undefined, InventoryValuationReportSchema),
+      serverFetchJson('/product-costs', undefined, z.array(ProductCostSummarySchema)),
     ]);
-    return { pnl, margins, valuation };
+    return { pnl, margins, valuation, costosParaPrecio };
   } catch (err) {
     if (err instanceof ApiError) return { error: friendlyApiError(err) };
     return { error: friendlyApiError(err) };
@@ -77,7 +86,7 @@ export default async function CostosPage({
             </Section>
 
             <Section eyebrow="Detalle" title="Margen real por producto" size="md">
-              <ProductMarginsTable report={result.margins} />
+              <ProductMarginsTable report={result.margins} costosParaPrecio={result.costosParaPrecio} />
             </Section>
 
             <Section
