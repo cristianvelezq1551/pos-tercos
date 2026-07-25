@@ -17,6 +17,11 @@ describe('COGS FIFO (e2e HTTP)', () => {
 
   beforeAll(async () => {
     ctx = await bootstrapApp();
+    // Arrancar de CERO, no confiar en que la suite anterior limpió: el COGS se
+    // calcula replicando TODO el ledger de inventario, así que un movimiento
+    // que sobreviva de otra suite mueve los costos y el test falla de forma
+    // intermitente según el orden en que jest decida correr los archivos.
+    await cleanDb(ctx.prisma);
     // Usuario propio: no depender del seed (otras suites truncan `users`).
     const hash = await bcrypt.hash('dev12345', 10);
     const dueno = await ctx.prisma.user.upsert({
@@ -165,6 +170,8 @@ describe('COGS refund post-preparación (e2e HTTP)', () => {
 
   beforeAll(async () => {
     ctx = await bootstrapApp();
+    // Mismo motivo que arriba: el ledger es global, hay que partir en cero.
+    await cleanDb(ctx.prisma);
     const hash = await bcrypt.hash('dev12345', 10);
     const dueno = await ctx.prisma.user.upsert({
       where: { email: 'dueno-refund@test.local' },

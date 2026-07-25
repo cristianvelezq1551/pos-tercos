@@ -64,6 +64,10 @@ describe('Pedidos a domicilio E2E', () => {
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
+    // Auto-aislada: no confiar en que la suite anterior limpió. Esta suite lee
+    // agregados GLOBALES (reportes / ledger de inventario), así que un residuo
+    // de otra suite mueve los números y el fallo depende del orden de archivos.
+    await cleanDb(prisma);
     const hash = await bcrypt.hash('dev12345', 10);
     await prisma.user.create({
       data: {

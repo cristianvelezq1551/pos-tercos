@@ -69,7 +69,9 @@ test('smoke caja: login → launcher → vender → cobrar → cerrar', async ({
   await test.step('cerrar caja con cuadre exacto', async () => {
     const expectedCash = await computeExpectedCash(api, operativo, shift);
     // Pestaña "Caja" de la CajaNav → /caja/cierre (CajaPanel con el cierre).
-    await page.locator('a[href="/caja/cierre"]').click();
+    // `.first()`: hay dos links al mismo destino (la pestaña y el acceso
+    // directo con ícono del topbar) y el modo estricto no elige por su cuenta.
+    await page.locator('a[href="/caja/cierre"]').first().click();
     await page.waitForURL((url) => url.pathname === '/caja/cierre');
     await page.getByRole('button', { name: 'Cerrar turno' }).click();
 

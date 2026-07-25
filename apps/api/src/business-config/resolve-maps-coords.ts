@@ -41,13 +41,7 @@ export async function resolveMapsCoords(url: string): Promise<string | null> {
   // El host se valida ANTES de mirar nada: acota el fetch (SSRF) y además evita
   // tomar por buenas unas coordenadas de un link que no es de Maps — un
   // `https://loquesea.com/p@1.0,2.0` dejaría el pin en medio del mar.
-  let host: string;
-  try {
-    host = new URL(trimmed).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-  if (!ALLOWED_HOSTS.has(host)) return null;
+  if (!isAllowedHost(trimmed)) return null;
 
   // Link largo: las coordenadas ya vienen en la URL, sin salir a la red.
   const fromUrl = extractCoords(trimmed);
@@ -61,5 +55,19 @@ export async function resolveMapsCoords(url: string): Promise<string | null> {
   }).catch(() => null);
   if (!res) return null;
 
+  // El allowlist de arriba solo cubre el PRIMER salto. Un acortador que
+  // redirija fuera de Google terminaría entregándonos la URL de otro host, y
+  // de ahí sacaríamos coordenadas en las que no confiamos. Revalidar el
+  // destino final cierra el redirect como vector.
+  if (!isAllowedHost(res.url)) return null;
+
   return extractCoords(res.url);
+}
+
+function isAllowedHost(url: string): boolean {
+  try {
+    return ALLOWED_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
 }
