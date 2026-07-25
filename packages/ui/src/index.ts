@@ -108,3 +108,4 @@ export {
   groupDigits,
   type DateFormat,
 } from './lib/format';
+export { mensajeDeError, type OpcionesMensajeError } from './lib/error-message';

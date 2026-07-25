@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { loginRequest } from '../api/login';
 import { ADMIN_ALLOWED_ROLES } from '../../../lib/auth-config';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function LoginScreen() {
   const params = useSearchParams();
@@ -29,7 +30,7 @@ export function LoginScreen() {
       }
       window.location.assign(redirectAfterLogin);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'No se pudo iniciar sesión. Volvé a intentar.'));
       setPending(false);
     }
   };
@@ -59,7 +60,7 @@ export function LoginScreen() {
               <span className="text-primary">carácter.</span>
             </p>
             <p className="caps text-[0.625rem] tracking-[0.3em] text-ink-400">
-              Bogotá · Medellín
+              Envigado
             </p>
           </div>
         </div>

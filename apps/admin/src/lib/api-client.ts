@@ -26,7 +26,10 @@ export async function request<T>(
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
+    // El `status` viaja pegado al error: si el backend no mandó mensaje (o
+    // mandó uno técnico), `mensajeDeError` arma uno entendible a partir del
+    // código. Antes salía "Request failed (429)" a la pantalla.
+    throw Object.assign(new Error(body.message ?? ''), { status: res.status });
   }
   const json = (await res.json()) as unknown;
   return schema.parse(json);

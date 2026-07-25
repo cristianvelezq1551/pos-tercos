@@ -15,9 +15,9 @@
 
 ## Preparación
 
-- [ ] Postgres arriba: `docker compose up -d postgres`
-- [ ] Todo levantado: `pnpm dev` desde la raíz
-- [ ] URLs a mano:
+- [x] Postgres arriba: `docker compose up -d postgres`
+- [x] Todo levantado: `pnpm dev` desde la raíz
+- [x] URLs a mano:
   - API `http://localhost:3001` · Admin/Caja `http://localhost:3004`
   - Web cliente `http://localhost:3000` · Cocina `http://localhost:3006`
   - Pantalla del local `http://localhost:3005`

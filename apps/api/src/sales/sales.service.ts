@@ -194,7 +194,7 @@ export class SalesService {
       shift = await this.shifts.getActiveTodayShift(cashierId);
       if (!shift) {
         throw new BadRequestException(
-          'No tenés un turno abierto. Abrí turno antes de vender (POST /shifts/open).',
+          'No tenés un turno abierto. Abrí la caja antes de vender.',
         );
       }
     }

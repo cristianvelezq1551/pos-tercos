@@ -1,6 +1,6 @@
 import { Catch, HttpException, Logger, type ArgumentsHost } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 
 /** Máximo una alerta cada 10 min por firma de error (no spamear al dueño). */
@@ -55,9 +55,34 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
           { signature, status },
         );
       }
+
+      // Y NO se le cuenta a la persona: el texto de una excepción cruda
+      // ("Cannot read properties of undefined…", un error de Prisma) no la
+      // ayuda en nada y de paso revela cómo está hecho el sistema por dentro.
+      // Se responde algo accionable; el detalle ya quedó arriba con su stack.
+      host.switchToHttp().getResponse<Response>().status(status).json({
+        statusCode: status,
+        message:
+          'El sistema tuvo un problema y no pudo completar la acción. ' +
+          'Volvé a intentar; si sigue igual, avisale al dueño.',
+      });
+      return;
     }
 
-    // La respuesta HTTP sale igual que siempre (filtro default de Nest).
+    // Los 404 los escriben los services como `Sale <uuid> not found`: útil en
+    // un log, inservible en pantalla (inglés + un UUID que no le dice nada a
+    // nadie). Son ~70 en el código; reescribirlos uno por uno sería ruido, y
+    // acá se cubren todos de una — incluidos los clientes futuros.
+    if (status === 404 && isHttp && pareceNotFoundTecnico(exception)) {
+      host.switchToHttp().getResponse<Response>().status(404).json({
+        statusCode: 404,
+        message: 'No encontramos lo que buscabas. Puede que ya no exista o que el enlace esté viejo.',
+      });
+      return;
+    }
+
+    // El resto (4xx de negocio, 5xx deliberados como el kill-switch) ya trae
+    // su mensaje en castellano escrito por el service: sale igual que siempre.
     super.catch(exception, host);
   }
 
@@ -81,4 +106,20 @@ function normalizePath(url: string | undefined): string {
   return path
     .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/:id')
     .replace(/\/\d+/g, '/:id');
+}
+
+/**
+ * ¿El 404 lo escribió un service en inglés, con el id adentro?
+ * Ej: "Sale 4605f4c1-… not found", "Ingredient abc not found".
+ * Un 404 con mensaje en castellano (los hay) se respeta tal cual.
+ */
+function pareceNotFoundTecnico(exception: HttpException): boolean {
+  const res = exception.getResponse();
+  const message =
+    typeof res === 'string'
+      ? res
+      : typeof (res as { message?: unknown })?.message === 'string'
+        ? ((res as { message: string }).message)
+        : '';
+  return /not found|no such|cannot (get|post|patch|delete)/i.test(message);
 }
