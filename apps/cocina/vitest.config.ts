@@ -6,6 +6,6 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     globals: false,
     environment: 'node',
-    coverage: coverageConfig(['src/app/**', 'src/**/api/**']),
+    coverage: coverageConfig(['src/app/**', 'src/**/api.ts', 'src/**/api/**']),
   },
 });

@@ -1,8 +1,9 @@
 {
+  "//": "Igual que jest-e2e.json pero con rootDir en la raíz de la app, para que la cobertura pueda instrumentar src/ (jest no colecta fuera de rootDir).",
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": "..",
   "testEnvironment": "node",
-  "testRegex": "\\.spec\\.ts$",
+  "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": [
       "ts-jest",
@@ -15,9 +16,16 @@
     "^@pos-tercos/types$": "<rootDir>/../../packages/types/dist/index.js",
     "^@pos-tercos/domain$": "<rootDir>/../../packages/domain/dist/index.js"
   },
-  "testTimeout": 10000,
-  "//coverageProvider": "v8 y no el default 'babel': babel-plugin-istanbul@6 exige Babel ^7 y el monorepo ya está en Babel 8 (instrumentar revienta el suite entero).",
+  "testTimeout": 30000,
+  "globalSetup": "<rootDir>/test/global-setup.ts",
+  "setupFiles": ["<rootDir>/test/setup-env.ts"],
   "coverageProvider": "v8",
-  "collectCoverageFrom": ["src/common/**/*.ts", "!src/**/*.spec.ts"],
+  "collectCoverageFrom": [
+    "src/**/*.ts",
+    "!src/**/*.spec.ts",
+    "!src/main.ts",
+    "!src/**/*.module.ts",
+    "!src/**/dto/**"
+  ],
   "coverageReporters": ["text-summary", "json-summary", "html"]
 }
