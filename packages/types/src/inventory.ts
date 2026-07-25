@@ -21,6 +21,13 @@ export type InventoryMovementType = z.infer<typeof InventoryMovementTypeEnum>;
 export const StockableTypeEnum = z.enum(['INGREDIENT', 'PRODUCT', 'SUBPRODUCT']);
 export type StockableType = z.infer<typeof StockableTypeEnum>;
 
+/** Nombre legible del tipo de item. Fuente única — no redefinir en las apps. */
+export const STOCKABLE_TYPE_LABELS: Record<StockableType, string> = {
+  INGREDIENT: 'insumo',
+  PRODUCT: 'producto',
+  SUBPRODUCT: 'subproducto',
+};
+
 export const InventoryMovementSchema = z.object({
   id: z.string().uuid(),
   entityType: StockableTypeEnum,
@@ -55,7 +62,7 @@ export const CreateInventoryMovementSchema = z
     ingredientId: z.string().uuid().optional(),
     productId: z.string().uuid().optional(),
     subproductId: z.string().uuid().optional(),
-    delta: z.number().refine((v) => v !== 0, { message: 'delta must not be zero' }),
+    delta: z.number().refine((v) => v !== 0, { message: 'La cantidad del movimiento no puede ser cero.' }),
     type: z.enum(['MANUAL_ADJUSTMENT', 'WASTE', 'INITIAL']).default('MANUAL_ADJUSTMENT'),
     /** Costo por unidad de stock para entradas (INITIAL / ajuste+). Base FIFO. */
     unitCost: z.number().nonnegative().nullable().optional(),
@@ -73,7 +80,7 @@ export const CreateInventoryMovementSchema = z
     if (!data[expected]) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `${expected} required when entityType=${data.entityType}`,
+        message: `Falta indicar a qué ${STOCKABLE_TYPE_LABELS[data.entityType]} corresponde el movimiento.`,
         path: [expected],
       });
     }
@@ -81,7 +88,7 @@ export const CreateInventoryMovementSchema = z
       if (k !== expected) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `${k} must be omitted when entityType=${data.entityType}`,
+          message: `El movimiento es de un ${STOCKABLE_TYPE_LABELS[data.entityType]}: no puede apuntar además a otro tipo de item.`,
           path: [k],
         });
       }
@@ -179,7 +186,7 @@ export const CreateStockCountSchema = z
     if (!data[expected]) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `${expected} es requerido cuando entityType=${data.entityType}`,
+        message: `Falta indicar a qué ${STOCKABLE_TYPE_LABELS[data.entityType]} corresponde.`,
         path: [expected],
       });
     }

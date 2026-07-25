@@ -14,6 +14,8 @@ interface ProductFormCategoryFieldProps {
   /** Categorías activas del catálogo curado (nombres). */
   categories: string[];
   disabled?: boolean;
+  /** Obligatoria al CREAR: sin categoría el producto solo se ve en \"Todo\". */
+  required?: boolean;
 }
 
 export function ProductFormCategoryField({
@@ -21,6 +23,7 @@ export function ProductFormCategoryField({
   onChange,
   categories,
   disabled,
+  required = false,
 }: ProductFormCategoryFieldProps) {
   const [options, setOptions] = useState<string[]>(categories);
   const [creating, setCreating] = useState(false);
@@ -53,7 +56,7 @@ export function ProductFormCategoryField({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label htmlFor="category">Categoría</Label>
+        <Label htmlFor="category">Categoría{required ? ' *' : ''}</Label>
         <Link href="/categories" className="text-xs text-primary hover:underline">
           Administrar
         </Link>
@@ -95,6 +98,7 @@ export function ProductFormCategoryField({
       ) : (
         <Select
           id="category"
+          required={required}
           disabled={disabled}
           value={value}
           onChange={(e) => {

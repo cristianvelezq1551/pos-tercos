@@ -74,7 +74,7 @@ describe('Pagos divididos E2E', () => {
     const prodRes = await request
       .post('/products')
       .set('Authorization', `Bearer ${duenoToken}`)
-      .send({
+      .send({ category: 'Test',
         name: 'Coca Split',
         basePrice: 5000,
         directResale: true,

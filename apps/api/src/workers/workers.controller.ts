@@ -89,7 +89,7 @@ export class WorkersController {
     @Body('payload') payloadRaw: string | undefined,
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<PayrollWeekPayment> {
-    if (!payloadRaw) throw new BadRequestException('Falta el payload del pago.');
+    if (!payloadRaw) throw new BadRequestException('Faltan los datos del pago.');
     let parsed: unknown;
     try {
       parsed = JSON.parse(payloadRaw);

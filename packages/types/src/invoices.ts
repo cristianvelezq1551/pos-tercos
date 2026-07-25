@@ -3,6 +3,13 @@ import { z } from 'zod';
 export const InvoiceStatusEnum = z.enum(['PENDING_REVIEW', 'CONFIRMED', 'REJECTED']);
 export type InvoiceStatus = z.infer<typeof InvoiceStatusEnum>;
 
+/** Estado de la factura en palabras. Fuente única (backend + admin). */
+export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
+  PENDING_REVIEW: 'pendiente de revisión',
+  CONFIRMED: 'confirmada',
+  REJECTED: 'rechazada',
+};
+
 /** Estado de pago al proveedor (independiente de InvoiceStatus que es
  *  sobre la validación IA). NULL si la factura aún no está CONFIRMED. */
 export const InvoicePaymentStatusEnum = z.enum(['PENDING', 'PAID']);
@@ -147,14 +154,14 @@ export const ConfirmInvoiceItemSchema = z
     if (data.entityType === 'INGREDIENT' && !data.ingredientId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'ingredientId required when entityType=INGREDIENT',
+        message: 'Falta indicar a qué insumo corresponde la línea.',
         path: ['ingredientId'],
       });
     }
     if (data.entityType === 'PRODUCT' && !data.productId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'productId required when entityType=PRODUCT',
+        message: 'Falta indicar a qué producto corresponde la línea.',
         path: ['productId'],
       });
     }
@@ -201,7 +208,7 @@ export const ConfirmInvoicePaymentSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'El comprobante es obligatorio: envía proofStorageKey O useInvoicePhotoAsProof (exactamente uno)',
+          'Falta el comprobante: sube una imagen o marca que se use la foto de la factura (una de las dos, no ambas).',
         path: ['proofStorageKey'],
       });
     }

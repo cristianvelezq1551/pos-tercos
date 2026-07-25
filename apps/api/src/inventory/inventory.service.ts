@@ -141,7 +141,7 @@ export class InventoryService {
     const row = await this.prisma.product.findUnique({ where: { id } });
     if (!row) throw new NotFoundException(`Product ${id} not found`);
     if (!row.directResale) {
-      throw new BadRequestException(`Product ${id} is not direct-resale; no own stock.`);
+      throw new BadRequestException(`Este producto no se vende por reventa directa, así que no lleva stock propio.`);
     }
     const current = await this.getCurrentStock('PRODUCT', id);
     return productToStockable(row, current);
@@ -158,7 +158,7 @@ export class InventoryService {
       });
       if (!ing) throw new NotFoundException(`Ingredient ${input.ingredientId} not found`);
       if (!ing.isActive) {
-        throw new BadRequestException(`Ingredient ${input.ingredientId} is inactive`);
+        throw new BadRequestException(`Ese insumo está desactivado.`);
       }
     } else if (input.entityType === 'SUBPRODUCT') {
       const sub = await this.prisma.subproduct.findUnique({
@@ -167,7 +167,7 @@ export class InventoryService {
       });
       if (!sub) throw new NotFoundException(`Subproduct ${input.subproductId} not found`);
       if (!sub.isActive) {
-        throw new BadRequestException(`Subproduct ${input.subproductId} is inactive`);
+        throw new BadRequestException(`Ese subproducto está desactivado.`);
       }
     } else {
       const prod = await this.prisma.product.findUnique({
@@ -176,7 +176,7 @@ export class InventoryService {
       });
       if (!prod) throw new NotFoundException(`Product ${input.productId} not found`);
       if (!prod.isActive) {
-        throw new BadRequestException(`Product ${input.productId} is inactive`);
+        throw new BadRequestException(`Ese producto está desactivado.`);
       }
       if (!prod.directResale) {
         throw new BadRequestException(

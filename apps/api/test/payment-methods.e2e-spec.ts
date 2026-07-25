@@ -36,7 +36,7 @@ describe('Medios de pago dinámicos E2E', () => {
     const prod = await request
       .post('/products')
       .set(auth())
-      .send({
+      .send({ category: 'Test',
         name: 'Coca Medios',
         basePrice: 5000,
         directResale: true,

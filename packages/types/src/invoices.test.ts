@@ -29,13 +29,13 @@ describe('ConfirmInvoiceItemSchema — a qué entidad se le carga el stock', () 
   it('INGREDIENT exige ingredientId', () => {
     const r = ConfirmInvoiceItemSchema.safeParse({ ...item, entityType: 'INGREDIENT' });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/ingredientId required/);
+    expect(reasons(r)).toMatch(/Falta indicar a qué insumo/);
   });
 
   it('PRODUCT exige productId', () => {
     const r = ConfirmInvoiceItemSchema.safeParse({ ...item, entityType: 'PRODUCT' });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/productId required/);
+    expect(reasons(r)).toMatch(/Falta indicar a qué producto/);
   });
 
   it('acepta cada tipo con su id', () => {
@@ -100,7 +100,7 @@ describe('ConfirmInvoicePaymentSchema — el comprobante es obligatorio', () => 
   it('rechaza pagar SIN comprobante', () => {
     const r = ConfirmInvoicePaymentSchema.safeParse(pago);
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/comprobante es obligatorio/);
+    expect(reasons(r)).toMatch(/Falta el comprobante/);
   });
 
   it('rechaza mandar los DOS comprobantes', () => {
@@ -110,7 +110,7 @@ describe('ConfirmInvoicePaymentSchema — el comprobante es obligatorio', () => 
       useInvoicePhotoAsProof: true,
     });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/exactamente uno/);
+    expect(reasons(r)).toMatch(/no ambas/);
   });
 
   it('acepta el comprobante subido a mano', () => {

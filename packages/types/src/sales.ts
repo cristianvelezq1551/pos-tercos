@@ -84,6 +84,27 @@ export const CASH_METHOD_CODE = 'CASH';
  * catálogo (DAVIPLATA/QR_BANCOLOMBIA — ventas viejas siguen guardando el code).
  * El label vivo de cada método viene del catálogo; esto solo cubre los conocidos.
  */
+/**
+ * Estado de una venta en palabras. Fuente ÚNICA: la usa el backend para
+ * redactar errores ("no se puede marcar listo un pedido en estado X") y el
+ * frontend para rotular. Sin esto el enum crudo se filtra a la pantalla.
+ */
+export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
+  PENDIENTE_PAGO: 'Pendiente de pago',
+  PAGADO: 'Pagado',
+  EN_PREPARACION: 'En cocina',
+  LISTO_DESPACHO: 'Listo',
+  ENTREGADO: 'Entregado',
+  CANCELADO_NO_PAGO: 'Cancelado',
+  CANCELADO_SIN_REEMBOLSO: 'Cancelado sin reembolso',
+  VOID: 'Anulado',
+};
+
+/** Label de un estado; si llega uno desconocido devuelve el code tal cual. */
+export function saleStatusLabel(status: string): string {
+  return SALE_STATUS_LABELS[status as SaleStatus] ?? status;
+}
+
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: 'Efectivo',
   CARD: 'Tarjeta',

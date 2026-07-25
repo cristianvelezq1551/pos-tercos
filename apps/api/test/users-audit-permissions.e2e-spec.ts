@@ -88,7 +88,7 @@ describe('Permisos de usuarios + bitácora E2E', () => {
     const prod = await request
       .post('/products')
       .set(dueno())
-      .send({ name: 'Prod Audit', basePrice: 4000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 12, modifiersEnabled: false })
+      .send({ category: 'Test', name: 'Prod Audit', basePrice: 4000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 12, modifiersEnabled: false })
       .expect(201);
     await request
       .post('/inventory/movements')

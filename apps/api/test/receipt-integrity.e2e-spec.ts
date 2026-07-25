@@ -66,7 +66,7 @@ describe('Integridad de la numeración de recibos E2E', () => {
     const prod = await request
       .post('/products')
       .set(auth(duenoToken))
-      .send({
+      .send({ category: 'Test',
         name: 'Gaseosa Recibos',
         basePrice: 4000,
         directResale: true,

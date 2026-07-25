@@ -15,6 +15,7 @@ import {
   type PrinterProvider,
   type PrintResult,
 } from '@pos-tercos/domain';
+import { saleStatusLabel } from '@pos-tercos/types';
 import type { AppliedModifier, SendToKitchenResponse } from '@pos-tercos/types';
 import { CASH_DRAWER_PROVIDER } from '../adapters/cash-drawer/cash-drawer.module';
 import { PRINTER_PROVIDER } from '../adapters/printer/printer.module';
@@ -104,7 +105,7 @@ export class SalesReceiptService {
     if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
     if (!COMANDA_STATUSES.includes(sale.status as (typeof COMANDA_STATUSES)[number])) {
       throw new BadRequestException(
-        `Sale en status ${sale.status} no genera comanda.`,
+        `Un pedido en estado "${saleStatusLabel(sale.status)}" no genera comanda.`,
       );
     }
     // Comanda de cocina: si el pedido tiene AL MENOS un plato (algo que se
@@ -174,7 +175,7 @@ export class SalesReceiptService {
       const sale = await tx.sale.findUnique({ where: { id: saleId }, include: includeFull() });
       if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
       if (!COMANDA_STATUSES.includes(sale.status as (typeof COMANDA_STATUSES)[number])) {
-        throw new BadRequestException(`Sale en status ${sale.status} no genera comanda.`);
+        throw new BadRequestException(`Un pedido en estado "${saleStatusLabel(sale.status)}" no genera comanda.`);
       }
 
       const pending = sale.items.filter((it) => it.quantity > it.sentToKitchenQty);

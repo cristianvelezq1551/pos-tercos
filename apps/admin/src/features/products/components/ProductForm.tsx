@@ -176,6 +176,7 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
           setForm={setForm}
           pending={pending}
           categories={categories}
+          isEdit={isEdit}
         />
 
         {isEdit && initial?.directResale && (

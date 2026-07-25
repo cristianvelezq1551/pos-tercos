@@ -205,10 +205,10 @@ export class ProductsService {
     const nextComboPrice = input.comboPrice ?? (input.isCombo === false ? null : undefined);
 
     if (nextIsCombo && nextComboPrice === null) {
-      throw new BadRequestException('comboPrice cannot be null when isCombo is true');
+      throw new BadRequestException('Un combo necesita un precio de combo.');
     }
     if (!nextIsCombo && nextComboPrice !== null && nextComboPrice !== undefined) {
-      throw new BadRequestException('comboPrice must be null when isCombo is false');
+      throw new BadRequestException('Solo los combos llevan precio de combo.');
     }
 
     // Normaliza la categoría contra el catálogo curado (evita duplicados por tipeo).
@@ -262,7 +262,7 @@ export class ProductsService {
     for (const s of input.sizes) {
       if (s.id) {
         if (!existingIds.has(s.id)) {
-          throw new BadRequestException(`La variante ${s.id} no pertenece a este producto`);
+          throw new BadRequestException(`Una de las variantes no pertenece a este producto.`);
         }
         incomingIds.add(s.id);
       }
@@ -564,15 +564,15 @@ export class ProductsService {
     const ids = components.map((c) => c.productId);
     const found = await this.prisma.product.findMany({
       where: { id: { in: ids } },
-      select: { id: true, isCombo: true },
+      select: { id: true, name: true, isCombo: true },
     });
     const missing = ids.filter((id) => !found.some((p) => p.id === id));
     if (missing.length > 0) {
-      throw new BadRequestException(`Combo references missing products: ${missing.join(', ')}`);
+      throw new BadRequestException(`El combo incluye productos que ya no existen en el catálogo.`);
     }
     const nestedCombo = found.find((p) => p.isCombo);
     if (nestedCombo) {
-      throw new BadRequestException(`Combo cannot include another combo (${nestedCombo.id})`);
+      throw new BadRequestException(`Un combo no puede incluir otro combo ("${nestedCombo.name}").`);
     }
   }
 }

@@ -57,7 +57,7 @@ describe('Reintento de WhatsApp fallido E2E', () => {
     const prod = await request
       .post('/products')
       .set(auth())
-      .send({ name: 'Coca Retry', basePrice: 5000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 24, modifiersEnabled: false })
+      .send({ category: 'Test', name: 'Coca Retry', basePrice: 5000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 24, modifiersEnabled: false })
       .expect(201);
     productId = prod.body.id as string;
   });

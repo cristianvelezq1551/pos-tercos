@@ -44,10 +44,28 @@ function capitalizar(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/**
+ * Textos por defecto de Zod: vienen en inglés y con jerga de tipos. Si el
+ * mensaje NO es uno de estos, lo escribió alguien del equipo en castellano
+ * (`.min(1, '…')`, `superRefine`) y explica el caso mejor que cualquier regla
+ * genérica: se respeta tal cual.
+ */
+const MENSAJE_POR_DEFECTO_DE_ZOD =
+  /^(Required|Expected |Invalid |String must|Number must|Array must|Too (big|small)|Unrecognized key)/i;
+
+/** ¿"la categoría" o "el nombre"? Para concordar el adjetivo. */
+function esFemenino(campo: string): boolean {
+  return /^(la|las) /.test(campo);
+}
+
 /** Traduce el problema de Zod a algo que se entienda sin saber qué es Zod. */
 function explicar(issue: ZodIssue): string {
   const clave = String(issue.path[0] ?? '');
   const campo = NOMBRE_CAMPO[clave] ?? clave ?? 'el dato';
+  const a = esFemenino(campo) ? 'a' : 'o'; // cort-o / cort-a
+
+  // Un mensaje escrito por nosotros gana siempre.
+  if (issue.message && !MENSAJE_POR_DEFECTO_DE_ZOD.test(issue.message)) return issue.message;
 
   switch (issue.code) {
     case 'invalid_type':
@@ -56,11 +74,11 @@ function explicar(issue: ZodIssue): string {
         : `${capitalizar(campo)} tiene un formato que no corresponde.`;
     case 'too_small':
       return issue.type === 'string'
-        ? `${capitalizar(campo)} es demasiado corto.`
+        ? `${capitalizar(campo)} es demasiado cort${a}.`
         : `${capitalizar(campo)} es menor que el mínimo permitido.`;
     case 'too_big':
       return issue.type === 'string'
-        ? `${capitalizar(campo)} es demasiado largo.`
+        ? `${capitalizar(campo)} es demasiado larg${a}.`
         : `${capitalizar(campo)} supera el máximo permitido.`;
     case 'invalid_string':
       return issue.validation === 'email'

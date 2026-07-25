@@ -32,7 +32,9 @@ const POLL_MS = 15_000;
  */
 export function LiveDashboardSections({ initial }: { initial: DashboardSummary }) {
   const [summary, setSummary] = useState<DashboardSummary>(initial);
-  const [updatedAt, setUpdatedAt] = useState<Date>(new Date());
+  // Arranca en null: la hora del servidor y la del navegador nunca coinciden y
+  // el reloj vive en un atributo (title) que React no repara al hidratar.
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [stale, setStale] = useState(false);
   const firstRender = useRef(true);
 
@@ -40,6 +42,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
     // Saltamos el primer fetch — ya tenemos `initial` desde SSR.
     if (firstRender.current) {
       firstRender.current = false;
+      setUpdatedAt(new Date());
     }
 
     let cancelled = false;
@@ -84,7 +87,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
                 'inline-flex items-center gap-1.5 text-[0.6875rem]',
                 stale ? 'text-warning' : 'text-success',
               )}
-              title={`Actualizado: ${updatedAt.toLocaleTimeString('es-CO')}`}
+              title={updatedAt ? `Actualizado: ${updatedAt.toLocaleTimeString('es-CO')}` : undefined}
             >
               <span
                 className={cn(

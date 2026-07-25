@@ -294,7 +294,7 @@ export class InvoicesController {
       throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
     }
     if (paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(paidAt)) {
-      throw new BadRequestException('paidAt debe ser YYYY-MM-DD.');
+      throw new BadRequestException('La fecha de pago debe tener el formato AAAA-MM-DD.');
     }
     return this.invoicePayments.markPaymentPaid(
       id,

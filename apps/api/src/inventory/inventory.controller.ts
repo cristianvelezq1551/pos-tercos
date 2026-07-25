@@ -52,7 +52,7 @@ export class InventoryController {
   ): Promise<Stockable> {
     const parsed = StockableTypeEnum.safeParse(entityType.toUpperCase());
     if (!parsed.success) {
-      throw new BadRequestException('entityType debe ser INGREDIENT, PRODUCT o SUBPRODUCT');
+      throw new BadRequestException('El tipo debe ser insumo, producto o subproducto.');
     }
     return this.inventory.getStockableById(parsed.data, id);
   }

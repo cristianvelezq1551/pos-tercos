@@ -96,7 +96,7 @@ describe('COGS FIFO (e2e HTTP)', () => {
 
     burgerId = (
       await auth(ctx.request.post('/products'))
-        .send({ name: 'Burger e2e', basePrice: 9000 })
+        .send({ category: 'Test', name: 'Burger e2e', basePrice: 9000 })
         .expect(201)
     ).body.id;
 
@@ -212,7 +212,7 @@ describe('COGS refund post-preparación (e2e HTTP)', () => {
         .expect(201)
     ).body.id;
     burgerId = (
-      await auth(ctx.request.post('/products')).send({ name: 'Burger refund', basePrice: 9000 }).expect(201)
+      await auth(ctx.request.post('/products')).send({ category: 'Test', name: 'Burger refund', basePrice: 9000 }).expect(201)
     ).body.id;
     await auth(ctx.request.put(`/products/${burgerId}/recipe`))
       .send({ edges: [{ childType: 'ingredient', childId: polloId, quantityNeta: 600, mermaPct: 0 }] })

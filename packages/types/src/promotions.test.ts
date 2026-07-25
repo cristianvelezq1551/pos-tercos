@@ -20,7 +20,7 @@ describe('CreatePromotionSchema — cada tipo solo acepta SUS campos', () => {
   it('PERCENT_OFF exige discountPct', () => {
     const r = CreatePromotionSchema.safeParse({ ...base, type: 'PERCENT_OFF' });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/discountPct requerido/);
+    expect(reasons(r)).toMatch(/Falta el porcentaje de descuento/);
   });
 
   it('PERCENT_OFF rechaza campos de otros tipos', () => {
@@ -31,7 +31,7 @@ describe('CreatePromotionSchema — cada tipo solo acepta SUS campos', () => {
       discountFixed: 1000,
     });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/discountFixed/);
+    expect(reasons(r)).toMatch(/El monto del descuento no aplica/);
   });
 
   it('PERCENT_OFF válida pasa y toma canal BOTH por defecto', () => {

@@ -64,7 +64,7 @@ const ACTION_LABELS: Record<string, string> = {
   APPROVAL_DENIED: 'Aprobación denegada (PIN)',
   APPROVAL_PIN_SET: 'Configuró su PIN',
 
-  IDEMPOTENCY_HIT: 'Reintento de operación (idempotencia)',
+  IDEMPOTENCY_HIT: 'Reintento de una operación ya registrada',
 
   // Facturas
   INVOICE_UPLOADED: 'Subió factura',

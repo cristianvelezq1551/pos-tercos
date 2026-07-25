@@ -23,7 +23,7 @@ describe('CreateInventoryMovementSchema — XOR polimórfico', () => {
     (entityType) => {
       const r = CreateInventoryMovementSchema.safeParse({ entityType, delta: 5 });
       expect(r.success).toBe(false);
-      expect(reasons(r)).toMatch(/required when entityType/);
+      expect(reasons(r)).toMatch(/Falta indicar a qué .* corresponde el movimiento/);
     },
   );
 
@@ -35,7 +35,7 @@ describe('CreateInventoryMovementSchema — XOR polimórfico', () => {
       delta: 5,
     });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/productId must be omitted/);
+    expect(reasons(r)).toMatch(/no puede apuntar además a otro tipo de item/);
   });
 
   it('rechaza delta = 0 (espeja el CHECK de la DB)', () => {
@@ -45,7 +45,7 @@ describe('CreateInventoryMovementSchema — XOR polimórfico', () => {
       delta: 0,
     });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/delta must not be zero/);
+    expect(reasons(r)).toMatch(/La cantidad del movimiento no puede ser cero/);
   });
 
   it('acepta delta negativo (merma / ajuste a la baja)', () => {
@@ -94,7 +94,7 @@ describe('CreateStockCountSchema — conteo físico', () => {
   it('exige el id que corresponde al entityType', () => {
     const r = CreateStockCountSchema.safeParse({ entityType: 'SUBPRODUCT', countedQty: 3 });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/subproductId es requerido/);
+    expect(reasons(r)).toMatch(/Falta indicar a qué subproducto corresponde/);
   });
 
   it('acepta contar 0 (se acabó)', () => {

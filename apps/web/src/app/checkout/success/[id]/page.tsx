@@ -25,8 +25,8 @@ export default async function CheckoutSuccessPage({
   if (!token) {
     return (
       <MessageScreen
-        title="Falta el token de tu pedido"
-        description="La URL del pedido necesita el parámetro ?token=. Si la perdiste, contacta al local por WhatsApp."
+        title="No pudimos abrir tu pedido"
+        description="Este enlace está incompleto. Abre el enlace original que te enviamos por WhatsApp; si lo perdiste, escríbenos y te lo reenviamos."
       />
     );
   }

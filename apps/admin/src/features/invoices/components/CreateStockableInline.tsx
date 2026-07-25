@@ -88,10 +88,17 @@ export function CreateStockableInline({
           setSubmitting(false);
           return;
         }
+        // La categoría es obligatoria en un producto: sin ella solo aparece
+        // bajo "Todo" y nadie lo encuentra filtrando.
+        if (!category.trim()) {
+          setErr('Elige una categoría para el producto.');
+          setSubmitting(false);
+          return;
+        }
         const created = await createProduct({
           name: name.trim(),
           basePrice: priceNum,
-          category: category.trim() || null,
+          category: category.trim(),
           directResale: true,
           unitPurchase: unitPurchase.trim(),
           unitStock: unitStock.trim(),

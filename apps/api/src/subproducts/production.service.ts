@@ -102,7 +102,7 @@ export class ProductionService {
     });
     if (!sub) throw new NotFoundException(`Subproduct ${subproductId} not found`);
     if (!sub.isActive) {
-      throw new BadRequestException(`Subproduct ${subproductId} está inactivo.`);
+      throw new BadRequestException(`Este subproducto está desactivado.`);
     }
     const yieldNum = Number(sub.yield);
     if (yieldNum <= 0) {
@@ -115,7 +115,7 @@ export class ProductionService {
     // consumen insumos por duplicado (la tx Serializable evita stock negativo,
     // NO la doble-producción). Es un POST crítico que muta stock.
     if (!input.idempotencyKey) {
-      throw new BadRequestException('Falta idempotencyKey para registrar la producción.');
+      throw new BadRequestException('No se pudo registrar la producción: falta la clave de la tanda. Vuelve a intentar.');
     }
 
     // Idempotencia anticipada: si ya se procesó esta key, devolver el run previo.

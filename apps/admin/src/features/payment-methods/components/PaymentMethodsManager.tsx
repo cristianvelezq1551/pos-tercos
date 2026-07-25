@@ -103,7 +103,7 @@ export function PaymentMethodsManager() {
 
       <p className="text-xs text-muted-foreground">
         Los métodos deshabilitados desaparecen del cobro en el POS (incluida la cuenta dividida) y
-        el backend rechaza cualquier cobro que los use. Sin conexión, el POS cobra con Efectivo y
+        el servidor rechaza cualquier cobro que los use. Sin conexión, el POS cobra con Efectivo y
         Transferencia.
       </p>
 

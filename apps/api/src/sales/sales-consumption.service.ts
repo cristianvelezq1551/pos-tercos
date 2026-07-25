@@ -191,7 +191,7 @@ export class SalesConsumptionService {
     for (const line of lines) {
       const product = saleProductMap.get(line.productId);
       if (!product) {
-        throw new BadRequestException(`Producto ${line.productId} ya no existe.`);
+        throw new BadRequestException(`Uno de los productos del pedido ya no existe.`);
       }
       consumeModifiers(line);
       if (product.isCombo) {

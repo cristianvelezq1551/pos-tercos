@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { StockableTypeEnum } from './inventory';
+import { StockableTypeEnum, STOCKABLE_TYPE_LABELS } from './inventory';
 
 // ====================================================================
 // COCINA (app del cocinero) — merma, conteo ciego, incidencias, checklist
@@ -26,7 +26,7 @@ function requireMatchingId(
   if (!data[expected]) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `${expected} es requerido cuando entityType=${data.entityType}`,
+      message: `Falta indicar a qué ${STOCKABLE_TYPE_LABELS[data.entityType]} corresponde.`,
       path: [expected],
     });
   }

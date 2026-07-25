@@ -48,7 +48,7 @@ export function CloseShiftModal({
   const { status, pending: offlinePending } = useOffline();
   const blockedReason =
     status === 'offline'
-      ? 'Sin conexión. El cierre necesita el backend (Z-report y efectivo esperado). Reconecta para cerrar el turno.'
+      ? 'Sin conexión. El cierre necesita el servidor (informe de caja y efectivo esperado). Reconecta para cerrar el turno.'
       : offlinePending > 0
         ? `Hay ${offlinePending} venta(s) offline sin sincronizar. Espera a que terminen de sincronizar antes de cerrar — si no, el efectivo esperado quedaría mal.`
         : null;

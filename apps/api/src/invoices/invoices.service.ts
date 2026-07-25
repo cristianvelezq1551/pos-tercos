@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import type { LLMInvoiceExtractionResult, StorageProvider } from '@pos-tercos/domain';
 import { buildCostIncreaseAlertMessage, roundCost, type CostIncreaseItem } from '@pos-tercos/domain';
 import {
+  INVOICE_STATUS_LABELS,
   ExtractedInvoiceSchema,
   type ConfirmInvoice,
   type ExtractedInvoice,
@@ -342,10 +343,10 @@ export class InvoicesService {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
     if (existing.status === 'CONFIRMED') {
-      throw new BadRequestException('Invoice is already confirmed');
+      throw new BadRequestException('Esta factura ya fue confirmada.');
     }
     if (existing.status === 'REJECTED') {
-      throw new BadRequestException('Invoice is rejected; cannot confirm');
+      throw new BadRequestException('Esta factura fue rechazada: no se puede confirmar.');
     }
 
     const { ingredients, products } = await this.loadAndValidateEntities(input);
@@ -466,11 +467,11 @@ export class InvoicesService {
 
     const missingIng = ingredientIds.filter((iid) => !ingredients.some((i) => i.id === iid));
     if (missingIng.length > 0) {
-      throw new BadRequestException(`Items refer to missing ingredients: ${missingIng.join(', ')}`);
+      throw new BadRequestException(`La factura referencia insumos que ya no existen.`);
     }
     const missingProd = productIds.filter((pid) => !products.some((p) => p.id === pid));
     if (missingProd.length > 0) {
-      throw new BadRequestException(`Items refer to missing products: ${missingProd.join(', ')}`);
+      throw new BadRequestException(`La factura referencia productos que ya no existen.`);
     }
 
     const inactiveIng = ingredients.filter((i) => !i.isActive).map((i) => i.id);
@@ -1028,7 +1029,7 @@ export class InvoicesService {
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
     if (existing.status !== 'PENDING_REVIEW') {
       throw new BadRequestException(
-        `Solo se pueden borrar borradores PENDING_REVIEW (status actual: ${existing.status}). Para anular una factura confirmada usa REJECTED.`,
+        `Solo se pueden borrar facturas en borrador. Esta ya está ${INVOICE_STATUS_LABELS[existing.status] ?? existing.status}; para dejarla sin efecto, recházala.`,
       );
     }
 

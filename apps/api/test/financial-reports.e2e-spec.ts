@@ -58,7 +58,7 @@ describe('Reportes financieros del dueño E2E', () => {
     const prod = await request
       .post('/products')
       .set(auth())
-      .send({ name: 'Coca FR', basePrice: 5000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 24, modifiersEnabled: false })
+      .send({ category: 'Test', name: 'Coca FR', basePrice: 5000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 24, modifiersEnabled: false })
       .expect(201);
     productId = prod.body.id as string;
     // Stock con costo FIFO conocido: 10 unidades a $1.500 c/u.

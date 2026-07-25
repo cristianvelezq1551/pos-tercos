@@ -68,7 +68,7 @@ export function OfflineReviewTray({
       open={open}
       onClose={busy ? () => {} : onClose}
       title="Ventas offline por sincronizar"
-      description="Estas ventas se cobraron sin conexión y todavía no llegaron al backend."
+      description="Estas ventas se cobraron sin conexión y todavía no llegaron al servidor."
       maxWidth="max-w-lg"
       footer={
         <>

@@ -11,6 +11,10 @@ interface ProductFormBasicFieldsProps {
   pending: boolean;
   /** Categorías activas del catálogo curado (nombres) para el selector. */
   categories: string[];
+  /** true = alta. La categoría es obligatoria al crear, no al editar: hay
+   *  productos viejos sin ella y cambiarles el precio no puede exigir
+   *  clasificarlos primero. */
+  isEdit?: boolean;
 }
 
 export function ProductFormBasicFields({
@@ -18,6 +22,7 @@ export function ProductFormBasicFields({
   setForm,
   pending,
   categories,
+  isEdit = false,
 }: ProductFormBasicFieldsProps) {
   return (
     <>
@@ -84,6 +89,7 @@ export function ProductFormBasicFields({
           onChange={(category) => setForm((f) => ({ ...f, category }))}
           categories={categories}
           disabled={pending}
+          required={!isEdit}
         />
       </div>
     </>

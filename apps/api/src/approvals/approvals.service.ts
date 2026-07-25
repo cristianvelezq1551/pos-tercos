@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { USER_ROLE_LABELS } from '@pos-tercos/types';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -78,11 +79,11 @@ export class ApprovalsService {
     });
     if (!user) throw new NotFoundException(`User ${userId} not found`);
     if (!user.active) {
-      throw new BadRequestException(`User ${userId} is inactive`);
+      throw new BadRequestException(`Ese usuario está desactivado.`);
     }
     if (user.role !== 'ADMIN_OPERATIVO' && user.role !== 'DUENO') {
       throw new BadRequestException(
-        `Solo ADMIN_OPERATIVO o DUENO pueden tener PIN (este user es ${user.role})`,
+        `Solo un ${USER_ROLE_LABELS.ADMIN_OPERATIVO} o el ${USER_ROLE_LABELS.DUENO} pueden tener PIN (este usuario es ${USER_ROLE_LABELS[user.role] ?? user.role}).`,
       );
     }
 

@@ -149,7 +149,9 @@ export function buildCreatePayload(
     description: form.description || null,
     preparationSteps: form.preparationSteps,
     basePrice: parsed.basePrice,
-    category: form.category || null,
+    // Obligatoria al crear (el selector la exige): sin categoría el
+    // producto solo aparecería bajo "Todo" en la caja y en la web.
+    category: form.category,
     imageUrl: form.imageUrl || null,
     emoji: form.emoji || null,
     modifiersEnabled: parsed.modifiers.length > 0,

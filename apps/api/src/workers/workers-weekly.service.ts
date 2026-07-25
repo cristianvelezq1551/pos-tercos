@@ -486,7 +486,7 @@ export class WorkersWeeklyService {
   async addWeeklyAdjustment(input: AddWeeklyAdjustment, actorId: string): Promise<PayrollAdjustment> {
     const week = payrollWeekFor(parseYmd(input.weekStart));
     if (week.weekStart !== input.weekStart) {
-      throw new BadRequestException('weekStart debe ser el inicio de una semana válida (YYYY-MM-DD).');
+      throw new BadRequestException('La semana indicada no es válida: debe empezar en su primer día (AAAA-MM-DD).');
     }
     const user = await this.workers.getEmploymentUser(input.userId);
     if (!user.payType) {

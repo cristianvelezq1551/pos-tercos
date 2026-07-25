@@ -352,7 +352,17 @@ export const CreateProductSchema = z
     description: z.string().max(500).nullable().optional(),
     preparationSteps: PreparationStepsSchema.optional(),
     basePrice: z.number().nonnegative(),
-    category: z.string().max(60).nullable().optional(),
+    /**
+     * OBLIGATORIA al crear. Todo el catálogo se navega por categoría —los chips
+     * de la caja y los de la web— así que un producto sin ella solo aparece
+     * bajo "Todo": el cajero que filtra "Burgers" no lo encuentra y el cliente
+     * que navega por categorías tampoco. Si no encaja en ninguna, se crea una
+     * "Otros" (el propio formulario deja crearla ahí mismo).
+     *
+     * En `UpdateProductSchema` sigue siendo opcional: hay productos viejos sin
+     * categoría y editarles el precio no puede obligar a clasificarlos.
+     */
+    category: z.string().trim().min(1, 'Elige una categoría para el producto.').max(60),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
     emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
@@ -373,14 +383,14 @@ export const CreateProductSchema = z
     if (data.isCombo && (data.comboPrice === undefined || data.comboPrice === null)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'comboPrice is required when isCombo is true',
+        message: 'Un combo necesita un precio de combo.',
         path: ['comboPrice'],
       });
     }
     if (!data.isCombo && data.comboPrice !== undefined && data.comboPrice !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'comboPrice must be null/omitted when isCombo is false',
+        message: 'Solo los combos llevan precio de combo.',
         path: ['comboPrice'],
       });
     }
@@ -388,28 +398,28 @@ export const CreateProductSchema = z
       if (!data.unitPurchase) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'unitPurchase required when directResale=true',
+          message: 'Falta la unidad de compra (obligatoria en un producto de reventa directa).',
           path: ['unitPurchase'],
         });
       }
       if (!data.unitStock) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'unitStock required when directResale=true',
+          message: 'Falta la unidad de venta (obligatoria en un producto de reventa directa).',
           path: ['unitStock'],
         });
       }
       if (data.conversionFactor === undefined || data.conversionFactor === null) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'conversionFactor required when directResale=true',
+          message: 'Falta el factor de conversión (obligatorio en un producto de reventa directa).',
           path: ['conversionFactor'],
         });
       }
       if (data.isCombo) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'directResale and isCombo cannot both be true',
+          message: 'Un producto no puede ser de reventa directa y combo a la vez.',
           path: ['directResale'],
         });
       }

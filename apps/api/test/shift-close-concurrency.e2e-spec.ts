@@ -47,7 +47,7 @@ describe('Race cierre de caja vs cobro concurrente E2E', () => {
     const prod = await request
       .post('/products')
       .set(auth())
-      .send({ name: 'Gaseosa Close', basePrice: PRICE, directResale: true, unitPurchase: 'unidad', unitStock: 'unidad', conversionFactor: 1, modifiersEnabled: false })
+      .send({ category: 'Test', name: 'Gaseosa Close', basePrice: PRICE, directResale: true, unitPurchase: 'unidad', unitStock: 'unidad', conversionFactor: 1, modifiersEnabled: false })
       .expect(201);
     prodId = prod.body.id as string;
     await request

@@ -168,10 +168,10 @@ export class FixedCostsService {
     const cost = await this.prisma.fixedCost.findUnique({ where: { id: fixedCostId } });
     if (!cost) throw new NotFoundException(`FixedCost ${fixedCostId} not found`);
     if (periodMonth < 1 || periodMonth > 12) {
-      throw new BadRequestException('periodMonth debe estar entre 1 y 12.');
+      throw new BadRequestException('El mes del período debe estar entre 1 y 12.');
     }
     if (cost.frequency === 'ANNUAL' && periodMonth !== 1) {
-      throw new BadRequestException('Para costos ANUALES el período debe ser enero (periodMonth=1).');
+      throw new BadRequestException('Para costos anuales el período debe ser enero.');
     }
 
     const amount = opts.amount ?? Number(cost.amount);

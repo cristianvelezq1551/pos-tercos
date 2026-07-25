@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { User as DbUser, Prisma } from '@prisma/client';
+import { USER_ROLE_LABELS } from '@pos-tercos/types';
 import type {
   CreateUser,
   ManagedUser,
@@ -113,7 +114,7 @@ export class UsersService {
       throw new ConflictException(`Ya existe un usuario con el correo ${email}.`);
     }
     if (dto.pin && !PIN_ROLES.includes(dto.role)) {
-      throw new BadRequestException('Solo ADMIN_OPERATIVO o DUENO pueden tener PIN.');
+      throw new BadRequestException(`Solo un ${USER_ROLE_LABELS.ADMIN_OPERATIVO} o el ${USER_ROLE_LABELS.DUENO} pueden tener PIN.`);
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);

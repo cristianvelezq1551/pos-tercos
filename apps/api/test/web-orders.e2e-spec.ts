@@ -77,7 +77,7 @@ describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
     const prod = await request
       .post('/products')
       .set('Authorization', `Bearer ${duenoToken}`)
-      .send({
+      .send({ category: 'Test',
         name: 'Gaseosa Web',
         basePrice: 5000,
         directResale: true,

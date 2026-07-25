@@ -148,7 +148,7 @@ export class RecipesService {
     });
     if (!size) throw new NotFoundException(`Variante ${sizeId} no existe`);
     if (size.productId !== productId) {
-      throw new BadRequestException(`La variante ${sizeId} no pertenece al producto ${productId}`);
+      throw new BadRequestException(`Esa variante no pertenece a este producto.`);
     }
   }
 
@@ -324,7 +324,7 @@ export class RecipesService {
               quantity: cc.quantity,
               unitCost: null,
               costContribution: null,
-              missingReason: `Componente productId=${cc.productId} no existe`,
+              missingReason: `Un componente del combo ya no existe en el catálogo.`,
             });
             continue;
           }
@@ -438,13 +438,13 @@ export class RecipesService {
     } catch (err) {
       if (err instanceof RecipeCycleError) {
         throw new BadRequestException({
-          message: 'Recipe contains a cycle',
+          message: 'La receta se referencia a sí misma: revisa sus subproductos.',
           cyclePath: err.cyclePath,
         });
       }
       if (err instanceof RecipeMissingNodeError) {
         throw new BadRequestException({
-          message: 'Recipe references missing node',
+          message: 'La receta usa un item que ya no existe en el catálogo.',
           missingId: err.missingId,
           kind: err.kind,
         });
@@ -506,7 +506,7 @@ export class RecipesService {
                 productName: '(eliminado)',
                 quantity: cc.quantity,
                 unitCost: null,
-                missingReason: `Componente productId=${cc.productId} no existe`,
+                missingReason: `Un componente del combo ya no existe en el catálogo.`,
               };
             }
             const r = costOf(comp);
@@ -588,7 +588,7 @@ export class RecipesService {
         const costContribution = unitCost !== null ? round(e.totalQuantity * unitCost) : null;
         if (unitCost === null) {
           allKnown = false;
-          missing.push(`Insumo "${e.name}" sin costo (no aparece en facturas confirmadas)`);
+          missing.push(`Falta el costo de "${e.name}" (sin facturas de compra confirmadas)`);
         } else {
           total += costContribution!;
         }
@@ -614,11 +614,11 @@ export class RecipesService {
       };
     } catch (err) {
       if (err instanceof RecipeCycleError) {
-        throw new BadRequestException({ message: 'Recipe contains a cycle', cyclePath: err.cyclePath });
+        throw new BadRequestException({ message: 'La receta se referencia a sí misma: revisa sus subproductos.', cyclePath: err.cyclePath });
       }
       if (err instanceof RecipeMissingNodeError) {
         throw new BadRequestException({
-          message: 'Recipe references missing node',
+          message: 'La receta usa un item que ya no existe en el catálogo.',
           missingId: err.missingId,
           kind: err.kind,
         });
@@ -723,7 +723,7 @@ export class RecipesService {
     if (kind !== 'subproduct') return;
     const selfRef = edges.find((e) => e.childType === 'subproduct' && e.childId === parentId);
     if (selfRef) {
-      throw new BadRequestException(`Subproduct ${parentId} cannot reference itself in its recipe`);
+      throw new BadRequestException(`Un subproducto no puede usarse a sí mismo en su receta.`);
     }
   }
 
@@ -798,13 +798,13 @@ export class RecipesService {
     } catch (err) {
       if (err instanceof RecipeCycleError) {
         throw new BadRequestException({
-          message: 'Recipe would create a cycle',
+          message: 'Ese cambio haría que la receta se referencie a sí misma.',
           cyclePath: err.cyclePath,
         });
       }
       if (err instanceof RecipeMissingNodeError) {
         throw new BadRequestException({
-          message: 'Recipe references missing node',
+          message: 'La receta usa un item que ya no existe en el catálogo.',
           missingId: err.missingId,
           kind: err.kind,
         });

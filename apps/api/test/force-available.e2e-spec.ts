@@ -58,7 +58,7 @@ describe('Forzar disponible + consumibles en el cobro E2E', () => {
     const p = await request
       .post('/products')
       .set(auth())
-      .send({ name: 'Agua Normal', basePrice: 3000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 12, modifiersEnabled: false })
+      .send({ category: 'Test', name: 'Agua Normal', basePrice: 3000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 12, modifiersEnabled: false })
       .expect(201);
     // Sin stock → el cobro valida y rechaza.
     const res = await sellAndPay(p.body.id, 3000);
@@ -69,7 +69,7 @@ describe('Forzar disponible + consumibles en el cobro E2E', () => {
     const p = await request
       .post('/products')
       .set(auth())
-      .send({ name: 'Agua Forzada', basePrice: 3000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 12, modifiersEnabled: false })
+      .send({ category: 'Test', name: 'Agua Forzada', basePrice: 3000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 12, modifiersEnabled: false })
       .expect(201);
     await request.post(`/products/${p.body.id}/force-available`).set(auth()).send({ forceAvailable: true }).expect(201);
 
@@ -102,7 +102,7 @@ describe('Forzar disponible + consumibles en el cobro E2E', () => {
     const burger = await request
       .post('/products')
       .set(auth())
-      .send({ name: 'Burger FA', basePrice: 8000, directResale: false, unitPurchase: 'unit', unitStock: 'unit', conversionFactor: 1, modifiersEnabled: false })
+      .send({ category: 'Test', name: 'Burger FA', basePrice: 8000, directResale: false, unitPurchase: 'unit', unitStock: 'unit', conversionFactor: 1, modifiersEnabled: false })
       .expect(201);
     await request
       .put(`/products/${burger.body.id}/recipe`)

@@ -13,7 +13,7 @@ import {
   roundsToZeroAt4,
   type PromotionDef,
 } from '@pos-tercos/domain';
-import { isWebSaleType, REFUND_VOID_REASON_PREFIX } from '@pos-tercos/types';
+import { isWebSaleType, REFUND_VOID_REASON_PREFIX, saleStatusLabel } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -430,7 +430,7 @@ export class SalesService {
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
     if (existing.status !== 'PENDIENTE_PAGO') {
       throw new BadRequestException(
-        `Sale está en status ${existing.status}, no se puede cobrar (solo PENDIENTE_PAGO).`,
+        `Este pedido está en estado "${saleStatusLabel(existing.status)}" y ya no se puede cobrar.`,
       );
     }
     // Un domicilio se cobra CON el envío ya cotizado (el fee es > 0 por regla).
@@ -822,7 +822,7 @@ export class SalesService {
       throw new BadRequestException('Solo los pedidos web se marcan listos.');
     }
     if (existing.status !== 'PAGADO') {
-      throw new BadRequestException(`No se puede marcar listo en estado ${existing.status}.`);
+      throw new BadRequestException(`No se puede marcar listo un pedido en estado "${saleStatusLabel(existing.status)}".`);
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -1471,7 +1471,7 @@ export function computeLine(
     throw new NotFoundException(`Product ${input.productId} not found`);
   }
   if (!product.isActive) {
-    throw new BadRequestException(`Product "${product.name}" is inactive`);
+    throw new BadRequestException(`El producto "${product.name}" está desactivado.`);
   }
 
   let basePrice = Number(product.basePrice);

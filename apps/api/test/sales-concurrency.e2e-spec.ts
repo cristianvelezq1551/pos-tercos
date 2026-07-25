@@ -42,7 +42,7 @@ describe('Cobro concurrente — unicidad de recibo E2E', () => {
     const prod = await request
       .post('/products')
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ category: 'Test',
         name: 'Gaseosa Conc',
         basePrice: 4000,
         directResale: true,
@@ -105,7 +105,7 @@ describe('Cobro concurrente — unicidad de recibo E2E', () => {
     const prod = await request
       .post('/products')
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ category: 'Test',
         name: 'Escaso Conc',
         basePrice: 5000,
         directResale: true,
