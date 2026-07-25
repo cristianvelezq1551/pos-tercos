@@ -48,7 +48,7 @@
 - [x] 🖥️ Login en Admin con `dueno@` → entra al launcher.
 - [x] 🖥️ **Aislamiento de sesiones**: en el MISMO navegador, abrí Cocina (3006) y logueá `cocinero@`.
       Volvé a Admin y recargá. → *La sesión de Admin sigue siendo el Dueño.* No se mezclan.
-- [ ] Cerrar sesión en Admin → vuelve a `/login` y no se puede volver con el botón "atrás".
+- [x] Cerrar sesión en Admin → vuelve a `/login` y no se puede volver con el botón "atrás".
 - [x] 🔌 Login con clave incorrecta 11 veces seguidas → *a partir del intento 11 responde "demasiados intentos"* (tope 10/min).
 - [x] 🔌 `cajero@` intenta entrar a `/finanzas/estado` → *pantalla de "no autorizado"*.
 - [x] 🔌 `cajero@` intenta entrar a `/users` → *no autorizado* (solo Dueño).

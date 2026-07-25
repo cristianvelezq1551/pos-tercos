@@ -2,7 +2,7 @@
 
 import type { Stockable } from '@pos-tercos/types';
 import { Input, Label, formatCop } from '@pos-tercos/ui';
-import { suggestBaseFactor } from './suggest-base-factor';
+import { conversionSospechosa, suggestBaseFactor } from './suggest-base-factor';
 
 interface LineForConversion {
   quantity: number;
@@ -38,6 +38,17 @@ export function BaseConversionPanel({
   const baseQty = Math.round(line.quantity * factor * 10000) / 10000;
   const costPerBase = baseQty > 0 ? line.total / baseQty : 0;
   const usingSuggestion = line.baseFactor == null || line.baseFactor === suggested;
+
+  // Ver `conversionSospechosa`: el aviso que evita que un número mal puesto
+  // entre menos mercancía de la que llegó y dispare el costo del insumo.
+  const factorDelInsumo = stockable.conversionFactor;
+  const sospechosa = conversionSospechosa({
+    lineUnit: line.unit,
+    unitPurchase: stockable.unitPurchase,
+    conversionFactor: factorDelInsumo,
+    factorElegido: factor,
+  });
+  const costoPorUnidadDeCompra = costPerBase * factorDelInsumo;
 
   return (
     <div className="space-y-2 rounded-md border border-blue-500/20 bg-blue-500/5 p-2.5">
@@ -78,6 +89,31 @@ export function BaseConversionPanel({
         <span className="text-muted-foreground"> · costo </span>
         <strong className="text-foreground">{formatCop(costPerBase)}/{base}</strong>
       </p>
+
+      {sospechosa ? (
+        <div className="space-y-1.5 rounded-md border border-warning/40 bg-warning/10 p-2">
+          <p className="text-xs leading-relaxed text-warning">
+            <strong>Revisa esta conversión.</strong> La factura viene en{' '}
+            <strong>{line.unit}</strong> y {stockable.name} se compra en{' '}
+            <strong>{stockable.unitPurchase}</strong>, así que 1 {stockable.unitPurchase} deberían
+            ser <strong>{factorDelInsumo.toLocaleString('es-CO')} {base}</strong>, no{' '}
+            {factor.toLocaleString('es-CO')}.
+          </p>
+          <p className="text-xs leading-relaxed text-warning">
+            Con este número entra menos mercancía de la que llegó y el costo queda en{' '}
+            <strong>{formatCop(costoPorUnidadDeCompra)}/{stockable.unitPurchase}</strong> — que
+            después se usa para calcular cuánto cuesta cada plato.
+          </p>
+          <button
+            type="button"
+            onClick={() => onChange(factorDelInsumo)}
+            disabled={disabled}
+            className="text-xs font-semibold text-warning underline underline-offset-2"
+          >
+            Corregir a {factorDelInsumo.toLocaleString('es-CO')} {base}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
