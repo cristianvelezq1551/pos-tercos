@@ -33,8 +33,8 @@ export function ProductMarginsTable({
             <Th>Producto</Th>
             <Th align="right">Unidades</Th>
             <Th align="right">Ventas</Th>
-            <Th align="right">Costo real</Th>
-            <Th align="right">Costo para precio</Th>
+            <Th align="right" nota="lo que ya vendiste">Costo real</Th>
+            <Th align="right" nota="al último precio pagado">Costo hoy</Th>
             <Th align="right">Ganancia</Th>
             <Th align="right">% margen</Th>
           </tr>
@@ -101,12 +101,12 @@ export function ProductMarginsTable({
       </table>
       <div className="space-y-1.5 border-t border-border bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
         <p>
-          <strong className="text-foreground">Costo real</strong>: lo que costaron las unidades
-          que de verdad saliste, al precio del lote que se consumió (FIFO, primero el más viejo).
-          Es el que va al estado de resultados.{' '}
-          <strong className="text-foreground">Costo para precio</strong>: lo que costaría hacerlas
-          hoy, al último precio que pagaste por cada insumo. Es el que sirve para decidir a cuánto
-          vender.
+          <strong className="text-foreground">Costo real</strong>: lo que te costaron las unidades
+          que ya vendiste, al precio del lote del que salieron (primero el más viejo). Es el que va
+          al estado de resultados.{' '}
+          <strong className="text-foreground">Costo hoy</strong>: lo que costaría hacer esas mismas
+          unidades ahora, al último precio que pagaste por cada insumo. Es el que sirve para decidir
+          a cuánto vender.
         </p>
         <p>⚠ = parte del costo no se pudo determinar (insumos sin costo en facturas confirmadas).</p>
       </div>
@@ -115,7 +115,17 @@ export function ProductMarginsTable({
   );
 }
 
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
+function Th({
+  children,
+  align,
+  nota,
+}: {
+  children: React.ReactNode;
+  align?: 'right';
+  /** Aclaración bajo el título: los dos costos se distinguen por lo que
+   *  responden, y el encabezado solo no alcanza a decirlo. */
+  nota?: string;
+}) {
   return (
     <th
       scope="col"
@@ -124,6 +134,11 @@ function Th({ children, align }: { children: React.ReactNode; align?: 'right' })
       }`}
     >
       {children}
+      {nota ? (
+        <span className="block text-[10px] font-normal normal-case tracking-normal opacity-70">
+          {nota}
+        </span>
+      ) : null}
     </th>
   );
 }

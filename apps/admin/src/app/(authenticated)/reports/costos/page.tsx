@@ -25,7 +25,7 @@ interface Data {
   pnl: PnlReport;
   margins: ProductMarginReport;
   valuation: InventoryValuationReport;
-  /** Costo "para poner precio" (último precio de compra) por producto. Va acá
+  /** Costo "hoy" (al último precio de compra) por producto. Va acá
    *  para que el costo real y el de referencia se lean juntos: verlos en
    *  pantallas distintas hacía que dos números correctos parecieran una
    *  contradicción. */

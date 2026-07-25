@@ -15,7 +15,7 @@ export function DiferenciaDeCostos({ filas }: { filas: FilaDeMargen[] }) {
   return (
     <div className="space-y-2 border-t border-border bg-warning/5 px-4 py-3">
       <p className="text-xs font-semibold text-warning">
-        Por qué el costo real no coincide con el costo para precio
+        Por qué el costo real no coincide con el costo de hoy
       </p>
       <ul className="space-y-1.5 text-xs leading-relaxed text-muted-foreground">
         {conDiferencia.map(({ producto, refUnitario, realUnitario }) => (
