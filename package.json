@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
+    "build": "node scripts/assert-no-dev-server.mjs && turbo run build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "turbo run test",

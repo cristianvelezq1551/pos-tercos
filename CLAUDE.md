@@ -151,6 +151,19 @@ apps/<app>/src/
 - ❌ `any` sin justificación documentada.
 - ❌ Magic numbers — constantes con nombre.
 
+### ⚠️ NUNCA correr `pnpm build` con `pnpm dev` levantado
+
+`next build` y `next dev` escriben en el MISMO `.next`. Compilar producción con
+el dev corriendo deja ese directorio mezclado y la app empieza a fallar con
+`Loading chunk app/(...)/page failed` — el chunk cliente no existe— aunque el
+código esté perfecto. Cuesta media hora entender que el problema no era la app.
+
+Desde 2026-07-25 hay un guard: `pnpm build` corre `scripts/assert-no-dev-server.mjs`
+y falla si alguno de los puertos de dev (3000/3004/3005/3006) está escuchando.
+Escape para CI o casos deliberados: `ALLOW_BUILD_WITH_DEV=1 pnpm build`.
+
+Si ya te pasó: pará el dev, `rm -rf apps/<app>/.next` y volvé a levantar.
+
 ### Validar antes de cada commit
 
 ```bash
