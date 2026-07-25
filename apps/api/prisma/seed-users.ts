@@ -1,5 +1,6 @@
 import { PrismaClient, type UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { assertNotProduction } from './assert-not-production';
 
 /**
  * Seed SOLO de usuarios de acceso (sin menú de prueba). Útil para dejar la base
@@ -9,6 +10,8 @@ import * as bcrypt from 'bcrypt';
  *   pnpm prisma migrate reset --force --skip-seed
  *   pnpm dlx tsx prisma/seed-users.ts
  */
+assertNotProduction('seed-users', 'un DUEÑO y un ADMIN con la clave pública dev12345');
+
 const prisma = new PrismaClient();
 const DEV_PASSWORD = 'dev12345';
 

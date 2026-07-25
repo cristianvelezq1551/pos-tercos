@@ -1,38 +1,11 @@
 import { createHash } from 'crypto';
 import { PrismaClient, type UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { assertNotProduction } from './assert-not-production';
+
+assertNotProduction('seed', 'usuarios con la clave pública dev12345 y catálogo de prueba');
 
 const prisma = new PrismaClient();
-
-// El seed crea usuarios con password de dev conocida (`dev12345`) y catálogo de
-// prueba — correrlo contra prod sería una brecha de seguridad inmediata. Guard
-// duro: solo corre contra hosts locales, salvo override explícito FORCE_SEED=1
-// (para un entorno de staging deliberado, nunca prod).
-function assertNotProduction(): void {
-  if (process.env.FORCE_SEED === '1') return;
-  const problems: string[] = [];
-  if (process.env.NODE_ENV === 'production') {
-    problems.push('NODE_ENV=production');
-  }
-  const dbUrl = process.env.DATABASE_URL ?? '';
-  try {
-    const host = new URL(dbUrl).hostname;
-    if (!['localhost', '127.0.0.1', 'host.docker.internal'].includes(host)) {
-      problems.push(`DATABASE_URL apunta a host no-local: ${host}`);
-    }
-  } catch {
-    problems.push('DATABASE_URL ausente o inválida');
-  }
-  if (problems.length > 0) {
-    console.error(
-      `✗ Seed ABORTADO (${problems.join(' + ')}).\n` +
-        '  Este seed crea usuarios dev12345 — NUNCA correrlo en prod.\n' +
-        '  Si esto es un entorno de staging deliberado: FORCE_SEED=1 pnpm prisma db seed',
-    );
-    process.exit(1);
-  }
-}
-assertNotProduction();
 
 const DEV_PASSWORD = 'dev12345';
 

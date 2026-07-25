@@ -7,6 +7,67 @@
 // (random + SHA-256 en DB), no JWT firmados. Pedirlo daba falsa confianza.
 const REQUIRED_ENV = ['DATABASE_URL', 'JWT_ACCESS_SECRET'] as const;
 
+/**
+ * §CN-003: TODO el endurecimiento de prod colgaba de `NODE_ENV === 'production'`
+ * evaluado en tres lugares distintos, y NADA verificaba que la variable
+ * estuviera seteada. Un typo en Railway (`Production`, `prod`, o ausente) hacía
+ * que el proceso arrancara EN SILENCIO con:
+ *   - CORS `origin: true` + `credentials: true` (cualquier origen, con sesión)
+ *   - cookies de auth sin `Secure`
+ *   - todo `REQUIRED_ENV_PROD` salteado (incluido el piso de entropía)
+ * El propio `assertRequiredEnv` no podía detectarlo porque estaba detrás de la
+ * misma condición. Acá se resuelve UNA vez y se exporta como fuente única.
+ */
+const KNOWN_APP_ENVS: readonly string[] = ['development', 'test', 'qa', 'production'];
+
+const LOCAL_DB_HOSTS = ['localhost', '127.0.0.1', 'host.docker.internal'];
+
+function dbLooksLocal(): boolean {
+  try {
+    return LOCAL_DB_HOSTS.includes(new URL(process.env.DATABASE_URL ?? '').hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * OJO: esto NO se evalúa al importar el módulo. Nada carga `.env` antes de que
+ * corran los imports (verificado empíricamente), así que validar en module-load
+ * mataba el arranque en dev con "DATABASE_URL apunta a host remoto". La
+ * validación vive dentro de `assertRequiredEnv()`, que ya hoy lee DATABASE_URL
+ * con éxito; `isProd()` se evalúa perezosamente en cada uso.
+ */
+function assertKnownAppEnv(): void {
+  const raw = process.env.APP_ENV ?? process.env.NODE_ENV;
+
+  if (raw) {
+    if (!KNOWN_APP_ENVS.includes(raw)) {
+      throw new Error(
+        `APP_ENV/NODE_ENV="${raw}" no es un valor conocido. ` +
+          `Permitidos: ${KNOWN_APP_ENVS.join(' | ')}. Un typo acá deshabilita ` +
+          'CORS estricto, cookies Secure y las validaciones de secretos de prod.',
+      );
+    }
+    return;
+  }
+
+  // Sin variable: solo aceptable en una máquina de desarrollo (DB local).
+  // Contra una DB remota es casi seguro un deploy mal configurado → morir acá.
+  if (!dbLooksLocal()) {
+    throw new Error(
+      'APP_ENV/NODE_ENV no está seteada y DATABASE_URL apunta a un host remoto. ' +
+        'Sin declarar el entorno, la API arrancaría con CORS abierto (origin: true ' +
+        '+ credentials) y cookies de sesión sin Secure. ' +
+        'Seteá NODE_ENV=production en el servicio (deploy.md §1.2).',
+    );
+  }
+}
+
+/** Fuente ÚNICA del flag de producción. No re-leer `process.env.NODE_ENV` suelto. */
+export function isProd(): boolean {
+  return (process.env.APP_ENV ?? process.env.NODE_ENV) === 'production';
+}
+
 /** Requeridas solo en producción (en dev tienen fallback o mock).
  *  CORS_ORIGINS: main.ts también la valida, pero acá sale en la MISMA lista
  *  de faltantes. STORAGE_PROVIDER: sin ella la API arranca en modo `local` y
@@ -28,11 +89,15 @@ const MIN_SECRET_LENGTH = 32;
 const SECRETS_WITH_FLOOR = ['JWT_ACCESS_SECRET', 'WEB_ORDER_TOKEN_SECRET'] as const;
 
 export function assertRequiredEnv(): void {
+  // PRIMERO: sin un entorno declarado y válido, todo lo de abajo se saltea solo.
+  assertKnownAppEnv();
+  const IS_PROD = isProd();
+
   const missing: string[] = [];
   for (const key of REQUIRED_ENV) {
     if (!process.env[key]) missing.push(key);
   }
-  if (process.env.NODE_ENV === 'production') {
+  if (IS_PROD) {
     for (const key of REQUIRED_ENV_PROD) {
       if (!process.env[key]) missing.push(key);
     }
@@ -63,7 +128,7 @@ export function assertRequiredEnv(): void {
 
   // Piso de entropía en prod: un secret presente pero trivial (ej. "secret")
   // arrancaría sin alarma y firma tokens triviales de forjar.
-  if (process.env.NODE_ENV === 'production') {
+  if (IS_PROD) {
     const weak = SECRETS_WITH_FLOOR.filter((key) => {
       const v = process.env[key];
       return v !== undefined && v.length < MIN_SECRET_LENGTH;

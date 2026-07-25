@@ -3,12 +3,13 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { assertRequiredEnv } from './common/assert-env';
-
-const IS_PROD = process.env.NODE_ENV === 'production';
+import { assertRequiredEnv, isProd } from './common/assert-env';
 
 async function bootstrap() {
+  // Valida además que el entorno esté DECLARADO (APP_ENV/NODE_ENV conocido):
+  // de eso cuelgan el CORS estricto, las cookies Secure y el piso de secretos.
   assertRequiredEnv();
+  const IS_PROD = isProd();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Detrás del proxy de Railway/Cloudflare: confiar en X-Forwarded-For para que
@@ -42,8 +43,10 @@ async function bootstrap() {
       'CORS_ORIGINS es obligatorio en producción (allowlist de orígenes separada por comas).',
     );
   }
+  // El `true` (reflejar cualquier origen) es EXCLUSIVO de dev: atado a !IS_PROD
+  // para que aunque el throw de arriba desapareciera, prod nunca pueda reflejar.
   app.enableCors({
-    origin: corsOrigins.length ? corsOrigins : true,
+    origin: corsOrigins.length ? corsOrigins : !IS_PROD,
     credentials: true,
   });
 
