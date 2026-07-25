@@ -55,20 +55,23 @@ export class CogsService {
   //   1. El seed lleva lotes restantes + waste/cortesía históricos + costo por
   //      cortesía → valuación, lotes y cortesías son EXACTOS en incremental.
   //   2. Los costos POR VENTA pre-corte NO están en el incremental → un
-  //      reporte cuyo rango empiece ANTES del corte usa replay completo
-  //      (parámetro `rangeFrom` de runLedger).
+  //      reporte usa el snapshot MÁS NUEVO cuyo corte sea <= el inicio de su
+  //      rango (`rangeFrom`). Como los snapshots de todos los meses quedan
+  //      guardados, los reportes históricos también corren incrementales; solo
+  //      cae a replay completo lo anterior al PRIMER corte.
   //   3. Una reversa (void/edición/anulación de cortesía) que cruza el corte
   //      enciende `needsFullReplay` → fallback automático a replay completo.
   //      Nunca hay resultado incorrecto, solo uno más lento.
   // ==================================================================
 
   /**
-   * Caché del ledger con TTL corto, una entrada por modo (incremental / full).
+   * Caché del ledger con TTL corto, una entrada por corte usado (`full` o
+   * `inc:<corte>`).
    * Memoizar la PROMESA deduplica llamados concurrentes. Sin invalidación por
    * escritura a propósito: un reporte de COGS tolera ≤ TTL de staleness.
    */
   private static readonly LEDGER_TTL_MS = 60_000;
-  private ledgerCache = new Map<'incremental' | 'full', { promise: Promise<LedgerFifo>; at: number }>();
+  private ledgerCache = new Map<string, { promise: Promise<LedgerFifo>; at: number }>();
 
   /** Limpia la caché (tras crear un snapshot, y para tests). */
   invalidateLedgerCache(): void {
@@ -83,21 +86,20 @@ export class CogsService {
    *   preserva lotes y agregados históricos completos.
    */
   private async runLedger(rangeFrom?: Date): Promise<LedgerFifo> {
-    // ⚠️ La decisión full-vs-incremental se resuelve ANTES de tocar la caché.
-    // La caché tiene UNA entrada por modo; si `rangeFrom` se evaluara dentro
-    // del closure, un cache-hit de otro caller (p.ej. la valuación, que llama
-    // sin rango y cachea el incremental) le devolvería el incremental a un
-    // reporte histórico → COGS de ventas pre-corte = $0 (margen inflado).
-    const snapshot = await this.latestSnapshot();
+    // ⚠️ Qué snapshot se usa se resuelve ANTES de tocar la caché, y la clave de
+    // la caché lleva SU CORTE. Con una sola entrada de "incremental", un
+    // cache-hit de otro caller (p.ej. la valuación, que llama sin rango y usa
+    // el corte más nuevo) le devolvería ese resultado a un reporte histórico
+    // que necesita un corte anterior → COGS de las ventas pre-corte en $0
+    // (margen inflado). El corte en la clave hace imposible ese cruce.
+    const snapshot = await this.pickSnapshot(rangeFrom);
     if (!snapshot) {
-      return this.cachedLedger('full', () => this.computeLedger(null));
-    }
-    if (rangeFrom && rangeFrom < snapshot.cutoffAt) {
-      // Rango histórico: el incremental no lleva costos de ventas pre-corte.
+      // Sin snapshot que cubra el rango (historia anterior al primer corte).
       return this.fullLedger();
     }
-    const incremental = await this.cachedLedger('incremental', () =>
-      this.computeLedger(snapshot),
+    const incremental = await this.cachedLedger(
+      `inc:${snapshot.cutoffAt.toISOString()}`,
+      () => this.computeLedger(snapshot),
     );
     if (incremental.needsFullReplay) {
       // Reversa cruzó el corte (void de una venta del mes pasado): el
@@ -115,8 +117,9 @@ export class CogsService {
     return this.cachedLedger('full', () => this.computeLedger(null));
   }
 
+  /** `key` = 'full' o `inc:<corte ISO>` — ver la nota de `runLedger`. */
   private cachedLedger(
-    mode: 'incremental' | 'full',
+    mode: string,
     compute: () => Promise<LedgerFifo>,
   ): Promise<LedgerFifo> {
     const now = Date.now();
@@ -131,8 +134,27 @@ export class CogsService {
     return promise;
   }
 
-  private async latestSnapshot(): Promise<{ cutoffAt: Date; seed: LedgerSeed } | null> {
+  /**
+   * Snapshot MÁS NUEVO que sirve para costear ventas desde `rangeFrom`.
+   *
+   * Los snapshots de todos los meses quedan guardados (nunca se borran), pero
+   * antes solo se miraba el último: cualquier reporte histórico (el P&G del mes
+   * pasado, la tendencia de 6 meses) tenía su rango ANTES de ese corte y caía a
+   * replay completo desde el génesis, aunque existiera un snapshot justo de esa
+   * época. Eligiendo el corte que cubre el rango, esos reportes también corren
+   * incrementales.
+   *
+   * Sin `rangeFrom` (valuación, lotes, cortesías) sirve el último: el seed
+   * preserva los agregados históricos completos.
+   */
+  private async pickSnapshot(
+    rangeFrom?: Date,
+  ): Promise<{ cutoffAt: Date; seed: LedgerSeed } | null> {
     const row = await this.prisma.ledgerSnapshot.findFirst({
+      // El corte debe ser <= rangeFrom: si fuera posterior, las ventas del
+      // arranque del rango quedarían DENTRO del snapshot y sus costos por venta
+      // no están en el seed (a propósito) → COGS en $0.
+      where: rangeFrom ? { cutoffAt: { lte: rangeFrom } } : undefined,
       orderBy: { cutoffAt: 'desc' },
       select: { cutoffAt: true, payload: true },
     });

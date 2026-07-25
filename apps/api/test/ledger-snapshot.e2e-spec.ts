@@ -3,8 +3,9 @@
  * del informe de calidad): el replay de COGS arranca del snapshot mensual en
  * vez del génesis. Valida las 3 reglas de corrección de CogsService:
  *   1. Incremental === replay completo para valuación y ventas post-corte.
- *   2. Rango que empieza antes del corte → replay completo (P&G histórico
- *      conserva mermas y costos por venta pre-corte).
+ *   2. Cada reporte usa el snapshot más nuevo cuyo corte sea <= el inicio de
+ *      su rango; solo lo anterior al PRIMER corte cae a replay completo. El
+ *      número tiene que ser el mismo por cualquiera de los dos caminos.
  *   3. Reversa que cruza el corte (void de venta del mes pasado) → fallback
  *      automático a replay completo (needsFullReplay), nunca dato incorrecto.
  *
@@ -180,7 +181,7 @@ describe('Ledger snapshot FIFO E2E', () => {
     expect(pnl.body.wasteCost).toBe(0);
   });
 
-  it('regla 2: P&G con rango que empieza antes del corte usa replay completo', async () => {
+  it('regla 2: rango anterior al PRIMER corte usa replay completo', async () => {
     cogs.invalidateLedgerCache();
     const pnl = await request
       .get(`/reports/cogs/pnl?from=${iso(lastMonth(1))}&to=${iso(now)}`)
@@ -206,5 +207,35 @@ describe('Ledger snapshot FIFO E2E', () => {
     // 20 − 4 (venta vieja) − 3 (venta de hoy) + 4 (reverso) = 17 × $1.000.
     expect(gaseosa?.qty).toBe(17);
     expect(gaseosa?.value).toBe(17_000);
+  });
+
+  it('un reporte HISTÓRICO usa el snapshot de su época y da el MISMO número que el replay completo', async () => {
+    // Antes solo se miraba el snapshot más nuevo: cualquier rango anterior a
+    // ese corte replicaba la historia entera desde el génesis, aunque hubiera
+    // un snapshot justo de esa época. Ahora se elige el corte que cubre el
+    // rango — y lo que no puede cambiar NUNCA es el número.
+    const desde = lastMonth(1);
+    const url = `/reports/cogs/pnl?from=${iso(desde)}&to=${iso(now)}`;
+    const pedir = async () => {
+      cogs.invalidateLedgerCache();
+      const res = await request
+        .get(url)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .expect(200);
+      const b = res.body as Record<string, unknown>;
+      delete b.periodFrom;
+      delete b.periodTo;
+      return b;
+    };
+
+    // Corte ANTERIOR al inicio del rango ⇒ el reporte puede apoyarse en él.
+    await cogs.createLedgerSnapshot(new Date(desde.getTime() - 86_400_000));
+    const conSnapshotViejo = await pedir();
+
+    // Misma pregunta, sin ningún snapshot: replay completo desde el génesis.
+    await prisma.ledgerSnapshot.deleteMany({});
+    const conReplayCompleto = await pedir();
+
+    expect(conSnapshotViejo).toEqual(conReplayCompleto);
   });
 });
