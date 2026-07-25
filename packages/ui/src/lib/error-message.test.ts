@@ -23,10 +23,10 @@ describe('mensajeDeError', () => {
 
   describe('lo que SÍ debe pasar tal cual', () => {
     it.each([
-      'No tenés un turno abierto. Abrí turno antes de vender.',
+      'No tienes un turno abierto. Abre turno antes de vender.',
       'La caja de hoy ya fue cerrada. No se abre una segunda el mismo día.',
-      'Asigná el costo del envío antes de cobrar el domicilio.',
-      'El medio de pago RAPPI no está habilitado. Configuralo en el admin.',
+      'Asigna el costo del envío antes de cobrar el domicilio.',
+      'El medio de pago RAPPI no está habilitado. Configúralo en el admin.',
       'Falta el celular.',
     ])('deja pasar el mensaje del negocio: %s', (mensaje) => {
       expect(mensajeDeError(new Error(mensaje))).toBe(mensaje);
@@ -47,7 +47,7 @@ describe('mensajeDeError', () => {
       [401, /sesión venció/i],
       [403, /permiso/i],
       [404, /no encontramos/i],
-      [409, /recargá/i],
+      [409, /recarga/i],
       [429, /demasiados intentos/i],
       [500, /problema/i],
       [502, /problema/i],

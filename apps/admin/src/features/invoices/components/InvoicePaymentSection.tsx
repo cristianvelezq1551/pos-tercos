@@ -65,7 +65,7 @@ export function InvoicePaymentSection({
           <p className="mt-1 text-xs text-muted-foreground">
             {isPaid
               ? `Pagada el ${paidAtLabel}${invoice.paymentActorName ? ` por ${invoice.paymentActorName}` : ''}${pocketLabel ? ` · ${pocketLabel}` : ''}${invoice.paymentNote ? ` · ${invoice.paymentNote}` : ''}`
-              : 'Subí el comprobante de la transferencia para marcarla pagada y sacarla de la lista de pendientes.'}
+              : 'Sube el comprobante de la transferencia para marcarla pagada y sacarla de la lista de pendientes.'}
           </p>
         </div>
         {canManage || canViewProof ? (

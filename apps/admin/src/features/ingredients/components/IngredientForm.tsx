@@ -226,7 +226,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
 
         <Checkbox
           label="Frena la venta si no hay stock"
-          description="Destildá esto para un CONSUMIBLE (servilletas, sal): no frena la venta de los productos que lo usan y no aparece en Deudas de inventario. Se sigue descontando y costeando igual."
+          description="Desmarca esto para un CONSUMIBLE (servilletas, sal): no frena la venta de los productos que lo usan y no aparece en Deudas de inventario. Se sigue descontando y costeando igual."
           disabled={pending}
           checked={form.blocksAvailability}
           onChange={(e) => setForm((f) => ({ ...f, blocksAvailability: e.target.checked }))}

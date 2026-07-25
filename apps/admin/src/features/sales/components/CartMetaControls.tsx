@@ -46,7 +46,7 @@ export function CartMetaControls({
   const handleOpenTab = async () => {
     if (submittingRef.current || tabPending || items.length === 0) return;
     if (!customerName.trim()) {
-      setError('Poné el nombre del cliente para abrir la cuenta.');
+      setError('Escribe el nombre del cliente para abrir la cuenta.');
       return;
     }
     submittingRef.current = true;

@@ -51,7 +51,7 @@ export function ProduceModal({
   const submit = async () => {
     const n = Number(qty);
     if (!Number.isFinite(n) || n <= 0) {
-      setError('Ingresá una cantidad mayor a 0.');
+      setError('Ingresa una cantidad mayor a 0.');
       return;
     }
     setPending(true);

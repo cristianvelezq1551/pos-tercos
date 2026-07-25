@@ -180,7 +180,7 @@ export class ShiftsController {
     const includeMargin = COST_VISIBLE_ROLES.has(user.role);
     const detail = await this.shifts.getSessionDetail(id, includeMargin);
     if (!OVERSIGHT_ROLES.has(user.role) && detail.shift.cashierId !== user.sub) {
-      throw new ForbiddenException('Solo podés ver el detalle de tu propia caja.');
+      throw new ForbiddenException('Solo puedes ver el detalle de tu propia caja.');
     }
     return detail;
   }
@@ -204,7 +204,7 @@ export class ShiftsController {
   ): Promise<Shift> {
     const shift = await this.shifts.getById(id);
     if (!OVERSIGHT_ROLES.has(user.role) && shift.cashierId !== user.sub) {
-      throw new ForbiddenException('Solo podés ver tu propia caja.');
+      throw new ForbiddenException('Solo puedes ver tu propia caja.');
     }
     return shift;
   }
@@ -246,7 +246,7 @@ export class ShiftsController {
     if (OVERSIGHT_ROLES.has(user.role)) return;
     const shift = await this.shifts.getById(shiftId);
     if (shift.cashierId !== user.sub) {
-      throw new ForbiddenException('Solo podés ver tu propia caja.');
+      throw new ForbiddenException('Solo puedes ver tu propia caja.');
     }
   }
 }

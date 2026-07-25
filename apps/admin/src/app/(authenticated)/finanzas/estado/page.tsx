@@ -58,7 +58,7 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
       <PageHeader
         eyebrow="Finanzas"
         title="Estado financiero"
-        description="Resultado real del mes: ingresos − COGS (FIFO) − costos fijos. Te dice si cubrís todo y cuánto neto sacaste. La nómina entra automática."
+        description="Resultado real del mes: ingresos − COGS (FIFO) − costos fijos. Te dice si cubres todo y cuánto neto obtuviste. La nómina entra automática."
         icon={<TrendingUp className="h-6 w-6" strokeWidth={1.75} />}
         actions={<MonthPicker year={year} month={month} />}
       />

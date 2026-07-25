@@ -9,7 +9,7 @@ export default function Error({ reset }: { error: Error & { digest?: string }; r
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold text-foreground">Algo salió mal</h1>
         <p className="text-sm text-muted-foreground">
-          Tuvimos un problema cargando esta página. Probá de nuevo en un momento.
+          Tuvimos un problema cargando esta página. Prueba de nuevo en un momento.
         </p>
       </div>
       <button

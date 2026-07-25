@@ -30,7 +30,7 @@ export function LoginScreen() {
       }
       window.location.assign(redirectAfterLogin);
     } catch (e) {
-      setError(getErrorMessage(e, 'No se pudo iniciar sesión. Volvé a intentar.'));
+      setError(getErrorMessage(e, 'No se pudo iniciar sesión. Vuelve a intentar.'));
       setPending(false);
     }
   };

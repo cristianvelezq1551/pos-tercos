@@ -182,7 +182,7 @@ export async function runConfirmCheckout(d: ConfirmCheckoutDeps): Promise<void> 
   // → descuadre). Se rechaza con mensaje claro; el cajero reintenta con red.
   if (d.offline && d.sale) {
     throw new Error(
-      'Sin conexión no se puede cobrar una cuenta abierta. Esperá a que vuelva la red e intentá de nuevo.',
+      'Sin conexión no se puede cobrar una cuenta abierta. Espera a que vuelva la red e intenta de nuevo.',
     );
   }
   // CUENTA DIVIDIDA (solo online): N partes en una sola confirmación atómica.

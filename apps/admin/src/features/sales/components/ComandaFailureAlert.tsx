@@ -55,7 +55,7 @@ export function ComandaFailureAlert() {
       setFailures((prev) => prev.filter((p) => !(p.saleId === f.saleId && p.kind === f.kind)));
     } catch (err) {
       logError('comanda-retry', err, { saleId: f.saleId });
-      setRetryError(getErrorMessage(err, 'Sigue sin imprimir — revisá la impresora/print-agent'));
+      setRetryError(getErrorMessage(err, 'Sigue sin imprimir — revisa la impresora / print-agent'));
     } finally {
       setBusyId(null);
     }

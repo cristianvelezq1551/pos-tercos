@@ -44,7 +44,7 @@ export function TreasuryConfigCard({ config }: { config: TreasuryConfig }) {
         Saldos iniciales
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Configurá una vez desde qué fecha cuenta la tesorería y cuánto había en cada bolsillo ese día.
+        Configura una vez desde qué fecha cuenta la tesorería y cuánto había en cada bolsillo ese día.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <FormField label="Cuenta desde" hint="Vacío = todo el histórico">

@@ -32,14 +32,14 @@ export async function createWebOrder(
  */
 function friendlyOrderError(status: number, raw?: string): string {
   if (status === 429) {
-    return 'Estamos recibiendo muchos pedidos. Esperá unos segundos y volvé a intentar.';
+    return 'Estamos recibiendo muchos pedidos. Espera unos segundos y vuelve a intentar.';
   }
   const msg = (raw ?? '').trim();
   if (/validation failed|invalid|too_big|demasiado/i.test(msg)) {
-    return 'Revisá los datos del pedido: algún campo es inválido o el carrito es muy grande.';
+    return 'Revisa los datos del pedido: algún campo es inválido o el carrito es muy grande.';
   }
   if (/not found/i.test(msg)) {
-    return 'Un producto de tu carrito ya no está disponible. Volvé al menú y armá el pedido de nuevo.';
+    return 'Un producto de tu carrito ya no está disponible. Vuelve al menú y arma el pedido de nuevo.';
   }
   return msg || `No se pudo crear el pedido (error ${status}).`;
 }

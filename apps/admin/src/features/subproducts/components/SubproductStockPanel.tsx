@@ -96,7 +96,7 @@ export function SubproductStockPanel({
         </div>
         {movements.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-            Sin movimientos todavía. Producí una tanda para empezar.
+            Sin movimientos todavía. Produce una tanda para empezar.
           </p>
         ) : (
           <ul className="divide-y divide-border">

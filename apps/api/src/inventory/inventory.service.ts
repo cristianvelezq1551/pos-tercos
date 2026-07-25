@@ -202,7 +202,7 @@ export class InventoryService {
       });
       if (existingInitial) {
         throw new BadRequestException(
-          'Este item ya tiene un "Stock inicial" registrado. Para corregir el stock usá un ajuste manual.',
+          'Este item ya tiene un "Stock inicial" registrado. Para corregir el stock usa un ajuste manual.',
         );
       }
     }
@@ -278,7 +278,7 @@ export class InventoryService {
     if (!original) throw new NotFoundException(`Movimiento ${movementId} no encontrado`);
     if (original.type !== 'WASTE') {
       throw new BadRequestException(
-        'Solo se anulan movimientos de MERMA. Para corregir otro movimiento usá un ajuste manual.',
+        'Solo se anulan movimientos de MERMA. Para corregir otro movimiento usa un ajuste manual.',
       );
     }
 

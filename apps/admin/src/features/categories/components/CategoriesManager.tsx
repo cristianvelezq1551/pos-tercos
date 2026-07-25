@@ -87,7 +87,7 @@ export function CategoriesManager({ initial }: { initial: ProductCategory[] }) {
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         {cats.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">
-            Todavía no hay categorías. Creá la primera arriba.
+            Todavía no hay categorías. Crea la primera arriba.
           </p>
         ) : (
           <table className="w-full text-sm">

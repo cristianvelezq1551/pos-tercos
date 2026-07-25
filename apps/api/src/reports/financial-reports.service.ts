@@ -392,7 +392,7 @@ function parseFinancialAnalysisJson(raw: string, modelUsed: string): FinancialAn
   try {
     obj = JSON.parse(clean);
   } catch {
-    throw new Error('La IA no devolvió un JSON válido. Probá de nuevo.');
+    throw new Error('La IA no devolvió un JSON válido. Prueba de nuevo.');
   }
   if (typeof obj !== 'object' || obj === null) {
     throw new Error('La IA devolvió un formato inesperado.');

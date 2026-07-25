@@ -99,7 +99,7 @@ export function PayWeekModal({
           hint={
             overRemaining
               ? `No puede superar el restante (${formatCop(remaining)}).`
-              : 'Podés ajustarlo (incluir bonos, abono parcial, etc.).'
+              : 'Puedes ajustarlo (incluir bonos, abono parcial, etc.).'
           }
           required
         >
@@ -138,7 +138,7 @@ export function PayWeekModal({
         {mode === 'EFECTIVO' || mode === 'MIXTO' ? (
           <p className="text-[11px] text-muted-foreground">
             La parte en efectivo ({formatCop(cashAmount)}) sale del bolsillo Efectivo de tesorería, no del cajón del
-            turno. Si la sacaste de la caja, registrá además la salida en el POS.
+            turno. Si lo sacaste de la caja, registra además la salida en el POS.
           </p>
         ) : null}
 

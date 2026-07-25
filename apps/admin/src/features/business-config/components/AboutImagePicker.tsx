@@ -65,7 +65,7 @@ export function AboutImagePicker({
             {imageUrl ? 'Cambiar foto' : 'Subir foto'}
           </Button>
           <p className="max-w-xs text-xs text-muted-foreground">
-            Va al lado de la historia. Elegí una <strong>horizontal</strong> — ese espacio es
+            Va al lado de la historia. Elige una <strong>horizontal</strong> — ese espacio es
             ancho. Sin foto, la web usa su fondo degradado.
           </p>
         </div>

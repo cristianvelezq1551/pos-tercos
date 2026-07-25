@@ -70,7 +70,7 @@ export function InventarioView() {
             <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           {filtered.length === 0 ? (
-            <EmptyState title="Nada por acá" description="No hay stock que coincida." size="sm" className="mt-4" />
+            <EmptyState title="Nada por aquí" description="No hay stock que coincida." size="sm" className="mt-4" />
           ) : (
             <ul className="mt-3 space-y-2">
               {filtered.map((s) => (

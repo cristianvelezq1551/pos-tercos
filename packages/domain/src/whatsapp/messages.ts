@@ -30,7 +30,7 @@ export function buildPaymentInstructionsMessage(
   return (
     `${greet(sale.customerName)}, recibimos tu pedido #${sale.receiptNumber} en ${opts.businessName}. ` +
     `Total: ${formatCop(sale.total)}.${instr}${delivery}\n\n` +
-    `Cuando pagues, enviános el comprobante por este chat para confirmarlo. ¡Gracias!`
+    `Cuando pagues, envíanos el comprobante por este chat para confirmarlo. ¡Gracias!`
   );
 }
 
@@ -76,7 +76,7 @@ export function buildCanceledMessage(
 ): string {
   return (
     `${greet(sale.customerName)}, lamentablemente tu pedido #${sale.receiptNumber} fue cancelado. ` +
-    `Si creés que es un error o querés volver a pedir, escribinos por este chat. — ${opts.businessName}`
+    `Si crees que es un error o quieres volver a pedir, escríbenos por este chat. — ${opts.businessName}`
   );
 }
 

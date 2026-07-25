@@ -96,12 +96,12 @@ export interface FormState {
 
 export function validate(s: FormState): { error: string | null } {
   if (s.name.trim().length === 0) return { error: 'Nombre requerido' };
-  if ((s.daysMask & 127) === 0) return { error: 'Seleccioná al menos un día' };
+  if ((s.daysMask & 127) === 0) return { error: 'Selecciona al menos un día' };
   if (s.timeStart === s.timeEnd)
     return { error: 'La hora de inicio y fin no pueden ser iguales' };
   if (s.activeFrom && s.activeTo && s.activeTo < s.activeFrom)
     return { error: 'La fecha "hasta" debe ser >= "desde"' };
-  if (s.productIds.size === 0) return { error: 'Seleccioná al menos un producto' };
+  if (s.productIds.size === 0) return { error: 'Selecciona al menos un producto' };
 
   switch (s.type) {
     case 'PERCENT_OFF': {

@@ -38,7 +38,7 @@ export function AdjustmentModal({ onClose, onSuccess }: { onClose: () => void; o
       open
       onClose={pending ? () => {} : onClose}
       title="Nuevo ajuste"
-      description="Corrige el saldo de un bolsillo a mano (sumá o restá) cuando el sistema no captura el movimiento."
+      description="Corrige el saldo de un bolsillo a mano (suma o resta) cuando el sistema no captura el movimiento."
       maxWidth="max-w-md"
       footer={
         <>

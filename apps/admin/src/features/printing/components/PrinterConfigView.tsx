@@ -100,7 +100,7 @@ export function PrinterConfigView() {
 
       {names.length === 0 && !loading ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">
-          No se detectaron impresoras. Verificá que el print-agent esté corriendo
+          No se detectaron impresoras. Verifica que el print-agent esté corriendo
           en esta PC y que las impresoras estén instaladas en Windows.
         </Card>
       ) : null}

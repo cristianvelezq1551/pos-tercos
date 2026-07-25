@@ -164,13 +164,13 @@ export class UsersService {
       });
       if (otherActiveDuenos === 0) {
         throw new BadRequestException(
-          'No podés dejar el sistema sin un Dueño activo. asigna otro Dueño primero.',
+          'No puedes dejar el sistema sin un Dueño activo. Asigna otro Dueño primero.',
         );
       }
     }
     // No auto-desactivarse (evita quedar fuera de tu propia sesión).
     if (dto.active === false && id === actorId) {
-      throw new BadRequestException('No podés desactivar tu propio usuario.');
+      throw new BadRequestException('No puedes desactivar tu propio usuario.');
     }
     // El dueño principal no se puede desactivar ni cambiar de rol (sí editar nombre/teléfono).
     if (willBeRole !== 'DUENO' || !willBeActive) {
@@ -336,11 +336,11 @@ export class UsersService {
         where: { role: 'DUENO', active: true, id: { not: id } },
       });
       if (otherActiveDuenos === 0) {
-        throw new BadRequestException('No podés terminar al único Dueño activo.');
+        throw new BadRequestException('No puedes terminar al único Dueño activo.');
       }
     }
     if (id === actorId) {
-      throw new BadRequestException('No podés terminar tu propio empleo.');
+      throw new BadRequestException('No puedes terminar tu propio empleo.');
     }
     const updated = await this.prisma.user.update({
       where: { id },
@@ -379,14 +379,14 @@ export class UsersService {
     const approverId = await this.approvals.verify(pin); // 403 si el PIN no matchea
     await this.assertNotPrimaryOwner(id, 'No se puede eliminar al dueño principal.');
     if (id === actorId) {
-      throw new BadRequestException('No podés eliminar tu propio usuario.');
+      throw new BadRequestException('No puedes eliminar tu propio usuario.');
     }
     if (existing.role === 'DUENO') {
       const otherDuenos = await this.prisma.user.count({
         where: { role: 'DUENO', id: { not: id } },
       });
       if (otherDuenos === 0) {
-        throw new BadRequestException('No podés eliminar al único Dueño.');
+        throw new BadRequestException('No puedes eliminar al único Dueño.');
       }
     }
     // El audit_log registra TODA acción (login, ventas, turnos, inventario…) con
@@ -395,7 +395,7 @@ export class UsersService {
     const historyCount = await this.prisma.auditLog.count({ where: { userId: id } });
     if (historyCount > 0) {
       throw new ConflictException(
-        'No se puede eliminar: el usuario tiene historial (inició sesión u operó: ventas, turnos, etc.). Usá "Terminar empleo" para inactivarlo; su historial se conserva.',
+        'No se puede eliminar: el usuario tiene historial (inició sesión u operó: ventas, turnos, etc.). Usa "Terminar empleo" para inactivarlo; su historial se conserva.',
       );
     }
     try {
@@ -410,7 +410,7 @@ export class UsersService {
       // Red de seguridad: cualquier FK residual → mismo mensaje guía.
       if ((e as { code?: string }).code?.startsWith('P2') ?? false) {
         throw new ConflictException(
-          'No se puede eliminar: el usuario tiene historial operativo. Usá "Terminar empleo" para inactivarlo; su historial se conserva.',
+          'No se puede eliminar: el usuario tiene historial operativo. Usa "Terminar empleo" para inactivarlo; su historial se conserva.',
         );
       }
       throw e;

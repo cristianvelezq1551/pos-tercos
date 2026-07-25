@@ -48,7 +48,7 @@ export function TreasuryMovements({ movements }: { movements: TreasuryMovement[]
       {movements.length === 0 ? (
         <EmptyState
           title="Sin movimientos manuales"
-          description="Registrá un traspaso (mover plata entre efectivo y cuenta) o un ajuste cuando haga falta."
+          description="Registra un traspaso (mover dinero entre efectivo y cuenta) o un ajuste cuando haga falta."
         />
       ) : (
         <Card className="px-5 py-3">

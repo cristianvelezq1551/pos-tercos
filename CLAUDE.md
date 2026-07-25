@@ -133,6 +133,22 @@ apps/<app>/src/
 - ✅ SIEMPRE componentes <200 líneas. Si crece, partir.
 - ✅ SIEMPRE importar tipos de `@pos-tercos/types` cuando hay contrato compartido.
 
+### Textos que ve el usuario (copy)
+
+- **Español neutro, con TUTEO. Nunca voseo.** "Vuelve a intentar", no "Volvé";
+  "no tienes permiso", no "no tenés". La app está escrita así (150 usos contra
+  2 al momento de fijar la regla) y mezclar las dos formas se nota. La regla ya
+  estaba, pero enterrada dentro de un prompt del LLM
+  (`packages/domain/src/llm/prompt.ts`) — por eso se coló voseo más de una vez.
+- **Un mensaje de error le dice a la persona QUÉ pasó y QUÉ hacer.** Nada de
+  nombres de excepción, códigos, rutas de la API ni UUIDs. Si el texto solo lo
+  entiende quien programó, está mal.
+- Los mensajes que van a **logs y a metadata de auditoría** son la excepción:
+  ahí sí queremos el error crudo, completo y en el idioma que venga.
+- La red de seguridad es `mensajeDeError` (`packages/ui/src/lib/error-message.ts`):
+  deja pasar los mensajes del negocio y reemplaza los técnicos. Los helpers
+  `getErrorMessage` de cada app delegan ahí — no escribir uno nuevo.
+
 ### Naming
 
 - Filenames: `kebab-case` (`sales.service.ts`, `expand-recipe.ts`).

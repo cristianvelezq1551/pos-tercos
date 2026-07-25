@@ -55,7 +55,7 @@ export function DayOverrideDialog({
       open
       onClose={pending ? () => {} : onClose}
       title={`Editar día · ${date}`}
-      description={`${workerName} · valor/día ${formatCop(defaultAmount)}. Poné $0 para una ausencia o un monto menor por llegada tarde.`}
+      description={`${workerName} · valor/día ${formatCop(defaultAmount)}. Escribe $0 para una ausencia o un monto menor por llegada tarde.`}
       maxWidth="max-w-sm"
       footer={
         <>

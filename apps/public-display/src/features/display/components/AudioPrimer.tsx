@@ -76,7 +76,7 @@ export function AudioPrimer() {
         </div>
         <div className="h-1 w-16 rounded-full bg-accent" />
         <p className="text-2xl font-semibold text-text-muted">
-          Tocá la pantalla para iniciar
+          Toca la pantalla para iniciar
         </p>
       </div>
     </div>

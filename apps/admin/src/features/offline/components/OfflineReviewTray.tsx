@@ -119,7 +119,7 @@ export function OfflineReviewTray({
                 confirmDiscard === s.localId ? (
                   <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 p-2">
                     <p className="text-xs text-destructive">
-                      La plata quedó en el cajón pero esta venta <strong>NO se registrará</strong>.
+                      El dinero quedó en el cajón pero esta venta <strong>NO se registrará</strong>.
                       Va a quedar un descuadre que el dueño debe conciliar. ¿Descartar igual?
                     </p>
                     <div className="mt-2 flex gap-2">

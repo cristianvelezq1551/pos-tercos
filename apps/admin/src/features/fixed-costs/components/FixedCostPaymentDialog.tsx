@@ -48,7 +48,7 @@ export function FixedCostPaymentDialog({
 
   const submit = async (): Promise<void> => {
     if (!file) {
-      setError('Seleccioná el comprobante (imagen).');
+      setError('Selecciona el comprobante (imagen).');
       return;
     }
     const amountNum = Number(amount);

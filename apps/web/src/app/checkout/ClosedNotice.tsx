@@ -20,7 +20,7 @@ export function ClosedNotice({ business }: { business: PublicBusinessInfo }) {
           ? 'Los pedidos por la web están temporalmente deshabilitados. ¡Te esperamos en el local!'
           : next
             ? `Abrimos ${next}. Tu carrito te espera hasta entonces.`
-            : 'Volvé a intentar durante nuestro horario de atención.'}
+            : 'Vuelve a intentar durante nuestro horario de atención.'}
       </p>
 
       {!paused ? (

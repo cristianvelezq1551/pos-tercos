@@ -10,7 +10,7 @@ export function CheckoutBanners({ offline }: { offline: boolean }) {
         </p>
       ) : null}
       <p className="rounded-md border border-border bg-muted/60 px-3 py-2 text-sm font-medium text-foreground">
-        📋 Repasá el pedido en voz alta con el cliente antes de cobrar. La comanda
+        📋 Repasa el pedido en voz alta con el cliente antes de cobrar. La comanda
         y la factura se imprimen al confirmar el pago.
       </p>
     </>

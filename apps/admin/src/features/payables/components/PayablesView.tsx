@@ -35,7 +35,7 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
 
       <Section eyebrow="Pendientes" title="Por pagar" size="md">
         {pending.length === 0 ? (
-          <EmptyState title="Sin compromisos pendientes" description="Registrá lo que el negocio le debe a alguien." />
+          <EmptyState title="Sin compromisos pendientes" description="Registra lo que el negocio le debe a alguien." />
         ) : (
           <Card className="px-5 py-3">
             <ul className="divide-y divide-border">

@@ -21,7 +21,7 @@ export default async function CategoriesPage() {
       <PageHeader
         eyebrow="Catálogo"
         title="Categorías"
-        description="Definí las categorías del menú una sola vez. Al crear un producto se elige de esta lista, así no se duplican por errores de tipeo."
+        description="Define las categorías del menú una sola vez. Al crear un producto se elige de esta lista, así no se duplican por errores de escritura."
         icon={<Shapes className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="2xl" padY="md">

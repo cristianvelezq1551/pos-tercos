@@ -236,8 +236,8 @@ export function OrderStatusView({
                 Falta el costo del domicilio
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Mandanos tu pedido por WhatsApp y te confirmamos el total con el envío. Recién
-                ahí hacés la transferencia.
+                Envíanos tu pedido por WhatsApp y te confirmamos el total con el envío. Solo
+                ahí haces la transferencia.
               </p>
             </div>
           ) : (

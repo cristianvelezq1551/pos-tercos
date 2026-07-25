@@ -53,7 +53,7 @@ export class WebOrdersService {
     if (state.accepting) return;
     if (state.reason === 'orders_disabled') {
       throw new ServiceUnavailableException(
-        'Los pedidos web están temporalmente deshabilitados. Podés pedir en el local.',
+        'Los pedidos web están temporalmente deshabilitados. Puedes pedir en el local.',
       );
     }
     throw new ServiceUnavailableException(
@@ -82,7 +82,7 @@ export class WebOrdersService {
     const config = await this.businessConfig.get();
     if (!config.deliveryEnabled) {
       throw new BadRequestException(
-        'Por ahora no hacemos domicilios. Podés pedir para recoger en el local.',
+        'Por ahora no hacemos domicilios. Puedes pedir para recoger en el local.',
       );
     }
 
@@ -121,7 +121,7 @@ export class WebOrdersService {
     });
     if (pendingToday >= MAX_PENDING_WEB_ORDERS_PER_PHONE_PER_DAY) {
       throw new BadRequestException(
-        'Ya tenés varios pedidos sin pagar hoy con este número. Pagá o esperá a que el local los procese antes de pedir de nuevo.',
+        'Ya tienes varios pedidos sin pagar hoy con este número. Paga o espera a que el local los procese antes de pedir de nuevo.',
       );
     }
     // SalesService.create necesita un userId. Para ventas web, usamos el

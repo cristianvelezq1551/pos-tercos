@@ -141,7 +141,7 @@ export function OverridesEditor({
               <p className="w-full text-xs text-muted-foreground">
                 {duplicated.has(o.date) ? (
                   <span className="text-destructive">
-                    Ya hay otra excepción para esta fecha. Dejá una sola.
+                    Ya hay otra excepción para esta fecha. Deja una sola.
                   </span>
                 ) : (
                   formatOverrideDate(o.date)

@@ -30,7 +30,7 @@ export default async function WeeklyPayrollPage({ searchParams }: PageProps) {
       <PageHeader
         eyebrow="Personal"
         title="Nómina"
-        description="Pago semanal de todo el personal. Los empleados por mes ven su salario prorrateado por día; los de jornal, por días trabajados. Podés abonar parcial o saldar la semana, sumar bonos o descuentos — cada pago pide comprobante. El descanso se corre solo si el lunes es festivo."
+        description="Pago semanal de todo el personal. Los empleados por mes ven su salario prorrateado por día; los de jornal, por días trabajados. Puedes abonar parcial o saldar la semana, sumar bonos o descuentos — cada pago pide comprobante. El descanso se corre solo si el lunes es festivo."
         icon={<CalendarDays className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

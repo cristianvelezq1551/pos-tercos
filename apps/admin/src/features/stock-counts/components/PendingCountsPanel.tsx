@@ -36,7 +36,7 @@ export function PendingCountsPanel({ initial }: { initial: StockCount[] }) {
     return (
       <EmptyState
         title="Sin conteos por aprobar"
-        description="Cuando el cocinero registre un conteo físico, aparecerá acá para que lo valides."
+        description="Cuando el cocinero registre un conteo físico, aparecerá aquí para que lo valides."
         size="sm"
       />
     );

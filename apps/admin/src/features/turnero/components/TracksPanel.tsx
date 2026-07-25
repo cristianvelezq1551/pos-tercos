@@ -25,7 +25,7 @@ export function TracksPanel({
 
   const upload = async (file: File) => {
     if (file.size > MAX_MB * 1024 * 1024) {
-      setError(`El archivo supera ${MAX_MB} MB. Comprimí el MP3 o usá uno más liviano.`);
+      setError(`El archivo supera ${MAX_MB} MB. Comprime el MP3 o usa uno más liviano.`);
       return;
     }
     setBusy(true);
@@ -117,8 +117,8 @@ export function TracksPanel({
         <div className="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center">
           <Music className="mx-auto h-6 w-6 text-muted-foreground" />
           <p className="mt-2 text-sm text-muted-foreground">
-            Sin música. El turnero funciona igual (la campana de llamado suena siempre); subí pistas
-            si querés ambiente musical. Recomendado: MP3 hasta {MAX_MB} MB.
+            Sin música. El turnero funciona igual (la campana de llamado suena siempre); sube pistas
+            si quieres ambiente musical. Recomendado: MP3 hasta {MAX_MB} MB.
           </p>
         </div>
       ) : null}

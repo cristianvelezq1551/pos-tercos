@@ -51,7 +51,7 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
         this.lastAlertAt.set(signature, now);
         void this.ownerNotifications.alert(
           'server_error',
-          `[${process.env.BUSINESS_NAME ?? 'Tercos'}] 🔴 Error del sistema\n\n${signature}\n\nSi se repite, revisá los logs del servidor.`,
+          `[${process.env.BUSINESS_NAME ?? 'Tercos'}] 🔴 Error del sistema\n\n${signature}\n\nSi se repite, revisa los registros del servidor.`,
           { signature, status },
         );
       }
@@ -64,7 +64,7 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
         statusCode: status,
         message:
           'El sistema tuvo un problema y no pudo completar la acción. ' +
-          'Volvé a intentar; si sigue igual, avisale al dueño.',
+          'Vuelve a intentar; si sigue igual, avísale al dueño.',
       });
       return;
     }

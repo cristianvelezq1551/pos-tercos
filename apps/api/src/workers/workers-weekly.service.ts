@@ -540,7 +540,7 @@ export class WorkersWeeklyService {
     const newRemaining = round2(entry.remaining + owedDelta(entry));
     if (newRemaining < -0.01) {
       throw new BadRequestException(
-        `Este cambio dejaría a ${entry.fullName} con saldo NEGATIVO ($${newRemaining.toLocaleString('es-CO')}): ya se le abonó más de lo que quedaría debiendo esta semana. Anulá primero el abono correspondiente.`,
+        `Este cambio dejaría a ${entry.fullName} con saldo NEGATIVO ($${newRemaining.toLocaleString('es-CO')}): ya se le abonó más de lo que quedaría debiendo esta semana. Anula primero el abono correspondiente.`,
       );
     }
   }
@@ -604,7 +604,7 @@ export class WorkersWeeklyService {
         },
       });
       throw new BadRequestException(
-        `Quitar esta excepción dejaría a ${entry.fullName} con saldo NEGATIVO: ya se le abonó de más esta semana. Anulá el abono primero.`,
+        `Quitar esta excepción dejaría a ${entry.fullName} con saldo NEGATIVO: ya se le abonó de más esta semana. Anula el abono primero.`,
       );
     }
     await this.audit.log({

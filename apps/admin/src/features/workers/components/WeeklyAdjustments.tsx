@@ -28,7 +28,7 @@ export function WeeklyAdjustments({
   const submit = async (): Promise<void> => {
     const magnitude = Number(amountInput) || 0;
     if (!concept.trim() || magnitude <= 0) {
-      setError('Poné un concepto y un monto mayor a 0.');
+      setError('Escribe un concepto y un monto mayor a 0.');
       return;
     }
     setBusy(true);

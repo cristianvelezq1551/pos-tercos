@@ -42,7 +42,7 @@ export function IncidenciasView() {
   }, [refresh]);
 
   const submit = async () => {
-    if (note.trim().length < 3) return setError('Escribí qué pasó.');
+    if (note.trim().length < 3) return setError('Escribe qué pasó.');
     setPending(true);
     setError(null);
     try {
@@ -85,7 +85,7 @@ export function IncidenciasView() {
           onChange={(e) => setNote(e.target.value)}
           rows={3}
           maxLength={1000}
-          placeholder="Contá qué pasó…"
+          placeholder="Cuenta qué pasó…"
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
         />
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
@@ -106,7 +106,7 @@ export function IncidenciasView() {
             {listError}
           </p>
         ) : items.length === 0 ? (
-          <EmptyState title="Sin incidencias" description="Cuando registres una aparece acá." size="sm" />
+          <EmptyState title="Sin incidencias" description="Cuando registres una aparece aquí." size="sm" />
         ) : (
           <ul className="space-y-2">
             {items.map((i) => (

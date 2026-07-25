@@ -79,7 +79,7 @@ export function parseFormValues(form: FormState): ParsedFormResult {
       } else if (m.consumeChildType && !m.consumeChildId) {
         return {
           ok: false,
-          error: `Elegí qué consume el extra "${m.name}" (o dejá el consumo en "No descuenta").`,
+          error: `Elige qué consume el extra "${m.name}" (o deja el consumo en "No descuenta").`,
         };
       }
       modifiers.push(extra);

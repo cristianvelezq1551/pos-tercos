@@ -219,7 +219,7 @@ export function EditSaleModal({
         </div>
         <p className="text-[0.6875rem] text-muted-foreground">
           El sistema recalcula promociones y stock al guardar. Si el total cambia,
-          cobrá o devolvé la diferencia al cliente — el pago registrado se ajusta solo.
+          cobra o devuelve la diferencia al cliente — el pago registrado se ajusta solo.
         </p>
 
         {error ? (

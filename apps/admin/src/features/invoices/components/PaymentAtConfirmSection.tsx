@@ -77,7 +77,7 @@ export function PaymentAtConfirmSection({
           <span className="text-sm font-semibold text-foreground">Ya está pagada</span>
           <span className="block text-xs text-muted-foreground">
             La factura se registra como PAGADA y descuenta del bolsillo elegido en Tesorería.
-            Destildá si quedó pendiente — va a &quot;cuentas por pagar&quot;.
+            Desmarca si quedó pendiente — va a &quot;cuentas por pagar&quot;.
           </span>
         </span>
       </label>
@@ -130,7 +130,7 @@ export function PaymentAtConfirmSection({
               <span className="text-sm text-foreground">
                 Usar la foto de la factura como comprobante
                 <span className="block text-xs text-muted-foreground">
-                  Si el pago fue por transferencia, destildá y subí el pantallazo del comprobante.
+                  Si el pago fue por transferencia, desmarca y sube la captura del comprobante.
                 </span>
               </span>
             </label>

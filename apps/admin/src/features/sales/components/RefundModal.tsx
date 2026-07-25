@@ -80,7 +80,7 @@ export function RefundModal({
         <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs leading-relaxed text-warning">
           La comida ya se preparó: el stock <strong>NO se devuelve</strong> (es
           una pérdida). El pedido sale de los ingresos y del arqueo —{' '}
-          <strong>devolvé la plata al cliente</strong>. Queda en auditoría.
+          <strong>devuelve el dinero al cliente</strong>. Queda en auditoría.
           Requiere PIN de Admin/Dueño.
         </div>
 

@@ -187,7 +187,7 @@ server.listen(PORT, HOST, () => {
     log(
       `[print-agent] ⚠ SIN PRINT_AGENT_SECRET y escuchando en ${HOST} (red). ` +
         `Cualquier dispositivo de la LAN puede abrir el cajón/imprimir. ` +
-        `Configurá PRINT_AGENT_SECRET o dejá HOST en 127.0.0.1.`,
+        `Configura PRINT_AGENT_SECRET o deja HOST en 127.0.0.1.`,
     );
   }
   log(
@@ -215,7 +215,7 @@ function fatal(context: string, err: unknown): never {
   log(`[print-agent] ✗ FATAL (${context}): ${msg}`);
   if (process.stdin.isTTY) {
     console.log('\n>>> El print-agent NO pudo arrancar (ver el error de arriba).');
-    console.log('>>> Presioná Enter para cerrar esta ventana…');
+    console.log('>>> Presiona Enter para cerrar esta ventana…');
     try {
       readSync(0, Buffer.alloc(1), 0, 1, null); // bloquea hasta Enter
     } catch {
@@ -234,11 +234,11 @@ function fatal(context: string, err: unknown): never {
 function alreadyRunning(): never {
   log(
     `[print-agent] El puerto ${PORT} ya está en uso → ya hay un print-agent corriendo. ` +
-      `Cierro esta copia (es normal). Verificá en http://localhost:${PORT}/health.`,
+      `Cierro esta copia (es normal). Verifica en http://localhost:${PORT}/health.`,
   );
   if (process.stdin.isTTY) {
     console.log('\n>>> Ya hay un print-agent corriendo (esto es normal).');
-    console.log('>>> Presioná Enter para cerrar esta ventana…');
+    console.log('>>> Presiona Enter para cerrar esta ventana…');
     try {
       readSync(0, Buffer.alloc(1), 0, 1, null);
     } catch {

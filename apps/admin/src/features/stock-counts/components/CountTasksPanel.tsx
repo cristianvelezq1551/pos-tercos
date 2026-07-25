@@ -63,7 +63,7 @@ function CountTaskRow({
   const submit = async () => {
     const counted = Number(value);
     if (!Number.isFinite(counted) || counted < 0) {
-      setError('Ingresá la cantidad contada (número ≥ 0).');
+      setError('Ingresa la cantidad contada (número ≥ 0).');
       return;
     }
     setPending(true);

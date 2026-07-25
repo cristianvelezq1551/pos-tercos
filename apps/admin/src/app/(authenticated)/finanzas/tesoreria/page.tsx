@@ -25,7 +25,7 @@ export default async function TreasuryPage() {
       <PageHeader
         eyebrow="Finanzas"
         title="Tesorería"
-        description="Cuánto tenés y cómo lo tenés: Efectivo y Cuenta. Se alimenta solo de las ventas y los pagos; vos cargás traspasos, ajustes y los saldos iniciales."
+        description="Cuánto tienes y cómo lo tienes: Efectivo y Cuenta. Se alimenta solo de las ventas y los pagos; tú cargas traspasos, ajustes y los saldos iniciales."
         icon={<Wallet className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

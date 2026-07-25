@@ -49,7 +49,7 @@ export class AuthService {
         action: 'AUTH_LOGIN_FAILED',
         metadata: { email, reason: 'inactive' },
       });
-      throw new ForbiddenException('Tu usuario está inactivo. Contactá al administrador.');
+      throw new ForbiddenException('Tu usuario está inactivo. Contacta al administrador.');
     }
 
     const accessToken = await this.signAccess(user.id, user.role, user.email, user.tokenVersion);

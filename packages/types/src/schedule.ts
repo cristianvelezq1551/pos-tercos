@@ -16,8 +16,8 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 /** Rango en hora local. `end <= start` ⇒ cruza medianoche (ej. 18:00–02:00). */
 export const TimeRangeSchema = z
   .object({
-    start: z.string().regex(HHMM, 'Usá formato HH:MM (24h).'),
-    end: z.string().regex(HHMM, 'Usá formato HH:MM (24h).'),
+    start: z.string().regex(HHMM, 'Usa el formato HH:MM (24h).'),
+    end: z.string().regex(HHMM, 'Usa el formato HH:MM (24h).'),
   })
   .refine((r) => r.start !== r.end, {
     message: 'El inicio y el fin no pueden ser la misma hora.',
@@ -61,7 +61,7 @@ export type WeeklyHours = z.infer<typeof WeeklyHoursSchema>;
 // asignable a `ZodType<DateOverride>` (rompe `request()`/`serverFetchJson`).
 // Mismo tropiezo que `PromotionSchema.productIds` en la FASE 12.B.
 export const DateOverrideSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Usá formato YYYY-MM-DD.'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Usa el formato YYYY-MM-DD.'),
   closed: z.boolean(),
   ranges: z.array(TimeRangeSchema).max(MAX_RANGES_PER_DAY),
   note: z.string().trim().max(120).optional(),

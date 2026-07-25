@@ -194,7 +194,7 @@ export class SalesService {
       shift = await this.shifts.getActiveTodayShift(cashierId);
       if (!shift) {
         throw new BadRequestException(
-          'No tenés un turno abierto. Abrí la caja antes de vender.',
+          'No tienes un turno abierto. Abre la caja antes de vender.',
         );
       }
     }
@@ -438,7 +438,7 @@ export class SalesService {
     // ya no se puede setear). Bloquear evita la pérdida silenciosa.
     if (existing.type === 'WEB_DELIVERY' && Number(existing.deliveryFee) <= 0) {
       throw new BadRequestException(
-        'Asigná el costo del envío antes de cobrar el domicilio.',
+        'Asigna el costo del envío antes de cobrar el domicilio.',
       );
     }
     const total = Number(existing.total);
@@ -483,7 +483,7 @@ export class SalesService {
           const partsSum = parts.reduce((acc, p) => acc + p.amount, 0);
           if (Math.abs(partsSum - freshTotal) > 0.005) {
             throw new BadRequestException(
-              `El pedido cambió mientras se cobraba: el total ahora es ${freshTotal}. Recargá y volvé a cobrar.`,
+              `El pedido cambió mientras se cobraba: el total ahora es ${freshTotal}. Recarga y vuelve a cobrar.`,
             );
           }
           // B4 (auditoría): la caja destino debe seguir ABIERTA — si cerró entre
@@ -495,7 +495,7 @@ export class SalesService {
             });
             if (!shift || shift.status !== 'OPEN') {
               throw new BadRequestException(
-                'La caja se cerró mientras se cobraba. Abrí caja e intentá de nuevo.',
+                'La caja se cerró mientras se cobraba. Abre caja e intenta de nuevo.',
               );
             }
           }
@@ -591,8 +591,8 @@ export class SalesService {
     if (!shift) {
       throw new BadRequestException(
         isWebSaleType(type)
-          ? 'Abrí la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).'
-          : 'La caja de esta venta ya cerró y no hay caja abierta. Abrí caja antes de cobrar.',
+          ? 'Abre la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).'
+          : 'La caja de esta venta ya cerró y no hay caja abierta. Abre caja antes de cobrar.',
       );
     }
     // El cajero original se conserva si existía (atribución de la venta); la
@@ -785,7 +785,7 @@ export class SalesService {
       },
     });
     if (claim.count === 0) {
-      throw new BadRequestException('El pedido cambió — recargá y volvé a intentar.');
+      throw new BadRequestException('El pedido cambió — recarga y vuelve a intentar.');
     }
 
     await this.audit.log({
@@ -833,7 +833,7 @@ export class SalesService {
         data: { status: 'LISTO_DESPACHO', readyAt: new Date() },
       });
       if (claim.count === 0) {
-        throw new BadRequestException('El pedido cambió de estado. Refrescá.');
+        throw new BadRequestException('El pedido cambió de estado. Actualiza la vista.');
       }
       await tx.saleStatusLog.create({
         data: { saleId, statusFrom: 'PAGADO', statusTo: 'LISTO_DESPACHO', userId },
@@ -867,7 +867,7 @@ export class SalesService {
     const disabledPart = parts.find((p) => !enabled.has(p.method));
     if (disabledPart) {
       throw new BadRequestException(
-        `El medio de pago ${disabledPart.method} no está habilitado. Configuralo en el admin.`,
+        `El medio de pago ${disabledPart.method} no está habilitado. Actívalo en el admin.`,
       );
     }
     // Qué métodos exigen verificar comprobante lo define el catálogo, no el code.
@@ -948,7 +948,7 @@ export class SalesService {
     const current = await this.shifts.getActiveTodayShift(userId);
     if (!current) {
       throw new BadRequestException(
-        'La caja de esta venta ya cerró: abrí caja para registrar la devolución de la plata.',
+        'La caja de esta venta ya cerró: abre caja para registrar la devolución del dinero.',
       );
     }
     return current.id;
@@ -977,7 +977,7 @@ export class SalesService {
     });
     if (!shift || shift.status !== 'OPEN') {
       throw new BadRequestException(
-        'La caja se cerró mientras se registraba la devolución. Abrí caja e intentá de nuevo.',
+        'La caja se cerró mientras se registraba la devolución. Abre caja e intenta de nuevo.',
       );
     }
     // Venta histórica sin filas en sale_payments (previa a la tabla o migrada):
@@ -1174,7 +1174,7 @@ export class SalesService {
     if (!REFUNDABLE.includes(existing.status as (typeof REFUNDABLE)[number])) {
       throw new BadRequestException(
         existing.status === 'PAGADO'
-          ? 'La cocina aún no inició este pedido — usá "Anular" (revierte el stock).'
+          ? 'La cocina aún no inició este pedido — usa "Anular" (revierte el stock).'
           : `No se puede reembolsar en estado ${existing.status}.`,
       );
     }
@@ -1187,7 +1187,7 @@ export class SalesService {
         data: { status: 'VOID', voidReason: `${REFUND_VOID_REASON_PREFIX} ${input.reason}` },
       });
       if (res.count === 0) {
-        throw new BadRequestException('El pedido cambió de estado — recargá e intentá de nuevo.');
+        throw new BadRequestException('El pedido cambió de estado — recarga e intenta de nuevo.');
       }
       await tx.saleStatusLog.create({
         data: {
@@ -1349,7 +1349,7 @@ export class SalesService {
       data: { shiftId: null },
     });
     if (res.count === 0) {
-      throw new BadRequestException('La cuenta cambió de estado — recargá los pedidos.');
+      throw new BadRequestException('La cuenta cambió de estado — recarga los pedidos.');
     }
     await this.audit.log({
       userId,

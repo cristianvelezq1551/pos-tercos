@@ -173,7 +173,7 @@ export function ChangePaymentModal({
         </div>
 
         <p className="text-[0.6875rem] text-muted-foreground">
-          La plata ya entró — esto solo corrige el registro (método o división)
+          El dinero ya entró — esto solo corrige el registro (método o división)
           para que el arqueo cuadre. El cambio queda en la bitácora del dueño.
         </p>
 

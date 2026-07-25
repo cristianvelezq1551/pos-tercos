@@ -87,7 +87,7 @@ export class SubproductsService {
     }
     if (hasMovements > 0) {
       throw new ConflictException(
-        'No se puede eliminar: el subproducto tiene historial de movimientos (producción/venta). Usá "Desactivar" para sacarlo del catálogo sin perder la trazabilidad.',
+        'No se puede eliminar: el subproducto tiene historial de movimientos (producción/venta). Usa "Desactivar" para sacarlo del catálogo sin perder la trazabilidad.',
       );
     }
     await this.prisma.$transaction([

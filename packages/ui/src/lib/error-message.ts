@@ -33,18 +33,18 @@ const TECNICO: readonly RegExp[] = [
 
 /** Mensajes por código HTTP, cuando el backend no mandó uno propio. */
 const POR_ESTADO: Record<number, string> = {
-  400: 'Revisá los datos: hay algo que no está bien.',
-  401: 'Tu sesión venció. Volvé a entrar.',
-  403: 'No tenés permiso para hacer esto.',
+  400: 'Revisa los datos: hay algo que no está bien.',
+  401: 'Tu sesión venció. Vuelve a entrar.',
+  403: 'No tienes permiso para hacer esto.',
   404: 'No encontramos lo que buscabas.',
-  409: 'Alguien más cambió esto mientras lo editabas. Recargá y volvé a intentar.',
+  409: 'Alguien más cambió esto mientras lo editabas. Recarga y vuelve a intentar.',
   413: 'El archivo es demasiado grande.',
-  422: 'Revisá los datos: hay algo que no está bien.',
-  429: 'Demasiados intentos seguidos. Esperá un minuto y volvé a intentar.',
+  422: 'Revisa los datos: hay algo que no está bien.',
+  429: 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentar.',
   503: 'El servicio no está disponible en este momento.',
 };
 
-const GENERICO = 'No se pudo completar la acción. Volvé a intentar.';
+const GENERICO = 'No se pudo completar la acción. Vuelve a intentar.';
 
 function pareceTecnico(texto: string): boolean {
   return TECNICO.some((re) => re.test(texto));
@@ -82,14 +82,14 @@ export interface OpcionesMensajeError {
  *
  * @example
  *   mensajeDeError(err)                       // "Demasiados intentos seguidos…"
- *   mensajeDeError(err, { status: 403 })      // "No tenés permiso para hacer esto."
+ *   mensajeDeError(err, { status: 403 })      // "No tienes permiso para hacer esto."
  */
 export function mensajeDeError(err: unknown, opciones: OpcionesMensajeError = {}): string {
   const texto = textoDe(err).trim();
   const status = opciones.status ?? estadoDe(err);
 
   if (texto && SIN_CONEXION.test(texto)) {
-    return 'Sin conexión. Revisá tu internet y volvé a intentar.';
+    return 'Sin conexión. Revisa tu internet y vuelve a intentar.';
   }
 
   // Un mensaje del negocio pasa tal cual: explica mejor su caso.
@@ -97,7 +97,7 @@ export function mensajeDeError(err: unknown, opciones: OpcionesMensajeError = {}
 
   if (status && POR_ESTADO[status]) return POR_ESTADO[status]!;
   if (status && status >= 500) {
-    return 'El sistema tuvo un problema. Volvé a intentar; si sigue igual, avisale al dueño.';
+    return 'El sistema tuvo un problema. Vuelve a intentar; si sigue igual, avísale al dueño.';
   }
   return opciones.fallback ?? GENERICO;
 }

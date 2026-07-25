@@ -44,7 +44,7 @@ function assertKnownAppEnv(): void {
     if (!KNOWN_APP_ENVS.includes(raw)) {
       throw new Error(
         `APP_ENV/NODE_ENV="${raw}" no es un valor conocido. ` +
-          `Permitidos: ${KNOWN_APP_ENVS.join(' | ')}. Un typo acá deshabilita ` +
+          `Permitidos: ${KNOWN_APP_ENVS.join(' | ')}. Un error de escritura aquí deshabilita ` +
           'CORS estricto, cookies Secure y las validaciones de secretos de prod.',
       );
     }
@@ -58,7 +58,7 @@ function assertKnownAppEnv(): void {
       'APP_ENV/NODE_ENV no está seteada y DATABASE_URL apunta a un host remoto. ' +
         'Sin declarar el entorno, la API arrancaría con CORS abierto (origin: true ' +
         '+ credentials) y cookies de sesión sin Secure. ' +
-        'Seteá NODE_ENV=production en el servicio (deploy.md §1.2).',
+        'Configura NODE_ENV=production en el servicio (deploy.md §1.2).',
     );
   }
 }
@@ -105,7 +105,7 @@ export function assertRequiredEnv(): void {
   if (missing.length > 0) {
     throw new Error(
       `Variables de entorno requeridas ausentes: ${missing.join(', ')}. ` +
-        'Revisá apps/api/.env (dev) o las vars del servicio (prod).',
+        'Revisa apps/api/.env (dev) o las variables del servicio (prod).',
     );
   }
 
@@ -136,7 +136,7 @@ export function assertRequiredEnv(): void {
     if (weak.length > 0) {
       throw new Error(
         `Secretos demasiado cortos (mínimo ${MIN_SECRET_LENGTH} caracteres): ${weak.join(', ')}. ` +
-          'Generá uno aleatorio: `openssl rand -base64 48`.',
+          'Genera uno aleatorio: `openssl rand -base64 48`.',
       );
     }
 
@@ -152,8 +152,8 @@ export function assertRequiredEnv(): void {
     if (process.env.STORAGE_PROVIDER === 'local' && process.env.ALLOW_LOCAL_STORAGE !== '1') {
       throw new Error(
         'STORAGE_PROVIDER=local en producción pierde las fotos en cada redeploy ' +
-          '(filesystem efímero). Usá `r2` + R2_* (deploy.md §1.2). Si de verdad ' +
-          'querés local a propósito: ALLOW_LOCAL_STORAGE=1.',
+          '(filesystem efímero). Usa `r2` + R2_* (deploy.md §1.2). Si de verdad ' +
+          'quieres local a propósito: ALLOW_LOCAL_STORAGE=1.',
       );
     }
 
@@ -163,7 +163,7 @@ export function assertRequiredEnv(): void {
     // arrancar mudo (el cliente nunca recibiría cómo pagar).
     if (process.env.WHATSAPP_REQUIRED === 'true' && !process.env.KAPSO_API_KEY) {
       throw new Error(
-        'WHATSAPP_REQUIRED=true pero no hay proveedor configurado: seteá KAPSO_*. ' +
+        'WHATSAPP_REQUIRED=true pero no hay proveedor configurado: configura KAPSO_*. ' +
           'Sin WhatsApp el cliente nunca recibe cómo pagar y no salen alertas al dueño.',
       );
     }
@@ -179,7 +179,7 @@ export function assertRequiredEnv(): void {
     if (!hopsRaw || !Number.isInteger(hops) || hops < 1) {
       throw new Error(
         `TRUST_PROXY_HOPS debe ser un entero >= 1 en producción (Cloudflare→Railway = 2); ` +
-          `valor actual: ${hopsRaw ?? 'ausente'}. Verificá req.ip real en QA ` +
+          `valor actual: ${hopsRaw ?? 'ausente'}. Verifica req.ip real en QA ` +
           '(ver ir-a-prod-y-entornos.md §6).',
       );
     }

@@ -123,7 +123,7 @@ export function CreateStockableInline({
       const forbidden = /not allowed|forbidden|403/i.test(msg);
       setErr(
         forbidden && type === 'PRODUCT'
-          ? 'Solo el dueño puede crear productos de reventa (definen precio de venta). Registralo como insumo, o pedile al dueño que cree el producto.'
+          ? 'Solo el dueño puede crear productos de reventa (definen precio de venta). Regístralo como insumo, o pídele al dueño que cree el producto.'
           : msg,
       );
     } finally {
@@ -144,7 +144,7 @@ export function CreateStockableInline({
           <p className="text-[11px] text-blue-300">
             📦 La IA detectó que <strong>1 {unitPurchase || invoiceUnit} = {packUnits}
             {packSizePerUnit ? ` × ${packSizePerUnit} ${packSizeMeasure ?? ''}`.trimEnd() : ' unidades'}</strong>.
-            Elegí cómo trackearlo:
+            Elige cómo controlarlo:
           </p>
           <div className="flex flex-wrap gap-2">
             <Button

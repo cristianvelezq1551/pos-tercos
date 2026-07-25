@@ -43,7 +43,7 @@ export function WasteModal({
   const submit = async () => {
     const n = Number(qty);
     if (!Number.isFinite(n) || n <= 0) return setError('Cantidad mayor a 0.');
-    if (reason.trim().length < 3) return setError('Escribí un motivo.');
+    if (reason.trim().length < 3) return setError('Escribe un motivo.');
     setPending(true);
     setError(null);
     try {

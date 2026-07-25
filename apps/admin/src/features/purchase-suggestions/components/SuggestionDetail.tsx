@@ -176,7 +176,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
           <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
             <p className="text-sm font-medium text-foreground">Pedir al proveedor por WhatsApp</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Elegís el proveedor (queda preseleccionado el más reciente; podés cambiarlo a cualquiera
+              Eliges el proveedor (queda preseleccionado el más reciente; puedes cambiarlo a cualquiera
               que haya vendido este item) y se envía el pedido. La sugerencia queda aceptada
               automáticamente.
             </p>
@@ -188,7 +188,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
           {/* Alternativa: resolver manualmente sin enviar (ej. ya pediste por fuera). */}
           <div className="border-t border-border pt-3">
             <p className="text-xs text-muted-foreground">
-              ¿Ya hiciste el pedido por otro lado o querés rechazarla? Resolvela manualmente:
+              ¿Ya hiciste el pedido por otro lado o quieres rechazarla? Resuélvela manualmente:
             </p>
             <label className="mt-2 block text-sm">
               <span className="text-foreground">Nota (opcional)</span>

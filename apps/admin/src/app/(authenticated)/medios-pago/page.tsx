@@ -14,7 +14,7 @@ export default async function MediosPagoPage() {
       <PageHeader
         eyebrow="Caja"
         title="Medios de pago"
-        description="Qué formas de pago ofrece el POS al cobrar. Habilitá solo las que el negocio realmente acepta."
+        description="Qué formas de pago ofrece el POS al cobrar. Habilita solo las que el negocio realmente acepta."
         icon={<CreditCard className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

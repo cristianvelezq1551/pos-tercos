@@ -69,7 +69,7 @@ export function StockShortageNotice({
 
       <p className="mt-3 text-xs text-muted-foreground">
         El pedido sigue sin cobrar y no tocó el inventario. Avisale al cliente por el chat
-        antes de rechazarlo — si ya transfirió, hay que devolverle la plata.
+        antes de rechazarlo — si ya transfirió, hay que devolverle el dinero.
       </p>
 
       <Button variant="destructive" size="sm" className="mt-3" disabled={busy} onClick={reject}>

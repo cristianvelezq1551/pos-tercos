@@ -46,7 +46,7 @@ export default async function CheckoutSuccessPage({
     return (
       <MessageScreen
         title="No pudimos cargar tu pedido"
-        description="Tuvimos un problema momentáneo. Recargá la página en unos segundos; si sigue fallando, contacta al local por WhatsApp."
+        description="Tuvimos un problema momentáneo. Recarga la página en unos segundos; si sigue fallando, contacta al local por WhatsApp."
       />
     );
   }

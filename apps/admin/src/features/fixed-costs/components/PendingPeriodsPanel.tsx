@@ -114,7 +114,7 @@ export function PendingPeriodsPanel({
               {overdue.length > 1 ? 's' : ''}
             </strong>{' '}
             de meses anteriores — <strong className="font-semibold">{formatCop(overdueTotal)}</strong>{' '}
-            atrasado. Pagá primero lo más viejo.
+            atrasado. Paga primero lo más viejo.
           </span>
         </div>
       ) : null}

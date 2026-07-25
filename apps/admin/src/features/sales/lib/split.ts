@@ -111,13 +111,13 @@ export function validateSplit(parts: readonly SplitPart[], total: number): Split
   }
   for (const p of parts) {
     if (p.amount <= 0) return { ok: false, reason: `La parte ${p.index} no tiene monto` };
-    if (!p.method) return { ok: false, reason: `Elegí el método de la persona ${p.index}` };
+    if (!p.method) return { ok: false, reason: `Elige el método de la persona ${p.index}` };
     if (p.method === 'CASH') {
       if (p.cashReceived === null || p.cashReceived < p.amount) {
         return { ok: false, reason: `Persona ${p.index}: el efectivo recibido no cubre su parte` };
       }
     } else if (!p.verified) {
-      return { ok: false, reason: `Persona ${p.index}: confirmá que su pago llegó` };
+      return { ok: false, reason: `Persona ${p.index}: confirma que su pago llegó` };
     }
   }
   return { ok: true, reason: null };

@@ -205,7 +205,7 @@ export class ProductsController {
     const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
     if (!detected) {
       throw new BadRequestException(
-        'Formato no soportado. Usá PNG, JPG, WebP, GIF, BMP, TIFF, HEIC o AVIF (SVG no permitido).',
+        'Formato no soportado. Usa PNG, JPG, WebP, GIF, BMP, TIFF, HEIC o AVIF (SVG no permitido).',
       );
     }
     return this.products.uploadImage({

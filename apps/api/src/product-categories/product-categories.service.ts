@@ -99,7 +99,7 @@ export class ProductCategoriesService {
     const inUse = await this.countForName(existing.name);
     if (inUse > 0) {
       throw new ConflictException(
-        `No se puede borrar "${existing.name}": ${inUse} producto(s) la usan. Reasigná esos productos o desactivá la categoría.`,
+        `No se puede borrar "${existing.name}": ${inUse} producto(s) la usan. Reasigna esos productos o desactiva la categoría.`,
       );
     }
     await this.prisma.productCategory.delete({ where: { id } });
@@ -127,7 +127,7 @@ export class ProductCategoriesService {
     });
     if (!match) {
       throw new BadRequestException(
-        `La categoría "${trimmed}" no existe. Creála primero en Categorías.`,
+        `La categoría "${trimmed}" no existe. Créala primero en Categorías.`,
       );
     }
     return match.name;

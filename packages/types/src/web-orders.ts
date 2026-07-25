@@ -52,7 +52,7 @@ export const CreateWebOrderSchema = z
     deliveryNotes: z.string().trim().max(300).optional(),
   })
   .refine((d) => (d.customerLat === undefined) === (d.customerLng === undefined), {
-    message: 'Mandá latitud y longitud juntas, o ninguna.',
+    message: 'Envía latitud y longitud juntas, o ninguna.',
   })
   .superRefine((d, ctx) => {
     if (d.type === 'WEB_DELIVERY' && !d.deliveryAddress) {

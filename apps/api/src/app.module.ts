@@ -59,7 +59,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     // quien está tratando de entrar. Se explica QUÉ pasó y QUÉ hacer.
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 100 }],
-      errorMessage: 'Demasiados intentos seguidos. Esperá un minuto y volvé a intentar.',
+      errorMessage: 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentar.',
     }),
     PrismaModule,
     AuditModule,

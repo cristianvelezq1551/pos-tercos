@@ -15,7 +15,9 @@
     "typecheck": "turbo run typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
-    "test:cov": "turbo run test:cov"
+    "test:cov": "turbo run test:cov",
+    "dev:reset": "node scripts/kill-dev.mjs && pnpm dev",
+    "kill": "node scripts/kill-dev.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

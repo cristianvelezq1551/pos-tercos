@@ -109,7 +109,7 @@ export function InvoiceItemRow({
             <p className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-1 text-[11px] font-medium text-blue-400 ring-1 ring-inset ring-blue-500/20">
               📦 IA detectó empaque: 1 {row.unit} = {row.packUnits}
               {row.packSizePerUnit ? ` × ${row.packSizePerUnit} ${row.packSizeMeasure ?? ''}`.trimEnd() : ' u'}
-              {' · '}asociá el insumo para ajustar la conversión
+              {' · '}asocia el insumo para ajustar la conversión
             </p>
           ) : null}
 

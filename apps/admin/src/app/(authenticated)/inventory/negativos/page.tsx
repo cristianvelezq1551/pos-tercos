@@ -71,7 +71,7 @@ export default async function NegativeStockPage() {
                   corrige solo.
                 </p>
                 <p className="mt-2 text-warning/90">
-                  Si ya cargaste todo y aun así queda en negativo, la diferencia es real: hacé un{' '}
+                  Si ya cargaste todo y aun así queda en negativo, la diferencia es real: haz un{' '}
                   <Link href="/inventory/counts" className="font-semibold underline">
                     conteo físico
                   </Link>{' '}

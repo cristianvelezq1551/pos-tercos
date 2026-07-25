@@ -38,7 +38,7 @@ export function DeleteFixedCostDialog({
       description={
         error
           ? error
-          : 'El costo se borra definitivamente. Esto NO afecta cierres anteriores ya calculados, pero deja de sumar a partir del próximo cálculo. Si solo querés pausarlo, edítalo y desactivalo.'
+          : 'El costo se borra definitivamente. Esto NO afecta cierres anteriores ya calculados, pero deja de sumar a partir del próximo cálculo. Si solo quieres pausarlo, edítalo y desactívalo.'
       }
       confirmLabel="Eliminar"
       destructive

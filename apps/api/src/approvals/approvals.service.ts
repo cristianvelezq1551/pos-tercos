@@ -115,7 +115,7 @@ export class ApprovalsService {
         `PIN lockout activo: ${this.failedPinAttempts.length} intentos fallidos en la ventana`,
       );
       throw new ForbiddenException(
-        'Demasiados intentos de PIN fallidos. Esperá 5 minutos e intentá de nuevo.',
+        'Demasiados intentos de PIN fallidos. Espera 5 minutos e intenta de nuevo.',
       );
     }
   }
@@ -133,7 +133,7 @@ export class ApprovalsService {
     if (candidates.length === 0) {
       this.logger.warn('No approval PINs configured — every approval will fail');
       throw new ForbiddenException(
-        'No hay PINs de aprobación configurados. Pedí al Dueño que setee uno.',
+        'No hay PINes de aprobación configurados. Pídele al Dueño que configure uno.',
       );
     }
     for (const c of candidates) {

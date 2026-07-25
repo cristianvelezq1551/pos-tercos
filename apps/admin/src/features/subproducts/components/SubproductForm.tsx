@@ -206,7 +206,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
 
         <Checkbox
           label="Frena la venta si no hay stock"
-          description="Destildá esto si es opcional (ej. una salsa de acompañamiento): no frena la venta de los productos que lo usan y no aparece en Deudas de inventario. Se sigue descontando y costeando igual."
+          description="Desmarca esto si es opcional (ej. una salsa de acompañamiento): no frena la venta de los productos que lo usan y no aparece en Deudas de inventario. Se sigue descontando y costeando igual."
           disabled={pending}
           checked={form.blocksAvailability}
           onChange={(e) => setForm((f) => ({ ...f, blocksAvailability: e.target.checked }))}

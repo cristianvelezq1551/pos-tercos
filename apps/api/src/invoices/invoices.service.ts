@@ -236,7 +236,7 @@ export class InvoicesService {
       // Si la IA falló, no dejamos la foto huérfana — limpiamos ya mismo.
       await this.storage.delete(stored.key).catch(() => {});
       throw new BadRequestException({
-        message: 'IA no pudo extraer la factura. Probá con otra foto o cargala manualmente.',
+        message: 'La IA no pudo extraer la factura. Prueba con otra foto o cárgala manualmente.',
         cause: err instanceof Error ? err.message : String(err),
       });
     }
@@ -529,15 +529,15 @@ export class InvoicesService {
     const sourceKey = p.useInvoicePhotoAsProof ? photoStorageKey : (p.proofStorageKey as string);
     if (!sourceKey) {
       throw new BadRequestException(
-        'Esta factura no tiene foto para usar como comprobante — subí una imagen del comprobante.',
+        'Esta factura no tiene foto para usar como comprobante — sube una imagen del comprobante.',
       );
     }
     const buffer = await this.storage.get(sourceKey).catch(() => null);
     if (!buffer) {
       throw new BadRequestException(
         p.useInvoicePhotoAsProof
-          ? 'La foto de la factura ya no está disponible. Volvé a subirla.'
-          : 'El comprobante ya no está disponible. Volvé a subirlo.',
+          ? 'La foto de la factura ya no está disponible. Vuelve a subirla.'
+          : 'El comprobante ya no está disponible. Vuelve a subirlo.',
       );
     }
     const ext = sourceKey.split('.').pop() ?? 'jpg';
@@ -831,14 +831,14 @@ export class InvoicesService {
     }
     if (source.status !== 'CONFIRMED') {
       throw new BadRequestException(
-        'Solo se pueden clonar facturas confirmadas. Reanudá la draft directamente.',
+        'Solo se pueden clonar facturas confirmadas. Retoma el borrador directamente.',
       );
     }
     // FASE 4 ajustes 2.12: rechazar source con 0 items (caso patológico
     // que dejaría una draft no-confirmable porque CreateInvoice exige >=1).
     if (source.items.length === 0) {
       throw new BadRequestException(
-        'La factura origen no tiene items, no se puede clonar. Editala manualmente o subí una nueva.',
+        'La factura origen no tiene items, no se puede clonar. Edítala manualmente o sube una nueva.',
       );
     }
 
@@ -869,7 +869,7 @@ export class InvoicesService {
         packSizePerUnit: null,
         packSizeMeasure: null,
       })),
-      warnings: [`Clonado de factura ${sourceShort}. Revisá cantidades y precios antes de confirmar.`],
+      warnings: [`Clonado de factura ${sourceShort}. Revisa cantidades y precios antes de confirmar.`],
     };
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -967,7 +967,7 @@ export class InvoicesService {
       total: null,
       iva: null,
       items: [],
-      warnings: ['Carga manual — la IA no extrajo datos. Ingresá proveedor, items y totales.'],
+      warnings: ['Carga manual — la IA no extrajo datos. Ingresa proveedor, items y totales.'],
     };
 
     const created = await this.prisma.invoice.create({
@@ -1028,7 +1028,7 @@ export class InvoicesService {
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
     if (existing.status !== 'PENDING_REVIEW') {
       throw new BadRequestException(
-        `Solo se pueden borrar borradores PENDING_REVIEW (status actual: ${existing.status}). Para anular una factura confirmada usá REJECTED.`,
+        `Solo se pueden borrar borradores PENDING_REVIEW (status actual: ${existing.status}). Para anular una factura confirmada usa REJECTED.`,
       );
     }
 

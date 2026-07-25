@@ -85,7 +85,7 @@ export function AdCard({
 
       <div className="space-y-3 p-3">
         <p className="truncate text-xs text-muted-foreground">
-          {ad.linkUrl ? ad.linkUrl : 'Sin link (no clickeable)'}
+          {ad.linkUrl ? ad.linkUrl : 'Sin link (no clicable)'}
         </p>
 
         <div className="flex items-center justify-between gap-2">

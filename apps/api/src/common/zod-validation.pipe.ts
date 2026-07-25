@@ -84,7 +84,7 @@ export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
       // Máximo 3: una lista de doce problemas no la lee nadie.
       const problemas = [...new Set(result.error.issues.map(explicar))].slice(0, 3);
       throw new BadRequestException({
-        message: problemas.join(' ') || 'Revisá los datos: hay algo que no está bien.',
+        message: problemas.join(' ') || 'Revisa los datos: hay algo que no está bien.',
         // El detalle por campo se conserva para soporte y para los tests.
         errors: result.error.flatten(),
       });

@@ -139,7 +139,7 @@ export function createTrack(
       }
     };
     xhr.onerror = () =>
-      reject(new Error('Se cortó la conexión durante la subida. Probá de nuevo.'));
+      reject(new Error('Se cortó la conexión durante la subida. Prueba de nuevo.'));
     xhr.send(fd);
   });
 }

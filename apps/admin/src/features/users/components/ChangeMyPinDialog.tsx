@@ -40,7 +40,7 @@ export function ChangeMyPinDialog({ onClose, onSuccess }: ChangeMyPinDialogProps
       open
       onClose={onClose}
       title="Cambiar mi PIN de aprobación"
-      description="Tu PIN autoriza acciones sensibles (anular ventas, nómina, abrir el cajón sin venta). Solo vos puedes cambiarlo."
+      description="Tu PIN autoriza acciones sensibles (anular ventas, nómina, abrir el cajón sin venta). Solo tú puedes cambiarlo."
       maxWidth="max-w-md"
       footer={
         <>

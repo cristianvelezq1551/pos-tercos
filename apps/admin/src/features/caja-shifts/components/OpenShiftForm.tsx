@@ -93,7 +93,7 @@ export function OpenShiftForm() {
           <strong className="text-foreground">
             ${offlinePending.openingCash.toLocaleString('es-CO')}
           </strong>{' '}
-          de fondo. Se sincroniza sola al volver la conexión — podés vender normalmente.
+          de fondo. Se sincroniza sola al volver la conexión — puedes vender normalmente.
         </p>
         {offlinePending.status === 'failed' && offlinePending.failReason ? (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-500">
@@ -117,7 +117,7 @@ export function OpenShiftForm() {
           Abrir turno
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cuenta la plata que hay en caja antes de empezar a vender.
+          Cuenta el dinero que hay en caja antes de empezar a vender.
         </p>
       </div>
 

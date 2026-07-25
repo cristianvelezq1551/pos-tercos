@@ -154,7 +154,7 @@ export function FifoYieldBreakdown({
           </div>
         ) : (
           <p className="mt-2 rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            Todavía no podés vender este producto: {emptyHint(limiting)}.
+            Todavía no puedes vender este producto: {emptyHint(limiting)}.
           </p>
         )}
       </div>
@@ -194,6 +194,6 @@ export function FifoYieldBreakdown({
 /** Acción para conseguir stock de un componente sin lotes. */
 function emptyHint(c: { entityType: 'INGREDIENT' | 'SUBPRODUCT'; name: string }): string {
   return c.entityType === 'SUBPRODUCT'
-    ? `producí una tanda de ${c.name}`
-    : `registrá una compra de ${c.name}`;
+    ? `produce una tanda de ${c.name}`
+    : `registra una compra de ${c.name}`;
 }

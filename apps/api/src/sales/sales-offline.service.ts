@@ -130,7 +130,7 @@ export class SalesOfflineService {
         },
       });
       throw new BadRequestException(
-        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corregí la hora del dispositivo y reintentá desde la bandeja.`,
+        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corrige la hora del dispositivo y reintenta desde la bandeja.`,
       );
     }
 
@@ -140,7 +140,7 @@ export class SalesOfflineService {
     const shift = await this.shifts.getActiveTodayShift(userId);
     if (!shift) {
       throw new BadRequestException(
-        'No hay caja abierta para asociar la venta offline. Abrí/cerrá caja y reintentá.',
+        'No hay caja abierta para asociar la venta offline. Abre o cierra caja y reintenta.',
       );
     }
 

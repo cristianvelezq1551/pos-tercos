@@ -67,7 +67,7 @@ export function RadiusSection({
         label="Hacemos domicilios"
         description={
           config.deliveryEnabled
-            ? 'La web ofrece “A domicilio” y le pide la dirección al cliente. El costo del envío lo cargás vos en cada pedido, antes de cobrar.'
+            ? 'La web ofrece “A domicilio” y le pide la dirección al cliente. El costo del envío lo cargas tú en cada pedido, antes de cobrar.'
             : 'La web solo ofrece “Recoger en el local”.'
         }
       />
@@ -97,7 +97,7 @@ export function RadiusSection({
           {!config.coords ? (
             <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-500">
               <MapPin className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
-              Sin la ubicación del local no se puede medir nada: cargá el link de Google Maps
+              Sin la ubicación del local no se puede medir nada: carga el link de Google Maps
               arriba. Mientras tanto, este límite no se aplica.
             </p>
           ) : null}

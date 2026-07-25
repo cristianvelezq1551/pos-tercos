@@ -143,7 +143,7 @@ export function OrdersPanel() {
           </h3>
           {tabs.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              Sin cuentas abiertas. Armá el carrito, poné el cliente y tocá «Cuenta».
+              Sin cuentas abiertas. Arma el carrito, escribe el cliente y toca «Cuenta».
             </p>
           ) : (
             <ul className="space-y-2">

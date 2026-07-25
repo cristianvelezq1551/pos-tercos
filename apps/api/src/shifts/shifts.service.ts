@@ -105,7 +105,7 @@ export class ShiftsService {
     });
     if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
     if (shift.status === 'OPEN' || shift.expectedCash === null || shift.countedCash === null) {
-      throw new BadRequestException('Cerrá la caja antes de analizarla con IA.');
+      throw new BadRequestException('Cierra la caja antes de analizarla con IA.');
     }
 
     const [cashSales, { cashIn, cashOut }, voidCount, noSaleDrawerCount] =
@@ -190,7 +190,7 @@ export class ShiftsService {
       });
       if (todays) {
         throw new ConflictException(
-          'La caja de hoy ya fue cerrada. No se abre una segunda el mismo día — si fue un error, pedí al admin que la reabra.',
+          'La caja de hoy ya fue cerrada. No se abre una segunda el mismo día — si fue un error, pídele al admin que la reabra.',
         );
       }
 
@@ -238,7 +238,7 @@ export class ShiftsService {
     const driftMs = openedAt.getTime() - Date.now();
     if (driftMs > MAX_FUTURE_CLOCK_DRIFT_MS) {
       throw new BadRequestException(
-        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corregí la hora del dispositivo y reintentá.`,
+        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corrige la hora del dispositivo y reintenta.`,
       );
     }
 
@@ -285,7 +285,7 @@ export class ShiftsService {
       });
       if (sameDay) {
         throw new ConflictException(
-          'La caja de ese día ya existe y está cerrada. Las ventas offline van a colgarse de la caja abierta de hoy — si falta la apertura, pedí al admin que la reabra.',
+          'La caja de ese día ya existe y está cerrada. Las ventas offline van a colgarse de la caja abierta de hoy — si falta la apertura, pídele al admin que la reabra.',
         );
       }
 
@@ -374,7 +374,7 @@ export class ShiftsService {
     if (row.openedAt < this.startOfBusinessToday()) {
       throw new ConflictException(
         `La caja sigue abierta desde el ${formatOpenedAt(row.openedAt)}. ` +
-          `Cerrala (Cerrar turno) e ingresá el efectivo con el que quedó antes de seguir operando.`,
+          `Ciérrala (Cerrar turno) e ingresa el efectivo con el que quedó antes de seguir operando.`,
       );
     }
     return toShiftDto(row);
@@ -439,7 +439,7 @@ export class ShiftsService {
       if (openAnywhere) {
         const who = openAnywhere.cashier?.fullName ?? 'otro usuario';
         throw new ConflictException(
-          `Ya hay una caja abierta por ${who}. Cerrala antes de reabrir esta — solo puede haber una caja abierta en el negocio.`,
+          `Ya hay una caja abierta por ${who}. Ciérrala antes de reabrir esta — solo puede haber una caja abierta en el negocio.`,
         );
       }
       const updated = await tx.shift.update({
@@ -1095,7 +1095,7 @@ export class ShiftsService {
     }
     if (row.shift.status !== 'OPEN') {
       throw new BadRequestException(
-        'La caja ya está cerrada — el arqueo es inmutable. Pedile a un admin reabrirla si hay un error.',
+        'La caja ya está cerrada — el arqueo es inmutable. Pídele a un admin que la reabra si hay un error.',
       );
     }
     return row;

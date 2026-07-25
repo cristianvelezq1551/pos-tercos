@@ -106,7 +106,7 @@ export function SendToSupplierDialog({ suggestion, onClose, onSuccess }: Props) 
           <p className="text-sm text-muted-foreground">Cargando proveedores…</p>
         ) : suppliers.length === 0 ? (
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-sm text-warning">
-            Este item no tiene ningún proveedor histórico. Cargá una factura primero para asociar un
+            Este item no tiene ningún proveedor histórico. Carga una factura primero para asociar un
             proveedor.
           </p>
         ) : (

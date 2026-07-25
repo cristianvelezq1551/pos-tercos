@@ -50,7 +50,7 @@ export function FulfillmentPicker({
         <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
           <FormField
             label="Dirección de entrega"
-            hint="Escribí calle, número y apartamento. Cuanto más claro, más rápido llega."
+            hint="Escribe calle, número y apartamento. Cuanto más claro, más rápido llega."
             required
           >
             <Input

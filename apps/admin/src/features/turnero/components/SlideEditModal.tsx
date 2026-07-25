@@ -79,7 +79,7 @@ export function SlideEditModal({
       open
       onClose={onClose}
       title={isNew ? 'Agregar producto al turnero' : 'Editar producto'}
-      description="Lo que escribís acá es lo que se ve en la pantalla del local."
+      description="Lo que escribes aquí es lo que se ve en la pantalla del local."
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={busy}>

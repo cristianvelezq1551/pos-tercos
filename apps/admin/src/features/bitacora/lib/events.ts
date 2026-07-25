@@ -131,7 +131,7 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
       const count = Number(m.count ?? 0);
       return {
         label: 'Venta offline dejó stock en negativo',
-        detail: `${count} ${count === 1 ? 'insumo' : 'insumos'} en negativo — revisá Deudas de inventario`,
+        detail: `${count} ${count === 1 ? 'insumo' : 'insumos'} en negativo — revisa Deudas de inventario`,
         tone: 'warning',
       };
     }

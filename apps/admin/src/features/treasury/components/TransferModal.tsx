@@ -46,7 +46,7 @@ export function TransferModal({ onClose, onSuccess }: { onClose: () => void; onS
       open
       onClose={pending ? () => {} : onClose}
       title="Nuevo traspaso"
-      description="Mové plata entre Efectivo y Cuenta. No cambia el total: solo la forma."
+      description="Mueve dinero entre Efectivo y Cuenta. No cambia el total: solo la forma."
       maxWidth="max-w-md"
       footer={
         <>

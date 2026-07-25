@@ -526,7 +526,7 @@ export const ChangeSalePaymentSchema = z
     if (simple === split) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Indicá `method` (único) O `payments` (dividido), no ambos.',
+        message: 'Indica `method` (único) O `payments` (dividido), no ambos.',
         path: ['method'],
       });
     }
@@ -554,7 +554,7 @@ export const ConfirmPaymentSchema = z
     if (simple === split) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Indicá `method` (pago simple) O `payments` (cuenta dividida), no ambos.',
+        message: 'Indica `method` (pago simple) O `payments` (cuenta dividida), no ambos.',
         path: ['method'],
       });
       return;

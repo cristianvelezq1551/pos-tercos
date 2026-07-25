@@ -18,7 +18,7 @@ export function validateCheckout(input: {
 }): CheckoutValidation {
   if (input.splitOpen) {
     if (input.splitResult) return { ok: true, reason: null };
-    return { ok: false, reason: input.splitReason ?? 'Completá la división de la cuenta' };
+    return { ok: false, reason: input.splitReason ?? 'Completa la división de la cuenta' };
   }
   if (!input.method) return { ok: false, reason: 'Elige un método de pago' };
   if (input.method === 'CASH') {

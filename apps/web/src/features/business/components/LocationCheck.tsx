@@ -46,7 +46,7 @@ export function LocationCheck({
         <Resolved result={result} radiusKm={radiusKm} />
       ) : (
         <Row icon={<TriangleAlert className="h-4 w-4" />} tone="muted">
-          No pudimos verificar tu ubicación. Podés seguir con el pedido; si quedás fuera de
+          No pudimos verificar tu ubicación. Puedes seguir con el pedido; si quedas fuera de
           nuestra zona te avisamos por WhatsApp.
         </Row>
       )}
@@ -59,7 +59,7 @@ function Idle({ onClick, radiusKm }: { onClick: () => void; radiusKm: number }) 
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
         Llegamos hasta <strong className="text-foreground">{radiusKm} km</strong> del local.
-        Verificá que estés dentro de la zona.
+        Verifica que estés dentro de la zona.
       </p>
       <button
         type="button"

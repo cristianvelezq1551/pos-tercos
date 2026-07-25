@@ -73,7 +73,7 @@ export function LoginScreen() {
                   a la obra.
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Consultá recetas, registrá producción y mantené el inventario al día.
+                  Consulta recetas, registra producción y mantén el inventario al día.
                 </p>
               </header>
             }

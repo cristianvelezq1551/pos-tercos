@@ -101,7 +101,7 @@ export class InvoicePaymentsService {
       },
     });
     if (claim.count === 0) {
-      throw new BadRequestException('La factura cambió de estado (se pagó en paralelo). Recargá.');
+      throw new BadRequestException('La factura cambió de estado (se pagó en paralelo). Recarga.');
     }
     const updated = await this.prisma.invoice.findUniqueOrThrow({
       where: { id: invoiceId },

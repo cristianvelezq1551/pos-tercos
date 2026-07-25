@@ -51,7 +51,7 @@ export function ProductionDialog({
 
   const submit = async (): Promise<void> => {
     if (qty === null || qty <= 0) {
-      setError('Ingresá una cantidad mayor a 0.');
+      setError('Ingresa una cantidad mayor a 0.');
       return;
     }
     setError(null);

@@ -111,7 +111,7 @@ export function EditSalaryDialog({ user, onClose, onSuccess }: EditSalaryDialogP
           label="Días de descanso (no pagos)"
           hint={
             payType === 'DAILY'
-              ? 'Solo aplica a DIARIO. El lunes ya es descanso fijo (no abrimos). Ej. trabajador de fin de semana → marcá martes-jueves.'
+              ? 'Solo aplica a DIARIO. El lunes ya es descanso fijo (no abrimos). Ej. trabajador de fin de semana → marca martes-jueves.'
               : 'Solo aplica a DIARIO; el salario mensual se paga independiente del día.'
           }
         >

@@ -12,6 +12,6 @@ export function friendlyApiError(err: unknown): string {
   const status = err instanceof ApiError ? err.status : undefined;
   return mensajeDeError(err, {
     status,
-    fallback: 'Sin conexión con el servidor. Revisá tu internet y volvé a intentar.',
+    fallback: 'Sin conexión con el servidor. Revisa tu internet y vuelve a intentar.',
   });
 }

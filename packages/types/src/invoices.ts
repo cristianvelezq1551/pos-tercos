@@ -201,7 +201,7 @@ export const ConfirmInvoicePaymentSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'El comprobante es obligatorio: enviá proofStorageKey O useInvoicePhotoAsProof (exactamente uno)',
+          'El comprobante es obligatorio: envía proofStorageKey O useInvoicePhotoAsProof (exactamente uno)',
         path: ['proofStorageKey'],
       });
     }

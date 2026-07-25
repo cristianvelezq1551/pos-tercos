@@ -17,7 +17,7 @@ const PhoneSchema = z
   .string()
   .trim()
   .refine((v) => v === '' || /^\+57\d{10}$/.test(v), {
-    message: 'Usá formato +57 seguido de 10 dígitos.',
+    message: 'Usa el formato +57 seguido de 10 dígitos.',
   });
 
 /** URL http(s) o '' para dejarla vacía. */
@@ -34,7 +34,7 @@ const CoordsSchema = z
   .string()
   .trim()
   .refine((v) => v === '' || /^-?\d{1,3}(\.\d+)?,\s*-?\d{1,3}(\.\d+)?$/.test(v), {
-    message: 'Usá "latitud,longitud" (ej. 6.1658173,-75.580882).',
+    message: 'Usa "latitud,longitud" (ej. 6.1658173,-75.580882).',
   });
 
 export const BusinessConfigSchema = z.object({
@@ -110,6 +110,6 @@ export const UpdateBusinessConfigSchema = z
     aboutValues: z.array(AboutValueInputSchema).max(6).optional(),
   })
   .refine((d) => Object.keys(d).length > 0, {
-    message: 'Indicá al menos un campo a actualizar.',
+    message: 'Indica al menos un campo a actualizar.',
   });
 export type UpdateBusinessConfig = z.infer<typeof UpdateBusinessConfigSchema>;

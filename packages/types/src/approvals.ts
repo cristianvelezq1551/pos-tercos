@@ -21,7 +21,7 @@ const PinDigitsSchema = z.string().regex(/^\d{6}$/, 'PIN debe ser exactamente 6 
 export const SetApprovalPinSchema = z.object({
   pin: PinDigitsSchema,
   /** Contraseña de la cuenta: evita que una sesión abierta cambie el PIN sin más. */
-  password: z.string().min(1, 'Ingresá tu contraseña'),
+  password: z.string().min(1, 'Ingresa tu contraseña'),
 });
 export type SetApprovalPin = z.infer<typeof SetApprovalPinSchema>;
 

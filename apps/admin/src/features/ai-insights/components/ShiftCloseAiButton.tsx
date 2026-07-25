@@ -50,7 +50,7 @@ export function ShiftCloseAiButton({ shiftId }: { shiftId: string }) {
         </p>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">
-          Pedile a la IA que explique cómo quedó la caja y la causa probable de la diferencia.
+          Pídele a la IA que explique cómo quedó la caja y la causa probable de la diferencia.
         </p>
       )}
     </div>

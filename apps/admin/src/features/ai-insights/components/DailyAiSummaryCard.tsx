@@ -50,7 +50,7 @@ export function DailyAiSummaryCard() {
         </p>
       ) : (
         <p className="mt-2 text-sm text-muted-foreground">
-          Generá un resumen ejecutivo del día: ventas, anulaciones, descuadres, demoras de
+          Genera un resumen ejecutivo del día: ventas, anulaciones, descuadres, demoras de
           cocina y una sugerencia.
         </p>
       )}

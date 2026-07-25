@@ -113,7 +113,7 @@ export function OpenTabsResolver({
           Cuentas abiertas sin cobrar ({tabs.length})
         </h3>
         <p className="text-[0.6875rem] text-muted-foreground">
-          Decidí qué hacer con cada una antes de cerrar el turno.
+          Decide qué hacer con cada una antes de cerrar el turno.
         </p>
       </div>
 

@@ -45,7 +45,7 @@ export default async function FinancePagosPage({ searchParams }: PageProps) {
       <PageHeader
         eyebrow="Finanzas"
         title="Pagos y cobros"
-        description="Lo que entró, lo que pagaste y lo que todavía debés. Los pendientes incluyen meses anteriores no pagados; lo pagado y los ingresos son del mes seleccionado."
+        description="Lo que entró, lo que pagaste y lo que todavía debes. Los pendientes incluyen meses anteriores no pagados; lo pagado y los ingresos son del mes seleccionado."
         icon={<Receipt className="h-6 w-6" strokeWidth={1.75} />}
         actions={<MonthPicker year={year} month={month} />}
       />

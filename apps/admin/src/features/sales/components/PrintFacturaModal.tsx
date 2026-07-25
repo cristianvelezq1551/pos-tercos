@@ -39,7 +39,7 @@ export function PrintFacturaModal({
       }
     >
       <p className="text-sm text-foreground">
-        La comanda ya se imprimió. Cortala y, cuando estés listo, imprimí la
+        La comanda ya se imprimió. Córtala y, cuando estés listo, imprime la
         factura del cliente.
       </p>
     </Dialog>

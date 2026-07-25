@@ -72,7 +72,7 @@ export function ConfirmWebPaymentModal({
     if (order.type === 'WEB_DELIVERY' && order.deliveryFee <= 0) {
       return {
         ok: false,
-        reason: 'Asigná el costo del envío en la tarjeta del pedido antes de cobrar.',
+        reason: 'Asigna el costo del envío en la tarjeta del pedido antes de cobrar.',
       };
     }
     if (method === 'CASH') return { ok: true, reason: null };
@@ -182,7 +182,7 @@ export function ConfirmWebPaymentModal({
               checked={silent}
               onChange={(e) => setSilent(e.target.checked)}
               label="Modo registro: no avisar al cliente"
-              description="Pedido viejo (+15 min). Para cobrarlo retroactivamente sin mandarle WhatsApp."
+              description="Pedido viejo (+15 min). Para cobrarlo retroactivamente sin enviarle WhatsApp."
             />
           </div>
         ) : null}

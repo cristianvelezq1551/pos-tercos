@@ -65,7 +65,7 @@ export function PublicidadManager() {
       {ads && ads.length === 0 ? (
         <EmptyState
           title="Todavía no hay publicidad configurada"
-          description="Mientras no agregues piezas, la web muestra su portada por defecto. Agregá una imagen para que aparezca arriba del menú."
+          description="Mientras no agregues piezas, la web muestra su portada por defecto. Agrega una imagen para que aparezca arriba del menú."
           action={<Button onClick={() => setEditing('new')}>Agregar publicidad</Button>}
         />
       ) : null}

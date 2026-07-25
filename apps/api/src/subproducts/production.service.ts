@@ -107,7 +107,7 @@ export class ProductionService {
     const yieldNum = Number(sub.yield);
     if (yieldNum <= 0) {
       throw new BadRequestException(
-        `Subproducto "${sub.name}" tiene yield inválido (${yieldNum}). Configurálo antes de producir.`,
+        `Subproducto "${sub.name}" tiene yield inválido (${yieldNum}). Configúralo antes de producir.`,
       );
     }
 

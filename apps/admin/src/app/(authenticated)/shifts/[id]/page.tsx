@@ -39,7 +39,7 @@ export default async function ShiftDetailPage({
           </Link>
         }
         title="Detalle de caja"
-        description="Sesión consolidada del día: caja, ventas y pedidos. Reabrí la caja si fue cerrada por error."
+        description="Sesión consolidada del día: caja, ventas y pedidos. Reabre la caja si fue cerrada por error."
         icon={<Wallet className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

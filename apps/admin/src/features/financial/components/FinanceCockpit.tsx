@@ -69,7 +69,7 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
         <p className="text-xs text-muted-foreground">
           Incluye sub-pagos, facturas y costos fijos sin marcar como pagados —{' '}
           <strong className="text-foreground">no se filtra por mes</strong>: si quedó algo
-          atrasado de meses anteriores también aparece acá.
+          atrasado de meses anteriores también aparece aquí.
         </p>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

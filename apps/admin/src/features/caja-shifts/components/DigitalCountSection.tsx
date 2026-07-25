@@ -92,7 +92,7 @@ export function DigitalCountSection({
         );
       })}
       <p className="text-[0.6875rem] text-muted-foreground">
-        Sumá los movimientos del turno en cada app. Si dejás un método vacío, no se arquea.
+        Suma los movimientos del turno en cada app. Si dejas un método vacío, no se arquea.
       </p>
     </section>
   );

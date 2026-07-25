@@ -93,7 +93,7 @@ export function ReverseWasteModal({ movement, open, onClose }: ReverseWasteModal
           />
           {reason.length > 0 && reason.trim().length < MIN_REASON ? (
             <span className="text-xs text-destructive">
-              Escribí al menos {MIN_REASON} caracteres.
+              Escribe al menos {MIN_REASON} caracteres.
             </span>
           ) : null}
         </div>

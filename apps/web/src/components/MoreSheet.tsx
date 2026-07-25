@@ -57,7 +57,7 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
             </header>
 
             <ul className="flex flex-col gap-2">
-              <SheetItem href="/nosotros" label="Nosotros" description="Conocé nuestra historia" icon={Info} onClick={onClose} />
+              <SheetItem href="/nosotros" label="Nosotros" description="Conoce nuestra historia" icon={Info} onClick={onClose} />
               <SheetItem href="/ubicaciones" label="Ubicaciones" description="Encuéntranos en Envigado" icon={MapPin} onClick={onClose} />
               <li>
                 <SheetRow
@@ -74,7 +74,7 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 <SheetItem
                   href={wa}
                   label="WhatsApp"
-                  description="Escribinos y te respondemos"
+                  description="Escríbenos y te respondemos"
                   icon={MessageCircle}
                   external
                   onClick={onClose}

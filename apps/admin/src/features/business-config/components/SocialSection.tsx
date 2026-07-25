@@ -24,7 +24,7 @@ export function SocialSection({
   return (
     <SectionCard
       title="Redes sociales"
-      description="Aparecen en el pie de la web. Si dejás una vacía, no se muestra."
+      description="Aparecen en el pie de la web. Si dejas una vacía, no se muestra."
       icon={<Share2 className="h-4 w-4" strokeWidth={2} />}
       onSave={() => void save(updateBusinessConfig)}
       state={state}

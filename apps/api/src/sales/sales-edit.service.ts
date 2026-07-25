@@ -200,7 +200,7 @@ export class SalesEditService {
         // diferencia entre las partes → se corrige el pago aparte (changePayment).
         if (existing.payments.length > 1 && Math.abs(total - oldTotal) > 0.005) {
           throw new BadRequestException(
-            'La cuenta está dividida y el total cambiaría. Ajustá los pagos con "Cambiar pago" después de igualar el total, o anulá y recobrá.',
+            'La cuenta está dividida y el total cambiaría. Ajusta los pagos con "Cambiar pago" después de igualar el total, o anula y vuelve a cobrar.',
           );
         }
 
@@ -307,7 +307,7 @@ export class SalesEditService {
         });
         if (res.count === 0) {
           throw new BadRequestException(
-            'El pedido cambió de estado — recargá e intentá de nuevo.',
+            'El pedido cambió de estado — recarga e intenta de nuevo.',
           );
         }
         await tx.saleItem.deleteMany({ where: { saleId } });
@@ -453,7 +453,7 @@ export class SalesEditService {
         (fresh.shift && fresh.shift.status !== 'OPEN')
       ) {
         throw new BadRequestException(
-          'El estado de la venta o la caja cambió — recargá e intentá de nuevo.',
+          'El estado de la venta o la caja cambió — recarga e intenta de nuevo.',
         );
       }
       await tx.salePayment.deleteMany({ where: { saleId } });

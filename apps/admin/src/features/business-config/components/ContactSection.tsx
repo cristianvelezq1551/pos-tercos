@@ -71,7 +71,7 @@ export function ContactSection({
 
       <FormField
         label="Link de Google Maps"
-        hint="Pegá el link de “Compartir” de Google Maps. Las coordenadas se deducen solas al guardar y alimentan el mapa y el botón de Waze."
+        hint="Pega el link de “Compartir” de Google Maps. Las coordenadas se deducen solas al guardar y alimentan el mapa y el botón de Waze."
       >
         <Input
           value={draft.mapsUrl}
@@ -104,7 +104,7 @@ function CoordsHint({ coords, mapsUrl }: { coords: string; mapsUrl: string }) {
     <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-500">
       <MapPin className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
       No se pudieron deducir las coordenadas de ese link. El botón “Cómo llegar” va a funcionar,
-      pero el mapa y Waze no. Probá con el link de “Compartir” de la app de Google Maps.
+      pero el mapa y Waze no. Prueba con el link de “Compartir” de la app de Google Maps.
     </p>
   );
 }
