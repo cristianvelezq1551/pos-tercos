@@ -10,10 +10,20 @@
     "declarationMap": true,
     "tsBuildInfoFile": "./.tsbuildinfo"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"],
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts"
+  ],
   "references": [
-    { "path": "../../packages/domain" },
-    { "path": "../../packages/types" }
+    {
+      "path": "../../packages/domain"
+    },
+    {
+      "path": "../../packages/types"
+    }
   ]
 }
