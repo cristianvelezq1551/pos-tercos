@@ -12,11 +12,24 @@ import Link from 'next/link';
 import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
 import { DeleteProductAction } from './DeleteProductAction';
 
+/** Lo que costó de verdad cada unidad vendida y el margen que dejó. */
+export interface RealCost {
+  unitCost: number | null;
+  marginPct: number | null;
+  partial: boolean;
+}
+
 interface ProductsTableProps {
   products: Product[];
   /** Costos pre-calculados por productId (batch `/product-costs`). Si no
    *  está, fallback a lastUnitCost para direct-resale. */
   costsById?: Map<string, ProductCostSummary>;
+  /** Costo REAL por producto (FIFO, últimos 30 días). Va al lado del estimado
+   *  para poder contrastarlos sin cambiar de pantalla: el estimado dice cuánto
+   *  costaría hacerlo hoy, el real cuánto costó lo que ya saliste. Vacío para
+   *  quien no es dueño (el reporte de costos es suyo) — ahí las columnas ni se
+   *  muestran, en vez de una fila de guiones. */
+  realCostById?: Map<string, RealCost>;
   /** Rol del usuario actual. Solo Dueño puede modificar receta o eliminar. */
   userRole?: UserRole;
 }
@@ -28,9 +41,15 @@ interface ProductRow {
   margin: number | null;
   costMissing: boolean;
   missingHint?: string;
+  real: RealCost | null;
 }
 
-export function ProductsTable({ products, costsById, userRole }: ProductsTableProps) {
+export function ProductsTable({
+  products,
+  costsById,
+  realCostById,
+  userRole,
+}: ProductsTableProps) {
   const canEditRecipe = userRole === 'DUENO';
   const canDelete = userRole === 'DUENO';
   const rows: ProductRow[] = products.map((p) => {
@@ -49,8 +68,11 @@ export function ProductsTable({ products, costsById, userRole }: ProductsTablePr
       margin,
       costMissing,
       missingHint: costMissing ? expanded.missingReasons.join(' · ') : undefined,
+      real: realCostById?.get(p.id) ?? null,
     };
   });
+
+  const mostrarReal = (realCostById?.size ?? 0) > 0;
 
   const columns: DataTableColumn<ProductRow>[] = [
     {
@@ -96,6 +118,53 @@ export function ProductsTable({ products, costsById, userRole }: ProductsTablePr
       numeric: true,
       cell: ({ salePrice }) => <Money amount={salePrice} weight="semibold" />,
     },
+    ...(mostrarReal
+      ? ([
+          {
+            key: 'realCost',
+            header: (
+              <span title="Lo que costaron de verdad las unidades que vendiste en los últimos 30 días, al precio del lote del que salieron (FIFO). Vacío si no se vendió en ese período.">
+                Costo real / u
+              </span>
+            ),
+            align: 'right',
+            numeric: true,
+            hideOnMobile: true,
+            cell: ({ real }: ProductRow) =>
+              real?.unitCost != null ? (
+                <span className="inline-flex items-center gap-1">
+                  <Money amount={real.unitCost} weight="medium" />
+                  {real.partial ? (
+                    <span className="text-warning" title="Parte del costo no se pudo determinar: hay insumos sin costo en facturas confirmadas.">
+                      ⚠
+                    </span>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="text-ink-300" title="No se vendió en los últimos 30 días">
+                  —
+                </span>
+              ),
+          },
+          {
+            key: 'realMargin',
+            header: (
+              <span title="(ventas − costo real) ÷ ventas de los últimos 30 días. Es el margen que de verdad dejó, ya con los descuentos que se hicieron.">
+                Margen real %
+              </span>
+            ),
+            align: 'right',
+            numeric: true,
+            hideOnMobile: true,
+            cell: ({ real }: ProductRow) =>
+              real?.marginPct != null ? (
+                <MarginBadge value={real.marginPct} />
+              ) : (
+                <span className="text-ink-300">—</span>
+              ),
+          },
+        ] as DataTableColumn<ProductRow>[])
+      : []),
     {
       key: 'costPerStock',
       // "Estimado" no es un adorno: este número usa el ÚLTIMO precio de compra
@@ -105,8 +174,8 @@ export function ProductsTable({ products, costsById, userRole }: ProductsTablePr
       // decía $8.100 y el reporte de costos $7.100 para el mismo producto,
       // por un pan comprado antes más barato.
       header: (
-        <span title="Estimado con el ÚLTIMO precio de compra de cada insumo. El costo REAL de lo que se vendió sale por FIFO (lote más viejo primero) y está en Reportes → Costos.">
-          Costo est. / u
+        <span title="Lo que costaría hacer una unidad HOY, con el último precio de compra de cada insumo. Es el número para poner precio; si difiere del costo real es porque todavía estás vendiendo de un lote comprado a otro precio.">
+          Costo hoy / u
         </span>
       ),
       align: 'right',
@@ -124,8 +193,8 @@ export function ProductsTable({ products, costsById, userRole }: ProductsTablePr
     {
       key: 'margin',
       header: (
-        <span title="Margen ESTIMADO = (precio de venta − costo estimado) / precio de venta. Usa el último precio de compra de cada insumo. El margen REAL de lo vendido está en Reportes → Costos.">
-          Margen est. %
+        <span title="(precio de venta − costo hoy) ÷ precio de venta. Es el margen que dejaría vender hoy al precio de lista, sin descuentos.">
+          Margen hoy %
         </span>
       ),
       align: 'right',
