@@ -17,6 +17,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { diaLocal } from './helpers/local-day';
 
 describe('Invoices E2E', () => {
   let app: INestApplication;
@@ -734,7 +735,7 @@ describe('Invoices E2E', () => {
     });
 
     it('fecha de pago futura → 400', async () => {
-      const future = new Date(Date.now() + 48 * 3600 * 1000).toISOString().slice(0, 10);
+      const future = diaLocal(2);
       const draft = await createDraft();
       await request
         .post(`/invoices/${draft.id}/confirm`)

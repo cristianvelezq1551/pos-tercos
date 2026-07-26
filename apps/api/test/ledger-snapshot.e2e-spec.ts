@@ -23,6 +23,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { CogsService } from '../src/reports/cogs.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { ymdLocal } from '../src/common/local-dates';
 
 describe('Ledger snapshot FIFO E2E', () => {
   let app: INestApplication;
@@ -61,7 +62,10 @@ describe('Ledger snapshot FIFO E2E', () => {
     return body;
   };
 
-  const iso = (d: Date): string => d.toISOString().slice(0, 10);
+  // Día calendario LOCAL: `now` es un instante y en Bogotá `toISOString` lo
+  // corre al día siguiente después de las 19:00 — el rango del P&G quedaba
+  // arrancando mañana y el reporte salía vacío.
+  const iso = (d: Date): string => ymdLocal(d);
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());

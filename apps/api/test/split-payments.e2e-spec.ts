@@ -12,6 +12,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Pagos divididos E2E', () => {
   let app: INestApplication;
@@ -184,7 +185,7 @@ describe('Pagos divididos E2E', () => {
   });
 
   it('la reconciliación matchea la transferencia por SU parte ($7.000), no por el total', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hoyLocal();
     const csv = `fecha,monto,referencia\n${today},7000,NEQ-SPLIT-1`;
     const res = await request
       .post('/reports/payment-reconciliation/import?source=NEQUI_CSV')
