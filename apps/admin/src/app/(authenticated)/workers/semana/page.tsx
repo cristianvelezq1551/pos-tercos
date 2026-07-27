@@ -6,6 +6,7 @@ import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
 import { requireRole } from '../../../../lib/guards';
 import type { WeeklyPayrollReport } from '@pos-tercos/types';
+import { ymdLocalToday } from '../../../../lib/dates';
 
 interface PageProps {
   searchParams: Promise<{ week?: string }>;
@@ -22,7 +23,9 @@ async function load(week: string): Promise<WeeklyPayrollReport | { error: string
 export default async function WeeklyPayrollPage({ searchParams }: PageProps) {
   await requireRole(['DUENO']);
   const sp = await searchParams;
-  const ref = sp.week && /^\d{4}-\d{2}-\d{2}$/.test(sp.week) ? sp.week : new Date().toISOString().slice(0, 10);
+  // Ver `ymdLocalToday`: con `toISOString` un domingo de noche la página
+  // abría en la semana siguiente.
+  const ref = sp.week && /^\d{4}-\d{2}-\d{2}$/.test(sp.week) ? sp.week : ymdLocalToday();
   const result = await load(ref);
 
   return (

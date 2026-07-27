@@ -9,6 +9,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 import type { WeeklyPayrollReport } from '@pos-tercos/types';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Nómina semanal unificada E2E', () => {
   let app: INestApplication;
@@ -370,5 +371,28 @@ describe('Nómina semanal unificada E2E', () => {
     } else {
       expect(currentWeekRows).toHaveLength(0);
     }
+  });
+  it('sin ?week= abre la semana de HOY en hora local, no la de UTC', async () => {
+    // `new Date().toISOString().slice(0,10)` es UTC: en Bogotá, desde las
+    // 7 p.m. devuelve MAÑANA. Un domingo por la noche eso saltaba a la semana
+    // siguiente y la nómina aparecía vacía justo cuando se cierra el pago.
+    const porDefecto = await request
+      .get('/workers/weekly')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const conHoyLocal = await request
+      .get(`/workers/weekly?week=${hoyLocal()}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const a = porDefecto.body as { weekStart: string; weekEnd: string };
+    const b = conHoyLocal.body as { weekStart: string; weekEnd: string };
+    expect(a.weekStart).toBe(b.weekStart);
+    expect(a.weekEnd).toBe(b.weekEnd);
+    // OJO: no se puede exigir que la semana CONTENGA a hoy. El lunes es el
+    // descanso —el borde entre semanas— y el dominio lo mapea a la semana que
+    // arranca el martes; un lunes, `weekStart` es mañana. Lo que se fija acá es
+    // que el default y la fecha local resuelvan la MISMA semana, que es donde
+    // se colaba el corrimiento de UTC.
   });
 });

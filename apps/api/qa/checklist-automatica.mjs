@@ -73,6 +73,13 @@ const auth = (t) => ({ token: t });
 // ══════════════════════════════════════════════════════════════
 log('\n═══ BLOQUE 0 — Acceso, sesiones y roles ═══');
 
+/**
+ * YYYY-MM-DD del día LOCAL. `toISOString` es UTC: en Bogotá, desde las 7 p.m.
+ * devuelve MAÑANA, y el chequeo le pedía a los reportes un día sin datos.
+ */
+const ymdLocal = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 await check('0', 'Login de los 4 usuarios', async () => {
   T.dueno = await login('dueno@dev.local');
   T.admin = await login('admin@dev.local');
@@ -514,7 +521,7 @@ await check('8', 'Costo fijo recurrente baja el neto y entra al break-even', asy
 });
 await check('8', 'Gasto puntual baja el neto pero NO el break-even', async () => {
   const a = await pnl();
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = ymdLocal(new Date());
   await POST('/fixed-costs', { name: 'QA Horno', amount: 800000, frequency: 'ONE_TIME', category: 'Equipos', startedAt: hoy }, auth(T.dueno));
   const b = await pnl();
   eq(b.oneTimeCost - a.oneTimeCost, 800000, 'gasto puntual');
@@ -576,15 +583,15 @@ await check('17', 'P&G: neto = margen − fijos − puntuales − cortesías −
 });
 await check('17', 'Ingreso del P&G = suma de las ventas cobradas', async () => {
   const m = await pnl();
-  const desde = new Date(mes.getFullYear(), mes.getMonth(), 1).toISOString().slice(0, 10);
-  const hasta = new Date().toISOString().slice(0, 10);
+  const desde = ymdLocal(new Date(mes.getFullYear(), mes.getMonth(), 1));
+  const hasta = ymdLocal(new Date());
   const s = (await GET(`/reports/sales-summary?from=${desde}&to=${hasta}`, auth(T.dueno))).data;
   near(m.revenue, s.totals.revenue, 'P&G vs reporte de ventas', 2);
   return `${Math.round(m.revenue)} en ambos`;
 });
 await check('17', 'Suma por método del reporte = total vendido', async () => {
-  const desde = new Date(mes.getFullYear(), mes.getMonth(), 1).toISOString().slice(0, 10);
-  const hasta = new Date().toISOString().slice(0, 10);
+  const desde = ymdLocal(new Date(mes.getFullYear(), mes.getMonth(), 1));
+  const hasta = ymdLocal(new Date());
   const s = (await GET(`/reports/sales-summary?from=${desde}&to=${hasta}`, auth(T.dueno))).data;
   const porMetodo = s.byMethod.reduce((a, m) => a + m.revenue, 0);
   near(porMetodo, s.totals.revenue, 'desglose por método vs total', 2);

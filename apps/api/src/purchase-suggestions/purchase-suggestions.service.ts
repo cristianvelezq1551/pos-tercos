@@ -22,6 +22,7 @@ import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ymdLocal } from '../common/local-dates';
 
 type DbSuggestionWithRelations = Prisma.PurchaseSuggestionGetPayload<{
   include: {
@@ -347,7 +348,7 @@ export class PurchaseSuggestionsService {
       estUnitCost: existing.estUnitCost === null ? null : Number(existing.estUnitCost),
       estTotal: existing.estTotal === null ? null : Number(existing.estTotal),
       history: items.map((it) => ({
-        date: it.invoice.createdAt.toISOString().slice(0, 10),
+        date: ymdLocal(it.invoice.createdAt),
         supplierName: it.invoice.supplier?.name ?? '(sin proveedor)',
         qty: Number(it.quantity),
         unit: it.unit,

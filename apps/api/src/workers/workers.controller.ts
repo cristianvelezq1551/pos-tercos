@@ -32,6 +32,7 @@ import { detectImageMimeLoose } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { WorkersWeeklyService } from './workers-weekly.service';
 import { WorkersService } from './workers.service';
+import { ymdLocal } from '../common/local-dates';
 
 /** RRHH / nómina unificada SEMANAL. Admin/Dueño. */
 @Controller('workers')
@@ -76,7 +77,10 @@ export class WorkersController {
   /** Reporte de la semana que contiene `?week=YYYY-MM-DD` (default: hoy). */
   @Get('weekly')
   getWeekly(@Query('week') week?: string): Promise<WeeklyPayrollReport> {
-    const ref = week && /^\d{4}-\d{2}-\d{2}$/.test(week) ? week : new Date().toISOString().slice(0, 10);
+    // Día LOCAL, no UTC: en Bogotá `toISOString` devuelve MAÑANA desde las
+    // 7 p.m., y un domingo por la noche eso caía en la semana siguiente — la
+    // nómina mostraba una semana vacía justo cuando se cierra el pago.
+    const ref = week && /^\d{4}-\d{2}-\d{2}$/.test(week) ? week : ymdLocal(new Date());
     return this.weekly.getWeeklyPayroll(ref);
   }
 
