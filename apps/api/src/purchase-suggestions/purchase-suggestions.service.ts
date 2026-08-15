@@ -6,7 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { buildPurchaseSuggestionUserPrompt, roundMoney, type WhatsAppProvider } from '@pos-tercos/domain';
+import {
+  buildPurchaseSuggestionUserPrompt,
+  buildSupplierOrderMessage,
+  normalizeWaPhone,
+  roundMoney,
+  toWaLink,
+  type WhatsAppProvider,
+} from '@pos-tercos/domain';
 import type {
   HistoricalSupplier,
   PurchaseSuggestion,
@@ -14,15 +21,17 @@ import type {
   ResolveSuggestion,
   ScanResult,
   SendToSupplier,
+  SupplierOrderLink,
   WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ymdLocal } from '../common/local-dates';
+import { localMidnightOfYmd, ymdLocal } from '../common/local-dates';
 
 type DbSuggestionWithRelations = Prisma.PurchaseSuggestionGetPayload<{
   include: {
@@ -47,6 +56,7 @@ export class PurchaseSuggestionsService {
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
     private readonly llm: LLMService,
+    private readonly businessConfig: BusinessConfigService,
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
@@ -514,14 +524,108 @@ export class PurchaseSuggestionsService {
   }
 
   /**
-   * Envía el pedido al proveedor por WhatsApp y marca la sugerencia ACCEPTED.
-   * Si el proveedor no tiene `phone` configurado → falla con BadRequest.
+   * Arma el pedido al proveedor: texto + link `wa.me`. NO envía nada — quien
+   * compra lo abre en SU WhatsApp y lo manda (puede editarlo antes). Read-only:
+   * la UI lo llama cada vez que cambian proveedor, cantidad o nota.
    */
-  async sendToSupplier(
+  async buildSupplierOrder(
     suggestionId: string,
     input: SendToSupplier,
     actorId: string,
-  ): Promise<{ outcome: WhatsAppSendOutcome; suggestion: PurchaseSuggestion }> {
+  ): Promise<SupplierOrderLink> {
+    const { sugg, supplier } = await this.loadOrderContext(suggestionId, input.supplierId);
+
+    const itemName =
+      sugg.entityType === 'INGREDIENT'
+        ? (sugg.ingredient?.name ?? '(insumo)')
+        : (sugg.product?.name ?? '(producto)');
+    const quantity = input.quantity ?? Number(sugg.suggestedQty);
+
+    const [config, actor] = await Promise.all([
+      this.businessConfig.get(),
+      this.prisma.user.findUnique({ where: { id: actorId }, select: { fullName: true } }),
+    ]);
+
+    const message = buildSupplierOrderMessage({
+      supplierPhone: supplier.phone,
+      supplierName: supplier.name,
+      businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+      neededByLabel: input.neededBy ? formatNeededByLabel(input.neededBy) : null,
+      requestedBy: actor?.fullName ?? null,
+      businessPhoneDisplay: config.phoneDisplay || config.phone || null,
+      deliveryAddress: config.address || null,
+      note: input.note,
+      items: [{ name: itemName, quantity, unitPurchase: sugg.unitPurchase }],
+    });
+
+    const phone = normalizeWaPhone(supplier.phone);
+    return {
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      phone,
+      url: phone ? toWaLink(phone, message).url : null,
+      messagePlain: message,
+    };
+  }
+
+  /**
+   * Marca la sugerencia ACCEPTED tras abrir el chat del proveedor. Se llama en
+   * el mismo click que abre WhatsApp: el sistema no puede saber si el mensaje
+   * se envió de verdad, y perseguirlo no vale la pena — quien compra siempre
+   * puede rechazar o volver a pedir.
+   */
+  async markOrderedToSupplier(
+    suggestionId: string,
+    input: SendToSupplier,
+    actorId: string,
+  ): Promise<{ link: SupplierOrderLink; suggestion: PurchaseSuggestion }> {
+    const link = await this.buildSupplierOrder(suggestionId, input, actorId);
+    // Sin teléfono no hubo chat que abrir: marcar ACCEPTED con nota "pedido por
+    // WhatsApp" sería mentira. La UI ya deshabilita el botón; esto cubre el API.
+    if (!link.url) {
+      throw new BadRequestException(
+        'El proveedor no tiene teléfono. Agrégalo en Proveedores para poder abrir el chat.',
+      );
+    }
+    const detail = [
+      input.quantity ? String(input.quantity) : null,
+      input.neededBy ? `para el ${input.neededBy}` : null,
+      input.note ?? null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const updated = await this.prisma.purchaseSuggestion.update({
+      where: { id: suggestionId },
+      data: {
+        status: 'ACCEPTED',
+        resolvedById: actorId,
+        resolvedAt: new Date(),
+        resolutionNote: `Pedido a ${link.supplierName} por WhatsApp${detail ? ` · ${detail}` : ''}`,
+      },
+      include: includeFull(),
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'PURCHASE_SUGGESTION_SENT_SUPPLIER',
+      entityType: 'purchase_suggestion',
+      entityId: suggestionId,
+      metadata: {
+        supplierId: link.supplierId,
+        supplierName: link.supplierName,
+        phone: link.phone,
+        quantity: input.quantity ?? null,
+        neededBy: input.neededBy ?? null,
+        channel: 'wa_link',
+        message: link.messagePlain,
+      },
+    });
+
+    return { link, suggestion: toDto(updated) };
+  }
+
+  /** Sugerencia sin resolver + proveedor existente. Lanza si algo no cuadra. */
+  private async loadOrderContext(suggestionId: string, supplierId: string) {
     const sugg = await this.prisma.purchaseSuggestion.findUnique({
       where: { id: suggestionId },
       include: includeFull(),
@@ -532,76 +636,12 @@ export class PurchaseSuggestionsService {
     }
 
     const supplier = await this.prisma.supplier.findUnique({
-      where: { id: input.supplierId },
+      where: { id: supplierId },
       select: { id: true, name: true, phone: true },
     });
-    if (!supplier) throw new NotFoundException(`Supplier ${input.supplierId} not found`);
-    if (!supplier.phone) {
-      throw new BadRequestException(
-        `El proveedor "${supplier.name}" no tiene WhatsApp configurado. Editalo desde Compras → Proveedores.`,
-      );
-    }
+    if (!supplier) throw new NotFoundException(`Supplier ${supplierId} not found`);
 
-    const itemName =
-      sugg.entityType === 'INGREDIENT'
-        ? (sugg.ingredient?.name ?? '(insumo)')
-        : (sugg.product?.name ?? '(producto)');
-    const quantity = input.quantity ?? Number(sugg.suggestedQty);
-    const message = buildSupplierOrderMessage({
-      itemName,
-      quantity,
-      unitPurchase: sugg.unitPurchase,
-      note: input.note,
-    });
-
-    const phoneE164 = normalizePhone(supplier.phone);
-    const result = await this.whatsapp.sendText(phoneE164, message);
-    const ok = result.ok;
-
-    // Marcar la sugerencia como ACCEPTED.
-    const updated = await this.prisma.purchaseSuggestion.update({
-      where: { id: suggestionId },
-      data: {
-        status: 'ACCEPTED',
-        resolvedById: actorId,
-        resolvedAt: new Date(),
-        resolutionNote: `Pedido enviado a ${supplier.name} por WhatsApp${
-          input.note ? ` · ${input.note}` : ''
-        }`,
-      },
-      include: includeFull(),
-    });
-    await this.audit.log({
-      userId: actorId,
-      action: 'PURCHASE_SUGGESTION_SENT_SUPPLIER',
-      entityType: 'purchase_suggestion',
-      entityId: suggestionId,
-      metadata: {
-        supplierId: supplier.id,
-        supplierName: supplier.name,
-        phone: phoneE164,
-        quantity,
-        ok: result.ok,
-        error: result.error ?? null,
-      },
-    });
-
-    return {
-      outcome: {
-        sent: ok ? 1 : 0,
-        failed: ok ? 0 : 1,
-        recipients: [
-          {
-            name: supplier.name,
-            phone: phoneE164,
-            status: ok ? 'sent' : 'failed',
-            reason: result.error,
-          },
-        ],
-        preview: message,
-      },
-      suggestion: toDto(updated),
-    };
+    return { sugg, supplier };
   }
 
   /**
@@ -687,22 +727,25 @@ export class PurchaseSuggestionsService {
   }
 }
 
-/** Texto del mensaje al proveedor (sencillo y directo). */
-function buildSupplierOrderMessage(input: {
-  itemName: string;
-  quantity: number;
-  unitPurchase: string;
-  note?: string;
-}): string {
-  const qty = Number(input.quantity).toLocaleString('es-CO', { maximumFractionDigits: 2 });
-  const lines = [
-    'Hola! Quisiera hacer un pedido:',
-    '',
-    `• ${input.itemName}: ${qty} ${input.unitPurchase}`,
-  ];
-  if (input.note) lines.push('', input.note);
-  lines.push('', 'Gracias!');
-  return lines.join('\n');
+/**
+ * Día de entrega legible para el proveedor: "mañana, martes 28 de julio".
+ * El "hoy/mañana" se mide en hora LOCAL del server (prod: America/Bogota),
+ * igual que el resto de las fechas elegidas por el usuario.
+ */
+function formatNeededByLabel(ymd: string): string {
+  const target = localMidnightOfYmd(ymd);
+  const today = localMidnightOfYmd(ymdLocal(new Date()));
+  const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+
+  const pretty = new Intl.DateTimeFormat('es-CO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(target);
+
+  if (days === 0) return `hoy, ${pretty}`;
+  if (days === 1) return `mañana, ${pretty}`;
+  return pretty;
 }
 
 /** Normaliza teléfono a E.164 colombiano cuando es razonable. Best-effort. */

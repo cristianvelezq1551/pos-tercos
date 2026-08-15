@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   FINANCIAL_ANALYSIS_SYSTEM,
   buildFinancialAnalysisUserPrompt,
+  computeBreakEven,
   nextWeekRef,
   payrollWeekFor,
   type FinancialAnalysisInput,
@@ -116,13 +117,19 @@ export class FinancialReportsService {
       grossMargin - totalFixed - oneTimeCost - cortesiasCost - refundCost - wasteCost,
     );
 
-    // Break-even = costos fijos / margen bruto %. Solo válido si hay margen %.
-    let breakEven: number | null = null;
-    let breakEvenCoverage: number | null = null;
-    if (grossMarginPct > 0) {
-      breakEven = round(totalFixed / grossMarginPct);
-      breakEvenCoverage = breakEven > 0 ? revenue / breakEven : null;
-    }
+    // Punto de equilibrio sobre el margen de CONTRIBUCIÓN (fórmula pura y
+    // testeada en domain). El margen BRUTO ignoraba merma, cortesías y
+    // reembolsos —que suben con la venta— y por eso daba un equilibrio más
+    // bajo que el real: parecía cubierto cuando todavía se perdía plata.
+    // Los gastos puntuales quedan fuera a propósito: no se repiten.
+    const be = computeBreakEven({
+      revenue,
+      cogs,
+      wasteCost,
+      cortesiaCost: cortesiasCost,
+      refundCost,
+      totalFixed,
+    });
 
     return {
       year,
@@ -131,6 +138,8 @@ export class FinancialReportsService {
       periodStart: ymdLocal(monthStart),
       periodEnd: ymdLocal(monthEnd),
       revenue: round(revenue),
+      discountTotal: pnl.discountTotal,
+      grossRevenue: pnl.grossRevenue,
       cogs: round(cogs),
       cogsPartial: pnl.cogsUnknownQty > 0,
       cogsEstimated: pnl.cogsEstimatedQty > 0,
@@ -141,11 +150,20 @@ export class FinancialReportsService {
       oneTimeCost,
       cortesiasCost,
       cortesiasCostPartial: cortesiasUnknownQty > 0,
+      cortesiasCostEstimated: pnl.cortesiaEstimatedCost > 0,
       refundCost: round(refundCost),
       wasteCost,
+      wasteCostEstimated: pnl.wasteEstimatedCost > 0,
+      deliveryCollected: pnl.deliveryCollected,
+      deliveryOrderCount: pnl.deliveryOrderCount,
+      salesCount: pnl.salesCount,
       netResult,
-      breakEven,
-      breakEvenCoverage: breakEvenCoverage === null ? null : round4(breakEvenCoverage),
+      contributionMargin: round(be.contributionMargin),
+      contributionMarginPct:
+        be.contributionMarginPct === null ? null : round4(be.contributionMarginPct),
+      breakEven: be.breakEven === null ? null : round(be.breakEven),
+      breakEvenCoverage:
+        be.breakEvenCoverage === null ? null : round4(be.breakEvenCoverage),
     };
   }
 

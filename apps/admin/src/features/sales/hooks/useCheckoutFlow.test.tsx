@@ -40,7 +40,7 @@ vi.mock('./useEnabledPaymentMethods', () => ({
     { code: 'TRANSFER', name: 'Transferencia', enabled: true, isCash: false, requiresVerification: true, reconciliationSource: 'BANCOLOMBIA_CSV', isSystem: false, sortOrder: 2 },
   ],
 }));
-vi.mock('../../shifts/lib/caja-events', () => ({ notifyCajaChanged: vi.fn() }));
+vi.mock('../../../lib/caja-events', () => ({ notifyCajaChanged: vi.fn() }));
 vi.mock('../../../lib/client-log', () => ({ logError: vi.fn() }));
 
 import { useCheckoutFlow } from './useCheckoutFlow';

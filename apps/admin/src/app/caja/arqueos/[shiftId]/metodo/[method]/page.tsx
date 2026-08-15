@@ -10,7 +10,7 @@ export default async function MethodSalesPage({
 }) {
   const { shiftId, method } = await params;
   return (
-    <div className="mx-auto max-w-3xl p-4">
+    <div className="mx-auto h-full w-full max-w-3xl overflow-y-auto p-4">
       <MethodSalesView shiftId={shiftId} method={decodeURIComponent(method)} />
     </div>
   );

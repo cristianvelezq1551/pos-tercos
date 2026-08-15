@@ -43,7 +43,7 @@ function readOwnerCredentials(): { email: string; password: string; name: string
   }
   // Nunca dejar el Dueño de dev (credenciales públicas) en un entorno real.
   if (email.endsWith('@dev.local')) {
-    fail('el email @dev.local es el Dueño de DEV — usá un email real.');
+    fail('el email @dev.local es el Dueño de DEV — usa un email real.');
   }
   if (password.length < MIN_PASSWORD_LENGTH || password === 'dev12345') {
     fail(`la clave debe tener ${MIN_PASSWORD_LENGTH}+ caracteres y no ser la de dev.`);
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   const creds = readOwnerCredentials();
   await upsertOwner(creds);
   await seedCategories();
-  console.log('✓ bootstrap completo. Ya podés loguear como Dueño y cargar catálogo.');
+  console.log('✓ bootstrap completo. Ya puedes entrar como Dueño y cargar el catálogo.');
 }
 
 main()

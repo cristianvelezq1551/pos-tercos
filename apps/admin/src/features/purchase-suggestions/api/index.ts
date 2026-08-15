@@ -7,7 +7,8 @@ export {
   acceptSuggestion,
   rejectSuggestion,
   listSuggestionSuppliers,
-  sendToSupplier,
+  previewSupplierOrder,
+  markSupplierOrder,
   sendSuggestionsSummary,
   type EvaluateAllResult,
 } from './client';

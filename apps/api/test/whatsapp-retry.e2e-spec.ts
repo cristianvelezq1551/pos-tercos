@@ -13,6 +13,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { NotificationService } from '../src/notifications/notification.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { withDeliveringWhatsApp } from './helpers/whatsapp-provider';
 
 describe('Reintento de WhatsApp fallido E2E', () => {
   let app: INestApplication;
@@ -47,7 +48,9 @@ describe('Reintento de WhatsApp fallido E2E', () => {
     prisma.whatsAppMessage.count({ where: { saleId, stage, status: 'sent' } });
 
   beforeAll(async () => {
-    ({ app, prisma, request } = await bootstrapApp());
+    // El reintento solo tiene sentido con un proveedor que entregue: el mock
+    // por defecto declara `delivers:false` y `notify` sale sin enviar (§7.v22).
+    ({ app, prisma, request } = await bootstrapApp(withDeliveringWhatsApp));
     notifications = app.get(NotificationService);
     const hash = await bcrypt.hash('dev12345', 10);
     await prisma.user.create({

@@ -6,13 +6,21 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { CloseShiftModal } from './CloseShiftModal';
 
-export function CloseShiftAction({ shift }: { shift: Shift | null }) {
+export function CloseShiftAction({
+  shift,
+  onClosed,
+}: {
+  shift: Shift | null;
+  onClosed?: (closed: Shift) => void;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  const handleClosed = () => {
+  const handleClosed = (closed: Shift) => {
     setOpen(false);
-    // El gate del home redirige a /shift/open al detectar que no hay shift OPEN.
+    // El refresh actualiza la barra superior (pasa a "sin turno"); quien muestra
+    // la confirmación del cierre es el padre, con el turno ya cerrado.
+    onClosed?.(closed);
     router.refresh();
   };
 

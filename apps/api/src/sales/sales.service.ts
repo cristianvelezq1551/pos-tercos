@@ -808,9 +808,10 @@ export class SalesService {
   }
 
   /**
-   * Pedido WEB pagado → LISTO_DESPACHO: el cajero marca "listo para retirar" y se
-   * dispara el WhatsApp al cliente (sin cocina/KDS).
-   * Solo WEB_PICKUP en PAGADO; LISTO_DESPACHO es el estado final del pedido web.
+   * Pedido WEB pagado → LISTO_DESPACHO: el cajero lo marca y se dispara el
+   * WhatsApp al cliente (sin cocina/KDS). Los dos tipos web pasan por acá, pero
+   * significan cosas distintas: en RECOGER es el estado final ("pasa a buscarlo");
+   * en DOMICILIO es "salió hacia la dirección" y todavía falta `markWebDelivered`.
    */
   async markWebReady(saleId: string, userId: string): Promise<Sale> {
     const existing = await this.prisma.sale.findUnique({
@@ -851,6 +852,58 @@ export class SalesService {
     const dto = toSaleDto(updated);
     void this.notifications.notify(saleId, 'pickup_ready');
     return dto;
+  }
+
+  /**
+   * Domicilio despachado → ENTREGADO: el cajero confirma que el pedido llegó.
+   *
+   * Solo WEB_DELIVERY: un pedido para RECOGER termina en LISTO_DESPACHO (nadie
+   * le avisa al local que el cliente ya se fue con la bolsa), pero un domicilio
+   * sin este paso queda para siempre indistinguible entre "va en la moto" y
+   * "el cliente ya comió" — y ahí se pierde el tiempo de reparto.
+   *
+   * Sin WhatsApp: el cliente ya tiene la comida en la mano; un mensaje
+   * avisándole de eso es ruido.
+   */
+  async markWebDelivered(saleId: string, userId: string): Promise<Sale> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { type: true, status: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (existing.type !== 'WEB_DELIVERY') {
+      throw new BadRequestException('Solo un pedido a domicilio se marca entregado.');
+    }
+    if (existing.status !== 'LISTO_DESPACHO') {
+      throw new BadRequestException(
+        `Un pedido en estado "${saleStatusLabel(existing.status)}" no se puede marcar entregado: primero hay que despacharlo.`,
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Guard condicionado por status, igual que markWebReady: dos toques
+      // concurrentes no escriben dos veces la transición ni su bitácora.
+      const claim = await tx.sale.updateMany({
+        where: { id: saleId, status: 'LISTO_DESPACHO' },
+        data: { status: 'ENTREGADO' },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException('El pedido cambió de estado. Actualiza la vista.');
+      }
+      await tx.saleStatusLog.create({
+        data: { saleId, statusFrom: 'LISTO_DESPACHO', statusTo: 'ENTREGADO', userId },
+      });
+      return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'SALE_STATUS_CHANGED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: { from: 'LISTO_DESPACHO', to: 'ENTREGADO', by: 'mark-delivered' },
+    });
+    return toSaleDto(updated);
   }
 
   /**

@@ -6,7 +6,9 @@ import { useState } from 'react';
 import { SALE_STATUS_MAPPING } from '../../sales';
 import { DeliveryAddress } from './DeliveryAddress';
 import { DeliveryFeeField } from './DeliveryFeeField';
-import { cancelWebOrder, markWebOrderReady } from '../api';
+import { SendWhatsAppButton } from './SendWhatsAppButton';
+import { whatsappStageFor } from '../lib/whatsapp-stage';
+import { cancelWebOrder, markWebOrderDelivered, markWebOrderReady } from '../api';
 import { getErrorMessage } from '../../../lib/errors';
 
 function minutesSince(iso: string): number {
@@ -33,6 +35,7 @@ export function WebOrderCard({
   const [busy, setBusy] = useState(false);
   const [confirmReject, setConfirmReject] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const prompt = whatsappStageFor(sale);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -110,8 +113,8 @@ export function WebOrderCard({
           </div>
         ) : sale.status === 'PAGADO' ? (
           // Pagado → el cajero marca listo: avisa al cliente por WhatsApp
-          // (pickup_ready). LISTO_DESPACHO es el estado final. Un domicilio no
-          // se "retira" — el texto acompaña lo que realmente pasa.
+          // (pickup_ready). Un domicilio no se "retira" — el texto acompaña lo
+          // que realmente pasa, y para el domicilio esto no es el final.
           <Button
             variant="success"
             size="sm"
@@ -125,6 +128,32 @@ export function WebOrderCard({
                 ? 'Marcar despachado'
                 : 'Marcar listo para retirar'}
           </Button>
+        ) : sale.status === 'LISTO_DESPACHO' && sale.type === 'WEB_DELIVERY' ? (
+          // El domicilio salió pero todavía no llegó. Sin este paso, "en la
+          // moto" y "ya entregado" se ven igual para siempre.
+          <Button
+            variant="success"
+            size="sm"
+            className="w-full"
+            disabled={busy}
+            onClick={() => run(() => markWebOrderDelivered(sale.id))}
+          >
+            {busy ? 'Marcando…' : 'Marcar entregado'}
+          </Button>
+        ) : null}
+      </div>
+
+      {/* El aviso al cliente es MANUAL: nada sale solo. El botón sabe en qué
+          punto está el pedido y qué corresponde decirle ahora. */}
+      <div>
+        {prompt ? (
+          <SendWhatsAppButton
+            saleId={sale.id}
+            stage={prompt.stage}
+            label={prompt.label}
+            sent={prompt.sent}
+            onSent={onChanged}
+          />
         ) : null}
       </div>
       {err ? (

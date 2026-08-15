@@ -1,6 +1,13 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
+  buildManualNotificationLink,
   buildNotificationMessage,
   buildNotificationTemplate,
   WHATSAPP_TEMPLATE_LANG_DEFAULT,
@@ -9,10 +16,23 @@ import {
   type WhatsAppSaleSnapshot,
 } from '@pos-tercos/domain';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Días de retención de los registros de envío de WhatsApp (PII en claro). */
 const WHATSAPP_RETENTION_DAYS = 90;
+
+/**
+ * En qué estados de la venta tiene sentido cada aviso manual. Espeja
+ * `whatsappStageFor` del admin (más VOID en la cancelación: una anulada tras
+ * pago también amerita avisar). Fuera de esto, el flag notified_* mentiría.
+ */
+const MANUAL_STAGE_STATUSES: Record<WhatsAppNotificationStage, string[]> = {
+  payment_instructions: ['PENDIENTE_PAGO'],
+  payment_received: ['PAGADO', 'EN_PREPARACION'],
+  pickup_ready: ['LISTO_DESPACHO', 'ENTREGADO'],
+  canceled: ['CANCELADO_NO_PAGO', 'CANCELADO_SIN_REEMBOLSO', 'VOID'],
+};
 
 /**
  * `WHATSAPP_TEMPLATES_ENABLED=true` activa el envío por template (requiere
@@ -38,6 +58,7 @@ export class NotificationService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
     @Inject(WHATSAPP_PROVIDER) private readonly wa: WhatsAppProvider,
   ) {}
 
@@ -62,6 +83,19 @@ export class NotificationService {
       // Los dos tipos web se notifican. COUNTER no: el cliente está en el mostrador.
       if (!sale || sale.type === 'COUNTER' || !sale.customerPhone) return;
       if (this.alreadySent(sale, stage)) return;
+
+      // Sin proveedor real (dev/mock, o prod sin KAPSO_*) NO se toca nada: ni
+      // se marca el flag ni se escribe en whatsapp_messages. Antes el mock
+      // devolvía ok:true y quedaba una fila `status:'sent'` de un mensaje que
+      // nunca salió — la tabla mentía y el cajero veía "Avisado".
+      // Salir acá deja el pedido como "sin avisar", que es la verdad, y habilita
+      // el envío MANUAL por wa.me (el flag lo marca `markManualSend`).
+      if (this.wa.delivers === false) {
+        this.logger.log(
+          `Sin proveedor de WhatsApp: ${stage} de la venta ${saleId} queda para envío manual.`,
+        );
+        return;
+      }
 
       // Claim atómico del flag ANTES de enviar: si dos notify() concurrentes
       // entran para el mismo (sale, stage) — reintento de red + sweep, doble
@@ -136,6 +170,132 @@ export class NotificationService {
         `notify(${stage}) error sale ${saleId}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  /**
+   * Arma el link `wa.me` para que el CAJERO le escriba al cliente desde su
+   * propio WhatsApp, y registra que se mandó.
+   *
+   * Se hace en UN solo paso (no preview + commit como el pedido al proveedor)
+   * porque acá el cajero no elige nada: el texto ya está decidido por la etapa.
+   * Igual que allá, no podemos saber si tocó "enviar" — pero dejar de marcarlo
+   * significaría que el badge nunca avanza y el cajero reenvíe de más.
+   *
+   * `force` permite reenviar una etapa ya marcada (el cliente borró el chat,
+   * cambió el envío, se cerró la pestaña antes de mandar).
+   */
+  async buildManualLink(
+    saleId: string,
+    stage: WhatsAppNotificationStage,
+    userId: string,
+    force = false,
+  ): Promise<{ url: string; messagePlain: string; alreadySent: boolean }> {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: {
+        id: true,
+        receiptNumber: true,
+        customerName: true,
+        customerPhone: true,
+        total: true,
+        type: true,
+        status: true,
+        deliveryAddress: true,
+        deliveryFee: true,
+        notified_payment_instructions: true,
+        notified_payment_received: true,
+        notified_ready_for_pickup: true,
+        notified_canceled: true,
+      },
+    });
+    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (sale.type === 'COUNTER') {
+      throw new BadRequestException(
+        'Los pedidos de mostrador no se avisan por WhatsApp: el cliente está en la caja.',
+      );
+    }
+    if (!sale.customerPhone) {
+      throw new BadRequestException('Este pedido no tiene teléfono para escribirle.');
+    }
+    // El aviso tiene que corresponder al estado REAL del pedido: sin este guard
+    // se podía marcar "pago recibido" sobre una venta sin pagar y el flag
+    // notified_* (la única fuente de "avisado") quedaba mintiendo. Espeja
+    // whatsappStageFor del cliente.
+    if (!MANUAL_STAGE_STATUSES[stage].includes(sale.status)) {
+      throw new BadRequestException('Este aviso no corresponde al estado actual del pedido.');
+    }
+
+    const alreadySent = this.alreadySent(sale, stage);
+    if (alreadySent && !force) {
+      throw new BadRequestException('Ya se le avisó de esto. Usa "Reenviar" si hace falta.');
+    }
+
+    const link = buildManualNotificationLink(
+      stage,
+      {
+        receiptNumber: Number(sale.receiptNumber),
+        customerName: sale.customerName,
+        customerPhone: sale.customerPhone,
+        total: Number(sale.total),
+        deliveryAddress: sale.deliveryAddress,
+        deliveryFee: Number(sale.deliveryFee),
+      },
+      {
+        businessName: this.businessName,
+        businessAddressShort: this.addressShort,
+        paymentInstructions:
+          stage === 'payment_instructions' ? this.paymentInstructions() : null,
+      },
+    );
+    if (!link) {
+      throw new BadRequestException(
+        `El teléfono del pedido (${sale.customerPhone}) no sirve para abrir un chat.`,
+      );
+    }
+
+    // Claim atómico del flag ANTES de registrar (mismo patrón que notify()):
+    // dos taps concurrentes → solo uno gana el updateMany condicionado; el
+    // otro recibe el mismo 400 de "ya se le avisó". Sin esto quedaban dos
+    // filas `manual` con resent:false, y si el update del flag fallaba después
+    // del create, un reintento duplicaba el registro.
+    if (!alreadySent) {
+      const claim = await this.prisma.sale.updateMany({
+        where: { id: sale.id, ...this.flagPatch(stage, false) },
+        data: this.flagPatch(stage, true),
+      });
+      if (claim.count === 0 && !force) {
+        throw new BadRequestException('Ya se le avisó de esto. Usa "Reenviar" si hace falta.');
+      }
+    }
+
+    // `status:'manual'` distingue lo que mandó una persona de lo que mandó el
+    // gateway (`sent`): si mañana se enciende Kapso, el histórico sigue diciendo
+    // la verdad sobre quién avisó cada pedido.
+    try {
+      await this.prisma.whatsAppMessage.create({
+        data: {
+          saleId: sale.id,
+          stage,
+          toPhone: sale.customerPhone,
+          body: link.messagePlain,
+          status: 'manual',
+        },
+      });
+    } catch (err) {
+      // El registro falló: soltar el flag para que el reintento no choque con
+      // "ya se le avisó" sin que exista fila que lo respalde.
+      if (!alreadySent) await this.releaseFlag(sale.id, stage);
+      throw err;
+    }
+    await this.audit.log({
+      userId,
+      action: 'WHATSAPP_MANUAL_SENT',
+      entityType: 'sale',
+      entityId: sale.id,
+      metadata: { stage, resent: alreadySent },
+    });
+
+    return { url: link.url, messagePlain: link.messagePlain, alreadySent };
   }
 
   private alreadySent(

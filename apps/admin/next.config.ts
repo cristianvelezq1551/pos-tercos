@@ -26,6 +26,18 @@ const WS_SOURCES = (() => {
     return '';
   }
 })();
+// La caja le habla DIRECTO al print-agent desde el navegador (comanda +
+// factura al vender, y /caja/configuracion). Sin su origen en connect-src la
+// CSP bloquea la impresión EN SILENCIO: la venta sigue (best-effort) pero
+// nunca sale papel, y la causa solo se ve en la consola del navegador.
+// Detectado en el recorrido de navegador 2026-08-14.
+const PRINT_AGENT_SOURCE = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_PRINT_AGENT_URL ?? 'http://localhost:9120').origin;
+  } catch {
+    return '';
+  }
+})();
 const CSP = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
@@ -33,7 +45,7 @@ const CSP = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "media-src 'self' blob: https:",
-  `connect-src 'self' ${WS_SOURCES}`.trim(),
+  `connect-src 'self' ${WS_SOURCES} ${PRINT_AGENT_SOURCE}`.replace(/\s+/g, ' ').trim(),
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

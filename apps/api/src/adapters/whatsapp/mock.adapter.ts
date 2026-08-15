@@ -13,6 +13,9 @@ import type {
  */
 @Injectable()
 export class MockWhatsAppAdapter implements WhatsAppProvider {
+  /** No entrega nada: quien lo use NO debe registrar el mensaje como enviado. */
+  readonly delivers = false;
+
   private readonly logger = new Logger(MockWhatsAppAdapter.name);
 
   async sendText(phoneE164: string, text: string): Promise<WhatsAppSendResult> {

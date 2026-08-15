@@ -24,12 +24,17 @@ export function buildPaymentInstructionsMessage(
   const instr = opts.paymentInstructions?.trim()
     ? `\n\n${opts.paymentInstructions.trim()}`
     : '';
-  const delivery = sale.deliveryAddress?.trim()
-    ? `\n\nEse total ya incluye el domicilio.`
-    : '';
+  // Con envío se muestra el DESGLOSE: el cliente vio un número en la web y
+  // ahora le llega otro más alto. "Ya incluye el domicilio" no le dice cuánto
+  // fue —y ese es justo el dato que va a querer discutir—.
+  const fee = sale.deliveryFee ?? 0;
+  const total =
+    fee > 0
+      ? `${formatCop(sale.total)} (${formatCop(sale.total - fee)} del pedido + ${formatCop(fee)} de domicilio)`
+      : formatCop(sale.total);
   return (
     `${greet(sale.customerName)}, recibimos tu pedido #${sale.receiptNumber} en ${opts.businessName}. ` +
-    `Total: ${formatCop(sale.total)}.${instr}${delivery}\n\n` +
+    `Total: ${total}.${instr}\n\n` +
     `Cuando pagues, envíanos el comprobante por este chat para confirmarlo. ¡Gracias!`
   );
 }

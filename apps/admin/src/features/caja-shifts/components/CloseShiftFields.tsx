@@ -12,6 +12,11 @@ import {
 } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { sumBreakdown } from '../lib/denominations';
+import {
+  digitalDifference,
+  missingDigitalCounts,
+  type DigitalTarget,
+} from '../lib/digital-arqueo';
 import type { ShiftSummary } from '../lib/shift-summary';
 import { DigitalCountSection } from './DigitalCountSection';
 import { DenominationCounter } from './DenominationCounter';
@@ -37,7 +42,7 @@ export function CloseShiftFields({
   onCountsChange,
   manual,
   onManualChange,
-  digitalNet,
+  digitalTargets,
   digitalCounts,
   onDigitalChange,
   tips,
@@ -58,7 +63,7 @@ export function CloseShiftFields({
   onCountsChange: (counts: Record<number, number>) => void;
   manual: number | null;
   onManualChange: (value: number | null) => void;
-  digitalNet: Record<string, number>;
+  digitalTargets: DigitalTarget[];
   digitalCounts: Record<string, number | null>;
   onDigitalChange: (method: string, value: number | null) => void;
   tips: number | null;
@@ -75,6 +80,8 @@ export function CloseShiftFields({
   const hasCount = arqueo ? Object.values(counts).some((n) => n > 0) : manual !== null;
   const showResult = !blind || revealed;
   const difference = expectedCash !== null ? countedNum - expectedCash : 0;
+  const accountDifference = digitalDifference(digitalTargets, digitalCounts);
+  const missingAccount = missingDigitalCounts(digitalTargets, digitalCounts).length;
 
   return (
     <>
@@ -132,11 +139,10 @@ export function CloseShiftFields({
         )
       ) : null}
 
-      {/* Arqueo digital: transferencias según cada app. */}
+      {/* Arqueo de cuenta: transferencias/Nequi según cada app. Obligatorio. */}
       {!loading && summary ? (
         <DigitalCountSection
-          summary={summary}
-          digitalNet={digitalNet}
+          targets={digitalTargets}
           values={digitalCounts}
           onChange={onDigitalChange}
           showExpected={showResult}
@@ -147,7 +153,11 @@ export function CloseShiftFields({
       {/* Diferencia: visible solo si no es ciego o ya se reveló. */}
       {!loading && summary && hasCount ? (
         showResult ? (
-          <DifferenceWidget difference={difference} />
+          <DifferenceWidget
+            difference={difference}
+            accountDifference={accountDifference}
+            accountPending={missingAccount}
+          />
         ) : (
           <button
             type="button"

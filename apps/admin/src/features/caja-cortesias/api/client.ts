@@ -37,6 +37,18 @@ export async function createCortesia(
   return created;
 }
 
+/**
+ * Cortesías del día (todas, no solo las de quien mira) para el historial de la
+ * caja. `from` = inicio del día de negocio del dispositivo.
+ */
+export async function listDayCortesias(from: string): Promise<CortesiaRequest[]> {
+  const res = await fetch(`/api/cortesias/day?from=${encodeURIComponent(from)}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return ListSchema.parse(await res.json());
+}
+
 /** Cortesías del cajero actual (con su estado). */
 export async function listMyCortesias(): Promise<CortesiaRequest[]> {
   const res = await fetch('/api/cortesias/mine', { credentials: 'include' });

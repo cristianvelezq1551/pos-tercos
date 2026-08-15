@@ -111,8 +111,14 @@ export const AuditActionEnum = z.enum([
   'PURCHASE_SUGGESTION_SENT_SUPPLIER',
   'PURCHASE_SUGGESTION_SUMMARY_SENT',
 
-  // WhatsApp wa.me semi-automático (FASE 9)
+  // WhatsApp wa.me semi-automático (FASE 9) — legacy, ya no se emite.
   'WHATSAPP_LINK_OPENED',
+  /**
+   * El cajero abrió el chat del cliente para avisarle desde SU WhatsApp
+   * (§7.v22). Acción propia y no reutilizar `WHATSAPP_LINK_OPENED`: aquella es
+   * del flujo v1 y mezclarlas haría ilegible el histórico.
+   */
+  'WHATSAPP_MANUAL_SENT',
 
   // RRHH / Nómina
   'USER_SALARY_CHANGED',
@@ -153,6 +159,10 @@ export const AuditActionEnum = z.enum([
   // Alerta puntual al dueño por WhatsApp (descuadre, void, cajón sin venta,
   // suba de costos). metadata.kind distingue el tipo.
   'OWNER_ALERT_SENT',
+  // Aviso de que el mes va con margen de CONTRIBUCIÓN negativo (cada venta
+  // pierde plata). Acción propia —y no `metadata.kind` de OWNER_ALERT_SENT—
+  // para poder consultarla por acción y mandar UNA sola por mes.
+  'OWNER_MARGIN_ALERT_SENT',
   // Conteo físico ciclado registrado (con o sin diferencia).
   'STOCK_COUNT_REGISTERED',
   'STOCK_COUNT_APPROVED',

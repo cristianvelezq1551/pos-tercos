@@ -60,7 +60,9 @@ test('cross-app: pedido web → caja confirma pago → marcar listo → cliente 
   await test.step('checkout: datos y confirmación', async () => {
     await page.getByPlaceholder('Como te van a llamar al retirar').fill(CUSTOMER);
     await page.getByPlaceholder('3001234567').fill(PHONE_10);
-    await page.getByRole('button', { name: /Confirmar y recibir datos de pago/ }).click();
+    // §7.v26: confirmar abre el chat de WhatsApp en pestaña nueva (popup) y
+    // la página principal navega al tracking. El popup (wa.me) se ignora.
+    await page.getByRole('button', { name: /Confirmar y abrir WhatsApp/ }).click();
     await page.waitForURL((url) => url.pathname.startsWith('/checkout/success/'), { timeout: 20_000 });
     successUrl = page.url();
     orderId = new URL(successUrl).pathname.split('/').pop()!;
@@ -113,8 +115,11 @@ test('cross-app: pedido web → caja confirma pago → marcar listo → cliente 
       .toBe('LISTO_DESPACHO');
   });
 
-  await test.step('cliente ve "¡Listo para retirar!" en su tracking', async () => {
+  await test.step('cliente ve "¡Pago confirmado!" en su tracking', async () => {
+    // §7.v25: la web ya NO promete el avance del pedido (el canal es WhatsApp).
+    // Todo estado pagado-o-posterior (incluido LISTO_DESPACHO) se muestra como
+    // "¡Pago confirmado!" con el número de pedido.
     await page.goto(successUrl);
-    await expect(page.getByText('¡Listo para retirar!')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('¡Pago confirmado!')).toBeVisible({ timeout: 20_000 });
   });
 });

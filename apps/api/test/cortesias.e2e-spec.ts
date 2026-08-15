@@ -122,6 +122,38 @@ describe('Cortesías E2E', () => {
     expect(total).toBe(1);
   });
 
+  it('el historial del día trae TODAS las cortesías, no solo las propias', async () => {
+    const { id } = await createCortesia(1, 'Para el historial');
+    // Una registrada por OTRO usuario (el dueño): el historial de la caja no
+    // filtra por cajero — un pedido regalado es del día, no de quien lo dio.
+    const otra = await request
+      .post('/cortesias')
+      .set(auth(duenoToken))
+      .send({ productId, quantity: 1, reason: 'Regalada por el dueño' })
+      .expect(201);
+
+    const from = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const res = await request
+      .get(`/cortesias/day?from=${encodeURIComponent(from)}`)
+      .set(auth(cajeroToken))
+      .expect(200);
+    const ids = (res.body as { id: string }[]).map((c) => c.id);
+    expect(ids).toContain(id);
+    expect(ids).toContain(otra.body.id as string);
+
+    // Fuera de la ventana no aparece nada (el historial es del día, no de siempre).
+    const futuro = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const vacio = await request
+      .get(`/cortesias/day?from=${encodeURIComponent(futuro)}`)
+      .set(auth(cajeroToken))
+      .expect(200);
+    expect(vacio.body).toHaveLength(0);
+  });
+
+  it('un `from` inválido es 400 del cliente, no un 500 de Prisma', async () => {
+    await request.get('/cortesias/day?from=ayer').set(auth(cajeroToken)).expect(400);
+  });
+
   it('un rol no-admin no puede anular (403)', async () => {
     const { id } = await createCortesia(1, 'Prueba de rol');
     await request.post(`/cortesias/${id}/reverse`).set(auth(cajeroToken)).send({}).expect(403);

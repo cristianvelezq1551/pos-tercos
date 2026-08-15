@@ -69,7 +69,10 @@ export class FinanceSummaryService {
           paidAt: { gte: monthStart, lte: monthEnd },
           status: { notIn: [...NON_REVENUE_SALE_STATUSES] },
         },
-        _sum: { total: true },
+        // El domicilio se resta: es plata del repartidor que solo pasa por la
+        // caja (§7.v24). Sin esto, "ingresos del mes" y el neto quedaban
+        // inflados con algo que el negocio no se queda.
+        _sum: { total: true, deliveryFee: true },
       }),
       this.workers.getPendingPayments(asOfForPending),
       this.workers.getPaidPaymentsInRange(monthStart, monthEnd),
@@ -116,7 +119,9 @@ export class FinanceSummaryService {
       }),
     ]);
 
-    const revenue = Number(revenueAgg._sum.total ?? 0);
+    const revenue = round(
+      Number(revenueAgg._sum.total ?? 0) - Number(revenueAgg._sum.deliveryFee ?? 0),
+    );
 
     const pendingInvoices: FinancePendingInvoice[] = pendingInvoiceRows.map((r) => ({
       invoiceId: r.id,

@@ -114,6 +114,14 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
     e.preventDefault();
     setError(null);
 
+    // Al crear, la categoría es obligatoria. El `required` del select ya lo
+    // frena con el globo del navegador, pero ese globo depende del navegador y
+    // no habla nuestro idioma: dejamos el mensaje explícito del formulario.
+    if (!isEdit && !form.category.trim()) {
+      setError('Elige una categoría para el producto.');
+      return;
+    }
+
     const parsed = parseFormValues(form);
     if (!parsed.ok) {
       setError(parsed.error);

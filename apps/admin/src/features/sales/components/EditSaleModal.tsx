@@ -4,7 +4,7 @@ import type { ManualDiscount, Product, Promotion, Sale } from '@pos-tercos/types
 import { Button, Dialog, Money } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { ProductPickerModal, fetchActiveProducts, useAvailability } from '../../catalog';
-import { notifyCajaChanged } from '../../caja-shifts/lib/caja-events';
+import { notifyCajaChanged } from '../../../lib/caja-events';
 import { editSaleItems } from '../api/edit';
 import { fetchActivePromotions } from '../api';
 import { printComanda, sendTabToKitchen } from '../api/print';

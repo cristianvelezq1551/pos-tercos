@@ -2,13 +2,9 @@
 
 import type { Shift } from '@pos-tercos/types';
 import { Money } from '@pos-tercos/ui';
-
-interface ShiftSummary {
-  totalSales: number;
-  countSales: number;
-  byMethod: Record<string, { count: number; total: number }>;
-  cashSalesTotal: number;
-}
+// El tipo REAL, no una copia local: acá había una interfaz duplicada con solo
+// 4 campos, así que agregar datos al resumen no llegaba a este reporte.
+import type { ShiftSummary } from '../lib/shift-summary';
 
 function Row({
   label,
@@ -85,8 +81,9 @@ export function ShiftZReport({
         <div className="border-t border-border pt-2">
           <Row label="Esperado en caja" value={expectedCash} bold />
         </div>
+
         <p className="mt-1 text-[0.6875rem] text-muted-foreground">
-          Total ventas del turno: {summary.countSales} ·{' '}
+          Vendido en el turno: {summary.countSales} ·{' '}
           <Money amount={summary.totalSales} size="xs" weight="medium" className="text-current" />
         </p>
       </div>

@@ -4,8 +4,8 @@ import type { Shift } from '@pos-tercos/types';
 import { Badge, formatCop } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { listSales } from '../../sales';
-import { listCashMovements } from '../api';
-import { onCajaChanged } from '../lib/caja-events';
+import { getExpectedCash, listCashMovements } from '../api';
+import { onCajaChanged } from '../../../lib/caja-events';
 import { cashMovementsNet } from '../lib/denominations';
 import { computeShiftSummary } from '../lib/shift-summary';
 import { usePolling } from '../../../lib/use-polling';
@@ -25,6 +25,16 @@ export function ShiftCashBadge({ shift }: { shift: Shift | null }) {
 
   const load = async () => {
     if (!shift) return;
+    // Esperado AUTORITATIVO del server (consulta sale_payments sin límite de
+    // paginación); el cálculo cliente queda solo como respaldo offline — con
+    // más de 200 ventas el listado paginado subcuenta.
+    try {
+      const exp = await getExpectedCash(shift.id);
+      setExpected(exp.expectedCash);
+      return;
+    } catch {
+      // sin red o error: cae al cálculo local
+    }
     try {
       const [sales, movements] = await Promise.all([
         listSales({ shiftId: shift.id, limit: 200 }),

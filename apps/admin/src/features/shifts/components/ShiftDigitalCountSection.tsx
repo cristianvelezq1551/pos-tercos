@@ -10,6 +10,7 @@ export function ShiftDigitalCountSection({
   breakdown: ShiftSessionDetail['digitalCountBreakdown'];
 }) {
   if (!breakdown || breakdown.length === 0) return null;
+  const arqueadas = breakdown.filter((d) => d.counted !== null);
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-card">
       <div className="border-b border-border bg-muted/40 px-4 py-2.5">
@@ -63,7 +64,32 @@ export function ShiftDigitalCountSection({
             </tr>
           ))}
         </tbody>
+        <tfoot className="border-t border-border bg-muted/20">
+          <tr>
+            <td className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Total cuenta
+            </td>
+            <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-foreground">
+              {formatCop(breakdown.reduce((a, d) => a + d.expected, 0))}
+            </td>
+            <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-foreground">
+              {arqueadas.length > 0
+                ? formatCop(arqueadas.reduce((a, d) => a + (d.counted ?? 0), 0))
+                : '— sin arquear'}
+            </td>
+            <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-foreground">
+              {arqueadas.length > 0
+                ? formatCop(arqueadas.reduce((a, d) => a + (d.difference ?? 0), 0))
+                : '—'}
+            </td>
+          </tr>
+        </tfoot>
       </table>
+      {arqueadas.length > 0 && arqueadas.length < breakdown.length ? (
+        <p className="px-4 py-2 text-xs text-warning">
+          Quedaron medios sin arquear: el total contado es parcial.
+        </p>
+      ) : null}
     </section>
   );
 }

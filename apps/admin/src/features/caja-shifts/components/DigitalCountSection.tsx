@@ -1,77 +1,59 @@
 'use client';
 
-import { PAYMENT_METHOD_LABELS } from '@pos-tercos/types';
 import { Money, NumberInput } from '@pos-tercos/ui';
-import type { ShiftSummary } from '../lib/shift-summary';
-
-const DIGITAL_LABELS: Record<string, string> = PAYMENT_METHOD_LABELS;
+import type { DigitalTarget } from '../lib/digital-arqueo';
 
 /**
- * Métodos NO-efectivo con plata en el turno: ventas y/o movimientos
- * digitales registrados (un egreso por transferencia también se arquea).
- */
-export function digitalMethodsOf(
-  summary: ShiftSummary,
-  digitalNet: Record<string, number> = {},
-): string[] {
-  const fromSales = Object.keys(summary.byMethod).filter(
-    (m) => m !== 'CASH' && m !== 'UNKNOWN' && (summary.byMethod[m]?.total ?? 0) > 0,
-  );
-  const fromMovs = Object.keys(digitalNet).filter((m) => digitalNet[m] !== 0);
-  return Array.from(new Set([...fromSales, ...fromMovs]));
-}
-
-/**
- * Arqueo DIGITAL del cierre: el cajero revisa cada app (Nequi/banco) y
- * anota cuánto entró durante el turno. La diferencia contra lo esperado
- * respeta el conteo ciego (no se muestra hasta revelar).
+ * Arqueo de CUENTA del cierre: el cajero revisa cada app (Nequi/banco) y anota
+ * cuánto entró durante el turno. Es OBLIGATORIO — cerrar sin contar un método
+ * dejaba esa plata sin verificar y fuera del descuadre. La diferencia respeta
+ * el conteo ciego (no se muestra hasta revelar).
  */
 export function DigitalCountSection({
-  summary,
-  digitalNet = {},
+  targets,
   values,
   onChange,
   showExpected,
   disabled,
 }: {
-  summary: ShiftSummary;
-  /** Neto IN−OUT de movimientos por método digital (ajusta el esperado). */
-  digitalNet?: Record<string, number>;
+  targets: DigitalTarget[];
   values: Record<string, number | null>;
   onChange: (method: string, value: number | null) => void;
   showExpected: boolean;
   disabled: boolean;
 }) {
-  const methods = digitalMethodsOf(summary, digitalNet);
-  if (methods.length === 0) return null;
+  if (targets.length === 0) return null;
 
   return (
     <section className="space-y-2 rounded-lg border border-border p-3">
       <h3 className="caps text-[0.625rem] font-semibold tracking-[0.2em] text-muted-foreground">
-        Arqueo digital · según cada app
+        Arqueo de cuenta · según cada app
       </h3>
-      {methods.map((m) => {
-        const expected = (summary.byMethod[m]?.total ?? 0) + (digitalNet[m] ?? 0);
-        const counted = values[m] ?? null;
-        const diff = counted !== null ? counted - expected : null;
+      {targets.map((t) => {
+        const counted = values[t.method] ?? null;
+        const diff = counted !== null ? counted - t.expected : null;
         return (
-          <div key={m} className="flex flex-wrap items-center gap-2">
-            <span className="w-32 shrink-0 text-sm text-foreground">{DIGITAL_LABELS[m]}</span>
+          <div key={t.method} className="flex flex-wrap items-center gap-2">
+            <span className="w-32 shrink-0 text-sm text-foreground">{t.name}</span>
             <div className="w-36">
               <NumberInput
                 value={counted}
-                onChange={(v) => onChange(m, v)}
+                onChange={(v) => onChange(t.method, v)}
                 prefix="$"
                 grouping
                 min={0}
-                placeholder={showExpected ? String(expected) : 'Según la app'}
+                placeholder={showExpected ? String(t.expected) : 'Según la app'}
                 disabled={disabled}
-                aria-label={`Total según la app de ${DIGITAL_LABELS[m]}`}
+                required
+                aria-label={`Total según la app de ${t.name}`}
               />
             </div>
+            {counted === null ? (
+              <span className="text-xs font-semibold text-warning">falta contar</span>
+            ) : null}
             {showExpected ? (
               <span className="text-xs tabular-nums text-muted-foreground">
-                esperado <Money amount={expected} size="xs" className="text-current" />
+                esperado <Money amount={t.expected} size="xs" className="text-current" />
               </span>
             ) : null}
             {showExpected && diff !== null && diff !== 0 ? (
@@ -92,7 +74,8 @@ export function DigitalCountSection({
         );
       })}
       <p className="text-[0.6875rem] text-muted-foreground">
-        Suma los movimientos del turno en cada app. Si dejas un método vacío, no se arquea.
+        Abre cada app y suma lo que entró en el turno. Hay que contar todos: si por un medio no
+        entró nada, escribe 0.
       </p>
     </section>
   );

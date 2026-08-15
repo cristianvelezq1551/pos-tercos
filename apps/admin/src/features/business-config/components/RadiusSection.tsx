@@ -55,7 +55,7 @@ export function RadiusSection({
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">Domicilios</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Si repartís y hasta dónde llegás.
+            Si repartes y hasta dónde llegas.
           </p>
         </div>
       </header>
@@ -109,7 +109,7 @@ export function RadiusSection({
             label="Rechazar domicilios fuera del radio"
             description={
               config.ordersRespectRadius
-                ? 'La web le pide la ubicación al cliente y bloquea si está lejos. Si niega el permiso, el pedido pasa igual — el radio filtra, no es un candado.'
+                ? 'La web obliga a elegir la dirección de la lista de sugerencias y bloquea el pedido si queda fuera del radio. Se verifica en el servidor: no se puede saltar.'
                 : 'Ahora mismo se acepta un domicilio a cualquier distancia.'
             }
           />

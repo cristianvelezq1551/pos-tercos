@@ -14,7 +14,7 @@ import {
   listCashMovements,
   updateCashMovement,
 } from '../api';
-import { notifyCajaChanged } from '../lib/caja-events';
+import { notifyCajaChanged } from '../../../lib/caja-events';
 import { CashMovementForm } from './CashMovementForm';
 import { CashMovementRow } from './CashMovementRow';
 import { getErrorMessage } from '../../../lib/errors';

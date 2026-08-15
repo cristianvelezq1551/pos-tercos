@@ -1,9 +1,9 @@
 'use client';
 
-import type { WebOrderType } from '@pos-tercos/types';
-import { cn, FormField, Input, Textarea } from '@pos-tercos/ui';
+import type { ResolvedAddressResponse, WebOrderType } from '@pos-tercos/types';
+import { cn, FormField, Textarea } from '@pos-tercos/ui';
 import { Bike, Store } from 'lucide-react';
-import { useBusiness } from '../../business';
+import { AddressAutocomplete, useBusiness } from '../../business';
 
 /**
  * Recoger o domicilio. Solo aparece si el dueño reparte (`deliveryEnabled`);
@@ -11,17 +11,16 @@ import { useBusiness } from '../../business';
  */
 export function FulfillmentPicker({
   type,
-  address,
   addressNotes,
   onType,
-  onAddress,
+  onResolvedAddress,
   onAddressNotes,
 }: {
   type: WebOrderType;
-  address: string;
   addressNotes: string;
   onType: (t: WebOrderType) => void;
-  onAddress: (v: string) => void;
+  /** null = no hay una dirección verificada elegida todavía. */
+  onResolvedAddress: (resolved: ResolvedAddressResponse | null) => void;
   onAddressNotes: (v: string) => void;
 }) {
   const deliveryEnabled = useBusiness((s) => s.business.radius.deliveryEnabled);
@@ -34,7 +33,7 @@ export function FulfillmentPicker({
           active={type === 'WEB_PICKUP'}
           icon={<Store className="h-5 w-5" strokeWidth={2} />}
           label="Recoger"
-          hint="Pasás por el local"
+          hint="Pasas por el local"
           onClick={() => onType('WEB_PICKUP')}
         />
         <Option
@@ -48,25 +47,15 @@ export function FulfillmentPicker({
 
       {type === 'WEB_DELIVERY' ? (
         <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
-          <FormField
-            label="Dirección de entrega"
-            hint="Escribe calle, número y apartamento. Cuanto más claro, más rápido llega."
-            required
-          >
-            <Input
-              value={address}
-              onChange={(e) => onAddress(e.target.value)}
-              placeholder="Cra 43A #5-15, torre 2, apto 502"
-              autoComplete="street-address"
-              maxLength={300}
-            />
-          </FormField>
-          <FormField label="Referencias (opcional)">
+          <AddressAutocomplete onResolved={onResolvedAddress} />
+          {/* Torre, apto y portería NO se geocodifican: van aparte, y son
+              justo lo que el repartidor necesita para tocar un timbre. */}
+          <FormField label="Torre, apartamento, referencias">
             <Textarea
               value={addressNotes}
               onChange={(e) => onAddressNotes(e.target.value)}
               rows={2}
-              placeholder="Portería azul, el timbre no suena, llamar al llegar…"
+              placeholder="Torre 2, apto 502. Portería azul, el timbre no suena…"
               maxLength={300}
             />
           </FormField>

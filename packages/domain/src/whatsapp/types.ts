@@ -29,10 +29,17 @@ export interface WhatsAppSaleSnapshot {
   customerName: string | null;
   /** Phone E.164 colombiano, formato `+57XXXXXXXXXX`. */
   customerPhone: string | null;
-  /** Total del pedido en COP (ya con descuentos). */
+  /** Total del pedido en COP (ya con descuentos y CON el envío si lo hay). */
   total: number;
   /** Dirección de entrega. Presente ⇒ es domicilio y NO se retira en el local. */
   deliveryAddress?: string | null;
+  /**
+   * Costo del envío ya incluido en `total`. Con esto el mensaje muestra el
+   * DESGLOSE ("$45.000 = $38.000 del pedido + $7.000 de domicilio") en vez de
+   * un total pelado: al cliente le acaba de subir el número que vio en la web
+   * y merece ver por qué antes de transferir.
+   */
+  deliveryFee?: number;
 }
 
 export interface WhatsAppMessageOptions {
@@ -73,6 +80,14 @@ export interface WhatsAppTemplateMessage {
  * `sendTemplate` es opcional: solo la Cloud API lo soporta.
  */
 export interface WhatsAppProvider {
+  /**
+   * `false` cuando el adapter NO entrega nada (el mock de dev). Existe porque
+   * el mock devolvía `ok:true` y el sistema registraba `status:'sent'` de
+   * mensajes que nunca salieron: la tabla de auditoría mentía y la pantalla
+   * del cajero decía "Avisado". Un adapter que no entrega tiene que poder
+   * declararlo. Ausente = sí entrega (los adapters reales no la declaran).
+   */
+  readonly delivers?: boolean;
   sendText(phoneE164: string, text: string): Promise<WhatsAppSendResult>;
   sendTemplate?(
     phoneE164: string,

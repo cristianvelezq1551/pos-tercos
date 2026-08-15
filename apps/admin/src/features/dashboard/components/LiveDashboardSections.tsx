@@ -59,7 +59,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
       }
     };
 
-    const id = window.setInterval(tick, POLL_MS);
+    const id = window.setInterval(() => void tick(), POLL_MS);
     const onFocus = (): void => {
       if (document.visibilityState !== 'hidden') void tick();
     };

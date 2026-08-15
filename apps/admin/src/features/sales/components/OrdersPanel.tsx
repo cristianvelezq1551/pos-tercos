@@ -1,25 +1,27 @@
 'use client';
 
-import type { Promotion, Sale } from '@pos-tercos/types';
-import { ConfirmDialog, StatusBadge, Money } from '@pos-tercos/ui';
-import { useCallback, useEffect, useState } from 'react';
+import type { CortesiaRequest, Promotion, Sale } from '@pos-tercos/types';
+import { ConfirmDialog } from '@pos-tercos/ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CortesiaDetailModal, listDayCortesias } from '../../caja-cortesias';
 import { getErrorMessage } from '../../../lib/errors';
 import { logError } from '../../../lib/client-log';
 import { startOfTodayIso } from '../../../lib/dates';
 import { usePolling } from '../../../lib/use-polling';
-import { notifyCajaChanged, onCajaChanged } from '../../caja-shifts/lib/caja-events';
+import { notifyCajaChanged, onCajaChanged } from '../../../lib/caja-events';
 import { cancelSale } from '../api/cancel';
 import { getSale } from '../api/get';
 import { listSales } from '../api/list';
 import { fetchActivePromotions } from '../api/list-promotions';
 import { printComanda, sendTabToKitchen } from '../api/print';
+import { mergeDayEntries } from '../lib/day-entries';
 import { notifyOrdersChanged, onOrdersChanged } from '../lib/orders-events';
 import { printCheckoutReceipt } from '../lib/print-on-checkout';
-import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
 import { totalsFromSale } from '../lib/totals';
 import { CheckoutModal } from './CheckoutModal';
 import { EditSaleModal } from './EditSaleModal';
 import { OpenTabCard, anySentToKitchen } from './OpenTabCard';
+import { RecentOrdersSection } from './RecentOrdersSection';
 import { SaleDetailModal } from './SaleDetailModal';
 
 const REFRESH_MS = 15_000;
@@ -32,6 +34,7 @@ const RECENT_LIMIT = 12;
 export function OrdersPanel() {
   const [tabs, setTabs] = useState<Sale[]>([]);
   const [recent, setRecent] = useState<Sale[]>([]);
+  const [cortesias, setCortesias] = useState<CortesiaRequest[]>([]);
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -39,20 +42,39 @@ export function OrdersPanel() {
   const [editTab, setEditTab] = useState<Sale | null>(null);
   const [cancelTab, setCancelTab] = useState<Sale | null>(null);
   const [detailSale, setDetailSale] = useState<Sale | null>(null);
+  const [detailCortesia, setDetailCortesia] = useState<CortesiaRequest | null>(null);
 
   const refresh = useCallback(async () => {
+    const from = startOfTodayIso();
     try {
-      const [pending, today] = await Promise.all([
+      const [pending, today, gifts] = await Promise.all([
+        // Cuentas abiertas: concepto de mostrador (un pedido web nunca lo es).
         listSales({ status: 'PENDIENTE_PAGO', type: 'COUNTER', limit: 100 }),
-        listSales({ type: 'COUNTER', from: startOfTodayIso(), limit: 60 }),
+        // Últimos pedidos: TODOS los del día, no solo los de mostrador. Filtrar
+        // por COUNTER dejaba los pedidos web fuera de esta lista aunque
+        // estuvieran cobrados — el cajero los cobraba y no aparecían por
+        // ningún lado en la pantalla de venta.
+        listSales({ from, limit: 60 }),
+        // Las cortesías del día van en la misma lista (son pedidos que salieron
+        // sin cobrarse). Si fallan, los pedidos se muestran igual.
+        listDayCortesias(from).catch((e) => {
+          logError('orders-panel.cortesias', e);
+          return [] as CortesiaRequest[];
+        }),
       ]);
       setTabs(pending.filter((s) => s.isOpenTab));
-      setRecent(today.filter((s) => !(s.isOpenTab && s.status === 'PENDIENTE_PAGO')).slice(0, RECENT_LIMIT));
+      setRecent(today.filter((s) => !(s.isOpenTab && s.status === 'PENDIENTE_PAGO')));
+      setCortesias(gifts);
       setError(null);
     } catch (err) {
       setError(getErrorMessage(err, 'No se pudieron cargar los pedidos'));
     }
   }, []);
+
+  const recentEntries = useMemo(
+    () => mergeDayEntries(recent, cortesias).slice(0, RECENT_LIMIT),
+    [recent, cortesias],
+  );
 
   usePolling(refresh, REFRESH_MS);
   useEffect(() => {
@@ -162,35 +184,11 @@ export function OrdersPanel() {
           )}
         </section>
 
-        <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Últimos pedidos
-          </h3>
-          {recent.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Todavía no hay pedidos hoy.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {recent.map((s) => (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    onClick={() => setDetailSale(s)}
-                    className="flex w-full items-center justify-between gap-2 py-1.5 text-left transition-colors hover:bg-muted/40"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-medium text-foreground">
-                        #{s.receiptNumber}
-                        {s.customerName ? ` · ${s.customerName}` : ''}
-                      </p>
-                      <StatusBadge status={s.status} mapping={SALE_STATUS_MAPPING} size="sm" />
-                    </div>
-                    <Money amount={s.total} size="sm" weight="medium" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <RecentOrdersSection
+          entries={recentEntries}
+          onSelectSale={setDetailSale}
+          onSelectCortesia={setDetailCortesia}
+        />
       </div>
 
       <CheckoutModal
@@ -220,6 +218,11 @@ export function OrdersPanel() {
       />
 
       <SaleDetailModal sale={detailSale} onClose={() => setDetailSale(null)} />
+
+      <CortesiaDetailModal
+        cortesia={detailCortesia}
+        onClose={() => setDetailCortesia(null)}
+      />
 
       <ConfirmDialog
         open={cancelTab !== null}

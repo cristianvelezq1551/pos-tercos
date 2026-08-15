@@ -9,7 +9,7 @@ import {
 import { Button, Dialog, Money, cn } from '@pos-tercos/ui';
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { notifyCajaChanged } from '../../caja-shifts/lib/caja-events';
+import { notifyCajaChanged } from '../../../lib/caja-events';
 import { changeSalePayment } from '../api/edit';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../api/payment-methods';
 import { PaymentPartRow, type Part } from './PaymentPartRow';

@@ -1,10 +1,10 @@
 'use client';
 
-import type { CashMovement, Shift } from '@pos-tercos/types';
+import type { CashMovement, ExpectedCash, Shift } from '@pos-tercos/types';
 import { LoadingSkeleton, Money } from '@pos-tercos/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../../sales';
-import { listCashMovements } from '../api';
+import { getExpectedCash, listCashMovements } from '../api';
 import { cashMovementsNet } from '../lib/denominations';
 import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
 import { CashMovementsSection } from './CashMovementsSection';
@@ -16,21 +16,32 @@ import { getErrorMessage } from '../../../lib/errors';
  * Página de Caja del cajero: Z-report en vivo, stats, movimientos de
  * efectivo y el cierre del turno. (Reemplaza al viejo CajaModal del topbar.)
  */
-export function CajaPanel({ shift }: { shift: Shift }) {
+export function CajaPanel({
+  shift,
+  onClosed,
+}: {
+  shift: Shift;
+  onClosed?: (closed: Shift) => void;
+}) {
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
   const [movements, setMovements] = useState<CashMovement[]>([]);
+  const [serverExpected, setServerExpected] = useState<ExpectedCash | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [sales, movs] = await Promise.all([
+      const [sales, movs, exp] = await Promise.all([
         listSales({ shiftId: shift.id, limit: 200 }),
         listCashMovements(shift.id),
+        // Esperado AUTORITATIVO del server (sin límite de paginación); el
+        // cálculo cliente queda como respaldo si esta consulta falla.
+        getExpectedCash(shift.id).catch(() => null),
       ]);
       setSummary(computeShiftSummary(sales));
       setMovements(movs);
+      setServerExpected(exp);
     } catch (e) {
       setError(getErrorMessage(e, 'Error cargando la caja'));
     } finally {
@@ -44,7 +55,8 @@ export function CajaPanel({ shift }: { shift: Shift }) {
 
   const net = useMemo(() => cashMovementsNet(movements), [movements]);
   const expectedCash =
-    summary !== null ? shift.openingCash + summary.cashSalesTotal + net.net : null;
+    serverExpected?.expectedCash ??
+    (summary !== null ? shift.openingCash + summary.cashSalesTotal + net.net : null);
   const transfer = summary?.byMethod.TRANSFER;
   const avgTicket =
     summary && summary.countSales > 0 ? Math.round(summary.totalSales / summary.countSales) : 0;
@@ -82,7 +94,7 @@ export function CajaPanel({ shift }: { shift: Shift }) {
       </div>
       <CashMovementsSection shiftId={shift.id} onChanged={() => void load()} />
       <div className="border-t border-border pt-4">
-        <CloseShiftAction shift={shift} />
+        <CloseShiftAction shift={shift} onClosed={onClosed} />
       </div>
     </div>
   );

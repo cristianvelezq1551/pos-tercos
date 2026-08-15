@@ -6,16 +6,18 @@ import { MessageCircle } from 'lucide-react';
 import { useBusiness } from '../../business';
 
 /**
- * Abre el WhatsApp del cliente con SU pedido ya escrito.
+ * RESPALDO para reabrir el chat con el pedido ya escrito.
  *
- * El pedido ya existe (se creó en la web con precios, promos, stock, horario y
- * zona validados): el chat solo lo referencia por su `#N`. Que el cliente
- * escriba primero abre la ventana de 24 h, donde contestarle es texto libre y
- * gratis — sin templates de Meta.
+ * Desde §7.v26 el chat se abre SOLO al confirmar el pedido (dentro del gesto
+ * del cliente, en `CheckoutForm`): un botón aparte era un paso más que la
+ * mayoría no iba a dar, y sin ese mensaje el pedido quedaba esperando a que el
+ * cajero se acordara de escribir.
  *
- * NO envía nada: deja el mensaje escrito y el cliente toca enviar. Si no lo
- * toca no se pierde nada: los datos de pago están acá abajo en esta misma
- * pantalla. Por eso el botón vive JUNTO a las instrucciones y no en vez de ellas.
+ * Este queda para cuando esa apertura no ocurrió —bloqueador de pop-ups, la
+ * pestaña se cerró, el cliente volvió al link horas después— y por eso está en
+ * tono secundario: no es la acción principal de la pantalla.
+ *
+ * NO envía nada: deja el mensaje escrito y el cliente toca enviar.
  */
 export function SendOrderByWhatsApp({ order }: { order: PublicWebOrder }) {
   const phone = useBusiness((s) => s.business.contact.phone);
@@ -54,10 +56,10 @@ export function SendOrderByWhatsApp({ order }: { order: PublicWebOrder }) {
       href={link.url}
       target="_blank"
       rel="noreferrer"
-      className="press inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-6 text-base font-bold text-black shadow-md transition-colors hover:bg-[#1FBE59] active:bg-[#17A94D]"
+      className="press inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-[#25D366]/50 px-6 text-sm font-semibold text-[#25D366] transition-colors hover:bg-[#25D366]/10"
     >
-      <MessageCircle className="h-5 w-5" strokeWidth={2.25} />
-      Enviar mi pedido por WhatsApp
+      <MessageCircle className="h-4 w-4" strokeWidth={2.25} />
+      ¿No se abrió WhatsApp? Ábrelo aquí
     </a>
   );
 }

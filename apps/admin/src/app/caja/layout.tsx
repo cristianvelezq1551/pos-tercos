@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { CajaServiceWorker } from '../../components/CajaServiceWorker';
 import { CajaTopbar } from '../../components/CajaTopbar';
 import { SessionKeeper } from '../../features/auth';
-import { getAccessTokenServer, requireOperativoServer } from '../../features/auth/server';
+import { getWsTokenServer, requireOperativoServer } from '../../features/auth/server';
 import { OfflineProvider, OfflineStatusBar } from '../../features/offline';
 import { ComandaFailureAlert } from '../../features/sales';
 import { CortesiaNotifier, CortesiaWatchProvider } from '../../features/caja-cortesias';
@@ -29,7 +29,7 @@ export default async function CajaLayout({ children }: { children: React.ReactNo
   const [shift, webSales, wsToken] = await Promise.all([
     getCurrentShiftServer(),
     getPendingWebOrdersServer(),
-    getAccessTokenServer(),
+    getWsTokenServer(),
   ]);
   const webOrdersInitial = webSales
     .map(saleToPublicWebOrder)

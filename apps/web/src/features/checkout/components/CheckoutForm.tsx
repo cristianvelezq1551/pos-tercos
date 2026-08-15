@@ -4,12 +4,13 @@ import { cn, FormField, Input } from '@pos-tercos/ui';
 import { MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState, type FormEvent } from 'react';
-import type { WebOrderType } from '@pos-tercos/types';
-import { LocationCheck } from '../../business';
+import { buildWebOrderLink } from '@pos-tercos/domain';
+import type { ResolvedAddressResponse, WebOrderType } from '@pos-tercos/types';
 import {
   cartLinesToCreateItems,
   useCartStore,
 } from '../../cart';
+import { useBusiness } from '../../business';
 import { computeCartPromoTotals, usePromotions } from '../../promotions';
 import { createWebOrder } from '../api/create-order';
 import { useCartReconcile } from '../hooks/use-cart-reconcile';
@@ -28,24 +29,24 @@ export function CheckoutForm() {
   const hydrated = useCartStore((s) => s.hydrated);
   const clear = useCartStore((s) => s.clear);
   const setActiveOrder = useActiveOrder((s) => s.setOrder);
+  // Teléfono del local: es el destinatario del chat que se abre al confirmar.
+  const businessPhone = useBusiness((s) => s.business.contact.phone);
 
   const [name, setName] = useState('');
   const [phone10, setPhone10] = useState('');
   const [notes, setNotes] = useState('');
   const [type, setType] = useState<WebOrderType>('WEB_PICKUP');
-  const [address, setAddress] = useState('');
   const [addressNotes, setAddressNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** Ubicación del cliente + si quedó fuera de la zona (lo resuelve LocationCheck). */
-  const [geo, setGeo] = useState<{
-    coords: { lat: number; lng: number } | null;
-    blocked: boolean;
-  }>({ coords: null, blocked: false });
+  /**
+   * Dirección VERIFICADA por el server (con coordenadas firmadas y el veredicto
+   * de cobertura). null mientras el cliente no elija una de la lista.
+   */
+  const [address, setAddress] = useState<ResolvedAddressResponse | null>(null);
 
-  const onGeoResolved = useCallback(
-    (coords: { lat: number; lng: number } | null, blocked: boolean) =>
-      setGeo({ coords, blocked }),
+  const onResolvedAddress = useCallback(
+    (resolved: ResolvedAddressResponse | null) => setAddress(resolved),
     [],
   );
 
@@ -55,12 +56,12 @@ export function CheckoutForm() {
   // regeneraba en cada submit y un reintento creaba un SEGUNDO pedido real.
   const [idempotencyKey] = useState(() => randomUUID());
 
-  // §3.1: al cambiar de "A domicilio" a "Recoger", limpiar el estado de geo — si
-  // no, un `blocked` viejo (quedó fuera del radio) dejaba el botón Confirmar
-  // deshabilitado para SIEMPRE sin ningún mensaje (LocationCheck ya desmontado).
+  // §3.1: al volver a "Recoger", olvidar la dirección — si no, un "fuera de
+  // zona" viejo dejaba el botón trabado para siempre y sin explicación (el
+  // componente que mostraba el motivo ya no estaba en pantalla).
   const onType = useCallback((next: WebOrderType) => {
     setType(next);
-    if (next !== 'WEB_DELIVERY') setGeo({ coords: null, blocked: false });
+    if (next !== 'WEB_DELIVERY') setAddress(null);
   }, []);
 
   const { change, hasChanges, apply } = useCartReconcile();
@@ -73,20 +74,18 @@ export function CheckoutForm() {
   // de WhatsApp del pedido, por eso no aceptamos fijos ni números imposibles.
   const phoneValid = /^3\d{9}$/.test(phone10);
   const nameValid = name.trim().length >= 2;
-  // Un domicilio sin dirección no lo puede entregar nadie.
-  const addressValid = type !== 'WEB_DELIVERY' || address.trim().length >= 8;
+  // Un domicilio necesita una dirección ELEGIDA de la lista: sin coordenadas
+  // verificadas no se puede saber si llegamos hasta allá.
+  const addressValid = type !== 'WEB_DELIVERY' || address !== null;
   /**
    * No dejar pedir con: cambios del carrito sin revisar (precio viejo / producto
-   * desactivado), un domicilio sin dirección, o una ubicación verificada fuera
-   * del radio. El backend rechaza los tres igual — esto es la cara amable, para
-   * que el cliente no llegue hasta el submit para enterarse.
+   * desactivado), un domicilio sin dirección verificada, o una dirección que
+   * quedó fuera de la zona. El backend rechaza los tres igual — esto es la cara
+   * amable, para que el cliente no llegue hasta el submit para enterarse.
    */
-  // §3.1: `geo.blocked` solo aplica a domicilios (el radio no bloquea a quien
-  // viene a recoger). Sin este gate por tipo, cambiar a "Recoger" dejaba el
-  // botón trabado por un blocked residual del flujo de domicilio.
-  const geoBlocking = type === 'WEB_DELIVERY' && geo.blocked;
+  const outOfRange = type === 'WEB_DELIVERY' && address !== null && !address.inRange;
   const canSubmit =
-    items.length > 0 && nameValid && phoneValid && addressValid && !hasChanges && !geoBlocking;
+    items.length > 0 && nameValid && phoneValid && addressValid && !hasChanges && !outOfRange;
 
   if (hydrated && items.length === 0) {
     return (
@@ -108,6 +107,24 @@ export function CheckoutForm() {
     if (!canSubmit || pending) return;
     setError(null);
     setPending(true);
+
+    /**
+     * La pestaña de WhatsApp se abre ACÁ, dentro del gesto del cliente.
+     *
+     * Antes había un botón aparte en la pantalla siguiente ("Enviar mi pedido
+     * por WhatsApp") que mucha gente no iba a tocar — y sin ese mensaje el
+     * pedido quedaba esperando a que el cajero se acordara de escribir. El
+     * motivo técnico que lo justificaba (que el cliente escribiera primero para
+     * abrir la ventana de 24 h de la API de Meta) desapareció cuando los avisos
+     * pasaron a salir del WhatsApp del cajero: ya no hay ventana ni templates.
+     *
+     * Se abre en blanco antes del `await` porque un `window.open` posterior a
+     * una espera lo bloquea el navegador (no viene de un gesto). Si el
+     * bloqueador igual la mata, `SendOrderByWhatsApp` sigue en la pantalla de
+     * seguimiento como respaldo.
+     */
+    const waTab = window.open('', '_blank');
+
     try {
       const result = await createWebOrder(
         {
@@ -116,15 +133,16 @@ export function CheckoutForm() {
           customerName: name.trim(),
           customerPhone: `+57${phone10}`,
           notes: notes.trim() || undefined,
-          ...(type === 'WEB_DELIVERY'
+          ...(type === 'WEB_DELIVERY' && address
             ? {
-                deliveryAddress: address.trim(),
+                deliveryAddress: address.formatted,
                 deliveryNotes: addressNotes.trim() || undefined,
+                // El sobre firmado por el server: lleva las coordenadas de la
+                // dirección y es lo único con lo que se puede sostener el
+                // rechazo por distancia (un lat/lng suelto se edita).
+                addressToken: address.addressToken,
               }
             : {}),
-          // Solo si el cliente compartió su ubicación. Sin esto el server no
-          // valida el radio y acepta (el permiso se puede negar).
-          ...(geo.coords ? { customerLat: geo.coords.lat, customerLng: geo.coords.lng } : {}),
         },
         idempotencyKey,
       );
@@ -134,11 +152,33 @@ export function CheckoutForm() {
         receiptNumber: result.order.receiptNumber,
         createdAt: Date.now(),
       });
+
+      const wa = buildWebOrderLink({
+        businessPhone,
+        receiptNumber: result.order.receiptNumber,
+        customerName: result.order.customerName,
+        items: result.order.items.map((it) => ({
+          productName: it.productName,
+          sizeName: it.sizeName,
+          quantity: it.quantity,
+          modifiers: it.modifiers,
+          notes: it.notes,
+        })),
+        total: result.order.total,
+        deliveryAddress: result.order.deliveryAddress,
+        deliveryNotes: result.order.deliveryNotes,
+      });
+      // Sin teléfono del negocio configurado no hay a dónde escribir: se cierra
+      // la pestaña en blanco en vez de dejarla colgada.
+      if (waTab && wa) waTab.location.href = wa.url;
+      else waTab?.close();
+
       clear();
       router.push(
         `/checkout/success/${result.order.id}?token=${encodeURIComponent(result.token)}`,
       );
     } catch (err) {
+      waTab?.close();
       setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
@@ -149,15 +189,11 @@ export function CheckoutForm() {
       {hasChanges ? <CartChangesBanner change={change} onApply={apply} /> : null}
       <FulfillmentPicker
         type={type}
-        address={address}
         addressNotes={addressNotes}
         onType={onType}
-        onAddress={setAddress}
+        onResolvedAddress={onResolvedAddress}
         onAddressNotes={setAddressNotes}
       />
-      {/* El radio es la zona de cobertura del domicilio: a quien viene a
-          recoger no se le pide la ubicación ni se lo bloquea por vivir lejos. */}
-      {type === 'WEB_DELIVERY' ? <LocationCheck onResolved={onGeoResolved} /> : null}
 
       <OrderSummaryCard items={items} />
 
@@ -231,7 +267,7 @@ export function CheckoutForm() {
         </div>
       </section>
 
-      <WhatsAppPaymentInfo />
+      <WhatsAppPaymentInfo isDelivery={type === 'WEB_DELIVERY'} />
 
       {error ? (
         <p
@@ -252,11 +288,11 @@ export function CheckoutForm() {
           style={{ height: 52 }}
         >
           <MessageCircle className="h-5 w-5" strokeWidth={2} />
-          {pending ? 'Enviando pedido…' : 'Confirmar y recibir datos de pago'}
+          {pending ? 'Enviando pedido…' : 'Confirmar y abrir WhatsApp'}
         </button>
         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
           <MessageCircle className="h-3.5 w-3.5 text-[#25D366]" strokeWidth={2} />
-          Te enviaremos un mensaje de WhatsApp para coordinar la transferencia
+          Se abre el chat con tu pedido ya escrito: solo tienes que enviarlo
         </p>
       </div>
     </form>

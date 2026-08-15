@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { startOfBusinessDay } from '@pos-tercos/domain';
 import {
   CortesiaStatusEnum,
   CreateCortesiaSchema,
@@ -33,6 +44,30 @@ export class CortesiasController {
     const idempotencyKey =
       idemKey && IdempotencyKeySchema.safeParse(idemKey).success ? idemKey : undefined;
     return this.cortesias.create(body, user.sub, idempotencyKey);
+  }
+
+  /**
+   * Cortesías del día operativo para el historial de la caja: todas, sin
+   * importar quién las registró (el historial de ventas tampoco filtra por
+   * cajero). `from` es el inicio del día de negocio que manda la caja; sin él,
+   * se calcula acá con el mismo corte de las 4 am.
+   */
+  @CashierAccess()
+  @Get('day')
+  day(@Query('from') from?: string): Promise<CortesiaRequest[]> {
+    let since = startOfBusinessDay(new Date());
+    if (from) {
+      const parsed = new Date(from);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException(`Parámetro 'from' inválido: ${from}`);
+      }
+      // Piso de 48h: este endpoint es "las del día" para la caja. Sin piso,
+      // un from=1970-01-01 devolvía el histórico completo de cortesías a
+      // cualquier rol de caja. 48h cubre de sobra el corte de las 4 am.
+      const floor = Date.now() - 48 * 60 * 60 * 1000;
+      since = parsed.getTime() < floor ? new Date(floor) : parsed;
+    }
+    return this.cortesias.listSince(since);
   }
 
   /** Cortesías del cajero actual (estado + novedades para acusar). */

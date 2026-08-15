@@ -12,6 +12,7 @@ import type {
   Product as DbProduct,
   Subproduct as DbSubproduct,
 } from '@prisma/client';
+import { runWithSerializationRetry } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 
 type DbInventoryMovement = Prisma.InventoryMovementGetPayload<{
@@ -263,65 +264,80 @@ export class InventoryService {
     input: { reason: string; quantity?: number | null },
     userId: string,
   ): Promise<InventoryMovement> {
-    const original = await this.prisma.inventoryMovement.findUnique({
-      where: { id: movementId },
-      select: {
-        id: true,
-        type: true,
-        delta: true,
-        entityType: true,
-        ingredientId: true,
-        productId: true,
-        subproductId: true,
-      },
-    });
-    if (!original) throw new NotFoundException(`Movimiento ${movementId} no encontrado`);
-    if (original.type !== 'WASTE') {
-      throw new BadRequestException(
-        'Solo se anulan movimientos de MERMA. Para corregir otro movimiento usa un ajuste manual.',
-      );
-    }
+    // Leer "lo ya devuelto" y escribir la nueva reversa TIENEN que ir en la
+    // misma tx Serializable. Sueltas, dos clics en el botón "Anular" (o un
+    // retry de red) leen ambos `alreadyReturned = 0`, los dos pasan el tope y
+    // se crean DOS reversas completas: el insumo vuelve al doble y la merma
+    // desaparece del P&G por partida doble. Y como `inventory_movements` es
+    // insert-only, ese fantasma ya no se borra — solo se compensa a mano.
+    // Con Serializable, Postgres aborta a una de las dos (40001) y el reintento
+    // lee el total actualizado, así que devuelve lo que falta o rechaza.
+    const created = await runWithSerializationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const original = await tx.inventoryMovement.findUnique({
+            where: { id: movementId },
+            select: {
+              id: true,
+              type: true,
+              delta: true,
+              entityType: true,
+              ingredientId: true,
+              productId: true,
+              subproductId: true,
+            },
+          });
+          if (!original) throw new NotFoundException(`Movimiento ${movementId} no encontrado`);
+          if (original.type !== 'WASTE') {
+            throw new BadRequestException(
+              'Solo se anulan movimientos de MERMA. Para corregir otro movimiento usa un ajuste manual.',
+            );
+          }
 
-    const wasted = Math.abs(Number(original.delta));
-    // Lo ya devuelto por reversas previas (acumulables).
-    const prior = await this.prisma.inventoryMovement.aggregate({
-      where: { sourceType: 'waste_reversal', sourceId: movementId },
-      _sum: { delta: true },
-    });
-    const alreadyReturned = Number(prior._sum.delta ?? 0);
-    const pending = roundCost(wasted - alreadyReturned);
-    if (pending <= 0) {
-      throw new BadRequestException('Esta merma ya fue anulada por completo.');
-    }
+          const wasted = Math.abs(Number(original.delta));
+          // Lo ya devuelto por reversas previas (acumulables).
+          const prior = await tx.inventoryMovement.aggregate({
+            where: { sourceType: 'waste_reversal', sourceId: movementId },
+            _sum: { delta: true },
+          });
+          const alreadyReturned = Number(prior._sum.delta ?? 0);
+          const pending = roundCost(wasted - alreadyReturned);
+          if (pending <= 0) {
+            throw new BadRequestException('Esta merma ya fue anulada por completo.');
+          }
 
-    const requested = input.quantity ?? pending;
-    if (requested > pending + 1e-9) {
-      throw new BadRequestException(
-        `No se puede devolver ${requested}: la merma tiene ${pending} sin anular.`,
-      );
-    }
-    const delta = roundCost(requested);
-    if (roundsToZeroAt4(delta)) {
-      throw new BadRequestException('La cantidad a devolver redondea a cero.');
-    }
+          const requested = input.quantity ?? pending;
+          if (requested > pending + 1e-9) {
+            throw new BadRequestException(
+              `No se puede devolver ${requested}: la merma tiene ${pending} sin anular.`,
+            );
+          }
+          const delta = roundCost(requested);
+          if (roundsToZeroAt4(delta)) {
+            throw new BadRequestException('La cantidad a devolver redondea a cero.');
+          }
 
-    const created = await this.prisma.inventoryMovement.create({
-      data: {
-        entityType: original.entityType,
-        ingredientId: original.ingredientId,
-        productId: original.productId,
-        subproductId: original.subproductId,
-        delta,
-        // El costo lo resuelve el ledger devolviendo los lotes originales.
-        unitCost: null,
-        type: 'MANUAL_ADJUSTMENT',
-        sourceType: 'waste_reversal',
-        sourceId: movementId,
-        notes: `Anulación de merma: ${input.reason}`.slice(0, 500),
-        userId,
-      },
-      include: includeFull(),
-    });
+          return tx.inventoryMovement.create({
+            data: {
+              entityType: original.entityType,
+              ingredientId: original.ingredientId,
+              productId: original.productId,
+              subproductId: original.subproductId,
+              delta,
+              // El costo lo resuelve el ledger devolviendo los lotes originales.
+              unitCost: null,
+              type: 'MANUAL_ADJUSTMENT',
+              sourceType: 'waste_reversal',
+              sourceId: movementId,
+              notes: `Anulación de merma: ${input.reason}`.slice(0, 500),
+              userId,
+            },
+            include: includeFull(),
+          });
+        },
+        { isolationLevel: 'Serializable' },
+      ),
+    );
     return toMovementDto(created);
   }
 

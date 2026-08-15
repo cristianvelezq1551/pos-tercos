@@ -17,10 +17,13 @@ export function CajaServiceWorker() {
     } else {
       navigator.serviceWorker
         .getRegistrations()
-        .then((regs) => regs.forEach((r) => r.unregister()))
+        .then((regs) => regs.forEach((r) => void r.unregister()))
         .catch(() => undefined);
       if ('caches' in window) {
-        caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => undefined);
+        caches
+          .keys()
+          .then((keys) => keys.forEach((k) => void caches.delete(k)))
+          .catch(() => undefined);
       }
     }
   }, []);

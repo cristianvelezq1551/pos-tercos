@@ -127,6 +127,22 @@ describe('COGS FIFO (e2e HTTP)', () => {
     expect(pnl.grossMargin).toBe(4000);
     expect(pnl.cogsUnknownQty).toBe(0);
 
+    // 5.b El período se rotula en día calendario LOCAL. El `to` del rango son
+    // las 23:59:59.999 locales, que en Bogotá ya es el día siguiente en UTC:
+    // con `toISOString().slice(0,10)` el P&G de julio decía "hasta el 1 de
+    // agosto" (auditoría 2026-07-25, ver common/local-dates.ts).
+    const ymdHoyLocal = (): string => {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      return `${d.getFullYear()}-${m}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const hoy = ymdHoyLocal();
+    const rango = (
+      await auth(ctx.request.get(`/reports/cogs/pnl?from=${hoy}&to=${hoy}`)).expect(200)
+    ).body;
+    expect(rango.periodFrom).toBe(hoy);
+    expect(rango.periodTo).toBe(hoy);
+
     // 6. Margen real por producto.
     const margins = (await auth(ctx.request.get('/reports/cogs/product-margins')).expect(200)).body;
     const burger = margins.products.find((p: { productId: string }) => p.productId === burgerId);
@@ -134,6 +150,11 @@ describe('COGS FIFO (e2e HTTP)', () => {
     expect(burger.cogs).toBe(14000);
     expect(burger.margin).toBe(4000);
     expect(burger.cogsPartial).toBe(false);
+    const marginsRango = (
+      await auth(ctx.request.get(`/reports/cogs/product-margins?from=${hoy}&to=${hoy}`)).expect(200)
+    ).body;
+    expect(marginsRango.periodFrom).toBe(hoy);
+    expect(marginsRango.periodTo).toBe(hoy);
 
     // 7. Inventario valorizado: quedan 800 g @ $20 = $16.000.
     const val = (await auth(ctx.request.get('/reports/cogs/inventory-valuation')).expect(200)).body;

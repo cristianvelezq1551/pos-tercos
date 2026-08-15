@@ -23,6 +23,9 @@ export function ShiftSessionSummary({
         value={String(summary.canceledCount)}
         emphasize={summary.canceledCount > 0}
       />
+      {/* "Ingresos" va NETO de domicilios; "Efectivo"/"Digital" son lo COBRADO
+          (bruto), así que con domicilios los dos últimos suman más que el
+          primero. El desglose NO se muestra acá a propósito (§7.v29). */}
       <SummaryCard label="Ingresos" value={formatCop(summary.totalRevenue)} wide />
       <SummaryCard label="Efectivo" value={formatCop(summary.cashRevenue)} wide />
       <SummaryCard label="Digital" value={formatCop(summary.transferRevenue)} wide />

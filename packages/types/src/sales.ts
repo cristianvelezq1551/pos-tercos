@@ -105,6 +105,23 @@ export function saleStatusLabel(status: string): string {
   return SALE_STATUS_LABELS[status as SaleStatus] ?? status;
 }
 
+/**
+ * Cómo se nombra cada modalidad en pantalla. Vive acá y no en cada app porque
+ * los mapas duplicados se olvidan: al reponer WEB_DELIVERY quedaron dos copias
+ * con solo COUNTER y WEB_PICKUP, y el reporte de ventas mostraba "WEB_DELIVERY"
+ * crudo al dueño.
+ */
+export const SALE_TYPE_LABELS: Record<SaleType, string> = {
+  COUNTER: 'Mostrador',
+  WEB_PICKUP: 'Web · recoger',
+  WEB_DELIVERY: 'Web · domicilio',
+};
+
+/** Label de una modalidad; si llega una desconocida devuelve el code tal cual. */
+export function saleTypeLabel(type: string): string {
+  return SALE_TYPE_LABELS[type as SaleType] ?? type;
+}
+
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: 'Efectivo',
   CARD: 'Tarjeta',
@@ -299,6 +316,20 @@ export const SaleSchema = z.object({
   deliveryLat: z.number().nullable().optional(),
   deliveryLng: z.number().nullable().optional(),
   idempotencyKey: z.string().nullable(),
+  /**
+   * Qué se le avisó YA al cliente por WhatsApp. Sin esto la caja no puede
+   * distinguir "avisado" de "sin avisar" y termina afirmando lo primero por
+   * defecto (que es lo que hacía: el badge "Avisado" salía de tener cargado el
+   * envío, no de haber mandado nada).
+   */
+  notified: z
+    .object({
+      paymentInstructions: z.boolean(),
+      paymentReceived: z.boolean(),
+      readyForPickup: z.boolean(),
+      canceled: z.boolean(),
+    })
+    .optional(),
   /** Pagos registrados. >1 elemento = cuenta dividida (paymentMethod null). */
   payments: z.array(SalePaymentSchema).optional(),
   createdAt: z.string().datetime(),
@@ -681,6 +712,30 @@ export type SaleStatusLogEntry = z.infer<typeof SaleStatusLogEntrySchema>;
  * total y recién ahí sale el WhatsApp con el número real: pedirle plata al
  * cliente antes de saber el envío sería pedirle un total que va a cambiar.
  */
+/**
+ * Etapas que se le avisan al cliente por WhatsApp. Espeja
+ * `WhatsAppNotificationStage` del domain (que no puede vivir acá: `types` no
+ * depende de `domain`). Si se agrega una etapa, van las dos.
+ */
+export const WhatsAppNotificationStageEnum = z.enum([
+  'payment_instructions',
+  'payment_received',
+  'pickup_ready',
+  'canceled',
+]);
+export type WhatsAppNotificationStageCode = z.infer<
+  typeof WhatsAppNotificationStageEnum
+>;
+
+/** Respuesta del aviso manual: la URL que el cajero abre + el texto que va. */
+export const ManualWhatsAppLinkSchema = z.object({
+  url: z.string().url(),
+  messagePlain: z.string(),
+  /** true = ya se le había avisado de esta etapa (esto fue un reenvío). */
+  alreadySent: z.boolean(),
+});
+export type ManualWhatsAppLink = z.infer<typeof ManualWhatsAppLinkSchema>;
+
 export const SetDeliveryFeeSchema = z.object({
   /** COP. DEBE ser > 0: un domicilio tiene costo. "Envío gratis" se maneja como
    *  descuento sobre el total, no como fee 0 (que era indistinguible de "sin

@@ -7,6 +7,11 @@ const DISCREPANCY_THRESHOLD = 5000;
 
 type Tone = 'success' | 'warning' | 'destructive';
 
+/** "+$1.000" / "−$25.000" para el detalle por pata. */
+function signed(amount: number): string {
+  return `${amount > 0 ? '+' : '−'}$${Math.abs(Math.round(amount)).toLocaleString('es-CO')}`;
+}
+
 const TONE: Record<Tone, { container: string; badge: string }> = {
   success: {
     container: 'border-success-border bg-success-bg text-success',
@@ -23,25 +28,42 @@ const TONE: Record<Tone, { container: string; badge: string }> = {
 };
 
 /**
- * Resultado del arqueo de efectivo: cuadra / sobra / falta, con la magnitud
- * de la diferencia (contado − esperado). Sobre el umbral de anomalía muestra
- * el aviso de que queda registrado y se notifica al dueño.
+ * Resultado del arqueo: cuadra / sobra / falta. El número grande es el
+ * descuadre TOTAL (efectivo + cuenta) — mostrar solo el del cajón daba una
+ * caja "cuadrada" con plata digital descuadrada al lado.
  */
-export function DifferenceWidget({ difference }: { difference: number }) {
-  const exact = Math.abs(difference) < 1;
-  const surplus = difference > 0;
-  const flagged = !exact && Math.abs(difference) >= DISCREPANCY_THRESHOLD;
+export function DifferenceWidget({
+  difference,
+  accountDifference = 0,
+  accountPending = 0,
+}: {
+  /** Contado − esperado del cajón. */
+  difference: number;
+  /** Contado − esperado de los medios de cuenta ya arqueados. */
+  accountDifference?: number;
+  /** Medios de cuenta todavía sin contar (el total aún no es definitivo). */
+  accountPending?: number;
+}) {
+  const total = difference + accountDifference;
+  const exact = Math.abs(total) < 1;
+  const surplus = total > 0;
+  const flagged = !exact && Math.abs(total) >= DISCREPANCY_THRESHOLD;
+  const split = Math.abs(accountDifference) >= 1 && Math.abs(difference) >= 1;
 
   const tone: Tone = exact ? 'success' : surplus ? 'warning' : 'destructive';
   const styles = TONE[tone];
   const Icon = exact ? Check : surplus ? ArrowUpRight : ArrowDownRight;
 
-  const title = exact ? 'La caja cuadra' : surplus ? 'Sobra efectivo' : 'Falta efectivo';
-  const subtitle = exact
-    ? 'El conteo coincide con lo esperado.'
-    : surplus
-      ? 'Hay más efectivo en caja del esperado.'
-      : 'Hay menos efectivo en caja del esperado.';
+  const title = exact ? 'La caja cuadra' : surplus ? 'Sobra plata' : 'Falta plata';
+  const subtitle = accountPending > 0
+    ? `Faltan ${accountPending} medio(s) de cuenta por contar: el total todavía no es definitivo.`
+    : split
+      ? `Efectivo ${signed(difference)} · cuenta ${signed(accountDifference)}`
+      : exact
+        ? 'El conteo coincide con lo esperado.'
+        : Math.abs(accountDifference) >= 1
+          ? 'La diferencia está en la cuenta, no en el cajón.'
+          : 'La diferencia está en el cajón.';
 
   return (
     <div className={cn('rounded-xl border p-3.5', styles.container)}>
@@ -60,7 +82,7 @@ export function DifferenceWidget({ difference }: { difference: number }) {
           <p className="text-xs leading-tight opacity-80">{subtitle}</p>
         </div>
         <Money
-          amount={difference}
+          amount={total}
           size="2xl"
           weight="bold"
           withSign

@@ -3,7 +3,13 @@
 import { type PaymentMethod, type PublicWebOrder, type Sale } from '@pos-tercos/types';
 import { Button, Checkbox, Dialog, FormField, Money } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
-import { confirmPayment, notifyComandaFailed, sendTabToKitchen, TransferSection } from '../../sales';
+import {
+  confirmPayment,
+  notifyComandaFailed,
+  printReceipt,
+  sendTabToKitchen,
+  TransferSection,
+} from '../../sales';
 import { fetchSaleById } from '../api/get-sale';
 import { OrderItemsList } from './OrderItemsList';
 import { StockShortageNotice } from './StockShortageNotice';
@@ -106,6 +112,12 @@ export function ConfirmWebPaymentModal({
           receiptNumber: order.receiptNumber,
           kind: 'comanda',
         });
+      });
+      // Y el RECIBO, igual que en el mostrador. Faltaba: un pedido web cobrado
+      // no dejaba comprobante impreso aunque es una venta como cualquier otra.
+      // Best-effort — el botón "Recibo" del historial sigue estando.
+      void printReceipt(order.id, { fallback: paid }).catch((e: unknown) => {
+        logError('web-orders.receipt', e, { saleId: order.id });
       });
       onConfirmed(paid);
     } catch (err) {

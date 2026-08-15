@@ -4,7 +4,7 @@ import type { Sale } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, Money } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { refundSale } from '../api/void';
-import { notifyCajaChanged } from '../../caja-shifts/lib/caja-events';
+import { notifyCajaChanged } from '../../../lib/caja-events';
 import { getErrorMessage } from '../../../lib/errors';
 
 /**

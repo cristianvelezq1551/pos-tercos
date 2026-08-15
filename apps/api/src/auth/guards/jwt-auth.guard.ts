@@ -46,6 +46,13 @@ export class JwtAuthGuard implements CanActivate {
         algorithms: ['HS256'],
       });
       const payload = JwtAccessPayloadSchema.parse(decoded);
+      // Separación de alcances: el token `scope: 'ws'` lo emite /auth/ws-token
+      // y vive en el JS de la página (el handshake del socket no puede usar la
+      // cookie httpOnly). Por eso NO sirve como credencial HTTP: si un XSS lo
+      // roba, no puede tocar la API. La sesión real siempre viaja por cookie.
+      if (payload.scope === 'ws') {
+        throw new UnauthorizedException('WS token no válido para HTTP');
+      }
       // Revocación de sesión: el `tv` del token debe coincidir con la versión
       // actual del usuario. Si se desactivó / cambió de rol / reseteó password,
       // la versión subió y el token (aunque no haya expirado) queda muerto.

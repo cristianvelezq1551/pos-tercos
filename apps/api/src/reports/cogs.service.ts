@@ -21,6 +21,7 @@ import {
   type ProductMargin,
   type ProductMarginReport,
 } from '@pos-tercos/types';
+import { ymdLocal } from '../common/local-dates';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -306,7 +307,9 @@ export class CogsService {
   }
 
   /** Costo FIFO real por solicitud de cortesía (sourceId → costo). Cacheado. */
-  async getCortesiaCostBySource(): Promise<Map<string, { cost: number; unknownQty: number }>> {
+  async getCortesiaCostBySource(): Promise<
+    Map<string, { cost: number; unknownQty: number; estimatedCost: number }>
+  > {
     const ledger = await this.runLedger();
     return ledger.cortesiaCostBySource;
   }
@@ -320,7 +323,7 @@ export class CogsService {
   async getApprovedCortesiaCost(
     from: Date,
     to: Date,
-  ): Promise<{ total: number; count: number; unknownQty: number }> {
+  ): Promise<{ total: number; count: number; unknownQty: number; estimatedCost: number }> {
     const [ledger, approved] = await Promise.all([
       this.runLedger(),
       this.prisma.cortesiaRequest.findMany({
@@ -330,14 +333,23 @@ export class CogsService {
     ]);
     let total = 0;
     let unknownQty = 0;
+    let estimatedCost = 0;
     for (const r of approved) {
       const entry = ledger.cortesiaCostBySource.get(r.id);
       total += entry?.cost ?? 0;
       // FIFO sin lote disponible al aprobar → costo desconocido. Lo arrastramos
       // para avisar que la pérdida real puede estar subestimada.
       unknownQty += entry?.unknownQty ?? 0;
+      // Parte valuada al último precio conocido: es un número honesto pero
+      // provisional, y la UI tiene que decirlo (se corrige con la factura).
+      estimatedCost += entry?.estimatedCost ?? 0;
     }
-    return { total: round(total), count: approved.length, unknownQty: round(unknownQty) };
+    return {
+      total: round(total),
+      count: approved.length,
+      unknownQty: round(unknownQty),
+      estimatedCost: round(estimatedCost),
+    };
   }
 
   // ==================================================================
@@ -372,7 +384,7 @@ export class CogsService {
       this.runLedger(from),
       this.prisma.sale.findMany({
         where: { paidAt: { gte: from, lte: to }, status: { notIn: [...EXCLUDED_STATUSES] } },
-        select: { id: true, total: true },
+        select: { id: true, total: true, discountTotal: true, deliveryFee: true },
       }),
       // Reembolsos del período: VOID con stock NO revertido (la comida ya se
       // preparó). Su costo FIFO quedó en el ledger pero la venta está excluida
@@ -389,11 +401,27 @@ export class CogsService {
     ]);
 
     let revenue = 0;
+    // Descuentos ya restados de `revenue`. Se acumulan aparte porque el P&G
+    // mostraba el neto sin decir en ningún lado cuánto se regaló.
+    let discountTotal = 0;
     let cogs = 0;
     let unknownQty = 0;
     let estimatedQty = 0;
+    // El envío NO es ingreso del negocio (decisión del dueño 2026-07-27): esa
+    // plata es del domiciliario y solo pasa por la caja. Se descuenta de
+    // `revenue` y se reporta aparte — si se sumara, además de inflar las
+    // ventas subiría el margen bruto (no consume inventario) y ensuciaría el
+    // punto de equilibrio.
+    let deliveryCollected = 0;
+    let deliveryOrderCount = 0;
     for (const s of sales) {
-      revenue += Number(s.total);
+      const fee = Number(s.deliveryFee ?? 0);
+      revenue += Number(s.total) - fee;
+      discountTotal += Number(s.discountTotal ?? 0);
+      if (fee > 0) {
+        deliveryCollected += fee;
+        deliveryOrderCount += 1;
+      }
       const c = this.saleCost(ledger, s.id);
       cogs += c.cost;
       unknownQty += c.unknownQty;
@@ -410,30 +438,43 @@ export class CogsService {
 
     const fromIso = from.toISOString();
     const toIso = to.toISOString();
-    const wasteCost = ledger.waste
-      .filter((w) => w.createdAt >= fromIso && w.createdAt <= toIso)
-      .reduce((s, w) => s + w.cost, 0);
-    const cortesiaCost = ledger.cortesia
-      .filter((c) => c.createdAt >= fromIso && c.createdAt <= toIso)
-      .reduce((s, c) => s + c.cost, 0);
+    const wasteInRange = ledger.waste.filter(
+      (w) => w.createdAt >= fromIso && w.createdAt <= toIso,
+    );
+    const cortesiaInRange = ledger.cortesia.filter(
+      (c) => c.createdAt >= fromIso && c.createdAt <= toIso,
+    );
+    const wasteCost = wasteInRange.reduce((s, w) => s + w.cost, 0);
+    const cortesiaCost = cortesiaInRange.reduce((s, c) => s + c.cost, 0);
+    const wasteEstimatedCost = wasteInRange.reduce((s, w) => s + w.estimatedCost, 0);
+    const cortesiaEstimatedCost = cortesiaInRange.reduce((s, c) => s + c.estimatedCost, 0);
 
     const grossMargin = revenue - cogs;
     return {
-      periodFrom: fromIso.slice(0, 10),
-      periodTo: toIso.slice(0, 10),
+      // Día calendario LOCAL: `to` llega a las 23:59:59.999 locales, que en
+      // Bogotá ya es el día siguiente en UTC → `toISOString().slice(0,10)`
+      // mostraba "01 jul – 01 ago" para el rango de julio (ver local-dates.ts).
+      periodFrom: ymdLocal(from),
+      periodTo: ymdLocal(to),
       revenue: round(revenue),
+      discountTotal: round(discountTotal),
+      grossRevenue: round(revenue + discountTotal),
       cogs: round(cogs),
       grossMargin: round(grossMargin),
       grossMarginPct: revenue > 0 ? Math.round((grossMargin / revenue) * 10000) / 10000 : null,
       wasteCost: round(wasteCost),
       cortesiaCost: round(cortesiaCost),
       refundCost: round(refundCost),
+      deliveryCollected: round(deliveryCollected),
+      deliveryOrderCount,
       salesCount: sales.length,
       cogsUnknownQty: Math.round((unknownQty + refundUnknownQty) * 10000) / 10000,
       // §1.12: unidades costeadas con ESTIMADO (venta forzada sin stock). El COGS
       // aún NO es exacto para esas unidades — se corrige al subir la factura. Un
       // COGS 100% estimado se veía como exacto (cogsPartial=false).
       cogsEstimatedQty: Math.round(estimatedQty * 10000) / 10000,
+      wasteEstimatedCost: round(wasteEstimatedCost),
+      cortesiaEstimatedCost: round(cortesiaEstimatedCost),
     };
   }
 
@@ -635,8 +676,9 @@ export class CogsService {
     const tCogs = list.reduce((s, p) => s + p.cogs, 0);
     const tMargin = tRevenue - tCogs;
     return {
-      periodFrom: from.toISOString().slice(0, 10),
-      periodTo: to.toISOString().slice(0, 10),
+      // Día calendario LOCAL — mismo motivo que en `getPnl`.
+      periodFrom: ymdLocal(from),
+      periodTo: ymdLocal(to),
       products: list,
       totals: {
         revenue: round(tRevenue),

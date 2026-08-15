@@ -18,7 +18,7 @@ vi.mock('../api/void', () => ({ voidSale: (...a: unknown[]) => voidSale(...a) })
 const printComanda = vi.fn().mockResolvedValue(undefined);
 vi.mock('../api/print', () => ({ printComanda: (...a: unknown[]) => printComanda(...a) }));
 vi.mock('../lib/comanda-events', () => ({ notifyComandaFailed: vi.fn() }));
-vi.mock('../../shifts/lib/caja-events', () => ({ notifyCajaChanged: vi.fn() }));
+vi.mock('../../../lib/caja-events', () => ({ notifyCajaChanged: vi.fn() }));
 vi.mock('../../../lib/client-log', () => ({ logError: vi.fn() }));
 
 import { VoidModal } from './VoidModal';

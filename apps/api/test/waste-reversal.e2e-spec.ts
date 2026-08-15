@@ -17,6 +17,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { CogsService } from '../src/reports/cogs.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Anulación de merma E2E', () => {
   let app: INestApplication;
@@ -34,7 +35,7 @@ describe('Anulación de merma E2E', () => {
     // El ledger se cachea 60s a propósito (un reporte de COGS tolera ese
     // staleness). Acá medimos la LÓGICA, no la caché.
     cogs.invalidateLedgerCache();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hoyLocal();
     const res = await request
       .get(`/reports/cogs/pnl?from=${today}&to=${today}`)
       .set(auth(duenoToken))
@@ -184,6 +185,37 @@ describe('Anulación de merma E2E', () => {
       .expect(400);
   });
 
+  /**
+   * El caso real: el dueño hace doble clic en "Anular" y salen dos requests a
+   * la vez. Sin la tx Serializable las dos leían "0 devuelto", las dos pasaban
+   * el tope y el insumo volvía al DOBLE de lo mermado — un fantasma permanente,
+   * porque `inventory_movements` es insert-only y no se puede borrar.
+   */
+  it('dos anulaciones simultáneas no devuelven más de lo mermado', async () => {
+    const stockAntes = await stockOf();
+    // Relativo: tests anteriores dejan mermas del día sin anular a propósito.
+    const wasteCostAntes = await wasteCostToday();
+    const wasteId = await registerWaste(1_000);
+
+    const anular = () =>
+      request
+        .post(`/inventory/movements/${wasteId}/reverse-waste`)
+        .set(auth(duenoToken))
+        .send({ reason: 'Doble clic del dueño en el botón Anular' });
+
+    // Varias en paralelo: con una sola pareja la carrera puede no darse nunca
+    // porque las dos requests se atienden en fila.
+    const res = await Promise.all(Array.from({ length: 6 }, anular));
+
+    // Exactamente una entra; el resto rebota (400: ya no queda por anular).
+    expect(res.filter((r) => r.status === 201).length).toBe(1);
+    expect(res.filter((r) => r.status === 400).length).toBe(res.length - 1);
+
+    // Y lo que importa: el stock vuelve EXACTO, no al doble.
+    expect(await stockOf()).toBe(stockAntes);
+    expect(await wasteCostToday()).toBe(wasteCostAntes);
+  });
+
   it('no se puede anular un movimiento que no es una merma', async () => {
     const compra = await request
       .post('/inventory/movements')
@@ -240,5 +272,179 @@ describe('Anulación de merma E2E', () => {
     });
     expect(log).not.toBeNull();
     expect(JSON.stringify(log!.afterJson)).toContain('Motivo auditable');
+  });
+
+  // ==================================================================
+  // "Uso y mermas" tiene que contar la MISMA pérdida que el P&G.
+  //
+  // Auditoría 2026-07-25: /reports/inventory-usage no conocía las reversas.
+  // Una merma anulada seguía figurando entera (con su % y su plata perdida)
+  // mientras el P&G ya la había neteado — dos reportes en desacuerdo sobre la
+  // misma plata. Peor: la reversa entraba como ajuste POSITIVO y el neto
+  // cancelaba faltantes reales de conteo físico del mismo período.
+  // ==================================================================
+
+  /** Insumo propio con `lastUnitCost` para que "Uso y mermas" pueda valorizar. */
+  const freshValuedIngredient = async (name: string): Promise<string> => {
+    const res = await request
+      .post('/ingredients')
+      .set(auth(duenoToken))
+      .send({
+        name,
+        unitPurchase: 'kg',
+        unitRecipe: 'g',
+        conversionFactor: 1000,
+        thresholdMin: 0,
+        isActive: true,
+      })
+      .expect(201);
+    const id = (res.body as { id: string }).id;
+    // $20.000/kg ÷ 1000 g = $20/g — el mismo costo del stock inicial.
+    await prisma.ingredient.update({
+      where: { id },
+      data: { lastUnitCost: 20_000, lastUnitCostDate: new Date() },
+    });
+    await request
+      .post('/inventory/movements')
+      .set(auth(duenoToken))
+      .send({
+        entityType: 'INGREDIENT',
+        ingredientId: id,
+        delta: 10_000,
+        type: 'INITIAL',
+        unitCost: 20,
+        notes: 'Carga inicial',
+      })
+      .expect(201);
+    return id;
+  };
+
+  const usageRowOf = async (
+    entityId: string,
+  ): Promise<{ waste: number; adjustments: number; wastePct: number | null; wasteCost: number | null }> => {
+    const today = hoyLocal();
+    const res = await request
+      .get(`/reports/inventory-usage?from=${today}&to=${today}`)
+      .set(auth(duenoToken))
+      .expect(200);
+    const rows = (
+      res.body as {
+        rows: Array<{
+          entityId: string;
+          waste: number;
+          adjustments: number;
+          wastePct: number | null;
+          wasteCost: number | null;
+        }>;
+      }
+    ).rows;
+    return (
+      rows.find((r) => r.entityId === entityId) ?? {
+        waste: 0,
+        adjustments: 0,
+        wastePct: null,
+        wasteCost: 0,
+      }
+    );
+  };
+
+  const registerWasteOn = async (entityId: string, qty: number): Promise<string> => {
+    const res = await request
+      .post('/inventory/movements')
+      .set(auth(duenoToken))
+      .send({
+        entityType: 'INGREDIENT',
+        ingredientId: entityId,
+        delta: -qty,
+        type: 'WASTE',
+        notes: 'Merma de prueba',
+      })
+      .expect(201);
+    return (res.body as { id: string }).id;
+  };
+
+  it('"Uso y mermas" borra la pérdida al anular, igual que el P&G', async () => {
+    const id = await freshValuedIngredient('Carne Uso-y-Mermas');
+    const wasteId = await registerWasteOn(id, 1_000); // 1.000 g × $20 = $20.000
+
+    const antes = await usageRowOf(id);
+    expect(antes.waste).toBe(1_000);
+    expect(antes.wasteCost).toBe(20_000);
+
+    await request
+      .post(`/inventory/movements/${wasteId}/reverse-waste`)
+      .set(auth(duenoToken))
+      .send({ reason: 'No se tiró nada' })
+      .expect(201);
+
+    // La reversa NO es un ajuste de inventario: netea la merma original.
+    const despues = await usageRowOf(id);
+    expect(despues.waste).toBe(0);
+    expect(despues.wasteCost).toBe(0);
+    // Sin consumo ni merma no hay porcentaje que calcular (antes daba 100%).
+    expect(despues.wastePct).toBeNull();
+    expect(despues.adjustments).toBe(0);
+  });
+
+  it('anular una merma NO tapa un faltante de conteo físico del mismo período', async () => {
+    const id = await freshValuedIngredient('Carne Faltante-Tapado');
+    const wasteId = await registerWasteOn(id, 1_000);
+    await request
+      .post(`/inventory/movements/${wasteId}/reverse-waste`)
+      .set(auth(duenoToken))
+      .send({ reason: 'La merma se registró por error' })
+      .expect(201);
+
+    // Faltante real: el conteo físico encuentra 500 g menos de los que dice el libro.
+    await request
+      .post('/inventory/movements')
+      .set(auth(duenoToken))
+      .send({
+        entityType: 'INGREDIENT',
+        ingredientId: id,
+        delta: -500,
+        type: 'MANUAL_ADJUSTMENT',
+        notes: 'Faltante de conteo físico',
+      })
+      .expect(201);
+
+    const row = await usageRowOf(id);
+    expect(row.waste).toBe(0);
+    // El faltante sobrevive: −500 (antes el +1.000 de la reversa lo dejaba en +500).
+    expect(row.adjustments).toBe(-500);
+    // Y su plata se reporta: 500 g × $20 = $10.000.
+    expect(row.wasteCost).toBe(10_000);
+  });
+
+  it('la anulación de una CORTESÍA no cuenta como ajuste de inventario', async () => {
+    const id = await freshValuedIngredient('Carne Cortesia-Reversa');
+    // El consumo de una cortesía y su reversa se contabilizan en el estado
+    // financiero, no acá: los dos tienen que quedar fuera de "Uso y mermas".
+    await prisma.inventoryMovement.create({
+      data: {
+        entityType: 'INGREDIENT',
+        ingredientId: id,
+        delta: -200,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'cortesia',
+        sourceId: '00000000-0000-4000-8000-000000000001',
+        notes: 'Cortesía',
+      },
+    });
+    await prisma.inventoryMovement.create({
+      data: {
+        entityType: 'INGREDIENT',
+        ingredientId: id,
+        delta: 200,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'cortesia_reversal',
+        sourceId: '00000000-0000-4000-8000-000000000001',
+        notes: 'Cortesía anulada',
+      },
+    });
+
+    const row = await usageRowOf(id);
+    expect(row.adjustments).toBe(0);
+    expect(row.waste).toBe(0);
   });
 });

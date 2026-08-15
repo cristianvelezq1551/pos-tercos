@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import type { Sale, Shift } from '@pos-tercos/types';
+import { saleTypeLabel, type Sale, type Shift } from '@pos-tercos/types';
 import { formatCop, formatDate } from '../../../lib/format';
 import { paymentSummary } from '../lib/payment-label';
 import { shiftCrossedMidnight, shiftLabel } from '../lib/shift-label';
@@ -19,11 +19,6 @@ interface SalesDetailListProps {
   outOfRangeShift?: Shift;
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  COUNTER: 'Mostrador',
-  WEB_PICKUP: 'Web · recoger',
-};
-
 export function SalesDetailList({
   sales,
   shifts,
@@ -32,7 +27,11 @@ export function SalesDetailList({
 }: SalesDetailListProps) {
   // Anuladas y pendientes NO llegan acá (el backend lista el mismo universo que
   // el resumen), así que este total espeja el "Ingresos" de arriba.
-  const total = sales.reduce((sum, s) => sum + s.total, 0);
+  // Neto de domicilios, por la misma razón: esa plata es del repartidor y si se
+  // sumara, este pie no cuadraría con el "Ingresos" de la cabecera.
+  const total = sales.reduce((sum, s) => sum + s.total - s.deliveryFee, 0);
+  const delivery = sales.reduce((sum, s) => sum + s.deliveryFee, 0);
+  const discount = sales.reduce((sum, s) => sum + s.discountTotal, 0);
 
   return (
     <section className="rounded-lg border border-border bg-card p-5">
@@ -52,6 +51,15 @@ export function SalesDetailList({
             <span className="font-medium text-foreground tabular-nums">
               {formatCop(total)}
             </span>
+            {discount > 0 ? (
+              <span className="tabular-nums"> · {formatCop(discount)} en descuentos</span>
+            ) : null}
+            {delivery > 0 ? (
+              <span className="tabular-nums">
+                {' '}
+                · + {formatCop(delivery)} de domicilios (del repartidor)
+              </span>
+            ) : null}
           </span>
         </div>
       </div>
@@ -129,13 +137,20 @@ function SaleRow({ sale }: { sale: Sale }) {
         <td className="py-2 text-muted-foreground">
           {formatDate(sale.paidAt ?? sale.createdAt, 'datetime')}
         </td>
-        <td className="py-2 text-muted-foreground">{TYPE_LABEL[sale.type] ?? sale.type}</td>
+        <td className="py-2 text-muted-foreground">{saleTypeLabel(sale.type)}</td>
         <td className="py-2 text-foreground">{sale.customerName ?? '—'}</td>
         <td className="py-2 text-muted-foreground">{paymentSummary(sale)}</td>
         <td className="py-2 text-muted-foreground">
           {sale.cashierName ?? sale.paidByName ?? '—'}
         </td>
         <td className="py-2 pr-1 text-right tabular-nums font-medium text-foreground">
+          {/* Con descuento, el precio de lista tachado al lado: si no, una venta
+              rebajada se ve idéntica a una barata y el descuento es invisible. */}
+          {sale.discountTotal > 0 ? (
+            <span className="mr-2 text-xs font-normal text-muted-foreground line-through">
+              {formatCop(sale.subtotal)}
+            </span>
+          ) : null}
           {formatCop(sale.total)}
         </td>
       </tr>

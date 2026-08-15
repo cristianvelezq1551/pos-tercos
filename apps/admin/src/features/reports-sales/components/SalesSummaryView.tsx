@@ -1,14 +1,14 @@
-import { PAYMENT_METHOD_LABELS, type PaymentMethod, type SalesSummary } from '@pos-tercos/types';
+import {
+  PAYMENT_METHOD_LABELS,
+  saleTypeLabel,
+  type PaymentMethod,
+  type SalesSummary,
+} from '@pos-tercos/types';
 import { formatCop, formatNumber } from '../../../lib/format';
 
 interface SalesSummaryViewProps {
   summary: SalesSummary;
 }
-
-const TYPE_LABEL: Record<string, string> = {
-  COUNTER: 'Mostrador',
-  WEB_PICKUP: 'Web · recoger',
-};
 
 const methodLabel = (m: string): string =>
   PAYMENT_METHOD_LABELS[m as PaymentMethod] ?? m;
@@ -22,7 +22,17 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
     <div className="space-y-6">
       {/* Totales */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Ingresos" value={formatCop(summary.totals.revenue)} />
+        {/* El ingreso ya viene neto de descuentos; el detalle de abajo dice
+            cuánto se regaló para que no se lea como "vendí menos". */}
+        <Stat
+          label="Ingresos"
+          value={formatCop(summary.totals.revenue)}
+          hint={
+            summary.totals.discount > 0
+              ? `${formatCop(summary.totals.revenue + summary.totals.discount)} a precio de lista − ${formatCop(summary.totals.discount)} de descuentos`
+              : undefined
+          }
+        />
         <Stat label="Ventas" value={String(summary.totals.count)} />
         <Stat label="Ticket promedio" value={formatCop(summary.totals.avgTicket)} />
         <Stat
@@ -31,6 +41,7 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
           tone={summary.totals.voidCount > 0 ? 'warning' : 'default'}
         />
       </div>
+
 
       {/* Serie temporal — gráfica horizontal de barras */}
       <section className="rounded-lg border border-border bg-card p-5">
@@ -78,7 +89,7 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
           title="Por tipo de pedido"
           rows={summary.byType.map((t) => ({
             key: t.type,
-            label: TYPE_LABEL[t.type] ?? t.type,
+            label: saleTypeLabel(t.type),
             count: t.count,
             revenue: t.revenue,
           }))}
@@ -148,10 +159,12 @@ function Stat({
   label,
   value,
   tone = 'default',
+  hint,
 }: {
   label: string;
   value: string;
   tone?: 'default' | 'warning';
+  hint?: string;
 }) {
   const valueClass = tone === 'warning' ? 'text-warning' : 'text-foreground';
   return (
@@ -162,6 +175,7 @@ function Stat({
       <p className={`mt-1 text-2xl font-bold tracking-tight tabular-nums ${valueClass}`}>
         {value}
       </p>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground tabular-nums">{hint}</p> : null}
     </div>
   );
 }

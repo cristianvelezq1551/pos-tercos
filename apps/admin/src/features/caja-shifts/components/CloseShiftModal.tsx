@@ -1,6 +1,6 @@
 'use client';
 
-import type { CashMovement, Shift } from '@pos-tercos/types';
+import type { CashMovement, ExpectedCash, Shift } from '@pos-tercos/types';
 import { Button, Dialog, formatDate } from '@pos-tercos/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOffline } from '../../offline';
@@ -9,6 +9,7 @@ import { closeShift } from '../api/close';
 import { getExpectedCash, listCashMovements } from '../api';
 import { cashMovementsNet, digitalMovementsNet, sumBreakdown } from '../lib/denominations';
 import { buildClosePayload } from '../lib/close-payload';
+import { digitalTargets, missingDigitalCounts } from '../lib/digital-arqueo';
 import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
 import { CloseShiftFields } from './CloseShiftFields';
 import { getErrorMessage } from '../../../lib/errors';
@@ -37,7 +38,7 @@ export function CloseShiftModal({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   // Esperado del server (autoritativo); cae al cálculo cliente si la red falla.
-  const [serverExpected, setServerExpected] = useState<number | null>(null);
+  const [serverExpected, setServerExpected] = useState<ExpectedCash | null>(null);
   // Cuentas abiertas sin resolver en esta caja (null = aún no reportado por el
   // resolver). El cierre se destraba cuando llega a 0.
   const [openTabCount, setOpenTabCount] = useState<number | null>(null);
@@ -64,12 +65,13 @@ export function CloseShiftModal({
     ]);
     setSummary(computeShiftSummary(sales));
     setMovements(movs);
-    setServerExpected(exp?.expectedCash ?? null);
+    setServerExpected(exp);
   }, []);
 
   useEffect(() => {
     if (!open || !shift) return;
     setSummary(null);
+    setDigitalCounts({});
     setMovements([]);
     setArqueo(false);
     setCounts({});
@@ -91,8 +93,16 @@ export function CloseShiftModal({
   const expectedCash = useMemo(() => {
     if (!shift || !summary) return null;
     // Preferir el número autoritativo del server; el cálculo cliente es respaldo.
-    return serverExpected ?? shift.openingCash + summary.cashSalesTotal + net.net;
+    return serverExpected?.expectedCash ?? shift.openingCash + summary.cashSalesTotal + net.net;
   }, [shift, summary, net, serverExpected]);
+
+  // Medios de cuenta a arquear: la lista del server es la misma que el cierre
+  // EXIGE; si esa consulta falló, se deriva de las ventas cargadas.
+  const targets = useMemo(
+    () => digitalTargets(serverExpected?.digital ?? null, summary, digitalNet),
+    [serverExpected, summary, digitalNet],
+  );
+  const missingDigital = missingDigitalCounts(targets, digitalCounts);
 
   const countedNum = arqueo ? sumBreakdown(counts) : (manual ?? 0);
   const hasCount = arqueo ? Object.values(counts).some((n) => n > 0) : manual !== null;
@@ -100,6 +110,7 @@ export function CloseShiftModal({
     summary !== null &&
     hasCount &&
     countedNum >= 0 &&
+    missingDigital.length === 0 && // la cuenta se arquea completa o no se cierra
     (openTabCount ?? 0) === 0 && // no cerrar con cuentas abiertas sin resolver
     !pending &&
     !blockedReason;
@@ -174,7 +185,7 @@ export function CloseShiftModal({
           onCountsChange={setCounts}
           manual={manual}
           onManualChange={setManual}
-          digitalNet={digitalNet}
+          digitalTargets={targets}
           digitalCounts={digitalCounts}
           onDigitalChange={(method, value) =>
             setDigitalCounts((prev) => ({ ...prev, [method]: value }))
@@ -184,6 +195,16 @@ export function CloseShiftModal({
           notes={notes}
           onNotesChange={setNotes}
         />
+
+        {summary && missingDigital.length > 0 ? (
+          <p
+            role="status"
+            className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm font-semibold text-warning"
+          >
+            Para cerrar falta arquear {missingDigital.map((m) => m.name).join(', ')}. Mira cada
+            app y anota cuánto entró; si no entró nada, escribe 0.
+          </p>
+        ) : null}
 
         {error ? (
           <p

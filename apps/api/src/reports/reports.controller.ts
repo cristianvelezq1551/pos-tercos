@@ -248,6 +248,21 @@ export class ReportsController {
   }
 
   /**
+   * Trigger manual del aviso de margen de contribución negativo (el cron corre
+   * 21:45 hora local). Devuelve por qué NO mandó cuando no corresponde —así se
+   * verifica el flujo sin esperar a la noche ni adivinar.
+   */
+  @OnlyDueno()
+  @Post('admin/check-contribution-margin')
+  checkContributionMargin(): Promise<{
+    sent: boolean;
+    reason?: string;
+    contributionMargin?: number;
+  }> {
+    return this.ownerDigest.alertIfNegativeContributionMargin();
+  }
+
+  /**
    * Trigger manual del snapshot mensual del ledger FIFO (el cron corre el
    * día 2, 4:30 AM). Corte = primer día del mes actual 00:00 local.
    */

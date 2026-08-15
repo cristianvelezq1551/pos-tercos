@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { CreateWebOrder, PublicWebOrder, Sale } from '@pos-tercos/types';
 import { BusinessConfigService } from '../business-config/business-config.service';
+import { AddressTokenService } from './address-token.service';
 import { formatOpeningMoment } from './format-opening';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -30,6 +31,7 @@ export class WebOrdersService {
     private readonly sales: SalesService,
     private readonly notifications: NotificationService,
     private readonly businessConfig: BusinessConfigService,
+    private readonly addressTokens: AddressTokenService,
     @Inject(forwardRef(() => PosGateway))
     private readonly posGateway: PosGateway,
   ) {}
@@ -64,13 +66,21 @@ export class WebOrdersService {
   }
 
   /**
-   * Zona de cobertura. Si el cliente no mandó ubicación (negó el permiso del
-   * GPS) NO se bloquea — decisión del dueño: el radio es un filtro, no un
-   * candado, y el permiso se puede negar desde cualquier navegador.
+   * Zona de cobertura del domicilio.
    *
-   * 400 y no 503: acá el problema es el pedido (de dónde viene), no el
-   * servicio. El 503 dice "volvé más tarde"; estar lejos no se arregla
-   * esperando.
+   * La ubicación que se mide es la de la DIRECCIÓN elegida, no la del teléfono:
+   * viene dentro de `addressToken`, un sobre que firmó el server al resolverla.
+   * Antes se medía el GPS del navegador, que responde "dónde está el cliente
+   * ahora" —no "a dónde va la comida"— y además se podía falsear editando el
+   * body.
+   *
+   * Con `ordersRespectRadius` activo el token es OBLIGATORIO: sin poder ubicar
+   * la dirección no hay forma de sostener el rechazo, y aceptar "por las dudas"
+   * volvería el candado decorativo. Con el switch apagado se acepta igual (el
+   * dueño todavía no quiere rechazar a nadie).
+   *
+   * 400 y no 503: el problema es el pedido (de dónde viene), no el servicio.
+   * El 503 dice "volvé más tarde"; estar lejos no se arregla esperando.
    */
   private async assertInRange(input: CreateWebOrder): Promise<void> {
     // El radio es la ZONA DE COBERTURA del domicilio: solo aplica a WEB_DELIVERY.
@@ -85,16 +95,41 @@ export class WebOrdersService {
         'Por ahora no hacemos domicilios. Puedes pedir para recoger en el local.',
       );
     }
+    if (!config.ordersRespectRadius) return;
 
-    const customer =
-      input.customerLat !== undefined && input.customerLng !== undefined
-        ? { lat: input.customerLat, lng: input.customerLng }
-        : null;
-    const { inRange, distanceKm, radiusKm } = await this.businessConfig.checkRadius(customer);
+    const verified = input.addressToken
+      ? this.addressTokens.verify(input.addressToken)
+      : null;
+    if (!verified) {
+      throw new BadRequestException(
+        'Elige tu dirección de la lista de sugerencias para que podamos verificar que llegamos hasta allá.',
+      );
+    }
+
+    const { inRange, distanceKm, radiusKm } = await this.businessConfig.checkRadius({
+      lat: verified.lat,
+      lng: verified.lng,
+    });
     if (inRange) return;
     throw new BadRequestException(
-      `Estás fuera de nuestra zona de cobertura (${distanceKm!.toFixed(1)} km). Llegamos hasta ${radiusKm} km del local.`,
+      distanceKm === null
+        ? `No pudimos ubicar esa dirección dentro de nuestra zona (llegamos hasta ${radiusKm} km del local).`
+        : `Esa dirección está a ${distanceKm.toFixed(1)} km y llegamos hasta ${radiusKm} km del local.`,
     );
+  }
+
+  /**
+   * Coordenadas que se guardan con la venta (para abrir el mapa desde la caja).
+   * Manda la dirección verificada; el GPS del navegador es el respaldo cuando
+   * el radio está apagado y no hubo token.
+   */
+  private deliveryCoords(input: CreateWebOrder): { lat?: number; lng?: number } {
+    if (input.type !== 'WEB_DELIVERY') return {};
+    const verified = input.addressToken
+      ? this.addressTokens.verify(input.addressToken)
+      : null;
+    if (verified) return { lat: verified.lat, lng: verified.lng };
+    return { lat: input.customerLat, lng: input.customerLng };
   }
 
   /**
@@ -144,10 +179,14 @@ export class WebOrdersService {
         notes: input.notes,
         deliveryAddress: input.deliveryAddress,
         deliveryNotes: input.deliveryNotes,
-        // El GPS del pedido queda guardado con la venta: sirve para abrir el
-        // mapa desde el POS. La dirección escrita sigue siendo la que manda.
-        deliveryLat: input.customerLat,
-        deliveryLng: input.customerLng,
+        // Coordenadas de la DIRECCIÓN verificada (o el GPS como respaldo):
+        // sirven para abrir el mapa desde la caja. El texto que escribió el
+        // cliente sigue siendo la guía del repartidor — "torre 2, apto 502"
+        // no está en ninguna coordenada.
+        ...(() => {
+          const c = this.deliveryCoords(input);
+          return { deliveryLat: c.lat, deliveryLng: c.lng };
+        })(),
       },
       systemUser.id,
       idempotencyKey,

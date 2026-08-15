@@ -73,10 +73,27 @@ export function SaleDetailModal({ sale, onClose }: { sale: Sale | null; onClose:
               <span>−{Math.round(sale.discountTotal).toLocaleString('es-CO')}</span>
             </div>
           ) : null}
+          {/* Sin esta línea, el salto entre subtotal y total quedaba sin
+              explicación: parecía un recargo salido de la nada. */}
+          {sale.deliveryFee > 0 ? (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Domicilio</span>
+              <Money amount={sale.deliveryFee} className="text-sm" />
+            </div>
+          ) : null}
           <div className="flex justify-between font-semibold text-foreground">
             <span>Total</span>
             <Money amount={sale.total} weight="semibold" className="text-base" />
           </div>
+          {sale.deliveryFee > 0 ? (
+            <p className="pt-1 text-xs text-muted-foreground">
+              El domicilio es del repartidor: de este total, al negocio le quedan{' '}
+              <strong className="text-foreground">
+                ${Math.round(sale.total - sale.deliveryFee).toLocaleString('es-CO')}
+              </strong>
+              .
+            </p>
+          ) : null}
         </section>
 
         {payments.length > 0 ? (

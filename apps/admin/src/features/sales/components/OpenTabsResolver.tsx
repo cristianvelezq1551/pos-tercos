@@ -5,7 +5,7 @@ import { Button, ConfirmDialog, Money } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { getErrorMessage } from '../../../lib/errors';
 import { logError } from '../../../lib/client-log';
-import { notifyCajaChanged } from '../../caja-shifts/lib/caja-events';
+import { notifyCajaChanged } from '../../../lib/caja-events';
 import { carryOverOpenTab } from '../api/carry-over';
 import { cancelSale } from '../api/cancel';
 import { getSale } from '../api/get';

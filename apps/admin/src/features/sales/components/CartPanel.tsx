@@ -46,7 +46,11 @@ export function CartPanel() {
   const handleCortesiaDone = () => {
     clear();
     setCortesiaOpen(false);
-    setCortesiaMsg('Pedido marcado como cortesía · queda Sin revisar');
+    setCortesiaMsg('Pedido marcado como cortesía · queda en el historial del día');
+    // Sin esto la cortesía no aparecía hasta el siguiente poll (o hasta
+    // recargar): es un pedido del día como cualquier otro y las listas tienen
+    // que enterarse al instante, igual que con un cobro.
+    notifyOrdersChanged();
   };
 
   usePolling(async () => {

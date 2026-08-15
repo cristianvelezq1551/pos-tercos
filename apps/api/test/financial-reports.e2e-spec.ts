@@ -13,6 +13,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { CogsService } from '../src/reports/cogs.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Reportes financieros del dueño E2E', () => {
   let app: INestApplication;
@@ -32,9 +33,14 @@ describe('Reportes financieros del dueño E2E', () => {
     cogs.invalidateLedgerCache();
     return (await request.get(`/reports/financial/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`).set(auth()).expect(200))
       .body as {
-      revenue: number; cogs: number; grossMargin: number; grossMarginPct: number;
+      revenue: number; discountTotal: number; grossRevenue: number;
+      cogs: number; grossMargin: number; grossMarginPct: number;
       netResult: number; wasteCost: number; cortesiasCost: number; refundCost: number;
       totalFixed: number; oneTimeCost: number; breakEven: number | null;
+      breakEvenCoverage: number | null;
+      contributionMargin: number; contributionMarginPct: number | null;
+      deliveryCollected: number; deliveryOrderCount: number;
+      salesCount: number;
       fixedCosts: Array<{ name: string; monthlyAmount: number; isPayroll: boolean; isOneTime: boolean }>;
       cogsEstimated: boolean; cogsPartial: boolean;
     };
@@ -208,7 +214,7 @@ describe('Reportes financieros del dueño E2E', () => {
     // Gasto puntual: pega al neto pero se reporta aparte y NO infla el
     // break-even (que representa el piso RECURRENTE que hay que vender).
     const COMPRA_HORNO = 800_000;
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = hoyLocal();
     await request
       .post('/fixed-costs')
       .set(auth())
@@ -220,10 +226,133 @@ describe('Reportes financieros del dueño E2E', () => {
     expect(after.totalFixed).toBe(conArriendo.totalFixed); // el puntual NO es recurrente
     expect(after.netResult - conArriendo.netResult).toBe(-COMPRA_HORNO);
 
-    // Break-even = costos recurrentes / margen bruto %.
-    if (after.grossMarginPct > 0) {
-      expect(after.breakEven).toBeCloseTo(after.totalFixed / after.grossMarginPct, 0);
+    // Break-even = costos recurrentes / margen de CONTRIBUCIÓN % (auditoría
+    // 2026-07-25). El margen BRUTO ignoraba merma, cortesías y reembolsos —que
+    // suben con la venta— y daba un equilibrio más bajo que el real. Acá el
+    // escenario tiene merma acumulada de tests previos, así que la diferencia
+    // entre las dos fórmulas es justamente lo que se está probando.
+    expect(after.contributionMargin).toBeCloseTo(
+      after.revenue - after.cogs - after.wasteCost - after.cortesiasCost - after.refundCost,
+      2,
+    );
+    if (after.contributionMarginPct !== null && after.contributionMarginPct > 0) {
+      expect(after.breakEven).toBeCloseTo(after.totalFixed / after.contributionMarginPct, 0);
+      // Nunca es menor que el que salía del margen bruto.
+      expect(after.breakEven!).toBeGreaterThanOrEqual(
+        after.totalFixed / after.grossMarginPct - 0.01,
+      );
+    } else {
+      // Margen de contribución ≤ 0: NO hay volumen que cubra los fijos, y el
+      // reporte lo dice con null en vez de inventar un número.
+      expect(after.breakEven).toBeNull();
+      expect(after.breakEvenCoverage).toBeNull();
     }
+  });
+
+  // ==================================================================
+  // Aviso de margen de contribución negativo
+  //
+  // Un mes donde cada venta pierde plata es justo el que el dueño no debería
+  // descubrir el día 30. El aviso se empuja por WhatsApp, pero SOLO si el mes
+  // tiene actividad real y una vez por mes: una alerta ruidosa se ignora.
+  // ==================================================================
+
+  const checkMargin = async () =>
+    (await request.post('/reports/admin/check-contribution-margin').set(auth()).expect(201))
+      .body as { sent: boolean; reason?: string; contributionMargin?: number };
+
+  it('con pocas ventas NO avisa, aunque el margen sea negativo', async () => {
+    // El escenario acumulado tiene 1 venta de $5.000 y $4.500 de merma → el
+    // margen ya es negativo, pero una merma sobre un puñado de tickets no dice
+    // nada del negocio.
+    const st = await monthly();
+    expect(st.contributionMargin).toBeLessThan(0);
+    expect(st.salesCount).toBeLessThan(20);
+
+    const res = await checkMargin();
+    expect(res.sent).toBe(false);
+    expect(res.reason).toContain('mínimo 20');
+  });
+
+  it('con actividad real avisa UNA vez, y no repite el mismo mes', async () => {
+    // Stock para vender y para mermar sin dejar el inventario en negativo.
+    await request
+      .post('/inventory/movements')
+      .set(auth())
+      .send({ entityType: 'PRODUCT', productId, delta: 200, type: 'MANUAL_ADJUSTMENT', unitCost: 1500 })
+      .expect(201);
+    // Se llega al mínimo de ventas manteniendo el margen negativo: cada venta
+    // deja $3.500, y la merma acumulada ($4.500) más otra grande la supera.
+    for (let i = 0; i < 25; i++) {
+      const sale = await request
+        .post('/sales')
+        .set(auth())
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${sale.body.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 5000 })
+        .expect(201);
+    }
+    // Merma que se come todo el margen del mes (una nevera dañada, p. ej.).
+    await request
+      .post('/inventory/movements')
+      .set(auth())
+      .send({ entityType: 'PRODUCT', productId, delta: -80, type: 'WASTE', notes: 'se dañó la nevera' })
+      .expect(201);
+
+    const st = await monthly();
+    expect(st.salesCount).toBeGreaterThanOrEqual(20);
+    expect(st.contributionMargin).toBeLessThan(0);
+    expect(st.breakEven).toBeNull(); // no hay equilibrio posible
+
+    const primera = await checkMargin();
+    expect(primera.sent).toBe(true);
+    expect(primera.contributionMargin).toBe(st.contributionMargin);
+
+    // Queda en la bitácora con los números que lo motivaron.
+    const log = await prisma.auditLog.findFirst({
+      where: { action: 'OWNER_MARGIN_ALERT_SENT' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(log).not.toBeNull();
+    expect(JSON.stringify(log!.metadata)).toContain('contributionMargin');
+
+    // Segundo intento el mismo mes: no repite (si no, avisaría todas las noches).
+    const segunda = await checkMargin();
+    expect(segunda.sent).toBe(false);
+    expect(segunda.reason).toContain('ya se avisó');
+  });
+
+  it('con margen positivo no avisa nada', async () => {
+    await request
+      .post('/inventory/movements')
+      .set(auth())
+      .send({ entityType: 'PRODUCT', productId, delta: 200, type: 'MANUAL_ADJUSTMENT', unitCost: 1500 })
+      .expect(201);
+    // Se levanta el margen vendiendo: las ventas dejan $3.500 cada una y la
+    // merma del mes ya está fija, así que el acumulado se vuelve positivo.
+    for (let i = 0; i < 40; i++) {
+      const sale = await request
+        .post('/sales')
+        .set(auth())
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${sale.body.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 5000 })
+        .expect(201);
+    }
+    const st = await monthly();
+    expect(st.contributionMargin).toBeGreaterThan(0);
+
+    const res = await checkMargin();
+    expect(res.sent).toBe(false);
+    expect(res.reason).toContain('no es negativo');
   });
 
   it('el estado financiero cierra: neto = margen bruto − fijos − puntuales − cortesías − reembolsos − merma', async () => {
@@ -234,5 +363,38 @@ describe('Reportes financieros del dueño E2E', () => {
     // Es LA identidad del reporte: si esto se rompe, el dueño decide con un
     // número que no corresponde a ninguna suma.
     expect(m.netResult).toBeCloseTo(esperado, 2);
+  });
+
+  // Va al FINAL a propósito: agrega una venta y los tests de alerta de margen de
+  // arriba leen el acumulado del mes (una venta rentable de más les da vuelta al
+  // signo del margen de contribución).
+  it('un descuento del cajero baja el ingreso y queda visible como línea del P&G', async () => {
+    const before = await monthly();
+
+    // $5.000 con 20% de descuento = cobra $4.000 y regala $1.000.
+    const sale = await request
+      .post('/sales')
+      .set(auth())
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        type: 'COUNTER',
+        items: [{ productId, quantity: 1 }],
+        orderDiscount: { kind: 'PERCENT', value: 20 },
+        discountReason: 'Cliente frecuente',
+      })
+      .expect(201);
+    await request
+      .post(`/sales/${sale.body.id}/confirm-payment`)
+      .set(auth())
+      .send({ method: 'CASH', amountReceived: 4000 })
+      .expect(201);
+
+    const after = await monthly();
+    // El ingreso entra NETO: lo descontado nunca se cobró, no es ingreso.
+    expect(after.revenue - before.revenue).toBe(4000);
+    // Y el descuento queda explícito: sin esta línea el dueño no ve qué regaló.
+    expect(after.discountTotal - before.discountTotal).toBe(1000);
+    expect(after.grossRevenue - before.grossRevenue).toBe(5000);
+    expect(after.grossRevenue).toBe(after.revenue + after.discountTotal);
   });
 });

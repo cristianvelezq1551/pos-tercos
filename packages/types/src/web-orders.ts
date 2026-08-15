@@ -34,14 +34,21 @@ export const CreateWebOrderSchema = z
     customerPhone: PhoneSchema,
     notes: z.string().max(500).optional(),
     /**
-     * Ubicación del cliente (GPS del navegador), para validar la zona de
-     * cobertura. OPCIONAL a propósito: si niega el permiso no se puede medir
-     * y el pedido pasa igual (decisión del dueño 2026-07-16) — el radio es un
-     * filtro, no un candado: cualquiera puede negar el permiso o falsear las
-     * coordenadas desde el navegador.
+     * GPS del navegador. Se guarda con la venta (abre el mapa desde la caja)
+     * pero YA NO decide la zona de cobertura: mide dónde está el TELÉFONO, que
+     * no es a dónde va la comida. Quien pide desde el trabajo para su casa se
+     * medía desde el trabajo. Eso ahora lo resuelve `addressToken` (§7.v23).
      */
     customerLat: z.number().min(-90).max(90).optional(),
     customerLng: z.number().min(-180).max(180).optional(),
+    /**
+     * Sobre FIRMADO por el server con las coordenadas de la dirección elegida
+     * (`POST /web/address/resolve`). Es la única fuente válida de la ubicación
+     * de entrega: el cliente lo transporta pero no lo puede alterar, y sin eso
+     * el rechazo por distancia sería decorativo (bastaría editar el lat/lng).
+     * Obligatorio para domicilio cuando el dueño activó el rechazo por radio.
+     */
+    addressToken: z.string().max(2000).optional(),
     /**
      * Dirección de entrega. OBLIGATORIA en WEB_DELIVERY y prohibida en
      * WEB_PICKUP. Texto libre: el repartidor necesita "torre 2, apto 502,

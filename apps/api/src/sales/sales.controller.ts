@@ -28,11 +28,13 @@ import {
   SetDeliveryFeeSchema,
   SyncOfflineSaleSchema,
   VoidSaleSchema,
+  WhatsAppNotificationStageEnum,
   type ChangeSalePayment,
   type ConfirmPayment,
   type CreateSale,
   type EditSaleItems,
   type JwtAccessPayload,
+  type ManualWhatsAppLink,
   type OpenDrawer,
   type Sale,
   type SaleStatus,
@@ -48,6 +50,7 @@ import {
   OnlyDueno,
 } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { NotificationService } from '../notifications/notification.service';
 import { ReceiptIntegrityService } from './receipt-integrity.service';
 import { SalesEditService } from './sales-edit.service';
 import { StaleSalesSweepService } from './stale-sales-sweep.service';
@@ -64,6 +67,7 @@ export class SalesController {
     private readonly receiptIntegrity: ReceiptIntegrityService,
     private readonly edits: SalesEditService,
     private readonly staleSweep: StaleSalesSweepService,
+    private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -145,7 +149,7 @@ export class SalesController {
     return this.sales.setDeliveryFee(id, body.fee, user.sub);
   }
 
-  /** Pedido WEB pagado → "listo para retirar": dispara el WhatsApp al cliente. */
+  /** Pedido WEB pagado → listo (retirar) / despachado (domicilio): avisa al cliente. */
   @CashierAccess()
   @Post(':id/mark-ready')
   markReady(
@@ -153,6 +157,35 @@ export class SalesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Sale> {
     return this.sales.markWebReady(id, user.sub);
+  }
+
+  /** Domicilio despachado → entregado. Cierra el ciclo del reparto (sin WhatsApp). */
+  @CashierAccess()
+  @Post(':id/mark-delivered')
+  markDelivered(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Sale> {
+    return this.sales.markWebDelivered(id, user.sub);
+  }
+
+  /**
+   * Link `wa.me` para avisarle al cliente desde el WhatsApp del cajero, y queda
+   * registrado el aviso. Devuelve la URL — abrirla es cosa del navegador.
+   */
+  @CashierAccess()
+  @Post(':id/whatsapp/:stage')
+  whatsappManual(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stage') stage: string,
+    @Query('force') force?: string,
+  ): Promise<ManualWhatsAppLink> {
+    const parsed = WhatsAppNotificationStageEnum.safeParse(stage);
+    if (!parsed.success) {
+      throw new BadRequestException(`No existe un aviso "${stage}".`);
+    }
+    return this.notifications.buildManualLink(id, parsed.data, user.sub, force === 'true');
   }
 
   /**

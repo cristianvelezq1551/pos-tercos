@@ -75,6 +75,20 @@ export function SaleExpandedDetail({ sale }: { sale: Sale }) {
           {sale.discountReason ? (
             <p className="italic">Motivo descuento: {sale.discountReason}</p>
           ) : null}
+          {/* El domicilio no es ingreso: se dice acá para que el total no se
+              lea como si todo se hubiera quedado en el negocio. */}
+          {sale.deliveryFee > 0 ? (
+            <p>
+              Domicilio (del repartidor):{' '}
+              <span className="tabular-nums text-foreground">
+                {formatCop(sale.deliveryFee)}
+              </span>{' '}
+              · Queda en el negocio:{' '}
+              <span className="tabular-nums text-foreground">
+                {formatCop(sale.total - sale.deliveryFee)}
+              </span>
+            </p>
+          ) : null}
           {sale.payments && sale.payments.length > 1 && (
             <p>
               Pagos:{' '}

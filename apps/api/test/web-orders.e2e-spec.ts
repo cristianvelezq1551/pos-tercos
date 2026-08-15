@@ -16,6 +16,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { withDeliveringWhatsApp } from './helpers/whatsapp-provider';
 
 describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
   let app: INestApplication;
@@ -63,7 +64,9 @@ describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
       .send({ method: 'CASH', amountReceived: total });
 
   beforeAll(async () => {
-    ({ app, prisma, request } = await bootstrapApp());
+    // Esta suite verifica las notificaciones AUTOMÁTICAS: necesita un proveedor
+    // que entregue (el mock por defecto ya no finge envíos — §7.v22).
+    ({ app, prisma, request } = await bootstrapApp(withDeliveringWhatsApp));
     const hash = await bcrypt.hash('dev12345', 10);
     await prisma.user.createMany({
       data: [

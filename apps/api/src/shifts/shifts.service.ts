@@ -10,6 +10,7 @@ import {
   buildDiscrepancyAlertLink,
   buildShiftCloseUserPrompt,
   businessDayWindow,
+  netOfDeliveryFee,
   startOfBusinessDay,
 } from '@pos-tercos/domain';
 import { NON_REVENUE_SALE_STATUSES } from '@pos-tercos/types';
@@ -20,6 +21,7 @@ import type {
   CashMovement,
   CloseShift,
   CreateCashMovement,
+  ExpectedCash,
   OpenShift,
   Shift,
   SaleStatus,
@@ -32,6 +34,7 @@ import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
 import { runWithSerializationRetry } from '../common/tx';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -83,6 +86,7 @@ export class ShiftsService {
     private readonly llm: LLMService,
     private readonly ownerNotifications: OwnerNotificationService,
     private readonly recipes: RecipesService,
+    private readonly paymentMethods: PaymentMethodsService,
   ) {}
 
   /**
@@ -487,6 +491,7 @@ export class ShiftsService {
         type: true,
         status: true,
         total: true,
+        deliveryFee: true,
         paymentMethod: true,
         customerName: true,
         createdAt: true,
@@ -560,6 +565,7 @@ export class ShiftsService {
         type: r.type,
         status: r.status,
         total: orderTotal,
+        deliveryFee: Number(r.deliveryFee ?? 0),
         paymentMethod: r.paymentMethod,
         customerName: r.customerName,
         createdAt: r.createdAt.toISOString(),
@@ -580,21 +586,29 @@ export class ShiftsService {
     const paid = orders.filter((o) => paidIds.has(o.id));
     // Por método desde sale_payments: una cuenta DIVIDIDA aporta su parte a
     // cada método (count = cantidad de pagos, no de ventas).
+    // NETO de envío (§7.v30): el domicilio se le paga al repartidor en el
+    // momento, así que al cerrar esa plata ya no está en ningún medio. Se
+    // prorratea por la parte que pagó cada uno.
     const byMethodMap = new Map<string, { count: number; total: number }>();
     for (const r of rows) {
       if (!paidIds.has(r.id)) continue;
+      const fee = Number(r.deliveryFee ?? 0);
+      const saleTotal = Number(r.total);
       for (const pay of r.payments) {
+        const neto = netOfDeliveryFee(Number(pay.amount), saleTotal, fee);
         const bm = byMethodMap.get(pay.method) ?? { count: 0, total: 0 };
-        byMethodMap.set(pay.method, {
-          count: bm.count + 1,
-          total: bm.total + Number(pay.amount),
-        });
+        byMethodMap.set(pay.method, { count: bm.count + 1, total: bm.total + neto });
       }
     }
+    // byType también NETO de envío (§7.v30): si no, un domicilio mostraría
+    // $45.000 en "Por tipo" y $38.000 en "Por método" en la misma pantalla.
     const byTypeMap = new Map<string, { count: number; total: number }>();
     for (const o of paid) {
       const bt = byTypeMap.get(o.type) ?? { count: 0, total: 0 };
-      byTypeMap.set(o.type, { count: bt.count + 1, total: bt.total + o.total });
+      byTypeMap.set(o.type, {
+        count: bt.count + 1,
+        total: bt.total + o.total - (o.deliveryFee ?? 0),
+      });
     }
     // cash/transfer desde sale_payments (byMethodMap) — split-aware: una cuenta
     // dividida aporta su porción a cada método (filtrar por sale.paymentMethod
@@ -609,7 +623,10 @@ export class ShiftsService {
         canceledCount: orders.filter(
           (o) => o.status === 'CANCELADO_NO_PAGO' || o.status === 'CANCELADO_SIN_REEMBOLSO',
         ).length,
-        totalRevenue: paid.reduce((a, o) => a + o.total, 0),
+        // NETO de envíos: el domicilio no es venta del negocio (§7.v24).
+        totalRevenue: paid.reduce((a, o) => a + o.total - (o.deliveryFee ?? 0), 0),
+        deliveryCollected: paid.reduce((a, o) => a + (o.deliveryFee ?? 0), 0),
+
         cashRevenue: byMethodMap.get('CASH')?.total ?? 0,
         transferRevenue: byMethodMap.get('TRANSFER')?.total ?? 0,
         byMethod: [...byMethodMap.entries()].map(([method, v]) => ({ method, ...v })),
@@ -666,6 +683,12 @@ export class ShiftsService {
     // cerrar (vía getExpectedCash) → cero divergencia entre el target del
     // cajero y la diferencia registrada.
     //
+    // Nombres vivos del catálogo para el mensaje de "falta arquear" — se leen
+    // ANTES de abrir la tx (nada de IO ajeno adentro de la serializable).
+    const methodNames = new Map(
+      (await this.paymentMethods.listAll()).map((m) => [m.code, m.name]),
+    );
+
     // Tx SERIALIZABLE (auditoría 2026-07-05): el cierre LEE sale_payments y
     // ESCRIBE shift.status; el cobro (tx serializable) LEE shift.status y
     // ESCRIBE sale_payments. En READ COMMITTED un cobro concurrente podía
@@ -690,6 +713,15 @@ export class ShiftsService {
               input.digitalCounts ?? [],
               tx,
             );
+            // Arqueo de cuenta OBLIGATORIO: cerrar con un método sin contar
+            // dejaba la caja "cuadrada" por el efectivo mientras la plata
+            // digital quedaba sin verificar (y fuera del descuadre).
+            const sinArquear = digital.filter((d) => d.counted === null);
+            if (sinArquear.length > 0) {
+              throw new BadRequestException(
+                `Falta arquear ${sinArquear.map((d) => methodNames.get(d.method) ?? d.method).join(', ')}. Revisa cada app y anota cuánto entró; si no entró nada, escribe 0.`,
+              );
+            }
             const res = await tx.shift.updateMany({
               where: { id: shiftId, status: 'OPEN' },
               data: {
@@ -733,19 +765,63 @@ export class ShiftsService {
         expectedCash,
         countedCash: input.countedCash,
         difference,
+        digitalDifference: sumDigitalDifference(digitalBreakdown),
         tips: input.tips ?? null,
       },
     });
 
-    if (Math.abs(difference) >= DISCREPANCY_THRESHOLD_COP) {
+    const cashFlagged = Math.abs(difference) >= DISCREPANCY_THRESHOLD_COP;
+    if (cashFlagged) {
       await this.alertCashDiscrepancy(shiftId, cashierId, difference, {
         cashierName: closed.cashier.fullName,
         closedAt: closed.closedAt ?? new Date(),
       });
     }
-    await this.alertDigitalDiscrepancy(shiftId, cashierId, digitalBreakdown);
+    const digitalFlagged = await this.alertDigitalDiscrepancy(
+      shiftId,
+      cashierId,
+      digitalBreakdown,
+    );
+    // Cada pata puede quedar bajo el umbral y aun así faltar plata: la novedad
+    // se dispara también por el descuadre TOTAL (si no avisó ya una de ellas).
+    const digitalDiff = sumDigitalDifference(digitalBreakdown);
+    if (
+      !cashFlagged &&
+      !digitalFlagged &&
+      Math.abs(difference + digitalDiff) >= DISCREPANCY_THRESHOLD_COP
+    ) {
+      await this.alertCombinedDiscrepancy(shiftId, cashierId, difference, digitalDiff);
+    }
 
     return toShiftDto(closed);
+  }
+
+  /** Descuadre TOTAL (cajón + cuenta) sobre el umbral con ambas patas por debajo. */
+  private async alertCombinedDiscrepancy(
+    shiftId: string,
+    cashierId: string,
+    cashDifference: number,
+    digitalDifference: number,
+  ): Promise<void> {
+    const total = cashDifference + digitalDifference;
+    await this.audit.log({
+      userId: cashierId,
+      action: 'SHIFT_DISCREPANCY_DETECTED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: {
+        kind: 'combined',
+        cashDifference,
+        digitalDifference,
+        total,
+        threshold: DISCREPANCY_THRESHOLD_COP,
+      },
+    });
+    void this.ownerNotifications.alert(
+      'shift_discrepancy',
+      `[${process.env.BUSINESS_NAME ?? 'Tercos'}] ⚠ Descuadre en cierre de caja\n\nEfectivo: ${signedCop(cashDifference)}\nCuenta: ${signedCop(digitalDifference)}\nTotal: ${signedCop(total)}\n\nShift: ${shiftId.slice(0, 8)}`,
+      { shiftId, kind: 'combined' },
+    );
   }
 
   /**
@@ -759,14 +835,60 @@ export class ShiftsService {
     digitalCounts: NonNullable<CloseShift['digitalCounts']>,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<DigitalCountLine[]> {
-    const digitalExpectedRows = await db.salePayment.groupBy({
-      by: ['method'],
+    const expectedByMethod = await this.computeDigitalExpected(shiftId, db);
+    const countedByMethod = new Map(
+      (digitalCounts ?? []).map((d) => [d.method, Math.round(d.counted)]),
+    );
+    const methods = new Set<string>([...expectedByMethod.keys(), ...countedByMethod.keys()]);
+    return [...methods].map((method) => {
+      const expected = expectedByMethod.get(method) ?? 0;
+      const counted = countedByMethod.get(method as DigitalCountLine['method']) ?? null;
+      return {
+        method: method as DigitalCountLine['method'],
+        expected,
+        counted,
+        difference: counted !== null ? counted - expected : null,
+      };
+    });
+  }
+
+  /**
+   * Esperado por método NO-efectivo: ventas del turno (sale_payments) más el
+   * neto IN−OUT de los movimientos digitales. Fuente ÚNICA del arqueo de cuenta
+   * — la usan el cierre (que lo EXIGE) y el target que ve el cajero.
+   */
+  private async computeDigitalExpected(
+    shiftId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Map<string, number>> {
+    // NETO de envío, igual que el efectivo (§7.v30): el domicilio se le paga al
+    // repartidor EN EL MOMENTO, siempre — no hay cierre con domicilios sin
+    // pagar. Al cerrar, esa plata ya salió, así que esperarla marcaría un
+    // sobrante que no existe. Se prorratea por la parte que pagó cada medio.
+    const digitalPayments = await db.salePayment.findMany({
       where: {
         method: { not: 'CASH' },
         sale: { shiftId, status: { notIn: NON_REVENUE_STATUSES_ARR } },
       },
-      _sum: { amount: true },
+      select: {
+        method: true,
+        amount: true,
+        sale: { select: { total: true, deliveryFee: true } },
+      },
     });
+    const digitalExpectedRows = [
+      ...digitalPayments
+        .reduce((acc, p) => {
+          const neto = netOfDeliveryFee(
+            Number(p.amount),
+            Number(p.sale?.total ?? 0),
+            Number(p.sale?.deliveryFee ?? 0),
+          );
+          acc.set(p.method, (acc.get(p.method) ?? 0) + neto);
+          return acc;
+        }, new Map<string, number>())
+        .entries(),
+    ].map(([method, sum]) => ({ method, _sum: { amount: sum } }));
     // Movimientos digitales del turno (entradas/salidas por método).
     const digitalMovRows = await db.cashMovement.groupBy({
       by: ['method', 'type'],
@@ -781,27 +903,20 @@ export class ShiftsService {
         (digitalMovNet.get(r.method as string) ?? 0) + (r.type === 'IN' ? amt : -amt),
       );
     }
-    const countedByMethod = new Map(
-      (digitalCounts ?? []).map((d) => [d.method, Math.round(d.counted)]),
-    );
-    const digitalMethods = new Set<string>([
+    const methods = new Set<string>([
       ...digitalExpectedRows.map((r) => r.method as string),
       ...digitalMovNet.keys(),
-      ...countedByMethod.keys(),
     ]);
-    return [...digitalMethods].map((method) => {
-      const expected =
+    const expected = new Map<string, number>();
+    for (const method of methods) {
+      expected.set(
+        method,
         Math.round(
           Number(digitalExpectedRows.find((r) => r.method === method)?._sum.amount ?? 0),
-        ) + (digitalMovNet.get(method) ?? 0);
-      const counted = countedByMethod.get(method as DigitalCountLine['method']) ?? null;
-      return {
-        method: method as DigitalCountLine['method'],
-        expected,
-        counted,
-        difference: counted !== null ? counted - expected : null,
-      };
-    });
+        ) + (digitalMovNet.get(method) ?? 0),
+      );
+    }
+    return expected;
   }
 
   /** Descuadre de EFECTIVO >= umbral: audit + link wa.me + alerta al dueño. */
@@ -847,11 +962,11 @@ export class ShiftsService {
     shiftId: string,
     cashierId: string,
     digitalBreakdown: DigitalCountLine[],
-  ): Promise<void> {
+  ): Promise<boolean> {
     const digitalMismatch = digitalBreakdown.filter(
       (d) => d.difference !== null && Math.abs(d.difference) >= DISCREPANCY_THRESHOLD_COP,
     );
-    if (digitalMismatch.length === 0) return;
+    if (digitalMismatch.length === 0) return false;
     const detail = digitalMismatch
       .map(
         (d) =>
@@ -870,29 +985,39 @@ export class ShiftsService {
       `[${process.env.BUSINESS_NAME ?? 'Tercos'}] ⚠ Descuadre DIGITAL en cierre de caja\n\n${detail}\n\nShift: ${shiftId.slice(0, 8)}`,
       { shiftId, kind: 'digital' },
     );
+    return true;
   }
 
   /**
    * Efectivo esperado AUTORITATIVO de una caja (apertura + ventas CASH +
    * entradas − salidas). Única fuente para el cierre y para el target que el
-   * POS muestra al cajero → no divergen. Exige la caja OPEN (cerrada ya tiene
-   * su expectedCash congelado).
+   * POS muestra al cajero → no divergen. También responde para una caja ya
+   * cerrada (recalcula desde las ventas); el expectedCash CONGELADO del cierre
+   * vive en la fila del shift y es el que usan arqueos históricos.
    */
-  async getExpectedCash(shiftId: string): Promise<{
-    expectedCash: number;
-    openingCash: number;
-    cashSalesTotal: number;
-    cashIn: number;
-    cashOut: number;
-  }> {
+  async getExpectedCash(shiftId: string): Promise<ExpectedCash> {
     const shift = await this.prisma.shift.findUnique({
       where: { id: shiftId },
       select: { openingCash: true, status: true },
     });
     if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
     const openingCash = Math.round(Number(shift.openingCash));
-    const r = await this.computeExpectedCash(shiftId, Number(shift.openingCash));
-    return { ...r, openingCash };
+    const [r, digitalExpected, catalog] = await Promise.all([
+      this.computeExpectedCash(shiftId, Number(shift.openingCash)),
+      this.computeDigitalExpected(shiftId),
+      this.paymentMethods.listAll(),
+    ]);
+    const names = new Map(catalog.map((m) => [m.code, m.name]));
+    return {
+      ...r,
+      openingCash,
+      // Los mismos métodos que `close` va a exigir arquear.
+      digital: [...digitalExpected.entries()].map(([method, expected]) => ({
+        method,
+        name: names.get(method) ?? method,
+        expected,
+      })),
+    };
   }
 
   /** Cálculo puro de efectivo esperado (compartido por close + getExpectedCash).
@@ -905,7 +1030,12 @@ export class ShiftsService {
     // Solo ventas que cuentan plata en efectivo: PAGADO en adelante; excluye
     // PENDIENTE_PAGO, VOID (reembolsado) y CANCELADO_NO_PAGO. Incluye
     // CANCELADO_SIN_REEMBOLSO (la plata quedó).
-    const cashSales = await db.salePayment.aggregate({
+    //
+    // El COSTO DEL DOMICILIO se descuenta (§7.v28): esa plata se le paga
+    // directo al domiciliario y NUNCA entra al cajón — el repartidor solo
+    // devuelve lo de la comida. Si se esperara, cada domicilio en efectivo
+    // marcaría un faltante que no existe.
+    const cashPayments = await db.salePayment.findMany({
       where: {
         method: 'CASH',
         sale: {
@@ -913,9 +1043,24 @@ export class ShiftsService {
           status: { notIn: NON_REVENUE_STATUSES_ARR },
         },
       },
-      _sum: { amount: true },
+      select: {
+        amount: true,
+        sale: { select: { total: true, deliveryFee: true } },
+      },
     });
-    const cashSalesTotal = Math.round(Number(cashSales._sum.amount ?? 0));
+    const cashSalesTotal = Math.round(
+      cashPayments.reduce(
+        (acc, p) =>
+          acc +
+          // Cuenta dividida: solo la porción del envío que se pagó en efectivo.
+          netOfDeliveryFee(
+            Number(p.amount),
+            Number(p.sale?.total ?? 0),
+            Number(p.sale?.deliveryFee ?? 0),
+          ),
+        0,
+      ),
+    );
     const { cashIn, cashOut } = await this.sumCashMovements(shiftId, db);
     const expectedCash = Math.round(openingCash) + cashSalesTotal + cashIn - cashOut;
     return { expectedCash, cashSalesTotal, cashIn, cashOut };
@@ -1159,6 +1304,18 @@ function toCashMovementDto(row: DbCashMovement): CashMovement {
     userName: row.user?.fullName ?? null,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/** Descuadre de la cuenta: suma de las diferencias por método arqueado. */
+function sumDigitalDifference(lines: DigitalCountLine[]): number {
+  return lines.reduce((acc, d) => acc + (d.difference ?? 0), 0);
+}
+
+/** "+$1.000" / "−$25.000" / "$0" para los mensajes de novedad. */
+function signedCop(amount: number): string {
+  const rounded = Math.round(amount);
+  if (rounded === 0) return '$0';
+  return `${rounded > 0 ? '+' : '−'}$${Math.abs(rounded).toLocaleString('es-CO')}`;
 }
 
 /** Fecha legible (DD/MM/YYYY HH:mm) en hora local del server, para mensajes. */

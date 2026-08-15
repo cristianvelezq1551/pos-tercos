@@ -19,14 +19,27 @@ import type { Request } from 'express';
  * En memoria a propósito: la API corre en instancia ÚNICA (invariante de deploy,
  * `railway.json numReplicas:1`). Si algún día se escala horizontalmente, mover
  * este contador a storage compartido (Redis) junto con el ThrottlerModule.
+ *
+ * `WEB_ORDER_MAX_PER_IP_PER_DAY` ajusta el tope sin deploy (default 25). Existe
+ * porque los e2e pegan TODOS desde 127.0.0.1: con el tope real, la suite
+ * comparte un solo presupuesto y los últimos tests fallan con 429 por la IP
+ * compartida, no por lo que prueban.
  */
 @Injectable()
 export class WebOrderDailyLimitGuard implements CanActivate {
-  private static readonly MAX_PER_IP_PER_DAY = 25;
+  private static readonly DEFAULT_MAX_PER_IP_PER_DAY = 25;
   private static readonly WINDOW_MS = 24 * 60 * 60 * 1000;
   private static readonly PRUNE_THRESHOLD = 10_000;
 
   private readonly hits = new Map<string, { count: number; resetAt: number }>();
+
+  /** Se lee una vez: el tope es de arranque, no algo que cambie en caliente. */
+  private readonly maxPerIpPerDay = ((): number => {
+    const raw = Number(process.env.WEB_ORDER_MAX_PER_IP_PER_DAY);
+    return Number.isInteger(raw) && raw > 0
+      ? raw
+      : WebOrderDailyLimitGuard.DEFAULT_MAX_PER_IP_PER_DAY;
+  })();
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<Request>();
@@ -43,7 +56,7 @@ export class WebOrderDailyLimitGuard implements CanActivate {
       return true;
     }
 
-    if (entry.count >= WebOrderDailyLimitGuard.MAX_PER_IP_PER_DAY) {
+    if (entry.count >= this.maxPerIpPerDay) {
       throw new HttpException(
         'Alcanzaste el máximo de pedidos por hoy. Escribinos por WhatsApp para ayudarte.',
         HttpStatus.TOO_MANY_REQUESTS,

@@ -3,6 +3,7 @@ import { WEB_SALE_TYPES, type SaleType } from '@pos-tercos/types';
 import {
   DAILY_SUMMARY_SYSTEM,
   buildDailySummaryUserPrompt,
+  netOfDeliveryFee,
   type DailySummaryInput,
 } from '@pos-tercos/domain';
 import {
@@ -72,14 +73,23 @@ export class SalesReportsService {
       this.computeLowStockCount(),
     ]);
 
+    // Lo digital se suma de su propio lado en vez de calcularse como
+    // `revenue − cashRevenue`: cuando byMethod era bruto y revenue neto, esa
+    // resta mezclaba escalas y con un domicilio en efectivo daba NEGATIVO.
+    // Hoy los dos van netos, pero sumar directo evita que vuelva a pasar.
     const cashRevenue = summary.byMethod.find((m) => m.method === 'CASH')?.revenue ?? 0;
+    const digitalRevenue = round(
+      summary.byMethod
+        .filter((m) => m.method !== 'CASH')
+        .reduce((acc, m) => acc + m.revenue, 0),
+    );
     const metrics: DailySummaryInput = {
       date: toDayBucket(dayStart),
       revenue: summary.totals.revenue,
       orderCount: summary.totals.count,
       avgTicket: summary.totals.avgTicket,
       cashRevenue,
-      digitalRevenue: round(summary.totals.revenue - cashRevenue),
+      digitalRevenue,
       voidCount: summary.totals.voidCount,
       cashDifference: shift?.difference != null ? Number(shift.difference) : null,
       lowStockCount: lowStock,
@@ -112,6 +122,7 @@ export class SalesReportsService {
         paymentMethod: true,
         total: true,
         discountTotal: true,
+        deliveryFee: true,
         paidAt: true,
         status: true,
         payments: { select: { method: true, amount: true } },
@@ -131,19 +142,23 @@ export class SalesReportsService {
 
     let revenue = 0;
     let discount = 0;
+    let deliveryCollected = 0;
     const buckets = new Map<string, { count: number; revenue: number; discount: number }>();
     const byType = new Map<string, { count: number; revenue: number }>();
     const byMethod = new Map<string, { count: number; revenue: number }>();
 
     for (const s of sales) {
-      // El envío SÍ cuenta: el reparto es un servicio que el negocio vende
-      // (decisión del dueño 2026-07-17). Lo que se le paga al domiciliario es un
-      // GASTO aparte, registrado en su módulo — así tesorería cuadra sola sin
-      // que nadie tenga que excluir nada.
-      const total = Number(s.total);
+      // El envío NO es ingreso (decisión del dueño 2026-07-27, revierte la de
+      // 2026-07-17): esa plata la cobra el negocio pero es de un TERCERO —el
+      // domiciliario— y solo pasa por la caja. Contarla como ingreso infla las
+      // ventas, el ticket promedio y el margen con plata que no se queda.
+      // Se acumula aparte para que siga siendo visible y arqueable.
+      const fee = Number(s.deliveryFee ?? 0);
+      const total = Number(s.total) - fee;
       const disc = Number(s.discountTotal);
       revenue += total;
       discount += disc;
+      deliveryCollected += fee;
 
       const at = s.paidAt ?? new Date();
       const bucketKey =
@@ -163,10 +178,18 @@ export class SalesReportsService {
 
       // Por método desde sale_payments: la plata de una cuenta dividida cae
       // en CADA método por su parte (count = pagos, no ventas).
+      //
+      // NETO de envío, prorrateado por la porción que pagó cada método
+      // (§7.v29): este es un reporte de VENTAS, así que todo lo que muestra
+      // tiene que ser plata del negocio. Con el envío incluido, `byMethod`
+      // sumaba más que `revenue` y hacía falta un párrafo explicando por qué.
+      // Para cuadrar contra el banco están el arqueo digital y la
+      // conciliación, que sí trabajan con lo cobrado en bruto.
+      const saleTotal = Number(s.total);
       for (const pay of s.payments) {
         const m = byMethod.get(pay.method) ?? { count: 0, revenue: 0 };
         m.count += 1;
-        m.revenue += Number(pay.amount);
+        m.revenue += netOfDeliveryFee(Number(pay.amount), saleTotal, fee);
         byMethod.set(pay.method, m);
       }
     }
@@ -184,6 +207,7 @@ export class SalesReportsService {
         discount: round(discount),
         voidCount,
         avgTicket: round(avgTicket),
+        deliveryCollected: round(deliveryCollected),
       },
       buckets: Array.from(buckets.entries())
         .sort(([a], [b]) => a.localeCompare(b))
@@ -345,7 +369,7 @@ export class SalesReportsService {
   async getHourHeatmap(from: Date, to: Date): Promise<HourHeatmapReport> {
     const sales = await this.prisma.sale.findMany({
       where: paidSalesWhere(from, to),
-      select: { paidAt: true, total: true },
+      select: { paidAt: true, total: true, deliveryFee: true },
     });
 
     const cells = new Map<string, { count: number; revenue: number }>();
@@ -356,7 +380,9 @@ export class SalesReportsService {
       const key = `${dow}-${hour}`;
       const cell = cells.get(key) ?? { count: 0, revenue: 0 };
       cell.count += 1;
-      cell.revenue += Number(s.total);
+      // Neto de envío, igual que el resumen: si no, la misma hora mostraría
+      // dos ingresos distintos según qué pantalla se mire.
+      cell.revenue += Number(s.total) - Number(s.deliveryFee ?? 0);
       cells.set(key, cell);
     }
 
@@ -508,12 +534,13 @@ export class SalesReportsService {
     const [today, lastWeekSameDay, pendingWeb, toPrepare, ready, lowStock, pendingSugg, negativeStock] = await Promise.all([
       this.prisma.sale.aggregate({
         where: paidSalesWhere(dayStart, dayEnd),
-        _sum: { total: true, discountTotal: true },
+        // deliveryFee se resta abajo: el domicilio no es ingreso (§7.v24).
+        _sum: { total: true, discountTotal: true, deliveryFee: true },
         _count: true,
       }),
       this.prisma.sale.aggregate({
         where: paidSalesWhere(lastWeekStart, lastWeekEnd),
-        _sum: { total: true },
+        _sum: { total: true, deliveryFee: true },
       }),
       this.prisma.sale.count({
         where: {
@@ -547,9 +574,13 @@ export class SalesReportsService {
       this.computeNegativeStockCount(),
     ]);
 
-    const todayRevenue = Number(today._sum.total ?? 0);
+    // Netos de domicilio en AMBOS lados: si solo se netea hoy, el WoW% compara
+    // peras con manzanas y muestra una caída inventada.
+    const todayRevenue =
+      Number(today._sum.total ?? 0) - Number(today._sum.deliveryFee ?? 0);
     const todayDiscount = Number(today._sum.discountTotal ?? 0);
-    const lastWeekRevenue = Number(lastWeekSameDay._sum.total ?? 0);
+    const lastWeekRevenue =
+      Number(lastWeekSameDay._sum.total ?? 0) - Number(lastWeekSameDay._sum.deliveryFee ?? 0);
     const weekOverWeekPct =
       lastWeekRevenue > 0
         ? round4((todayRevenue - lastWeekRevenue) / lastWeekRevenue)

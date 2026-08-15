@@ -175,6 +175,12 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     deliveryLat: row.deliveryLat === null ? null : Number(row.deliveryLat),
     deliveryLng: row.deliveryLng === null ? null : Number(row.deliveryLng),
     idempotencyKey: row.idempotencyKey,
+    notified: {
+      paymentInstructions: row.notified_payment_instructions,
+      paymentReceived: row.notified_payment_received,
+      readyForPickup: row.notified_ready_for_pickup,
+      canceled: row.notified_canceled,
+    },
     payments: (row.payments ?? []).map((p) => ({
       id: p.id,
       method: p.method,

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import {
   AiAnalysisCard,
   BreakEvenCard,
+  DeliverySpendCard,
   MonthPicker,
   PnlCard,
   TrendCard,
@@ -76,6 +77,7 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
             />
             <WebOrdersToggleCard enabled={businessConfig.webOrdersEnabled} />
             <BreakEvenCard s={statement} />
+            <DeliverySpendCard s={statement} />
             <TrendCard trend={trend} />
           </div>
         </div>

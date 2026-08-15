@@ -109,7 +109,10 @@ export function ProductFormCategoryField({
             onChange(e.target.value);
           }}
         >
-          <option value="">— Sin categoría —</option>
+          {/* Al crear no existe "sin categoría": el placeholder lo dice, y el
+              `required` impide dejarlo así. Al editar sí se puede vaciar (hay
+              productos viejos sin clasificar). */}
+          <option value="">{required ? '— Elige una categoría —' : '— Sin categoría —'}</option>
           {all.map((c) => (
             <option key={c} value={c}>
               {c}

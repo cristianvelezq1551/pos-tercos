@@ -60,8 +60,18 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
           new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime(),
       );
 
-  // Ingresos por método = ventas (sale_payments) + entradas de caja.
+  // Lo COBRADO por método = ventas (sale_payments) + entradas de caja.
   // Egresos por método = salidas de caja.
+  //
+  // Se llama "cobrado" y no "ingresos" a propósito: acá se arquea contra plata
+  // física, así que el número tiene que ser BRUTO (el domicilio pagado por
+  // transferencia sí entró a la cuenta). Lo que NO puede pasar es leerse como
+  // venta — para eso está la línea de domicilios de abajo.
+  //
+  // `byMethod` YA viene neto de domicilios (§7.v30): esa plata se le paga al
+  // repartidor en el momento, así que al cerrar no está en ningún medio. Acá no
+  // se descuenta nada ni se muestra línea aparte — el dato vive en
+  // Finanzas → Domicilios del mes.
   const methods = new Set<string>([
     ...summary.byMethod.map((m) => m.method),
     ...cashMovements.map((m) => m.method),
@@ -98,7 +108,7 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
 
       <SectionRow title="Monto inicial" amount={shift.openingCash} />
 
-      <SectionRow title="Ingresos" amount={ingresosTotal} />
+      <SectionRow title="Cobrado" amount={ingresosTotal} />
       {inRows.map((r) => (
         <MethodRow
           key={`in-${r.method}`}

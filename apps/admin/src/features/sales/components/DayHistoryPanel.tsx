@@ -1,6 +1,6 @@
 'use client';
 
-import type { Sale } from '@pos-tercos/types';
+import type { CortesiaRequest, Sale } from '@pos-tercos/types';
 import { EmptyState, LoadingSkeleton, cn } from '@pos-tercos/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../api/list';
@@ -11,7 +11,11 @@ import { ChangePaymentModal } from './ChangePaymentModal';
 import { EditSaleModal } from './EditSaleModal';
 import { RefundModal } from './RefundModal';
 import { HistoryRow } from './HistoryRow';
-import { CortesiasList, useUnseenCortesias } from '../../caja-cortesias';
+import {
+  CortesiaHistoryRow,
+  listDayCortesias,
+  useUnseenCortesias,
+} from '../../caja-cortesias';
 
 const CORTESIAS_KEY = '__cortesias__';
 import { startOfTodayIso } from '../../../lib/dates';
@@ -23,6 +27,8 @@ import {
   isActiveSale,
   minutesSince,
 } from '../lib/history-filters';
+import { entryMatchesFilter, mergeDayEntries } from '../lib/day-entries';
+import { onOrdersChanged } from '../lib/orders-events';
 
 const POLL_MS = 8_000;
 
@@ -33,6 +39,7 @@ const POLL_MS = 8_000;
  */
 export function DayHistoryPanel({ active = true }: { active?: boolean }) {
   const [sales, setSales] = useState<Sale[]>([]);
+  const [cortesias, setCortesias] = useState<CortesiaRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterKey, setFilterKey] = useState('todos');
@@ -44,13 +51,20 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
   const { requestFactura, facturaModal } = useFacturaPrint();
 
   const refresh = useCallback(async () => {
+    const from = startOfTodayIso();
     try {
-      const data = await listSales({ from: startOfTodayIso(), limit: 200 });
-      const sorted = [...data].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-      setSales(sorted);
+      // Las cortesías van en la MISMA lista que las ventas: son pedidos que se
+      // prepararon y no se cobraron. Si su lectura falla, el historial de
+      // ventas se muestra igual (no se cae toda la pantalla por un regalo).
+      const [data, gifts] = await Promise.all([
+        listSales({ from, limit: 200 }),
+        listDayCortesias(from).catch((e) => {
+          logError('day-history.cortesias', e);
+          return [] as CortesiaRequest[];
+        }),
+      ]);
+      setSales(data);
+      setCortesias(gifts);
       setError(null);
     } catch (e) {
       setError(getErrorMessage(e, 'Error cargando el historial'));
@@ -63,6 +77,13 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
     void refresh().finally(() => setLoading(false));
   }, [active, refresh]);
   usePolling(refresh, POLL_MS, { enabled: active, immediate: false });
+
+  // Cobrar, anular, editar o regalar emiten este evento: el historial se entera
+  // al instante en vez de esperar hasta 8s (o que el cajero recargue).
+  useEffect(() => {
+    if (!active) return;
+    return onOrdersChanged(() => void refresh());
+  }, [active, refresh]);
 
   // Tras editar: la comanda corregida ya se reimprimió (en EditSaleModal). La
   // FACTURA corregida se imprime igual que en el cobro — modal si comparte
@@ -81,9 +102,10 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
 
   const filter =
     HISTORY_FILTERS.find((f) => f.key === filterKey) ?? HISTORY_FILTERS[0]!;
+  const entries = useMemo(() => mergeDayEntries(sales, cortesias), [sales, cortesias]);
   const visible = useMemo(
-    () => sales.filter((s) => filter.match(s.status)),
-    [sales, filter],
+    () => entries.filter((e) => entryMatchesFilter(e, filter)),
+    [entries, filter],
   );
   const slowCount = useMemo(
     () =>
@@ -99,7 +121,7 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex shrink-0 flex-wrap gap-1.5">
         {HISTORY_FILTERS.map((f) => {
-          const count = sales.filter((s) => f.match(s.status)).length;
+          const count = entries.filter((e) => entryMatchesFilter(e, f)).length;
           return (
             <button
               key={f.key}
@@ -139,20 +161,41 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
             <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.625rem] font-bold text-destructive-foreground">
               {unseenCortesias}
             </span>
-          ) : null}
+          ) : (
+            <span
+              className={cn(
+                'tabular-nums',
+                cortesiasView ? 'text-primary' : 'text-muted-foreground/70',
+              )}
+            >
+              {cortesias.length}
+            </span>
+          )}
         </button>
       </div>
 
       {slowCount > 0 && !cortesiasView ? (
         <p className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs font-medium text-warning">
-          ⚠ {slowCount} pedido{slowCount === 1 ? '' : 's'} llevan más de{' '}
-          {SLOW_ORDER_THRESHOLD_MIN} min sin completarse.
+          {/* Solo cuenta pedidos SIN COBRAR (ACTIVE_SALE_STATUSES): el reloj
+              corre desde que se creó el pedido. "Sin completarse" hacía pensar
+              en cocina; lo que pasa es que nadie los cobró ni los rechazó. */}
+          ⚠ {slowCount} pedido{slowCount === 1 ? '' : 's'}{' '}
+          {slowCount === 1 ? 'lleva' : 'llevan'} más de {SLOW_ORDER_THRESHOLD_MIN} min sin
+          cobrarse.
         </p>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
         {cortesiasView ? (
-          <CortesiasList active={active} />
+          cortesias.length === 0 ? (
+            <EmptyState title="Sin cortesías hoy" size="sm" />
+          ) : (
+            <ul className="space-y-2">
+              {cortesias.map((c) => (
+                <CortesiaHistoryRow key={c.id} cortesia={c} />
+              ))}
+            </ul>
+          )
         ) : loading && sales.length === 0 ? (
           <LoadingSkeleton shape="table-row" count={6} />
         ) : error ? (
@@ -166,16 +209,20 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
           <EmptyState title="Sin pedidos en este filtro" size="sm" />
         ) : (
           <ul className="space-y-2">
-            {visible.map((s) => (
-              <HistoryRow
-                key={s.id}
-                sale={s}
-                onChanged={refresh}
-                onEdit={() => setEditingSale(s)}
-                onChangePayment={() => setPayingSale(s)}
-                onRefund={() => setRefundingSale(s)}
-              />
-            ))}
+            {visible.map((e) =>
+              e.kind === 'cortesia' ? (
+                <CortesiaHistoryRow key={e.id} cortesia={e.cortesia} />
+              ) : (
+                <HistoryRow
+                  key={e.id}
+                  sale={e.sale}
+                  onChanged={refresh}
+                  onEdit={() => setEditingSale(e.sale)}
+                  onChangePayment={() => setPayingSale(e.sale)}
+                  onRefund={() => setRefundingSale(e.sale)}
+                />
+              ),
+            )}
           </ul>
         )}
       </div>

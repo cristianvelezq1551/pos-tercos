@@ -95,8 +95,14 @@ function buildPaymentInstructions(order: PublicWebOrder): string {
     lines.push('Te enviaremos los datos de pago por WhatsApp.');
   }
   lines.push('');
+  // Un domicilio NO se retira. Decirle "pasa a buscarlo" a quien pidió a
+  // domicilio —en la pantalla donde está por transferir— es información falsa
+  // en el peor momento. El WhatsApp ya bifurca; esta pantalla también.
+  const cierre = order.deliveryAddress
+    ? `te avisamos cuando salga hacia tu dirección.`
+    : `te avisamos cuando esté lista para retirar.`;
   lines.push(
-    `Te vamos a contactar por WhatsApp para pedirte el comprobante. Apenas el cajero verifique el pago, preparamos tu orden #${order.receiptNumber} y te avisamos cuando esté lista para retirar.`,
+    `Te vamos a contactar por WhatsApp para pedirte el comprobante. Apenas el cajero verifique el pago, preparamos tu orden #${order.receiptNumber} y ${cierre}`,
   );
   return lines.join('\n');
 }

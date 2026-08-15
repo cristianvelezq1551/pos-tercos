@@ -51,7 +51,7 @@ export function useConnectivity(): ConnectivityStatus {
 
     const loop = async (): Promise<void> => {
       await ping();
-      if (!cancelled) timer = setTimeout(loop, HEARTBEAT_MS);
+      if (!cancelled) timer = setTimeout(() => void loop(), HEARTBEAT_MS);
     };
 
     // Eventos del navegador: aceleran la reacción pero no son la verdad final.

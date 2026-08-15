@@ -17,7 +17,9 @@ export type OwnerAlertKind =
   | 'cortesia_given'
   | 'manual_discount'
   | 'server_error'
-  | 'multi_instance';
+  | 'multi_instance'
+  /** El mes va con margen de contribución negativo: cada venta pierde plata. */
+  | 'negative_contribution_margin';
 
 /**
  * Alertas puntuales al WhatsApp del DUEÑO (antifraude + costos). Igual que
@@ -37,13 +39,31 @@ export class OwnerNotificationService {
     private readonly audit: AuditService,
   ) {}
 
+  /** @returns true solo si el proveedor REAL aceptó el mensaje. */
   async alert(
     kind: OwnerAlertKind,
     text: string,
     metadata?: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const phone = process.env.OWNER_WHATSAPP_PHONE?.trim();
-    if (!phone) return;
+    if (!phone) return false;
+    // Sin proveedor real (mock) no se finge el envío: se loguea y se registra
+    // delivered:false — antes el mock devolvía ok:true y la bitácora afirmaba
+    // alertas que nunca salieron (patrón "no fingir efectos", §7.v22).
+    if (this.wa.delivers === false) {
+      this.logger.log(`Sin proveedor de WhatsApp: alerta '${kind}' al dueño NO enviada.`);
+      try {
+        await this.audit.log({
+          userId: null,
+          action: 'OWNER_ALERT_SENT',
+          entityType: 'owner_alert',
+          metadata: { kind, ok: false, delivered: false, error: 'sin proveedor', ...metadata },
+        });
+      } catch {
+        // la bitácora es best-effort
+      }
+      return false;
+    }
     try {
       // Cloud API: la alerta al dueño es business-initiated → con templates
       // activos va por `alerta_negocio` (texto aplanado a una línea); si no,
@@ -68,15 +88,18 @@ export class OwnerNotificationService {
         metadata: {
           kind,
           ok: result.ok,
+          delivered: result.ok,
           error: result.error ?? null,
           providerMessageId: result.providerMessageId ?? null,
           ...metadata,
         },
       });
+      return result.ok;
     } catch (err) {
       this.logger.warn(
         `Alerta '${kind}' al dueño lanzó: ${err instanceof Error ? err.message : err}`,
       );
+      return false;
     }
   }
 }

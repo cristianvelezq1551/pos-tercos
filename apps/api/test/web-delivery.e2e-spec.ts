@@ -1,20 +1,25 @@
 /**
  * E2E de pedidos a DOMICILIO (2026-07-16). Vuelve `WEB_DELIVERY`, que la
- * reorientación v2 había eliminado. Cubre: la dirección es obligatoria y solo
- * existe en domicilios, el radio aplica SOLO a domicilios (a quien viene a
- * recoger no se le bloquea por vivir lejos) y el WhatsApp de "listo" cambia.
+ * reorientación v2 había eliminado. Cubre el CICLO del domicilio: la dirección
+ * es obligatoria y solo existe en domicilios, el envío se cotiza antes de
+ * cobrar, el WhatsApp de "listo" dice "va en camino", y el reparto cierra en
+ * ENTREGADO.
+ *
+ * La zona de cobertura NO se prueba acá (vive en `web-address.e2e-spec.ts`):
+ * desde §7.v23 se mide contra la dirección elegida, no contra el GPS.
  */
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import type { INestApplication } from '@nestjs/common';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { withDeliveringWhatsApp } from './helpers/whatsapp-provider';
 
 const LOCAL = '6.1658173,-75.580882';
 const CERCA = { customerLat: 6.1705, customerLng: -75.5835 }; // ~0.6 km
-const LEJOS = { customerLat: 4.711, customerLng: -74.0721 }; // Bogotá, ~232 km
 const DIRECCION = 'Cra 43A #5-15, torre 2, apto 502';
 
 /** Hoy en YYYY-MM-DD local (nunca toISOString: en Bogotá corre el día). */
@@ -63,7 +68,33 @@ describe('Pedidos a domicilio E2E', () => {
   };
 
   beforeAll(async () => {
-    ({ app, prisma, request } = await bootstrapApp());
+    // El throttle de `POST /web/orders` es 30/60s POR IP y esta suite dispara
+    // ~35 pedidos desde 127.0.0.1 en pocos segundos: sin neutralizarlo, los
+    // últimos tests fallan con 429 por vecindad y no por lo que prueban.
+    //
+    // Se reemplaza el STORAGE, no el guard: `ThrottlerGuard` está montado como
+    // APP_GUARD (donde `overrideGuard` no llega) y pisar el token APP_GUARD se
+    // llevaría puestos los guards de auth y roles. Con el contador siempre en 1
+    // el guard corre de verdad pero nunca acumula.
+    //
+    // No se pierde cobertura del anti-abuso: el tope diario por IP se prueba
+    // aislado en `src/web-orders/web-order-daily-limit.guard.spec.ts`.
+    //
+    // Además se inyecta un WhatsApp que SÍ entrega: esta suite prueba el camino
+    // AUTOMÁTICO (el que corre en prod con Kapso). Que sin proveedor NO se envíe
+    // ni se finja se prueba aparte, en `whatsapp-manual.e2e-spec.ts`.
+    ({ app, prisma, request } = await bootstrapApp((b) =>
+      withDeliveringWhatsApp(b).overrideProvider(ThrottlerStorage).useValue({
+        // Forma de `ThrottlerStorageRecord` (el tipo no se exporta desde la raíz).
+        increment: () =>
+          Promise.resolve({
+            totalHits: 1,
+            timeToExpire: 60,
+            isBlocked: false,
+            timeToBlockExpire: 0,
+          }),
+      }),
+    ));
     // Auto-aislada: no confiar en que la suite anterior limpió. Esta suite lee
     // agregados GLOBALES (reportes / ledger de inventario), así que un residuo
     // de otra suite mueve los números y el fallo depende del orden de archivos.
@@ -107,10 +138,15 @@ describe('Pedidos a domicilio E2E', () => {
       .send({ entityType: 'PRODUCT', productId, delta: 500, type: 'INITIAL', unitCost: 1500 })
       .expect(201);
 
+    // El rechazo por radio queda APAGADO: esta suite prueba el ciclo del
+    // domicilio (dirección, envío, despacho), no la cobertura. Con el candado
+    // activo cada pedido necesitaría resolver una dirección primero, lo que
+    // acoplaría estos tests al proveedor de direcciones sin agregar señal.
+    // El candado se prueba entero en `web-address.e2e-spec.ts`.
     await setConfig({
       coords: LOCAL,
       orderRadiusKm: 10,
-      ordersRespectRadius: true,
+      ordersRespectRadius: false,
       deliveryEnabled: true,
     });
   });
@@ -203,28 +239,11 @@ describe('Pedidos a domicilio E2E', () => {
     });
   });
 
-  describe('la zona de cobertura aplica SOLO a domicilios', () => {
-    it('un domicilio fuera del radio se rechaza', async () => {
-      const res = await order({
-        type: 'WEB_DELIVERY',
-        deliveryAddress: 'Calle 100 #15-20, Bogotá',
-        ...LEJOS,
-      }).expect(400);
-      expect(res.body.message).toContain('fuera de nuestra zona de cobertura');
-    });
-
-    it('RECOGER desde la misma distancia se acepta: maneja hasta el local', async () => {
-      await order({ type: 'WEB_PICKUP', ...LEJOS }).expect(201);
-    });
-
-    it('un domicilio dentro del radio se acepta', async () => {
-      await order({ type: 'WEB_DELIVERY', deliveryAddress: DIRECCION, ...CERCA }).expect(201);
-    });
-
-    it('un domicilio SIN GPS se acepta: el permiso se puede negar', async () => {
-      await order({ type: 'WEB_DELIVERY', deliveryAddress: DIRECCION }).expect(201);
-    });
-  });
+  /**
+   * La zona de cobertura vivía acá midiendo el GPS del navegador. Desde §7.v23
+   * se mide contra la DIRECCIÓN elegida y se prueba entera —incluida la parte
+   * de que a quien viene a RECOGER no se le aplica— en `web-address.e2e-spec.ts`.
+   */
 
   describe('el costo del envío', () => {
     const crearDom = () =>
@@ -287,13 +306,18 @@ describe('Pedidos a domicilio E2E', () => {
         .expect(201);
     });
 
-    it('el envío SÍ cuenta como ingreso: el reparto es un servicio que se vende', async () => {
+    /**
+     * Decisión del dueño 2026-07-27 (REVIERTE la de 2026-07-17): el envío NO es
+     * ingreso. Esa plata es del domiciliario y solo pasa por la caja; contarla
+     * inflaba ventas, ticket promedio y margen con dinero que no se queda.
+     */
+    it('el envío NO cuenta como ingreso: es plata del repartidor', async () => {
       const hoy = ymdLocalToday();
-      const revenueDe = async (): Promise<number> =>
+      const totalesDe = async (): Promise<{ revenue: number; deliveryCollected: number }> =>
         (await request.get(`/reports/sales-summary?from=${hoy}&to=${hoy}`).set(auth()).expect(200))
-          .body.totals.revenue;
+          .body.totals;
       // Delta, no valor absoluto: otros tests de la suite ya cobraron ventas.
-      const antes = await revenueDe();
+      const antes = await totalesDe();
 
       const { body } = await crearDom();
       await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
@@ -304,11 +328,43 @@ describe('Pedidos a domicilio E2E', () => {
         .send({ method: 'CASH', amountReceived: 11000 })
         .expect(201);
 
-      // El cliente pagó 11.000 y los 11.000 son ingreso: 5.000 de comida y 6.000
-      // de reparto. Lo que se le paga al domiciliario es un GASTO aparte — así
-      // tesorería cuadra sola (deriva ingresos de sale_payments, gastos de los
-      // módulos) sin excluir nada en ningún lado.
-      expect((await revenueDe()) - antes).toBe(11000);
+      const despues = await totalesDe();
+      // El cliente pagó 11.000: 5.000 de comida (ingreso) + 6.000 de envío (de
+      // un tercero, visible pero fuera de los ingresos).
+      expect(despues.revenue - antes.revenue).toBe(5000);
+      expect(despues.deliveryCollected - antes.deliveryCollected).toBe(6000);
+    });
+
+    /**
+     * §7.v29: el reporte de VENTAS es neto de punta a punta. `byMethod` también
+     * descuenta el envío (prorrateado), así que "por método" cuadra exacto con
+     * "Ingresos" y no hace falta explicar ninguna diferencia. Lo cobrado en
+     * bruto vive donde se necesita para conciliar: arqueo digital y el
+     * matcheo contra el extracto.
+     */
+    it('por método también va neto: cuadra exacto con los ingresos', async () => {
+      const hoy = ymdLocalToday();
+      const resumen = async () =>
+        (await request.get(`/reports/sales-summary?from=${hoy}&to=${hoy}`).set(auth()).expect(200))
+          .body;
+
+      const { body } = await crearDom();
+      await request.patch(`/sales/${body.order.id}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+      await request
+        .post(`/sales/${body.order.id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 11000 })
+        .expect(201);
+
+      const r = await resumen();
+      const porMetodo = r.byMethod.reduce(
+        (a: number, m: { revenue: number }) => a + m.revenue,
+        0,
+      );
+      expect(porMetodo).toBeCloseTo(r.totals.revenue, 2);
+      // Y el envío sigue reportado aparte, sin sumarse a nada.
+      expect(r.totals.deliveryCollected).toBeGreaterThan(0);
     });
 
     it('un pedido para recoger no puede llevar envío', async () => {
@@ -454,6 +510,194 @@ describe('Pedidos a domicilio E2E', () => {
       const msg = await waitForMessage(created.body.order.id, 'pickup_ready');
       expect(msg.body).toContain('listo para retirar');
       expect(msg.body).not.toContain('va en camino');
+    });
+  });
+
+  /**
+   * El texto de la PANTALLA de pago (no el WhatsApp): el cliente lo lee justo
+   * antes de transferir. Decirle "pasa a retirar" a quien pidió a domicilio es
+   * información falsa en el peor momento.
+   */
+  describe('las instrucciones de pago en pantalla', () => {
+    it('a un domicilio no le dicen que lo retire', async () => {
+      const created = await order({
+        type: 'WEB_DELIVERY',
+        deliveryAddress: DIRECCION,
+        ...CERCA,
+      }).expect(201);
+      const saleId = created.body.order.id as string;
+      await request.patch(`/sales/${saleId}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+
+      const token = created.body.token as string;
+      const res = await request.get(`/web/orders/${saleId}?token=${encodeURIComponent(token)}`).expect(200);
+      expect(res.body.paymentInstructions).toContain('hacia tu dirección');
+      expect(res.body.paymentInstructions).not.toContain('retirar');
+    });
+
+    it('a uno para recoger sí', async () => {
+      const created = await order({ type: 'WEB_PICKUP' }).expect(201);
+      expect(created.body.paymentInstructions).toContain('retirar');
+      expect(created.body.paymentInstructions).not.toContain('hacia tu dirección');
+    });
+  });
+
+  /**
+   * §7.v30 — El domicilio se le paga al repartidor EN EL MOMENTO, siempre: no
+   * existe un cierre con domicilios pendientes. Por eso el arqueo NUNCA espera
+   * esa plata: al cerrar ya salió, y esperarla marcaría un sobrante inventado.
+   */
+  describe('el envío nunca entra al arqueo', () => {
+    const cobrarDomicilio = async (metodo: string): Promise<string> => {
+      const created = await order({
+        type: 'WEB_DELIVERY',
+        deliveryAddress: DIRECCION,
+        ...CERCA,
+      }).expect(201);
+      const saleId = created.body.order.id as string;
+      await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+      await request.patch(`/sales/${saleId}/delivery-fee`).set(auth()).send({ fee: 7000 }).expect(200);
+      await request
+        .post(`/sales/${saleId}/confirm-payment`)
+        .set(auth())
+        .send({
+          method: metodo,
+          amountReceived: 12000,
+          ...(metodo === 'CASH' ? {} : { digitalDoubleVerified: true }),
+        })
+        .expect(201);
+      return saleId;
+    };
+
+    const shiftId = async (): Promise<string> =>
+      ((await request.get('/shifts/current').set(auth()).expect(200)).body as { id: string }).id;
+
+    it('cobrado en EFECTIVO: el cajón solo espera la comida', async () => {
+      const id = await shiftId().catch(async () => {
+        await request.post('/shifts/open').set(auth()).send({ openingCash: 0 });
+        return shiftId();
+      });
+      const esperado = async (): Promise<number> =>
+        (
+          (await request.get(`/shifts/${id}/expected-cash`).set(auth()).expect(200))
+            .body as { expectedCash: number }
+        ).expectedCash;
+
+      const antes = await esperado();
+      await cobrarDomicilio('CASH');
+      // Pagó 12.000; solo los 5.000 de comida quedan en el cajón.
+      expect((await esperado()) - antes).toBe(5000);
+    });
+
+    it('cobrado por TRANSFERENCIA: la cuenta tampoco espera el envío', async () => {
+      const id = await shiftId();
+      const esperadoTransfer = async (): Promise<number> => {
+        const body = (
+          await request.get(`/shifts/${id}/expected-cash`).set(auth()).expect(200)
+        ).body as { digital: { method: string; expected: number }[] };
+        return body.digital.find((d) => d.method === 'TRANSFER')?.expected ?? 0;
+      };
+
+      const antes = await esperadoTransfer();
+      await cobrarDomicilio('TRANSFER');
+      expect((await esperadoTransfer()) - antes).toBe(5000);
+    });
+  });
+
+  /**
+   * Cerrar el ciclo del reparto. Sin ENTREGADO, "va en la moto" y "el cliente
+   * ya comió" son el mismo estado para siempre y el tiempo de entrega no existe.
+   */
+  describe('marcar entregado', () => {
+    const despachado = async (): Promise<string> => {
+      const created = await order({
+        type: 'WEB_DELIVERY',
+        deliveryAddress: DIRECCION,
+        ...CERCA,
+      }).expect(201);
+      const saleId = created.body.order.id as string;
+      await request.post('/shifts/open').set(auth()).send({ openingCash: 0 }).catch(() => undefined);
+      await request.patch(`/sales/${saleId}/delivery-fee`).set(auth()).send({ fee: 6000 }).expect(200);
+      await request
+        .post(`/sales/${saleId}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 11000 })
+        .expect(201);
+      await request.post(`/sales/${saleId}/mark-ready`).set(auth()).expect(201);
+      return saleId;
+    };
+
+    it('un domicilio despachado se marca entregado y queda en la bitácora', async () => {
+      const saleId = await despachado();
+      const res = await request.post(`/sales/${saleId}/mark-delivered`).set(auth()).expect(201);
+      expect(res.body.status).toBe('ENTREGADO');
+
+      const log = await prisma.saleStatusLog.findFirst({
+        where: { saleId, statusTo: 'ENTREGADO' },
+      });
+      expect(log?.statusFrom).toBe('LISTO_DESPACHO');
+    });
+
+    it('no le manda otro WhatsApp: el cliente ya tiene la comida', async () => {
+      const saleId = await despachado();
+      // Esperar a que aterrice el `pickup_ready` ANTES de fotografiar el conteo:
+      // notify() es fire-and-forget, así que contar de inmediato tomaba una foto
+      // incompleta y el mensaje en vuelo se veía después como uno "nuevo".
+      await waitForMessage(saleId, 'pickup_ready');
+      const antes = await prisma.whatsAppMessage.count({ where: { saleId } });
+
+      await request.post(`/sales/${saleId}/mark-delivered`).set(auth()).expect(201);
+      await new Promise((r) => setTimeout(r, 400));
+      expect(await prisma.whatsAppMessage.count({ where: { saleId } })).toBe(antes);
+    });
+
+    it('dos veces no vuelve a transicionar (guard por status)', async () => {
+      const saleId = await despachado();
+      await request.post(`/sales/${saleId}/mark-delivered`).set(auth()).expect(201);
+      await request.post(`/sales/${saleId}/mark-delivered`).set(auth()).expect(400);
+      const logs = await prisma.saleStatusLog.count({
+        where: { saleId, statusTo: 'ENTREGADO' },
+      });
+      expect(logs).toBe(1);
+    });
+
+    it('un pedido que todavía no se despachó no se puede entregar', async () => {
+      const created = await order({
+        type: 'WEB_DELIVERY',
+        deliveryAddress: DIRECCION,
+        ...CERCA,
+      }).expect(201);
+      const res = await request
+        .post(`/sales/${created.body.order.id}/mark-delivered`)
+        .set(auth())
+        .expect(400);
+      expect(JSON.stringify(res.body)).toContain('despacharlo');
+    });
+
+    it('un pedido para RECOGER no se marca entregado: termina en listo', async () => {
+      const created = await order({ type: 'WEB_PICKUP' }).expect(201);
+      const saleId = created.body.order.id as string;
+      await request
+        .post(`/sales/${saleId}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 5000 })
+        .expect(201);
+      await request.post(`/sales/${saleId}/mark-ready`).set(auth()).expect(201);
+
+      const res = await request.post(`/sales/${saleId}/mark-delivered`).set(auth()).expect(400);
+      expect(JSON.stringify(res.body)).toContain('domicilio');
+    });
+
+    it('entregado sigue contando como venta cobrada en el reporte', async () => {
+      const hoy = ymdLocalToday();
+      const revenueDe = async (): Promise<number> =>
+        (await request.get(`/reports/sales-summary?from=${hoy}&to=${hoy}`).set(auth()).expect(200))
+          .body.totals.revenue;
+
+      const saleId = await despachado();
+      const antes = await revenueDe();
+      await request.post(`/sales/${saleId}/mark-delivered`).set(auth()).expect(201);
+      // Marcar la entrega mueve el estado, NO la plata: el reporte no se inmuta.
+      expect(await revenueDe()).toBeCloseTo(antes, 2);
     });
   });
 });

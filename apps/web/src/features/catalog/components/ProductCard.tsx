@@ -11,28 +11,42 @@ import { ProductImage } from './ProductImage';
 export function ProductCard({
   product,
   unavailable = false,
+  closed = false,
   onClick,
 }: {
   product: PublicMenuProduct;
+  /** Sin stock: el producto no se puede vender aunque el local esté abierto. */
   unavailable?: boolean;
+  /**
+   * El local no está tomando pedidos. Distinto de `unavailable`: el producto
+   * existe y hay, pero ahora no se puede pedir. Por eso NO dice "Agotado" —
+   * sería mentir sobre el motivo, y mañana el mismo producto se vende igual.
+   */
+  closed?: boolean;
   onClick: () => void;
 }) {
   const promotions = usePromotions((s) => s.promotions);
   const price = displayBasePrice(product);
   const promo = unavailable ? null : getMenuPromoBadge(product.id, price, promotions);
+  // Se puede mirar el menú, no agregar: quien está cerrado igual quiere que le
+  // vean los precios.
+  const noSePuedePedir = unavailable || closed;
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={unavailable}
-      aria-disabled={unavailable}
+      disabled={noSePuedePedir}
+      aria-disabled={noSePuedePedir}
       className={cn(
         'group w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         'flex items-center gap-3 border-b border-border py-4',
         'sm:card-lift sm:flex-col sm:items-stretch sm:gap-0 sm:overflow-hidden sm:rounded-xl sm:border-0 sm:bg-card sm:py-0',
         unavailable
           ? 'cursor-not-allowed opacity-50'
-          : 'active:scale-[0.99] sm:hover:bg-muted/60 sm:active:scale-100',
+          : closed
+            // Cerrado atenúa menos que agotado: el menú se sigue leyendo.
+            ? 'cursor-not-allowed opacity-75'
+            : 'active:scale-[0.99] sm:hover:bg-muted/60 sm:active:scale-100',
       )}
     >
       <div
@@ -87,6 +101,10 @@ export function ProductCard({
           {unavailable ? (
             <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">
               Agotado
+            </span>
+          ) : closed ? (
+            <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">
+              Cerrado
             </span>
           ) : (
             <span

@@ -164,10 +164,20 @@ export const SalesSummarySchema = z.object({
   granularity: SalesGranularityEnum,
   totals: z.object({
     count: z.number().int().nonnegative(),
+    /**
+     * Lo que se queda el negocio: NO incluye el cobro del domicilio (esa plata
+     * es del repartidor y solo pasa por la caja — decisión del dueño 2026-07-27).
+     */
     revenue: z.number().nonnegative(),
     discount: z.number().nonnegative(),
     voidCount: z.number().int().nonnegative(),
     avgTicket: z.number().nonnegative(),
+    /**
+     * Domicilios cobrados al cliente en el período. Plata de TERCEROS: se
+     * reporta para poder arquearla y para explicar por qué `byMethod` suma más
+     * que `revenue`, pero nunca se suma a los ingresos.
+     */
+    deliveryCollected: z.number().nonnegative(),
   }),
   buckets: z.array(SalesBucketSchema),
   byType: z.array(SalesByTypeSchema),

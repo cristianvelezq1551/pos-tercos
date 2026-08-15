@@ -4,6 +4,7 @@ import type { PublicMenuProduct } from '@pos-tercos/types';
 import { cn } from '@pos-tercos/ui';
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useBusiness } from '../../business';
 import { useCartStore } from '../../cart/store/cart-store';
 import { useAvailability } from '../hooks/useAvailability';
 import { ProductCard } from './ProductCard';
@@ -20,6 +21,10 @@ export function CatalogGrid({
 }) {
   const addItem = useCartStore((s) => s.addItem);
   const availability = useAvailability();
+  // Con el local cerrado (o los pedidos pausados) el menú se puede LEER pero no
+  // se puede armar un pedido: el servidor lo rechazaría igual, y dejar agregar
+  // productos para frenar recién en el checkout es hacerle perder el tiempo.
+  const acceptingOrders = useBusiness((s) => s.business.acceptingOrders);
   const [selected, setSelected] = useState<PublicMenuProduct | null>(null);
   const [open, setOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>(ALL);
@@ -112,8 +117,9 @@ export function CatalogGrid({
                 key={p.id}
                 product={p}
                 unavailable={unavailable}
+                closed={!acceptingOrders}
                 onClick={() => {
-                  if (unavailable) return;
+                  if (unavailable || !acceptingOrders) return;
                   setSelected(p);
                   setOpen(true);
                 }}

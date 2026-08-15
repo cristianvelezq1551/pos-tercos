@@ -18,7 +18,7 @@ import { listSales } from '../api/list';
 import { printComanda } from '../api/print';
 import { notifyComandaFailed } from '../lib/comanda-events';
 import { voidSale } from '../api/void';
-import { notifyCajaChanged } from '../../caja-shifts/lib/caja-events';
+import { notifyCajaChanged } from '../../../lib/caja-events';
 import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
 import { getErrorMessage } from '../../../lib/errors';
 import { logError } from '../../../lib/client-log';

@@ -75,6 +75,17 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 
 ## 3. Reglas de código (OBLIGATORIAS)
 
+> **Enforcement automático (2026-08-14):** las reglas de tamaño y boundaries ya
+> NO dependen de memoria — son errores de ESLint: `max-lines` (200 líneas de
+> código por `.tsx`), `max-lines-per-function` (50, en `apps/api` +
+> `packages/domain`) y `no-restricted-imports` (a un feature ajeno se entra por
+> su `index.ts` o `server.ts`, nunca por internos). La deuda EXISTENTE quedó
+> congelada en baselines dentro de `eslint.config.mjs` — esa lista solo puede
+> achicarse; si tu archivo nuevo la necesita, parte el archivo. Además, el
+> nightly `.github/workflows/nightly-checks.yml` corre las leyes matemáticas
+> del ledger con 20.000 historias aleatorias (así se encontró el bug de la
+> reversa post-corte del snapshot).
+
 ### Generales
 
 - **TypeScript strict** en todo el monorepo.
@@ -483,6 +494,9 @@ _(ninguno — FASE 4 cerrada)_
 - `POST /purchase-suggestions/:id/evaluate` — Dueño-only. LLM (Anthropic Haiku 4.5 primary, OpenAI fallback) escribe `llmRationale` + `llmModel`. Cuesta ~$0.0001/eval.
 - `POST /purchase-suggestions/admin/scan` — Dueño-only. Trigger manual del scan horario.
 - `POST /purchase-suggestions/admin/evaluate-all-pending` — Dueño-only. Batch sobre PENDING.
+- `GET /purchase-suggestions/:id/suppliers` — Admin/Dueño. Proveedores que ya vendieron ese item (el más reciente marcado `isLast`).
+- `POST /purchase-suggestions/:id/supplier-order/preview` — Admin/Dueño. Body `SendToSupplier {supplierId, quantity?, note?}` → `SupplierOrderLink {url, messagePlain, phone, …}`. **Read-only**: arma el texto del pedido y el link `wa.me`, no cambia nada.
+- `POST /purchase-suggestions/:id/supplier-order` — Admin/Dueño. Mismo body; marca la sugerencia ACCEPTED + audit `PURCHASE_SUGGESTION_SENT_SUPPLIER` (`metadata.channel='wa_link'` + el mensaje). **Reemplaza a `POST /:id/send-to-supplier`** (eliminado, ver §7.v19).
 - Cron `EVERY_HOUR`: detecta low-stock + crea PENDING + marca STALE las que se repusieron.
 
 ### Cierre de caja + Anti-fraude (FASE 11)
@@ -1054,7 +1068,9 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 
 ### Nuevo ciclo de vida de la venta
 - **COUNTER (mostrador): termina en `PAGADO`.** No hay estados de cocina. El recibo imprime el **# de recibo** (no "TU TURNO").
-- **WEB_PICKUP:** `PENDIENTE_PAGO → PAGADO → LISTO_DESPACHO` (terminal). El cajero marca **"Marcar listo para retirar"** desde el modal de Pedidos web → `POST /sales/:id/mark-ready` (`SalesService.markWebReady`, TOCTOU-safe) → dispara el WhatsApp `pickup_ready`. **Listo = fin** (no hay "Entregar"/ENTREGADO en el flujo web nuevo).
+- **WEB_PICKUP:** `PENDIENTE_PAGO → PAGADO → LISTO_DESPACHO` (terminal). El cajero marca **"Marcar listo para retirar"** desde el modal de Pedidos web → `POST /sales/:id/mark-ready` (`SalesService.markWebReady`, TOCTOU-safe) → dispara el WhatsApp `pickup_ready`. **Listo = fin** para RECOGER.
+
+> ⚠️ **`WEB_DELIVERY` agrega un paso más — ver §7.v21.** Para domicilios `LISTO_DESPACHO` significa "salió en la moto", NO el final: cierra con `ENTREGADO`.
 
 ### Eliminado
 - **Backend:** módulos `apps/api/src/kds/` y `apps/api/src/public-display/` (borrados). En `app.module.ts` desregistrados. `SalesService`/`SalesEditService` ya no inyectan `KdsGateway`. Endpoints `/kds/*` y `/public-display/*` **no existen**. `KdsService.ready` reemplazado por `SalesService.markWebReady`. La asignación de `turnNumber` se quitó de `confirmPayment` + `syncOffline`.
@@ -1129,7 +1145,7 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 - **B9**: `GET /sales` con from/to/limit inválidos → 400.
 
 ### FIFO — reversa de cortesía con base de costo real
-- `runLedgerFifo` registra los draws de cada cortesía (`sourceType='cortesia'`) y los movimientos `cortesia_reversal` (delta>0) devuelven las unidades con su costo ORIGINAL (reverso FIFO, helper `returnDraws` compartido con el void de ventas) + netean `cortesia`/`cortesiaCostBySource`. Sin lotes fantasma (el faltante NO se re-inyecta — el replay cubre toda la historia).
+- `runLedgerFifo` registra los draws de cada cortesía (`sourceType='cortesia'`) y los movimientos `cortesia_reversal` (delta>0) devuelven las unidades con su costo ORIGINAL (reverso FIFO, helper `returnDraws` compartido con el void de ventas) + netean `cortesia`/`cortesiaCostBySource`. Sin lotes fantasma (el faltante NO se re-inyecta — el replay cubre toda la historia). **Desde §7.v32 el faltante además se estima y deja deuda; anular la cortesía la cancela.**
 
 ### Auditoría §1.C completa (2026-07-05) — fixes posteriores
 > Pasada de auditoría con 6 agentes (FIFO, reportes, dinero, inventario/crons, código muerto, frontends). Detalle completo en `AUDITORIA-Y-AJUSTES-2026-07.md §1.C`. Verificado: typecheck 13/13, domain 154, POS 40, e2e 22 suites/179, lint limpio. Lo clave:
@@ -1361,6 +1377,761 @@ El modal admite además defaulteaba a `EFECTIVO`, así que el camino al cajón s
   los envíos. Es esperado — pero si el pago al domiciliario no se registra como
   gasto, el neto queda inflado.
 
+---
+
+## 7.v19 El pedido al proveedor se abre en WhatsApp, no se envía solo (2026-07-27)
+
+> Decisión del dueño: pedirle a un proveedor es una conversación, no una
+> notificación. El sistema arma el mensaje; **lo manda la persona desde SU
+> WhatsApp**. Antes salía por el número del gateway: el proveedor le contestaba
+> a un número que nadie lee y el hilo quedaba partido en dos.
+
+### Qué cambió
+- **Domain** `whatsapp/supplier-order-link.ts` (puro, 8 tests): `buildSupplierOrderMessage`
+  + `buildSupplierOrderLink` → `wa.me` con el texto ya escrito. Acepta N ítems
+  (hoy la UI manda uno; la puerta queda abierta a agrupar varias sugerencias del
+  mismo proveedor en un solo mensaje).
+- **Mensaje enriquecido** (antes: "Hola! Quisiera hacer un pedido: • Pan: 3 paquete"):
+  saludo al proveedor por su nombre + de parte de qué negocio + ítems con
+  cantidad en unidad de COMPRA + **el día en que se quiere recibir**
+  (`neededBy`, YYYY-MM-DD local; el label dice "hoy/mañana" cuando aplica) +
+  nota + dirección de entrega y teléfono de contacto (de `business_config`) +
+  cierre "¿Nos confirmas si lo tienes y a qué hora lo puedes despachar?".
+- ❌ **El mensaje NO habla de precios** (decisión del dueño): ni el último que
+  cobró, ni estimados, ni "cotízanos". Lo que cobra se negocia en el chat;
+  sacar a relucir el precio viejo ancla la conversación en el peor lugar. El
+  admin SÍ muestra el último precio en el selector de proveedor — es interno,
+  no viaja en el mensaje.
+- **API**: `POST /:id/send-to-supplier` (enviaba) → `POST /:id/supplier-order/preview`
+  (read-only, arma texto+link) + `POST /:id/supplier-order` (marca ACCEPTED).
+  `PurchaseSuggestionsService` ya no llama `whatsapp.sendText` para proveedores
+  (sigue haciéndolo el resumen a los admins, que va a números propios).
+- **Admin**: el diálogo muestra la **vista previa exacta** del mensaje (se
+  rearma con 350 ms de retraso al cambiar proveedor/cantidad/nota) y el botón
+  "Abrir WhatsApp". `window.open` va primero y sin `await` en el medio — con un
+  `await` antes, el navegador lo bloquea como popup.
+- La sugerencia se marca ACCEPTED al abrir el chat: el sistema no puede saber si
+  la persona tocó enviar, y perseguirlo no vale la pena (siempre puede
+  rechazarla o volver a pedir).
+- Proveedor sin teléfono ya **no es un 400**: el link viene en null y la UI lo
+  explica con el botón deshabilitado.
+
+---
+
+## 7.v20 El cierre arquea TODA la plata: cuenta obligatoria + descuadre total (2026-07-27)
+
+> Reportado por el dueño mirando `/shifts`: un turno cerró con "+$1.000 de
+> descuadre" en el cajón mientras $25.000 de transferencias quedaban **sin
+> arquear** — y esa plata no entraba en ninguna novedad. El arqueo digital era
+> opcional (§7.v7) y cada pata se medía por separado contra el umbral.
+
+### Reglas duras (NO violar)
+- **Arquear la cuenta es OBLIGATORIO para cerrar.** `ShiftsService.close`
+  rechaza (400, nombrando los medios) si algún método NO-efectivo con
+  movimiento en el turno quedó sin contar. Contar **0 sí es arquear**; dejar el
+  campo vacío, no.
+- **La lista de medios a arquear la manda el server.** `GET /shifts/:id/expected-cash`
+  devuelve `digital[]` (`method`, `name` del catálogo, `expected`) desde la
+  MISMA función que usa el cierre (`computeDigitalExpected`) → la caja nunca
+  pide un medio que el cajero no vio. El cálculo con las ventas cargadas en el
+  modal es solo respaldo si esa consulta falla (el listado del modal está
+  paginado; con muchas ventas se quedaría corto).
+- **La novedad se dispara por el descuadre TOTAL.** Además de las alertas por
+  cajón y por método, si ninguna de las dos llegó al umbral pero
+  `|efectivo + cuenta| >= $5.000` se registra `SHIFT_DISCREPANCY_DETECTED`
+  con `metadata.kind='combined'` (+ WhatsApp al dueño). `SHIFT_CLOSED` ahora
+  guarda también `digitalDifference`.
+
+### UI
+- Caja: el arqueo de cuenta muestra "falta contar" por medio, el botón
+  "Cerrar turno" queda bloqueado con el detalle de lo que falta, y el widget de
+  diferencia muestra el **descuadre total** (con el desglose efectivo · cuenta).
+- Admin `/shifts`: la tabla muestra **Efectivo · Cuenta · Total** por turno
+  (contado arriba, esperado y diferencia debajo). Los turnos viejos con medios
+  sin arquear se marcan `sin arquear` y su total queda sin calcular — sumar lo
+  que falta mostraría un faltante inventado.
+
+Verificado: e2e 42 suites/376 (+1 suite `shift-discrepancy` + arqueo obligatorio
+en `shifts`), unit admin 148, typecheck 12/12, lint 0.
+
+---
+
+## 7.v21 Domicilios encendidos: el reparto se cierra con ENTREGADO (2026-07-27)
+
+> El dueño reportó que la web solo ofrecía "recoger". La causa NO era código
+> faltante: `WEB_DELIVERY` estaba completo desde §7.v16 pero
+> `business_config.delivery_enabled` nace en `false` y nadie lo había prendido
+> (switch en admin → **Web del cliente** `/publicidad` → *Domicilios*).
+> Verificado: typecheck 12/12, lint 0, unit api 121 + admin 148,
+> e2e **42 suites / 384** (+8 en `web-delivery`), sin migración.
+
+### El domicilio ya no muere en "despachado"
+- `LISTO_DESPACHO` significaba dos cosas a la vez: en RECOGER es el final; en
+  DOMICILIO era "salió en la moto" **y también** el final — o sea que "va en
+  camino" y "el cliente ya comió" eran indistinguibles para siempre y el tiempo
+  de reparto no se podía medir. El enum `ENTREGADO` existía pero estaba
+  **dormido desde §7.v10**: ningún código lo escribía.
+- `POST /sales/:id/mark-delivered` (`@CashierAccess`) → `SalesService.markWebDelivered`:
+  **solo `WEB_DELIVERY` en `LISTO_DESPACHO`**, guard condicionado por status
+  (dos toques concurrentes no duplican transición ni bitácora), `sale_status_log`
+  + audit `SALE_STATUS_CHANGED {by:'mark-delivered'}`.
+- **Sin WhatsApp**: el cliente ya tiene la comida en la mano; avisarle es ruido.
+  Por eso no se agregó un 5º flag `notified_*`.
+- Cajero: botón **"Marcar entregado"** en la tarjeta del pedido + filtros
+  `Listos / en camino` y `Entregados` en el modal de Pedidos web.
+- Ciclo final: RECOGER `…→ LISTO_DESPACHO` · DOMICILIO `…→ LISTO_DESPACHO → ENTREGADO`.
+
+### Otros arreglos del mismo bloque
+- **Copy**: `buildPaymentInstructions` (web-orders.controller) le decía "te
+  avisamos cuando esté lista para **retirar**" a quien pidió a domicilio, en la
+  pantalla donde está por transferir. Ahora bifurca por `deliveryAddress`
+  ("…cuando salga hacia tu dirección"). El WhatsApp ya bifurcaba; esta pantalla
+  se había quedado atrás.
+- **Fallback mudo**: si `/web-hero/config` no responde o no valida, la web cae a
+  `EMPTY_PUBLIC_BUSINESS_INFO` → `deliveryEnabled: false`. No cierra la tienda
+  (`acceptingOrders: true` a propósito) pero **apaga los domicilios sin que se
+  note**. Ahora `getHeroServer` loguea el motivo — si "desaparecieron los
+  domicilios", la respuesta está en los logs y no en cazar el switch del admin.
+- Voseo en la tarjeta *Domicilios* del admin ("Si repartís…" → "Si repartes…").
+
+### Tope anti-abuso configurable (deuda de tests, no de producto)
+- `WEB_ORDER_MAX_PER_IP_PER_DAY` ajusta el tope diario por IP (**default 25,
+  sin cambio de comportamiento**; una env var basura cae al default). Existía un
+  problema real de harness: toda la suite e2e pega desde `127.0.0.1`, así que
+  los tests **compartían un solo presupuesto** y los últimos morían con 429 por
+  vecindad. `setup-env.ts` lo sube para e2e y `web-delivery` reemplaza el
+  **storage** del throttler (no el guard: `ThrottlerGuard` va como `APP_GUARD`,
+  donde `overrideGuard` no llega, y pisar ese token se llevaría auth y roles).
+- El anti-abuso **no quedó sin cobertura**: `web-order-daily-limit.guard.spec.ts`
+  (6 tests unit) prueba tope, aislamiento por IP, reset de ventana, default y
+  env var inválida.
+
+### Pendientes conocidos (NO son bloqueantes del reparto)
+- **La vitrina no anuncia el domicilio**: no hay ni una mención en home, hero,
+  barra de estado ni footer — el cliente se entera recién en el checkout.
+- **El pago al domiciliario no tiene campo propio**: el ingreso del envío está
+  separado (`deliveryRevenue`/`foodRevenue` en el P&G, §7.v18) pero el egreso se
+  registra a mano; si se olvida, el neto queda inflado por lo pagado al repartidor.
+
+---
+
+## 7.v22 El aviso al cliente lo manda el cajero, no el sistema (2026-07-27)
+
+> El dueño reportó que al asignar el envío la caja decía "Avisado" sin que se
+> notara ningún envío. Auditando aparecieron **tres capas de falsa confianza
+> apiladas**. Verificado: typecheck 12/12, lint 0, domain 357, admin 156,
+> e2e 44 suites / 398. Sin migración.
+
+### Lo que estaba pasando
+1. **No había proveedor configurado.** Sin `KAPSO_*` el factory cae al
+   `MockWhatsAppAdapter`. **Ningún cliente recibió nunca un WhatsApp** — ni el
+   del envío, ni instrucciones de pago, ni "pago confirmado", ni "listo".
+2. **La base de datos registraba `sent`.** El mock devolvía `ok:true` y
+   `NotificationService` escribía la fila igual. La tabla de auditoría mentía.
+3. **El badge no miraba nada**: `const assigned = sale.deliveryFee > 0` — decía
+   "Avisado" porque había un número en el campo del envío.
+
+### Decisión del dueño: aviso MANUAL por wa.me
+Como el pedido al proveedor (§7.v19): el sistema escribe el mensaje, **lo manda
+la persona desde SU WhatsApp**. No necesita chip dedicado, ni número registrado
+en Meta, ni templates aprobados — y el cliente responde en el hilo de siempre.
+
+- `WhatsAppProvider.delivers?: boolean`. El mock lo declara `false` y
+  `notify()` **sale sin tocar nada**: ni marca el flag ni escribe la fila. El
+  pedido queda "sin avisar", que es la verdad.
+- `POST /sales/:id/whatsapp/:stage[?force=true]` → `NotificationService.buildManualLink`:
+  arma el `wa.me` con **el mismo texto** que enviaría el automático
+  (`buildNotificationMessage` — una sola fuente para que no cambie la voz el
+  día que se encienda Kapso), marca el flag y registra `status:'manual'`
+  (distinto de `sent`: el histórico dice quién avisó). Sin `force`, reavisar da
+  400.
+- **`Sale.notified`** en el DTO (`{paymentInstructions, paymentReceived,
+  readyForPickup, canceled}`): la caja ya puede distinguir avisado de sin avisar.
+- Botón en los 4 momentos + el inicial de RECOGER, elegido por
+  `whatsappStageFor(sale)` (puro, 8 tests). Un domicilio **sin envío cotizado no
+  ofrece avisar**: el total no es real todavía.
+- `window.open('', '_blank')` **antes** del `await` y luego `location.href` — con
+  un await en el medio el navegador lo bloquea (piedra ya conocida de §7.v19).
+
+### El mensaje del envío ahora muestra el desglose
+`Total: $45.000 ($38.000 del pedido + $7.000 de domicilio)`. Antes decía solo el
+total y "ya incluye el domicilio" — al cliente le acaba de subir el número que
+vio en la web y ese es justo el dato que va a querer discutir.
+
+### Tests: dos premisas, dos suites (NO mezclar)
+- `whatsapp-manual.e2e-spec.ts` — **sin** proveedor (el mock real): verifica que
+  no se envía Y que no se finge.
+- `web-delivery` / `web-orders` / `whatsapp-retry` — usan
+  `withDeliveringWhatsApp()` (helper en `test/helpers/`): prueban el camino
+  AUTOMÁTICO, que sigue vivo para cuando exista Kapso.
+
+---
+
+## 7.v23 La dirección manda: Google Places + candado real de zona (2026-07-27)
+
+> Verificado: typecheck 12/12, lint 0, e2e 44 suites / 398 (+14 de
+> `web-address`). Sin migración.
+
+### El bug de fondo: se medía la cosa equivocada
+Había dos datos que no se hablaban: `deliveryAddress` (texto libre, a dónde va la
+comida) y `customerLat/Lng` (**GPS del navegador**, dónde está el teléfono). El
+radio validaba **el GPS**. Quien pedía desde el trabajo para su casa se medía
+desde el trabajo; quien estaba parado en la puerta del local podía escribir una
+dirección a 20 km y pasaba.
+
+### Ahora
+- **Puerto `AddressProvider`** en domain (`suggest` / `resolve`), con
+  `GoogleAddressAdapter` (Places New, sesgado a `regionCode:'co'` + radio del
+  local) y `StubAddressAdapter` determinístico para dev/tests sin llave ni
+  cuota (una dirección con "lejos" cae a ~50 km).
+- **La llave NUNCA va al navegador**: el autocompletado pasa por
+  `GET /web/address/suggest` (40/min por IP) y `POST /web/address/resolve`
+  (20/min). Es un endpoint público y cada búsqueda cuesta plata.
+- **Coordenadas FIRMADAS (`addressToken`, HMAC, TTL 1h)**: el server resuelve,
+  firma `{formatted, lat, lng, exp}` y el navegador solo transporta el sobre.
+  Sin esto el candado sería decorativo — bastaría editar el lat/lng del body. Y
+  evita pagar una segunda resolución al crear el pedido.
+- **Candado real**: con `ordersRespectRadius` activo, un domicilio **sin token
+  válido se rechaza** ("elige tu dirección de la lista"), y fuera del radio
+  también. El GPS ya no participa de la decisión (sí se guarda: abre el mapa).
+- Web: `AddressAutocomplete` (debounce 350 ms, session token de Google para no
+  pagar cada tecla) reemplaza el input libre y el `LocationCheck` por GPS.
+  Torre/apto/portería quedan en campo aparte — **no se geocodifican** y son lo
+  que el repartidor necesita.
+- Google devuelve precisión variable; se expone (`exact|interpolated|approximate`)
+  y la web avisa "ubicación aproximada". A 3 km de radio esa diferencia decide.
+
+### Config vigente (dev)
+`delivery_enabled=true`, `orders_respect_radius=true`, `order_radius_km=3`.
+**En prod hay que replicarlo desde admin → Web del cliente → Domicilios** (son
+datos, no código) y setear `GOOGLE_MAPS_API_KEY`; sin la llave corre el stub, que
+inventa direcciones.
+
+### Decisiones tomadas (NO revertir sin preguntar)
+- **Bloquear, no avisar** (decisión del dueño 2026-07-27): revierte
+  "el radio es un filtro, no un candado" (§7.v13 / 2026-07-16). Aquello tenía
+  sentido cuando dependía de un permiso de GPS que se puede negar; con la
+  dirección verificada, ya no.
+- **Línea recta** (haversine), no distancia de manejo: no se agrega otra API
+  paga. A 3 km el error de recorrido pesa — si empieza a rechazar gente que sí
+  se alcanza, subir el número antes que cambiar el método.
+
+### Pendiente conocido
+`WEB_ORDER_MAX_PER_IP_PER_DAY` (§7.v21) y el throttle de direcciones son **por
+IP y en memoria**: siguen atados al invariante `numReplicas:1`.
+
+---
+
+## 7.v24 El domicilio NO es ingreso: es plata de un tercero (2026-07-27)
+
+> **REVIERTE la decisión de §7.v18 / 2026-07-17** ("el envío cuenta como
+> ingreso"). El dueño lo vio en `/reports/sales` y lo llamó "un gran error": el
+> cobro del domicilio **no se lo queda el negocio**, se lo lleva el repartidor.
+> Contarlo como ingreso inflaba ventas, ticket promedio y —peor— el margen
+> bruto, porque el envío no consume inventario (COGS 0).
+> Verificado: typecheck 12/12, lint 0, unit todo verde, e2e 44 suites / 399.
+> Sin migración.
+
+### La regla (NO volver a invertirla sin decirlo acá)
+- **`revenue` = lo que se queda el negocio.** En `sales-summary`, heatmap, P&G y
+  estado financiero: `Σ(total) − Σ(deliveryFee)`.
+- **`deliveryCollected` = plata de terceros** recaudada. Se reporta —hay que
+  arquearla y hay que pagarla— pero NUNCA se suma a los ingresos. Reemplaza a
+  `deliveryRevenue`; `foodRevenue` **se eliminó** (era idéntico al nuevo
+  `revenue`, dos nombres para lo mismo).
+- **`byMethod` SÍ incluye el envío**: es la plata que físicamente entró por cada
+  medio, y es contra eso que se arquea y se concilia con el banco. De ahí la
+  identidad `Σ byMethod = revenue + deliveryCollected`, que la UI explica en
+  vez de esconder (si no, "por método de pago" parece no cuadrar).
+- **Caja y arqueo no cambian**: el efectivo del domicilio está en el cajón. Si
+  el dueño le paga al repartidor, eso es una **salida de efectivo** registrada a
+  mano en el POS (§7.v17: ningún módulo financiero escribe `cash_movements`).
+
+### Efecto colateral bueno
+La deuda de §7.v18 ("el revenue de *top productos* difiere del de *resumen de
+ventas* exactamente por la suma de los envíos") **queda cerrada**: ahora los dos
+excluyen el envío y coinciden. Hay un invariante que lo fija en
+`math-invariants`.
+
+### Otros arreglos del mismo bloque
+- **`WEB_DELIVERY` crudo en pantalla**: los dos mapas de etiquetas de
+  `reports-sales` tenían solo COUNTER y WEB_PICKUP, así que el dueño leía el
+  nombre del enum. Ahora hay **`SALE_TYPE_LABELS` / `saleTypeLabel()` en
+  `packages/types`** (misma solución que `SALE_STATUS_LABELS`): una sola fuente,
+  imposible olvidar un tipo nuevo en una app.
+- **El detalle del pedido dice cuánto es domicilio** (modal del cajero y fila
+  expandida del reporte), con el "queda en el negocio" al lado. Antes el salto
+  entre subtotal y total no tenía explicación.
+- **Recibo del pedido web**: `ConfirmWebPaymentModal` mandaba la comanda a
+  cocina pero **no imprimía la factura** (el mostrador sí). Se agregó, con el
+  mismo best-effort.
+- **Pedidos web en el panel de Vender**: `OrdersPanel` consultaba
+  `type: 'COUNTER'`, así que un pedido web cobrado no aparecía en "Últimos
+  pedidos" aunque sí estuviera en Historial.
+- **Envío + aviso en un solo toque**: `DeliveryFeeField` guarda la tarifa y abre
+  WhatsApp en la misma acción (antes eran dos botones seguidos para una sola
+  idea). `whatsappStageFor` devuelve null para domicilio sin cobrar — ese aviso
+  lo dispara el campo del envío.
+- Copy: "N pedido llevan más de 10 min sin completarse" → concordancia y
+  "sin **cobrarse**" (el contador solo mira `PENDIENTE_PAGO`, no cocina).
+
+---
+
+## 7.v25 La web del cliente deja de contar el progreso del pedido (2026-07-27)
+
+> Decisión del dueño: el avance del pedido lo marca el cajero a mano y en la
+> práctica no siempre ocurre. Una barra "Recibido → Preparando → Listo" que
+> nunca avanza es peor que no tenerla: promete algo que no va a pasar.
+> Verificado: typecheck 12/12, lint 0, unit todo verde, e2e 44 suites / 399.
+
+### La web muestra TRES desenlaces, no ocho estados
+| Desenlace | Cuándo | Qué ve el cliente |
+|---|---|---|
+| Esperando tu pago | `PENDIENTE_PAGO` | Cómo pagar + botón de WhatsApp (lo único accionable) |
+| Pago confirmado | `PAGADO` y cualquier avance posterior | Su número de pedido; el resto llega por WhatsApp |
+| Cancelado | `CANCELADO_*` / `VOID` | Que no se completó |
+
+- **Borrado** `StatusTimeline` (las 3 pastillas de progreso) y el "Tiempo
+  estimado: listo en ~20 min" — nada respaldaba esa promesa.
+- `PAGADO` pasa a ser **terminal para la web**: el poller deja de consultar ahí
+  (antes seguía hasta `LISTO_DESPACHO`, gastando requests para redibujar lo
+  mismo) y el banner de "pedido en curso" se limpia. `isTerminalStatus` quedó
+  como **fuente única** — el poller tenía su propia copia y se habían
+  desincronizado.
+- El **domicilio va antes del total** en el detalle: puesto después, el total se
+  leía como si le faltara sumar algo.
+
+### Lo que NO se tocó
+Los botones del cajero (**Marcar listo · Marcar despachado · Marcar entregado**)
+y los mensajes de WhatsApp **siguen existiendo**. El canal de avance es WhatsApp,
+no la página.
+
+> ⚠️ **Consecuencia operativa**: si el cajero no usa esos botones, los pedidos se
+> quedan en `PAGADO` para siempre — se acumulan en "Por preparar" del modal de
+> Pedidos web y ningún domicilio llega nunca a `ENTREGADO` (§7.v21), así que el
+> tiempo de reparto no se puede medir. El cliente igual no se entera: la web ya
+> no promete ese avance.
+
+---
+
+## 7.v26 Cerrado = no se arma pedido · el chat se abre solo (2026-07-27)
+
+> Dos ajustes del dueño sobre la web del cliente. Verificado: typecheck 12/12,
+> lint 0, unit todo verde, e2e 45 suites / 412.
+
+### Con el local cerrado no se puede hacer crecer el pedido
+Antes solo se bloqueaba el checkout: el cliente armaba todo y chocaba al final.
+La regla ahora es una: **cerrado ⇒ el pedido no crece.**
+
+| Acción | Cerrado |
+|---|---|
+| Ver el menú y los precios | ✅ |
+| Tocar un producto (abrir el picker) | ❌ |
+| Sumar cantidad en el carrito | ❌ |
+| Quitar / vaciar | ✅ |
+| Ir a pagar | ❌ |
+
+- El card dice **"Cerrado"**, NO "Agotado": el producto existe y mañana se
+  vende igual — reusar el cartel de agotado mentiría sobre el motivo.
+- El menú se sigue leyendo a propósito (quien mira a las 3 pm es el cliente de
+  las 5) y el carrito **no se borra**.
+- Todo sale de `acceptingOrders` (kill-switch + horario, resueltos en el
+  server): la web no recalcula nada.
+- ⚠️ Depende del switch **"Fuera de horario, no aceptar pedidos web"**. En dev
+  quedó prendido; **en prod hay que prenderlo desde admin** (es dato, no código).
+
+### El chat de WhatsApp se abre al confirmar, sin botón extra
+El botón "Enviar mi pedido por WhatsApp" de la pantalla de seguimiento era un
+paso que —observación del dueño— la mayoría no iba a dar; y sin ese mensaje el
+pedido quedaba esperando a que el cajero se acordara de escribir.
+
+- **El motivo técnico que lo justificaba ya no existía**: se puso para que el
+  cliente escribiera primero y se abriera la ventana de 24 h de la Cloud API.
+  Desde §7.v22 los avisos salen del WhatsApp **personal** del cajero — no hay
+  ventana ni templates que respetar.
+- Ahora `CheckoutForm` abre el chat **dentro del gesto de confirmar**
+  (`window.open('', '_blank')` ANTES del `await`, luego `location.href` — la
+  misma piedra del pop-up de §7.v19).
+- `SendOrderByWhatsApp` **queda** como respaldo, en tono secundario y al final:
+  cubre pop-up bloqueado, pestaña cerrada o volver al link horas después.
+- Beneficio operativo: el mensaje entrante le llega al cajero **a su teléfono**,
+  que es una señal más fuerte que un badge en el POS.
+
+---
+
+## 7.v27 El domicilio en el cierre de caja: contado pero marcado (2026-07-27)
+
+> El dueño reportó que el cierre "tiene en cuenta el valor del domicilio".
+> Verificado contra los datos: el **efectivo esperado NO lo incluía** (sus dos
+> domicilios se pagaron por transferencia). Lo que sí lo incluía eran las
+> **líneas de ventas** del reporte — inconsistencia con §7.v24, que dejó los
+> reportes netos pero no tocó el Z del turno.
+> Verificado: typecheck 12/12, lint 0, unit 165 admin, e2e 45 suites / 412.
+
+### La regla (NO invertirla sin leer esto)
+Un domicilio pagado **en efectivo** deja esa plata **físicamente en el cajón**.
+Por eso `expectedCash` la sigue esperando: si no lo hiciera, cada domicilio en
+efectivo produciría un **sobrante fantasma** en el arqueo. La plata se descuenta
+cuando se le paga al repartidor, registrando una **salida de efectivo** (§7.v17:
+los movimientos de caja se hacen a mano en el POS).
+
+| Cifra | Domicilio | Por qué |
+|---|---|---|
+| `totalSales` (vendido) | **excluido** | No es ingreso del negocio |
+| `byMethod` / `cashSalesTotal` | **incluido** | Es la plata que entró; se arquea contra esto |
+| `expectedCash` | **incluido** | Está en el cajón |
+
+De ahí la identidad `Σ byMethod = totalSales + deliveryCollected`.
+
+### Lo que se agregó
+- `deliveryCollected` y **`deliveryCashCollected`** en `ShiftSummary`. El
+  segundo es la parte que entró en efectivo (prorrateada por la porción CASH en
+  cuentas divididas): el Z-report avisa en ámbar **"de lo esperado, $X son
+  domicilios cobrados en efectivo: son del repartidor"**, para que el cajero
+  sepa cuánto de lo que cuenta se va a ir.
+- El pie del Z pasó de "Total ventas del turno" a **"Vendido en el turno"**
+  neto, más "· más $X de domicilios (no son ingreso)".
+- 7 tests nuevos en `shift-summary.test.ts`, incluido el prorrateo de cuenta
+  dividida y el caso "domicilio por transferencia no ensucia el efectivo".
+
+### Bug de fondo encontrado
+`ShiftZReport.tsx` declaraba **su propia copia** de `interface ShiftSummary` con
+4 campos. Por eso agregar datos al resumen no llegaba al reporte. Ahora importa
+el tipo real — un tipo duplicado por componente es una desincronización
+esperando a que alguien agregue un campo.
+
+### Barrido posterior: 3 pantallas más contaban el envío como ingreso
+§7.v24 neteó el resumen de ventas y el P&G, pero **quedaron tres sumando
+`total` bruto**. Encontradas revisando todos los `_sum: { total }` y `+= s.total`
+del backend:
+
+1. **Dashboard de inicio** (`getDashboardSummary`): ingresos del día **y** el
+   comparativo de la semana pasada. Se netean los DOS lados — netear solo hoy
+   habría inventado una caída en el WoW%.
+2. **Estado financiero** (`finance-summary`): `revenue` del mes y, con él, el
+   `netCash` (ingresos − pagado).
+3. **Resumen diario del dueño (IA)**: mezclaba las dos escalas —
+   `digitalRevenue = totals.revenue (NETO) − cashRevenue (BRUTO)`—, así que con
+   un domicilio en efectivo salía **negativo**. Ahora lo digital se suma de su
+   propio lado.
+
+**Correctos, verificados y NO tocados:** la conciliación bancaria (matchea
+`sale_payments.amount`, que es lo que llegó al banco), `byMethod`,
+`cashSalesTotal` y `expectedCash`. Tesorería sigue en bruto a propósito: mide
+plata en bolsillos reales, y el envío por transferencia **sí** entró a la cuenta
+(la deuda ahí es que el pago al domiciliario no se registra en ningún lado).
+
+Invariante nuevo en `math-invariants`: *"ninguna pantalla de ingresos cuenta el
+envío, y lo cobrado sí"* — recorre resumen, dashboard y byMethod en un solo caso.
+
+### Aviso del efectivo (corregido tras aclaración del dueño)
+El efectivo de un domicilio **se le paga directo al domiciliario: no entra al
+cajón**. Por eso, si aparece un domicilio registrado como cobrado en efectivo,
+el Z avisa que el esperado lo está contando de más — en vez de sugerir
+registrar una salida que no corresponde a esta operación.
+
+---
+
+## 7.v28 El domicilio sale del arqueo y pasa a ser UN dato de decisión (2026-07-27)
+
+> Regla del dueño, sin excepciones: *"ese dinero no es del negocio ni se cuenta
+> para cierres de caja, arqueos, ventas"*. Y un único dato que sí quiere:
+> **cuánto se llevan los domiciliarios**, para saber cuándo conviene contratar.
+> Verificado: typecheck 12/12, lint 0, unit 165 admin, e2e 45 suites / 414.
+
+### Fuera del efectivo esperado
+`computeExpectedCash` ahora **resta el envío** de la porción cobrada en efectivo
+(prorrateado en cuentas divididas). Razón operativa: **el efectivo del domicilio
+se le paga DIRECTO al domiciliario y nunca entra al cajón** — el repartidor solo
+devuelve lo de la comida. Antes se esperaba y cada domicilio en efectivo habría
+marcado un faltante inventado.
+
+Invariante nuevo: *"un domicilio cobrado en efectivo NO sube el efectivo
+esperado"* (paga 13.000, el cajón espera 5.000).
+
+### El dato: `DeliverySpendCard` en /finanzas/estado
+Total del mes + cantidad + promedio por entrega, con la comparación explícita
+contra lo que costaría un repartidor propio. **Tarjeta aparte, NO dentro del
+P&G** — y se quitó de ahí la línea que había: no es venta (el negocio no se
+queda el peso) ni gasto propio (lo paga el cliente), así que dentro del P&G
+volvía a mezclarse con la plata del negocio.
+
+### Único lugar donde el envío SIGUE contando (y por qué)
+El **arqueo digital**. Un domicilio pagado por transferencia **sí entró a la
+cuenta**: si el esperado lo excluyera, el cajero contaría el banco y vería un
+sobrante en cada domicilio — con alerta de descuadre al dueño (§7.v20) cada vez.
+El arqueo digital no es una cifra de ventas: es "cuánto hay en la cuenta".
+
+### Segunda pasada: el envío desaparece de TODA la caja
+El historial de arqueos llamaba **"Ingresos"** a la suma de `byMethod`, y
+`ShiftSessionSummary.totalRevenue` venía bruto. Al mostrarlo separado el dueño
+fue claro: **es ruido**. Los domiciliarios cobran **en el momento**, no por días
+— no hay nada que conciliar ni que entregar después, así que verlo en un arqueo
+no aporta.
+
+- `totalRevenue` (sesión) pasa a **neto**; `ShiftSessionOrder` lleva su
+  `deliveryFee` y el resumen expone `deliveryCashCollected` (uso INTERNO: netear
+  la fila de efectivo).
+- `ArqueoDetail`: **"Ingresos" → "Cobrado"**, la fila de efectivo va neta y
+  **no hay línea de domicilios**. Ídem el Z de cierre y el detalle de `/shifts`.
+- **Reporte de ventas: `byMethod` también va NETO** (prorrateado por método).
+  Antes sumaba más que "Ingresos" y hacía falta un párrafo explicándolo; ahora
+  cuadra exacto y no hay nada que explicar. Invariante:
+  `Σ byMethod === totals.revenue`.
+
+**El envío se ve en UN solo lugar: la tarjeta "Domicilios del mes"**
+(Finanzas → Estado). Total, cantidad y promedio, para decidir cuándo conviene
+contratar un repartidor propio.
+
+### Mapa final del envío
+| Dónde | ¿Aparece el envío? |
+|---|---|
+| Ventas, ingresos, P&G, dashboard, estado financiero, `byMethod` | **No** |
+| Cierre de caja, arqueo del cajón, historial de arqueos, detalle de sesión | **No** |
+| Arqueo digital y conciliación bancaria | **Sí, en el número** (el banco lo recibió) pero **sin línea propia** |
+| Tarjeta "Domicilios del mes" (Finanzas) | **El único lugar donde se muestra** |
+
+⚠️ Si un domicilio se paga por transferencia y al repartidor se le da efectivo
+del cajón, esa salida hay que registrarla en Caja como cualquier otra — si no,
+el arqueo marca faltante. El sistema ya lo soporta; no hay automatismo.
+
+---
+
+## 7.v30 El envío NUNCA está en el arqueo, en ningún medio (2026-07-28)
+
+> Aclaración final del dueño: **"entran pero salen al momento… no hay un cierre
+> de caja donde no se hayan pagado todos los domicilios"**. Al repartidor se le
+> paga al entregar, siempre. Entonces al cerrar esa plata YA SALIÓ, de cualquier
+> medio — y el arqueo no debe esperarla.
+> Verificado: typecheck 12/12, lint 0, unit 165 admin, e2e 45 suites / 416.
+
+### La regla, ahora sin excepciones
+`expectedCash` **y** `computeDigitalExpected` restan el envío, prorrateado por
+la parte que pagó cada medio. Ídem `ShiftSessionSummary.byMethod`, que es de
+donde leen el historial de arqueos y el detalle de `/shifts`.
+
+Consecuencia buscada: **ningún total de caja incluye el domicilio** — ni el
+esperado en efectivo, ni el de cuenta, ni el total del turno, ni en el admin.
+Invariante: en el detalle de sesión, `Σ byMethod === totalRevenue`.
+
+### Se descartó el registro manual de pago al domiciliario
+Una versión intermedia agregó `POST /sales/:id/delivery-payout` + un vínculo
+`cash_movements.sale_id` para registrar a mano "le pagué al repartidor". **Se
+revirtió entero** (código y migración, nunca se commiteó): si el pago es
+automático y garantizado en cada entrega, pedirle al cajero que lo registre es
+un paso que nunca va a fallar de forma útil — solo ruido. Se deja anotado para
+no reinventarlo.
+
+⚠️ El corolario que hay que aceptar: el sistema **asume** que todo domicilio se
+pagó. Si alguna vez no fuera así, el arqueo mostraría un sobrante por ese monto.
+Es el trade-off elegido a cambio de que la caja quede limpia.
+
+### Dónde vive el dato
+Solo en la tarjeta **"Domicilios del mes"** (Finanzas → Estado): total, cantidad
+y promedio, para decidir cuándo conviene un repartidor propio.
+
+---
+
+## 7.v31 Auditoría de estabilidad: el arqueo del cliente y la merma doble (2026-07-28)
+
+> Auditoría cíclica pedida por el dueño (estabilidad, fugas, arquitectura,
+> seguridad). Los gates ya estaban verdes al empezar: los dos bugs salieron de
+> leer la lógica, no de los tests. Verificado: typecheck 12/12, lint 0,
+> unit 1.079, e2e 45 suites / 417, builds 8/8.
+
+### El badge "En caja" mostraba de más el domicilio cobrado en efectivo
+`computeShiftSummary` (admin) seguía en la semántica **bruta** de §7.v27
+mientras el server ya iba **neto** (§7.v30). No es un caso de borde: el badge
+del topbar y `CajaPanel` usan SIEMPRE el cálculo del cliente —sin respaldo del
+server—, así que en cualquier turno con un domicilio en efectivo el cajero veía
+un número y contaba otro. El Z-report además no cuadraba consigo mismo
+(apertura + ventas en efectivo + entradas − salidas ≠ esperado), porque el
+"esperado" sí venía del server.
+
+- La fórmula del prorrateo estaba escrita a mano en **5 lugares**. Ahora vive
+  una sola vez en `packages/domain/src/finance/delivery-netting.ts`
+  (`netOfDeliveryFee` / `deliveryFeeShareOfPayment`, 11 tests) y la importan
+  `computeExpectedCash`, `computeDigitalExpected`, el resumen de sesión, el
+  reporte de ventas y el admin. **Si cambia la regla del envío, se cambia ahí.**
+- Los tests del admin afirmaban el comportamiento viejo — se corrigieron al
+  invariante real: `Σ byMethod === totalSales`.
+
+### Doble clic en "Anular merma" devolvía el doble de stock
+`InventoryService.reverseWaste` leía "lo ya devuelto" y escribía la reversa
+**fuera de transacción**. Dos requests leían ambas `alreadyReturned = 0`, las
+dos pasaban el tope y el insumo volvía al doble. Y como `inventory_movements`
+es insert-only, ese fantasma **no se borra**: solo se compensa a mano.
+
+Ahora va en tx `Serializable` + `runWithSerializationRetry` (el patrón ya
+establecido en ventas/cierre/producción). Test de regresión en
+`waste-reversal.e2e-spec.ts`, **verificado que falla sin el fix** (2 de 6
+requests entraban). ⚠️ Con solo 2 requests en paralelo la carrera no se
+reproduce — el test manda 6.
+
+### Promesas sueltas: ahora las atrapa el linter
+Se activaron `no-floating-promises` y `no-misused-promises` (con tipos, vía
+`projectService`) en las 5 apps. **Había cero violaciones de floating**: no
+limpió nada, congela la disciplina que ya existía para que no se pierda.
+
+- `checksVoidReturn: { attributes: false }` es obligatorio: sin eso marca 88
+  `onClick={async () => …}` perfectamente sanos y la regla termina apagada.
+- Solo sobre `src/` — `next.config.ts`/`vitest.config.ts`/`prisma/seed.ts` están
+  fuera del tsconfig de la app y el parser con tipos los rechaza.
+- Se arreglaron los 4 sitios reales (`setInterval`/`setTimeout` con callback
+  async, `forEach` sobre promesas en el service worker de dev).
+
+### Dos huecos de tooling que llevaban tiempo abiertos
+- **`apps/cocina` nunca tuvo reglas de hooks.** El glob del linter decía
+  `apps/{admin,pos,web,public-display}`: `pos` ya no existe (se fusionó en
+  `admin`) y `cocina` (§7.v11) nunca se agregó. Corregido — y al agregar una
+  app nueva hay que agregarla ahí o queda sin linter en silencio.
+- **`caja-events` movido a `admin/src/lib/`.** `sales` lo importaba por ruta
+  profunda para esquivar un ciclo REAL (`caja-shifts` ya importa el barril de
+  `sales`). Un bus de eventos es transversal, no propiedad de un feature. De
+  paso: dos `vi.mock` apuntaban a `features/shifts/lib/caja-events` —que no
+  existe, es `caja-shifts`— y llevaban tiempo siendo inertes.
+
+### Deuda reportada y NO corregida (decisión: no refactorizar a ciegas)
+- **42 componentes >200 líneas** (la regla de §3 dice <200) y **11 imports
+  cross-feature** que saltan el `index.ts`. Son de mantenibilidad, no de
+  estabilidad; partirlos sin supervisión es más riesgo que beneficio.
+- Cobertura API: **77,7% statements / 62,5% branches**. Lo más flojo con lógica
+  real es `subproducts/production.service.ts` (**20%**), que es justo el camino
+  concurrente de producción — candidato #1 a más e2e.
+- Verificado y sin novedad (para no re-auditarlo): SQL siempre parametrizado,
+  cero `dangerouslySetInnerHTML`/`eval`, cookies `httpOnly`+`sameSite:lax`,
+  CORS con allowlist obligatoria en prod, todos los `setInterval` con cleanup,
+  cachés en memoria acotadas (`prune`), y todos los `void this.x(...)` van a
+  services que envuelven su cuerpo en try/catch (no hay unhandled rejection que
+  tumbe el proceso en Node 20).
+
+---
+
+## 7.v32 Lo que se regala o se tira SIEMPRE tiene un costo (2026-07-30)
+
+> El dueño vio una cortesía de hamburguesa costeada en **$3.425** cuando el
+> producto vale **$4.925** de insumos, y lo llamó por su nombre: *"nunca se
+> asume en cero porque es un gran error, debe darle un valor"*.
+> Verificado: domain 376, api unit 121, admin 172, **e2e 45 suites / 419**,
+> typecheck 12/12, lint 0, más verificación visual de las dos pantallas. Sin
+> migración.
+
+### Qué pasaba
+La hamburguesa consume, a un nivel, 1 Pan + 1 Pollo sazonado. El Pan estaba en
+**−8 unidades** (25 compradas, 33 consumidas), así que FIFO no tenía lote del
+cual sacar su costo. La cortesía cargó solo el subproducto ($3.425) y el pan
+sumó **$0** — el número se veía exacto y estaba incompleto.
+
+La causa era una asimetría deliberada del ledger: **la venta estimaba su
+faltante al último precio conocido y dejaba una DEUDA** que la próxima compra
+corrige a costo real, pero **merma y cortesía no estimaban nada**: su faltante
+quedaba en `unknownQty`, que en el P&G suma cero. Regalar o tirar un insumo que
+no estaba cargado salía gratis.
+
+### La regla (NO volver a invertirla)
+- **Los CUATRO consumos estiman igual**: venta, cortesía, merma y **producción**.
+  El faltante se valora al último precio conocido del replay y, si el stockable
+  nunca tuvo entrada, al respaldo del catálogo (`fallbackUnitCost`).
+- **Sin ningún precio con qué estimar sí queda `unknownQty`** — ahí es
+  desconocido de verdad, y eso es distinto de cero.
+- **Todo faltante crea DEUDA** (`Debt.kind: 'sale' | 'cortesia' | 'waste' |
+  'production'`), así que la próxima compra lo corrige al costo REAL por
+  diferencia. Antes solo la venta lo hacía; como los otros tres no dejaban
+  deuda, sus unidades fantasma tampoco se descontaban de la compra siguiente y
+  la valuación quedaba por encima del stock real de la DB. Esto lo cierra.
+- **La producción es la excepción parcial**: estima igual (si no, el subproducto
+  nace barato y ese descuento se arrastra a TODO lo que se venda con él) y su
+  deuda se salda para sacar las unidades fantasma del inventario, pero el lote
+  producido **NO se re-costea**: pudo venderse hace meses y reabrir esa cadena no
+  es viable. La diferencia contra el estimado queda sin registrar — limitación
+  acotada al caso de producir sin haber cargado la compra.
+- **La corrección se imputa a la fecha del CONSUMO**, no a la de la factura: si
+  cayera en el mes de la compra, el mes que regaló el producto quedaría
+  subestimado para siempre (los reportes filtran `waste`/`cortesia` por fecha).
+- **Anular una cortesía o una merma cancela su deuda**, o una compra posterior
+  saldaría la deuda de algo que ya no existe.
+
+### Dónde
+Todo en `packages/domain/src/cost-fifo/run-ledger.ts`: `registerShortfall`
+(único lugar donde nace una deuda), `attributeToLoss` (netea en la línea de
+merma o cortesía) y el saldo dentro de `addLot`, que ahora despacha según
+`kind`. `Debt.saleId` pasó a `Debt.consumerId` — un snapshot viejo se hidrata
+al shape nuevo, no hay que regenerarlo.
+
+Las historias aleatorias de `test-support/ledger-histories.ts` ahora generan
+mermas, cortesías **y tandas de producción** sin stock: las leyes de propiedad
+(conservación de unidades, nada valuado en $0, equivalencia snapshot vs replay
+completo) cubren el camino nuevo.
+
+### La UI dice cuándo el número es estimado
+Un estimado presentado como exacto es el mismo problema que el $0: el dueño lee
+una cifra cerrada. El ledger ahora declara **cuánto** de cada pérdida es
+estimado (`LossEntry.estimatedCost`, que vuelve a 0 solo cuando la factura salda
+la deuda) y eso viaja hasta la pantalla:
+
+- **Solicitudes de cortesía**: "aprox." junto al total del mes + aviso con el
+  monto estimado, y `· estimado` en la fila de cada cortesía
+  (`CortesiaGivenSummary.estimatedCost`, `CortesiaRequest.fifoCostEstimated`).
+- **Estado financiero**: aviso bajo las líneas de Cortesías y de Merma
+  (`cortesiasCostEstimated` / `wasteCostEstimated`), con el mismo tono que el
+  aviso de COGS estimado que ya existía.
+- `partial` (no había NINGÚN precio con qué estimar) ahora dice "está
+  subestimado", que es distinto de "es aproximado".
+
+De paso, `CortesiasPanel` declaraba **su propia copia** del resumen del mes con
+3 campos: por eso agregar datos al backend no llegaba a la pantalla. Ahora
+importa `CortesiaGivenSummary`. Es el mismo error que `ShiftZReport` en §7.v31 —
+un tipo duplicado por componente se desincroniza siempre.
+
+⚠️ El ledger cachea 60s: después de subir la factura que salda una deuda, el
+P&G refleja el costo real cuando vence el TTL.
+
+---
+
+## 7.v32 La cortesía es un pedido del día: va en el historial (2026-07-30)
+
+> El dueño regaló una hamburguesa y en el historial del día solo apareció el
+> pedido cobrado. La cortesía **sí** estaba registrada (`cortesia_requests`,
+> stock descontado, notificación al dueño) pero vivía únicamente en una pestaña
+> aparte que leía `/cortesias/mine` — las de otro usuario no se veían y el chip
+> no traía contador, así que en la práctica era invisible.
+> Verificado: typecheck 12/12, lint 0, unit admin 172 (+10), e2e cortesías 9/9.
+> Sin migración.
+
+### La regla
+- **Un pedido regalado es un pedido**: la cocina lo preparó y el negocio no lo
+  cobró. Va en la MISMA lista que las ventas del día, ordenado por hora,
+  rotulado `CORTESÍA` y con el valor **tachado** + "regalado · no se cobró" (es
+  pérdida, no un pedido más que entró plata). El motivo se muestra siempre —es
+  lo que el cajero necesita para explicarlo— y las `REVERSED` se ven "no cuenta".
+- **Los filtros por estado son de VENTA** (Pend. pago / Pagados / Listos /
+  Anulados): una cortesía no se cobra ni se anula, así que solo sale en «Todos»
+  y en su propia pestaña. El contador de «Todos» sí la cuenta.
+- **El historial del día no filtra por cajero** — tampoco el de cortesías.
+  Nuevo `GET /cortesias/day?from=` (`@CashierAccess`, todas las del día de
+  negocio, `from` inválido → 400). `/cortesias/mine` queda para el watcher de
+  novedades, que sí es personal.
+- Si la lectura de cortesías falla, el historial de ventas se muestra igual (un
+  regalo no puede tumbar la pantalla operativa); el fallo va al `logError`.
+
+### Detalle
+- **Las dos listas del día llevan cortesías**: el historial (`DayHistoryPanel`)
+  y «Últimos pedidos» del panel de Vender (`RecentOrdersSection`, extraído de
+  `OrdersPanel` — que quedó en 240 líneas).
+- **Se toca y se ve, igual que un pedido cobrado**: `CortesiaDetailModal`
+  (qué salió · motivo · quién la dio · valor regalado) se abre desde las dos
+  listas. Una fila que no responde al tap cuando todas las de al lado sí,
+  se lee como que la app está rota.
+- **Aparece al instante, sin recargar**: regalar el pedido emite
+  `notifyOrdersChanged()` (el mismo bus que cobrar/anular/editar) y el
+  historial **se suscribió** a ese evento — antes solo pooleaba cada 8s, así
+  que cualquier cambio hecho en otra vista tardaba o exigía recargar.
+- `mergeDayEntries`/`entryMatchesFilter` (`features/sales/lib/day-entries.ts`,
+  puros) hacen la unión; `CortesiaHistoryRow` (feature `caja-cortesias`) rinde
+  la fila del historial. Se **borró** `CortesiasList`: su scope "mías" era el
+  bug y su "Marcar visto" ya lo cubre el `CortesiaNotifier` (toast).
+
+---
 
 ## 8. Estado del proyecto (commits y FASES)
 

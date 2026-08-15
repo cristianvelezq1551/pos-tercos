@@ -52,7 +52,7 @@ export class CortesiasService {
     // estado financiero → el KPI y el P&G coinciden siempre.
     const { from: monthStart, to: monthEnd } =
       await this.businessConfig.getBusinessMonthWindow(year, month1);
-    const { total, count, unknownQty } = await this.cogs.getApprovedCortesiaCost(
+    const { total, count, unknownQty, estimatedCost } = await this.cogs.getApprovedCortesiaCost(
       monthStart,
       monthEnd,
     );
@@ -63,6 +63,7 @@ export class CortesiasService {
       total,
       count,
       partial: unknownQty > 0,
+      estimatedCost,
     };
   }
 
@@ -220,10 +221,28 @@ export class CortesiasService {
     if (out.some((c) => c.status === 'APPROVED')) {
       const bySource = await this.cogs.getCortesiaCostBySource();
       for (const c of out) {
-        if (c.status === 'APPROVED') c.fifoCost = bySource.get(c.id)?.cost ?? null;
+        if (c.status !== 'APPROVED') continue;
+        const entry = bySource.get(c.id);
+        c.fifoCost = entry?.cost ?? null;
+        c.fifoCostEstimated = (entry?.estimatedCost ?? 0) > 0;
       }
     }
     return out;
+  }
+
+  /**
+   * Cortesías registradas desde `from` — TODAS, no solo las de quien pregunta.
+   * Alimenta el historial del día de la caja: un pedido regalado es un pedido
+   * que la cocina preparó, y el cajero tiene que verlo junto a los cobrados
+   * (antes solo existía en la pestaña "mías" y se perdía de vista).
+   */
+  async listSince(from: Date): Promise<CortesiaRequest[]> {
+    const rows = await this.prisma.cortesiaRequest.findMany({
+      where: { createdAt: { gte: from } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return this.toDtos(rows);
   }
 
   /** Cortesías del cajero (para que vea el estado y acuse las observadas). */

@@ -259,8 +259,13 @@ describe('Config de la web del cliente E2E', () => {
     const CERCA = { customerLat: 6.1705, customerLng: -75.5835 };
     const LEJOS = { customerLat: 4.711, customerLng: -74.0721 };
 
-    // Va como DOMICILIO: el radio es la zona de cobertura del delivery. A quien
-    // viene a recoger no se le bloquea por vivir lejos (lo cubre web-delivery).
+    /**
+     * §7.v23: la cobertura se mide contra la DIRECCIÓN elegida, no contra el
+     * GPS. `orderFrom` sigue mandando coordenadas de navegador a propósito —
+     * lo que prueba ahora es que ese camino YA NO alcanza para pasar el
+     * candado. El flujo bueno (sugerencia → sobre firmado) vive en
+     * `web-address.e2e-spec.ts`, junto al resto del candado.
+     */
     const orderFrom = (coords?: { customerLat: number; customerLng: number }) =>
       request
         .post('/web/orders')
@@ -295,39 +300,25 @@ describe('Config de la web del cliente E2E', () => {
       });
     });
 
-    it('con el switch APAGADO, se pide un domicilio desde Bogotá sin problema', async () => {
+    it('con el switch APAGADO no se le pide dirección verificada a nadie', async () => {
       await setConfig({ coords: LOCAL, orderRadiusKm: 10, ordersRespectRadius: false });
       await orderFrom(LEJOS).expect(201);
     });
 
-    it('dentro del radio, deja pedir', async () => {
+    /**
+     * El GPS decía dónde está el TELÉFONO, no a dónde va la comida: quien pedía
+     * desde el trabajo para su casa se medía desde el trabajo. Desde §7.v23 no
+     * participa de la decisión, ni para dejar pasar ni para rechazar.
+     */
+    it('con el switch PRENDIDO, el GPS del navegador ya no habilita el pedido', async () => {
       await setConfig({ coords: LOCAL, orderRadiusKm: 10, ordersRespectRadius: true });
-      await orderFrom(CERCA).expect(201);
+      const res = await orderFrom(CERCA).expect(400);
+      expect(res.body.message).toContain('sugerencias');
     });
 
-    it('fuera del radio, rechaza y dice a qué distancia está', async () => {
+    it('tampoco alcanza con NO mandar ubicación', async () => {
       await setConfig({ coords: LOCAL, orderRadiusKm: 10, ordersRespectRadius: true });
-      const res = await orderFrom(LEJOS).expect(400);
-      expect(res.body.message).toContain('fuera de nuestra zona de cobertura');
-      expect(res.body.message).toContain('km');
-      expect(res.body.message).toContain('10 km');
-    });
-
-    it('SIN ubicación no se bloquea: el permiso de GPS se puede negar', async () => {
-      await setConfig({ coords: LOCAL, orderRadiusKm: 10, ordersRespectRadius: true });
-      await orderFrom().expect(201);
-    });
-
-    it('sin las coordenadas del local no se bloquea a nadie', async () => {
-      await setConfig({ coords: '', orderRadiusKm: 10, ordersRespectRadius: true });
-      await orderFrom(LEJOS).expect(201);
-    });
-
-    it('el radio manda: achicarlo deja fuera a quien antes entraba', async () => {
-      await setConfig({ coords: LOCAL, orderRadiusKm: 10, ordersRespectRadius: true });
-      await orderFrom(CERCA).expect(201);
-      await setConfig({ orderRadiusKm: 0.5 }); // el cliente está a ~1 km
-      await orderFrom(CERCA).expect(400);
+      await orderFrom().expect(400);
     });
 
     it('rechaza latitud sin longitud', async () => {

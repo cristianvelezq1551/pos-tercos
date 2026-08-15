@@ -75,4 +75,35 @@ describe('whatsapp messages', () => {
       buildPickupReadyMessage(SALE, OPTS),
     );
   });
+
+  /**
+   * Al cliente le acaba de subir el número que vio en la web. Decirle solo el
+   * total nuevo invita al reclamo; mostrarle de dónde sale, no.
+   */
+  describe('desglose del domicilio en las instrucciones de pago', () => {
+    const DOMICILIO: WhatsAppSaleSnapshot = {
+      ...SALE,
+      total: 45_000,
+      deliveryFee: 7_000,
+      deliveryAddress: 'Cra 43A #5-15, apto 502',
+    };
+
+    it('separa lo que es comida de lo que es envío', () => {
+      const msg = buildPaymentInstructionsMessage(DOMICILIO, OPTS);
+      expect(msg).toContain('$45.000');
+      expect(msg).toContain('$38.000 del pedido');
+      expect(msg).toContain('$7.000 de domicilio');
+    });
+
+    it('sin envío no inventa un desglose', () => {
+      const msg = buildPaymentInstructionsMessage(SALE, OPTS);
+      expect(msg).toContain('$25.500');
+      expect(msg).not.toContain('domicilio');
+    });
+
+    it('un domicilio con envío todavía en 0 no anuncia un envío gratis', () => {
+      const msg = buildPaymentInstructionsMessage({ ...DOMICILIO, deliveryFee: 0 }, OPTS);
+      expect(msg).not.toContain('de domicilio');
+    });
+  });
 });

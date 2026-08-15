@@ -29,10 +29,30 @@ export async function getCurrentUserServer(): Promise<User | null> {
   }
 }
 
-/** Lee el access token de la cookie para el handshake WS (caja unificada, Fase 2e). */
-export async function getAccessTokenServer(): Promise<string | null> {
+/**
+ * Token para el handshake WS del SSR (caja unificada, Fase 2e).
+ *
+ * Pide uno con `scope: 'ws'` (120s, inútil contra la API) en vez de devolver la
+ * cookie de access cruda: este valor se serializa como prop de un componente
+ * cliente, o sea que queda legible por cualquier JS de la página. Devolver el
+ * access de 24h acá anulaba la cookie httpOnly igual que hacerlo por el endpoint.
+ */
+export async function getWsTokenServer(): Promise<string | null> {
   const cookieStore = await cookies();
-  return cookieStore.get(ACCESS_COOKIE)?.value ?? null;
+  const access = cookieStore.get(ACCESS_COOKIE);
+  if (!access) return null;
+
+  try {
+    const res = await fetch(`${API_URL}/auth/ws-token`, {
+      headers: { Cookie: `${ACCESS_COOKIE}=${access.value}`, 'X-Client-App': 'admin' },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const { token } = (await res.json()) as { token?: string };
+    return token ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -117,7 +117,8 @@ describe('Revocación de sesión (tokenVersion) E2E', () => {
       .send({ email: 'rev-refresh@test.local', password: 'dev12345' })
       .expect(200);
     const setCookies = login.headers['set-cookie'] as unknown as string[];
-    const refreshCookie = setCookies.find((c) => c.startsWith('pos_refresh='))!.split(';')[0];
+    // Sin X-Client-App el server emite cookies de admin (default post-cutover).
+    const refreshCookie = setCookies.find((c) => c.startsWith('admin_refresh='))!.split(';')[0];
 
     // Dos rotaciones simultáneas del mismo refresh token (doble pestaña / retry).
     // El revoke atómico (updateMany WHERE revokedAt IS NULL) hace que solo una
@@ -179,6 +180,65 @@ describe('Revocación de sesión (tokenVersion) E2E', () => {
       await gateway.handleConnection(after as unknown as Parameters<typeof gateway.handleConnection>[0]);
       expect(after.disconnect).toHaveBeenCalled();
       expect(after.join).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * El token de /auth/ws-token vive en el JavaScript de la página (el handshake
+   * del socket no puede leer la cookie httpOnly). Si además sirviera como
+   * credencial HTTP, un XSS en la caja se llevaría acceso completo a la API por
+   * 24h — justo lo que la cookie httpOnly existe para impedir. Este bloque fija
+   * la asimetría: sirve para el socket, NO para la API.
+   */
+  describe('Alcance del token de WebSocket', () => {
+    type FakeSocket = {
+      handshake: { headers: Record<string, string>; auth: { token: string } };
+      data: Record<string, unknown>;
+      emit: jest.Mock;
+      disconnect: jest.Mock;
+      join: jest.Mock;
+    };
+    const fakeSocket = (token: string): FakeSocket => ({
+      handshake: { headers: {}, auth: { token } },
+      data: {},
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+      join: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const mintWsToken = async (): Promise<string> => {
+      const res = await request
+        .get('/auth/ws-token')
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .expect(200);
+      return (res.body as { token: string }).token;
+    };
+
+    it('NO sirve como credencial HTTP (el access de la sesión sí)', async () => {
+      const wsToken = await mintWsToken();
+      expect(wsToken).toBeTruthy();
+      // Si esto falla, /auth/ws-token volvió a reemitir el access tal cual.
+      expect(wsToken).not.toBe(duenoToken);
+
+      await request.get('/auth/me').set('Authorization', `Bearer ${wsToken}`).expect(401);
+      await request.get('/auth/me').set('Authorization', `Bearer ${duenoToken}`).expect(200);
+    });
+
+    it('tampoco abre endpoints de negocio con el rol del dueño', async () => {
+      const wsToken = await mintWsToken();
+      await request.get('/users').set('Authorization', `Bearer ${wsToken}`).expect(401);
+    });
+
+    it('SÍ autentica el handshake del socket', async () => {
+      const wsToken = await mintWsToken();
+      const gateway = app.get(PosGateway);
+      const sock = fakeSocket(wsToken);
+      await gateway.handleConnection(
+        sock as unknown as Parameters<typeof gateway.handleConnection>[0],
+      );
+      expect(sock.disconnect).not.toHaveBeenCalled();
+      expect(sock.join).toHaveBeenCalled();
+      expect(sock.data.userId).toBeTruthy();
     });
   });
 });
