@@ -79,7 +79,7 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Tests unitarios (domain + pos + api)
+      - name: Tests unitarios (domain + admin + api)
         run: pnpm test
 
       - name: Tests e2e (API + Postgres)
