@@ -94,7 +94,7 @@ describe('runLedgerFifo · consumo básico', () => {
     expect(r.cortesia).toHaveLength(1);
     expect(r.cortesia[0]!.cost).toBe(150);
     expect(r.cortesia[0]!.unknownQty).toBe(0);
-    expect(r.cortesiaCostBySource.get('cor1')).toEqual({ cost: 150, unknownQty: 0 });
+    expect(r.cortesiaCostBySource.get('cor1')).toEqual({ cost: 150, unknownQty: 0, estimatedCost: 0 });
     expect(r.saleIngredientCost.size).toBe(0); // no es venta
     expect(r.waste).toHaveLength(0); // no es merma
     expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(12); // 15 − 3
@@ -108,16 +108,120 @@ describe('runLedgerFifo · consumo básico', () => {
       mov({ delta: -1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor9', ingredientId: 'pan' }),
       mov({ delta: -1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor9', entityType: 'SUBPRODUCT', subproductId: 'carne' }),
     ]);
-    expect(r.cortesiaCostBySource.get('cor9')).toEqual({ cost: 300, unknownQty: 0 });
+    expect(r.cortesiaCostBySource.get('cor9')).toEqual({ cost: 300, unknownQty: 0, estimatedCost: 0 });
   });
 
-  it('cortesía sin stock suficiente → unknownQty (nunca asume $0)', () => {
+  it('cortesía sin stock suficiente: lo que falta se ESTIMA al último precio', () => {
     const r = runLedgerFifo([
       mov({ delta: 1, unitCost: 50 }),
       mov({ delta: -3, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor1' }),
     ]);
-    expect(r.cortesia[0]!.cost).toBe(50);
+    // 1 del lote real + 2 estimadas a $50 = 150. Regalar sin stock cargado
+    // cuesta lo mismo que regalar con stock: $0 sería regalar el insumo también.
+    expect(r.cortesia[0]!.cost).toBe(150);
+    expect(r.cortesia[0]!.unknownQty).toBe(0);
+    // …y queda declarado cuánto de ese costo es estimado, para que la UI lo diga.
+    expect(r.cortesiaCostBySource.get('cor1')).toEqual({
+      cost: 150,
+      unknownQty: 0,
+      estimatedCost: 100,
+    });
+    expect(r.endingDebts['INGREDIENT:ing1']?.[0]).toMatchObject({
+      qty: 2,
+      kind: 'cortesia',
+      consumerId: 'cor1',
+      estimatedUnitCost: 50,
+    });
+  });
+
+  it('cortesía sin NINGÚN historial de precio → unknownQty (ahí sí, desconocido)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: -2, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor1' }),
+    ]);
+    expect(r.cortesia[0]!.cost).toBe(0);
     expect(r.cortesia[0]!.unknownQty).toBe(2);
+  });
+
+  it('cortesía sin historial pero con respaldo del catálogo → estima con él', () => {
+    const r = runLedgerFifo(
+      [mov({ delta: -2, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor1' })],
+      undefined,
+      { fallbackUnitCost: { 'INGREDIENT:ing1': 1500 } },
+    );
+    expect(r.cortesia[0]!.cost).toBe(3000);
+    expect(r.cortesia[0]!.unknownQty).toBe(0);
+  });
+
+  it('merma sobre inventario en negativo: también se estima (la pérdida existe)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 2, unitCost: 300 }),
+      mov({ delta: -2, type: 'SALE', sourceId: 'sale1' }),
+      mov({ delta: -3, type: 'WASTE', sourceType: null }),
+    ]);
+    expect(r.waste[0]!.cost).toBe(900); // 3 × $300 estimado
+    expect(r.waste[0]!.unknownQty).toBe(0);
+  });
+});
+
+describe('runLedgerFifo · pérdidas sin stock: el estimado se corrige a REAL', () => {
+  const enero = (dia: number) => new Date(2026, 0, dia, 12, 0);
+
+  it('la compra posterior corrige la cortesía y la imputa al mes que la registró', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1, unitCost: 1500, createdAt: enero(1) }),
+      mov({ delta: -1, type: 'SALE', sourceId: 'sale1', createdAt: enero(2) }),
+      // Cortesía sin stock: estima a $1.500 (lo último que costó).
+      mov({
+        delta: -1,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'cortesia',
+        sourceId: 'cor1',
+        createdAt: enero(3),
+      }),
+      // La factura llega después y dice que en realidad costó $2.000.
+      mov({ delta: 5, unitCost: 2000, createdAt: enero(20) }),
+    ]);
+    // Estimado 1.500 → real 2.000, y `estimatedCost` vuelve a 0: ya no es estimado.
+    expect(r.cortesiaCostBySource.get('cor1')).toEqual({
+      cost: 2000,
+      unknownQty: 0,
+      estimatedCost: 0,
+    });
+    // La corrección se imputa a la FECHA DEL CONSUMO, no a la de la factura:
+    // si no, el mes que regaló el producto quedaría subestimado para siempre.
+    const total = r.cortesia
+      .filter((c) => c.createdAt <= enero(4).toISOString())
+      .reduce((a, c) => a + c.cost, 0);
+    expect(total).toBe(2000);
+    expect(r.endingDebts['INGREDIENT:ing1']).toBeUndefined();
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(4); // la deuda se comió 1
+  });
+
+  it('anular la cortesía antes de reponer cancela la deuda y el estimado (neto 0)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 1, unitCost: 1500 }),
+      mov({ delta: -1, type: 'SALE', sourceId: 'sale1' }),
+      mov({ delta: -1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia', sourceId: 'cor1' }),
+      mov({ delta: 1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'cor1' }),
+      // Reposición posterior: no debe saldar una deuda que ya no existe.
+      mov({ delta: 3, unitCost: 2000 }),
+    ]);
+    expect(r.cortesiaCostBySource.get('cor1')).toEqual({ cost: 0, unknownQty: 0, estimatedCost: 0 });
+    expect(r.cortesia.reduce((a, c) => a + c.cost, 0)).toBe(0);
+    expect(r.endingDebts['INGREDIENT:ing1']).toBeUndefined();
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(3); // entera, sin deuda que pagar
+  });
+
+  it('anular la merma estimada la netea y no deja deuda', () => {
+    const wasteId = 'merma-1';
+    const r = runLedgerFifo([
+      mov({ delta: 1, unitCost: 800 }),
+      mov({ delta: -1, type: 'SALE', sourceId: 'sale1' }),
+      mov({ delta: -2, id: wasteId, type: 'WASTE', sourceType: null }),
+      mov({ delta: 2, type: 'MANUAL_ADJUSTMENT', sourceType: 'waste_reversal', sourceId: wasteId }),
+    ]);
+    expect(r.waste.reduce((a, w) => a + w.cost, 0)).toBe(0);
+    expect(r.endingDebts['INGREDIENT:ing1']).toBeUndefined();
   });
 });
 
@@ -256,6 +360,44 @@ describe('runLedgerFifo · producción (cruce de stockables)', () => {
       mov({ delta: 1, type: 'PRODUCTION', entityType: 'SUBPRODUCT', subproductId: 'A', sourceType: 'production', sourceId: 'runA' }),
     ]);
     expect(r.remaining.get('SUBPRODUCT:A')).toEqual({ qty: 1, value: 100, unknownQty: 0 });
+  });
+
+  it('producir con un insumo NO cargado lo estima al último precio (no lo regala)', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 500, unitCost: 2 }), // el insumo ya costó $2/g alguna vez…
+      mov({ delta: -500, type: 'SALE', sourceId: 'sale0' }), // …y se agotó
+      // Tanda con el inventario en 0: consume 500g que no estaban cargados.
+      mov({ delta: -500, type: 'PRODUCTION', ...PROD }),
+      mov({ delta: 10, type: 'PRODUCTION', entityType: 'SUBPRODUCT', ...PROD }),
+      mov({ delta: -2, type: 'SALE', sourceId: 'sale1', entityType: 'SUBPRODUCT' }),
+    ]);
+    // El lote sale a $100/u (500g × $2 / 10) en vez de nacer sin costo y
+    // arrastrar ese cero a todo lo que se venda con el subproducto.
+    expect(r.remaining.get('SUBPRODUCT:sub1')).toEqual({ qty: 8, value: 800, unknownQty: 0 });
+    expect(r.saleSubproductCost.get('sale1')?.get('sub1')?.cost).toBe(200);
+    // La deuda queda a nombre de la tanda: la compra que llegue después saca
+    // esas unidades fantasma del inventario.
+    expect(r.endingDebts['INGREDIENT:ing1']?.[0]).toMatchObject({
+      qty: 500,
+      kind: 'production',
+      consumerId: 'run1',
+    });
+  });
+
+  it('la compra posterior salda la deuda de la tanda sin re-costear el lote', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 500, unitCost: 2 }),
+      mov({ delta: -500, type: 'SALE', sourceId: 'sale0' }),
+      mov({ delta: -500, type: 'PRODUCTION', ...PROD }),
+      mov({ delta: 10, type: 'PRODUCTION', entityType: 'SUBPRODUCT', ...PROD }),
+      // Llega la factura de 800g: 500 pagan la deuda, quedan 300 en stock.
+      mov({ delta: 800, unitCost: 3 }),
+    ]);
+    expect(r.endingDebts['INGREDIENT:ing1']).toBeUndefined();
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 300, value: 900, unknownQty: 0 });
+    // El subproducto conserva su estimado: re-costearlo exigiría reabrir ventas
+    // que quizá ya ocurrieron (limitación documentada en §7.v32).
+    expect(r.remaining.get('SUBPRODUCT:sub1')?.value).toBe(1000);
   });
 
   it('si los insumos no tienen costo, el lote producido queda sin costo (no $0)', () => {
@@ -432,7 +574,7 @@ describe('runLedgerFifo · anulación de cortesía (base de costo real)', () => 
       estimatedQty: 0,
     });
     // La cortesía queda neteada a 0 (consumo +300, reversa −300).
-    expect(r.cortesiaCostBySource.get('corA')).toEqual({ cost: 0, unknownQty: 0 });
+    expect(r.cortesiaCostBySource.get('corA')).toEqual({ cost: 0, unknownQty: 0, estimatedCost: 0 });
     const cortesiaTotal = r.cortesia.reduce((a, c) => a + c.cost, 0);
     expect(cortesiaTotal).toBe(0);
     // Inventario final: 10 − 3 + 3 − 5 = 5 unidades a $100.
@@ -448,7 +590,7 @@ describe('runLedgerFifo · anulación de cortesía (base de costo real)', () => 
       // Reversa de 1 → devuelve la del lote de $20 (lo último consumido).
       mov({ delta: 1, type: 'MANUAL_ADJUSTMENT', sourceType: 'cortesia_reversal', sourceId: 'corB' }),
     ]);
-    expect(r.cortesiaCostBySource.get('corB')).toEqual({ cost: 20, unknownQty: 0 });
+    expect(r.cortesiaCostBySource.get('corB')).toEqual({ cost: 20, unknownQty: 0, estimatedCost: 0 });
     // Quedan 1 (reinyectada a $20) + 1 (del lote de $20 sin tocar) = 2×$20.
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 2, value: 40, unknownQty: 0 });
   });
@@ -889,5 +1031,75 @@ describe('runLedgerFifo · deuda de stock (forzar disponible / inventario negati
     // El inventario cuadra con el replay completo (3 saldaron la deuda → 7).
     expect(inc.remaining).toEqual(full.remaining);
     expect(inc.endingLots).toEqual(full.endingLots);
+  });
+});
+
+describe('runLedgerFifo · reversa post-corte de un consumo forzado pre-corte (LEY 6, semilla 1656071)', () => {
+  // Bug hallado por el property test con 1200 historias: una venta PRE-corte
+  // que consumió lotes reales + deuda, anulada DESPUÉS del corte. La semilla
+  // no trae los draws pre-corte, así que la deuda "cubría" toda la reversa y
+  // las unidades reales se perdían en silencio (needsFullReplay quedaba false
+  // y la valorización divergía del replay completo).
+  const pre = [
+    mov({ delta: 11, unitCost: 21, createdAt: new Date('2026-01-10T10:00:00Z') }),
+    // Consume 11 reales + 16 de deuda (estimadas @21).
+    mov({ delta: -27, type: 'SALE', sourceId: 'sale-5', createdAt: new Date('2026-01-15T10:00:00Z') }),
+  ];
+  const post = [
+    // Reversa PARCIAL post-corte: devuelve 16 de las 27.
+    mov({ delta: 16, type: 'SALE', sourceId: 'sale-5', createdAt: new Date('2026-02-03T10:00:00Z') }),
+  ];
+  const CUTOFF = '2026-02-01T00:00:00.000Z';
+
+  it('el incremental se declara insuficiente (needsFullReplay) en vez de perder unidades', () => {
+    const preResult = runLedgerFifo(pre);
+    const seed = JSON.parse(JSON.stringify(buildLedgerSeed(preResult, CUTOFF)));
+    const inc = runLedgerFifo(post, seed);
+    // Antes del fix: false, con 11 unidades ($231) perdidas vs el replay completo.
+    expect(inc.needsFullReplay).toBe(true);
+  });
+
+  it('el replay completo (a donde cae el servicio) conserva las unidades y el costo real', () => {
+    const full = runLedgerFifo([...pre, ...post]);
+    // Devuelve las 11 reales @21 y cancela 5 de deuda: quedan 11 en cola.
+    expect(full.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 11, value: 231, unknownQty: 0 });
+    expect(full.endingDebts['INGREDIENT:ing1']?.find((d) => d.consumerId === 'sale-5')?.qty).toBe(11);
+  });
+
+  it('el caso común no paga el costo: reversa cubierta 100% por draws de la ventana no marca', () => {
+    // Void normal (venta del mes CON stock): los draws están completos en la
+    // ventana, la reversa cuadra exacta y el incremental sigue siendo válido.
+    const emptySeed = JSON.parse(
+      JSON.stringify(buildLedgerSeed(runLedgerFifo([]), '2026-01-01T00:00:00.000Z')),
+    );
+    const inWindow = [
+      mov({ delta: 50, unitCost: 21, createdAt: new Date('2026-01-10T10:00:00Z') }),
+      mov({ delta: -27, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-01-15T10:00:00Z') }),
+      mov({ delta: 27, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-01-20T10:00:00Z') }),
+    ];
+    const inc = runLedgerFifo(inWindow, emptySeed);
+    const full = runLedgerFifo(inWindow);
+    expect(inc.needsFullReplay).toBe(false);
+    expect(inc.remaining).toEqual(full.remaining);
+    expect(inc.endingDebts).toEqual(full.endingDebts);
+  });
+
+  it('regla conservadora: TODA reversa que cancela deuda en modo incremental cae a replay completo', () => {
+    // Incluso si la deuda nació dentro de la ventana: la ventana no puede
+    // saber si el consumidor ADEMÁS tenía draws antes del corte (semilla
+    // 7571564: draws pre-corte + deuda en ventana → la deuda "cubría" lo que
+    // el replay completo devolvía a los lotes). Equivalencia no demostrable
+    // → se declara insuficiente. El servicio recomputa completo: más lento,
+    // nunca incorrecto.
+    const emptySeed = JSON.parse(
+      JSON.stringify(buildLedgerSeed(runLedgerFifo([]), '2026-01-01T00:00:00.000Z')),
+    );
+    const inWindow = [
+      mov({ delta: 11, unitCost: 21, createdAt: new Date('2026-01-10T10:00:00Z') }),
+      mov({ delta: -27, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-01-15T10:00:00Z') }),
+      mov({ delta: 16, type: 'SALE', sourceId: 's1', createdAt: new Date('2026-01-20T10:00:00Z') }),
+    ];
+    const inc = runLedgerFifo(inWindow, emptySeed);
+    expect(inc.needsFullReplay).toBe(true);
   });
 });
