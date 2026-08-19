@@ -64,9 +64,19 @@ jobs:
       issues: write # requerido por el paso de alerta (github-script)
     steps:
       - name: Instalar cliente Postgres 16
+        # El runner ubuntu-24.04 ya trae pg_dump 16 — apt es solo el respaldo.
+        # Con timeout propio y reintentos: un mirror caído debe FALLAR rápido,
+        # no colgar el job 15 min en silencio (pasó el 2026-08-19, run 32302621060).
+        timeout-minutes: 4
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-16 || sudo apt-get install -y -qq postgresql-client
+          if pg_dump --version 2>/dev/null | grep -Eq ' 1[6-9]| [2-9][0-9]'; then
+            pg_dump --version
+            echo "pg_dump ya presente en la imagen — se omite apt"
+            exit 0
+          fi
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 postgresql-client-16 \
+            || sudo apt-get install -y -o Acquire::Retries=3 postgresql-client
 
       - name: Dump (formato custom, comprimido)
         env:
