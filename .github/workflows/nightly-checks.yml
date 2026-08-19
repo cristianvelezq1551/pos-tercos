@@ -24,6 +24,9 @@ jobs:
   ledger-properties:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Misma TZ que exige prod: el sistema asume hora local de Bogotá.
+      TZ: America/Bogota
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

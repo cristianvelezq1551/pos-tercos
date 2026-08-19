@@ -48,6 +48,11 @@ jobs:
       JWT_ACCESS_SECRET: ci-jwt-access-secret-not-for-production-0001
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret-not-for-production-001
       WEB_ORDER_TOKEN_SECRET: ci-web-order-token-secret-not-for-prod-0001
+      # El sistema entero asume hora local de Bogotá (TZ es OBLIGATORIA en
+      # prod: crons, corte de día de negocio 4 AM, conciliación bancaria).
+      # El runner corre en UTC — sin esto, los tests de fechas locales
+      # (p.ej. distanceToCsvDate) prueban un sistema que no existe.
+      TZ: America/Bogota
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -121,6 +126,8 @@ jobs:
       JWT_ACCESS_SECRET: ci-jwt-access-secret-not-for-production-0001
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret-not-for-production-001
       WEB_ORDER_TOKEN_SECRET: ci-web-order-token-secret-not-for-prod-0001
+      # Misma TZ que exige prod (ver el comentario en el job verify).
+      TZ: America/Bogota
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
