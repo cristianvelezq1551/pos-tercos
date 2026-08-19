@@ -151,14 +151,24 @@ El cliente pide desde `tercos.co`. Antes de abrir, confirmar en admin
 - pos-tercos-db (PostgreSQL 16, plan Hobby al menos)
 ```
 
-`pos-tercos-api` Build settings:
-- Root directory: `apps/api`
-- **Estos comandos ya están versionados en `apps/api/railway.json`** (builder,
-  build/start command, `healthcheckPath: /healthz`, `numReplicas: 1`). Railway lo
-  lee del root del servicio — no hace falta escribirlos a mano en el dashboard, y
-  quedan revisables en PR. Si el dashboard los sobreescribe, deben coincidir:
-- Build command: `pnpm install --frozen-lockfile && pnpm prisma generate && pnpm build`
-- Start command: `pnpm prisma migrate deploy && pnpm start`
+`api` Build settings — **patrón VERIFICADO en el QA real (2026-08-19)**; los dos
+intentos "obvios" fallan y quedaron documentados para no repetirlos:
+- **Root directory: `/` (la raíz del repo)** — ⚠️ NO `apps/api`: Railway recorta
+  el contexto de build al root directory, y sin `pnpm-workspace.yaml` ni
+  `packages/` Nixpacks detecta npm y `npm i` muere con el protocolo `workspace:*`.
+- **Config file: `apps/api/railway.json`** (setting "Railway Config File" del
+  servicio). Ahí viven build/start command, `healthcheckPath: /healthz` y
+  `numReplicas: 1` — versionados y revisables en PR.
+- **Variable `NIXPACKS_INSTALL_CMD`** =
+  `pnpm install --frozen-lockfile --filter @pos-tercos/api...` — ⚠️ sin el
+  filtro, el install del workspace completo compila `usb` (el driver libusb del
+  print-agent, que corre en la Raspberry, no en Railway) y la imagen no trae
+  Python para node-gyp. El filtro instala api + types + domain y nada más.
+- **Watch paths**: `apps/api/**`, `packages/**`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml` — un cambio de docs o de frontends no redespliega el API.
+- Build command (en railway.json; cwd = raíz del repo):
+  `pnpm -F @pos-tercos/types build && pnpm -F @pos-tercos/domain build && pnpm -F @pos-tercos/api exec prisma generate && pnpm -F @pos-tercos/api build`
+- Start command: `pnpm -F @pos-tercos/api exec prisma migrate deploy && pnpm -F @pos-tercos/api start`
 
 > ⚠️ **`numReplicas: 1` es invariante, NO autoscale.** El throttler, los rooms de
 > WebSocket (`/ws/pos`) y los crons viven en memoria; con >1 réplica el rate-limit
