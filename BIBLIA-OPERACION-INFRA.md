@@ -122,8 +122,55 @@ railway logs --service api-prod --build    # el último build
 O en el dashboard: Railway → servicio → Logs. Los frontends: Vercel → proyecto → Deployments → Logs.
 Errores del navegador de la caja: el POS los manda a `POST /client-logs` → aparecen en los logs del API.
 
-**Revisión semanal (2 minutos):** Actions en verde (backup + nightly) · UptimeRobot 100% ·
-healthchecks verde. **Mensual:** un simulacro de restore (§6.3, 10 min).
+### 5.1 Qué significa cada alerta y cómo actuar (léelo ANTES de que suene)
+
+Son dos alarmas para dos peligros distintos: una cuida el **presente** (¿el negocio puede
+operar ahora?) y la otra el **pasado** (¿los datos están respaldados?).
+
+**🔴 UptimeRobot "DOWN" — el sistema no responde AHORA. Actuar en MINUTOS.**
+- Detecta: API crasheado (típico: deploy malo), Railway caído, la **DB caída** (el healthz
+  la revisa por dentro), DNS o certificado rotos.
+- NO detecta: pantallas de Vercel caídas, bugs de lógica, lentitud, la impresora.
+- Procedimiento: (1) abre https://api.tercos.co/healthz en el celular — si responde, fue un
+  parpadeo y el email de "UP" llega solo; (2) ¿hubo deploy reciente? → Railway → api-prod →
+  Deployments → **Redeploy** del anterior (causa #1 en la vida real); (3) sin deploy reciente →
+  `railway logs --service api-prod` + https://status.railway.com.
+- Consuelo: si pasa en pleno servicio, **la caja tiene modo offline** — las ventas de
+  mostrador se registran en el navegador y se sincronizan al volver. Lo que muere mientras
+  tanto son los pedidos web.
+
+**🟡 healthchecks.io "DOWN" — el backup lleva >7h sin confirmar. Actuar el MISMO DÍA.**
+Es un "hombre muerto": no vigila al sistema, **vigila al vigilante**.
+- Detecta: el workflow de backup dejó de correr (GitHub pausa los crons si el repo pasa
+  **60 días sin commits** — te va a pasar algún día, es un botón "Re-enable"; o Actions caído)
+  o corre pero falla siempre (secret vencido: cambió la clave de la DB, se recreó el proxy,
+  token R2 revocado).
+- NO detecta: nada del sistema en vivo, ni si el backup es restaurable (eso es el drill mensual).
+- Procedimiento: GitHub → Actions → "Postgres backup" → último run. ¿Falló? → el log dice
+  qué paso murió (y hay un Issue `backup-failure` con el resumen); corregir el secret en el
+  Environment `production-backup`. ¿Ni corrió? → re-enable del cron. Arreglado → Run workflow
+  manual → verde → el ping revive el check solo.
+
+**El tercero silencioso — Issue `backup-failure`**: salta si UN run falla (aunque el
+siguiente se recupere). Es la alerta rápida; healthchecks es la profunda. El Issue avisa
+del tropiezo, healthchecks del abandono.
+
+> **En una frase:** *UptimeRobot rojo = deja todo y mira Railway. healthchecks rojo = hoy
+> mismo, mira GitHub Actions.*
+
+### 5.2 Simulacro de alarmas (validado 2026-08-19 — repetir cada ~6 meses)
+
+Probar que los emails DE VERDAD llegan, sin tocar producción:
+
+1. **UptimeRobot**: crear un monitor temporal a `https://api.tercos.co/healthz-simulacro`
+   (esa ruta devuelve 404 = "caído") → en ≤5 min llega el email "Monitor is DOWN" → borrar
+   el monitor temporal. El monitor real nunca se toca.
+2. **healthchecks**: abrir la Ping URL del check agregándole **`/fail`** al final
+   (`https://hc-ping.com/<uuid>/fail`) → el check cae al instante y llega el email → para
+   revivirlo, correr el backup manual (Actions → Run workflow): su ping de éxito lo pone
+   verde y llega el email de recuperación.
+3. Si un email no llega: revisar spam; UptimeRobot → Monitor → Notifications; healthchecks →
+   Integrations → email verificado.
 
 ## 6. Backup: tu red de seguridad
 
@@ -222,7 +269,54 @@ Los dos servicios de QA (`api` y `Postgres` del env qa) tienen **App Sleeping** 
 - [ ] **Domicilios**: cuando se activen, `GOOGLE_MAPS_API_KEY` en api-prod es OBLIGATORIA
       (sin ella el autocompletado inventa direcciones).
 
-## 11. Los números del sistema (para saber qué es "normal")
+## 11. Calendario de mantenimiento (lo que mantiene vivo el sistema)
+
+### Semanal — 2 minutos
+- [ ] GitHub Actions: backup y nightly en **verde** (https://github.com/cristianvelezq1551/pos-tercos/actions).
+- [ ] UptimeRobot en 100% · healthchecks en verde.
+
+### Mensual — 20 minutos
+- [ ] **Simulacro de restore** (§6.3): bajar el último dump y restaurarlo en una DB desechable.
+      Un backup que no se prueba es una esperanza, no un respaldo.
+- [ ] **Consumo**: Railway → Usage (¿algo creció raro?) · tamaño del bucket de backups en R2.
+- [ ] **Tamaño de la DB**: Railway → Postgres-c6Li → Metrics. Crece con las ventas — es normal;
+      lo anormal es un salto brusco. (Nota técnica: `sale_status_log` no tiene purga automática
+      y el replay del inventario usa ~18 MB de RAM por mes de historia — ninguno de los dos es
+      problema antes del año 2-3, pero están anotados aquí para el futuro.)
+- [ ] **Dependencias**: en el repo, `pnpm audit --prod` → si sale algo, corregirlo como está
+      documentado en `pnpm-workspace.yaml` (overrides puntuales; la política de supply-chain
+      con retraso de 7 días y anti-downgrade NO se baja).
+
+### Semestral — 1 hora
+- [ ] **Simulacro de alarmas** (§5.2): validar que los emails siguen llegando.
+- [ ] **Rotar las llaves R2** (crear token nuevo → actualizar → borrar viejo). Los `JWT_*`
+      pueden rotarse también si hay sospecha (desloguea a todo el mundo — hacerlo un lunes
+      por la mañana, no un viernes por la noche).
+- [ ] **Accesos**: en admin → Usuarios, dar de baja a quien ya no trabaje en el negocio
+      (desactivar revoca sus sesiones al instante) y cambiar PINs si rotó gente.
+- [ ] Actualizar dependencias menores: rama nueva → `pnpm update` (la política de 7 días filtra
+      lo recién publicado) → gates completos (`pnpm typecheck && pnpm lint && pnpm test` + e2e)
+      → PR → QA → prod. Nunca directo.
+
+### Anual — y las trampas silenciosas que matan sistemas "que funcionaban"
+- [ ] **Renovación del dominio**: Cloudflare → Domain Registration → verificar **auto-renew
+      activo y tarjeta vigente**. Un dominio vencido apaga TODO y recuperarlo tarda días.
+- [ ] **Tarjetas de cobro vigentes** en Railway (el único con cobro mensual seguro). Si un
+      pago falla, primero avisan, después suspenden — no dejar que llegue a lo segundo.
+- [ ] **Actividad del repo**: si pasan 60 días sin ningún commit, GitHub pausa los crons
+      (backup y nightly incluidos) — healthchecks lo delataría, pero mejor no llegar: cualquier
+      commit (hasta de docs) reinicia el contador.
+- [ ] Revisar versiones mayores (Node, Next, Prisma): solo con tiempo, en rama, con QA de por
+      medio. Si el sistema está estable y no hay CVE, **no hay apuro** — estable > moderno.
+- [ ] Releer esta biblia y actualizar lo que haya cambiado (URLs, servicios, decisiones).
+
+### La regla madre del mantenimiento
+Este sistema está diseñado para fallar HACIA la seguridad: los tests bloquean los merges,
+QA absorbe los errores, el backup corre solo, las alarmas avisan. Tu único trabajo real de
+mantenimiento es **no ignorar un email de alerta** y pasar por este calendario. Nada de esto
+requiere saber programar — y para lo que sí, está el flujo de §4 con el CI de guardaespaldas.
+
+## 12. Los números del sistema (para saber qué es "normal")
 
 - API en reposo: ~130-160 MB RAM. Bajo carga: ~210 MB. Más de 500 MB sostenido = raro, investigar.
 - healthz responde en <300 ms desde Colombia.
