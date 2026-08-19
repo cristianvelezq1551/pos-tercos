@@ -236,13 +236,13 @@ export class DisplayContentService {
   // ── Helpers ────────────────────────────────────────────────────────
   private imageExt(mime: string): string {
     const ext = IMAGE_MIME_EXT[mime];
-    if (!ext) throw new BadRequestException('Formato de imagen no soportado (usá JPG, PNG o WebP).');
+    if (!ext) throw new BadRequestException('Formato de imagen no soportado (usa JPG, PNG o WebP).');
     return ext;
   }
 
   private audioExt(mime: string): string {
     const ext = AUDIO_MIME_EXT[mime];
-    if (!ext) throw new BadRequestException('Formato de audio no soportado (usá MP3, M4A, OGG o WAV).');
+    if (!ext) throw new BadRequestException('Formato de audio no soportado (usa MP3, M4A, OGG o WAV).');
     return ext;
   }
 

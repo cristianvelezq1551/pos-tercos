@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-// Redondeo canónico del dominio (2 decimales, montos COP cobrados/abonados).
+// Redondeo canónico del dominio (PESO ENTERO, montos COP cobrados/abonados).
 import { roundMoney as round2 } from '@pos-tercos/domain';
 
 /**

@@ -5,6 +5,7 @@ import { Button, Dialog, FormField, Input, MoneyInput, Select } from '@pos-terco
 import { useState } from 'react';
 import { createUser, updateUser } from '../api/client';
 import { ROLE_OPTIONS, PIN_ROLES } from '../lib/roles';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -20,7 +21,9 @@ export function UserFormDialog({ open, user, onClose, onSuccess }: UserFormDialo
   const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
-  const [role, setRole] = useState<UserRole>(user?.role ?? 'CAJERO');
+  // El operador de caja es ADMIN_OPERATIVO (el rol CAJERO se retiró de la
+  // operación en el cutover POS→admin; ver roles.ts).
+  const [role, setRole] = useState<UserRole>(user?.role ?? 'ADMIN_OPERATIVO');
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
   const [active, setActive] = useState(user?.active ?? true);
@@ -57,7 +60,7 @@ export function UserFormDialog({ open, user, onClose, onSuccess }: UserFormDialo
       }
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar el usuario.');
+      setError(getErrorMessage(e, 'No se pudo guardar el usuario.'));
     } finally {
       setPending(false);
     }

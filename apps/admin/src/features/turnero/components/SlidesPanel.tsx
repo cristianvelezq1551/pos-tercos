@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { importDefaults, listSlides, reorderSlides } from '../api/client';
 import { SlideCard } from './SlideCard';
 import { SlideEditModal } from './SlideEditModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Sección "Productos del turnero": grilla de slides + alta + import por defecto. */
 export function SlidesPanel({
@@ -27,7 +28,7 @@ export function SlidesPanel({
       await importDefaults();
       onChange(await listSlides());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error importando');
+      setError(getErrorMessage(e, 'Error importando'));
     } finally {
       setBusy(false);
     }
@@ -71,7 +72,7 @@ export function SlidesPanel({
       {slides && slides.length === 0 ? (
         <EmptyState
           title="Todavía no configuraste el turnero"
-          description="Importá el contenido de ejemplo (las hamburguesas y combos de Tercos) para arrancar y editalo a tu gusto, o agregá tus propios productos."
+          description="Importa el contenido de ejemplo (las hamburguesas y combos de Tercos) para empezar y edítalo a tu gusto, o agrega tus propios productos."
           action={
             <Button onClick={doImport} disabled={busy}>
               {busy ? 'Importando…' : 'Importar contenido de ejemplo'}

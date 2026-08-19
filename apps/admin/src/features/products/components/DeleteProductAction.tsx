@@ -4,6 +4,7 @@ import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { deleteProduct } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface Props {
   id: string;
@@ -24,7 +25,7 @@ export function DeleteProductAction({ id, name }: Props) {
       setOpen(false);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo eliminar el producto.');
+      setError(getErrorMessage(e, 'No se pudo eliminar el producto.'));
     } finally {
       setPending(false);
     }

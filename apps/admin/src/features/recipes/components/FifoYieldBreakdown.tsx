@@ -1,5 +1,5 @@
 import type { DirectRecipeComponent, FifoLotsResponse } from '@pos-tercos/types';
-import { formatCop } from '@pos-tercos/ui';
+import { formatCop, pluralizeUnit } from '@pos-tercos/ui';
 import { formatRecipeNumber } from './RecipeTablePrimitives';
 
 interface Tier {
@@ -154,7 +154,7 @@ export function FifoYieldBreakdown({
           </div>
         ) : (
           <p className="mt-2 rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            Todavía no podés vender este producto: {emptyHint(limiting)}.
+            Todavía no puedes vender este producto: {emptyHint(limiting)}.
           </p>
         )}
       </div>
@@ -166,7 +166,8 @@ export function FifoYieldBreakdown({
             <p className="text-xs text-foreground">
               <strong>{c.name}</strong>{' '}
               <span className="text-muted-foreground">
-                · {formatRecipeNumber(c.per)} {c.unitRecipe}/u · stock {formatRecipeNumber(c.stock)} {c.unitRecipe}
+                · {formatRecipeNumber(c.per)} {pluralizeUnit(c.unitRecipe, c.per)}/u · stock{' '}
+                {formatRecipeNumber(c.stock)} {pluralizeUnit(c.unitRecipe, c.stock)}
               </span>
             </p>
             <div className="mt-1">
@@ -193,6 +194,6 @@ export function FifoYieldBreakdown({
 /** Acción para conseguir stock de un componente sin lotes. */
 function emptyHint(c: { entityType: 'INGREDIENT' | 'SUBPRODUCT'; name: string }): string {
   return c.entityType === 'SUBPRODUCT'
-    ? `producí una tanda de ${c.name}`
-    : `registrá una compra de ${c.name}`;
+    ? `produce una tanda de ${c.name}`
+    : `registra una compra de ${c.name}`;
 }

@@ -10,6 +10,7 @@ import {
 } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
 import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
+import { ReverseWasteAction } from './ReverseWasteAction';
 
 interface MovementsTableProps {
   rows: InventoryMovement[];
@@ -34,6 +35,14 @@ const TYPE_TONE: Record<InventoryMovementType, BadgeTone> = {
 };
 
 export function MovementsTable({ rows }: MovementsTableProps) {
+  // Cuánto se devolvió ya de cada merma, según las filas visibles.
+  const reversedByWaste = new Map<string, number>();
+  for (const m of rows) {
+    if (m.sourceType === 'waste_reversal' && m.sourceId) {
+      reversedByWaste.set(m.sourceId, (reversedByWaste.get(m.sourceId) ?? 0) + m.delta);
+    }
+  }
+
   const columns: DataTableColumn<InventoryMovement>[] = [
     {
       key: 'date',
@@ -113,6 +122,19 @@ export function MovementsTable({ rows }: MovementsTableProps) {
         ) : (
           <span className="text-ink-300">sistema</span>
         ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      // Anular una merma es la ÚNICA forma de sacar esa pérdida del estado
+      // financiero (el ledger devuelve el costo original). Se oculta cuando ya
+      // se devolvió todo; el backend es igual la autoridad si la reversa no
+      // estaba en las filas cargadas.
+      cell: (m) =>
+        m.type === 'WASTE' && (reversedByWaste.get(m.id) ?? 0) < Math.abs(m.delta) - 1e-9 ? (
+          <ReverseWasteAction movement={m} />
+        ) : null,
     },
   ];
 

@@ -63,3 +63,48 @@ describe('renderComandaEscPos', () => {
     expect(out).toContain('TERCOS');
   });
 });
+
+describe('renderComandaEscPos — domicilio', () => {
+  const DELIVERY: ComandaData = {
+    ...BASE,
+    type: 'WEB_DELIVERY',
+    customerName: 'Ana',
+    customerPhone: '+573001112233',
+    deliveryAddress: 'Cra 43A #5-15, torre 2, apto 502',
+    deliveryNotes: 'Portería azul, el timbre no suena',
+  };
+
+  it('grita DOMICILIO y imprime a dónde va', () => {
+    const out = text(renderComandaEscPos(DELIVERY));
+    expect(out).toContain('*** DOMICILIO ***');
+    expect(out).toContain('ENTREGAR EN:');
+    expect(out).toContain('Cra 43A #5-15, torre 2,');
+    expect(out).toContain('apto 502');
+    expect(out).toContain('Portería azul');
+    expect(out).toContain('Tel: +573001112233');
+  });
+
+  it('la dirección se PARTE, no se trunca: el apto no se puede perder', () => {
+    const largo = 'Calle 100 Sur #45-32 Este, conjunto Los Robles, torre 7, apartamento 1204';
+    const out = text(renderComandaEscPos({ ...DELIVERY, deliveryAddress: largo }));
+    // Truncar a 32 se comería justo el apartamento, que es lo único que
+    // importa cuando el repartidor ya llegó al edificio.
+    expect(out).toContain('apartamento 1204');
+    expect(out).not.toContain('…');
+    // Y ninguna línea de la dirección se pasa del ancho del papel (32).
+    for (const line of largo.split(/\s+/)) expect(line.length).toBeLessThanOrEqual(32);
+  });
+
+  it('un pedido para recoger NO imprime dirección', () => {
+    const out = text(renderComandaEscPos({ ...BASE, type: 'WEB_PICKUP' }));
+    expect(out).toContain('PEDIDO WEB');
+    expect(out).not.toContain('DOMICILIO');
+    expect(out).not.toContain('ENTREGAR EN:');
+  });
+
+  it('una venta de mostrador no lleva nada de esto', () => {
+    const out = text(renderComandaEscPos(BASE));
+    expect(out).not.toContain('DOMICILIO');
+    expect(out).not.toContain('ENTREGAR EN:');
+  });
+});

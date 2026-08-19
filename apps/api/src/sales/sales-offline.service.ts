@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { sameBusinessDay } from '@pos-tercos/domain';
 import type { Sale, SyncOfflineSale } from '@pos-tercos/types';
-import type { PaymentMethod, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -130,7 +130,7 @@ export class SalesOfflineService {
         },
       });
       throw new BadRequestException(
-        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corregí la hora del dispositivo y reintentá desde la bandeja.`,
+        `El reloj del POS está adelantado ${Math.round(driftMs / 60_000)} min respecto al servidor. Corrige la hora del dispositivo y reintenta desde la bandeja.`,
       );
     }
 
@@ -140,7 +140,7 @@ export class SalesOfflineService {
     const shift = await this.shifts.getActiveTodayShift(userId);
     if (!shift) {
       throw new BadRequestException(
-        'No hay caja abierta para asociar la venta offline. Abrí/cerrá caja y reintentá.',
+        'No hay caja abierta para asociar la venta offline. Abre o cierra caja y reintenta.',
       );
     }
 
@@ -169,7 +169,7 @@ export class SalesOfflineService {
           subtotal: input.payload.subtotal,
           discountTotal: input.payload.discount,
           total: input.payload.total,
-          paymentMethod: input.payment.method as PaymentMethod,
+          paymentMethod: input.payment.method,
           paidAt: new Date(input.soldOfflineAt),
           paidByUserId: userId,
           cashierId: userId,
@@ -200,7 +200,7 @@ export class SalesOfflineService {
           // Fuente única de verdad del método: el cobro offline es 1 parte.
           payments: {
             create: {
-              method: input.payment.method as PaymentMethod,
+              method: input.payment.method,
               amount: input.payload.total,
               amountReceived:
                 input.payment.method === 'CASH' ? input.payment.amountReceived : null,

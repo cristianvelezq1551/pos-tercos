@@ -50,6 +50,8 @@ docker-data
 _legacy
 .vercel
 .claude/worktrees/
+# Claude Code local settings: nunca versionar (puede contener secretos en allowlist)
+.claude/settings.local.json
 
 # Playwright (smoke e2e POS)
 playwright-report/

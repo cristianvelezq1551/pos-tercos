@@ -91,7 +91,7 @@ export type ResetPassword = z.infer<typeof ResetPasswordSchema>;
 export const SetUserPinSchema = z.object({
   pin: z.string().regex(/^\d{6}$/, 'El PIN debe ser exactamente 6 dígitos'),
   /** Contraseña de quien hace el cambio: evita que una sesión abierta toque PINs. */
-  password: z.string().min(1, 'Ingresá tu contraseña'),
+  password: z.string().min(1, 'Ingresa tu contraseña'),
 });
 export type SetUserPin = z.infer<typeof SetUserPinSchema>;
 

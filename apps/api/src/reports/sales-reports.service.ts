@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { WEB_SALE_TYPES, type SaleType } from '@pos-tercos/types';
 import {
   DAILY_SUMMARY_SYSTEM,
   buildDailySummaryUserPrompt,
+  netOfDeliveryFee,
   type DailySummaryInput,
 } from '@pos-tercos/domain';
 import {
@@ -9,6 +11,7 @@ import {
   type AiSummary,
   type DashboardSummary,
   type HourHeatmapReport,
+  type Sale,
   type SalesGranularity,
   type SalesSummary,
   type SuggestionsMetrics,
@@ -17,8 +20,13 @@ import {
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
+import { includeFull, toSaleDto } from '../sales/sales.mappers';
+
+/** Techo del listado detallado — evita cargar miles de filas de golpe. */
+const SALES_DETAIL_MAX = 1000;
 
 /**
  * Reportes operativos / de negocio (FASE 13.A).
@@ -41,6 +49,7 @@ export class SalesReportsService {
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
     private readonly llm: LLMService,
+    private readonly inventory: InventoryService,
   ) {}
 
   // ==================================================================
@@ -64,14 +73,23 @@ export class SalesReportsService {
       this.computeLowStockCount(),
     ]);
 
+    // Lo digital se suma de su propio lado en vez de calcularse como
+    // `revenue − cashRevenue`: cuando byMethod era bruto y revenue neto, esa
+    // resta mezclaba escalas y con un domicilio en efectivo daba NEGATIVO.
+    // Hoy los dos van netos, pero sumar directo evita que vuelva a pasar.
     const cashRevenue = summary.byMethod.find((m) => m.method === 'CASH')?.revenue ?? 0;
+    const digitalRevenue = round(
+      summary.byMethod
+        .filter((m) => m.method !== 'CASH')
+        .reduce((acc, m) => acc + m.revenue, 0),
+    );
     const metrics: DailySummaryInput = {
       date: toDayBucket(dayStart),
       revenue: summary.totals.revenue,
       orderCount: summary.totals.count,
       avgTicket: summary.totals.avgTicket,
       cashRevenue,
-      digitalRevenue: round(summary.totals.revenue - cashRevenue),
+      digitalRevenue,
       voidCount: summary.totals.voidCount,
       cashDifference: shift?.difference != null ? Number(shift.difference) : null,
       lowStockCount: lowStock,
@@ -104,6 +122,7 @@ export class SalesReportsService {
         paymentMethod: true,
         total: true,
         discountTotal: true,
+        deliveryFee: true,
         paidAt: true,
         status: true,
         payments: { select: { method: true, amount: true } },
@@ -123,15 +142,23 @@ export class SalesReportsService {
 
     let revenue = 0;
     let discount = 0;
+    let deliveryCollected = 0;
     const buckets = new Map<string, { count: number; revenue: number; discount: number }>();
     const byType = new Map<string, { count: number; revenue: number }>();
     const byMethod = new Map<string, { count: number; revenue: number }>();
 
     for (const s of sales) {
-      const total = Number(s.total);
+      // El envío NO es ingreso (decisión del dueño 2026-07-27, revierte la de
+      // 2026-07-17): esa plata la cobra el negocio pero es de un TERCERO —el
+      // domiciliario— y solo pasa por la caja. Contarla como ingreso infla las
+      // ventas, el ticket promedio y el margen con plata que no se queda.
+      // Se acumula aparte para que siga siendo visible y arqueable.
+      const fee = Number(s.deliveryFee ?? 0);
+      const total = Number(s.total) - fee;
       const disc = Number(s.discountTotal);
       revenue += total;
       discount += disc;
+      deliveryCollected += fee;
 
       const at = s.paidAt ?? new Date();
       const bucketKey =
@@ -151,10 +178,18 @@ export class SalesReportsService {
 
       // Por método desde sale_payments: la plata de una cuenta dividida cae
       // en CADA método por su parte (count = pagos, no ventas).
+      //
+      // NETO de envío, prorrateado por la porción que pagó cada método
+      // (§7.v29): este es un reporte de VENTAS, así que todo lo que muestra
+      // tiene que ser plata del negocio. Con el envío incluido, `byMethod`
+      // sumaba más que `revenue` y hacía falta un párrafo explicando por qué.
+      // Para cuadrar contra el banco están el arqueo digital y la
+      // conciliación, que sí trabajan con lo cobrado en bruto.
+      const saleTotal = Number(s.total);
       for (const pay of s.payments) {
         const m = byMethod.get(pay.method) ?? { count: 0, revenue: 0 };
         m.count += 1;
-        m.revenue += Number(pay.amount);
+        m.revenue += netOfDeliveryFee(Number(pay.amount), saleTotal, fee);
         byMethod.set(pay.method, m);
       }
     }
@@ -172,6 +207,7 @@ export class SalesReportsService {
         discount: round(discount),
         voidCount,
         avgTicket: round(avgTicket),
+        deliveryCollected: round(deliveryCollected),
       },
       buckets: Array.from(buckets.entries())
         .sort(([a], [b]) => a.localeCompare(b))
@@ -182,21 +218,52 @@ export class SalesReportsService {
           discount: round(v.discount),
         })),
       byType: Array.from(byType.entries()).map(([type, v]) => ({
-        type: type as 'COUNTER' | 'WEB_PICKUP',
+        type: type as SaleType,
         count: v.count,
         revenue: round(v.revenue),
       })),
       byMethod: Array.from(byMethod.entries()).map(([method, v]) => ({
-        method: method as
-          | 'CASH'
-          | 'NEQUI'
-          | 'DAVIPLATA'
-          | 'QR_BANCOLOMBIA'
-          | 'TRANSFER',
+        method,
         count: v.count,
         revenue: round(v.revenue),
       })),
     };
+  }
+
+  // ==================================================================
+  // DETALLE DE VENTAS (listado del reporte, mismo universo que el resumen)
+  // ==================================================================
+
+  /**
+   * Ventas pagadas del período (mismo filtro `paidSalesWhere` que el resumen),
+   * con items + pagos, ordenadas por `paidAt` desc. Alimenta el listado
+   * detallado bajo el resumen en `/reports/sales`.
+   */
+  async getSalesDetail(from: Date, to: Date): Promise<Sale[]> {
+    return this.findSalesDetail(paidSalesWhere(from, to));
+  }
+
+  /**
+   * Ventas pagadas de UNA caja (arqueo), sin ventana de fechas: la sesión
+   * puede cruzar medianoche y ese es justamente el punto — muestra lo que
+   * entró en esa caja tal como lo cuadra el Z-report (agrupa por shiftId).
+   */
+  async getSalesDetailByShift(shiftId: string): Promise<Sale[]> {
+    return this.findSalesDetail({
+      shiftId,
+      paidAt: { not: null },
+      status: { notIn: [...NON_REVENUE_SALE_STATUSES] },
+    });
+  }
+
+  private async findSalesDetail(where: Prisma.SaleWhereInput): Promise<Sale[]> {
+    const rows = await this.prisma.sale.findMany({
+      where,
+      include: includeFull(),
+      orderBy: { paidAt: 'desc' },
+      take: SALES_DETAIL_MAX,
+    });
+    return rows.map(toSaleDto);
   }
 
   // ==================================================================
@@ -208,6 +275,13 @@ export class SalesReportsService {
     to: Date,
     limit: number,
   ): Promise<TopProductsReport> {
+    // §5.4 (aproximación documentada): el ranking (qué productos entran al top-N
+    // y su orden) se hace por Σ lineTotal BRUTO en la DB. El revenue MOSTRADO
+    // resta el prorrateo del descuento de orden (abajo). En ventas sin descuento
+    // sobre el total —el caso común— ambos coinciden; con descuentos de orden
+    // grandes y muy desparejos el orden del ranking puede diferir levemente del
+    // revenue neto. Ordenar por neto exigiría traer TODOS los productos (sin
+    // `take`) y re-ordenar en memoria — no vale el costo para este reporte.
     const grouped = await this.prisma.saleItem.groupBy({
       by: ['productId'],
       where: { sale: paidSalesWhere(from, to) },
@@ -295,7 +369,7 @@ export class SalesReportsService {
   async getHourHeatmap(from: Date, to: Date): Promise<HourHeatmapReport> {
     const sales = await this.prisma.sale.findMany({
       where: paidSalesWhere(from, to),
-      select: { paidAt: true, total: true },
+      select: { paidAt: true, total: true, deliveryFee: true },
     });
 
     const cells = new Map<string, { count: number; revenue: number }>();
@@ -306,7 +380,9 @@ export class SalesReportsService {
       const key = `${dow}-${hour}`;
       const cell = cells.get(key) ?? { count: 0, revenue: 0 };
       cell.count += 1;
-      cell.revenue += Number(s.total);
+      // Neto de envío, igual que el resumen: si no, la misma hora mostraría
+      // dos ingresos distintos según qué pantalla se mire.
+      cell.revenue += Number(s.total) - Number(s.deliveryFee ?? 0);
       cells.set(key, cell);
     }
 
@@ -330,10 +406,10 @@ export class SalesReportsService {
   // ==================================================================
 
   async getWhatsAppMetrics(from: Date, to: Date): Promise<WhatsAppMetrics> {
-    // Sales WEB_PICKUP en el período.
+    // Ambos tipos web: un domicilio también dispara notificaciones.
     const webSales = await this.prisma.sale.findMany({
       where: {
-        type: 'WEB_PICKUP',
+        type: { in: [...WEB_SALE_TYPES] },
         createdAt: { gte: from, lte: to },
       },
       select: { id: true, status: true, paidAt: true },
@@ -348,7 +424,7 @@ export class SalesReportsService {
       ['LISTO_DESPACHO', 'ENTREGADO'].includes(s.status),
     ).length;
 
-    // Mensajes OpenWA realmente enviados (status='sent') de estos pedidos web.
+    // Mensajes WhatsApp realmente enviados (status='sent') de estos pedidos web.
     // Filtramos por saleId (no por createdAt del mensaje) para no perder mensajes
     // de etapas tardías — p. ej. "listo" se envía horas después de crear el pedido.
     const messages = webSaleIds.size
@@ -455,33 +531,34 @@ export class SalesReportsService {
     // pasada (si no, en la mañana el WoW% siempre se ve fuertemente negativo).
     const lastWeekEnd = addDays(now, -7);
 
-    const [today, lastWeekSameDay, pendingWeb, toPrepare, ready, lowStock, pendingSugg] = await Promise.all([
+    const [today, lastWeekSameDay, pendingWeb, toPrepare, ready, lowStock, pendingSugg, negativeStock] = await Promise.all([
       this.prisma.sale.aggregate({
         where: paidSalesWhere(dayStart, dayEnd),
-        _sum: { total: true, discountTotal: true },
+        // deliveryFee se resta abajo: el domicilio no es ingreso (§7.v24).
+        _sum: { total: true, discountTotal: true, deliveryFee: true },
         _count: true,
       }),
       this.prisma.sale.aggregate({
         where: paidSalesWhere(lastWeekStart, lastWeekEnd),
-        _sum: { total: true },
+        _sum: { total: true, deliveryFee: true },
       }),
       this.prisma.sale.count({
         where: {
-          type: 'WEB_PICKUP',
+          type: { in: [...WEB_SALE_TYPES] },
           status: 'PENDIENTE_PAGO',
         },
       }),
-      // Pedidos WEB pagados que el cajero aún debe marcar "listo". Solo
-      // WEB_PICKUP: el mostrador (COUNTER) termina en PAGADO y NO entra a esta
-      // cola (si no, cada venta de caja inflaría el contador para siempre).
+      // Pedidos WEB pagados que el cajero aún debe marcar "listo". Solo los
+      // web: el mostrador (COUNTER) termina en PAGADO y NO entra a esta cola
+      // (si no, cada venta de caja inflaría el contador para siempre).
       this.prisma.sale.count({
-        where: { type: 'WEB_PICKUP', status: 'PAGADO' },
+        where: { type: { in: [...WEB_SALE_TYPES] }, status: 'PAGADO' },
       }),
-      // Pedidos WEB marcados "listos para retirar" hoy (acotado al día para que
-      // no acumule indefinidamente — LISTO_DESPACHO es terminal).
+      // Pedidos WEB marcados "listos" hoy (acotado al día para que no acumule
+      // indefinidamente — LISTO_DESPACHO es terminal).
       this.prisma.sale.count({
         where: {
-          type: 'WEB_PICKUP',
+          type: { in: [...WEB_SALE_TYPES] },
           status: 'LISTO_DESPACHO',
           readyAt: { gte: dayStart, lte: dayEnd },
         },
@@ -490,11 +567,20 @@ export class SalesReportsService {
       this.prisma.purchaseSuggestion.count({
         where: { status: { in: ['PENDING', 'EVALUATED'] } },
       }),
+      // Deuda de inventario (stock < 0). Se delega en InventoryService para que
+      // el contador del dashboard NO pueda divergir de la lista de /inventory
+      // /negativos (incluye subproductos e ignora el umbral, a diferencia de
+      // computeLowStockCount).
+      this.computeNegativeStockCount(),
     ]);
 
-    const todayRevenue = Number(today._sum.total ?? 0);
+    // Netos de domicilio en AMBOS lados: si solo se netea hoy, el WoW% compara
+    // peras con manzanas y muestra una caída inventada.
+    const todayRevenue =
+      Number(today._sum.total ?? 0) - Number(today._sum.deliveryFee ?? 0);
     const todayDiscount = Number(today._sum.discountTotal ?? 0);
-    const lastWeekRevenue = Number(lastWeekSameDay._sum.total ?? 0);
+    const lastWeekRevenue =
+      Number(lastWeekSameDay._sum.total ?? 0) - Number(lastWeekSameDay._sum.deliveryFee ?? 0);
     const weekOverWeekPct =
       lastWeekRevenue > 0
         ? round4((todayRevenue - lastWeekRevenue) / lastWeekRevenue)
@@ -511,7 +597,18 @@ export class SalesReportsService {
       webOrdersReady: ready,
       lowStockCount: lowStock,
       pendingSuggestions: pendingSugg,
+      negativeStockCount: negativeStock,
     };
+  }
+
+  /**
+   * Stockables con stock NEGATIVO (deuda de inventario). Excluye los
+   * CONSUMIBLES (servilletas, sal): su negativo es esperable y taparía la
+   * señal que importa ("falta subir la factura del pollo").
+   */
+  private async computeNegativeStockCount(): Promise<number> {
+    const negatives = await this.inventory.listStockables({ negative: true });
+    return negatives.filter((s) => s.blocksAvailability).length;
   }
 
   private async computeLowStockCount(): Promise<number> {

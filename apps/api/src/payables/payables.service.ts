@@ -127,7 +127,7 @@ export class PayablesService {
       data: { status: 'CANCELLED' },
     });
     if (claim.count === 0) {
-      throw new BadRequestException('El compromiso cambió de estado (se pagó en paralelo). Recargá.');
+      throw new BadRequestException('El compromiso cambió de estado (se pagó en paralelo). Recarga.');
     }
     await this.audit.log({
       userId: actorId,

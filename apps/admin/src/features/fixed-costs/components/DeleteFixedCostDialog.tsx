@@ -4,6 +4,7 @@ import type { FixedCost } from '@pos-tercos/types';
 import { ConfirmDialog } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { deleteFixedCost } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function DeleteFixedCostDialog({
   cost,
@@ -23,7 +24,7 @@ export function DeleteFixedCostDialog({
       await deleteFixedCost(cost.id);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo eliminar.');
+      setError(getErrorMessage(e, 'No se pudo eliminar.'));
       setPending(false);
     }
   };
@@ -37,7 +38,7 @@ export function DeleteFixedCostDialog({
       description={
         error
           ? error
-          : 'El costo se borra definitivamente. Esto NO afecta cierres anteriores ya calculados, pero deja de sumar a partir del próximo cálculo. Si solo querés pausarlo, edítalo y desactivalo.'
+          : 'El costo se borra definitivamente. Esto NO afecta cierres anteriores ya calculados, pero deja de sumar a partir del próximo cálculo. Si solo quieres pausarlo, edítalo y desactívalo.'
       }
       confirmLabel="Eliminar"
       destructive

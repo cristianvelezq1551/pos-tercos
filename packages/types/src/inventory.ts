@@ -21,6 +21,13 @@ export type InventoryMovementType = z.infer<typeof InventoryMovementTypeEnum>;
 export const StockableTypeEnum = z.enum(['INGREDIENT', 'PRODUCT', 'SUBPRODUCT']);
 export type StockableType = z.infer<typeof StockableTypeEnum>;
 
+/** Nombre legible del tipo de item. Fuente única — no redefinir en las apps. */
+export const STOCKABLE_TYPE_LABELS: Record<StockableType, string> = {
+  INGREDIENT: 'insumo',
+  PRODUCT: 'producto',
+  SUBPRODUCT: 'subproducto',
+};
+
 export const InventoryMovementSchema = z.object({
   id: z.string().uuid(),
   entityType: StockableTypeEnum,
@@ -55,7 +62,7 @@ export const CreateInventoryMovementSchema = z
     ingredientId: z.string().uuid().optional(),
     productId: z.string().uuid().optional(),
     subproductId: z.string().uuid().optional(),
-    delta: z.number().refine((v) => v !== 0, { message: 'delta must not be zero' }),
+    delta: z.number().refine((v) => v !== 0, { message: 'La cantidad del movimiento no puede ser cero.' }),
     type: z.enum(['MANUAL_ADJUSTMENT', 'WASTE', 'INITIAL']).default('MANUAL_ADJUSTMENT'),
     /** Costo por unidad de stock para entradas (INITIAL / ajuste+). Base FIFO. */
     unitCost: z.number().nonnegative().nullable().optional(),
@@ -73,7 +80,7 @@ export const CreateInventoryMovementSchema = z
     if (!data[expected]) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `${expected} required when entityType=${data.entityType}`,
+        message: `Falta indicar a qué ${STOCKABLE_TYPE_LABELS[data.entityType]} corresponde el movimiento.`,
         path: [expected],
       });
     }
@@ -81,13 +88,27 @@ export const CreateInventoryMovementSchema = z
       if (k !== expected) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `${k} must be omitted when entityType=${data.entityType}`,
+          message: `El movimiento es de un ${STOCKABLE_TYPE_LABELS[data.entityType]}: no puede apuntar además a otro tipo de item.`,
           path: [k],
         });
       }
     }
   });
 export type CreateInventoryMovement = z.infer<typeof CreateInventoryMovementSchema>;
+
+/**
+ * Anulación de una merma registrada por error (dedo pesado: "10 kg" en vez de
+ * "1 kg"). `inventory_movements` es insert-only, así que la corrección es un
+ * movimiento compensatorio; sin él la pérdida quedaba fija para siempre en el
+ * P&G (el ajuste manual devolvía la cantidad pero no el costo).
+ *
+ * `quantity` permite devolver SOLO lo que no se tiró: null = la merma entera.
+ */
+export const ReverseWasteSchema = z.object({
+  reason: z.string().min(5).max(200),
+  quantity: z.number().positive().nullable().optional(),
+});
+export type ReverseWaste = z.infer<typeof ReverseWasteSchema>;
 
 /**
  * Vista unificada de stock — incluye insumos, productos direct-resale y
@@ -108,6 +129,12 @@ export const StockableSchema = z.object({
   currentStock: z.number(),
   lowStock: z.boolean(),
   isActive: z.boolean(),
+  /**
+   * false = CONSUMIBLE (servilletas, sal): no frena la venta de los productos
+   * que lo usan y se oculta del panel de deudas (su negativo es esperable).
+   * Siempre true en productos de reventa directa: su stock ES lo que se vende.
+   */
+  blocksAvailability: z.boolean(),
   /** Tamaño de porción (en unidad de stock). Null en productos direct-resale y
    *  en ítems sin porción definida. */
   portionSize: z.number().positive().nullable().optional(),
@@ -159,7 +186,7 @@ export const CreateStockCountSchema = z
     if (!data[expected]) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `${expected} es requerido cuando entityType=${data.entityType}`,
+        message: `Falta indicar a qué ${STOCKABLE_TYPE_LABELS[data.entityType]} corresponde.`,
         path: [expected],
       });
     }

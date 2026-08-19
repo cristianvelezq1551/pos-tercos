@@ -10,8 +10,9 @@ import {
 } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import type { Ingredient } from '@pos-tercos/types';
+import { UNIT_LABEL_ERROR, isValidUnitLabel, type Ingredient } from '@pos-tercos/types';
 import { createIngredient, deactivateIngredient, updateIngredient } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface IngredientFormProps {
   initial?: Ingredient;
@@ -24,6 +25,7 @@ interface FormState {
   conversionFactor: number | null;
   thresholdMin: number | null;
   portionSize: number | null;
+  blocksAvailability: boolean;
   isActive: boolean;
 }
 
@@ -44,6 +46,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
     conversionFactor: initial?.conversionFactor ?? null,
     thresholdMin: initial?.thresholdMin ?? 0,
     portionSize: initial?.portionSize ?? null,
+    blocksAvailability: initial?.blocksAvailability ?? true,
     isActive: initial?.isActive ?? true,
   }));
 
@@ -66,6 +69,10 @@ export function IngredientForm({ initial }: IngredientFormProps) {
       setError('El tamaño de porción debe ser mayor a 0 (o dejarse vacío).');
       return;
     }
+    if (!isValidUnitLabel(form.unitPurchase) || !isValidUnitLabel(form.unitRecipe)) {
+      setError(UNIT_LABEL_ERROR);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -77,6 +84,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           conversionFactor: form.conversionFactor,
           thresholdMin: form.thresholdMin,
           portionSize: form.portionSize,
+          blocksAvailability: form.blocksAvailability,
           isActive: form.isActive,
         });
       } else {
@@ -87,6 +95,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           conversionFactor: form.conversionFactor,
           thresholdMin: form.thresholdMin,
           portionSize: form.portionSize,
+          blocksAvailability: form.blocksAvailability,
         });
       }
       startTransition(() => {
@@ -94,7 +103,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
     }
@@ -111,7 +120,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
       setConfirmDeactivate(false);
@@ -214,6 +223,14 @@ export function IngredientForm({ initial }: IngredientFormProps) {
             />
           </FormField>
         </div>
+
+        <Checkbox
+          label="Frena la venta si no hay stock"
+          description="Desmarca esto para un CONSUMIBLE (servilletas, sal): no frena la venta de los productos que lo usan y no aparece en Deudas de inventario. Se sigue descontando y costeando igual."
+          disabled={pending}
+          checked={form.blocksAvailability}
+          onChange={(e) => setForm((f) => ({ ...f, blocksAvailability: e.target.checked }))}
+        />
 
         {isEdit ? (
           <Checkbox

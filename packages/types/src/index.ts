@@ -1,6 +1,7 @@
 export * from './approvals';
 export * from './audit';
 export * from './auth';
+export * from './address';
 export * from './business-config';
 export * from './catalog';
 export * from './cogs';
@@ -22,6 +23,8 @@ export * from './shifts';
 export * from './suppliers';
 export * from './treasury';
 export * from './users';
+export * from './schedule';
+export * from './web-config';
 export * from './web-hero';
 export * from './web-menu';
 export * from './web-orders';

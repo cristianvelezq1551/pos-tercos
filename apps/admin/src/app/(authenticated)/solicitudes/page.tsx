@@ -14,7 +14,7 @@ export default async function SolicitudesPage() {
       <PageHeader
         eyebrow="Operación"
         title="Solicitudes de cortesía"
-        description="Cortesías que el cajero regaló (línea de un pedido o suelto). Confirmá o rechazá cada una. El stock ya se descontó; al aprobar se reconoce el gasto a costo."
+        description="Cortesías que el cajero regaló (línea de un pedido o suelto). Confirma o rechaza cada una. El stock ya se descontó; al aprobar se reconoce el gasto a costo."
         icon={<Gift className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="4xl" padY="md">

@@ -4,6 +4,8 @@ import { ArrowLeft, ShoppingBag, Minus, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COP } from '../../../lib/format';
+import { useBusiness } from '../../business';
+import { formatNextOpen } from '../../business/lib/hours-text';
 import { computeCartPromoTotals, usePromotions } from '../../promotions';
 import type { CartLine } from '../lib/cart-types';
 import { cartLineCount, useCartStore } from '../store/cart-store';
@@ -21,6 +23,12 @@ export function CartDrawer({
   const removeLine = useCartStore((s) => s.removeLine);
   const updateQty = useCartStore((s) => s.updateQty);
   const promotions = usePromotions((s) => s.promotions);
+  // Misma fuente que el resto de la web: el servidor ya resolvió si se toman
+  // pedidos (kill-switch + horario). Acá no se recalcula nada.
+  const business = useBusiness((s) => s.business);
+  const acceptingOrders = business.acceptingOrders;
+  const ordersPaused = !business.webOrdersEnabled;
+  const proximaApertura = formatNextOpen(business.schedule.nextOpenAt);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -120,6 +128,7 @@ export function CartDrawer({
                     else updateQty(line.lineId, line.quantity - 1);
                   }}
                   onIncrement={() => updateQty(line.lineId, line.quantity + 1)}
+                  canGrow={acceptingOrders}
                   onRemove={() => removeLine(line.lineId)}
                 />
               ))}
@@ -153,15 +162,27 @@ export function CartDrawer({
             </div>
           </div>
 
+          {/* Con el local cerrado no se toman pedidos: el botón lo dice acá y no
+              lleva al cliente hasta el checkout para recién ahí frenarlo. El
+              carrito NO se borra — sigue guardado para cuando abramos. */}
           <button
             type="button"
             onClick={onCheckout}
-            disabled={empty}
+            disabled={empty || !acceptingOrders}
             className="press inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-base font-bold text-primary-foreground shadow-md transition-colors hover:bg-red-700 hover:shadow-primary/30 active:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ShoppingBag className="h-5 w-5" strokeWidth={2} />
-            Ir a pagar
+            {acceptingOrders ? 'Ir a pagar' : 'Cerrado por ahora'}
           </button>
+          {!acceptingOrders ? (
+            <p className="-mt-1 text-center text-xs text-muted-foreground">
+              {ordersPaused
+                ? 'Los pedidos online están pausados. Te esperamos en el local.'
+                : proximaApertura
+                  ? `Abrimos ${proximaApertura}. Tu pedido queda guardado.`
+                  : 'Volvemos a tomar pedidos cuando abramos. Tu pedido queda guardado.'}
+            </p>
+          ) : null}
         </footer>
       </aside>
 
@@ -179,12 +200,15 @@ function CartLineRow({
   lineDiscount,
   onDecrement,
   onIncrement,
+  canGrow,
   onRemove,
 }: {
   line: CartLine;
   lineDiscount: number;
   onDecrement: () => void;
   onIncrement: () => void;
+  /** Con el local cerrado no se agranda el pedido; quitar sí se puede. */
+  canGrow: boolean;
   onRemove: () => void;
 }) {
   const description = [line.size?.name, ...line.modifiers.map((m) => m.name)]
@@ -266,8 +290,9 @@ function CartLineRow({
             <button
               type="button"
               onClick={onIncrement}
+              disabled={!canGrow}
               aria-label="Sumar uno"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-red-700"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
             </button>

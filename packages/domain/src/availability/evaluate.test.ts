@@ -10,6 +10,7 @@ function product(id: string, overrides: Partial<AvailabilityProduct> = {}): Avai
     directResale: false,
     isCombo: false,
     soldOut: false,
+    forceAvailable: false,
     comboComponents: [],
     ...overrides,
   };
@@ -25,6 +26,7 @@ function buildGraph(opts: {
     childId: string;
     qty: number;
     merma?: number;
+    blocksAvailability?: boolean;
   }>;
 }): RecipeGraph {
   const edgesByParent = new Map<string, RecipeEdgeNode[]>();
@@ -37,6 +39,9 @@ function buildGraph(opts: {
       child: { kind: e.childKind, id: e.childId },
       quantityNeta: e.qty,
       mermaPct: e.merma ?? 0,
+      ...(e.blocksAvailability !== undefined
+        ? { blocksAvailability: e.blocksAvailability }
+        : {}),
     });
     edgesByParent.set(key, list);
   }
@@ -108,6 +113,99 @@ describe('evaluateAvailability · 86 manual (soldOut)', () => {
     });
     expect(r.available).toBe(false);
     expect(r.reason).toBe('Agotado (manual)');
+  });
+
+  it('forceAvailable deja vendible un preparado sin stock de su subproducto', () => {
+    const graph = buildGraph({
+      subproducts: [{ id: 'pollo', name: 'Pollo Sazonado' }],
+      edges: [{ parentId: 'burger', childKind: 'subproduct', childId: 'pollo', qty: 1 }],
+    });
+    const [sinForzar] = evaluate({
+      products: [product('burger')],
+      graph,
+      subproductStock: { pollo: 0 },
+    });
+    expect(sinForzar.available).toBe(false);
+    expect(sinForzar.reason).toBe('Sin Pollo Sazonado');
+
+    const [forzado] = evaluate({
+      products: [product('burger', { forceAvailable: true })],
+      graph,
+      subproductStock: { pollo: 0 },
+    });
+    expect(forzado.available).toBe(true);
+    expect(forzado.reason).toBeNull();
+  });
+
+  it('un consumible sin stock (servilletas) NO frena la venta; el pan sí', () => {
+    const graph = buildGraph({
+      ingredients: [
+        { id: 'pan', name: 'Pan' },
+        { id: 'servilleta', name: 'Servilletas' },
+      ],
+      edges: [
+        { parentId: 'burger', childKind: 'ingredient', childId: 'pan', qty: 1 },
+        {
+          parentId: 'burger',
+          childKind: 'ingredient',
+          childId: 'servilleta',
+          qty: 2,
+          blocksAvailability: false,
+        },
+      ],
+    });
+    // Servilletas en 0 (y hasta en negativo): la hamburguesa se vende igual.
+    const [conPan] = evaluate({
+      products: [product('burger')],
+      graph,
+      ingredientStock: { pan: 10, servilleta: -50 },
+    });
+    expect(conPan.available).toBe(true);
+    expect(conPan.reason).toBeNull();
+
+    // Pero el pan (bloqueante) sigue frenando.
+    const [sinPan] = evaluate({
+      products: [product('burger')],
+      graph,
+      ingredientStock: { pan: 0, servilleta: 999 },
+    });
+    expect(sinPan.available).toBe(false);
+    expect(sinPan.reason).toBe('Sin Pan');
+  });
+
+  it('sin el flag (snapshot viejo) el insumo BLOQUEA — falla hacia el lado seguro', () => {
+    const graph = buildGraph({
+      ingredients: [{ id: 'pan', name: 'Pan' }],
+      // Sin blocksAvailability → undefined, debe seguir bloqueando.
+      edges: [{ parentId: 'burger', childKind: 'ingredient', childId: 'pan', qty: 1 }],
+    });
+    const [r] = evaluate({ products: [product('burger')], graph, ingredientStock: { pan: 0 } });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Sin Pan');
+  });
+
+  it('un subproducto marcado no-bloqueante tampoco frena', () => {
+    const graph = buildGraph({
+      subproducts: [{ id: 'salsa', name: 'Salsa de la Casa' }],
+      ingredients: [{ id: 'pan', name: 'Pan' }],
+      edges: [
+        { parentId: 'burger', childKind: 'ingredient', childId: 'pan', qty: 1 },
+        {
+          parentId: 'burger',
+          childKind: 'subproduct',
+          childId: 'salsa',
+          qty: 1,
+          blocksAvailability: false,
+        },
+      ],
+    });
+    const [r] = evaluate({
+      products: [product('burger')],
+      graph,
+      ingredientStock: { pan: 10 },
+      subproductStock: { salsa: 0 },
+    });
+    expect(r.available).toBe(true);
   });
 
   it('los productos inactivos no aparecen en el resultado', () => {

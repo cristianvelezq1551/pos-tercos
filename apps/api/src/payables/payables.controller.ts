@@ -60,7 +60,7 @@ export class PayablesController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Headers(IDEMPOTENCY_HEADER) idemKey?: string,
   ): Promise<PayableCommitment> {
-    if (!payloadRaw) throw new BadRequestException('Falta el payload del pago.');
+    if (!payloadRaw) throw new BadRequestException('Faltan los datos del pago.');
     let parsed: unknown;
     try {
       parsed = JSON.parse(payloadRaw);

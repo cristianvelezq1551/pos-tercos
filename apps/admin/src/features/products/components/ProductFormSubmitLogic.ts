@@ -1,4 +1,4 @@
-import type { CreateProduct, UpdateProduct } from '@pos-tercos/types';
+import { UNIT_LABEL_ERROR, isValidUnitLabel, type CreateProduct, type UpdateProduct } from '@pos-tercos/types';
 import type { FormState } from './ProductFormTypes';
 
 type DrFields = {
@@ -79,7 +79,7 @@ export function parseFormValues(form: FormState): ParsedFormResult {
       } else if (m.consumeChildType && !m.consumeChildId) {
         return {
           ok: false,
-          error: `Elegí qué consume el extra "${m.name}" (o dejá el consumo en "No descuenta").`,
+          error: `Elige qué consume el extra "${m.name}" (o deja el consumo en "No descuenta").`,
         };
       }
       modifiers.push(extra);
@@ -119,6 +119,9 @@ export function parseFormValues(form: FormState): ParsedFormResult {
     if (!form.unitStock.trim()) {
       return { ok: false, error: 'En reventa, "Unidad de stock" es requerido.' };
     }
+    if (!isValidUnitLabel(form.unitPurchase) || !isValidUnitLabel(form.unitStock)) {
+      return { ok: false, error: UNIT_LABEL_ERROR };
+    }
     if (!Number.isFinite(factor) || factor <= 0) {
       return { ok: false, error: 'Factor de conversión debe ser un número > 0.' };
     }
@@ -146,7 +149,9 @@ export function buildCreatePayload(
     description: form.description || null,
     preparationSteps: form.preparationSteps,
     basePrice: parsed.basePrice,
-    category: form.category || null,
+    // Obligatoria al crear (el selector la exige): sin categoría el
+    // producto solo aparecería bajo "Todo" en la caja y en la web.
+    category: form.category,
     imageUrl: form.imageUrl || null,
     emoji: form.emoji || null,
     modifiersEnabled: parsed.modifiers.length > 0,

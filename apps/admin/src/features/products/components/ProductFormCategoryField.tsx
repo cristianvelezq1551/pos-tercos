@@ -4,6 +4,7 @@ import { Button, Input, Label, Select } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { useState } from 'react';
 import { createCategory } from '../../categories';
+import { getErrorMessage } from '../../../lib/errors';
 
 const NEW_OPTION = '__new__';
 
@@ -13,6 +14,8 @@ interface ProductFormCategoryFieldProps {
   /** Categorías activas del catálogo curado (nombres). */
   categories: string[];
   disabled?: boolean;
+  /** Obligatoria al CREAR: sin categoría el producto solo se ve en \"Todo\". */
+  required?: boolean;
 }
 
 export function ProductFormCategoryField({
@@ -20,6 +23,7 @@ export function ProductFormCategoryField({
   onChange,
   categories,
   disabled,
+  required = false,
 }: ProductFormCategoryFieldProps) {
   const [options, setOptions] = useState<string[]>(categories);
   const [creating, setCreating] = useState(false);
@@ -43,7 +47,7 @@ export function ProductFormCategoryField({
       setCreating(false);
       setNewName('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo crear la categoría.');
+      setError(getErrorMessage(e, 'No se pudo crear la categoría.'));
     } finally {
       setBusy(false);
     }
@@ -52,7 +56,7 @@ export function ProductFormCategoryField({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label htmlFor="category">Categoría</Label>
+        <Label htmlFor="category">Categoría{required ? ' *' : ''}</Label>
         <Link href="/categories" className="text-xs text-primary hover:underline">
           Administrar
         </Link>
@@ -94,6 +98,7 @@ export function ProductFormCategoryField({
       ) : (
         <Select
           id="category"
+          required={required}
           disabled={disabled}
           value={value}
           onChange={(e) => {
@@ -104,7 +109,10 @@ export function ProductFormCategoryField({
             onChange(e.target.value);
           }}
         >
-          <option value="">— Sin categoría —</option>
+          {/* Al crear no existe "sin categoría": el placeholder lo dice, y el
+              `required` impide dejarlo así. Al editar sí se puede vaciar (hay
+              productos viejos sin clasificar). */}
+          <option value="">{required ? '— Elige una categoría —' : '— Sin categoría —'}</option>
           {all.map((c) => (
             <option key={c} value={c}>
               {c}

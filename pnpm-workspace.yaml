@@ -1,3 +1,38 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# --- Defensa de cadena de suministro ---
+# La ola de ataques a npm (chalk/debug, el worm Shai-Hulud) funciona así: le
+# roban la cuenta a un mantenedor, publican una versión con un postinstall
+# malicioso y esa versión se instala sola en el próximo `pnpm install`. Casi
+# siempre la detectan y despublican en horas.
+
+# Ignora versiones publicadas hace menos de 7 días (en minutos). Se paga un
+# retraso de una semana en updates a cambio de no ser paciente cero.
+minimumReleaseAge: 10080
+
+# Una dependencia transitiva no puede venir de un tarball o repo git arbitrario:
+# solo del registry. Cierra el vector de "dep legítima que apunta a un fork".
+blockExoticSubdeps: true
+
+# Un paquete no puede rebajar la configuración de seguridad en una versión
+# nueva (ej. re-habilitar scripts de instalación que acá están restringidos
+# por `onlyBuiltDependencies` en package.json).
+trustPolicy: no-downgrade
+
+# Parches de seguridad puntuales de deps transitivas (sin re-resolver el árbol):
+# - socket.io-parser: GHSA-2m8v-j782-fhvr (agotamiento de memoria) vía
+#   socket.io-client del admin. El rango del cliente permitía <4.2.7.
+overrides:
+  socket.io-parser: ">=4.2.7"
+  # nanoid v3 (build-time: next>postcss) — GHSA-2v37-7h3g-55p8.
+  "nanoid@<4": ">=3.3.18"
+
+# chokidar@4.0.3 (dev-tooling: @nestjs/cli + prisma, no corre en runtime) se
+# publicó en 2024-12 sin atestación de proveniencia y `no-downgrade` bloquea
+# CUALQUIER re-resolución del lockfile por su culpa. 20 meses sin incidente
+# reportado = no es un takeover en curso. Exclusión puntual, NO bajar la
+# política global.
+trustPolicyExclude:
+  - chokidar@4.0.3

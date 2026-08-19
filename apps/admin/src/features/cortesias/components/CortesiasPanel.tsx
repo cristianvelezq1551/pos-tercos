@@ -1,8 +1,9 @@
 'use client';
 
-import type { CortesiaRequest, CortesiaStatus } from '@pos-tercos/types';
+import type { CortesiaGivenSummary, CortesiaRequest, CortesiaStatus } from '@pos-tercos/types';
 import { Badge, Button, Card, EmptyState, Input, Money, cn, formatCop, formatDate } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { getErrorMessage } from '../../../lib/errors';
 import {
   approveCortesia,
   getCortesiaGivenSummary,
@@ -24,6 +25,16 @@ const STATUS_TONE: Record<CortesiaStatus, 'warning' | 'success' | 'danger' | 'ne
   REJECTED: 'danger',
   REVERSED: 'neutral',
 };
+const EMPTY_SUMMARY: CortesiaGivenSummary = {
+  year: 0,
+  month: 0,
+  monthLabel: '',
+  total: 0,
+  count: 0,
+  partial: false,
+  estimatedCost: 0,
+};
+
 const STATUS_LABEL: Record<CortesiaStatus, string> = {
   PENDING: 'Sin revisar',
   APPROVED: 'Registrada',
@@ -37,11 +48,9 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [monthTotal, setMonthTotal] = useState<{ count: number; total: number; monthLabel: string }>({
-    count: 0,
-    total: 0,
-    monthLabel: '',
-  });
+  // El tipo REAL del resumen, no una copia local: un shape propio por componente
+  // se desincroniza en cuanto el backend agrega un campo (§7.v31).
+  const [monthTotal, setMonthTotal] = useState<CortesiaGivenSummary>(EMPTY_SUMMARY);
 
   const refresh = useCallback(async (key: string) => {
     const status = TABS.find((t) => t.key === key)?.status;
@@ -49,7 +58,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
       setRows(await listCortesias(status));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error cargando solicitudes');
+      setError(getErrorMessage(e, 'Error cargando solicitudes'));
     }
   }, []);
 
@@ -57,8 +66,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
   // línea "Cortesías" del estado financiero (misma ventana, misma valuación).
   const loadSummary = useCallback(async () => {
     try {
-      const s = await getCortesiaGivenSummary();
-      setMonthTotal({ count: s.count, total: s.total, monthLabel: s.monthLabel });
+      setMonthTotal(await getCortesiaGivenSummary());
     } catch {
       // sin red: dejar el KPI como está.
     }
@@ -81,7 +89,7 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
       else await reverseCortesia(id, note);
       await Promise.all([refresh(tab), loadSummary()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error resolviendo la cortesía');
+      setError(getErrorMessage(e, 'Error resolviendo la cortesía'));
     } finally {
       setBusyId(null);
     }
@@ -89,19 +97,40 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
 
   return (
     <div className="space-y-4">
-      <Card className="flex items-center justify-between gap-3 p-4">
-        <div>
-          <p className="caps text-[0.625rem] text-muted-foreground">
-            Dado en cortesías · {monthTotal.monthLabel || 'este mes'}
-          </p>
-          <p className="mt-0.5 font-display text-2xl font-bold tabular-nums text-foreground">
-            {formatCop(monthTotal.total)}
-          </p>
+      <Card className="space-y-3 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="caps text-[0.625rem] text-muted-foreground">
+              Dado en cortesías · {monthTotal.monthLabel || 'este mes'}
+            </p>
+            <p className="mt-0.5 font-display text-2xl font-bold tabular-nums text-foreground">
+              {formatCop(monthTotal.total)}
+              {monthTotal.estimatedCost > 0 ? (
+                <span className="ml-2 align-middle text-xs font-semibold text-warning">
+                  aprox.
+                </span>
+              ) : null}
+            </p>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <p>{monthTotal.count} registrada{monthTotal.count === 1 ? '' : 's'}</p>
+            <p className="mt-0.5">costo FIFO · coincide con Estado financiero</p>
+          </div>
         </div>
-        <div className="text-right text-xs text-muted-foreground">
-          <p>{monthTotal.count} registrada{monthTotal.count === 1 ? '' : 's'}</p>
-          <p className="mt-0.5">costo FIFO · coincide con Estado financiero</p>
-        </div>
+        {monthTotal.estimatedCost > 0 ? (
+          <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+            {formatCop(monthTotal.estimatedCost)} de este total es un{' '}
+            <strong>estimado</strong>: se regaló producto con insumos que no estaban cargados en
+            inventario, así que se valuaron al último precio de compra conocido. Se corrige solo
+            cuando subas la factura.
+          </p>
+        ) : null}
+        {monthTotal.partial ? (
+          <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+            Alguna cortesía tiene insumos sin ningún precio de compra en el sistema, así que este
+            total está <strong>subestimado</strong>. Registra una compra de esos insumos.
+          </p>
+        ) : null}
       </Card>
 
       <div className="flex flex-wrap gap-1.5">
@@ -151,10 +180,21 @@ export function CortesiasPanel({ initial }: { initial: CortesiaRequest[] }) {
 
               <div className="flex items-center gap-3 border-t border-border pt-2 text-xs text-muted-foreground">
                 {c.status === 'APPROVED' ? (
-                  <span title="Costo real FIFO — el mismo del estado financiero">
+                  <span
+                    title={
+                      c.fifoCostEstimated
+                        ? 'Parte de este costo se valuó al último precio de compra: los insumos no estaban cargados. Se corrige al subir la factura.'
+                        : 'Costo real FIFO — el mismo del estado financiero'
+                    }
+                  >
                     Costo (FIFO):{' '}
                     {c.fifoCost != null ? (
-                      <Money amount={c.fifoCost} className="text-xs" weight="semibold" />
+                      <>
+                        <Money amount={c.fifoCost} className="text-xs" weight="semibold" />
+                        {c.fifoCostEstimated ? (
+                          <span className="ml-1 font-semibold text-warning">· estimado</span>
+                        ) : null}
+                      </>
                     ) : (
                       <span>s/d</span>
                     )}

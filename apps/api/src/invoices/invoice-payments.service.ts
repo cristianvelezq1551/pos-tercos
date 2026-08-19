@@ -1,6 +1,12 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { StorageProvider } from '@pos-tercos/domain';
-import type { Invoice } from '@pos-tercos/types';
+import type { Invoice, UserRole } from '@pos-tercos/types';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
@@ -29,10 +35,10 @@ export class InvoicePaymentsService {
     invoiceId: string,
     pin: string,
     actorId: string,
+    actorRole: UserRole,
     proof: { buffer: Buffer; mime: string; ext: string },
     opts: { paidAtYmd?: string; note?: string; cashAmount?: number; bankAmount?: number },
   ): Promise<Invoice> {
-    const approverId = await this.approvals.verify(pin);
     const existing = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
       select: {
@@ -41,9 +47,14 @@ export class InvoicePaymentsService {
         total: true,
         paymentStatus: true,
         paymentProofKey: true,
+        uploadedById: true,
       },
     });
     if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+    // Autoriza ANTES de consumir el PIN: un no-dueño ajeno a la factura no debe
+    // ni siquiera gastar la aprobación.
+    this.assertCanManagePayment(actorRole, actorId, existing.uploadedById);
+    const approverId = await this.approvals.verify(pin);
     if (existing.status !== 'CONFIRMED') {
       throw new BadRequestException(
         'Solo se pueden marcar pagadas las facturas CONFIRMADAS.',
@@ -90,7 +101,7 @@ export class InvoicePaymentsService {
       },
     });
     if (claim.count === 0) {
-      throw new BadRequestException('La factura cambió de estado (se pagó en paralelo). Recargá.');
+      throw new BadRequestException('La factura cambió de estado (se pagó en paralelo). Recarga.');
     }
     const updated = await this.prisma.invoice.findUniqueOrThrow({
       where: { id: invoiceId },
@@ -113,13 +124,26 @@ export class InvoicePaymentsService {
   }
 
   /** Revierte el pago: borra el registro y la imagen, vuelve a PENDING. */
-  async unmarkPayment(invoiceId: string, pin: string, actorId: string): Promise<Invoice> {
-    const approverId = await this.approvals.verify(pin);
+  async unmarkPayment(
+    invoiceId: string,
+    pin: string,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<Invoice> {
     const existing = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      select: { id: true, status: true, paymentStatus: true, paymentProofKey: true },
+      select: {
+        id: true,
+        status: true,
+        paymentStatus: true,
+        paymentProofKey: true,
+        uploadedById: true,
+      },
     });
     if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+    // Autoriza ANTES de consumir el PIN (ver markPaymentPaid).
+    this.assertCanManagePayment(actorRole, actorId, existing.uploadedById);
+    const approverId = await this.approvals.verify(pin);
     if (existing.status !== 'CONFIRMED') {
       throw new BadRequestException('Solo aplica a facturas confirmadas.');
     }
@@ -150,6 +174,24 @@ export class InvoicePaymentsService {
       metadata: { approverId, prevStatus: existing.paymentStatus },
     });
     return toInvoiceDto(updated);
+  }
+
+  /**
+   * El Dueño gestiona el pago de cualquier factura; el Admin Operativo solo el
+   * de las que él mismo creó (evita que otro usuario toque su compra). La
+   * lectura del comprobante NO pasa por acá — cualquier admin puede verlo.
+   */
+  private assertCanManagePayment(
+    actorRole: UserRole,
+    actorId: string,
+    uploadedById: string | null,
+  ): void {
+    if (actorRole === 'DUENO') return;
+    if (uploadedById !== actorId) {
+      throw new ForbiddenException(
+        'Solo el Dueño o quien creó la factura puede gestionar su pago.',
+      );
+    }
   }
 
   /** Lee el comprobante de pago al proveedor. */

@@ -10,11 +10,14 @@ import { InvoicePaymentActions } from './InvoicePaymentActions';
  *  porque InvoicePaymentActions abre diálogos + refresca al cambiar. */
 export function InvoicePaymentSection({
   invoice,
-  canAct,
+  canManage,
+  canViewProof,
 }: {
   invoice: Invoice;
-  /** True si el usuario actual es Dueño (puede marcar pagada/desmarcar). */
-  canAct: boolean;
+  /** Puede marcar pagada / desmarcar (Dueño o el admin que creó la factura). */
+  canManage: boolean;
+  /** Puede ver el comprobante (cualquier admin). */
+  canViewProof: boolean;
 }) {
   const router = useRouter();
   const refresh = (): void => router.refresh();
@@ -62,10 +65,17 @@ export function InvoicePaymentSection({
           <p className="mt-1 text-xs text-muted-foreground">
             {isPaid
               ? `Pagada el ${paidAtLabel}${invoice.paymentActorName ? ` por ${invoice.paymentActorName}` : ''}${pocketLabel ? ` · ${pocketLabel}` : ''}${invoice.paymentNote ? ` · ${invoice.paymentNote}` : ''}`
-              : 'Subí el comprobante de la transferencia para marcarla pagada y sacarla de la lista de pendientes.'}
+              : 'Sube el comprobante de la transferencia para marcarla pagada y sacarla de la lista de pendientes.'}
           </p>
         </div>
-        {canAct ? <InvoicePaymentActions invoice={invoice} onChanged={refresh} /> : null}
+        {canManage || canViewProof ? (
+          <InvoicePaymentActions
+            invoice={invoice}
+            onChanged={refresh}
+            canManage={canManage}
+            canViewProof={canViewProof}
+          />
+        ) : null}
       </div>
     </section>
   );

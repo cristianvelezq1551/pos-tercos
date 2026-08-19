@@ -4,6 +4,7 @@ import type { WebHeroSlide } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useEffect, useRef, useState } from 'react';
 import { createAd, listAds, replaceAdMedia, updateAd } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024; // 50 MB (igual que el backend)
 
@@ -37,7 +38,7 @@ export function AdEditModal({
 
   const pick = (f: File | null) => {
     if (f && f.size > MAX_MEDIA_BYTES) {
-      setError('El archivo supera 50 MB. Usá un video más corto o más comprimido.');
+      setError('El archivo supera 50 MB. Usa un video más corto o más comprimido.');
       return;
     }
     setError(null);
@@ -78,7 +79,7 @@ export function AdEditModal({
       }
       onSaved(await listAds());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error guardando');
+      setError(getErrorMessage(e, 'Error guardando'));
       setBusy(false);
     }
   };
@@ -146,7 +147,7 @@ export function AdEditModal({
 
         <FormField
           label="Link al tocar (opcional)"
-          error={!linkValid ? 'Usá una URL http(s) o una ruta interna (/... o #...).' : undefined}
+          error={!linkValid ? 'Usa una URL http(s) o una ruta interna (/... o #...).' : undefined}
         >
           <Input
             value={link}
@@ -156,7 +157,7 @@ export function AdEditModal({
           />
         </FormField>
         <p className="text-xs text-muted-foreground">
-          Si lo dejás vacío, la pieza no es clickeable. Ejemplos: <code>#menu</code> baja al menú,
+          Si lo dejas vacío, la pieza no es clicable. Ejemplos: <code>#menu</code> baja al menú,
           una URL de WhatsApp abre el chat.
         </p>
       </div>

@@ -13,7 +13,7 @@ export function WeeklyPayrollView({ report }: { report: WeeklyPayrollReport }) {
     return (
       <EmptyState
         title="Sin empleados diarios"
-        description="No hay empleados con pago DIARIO activos esta semana. Configurá el tipo de pago en Usuarios."
+        description="No hay empleados con pago DIARIO activos esta semana. Configura el tipo de pago en Usuarios."
       />
     );
   }

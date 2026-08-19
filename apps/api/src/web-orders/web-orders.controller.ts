@@ -8,8 +8,10 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { WebOrderDailyLimitGuard } from './web-order-daily-limit.guard';
 import {
   CreateWebOrderResponseSchema,
   CreateWebOrderSchema,
@@ -32,8 +34,9 @@ export class WebOrdersController {
     private readonly tokens: WebOrderTokenService,
   ) {}
 
-  /** 30 reqs / 60s por IP. */
+  /** 30 reqs / 60s por IP + tope diario de 25 pedidos por IP (anti-abuso). */
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @UseGuards(WebOrderDailyLimitGuard)
   @Post()
   async create(
     @Headers(IDEMPOTENCY_HEADER) idemKeyRaw: string | undefined,
@@ -74,7 +77,7 @@ export class WebOrdersController {
   }
 
   // Flujo cajero-driven: el cliente nunca afirma pago. Las instrucciones de pago
-  // salen automáticamente al crear el pedido (WhatsApp/OpenWA); el cajero verifica
+  // salen automáticamente al crear el pedido (WhatsApp); el cajero verifica
   // el comprobante y confirma desde el POS (/sales/:id/confirm-payment).
 }
 
@@ -92,8 +95,14 @@ function buildPaymentInstructions(order: PublicWebOrder): string {
     lines.push('Te enviaremos los datos de pago por WhatsApp.');
   }
   lines.push('');
+  // Un domicilio NO se retira. Decirle "pasa a buscarlo" a quien pidió a
+  // domicilio —en la pantalla donde está por transferir— es información falsa
+  // en el peor momento. El WhatsApp ya bifurca; esta pantalla también.
+  const cierre = order.deliveryAddress
+    ? `te avisamos cuando salga hacia tu dirección.`
+    : `te avisamos cuando esté lista para retirar.`;
   lines.push(
-    `Te vamos a contactar por WhatsApp para pedirte el comprobante. Apenas el cajero verifique el pago, preparamos tu orden #${order.receiptNumber} y te avisamos cuando esté lista para retirar.`,
+    `Te vamos a contactar por WhatsApp para pedirte el comprobante. Apenas el cajero verifique el pago, preparamos tu orden #${order.receiptNumber} y ${cierre}`,
   );
   return lines.join('\n');
 }

@@ -17,6 +17,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { diaLocal } from './helpers/local-day';
 
 describe('Invoices E2E', () => {
   let app: INestApplication;
@@ -26,6 +27,7 @@ describe('Invoices E2E', () => {
   let duenoToken: string;
   let adminToken: string;
   let duenoUserId: string;
+  let adminUserId: string;
   let ingredientId: string;
 
   beforeAll(async () => {
@@ -33,7 +35,7 @@ describe('Invoices E2E', () => {
 
     const hash = await bcrypt.hash('dev12345', 10);
 
-    const [dueno] = await Promise.all([
+    const [dueno, admin] = await Promise.all([
       prisma.user.create({
         data: {
           email: 'dueno-inv@test.local',
@@ -57,6 +59,7 @@ describe('Invoices E2E', () => {
     ]);
 
     duenoUserId = dueno.id;
+    adminUserId = admin.id;
     duenoToken = await loginAs(request, 'dueno-inv@test.local');
     adminToken = await loginAs(request, 'admin-inv@test.local');
 
@@ -509,6 +512,130 @@ describe('Invoices E2E', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Control de pago — autorización por rol / propietario
+  //   Dueño: sobre cualquier factura. Admin Operativo: solo sobre las que él
+  //   creó (marcar/desmarcar). Ver comprobante: cualquier admin.
+  // ---------------------------------------------------------------------------
+  describe('control de pago — autorización por rol/propietario', () => {
+    const PNG = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
+      'base64',
+    );
+    const DUENO_PIN = '135791';
+    const ADMIN_PIN = '112233';
+    let duenoInvId: string; // creada por el dueño
+    let adminInvId: string; // creada por el admin operativo
+
+    const createConfirmed = async (
+      uploaderId: string,
+      token: string,
+      invoiceNumber: string,
+    ): Promise<string> => {
+      const draft = await prisma.invoice.create({
+        data: {
+          status: 'PENDING_REVIEW',
+          aiModelUsed: 'test-mock',
+          aiExtractionJson: { supplierName: 'Prov Auth', total: 50000, items: [], warnings: [] },
+          uploadedById: uploaderId,
+        },
+      });
+      await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          supplierNit: '900888888-1',
+          supplierName: 'Prov Auth',
+          invoiceNumber,
+          total: 50000,
+          items: [
+            { entityType: 'INGREDIENT', ingredientId, descriptionRaw: 'Harina', quantity: 5, unit: 'kg', unitPrice: 10000, total: 50000 },
+          ],
+        })
+        .expect(201);
+      return draft.id;
+    };
+
+    const markPaid = (id: string, token: string, pin: string) =>
+      request
+        .post(`/invoices/${id}/payment/paid`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('x-approval-pin', pin)
+        .field('cashAmount', '0')
+        .field('bankAmount', '50000')
+        .attach('proof', PNG, 'p.png');
+
+    beforeAll(async () => {
+      await request
+        .post('/approvals/pin')
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({ pin: DUENO_PIN, password: 'dev12345' })
+        .expect((r) => {
+          if (r.status >= 300) throw new Error(`PIN dueño: ${r.status}`);
+        });
+      await request
+        .post('/approvals/pin')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ pin: ADMIN_PIN, password: 'dev12345' })
+        .expect((r) => {
+          if (r.status >= 300) throw new Error(`PIN admin: ${r.status}`);
+        });
+
+      duenoInvId = await createConfirmed(duenoUserId, duenoToken, 'F-AUTH-DUENO');
+      adminInvId = await createConfirmed(adminUserId, adminToken, 'F-AUTH-ADMIN');
+
+      // El admin operativo puede marcar pagada SU propia factura.
+      await markPaid(adminInvId, adminToken, ADMIN_PIN).expect(201);
+      // El dueño marca la suya.
+      await markPaid(duenoInvId, duenoToken, DUENO_PIN).expect(201);
+    });
+
+    it('el admin operativo ve el comprobante de una factura ajena (del dueño)', async () => {
+      await request
+        .get(`/invoices/${duenoInvId}/payment-proof`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+    });
+
+    it('el admin operativo NO puede desmarcar una factura que no creó (403)', async () => {
+      await request
+        .delete(`/invoices/${duenoInvId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('x-approval-pin', ADMIN_PIN)
+        .expect(403);
+      // Sigue pagada.
+      const row = await prisma.invoice.findUniqueOrThrow({ where: { id: duenoInvId } });
+      expect(row.paymentStatus).toBe('PAID');
+    });
+
+    it('el admin operativo NO puede marcar pagada una factura ajena (403)', async () => {
+      const otraDueno = await createConfirmed(duenoUserId, duenoToken, 'F-AUTH-DUENO-2');
+      await markPaid(otraDueno, adminToken, ADMIN_PIN).expect(403);
+      const row = await prisma.invoice.findUniqueOrThrow({ where: { id: otraDueno } });
+      expect(row.paymentStatus).toBe('PENDING');
+    });
+
+    it('el admin operativo SÍ puede desmarcar su propia factura', async () => {
+      await request
+        .delete(`/invoices/${adminInvId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('x-approval-pin', ADMIN_PIN)
+        .expect(200);
+      const row = await prisma.invoice.findUniqueOrThrow({ where: { id: adminInvId } });
+      expect(row.paymentStatus).toBe('PENDING');
+    });
+
+    it('el dueño puede desmarcar cualquier factura (su propia acá)', async () => {
+      await request
+        .delete(`/invoices/${duenoInvId}/payment`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .set('x-approval-pin', DUENO_PIN)
+        .expect(200);
+      const row = await prisma.invoice.findUniqueOrThrow({ where: { id: duenoInvId } });
+      expect(row.paymentStatus).toBe('PENDING');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // "Nace pagada": el confirm declara el pago (comprobante obligatorio)
   // ---------------------------------------------------------------------------
   describe('confirm con payment — la factura nace pagada', () => {
@@ -608,7 +735,7 @@ describe('Invoices E2E', () => {
     });
 
     it('fecha de pago futura → 400', async () => {
-      const future = new Date(Date.now() + 48 * 3600 * 1000).toISOString().slice(0, 10);
+      const future = diaLocal(2);
       const draft = await createDraft();
       await request
         .post(`/invoices/${draft.id}/confirm`)

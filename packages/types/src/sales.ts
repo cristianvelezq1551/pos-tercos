@@ -4,8 +4,24 @@ import { z } from 'zod';
 // ENUMS (espejo de Prisma SaleType / SaleStatus / PaymentMethod)
 // ====================================================================
 
-export const SaleTypeEnum = z.enum(['COUNTER', 'WEB_PICKUP']);
+export const SaleTypeEnum = z.enum(['COUNTER', 'WEB_PICKUP', 'WEB_DELIVERY']);
 export type SaleType = z.infer<typeof SaleTypeEnum>;
+
+/**
+ * Los dos tipos que vienen de la web pública. Existe para que NADIE vuelva a
+ * escribir `type === 'WEB_PICKUP'` cuando lo que quiere decir es "pedido web":
+ * al reponer WEB_DELIVERY (2026-07-16) esos chequeos sueltos dejaron domicilios
+ * sin WhatsApp, sin promos del canal WEB y sin poder marcarse listos.
+ */
+export const WEB_SALE_TYPES = ['WEB_PICKUP', 'WEB_DELIVERY'] as const;
+
+/**
+ * ¿La venta nació en la web (y no en el mostrador)? Es un type guard: estrecha
+ * el tipo, así el compilador acepta pasar la venta a lo que espera un pedido web.
+ */
+export function isWebSaleType(type: SaleType): type is (typeof WEB_SALE_TYPES)[number] {
+  return type === 'WEB_PICKUP' || type === 'WEB_DELIVERY';
+}
 
 export const SaleStatusEnum = z.enum([
   'PENDIENTE_PAGO',
@@ -47,18 +63,66 @@ export const NON_REVENUE_SALE_STATUSES = [
  */
 export const REFUND_VOID_REASON_PREFIX = 'Reembolso:';
 
-export const PaymentMethodEnum = z.enum([
-  'CASH',
-  'CARD',
-  'NEQUI',
-  'DAVIPLATA',
-  'QR_BANCOLOMBIA',
-  'TRANSFER',
-]);
-export type PaymentMethod = z.infer<typeof PaymentMethodEnum>;
+/**
+ * Un método de pago se identifica por su `code` (slug estable). Ya NO es un enum
+ * cerrado: el dueño crea/edita/borra métodos desde el admin (tabla
+ * `payment_method_settings`, ver PaymentMethodSettingSchema). Acá se valida solo
+ * como texto; que el code exista + esté habilitado + sea (o no) digital lo
+ * resuelve el backend contra el catálogo — NO se puede inferir del string.
+ */
+export const PaymentMethodCodeSchema = z.string().trim().min(1).max(40);
+export type PaymentMethod = string;
 
-/** Labels canónicos para mostrar al usuario (POS/admin/recibos HTML). */
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+/** @deprecated Alias de compatibilidad — el catálogo es dinámico, usar PaymentMethodCodeSchema. */
+export const PaymentMethodEnum = PaymentMethodCodeSchema;
+
+/** Código del método de efectivo (único con `isCash`, sistema, no borrable). */
+export const CASH_METHOD_CODE = 'CASH';
+
+/**
+ * Labels de FALLBACK para códigos built-in y para históricos ya retirados del
+ * catálogo (DAVIPLATA/QR_BANCOLOMBIA — ventas viejas siguen guardando el code).
+ * El label vivo de cada método viene del catálogo; esto solo cubre los conocidos.
+ */
+/**
+ * Estado de una venta en palabras. Fuente ÚNICA: la usa el backend para
+ * redactar errores ("no se puede marcar listo un pedido en estado X") y el
+ * frontend para rotular. Sin esto el enum crudo se filtra a la pantalla.
+ */
+export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
+  PENDIENTE_PAGO: 'Pendiente de pago',
+  PAGADO: 'Pagado',
+  EN_PREPARACION: 'En cocina',
+  LISTO_DESPACHO: 'Listo',
+  ENTREGADO: 'Entregado',
+  CANCELADO_NO_PAGO: 'Cancelado',
+  CANCELADO_SIN_REEMBOLSO: 'Cancelado sin reembolso',
+  VOID: 'Anulado',
+};
+
+/** Label de un estado; si llega uno desconocido devuelve el code tal cual. */
+export function saleStatusLabel(status: string): string {
+  return SALE_STATUS_LABELS[status as SaleStatus] ?? status;
+}
+
+/**
+ * Cómo se nombra cada modalidad en pantalla. Vive acá y no en cada app porque
+ * los mapas duplicados se olvidan: al reponer WEB_DELIVERY quedaron dos copias
+ * con solo COUNTER y WEB_PICKUP, y el reporte de ventas mostraba "WEB_DELIVERY"
+ * crudo al dueño.
+ */
+export const SALE_TYPE_LABELS: Record<SaleType, string> = {
+  COUNTER: 'Mostrador',
+  WEB_PICKUP: 'Web · recoger',
+  WEB_DELIVERY: 'Web · domicilio',
+};
+
+/** Label de una modalidad; si llega una desconocida devuelve el code tal cual. */
+export function saleTypeLabel(type: string): string {
+  return SALE_TYPE_LABELS[type as SaleType] ?? type;
+}
+
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: 'Efectivo',
   CARD: 'Tarjeta',
   NEQUI: 'Nequi',
@@ -67,46 +131,57 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   TRANSFER: 'Transferencia',
 };
 
-/**
- * Métodos digitales que requieren doble validación en POS antes de
- * confirmar (architecture.md §5.3): el cajero debe verificar en la app
- * del negocio + comprobante del cliente. Incluye todos excepto CASH.
- */
-export const DIGITAL_PAYMENT_METHODS = [
-  'CARD',
-  'NEQUI',
-  'DAVIPLATA',
-  'QR_BANCOLOMBIA',
-  'TRANSFER',
-] as const satisfies readonly PaymentMethod[];
+/** Label de un método: catálogo (si se pasa) → fallback built-in → el propio code. */
+export function paymentMethodLabel(
+  code: string,
+  catalog?: Record<string, string>,
+): string {
+  return catalog?.[code] ?? PAYMENT_METHOD_LABELS[code] ?? code;
+}
 
 // ====================================================================
-// MEDIOS DE PAGO CONFIGURABLES — el admin habilita/deshabilita métodos
+// MEDIOS DE PAGO CONFIGURABLES — el admin crea/edita/borra/habilita métodos
 // ====================================================================
+
+/** Fuentes de reconciliación a las que un método digital puede atarse. */
+export const RECONCILIATION_SOURCES = ['NEQUI_CSV', 'BANCOLOMBIA_CSV'] as const;
+export const ReconciliationSourceCodeSchema = z.enum(RECONCILIATION_SOURCES);
 
 export const PaymentMethodSettingSchema = z.object({
-  method: PaymentMethodEnum,
+  code: PaymentMethodCodeSchema,
+  name: z.string().min(1).max(40),
   enabled: z.boolean(),
+  /** Efectivo: abre cajón + arqueo de billetes. Solo el built-in CASH. */
+  isCash: z.boolean(),
+  /** Digital: obliga verificar comprobante antes de confirmar el cobro. */
+  requiresVerification: z.boolean(),
+  reconciliationSource: ReconciliationSourceCodeSchema.nullable(),
+  /** No borrable/renombrable de código (CASH). */
+  isSystem: z.boolean(),
   sortOrder: z.number().int(),
 });
 export type PaymentMethodSetting = z.infer<typeof PaymentMethodSettingSchema>;
 
-export const UpdatePaymentMethodsSchema = z.object({
-  methods: z
-    .array(z.object({ method: PaymentMethodEnum, enabled: z.boolean() }))
-    .min(1)
-    .superRefine((arr, ctx) => {
-      // El POS no puede quedarse sin formas de cobrar.
-      const enabledHere = arr.filter((m) => m.enabled).length;
-      if (enabledHere === 0 && arr.length >= 6) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Debe quedar al menos un medio de pago habilitado.',
-        });
-      }
-    }),
+/** Crear un método custom (siempre digital; el code se deriva del nombre server-side). */
+export const CreatePaymentMethodSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  requiresVerification: z.boolean().default(true),
+  reconciliationSource: ReconciliationSourceCodeSchema.nullable().default(null),
+  enabled: z.boolean().default(true),
 });
-export type UpdatePaymentMethods = z.infer<typeof UpdatePaymentMethodsSchema>;
+export type CreatePaymentMethod = z.infer<typeof CreatePaymentMethodSchema>;
+
+/** Editar un método (solo campos meta; el code es inmutable). */
+export const UpdatePaymentMethodSchema = z
+  .object({
+    name: z.string().trim().min(1).max(40).optional(),
+    enabled: z.boolean().optional(),
+    requiresVerification: z.boolean().optional(),
+    reconciliationSource: ReconciliationSourceCodeSchema.nullable().optional(),
+    sortOrder: z.number().int().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: 'Nada para actualizar.' });
+export type UpdatePaymentMethod = z.infer<typeof UpdatePaymentMethodSchema>;
 
 // ====================================================================
 // DESCUENTO MANUAL (#5b) — por línea y/o sobre el total
@@ -227,7 +302,34 @@ export const SaleSchema = z.object({
   discountReason: z.string().nullable().optional(),
   /** Motivo de anulación (solo cuando status=VOID). */
   voidReason: z.string().nullable().optional(),
+  /**
+   * Costo del envío (solo WEB_DELIVERY). Lo carga el cajero a mano tras
+   * preguntarle la tarifa al domiciliario. Entra al `total` porque el cliente
+   * transfiere UN solo monto, y cuenta como ingreso: el reparto es un servicio
+   * que se vende. Lo que se le paga al domiciliario es un gasto aparte.
+   */
+  deliveryFee: z.number().nonnegative().default(0),
+  /** Entrega a domicilio (solo WEB_DELIVERY). El POS la muestra al cajero. */
+  deliveryAddress: z.string().nullable().optional(),
+  deliveryNotes: z.string().nullable().optional(),
+  /** GPS del cliente al pedir: abre el mapa. La dirección escrita es la que manda. */
+  deliveryLat: z.number().nullable().optional(),
+  deliveryLng: z.number().nullable().optional(),
   idempotencyKey: z.string().nullable(),
+  /**
+   * Qué se le avisó YA al cliente por WhatsApp. Sin esto la caja no puede
+   * distinguir "avisado" de "sin avisar" y termina afirmando lo primero por
+   * defecto (que es lo que hacía: el badge "Avisado" salía de tener cargado el
+   * envío, no de haber mandado nada).
+   */
+  notified: z
+    .object({
+      paymentInstructions: z.boolean(),
+      paymentReceived: z.boolean(),
+      readyForPickup: z.boolean(),
+      canceled: z.boolean(),
+    })
+    .optional(),
   /** Pagos registrados. >1 elemento = cuenta dividida (paymentMethod null). */
   payments: z.array(SalePaymentSchema).optional(),
   createdAt: z.string().datetime(),
@@ -250,10 +352,15 @@ export const CreateSaleItemModifierSchema = z.object({
 });
 export type CreateSaleItemModifier = z.infer<typeof CreateSaleItemModifierSchema>;
 
+/** Tope de unidades por línea. Un pedido real nunca lo alcanza; sin él, un
+ *  `quantity` gigante en `POST /web/orders` (público) desborda int4/Decimal(14,2)
+ *  y tira un 500. */
+export const MAX_SALE_LINE_QTY = 999;
+
 export const CreateSaleItemSchema = z.object({
   productId: z.string().uuid(),
   sizeId: z.string().uuid().optional(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().int().positive().max(MAX_SALE_LINE_QTY),
   modifiers: z.array(CreateSaleItemModifierSchema).optional(),
   /** Notas de cocina por línea (ej. "sin cebolla"). */
   notes: z.string().max(200).optional(),
@@ -285,6 +392,11 @@ export const CreateSaleSchema = z
 
     /** Cuenta abierta (#3): solo COUNTER, requiere customerName. */
     openTab: z.boolean().optional(),
+    /** Entrega a domicilio (solo WEB_DELIVERY). Lo valida `CreateWebOrderSchema`. */
+    deliveryAddress: z.string().trim().min(8).max(300).optional(),
+    deliveryNotes: z.string().trim().max(300).optional(),
+    deliveryLat: z.number().min(-90).max(90).optional(),
+    deliveryLng: z.number().min(-180).max(180).optional(),
     /** Descuento manual sobre el TOTAL (#5b). */
     orderDiscount: ManualDiscountSchema.optional(),
     /** Motivo del descuento manual — obligatorio si hay CUALQUIER descuento manual. */
@@ -334,6 +446,16 @@ export const CreateSaleSchema = z
         });
       }
     }
+    // Un domicilio SIN dirección viola el CHECK `chk_sale_delivery_address` a
+    // nivel DB → PrismaError → 500 + hueco de recibo (el nextval ya se consumió).
+    // Espeja la regla de `CreateWebOrderSchema` para el POST /sales interno.
+    if (data.type === 'WEB_DELIVERY' && !data.deliveryAddress) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Un domicilio requiere la dirección de entrega.',
+        path: ['deliveryAddress'],
+      });
+    }
   });
 export type CreateSale = z.infer<typeof CreateSaleSchema>;
 
@@ -353,16 +475,8 @@ export const SalePaymentInputSchema = z
     digitalVerified: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
-    const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
-      data.method,
-    );
-    if (isDigital && !data.digitalVerified) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `La parte en ${data.method} requiere verificar su comprobante (digitalVerified=true)`,
-        path: ['digitalVerified'],
-      });
-    }
+    // La exigencia de `digitalVerified` por método digital la valida el backend
+    // contra el catálogo (el code por sí solo no dice si es digital).
     if (data.method === 'CASH' && data.amountReceived !== undefined && data.amountReceived < data.amount) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -464,7 +578,7 @@ export const ChangeSalePaymentSchema = z
     if (simple === split) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Indicá `method` (único) O `payments` (dividido), no ambos.',
+        message: 'Indica `method` (único) O `payments` (dividido), no ambos.',
         path: ['method'],
       });
     }
@@ -492,7 +606,7 @@ export const ConfirmPaymentSchema = z
     if (simple === split) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Indicá `method` (pago simple) O `payments` (cuenta dividida), no ambos.',
+        message: 'Indica `method` (pago simple) O `payments` (cuenta dividida), no ambos.',
         path: ['method'],
       });
       return;
@@ -505,16 +619,7 @@ export const ConfirmPaymentSchema = z
           path: ['amountReceived'],
         });
       }
-      const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
-        data.method!,
-      );
-      if (isDigital && !data.digitalDoubleVerified) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `${data.method} requires digitalDoubleVerified=true (app del negocio + comprobante cliente)`,
-          path: ['digitalDoubleVerified'],
-        });
-      }
+      // digitalDoubleVerified por método digital → lo valida el backend (catálogo).
     }
   });
 export type ConfirmPayment = z.infer<typeof ConfirmPaymentSchema>;
@@ -531,7 +636,7 @@ export type ConfirmPayment = z.infer<typeof ConfirmPaymentSchema>;
 export const SyncOfflineLineSchema = z.object({
   productId: z.string().uuid(),
   sizeId: z.string().uuid().nullable(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().int().positive().max(MAX_SALE_LINE_QTY),
   unitPrice: z.number().nonnegative(),
   modifiers: z.array(AppliedModifierSchema).default([]),
   notes: z.string().nullable().optional(),
@@ -601,3 +706,40 @@ export const SaleStatusLogEntrySchema = z.object({
   changedAt: z.string().datetime(),
 });
 export type SaleStatusLogEntry = z.infer<typeof SaleStatusLogEntrySchema>;
+
+/**
+ * El cajero asigna el costo del envío a un domicilio ya creado. Recalcula el
+ * total y recién ahí sale el WhatsApp con el número real: pedirle plata al
+ * cliente antes de saber el envío sería pedirle un total que va a cambiar.
+ */
+/**
+ * Etapas que se le avisan al cliente por WhatsApp. Espeja
+ * `WhatsAppNotificationStage` del domain (que no puede vivir acá: `types` no
+ * depende de `domain`). Si se agrega una etapa, van las dos.
+ */
+export const WhatsAppNotificationStageEnum = z.enum([
+  'payment_instructions',
+  'payment_received',
+  'pickup_ready',
+  'canceled',
+]);
+export type WhatsAppNotificationStageCode = z.infer<
+  typeof WhatsAppNotificationStageEnum
+>;
+
+/** Respuesta del aviso manual: la URL que el cajero abre + el texto que va. */
+export const ManualWhatsAppLinkSchema = z.object({
+  url: z.string().url(),
+  messagePlain: z.string(),
+  /** true = ya se le había avisado de esta etapa (esto fue un reenvío). */
+  alreadySent: z.boolean(),
+});
+export type ManualWhatsAppLink = z.infer<typeof ManualWhatsAppLinkSchema>;
+
+export const SetDeliveryFeeSchema = z.object({
+  /** COP. DEBE ser > 0: un domicilio tiene costo. "Envío gratis" se maneja como
+   *  descuento sobre el total, no como fee 0 (que era indistinguible de "sin
+   *  cotizar" y dejaba la web trabada + el envío incobrable). Tope defensivo. */
+  fee: z.number().int().positive().max(200_000),
+});
+export type SetDeliveryFee = z.infer<typeof SetDeliveryFeeSchema>;

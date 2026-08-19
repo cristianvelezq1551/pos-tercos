@@ -22,7 +22,7 @@ export async function buildPaymentBlock(
     return { ...base, useInvoicePhotoAsProof: true };
   }
   if (!payment.proofFile) {
-    throw new Error('Adjuntá el comprobante del pago (o destildá "Ya está pagada").');
+    throw new Error('Adjunta el comprobante del pago (o desmarca "Ya está pagada").');
   }
   const { proofStorageKey } = await uploadPaymentProof(payment.proofFile);
   return { ...base, proofStorageKey };

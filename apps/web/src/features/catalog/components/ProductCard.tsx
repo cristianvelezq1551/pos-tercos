@@ -6,53 +6,61 @@ import { Plus } from 'lucide-react';
 import { COP } from '../../../lib/format';
 import { displayBasePrice } from '../../../lib/menu-price';
 import { getMenuPromoBadge, usePromotions } from '../../promotions';
+import { ProductImage } from './ProductImage';
 
 export function ProductCard({
   product,
   unavailable = false,
+  closed = false,
   onClick,
 }: {
   product: PublicMenuProduct;
+  /** Sin stock: el producto no se puede vender aunque el local esté abierto. */
   unavailable?: boolean;
+  /**
+   * El local no está tomando pedidos. Distinto de `unavailable`: el producto
+   * existe y hay, pero ahora no se puede pedir. Por eso NO dice "Agotado" —
+   * sería mentir sobre el motivo, y mañana el mismo producto se vende igual.
+   */
+  closed?: boolean;
   onClick: () => void;
 }) {
   const promotions = usePromotions((s) => s.promotions);
   const price = displayBasePrice(product);
   const promo = unavailable ? null : getMenuPromoBadge(product.id, price, promotions);
+  // Se puede mirar el menú, no agregar: quien está cerrado igual quiere que le
+  // vean los precios.
+  const noSePuedePedir = unavailable || closed;
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={unavailable}
-      aria-disabled={unavailable}
+      disabled={noSePuedePedir}
+      aria-disabled={noSePuedePedir}
       className={cn(
         'group w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         'flex items-center gap-3 border-b border-border py-4',
         'sm:card-lift sm:flex-col sm:items-stretch sm:gap-0 sm:overflow-hidden sm:rounded-xl sm:border-0 sm:bg-card sm:py-0',
         unavailable
           ? 'cursor-not-allowed opacity-50'
-          : 'active:scale-[0.99] sm:hover:bg-muted/60 sm:active:scale-100',
+          : closed
+            // Cerrado atenúa menos que agotado: el menú se sigue leyendo.
+            ? 'cursor-not-allowed opacity-75'
+            : 'active:scale-[0.99] sm:hover:bg-muted/60 sm:active:scale-100',
       )}
     >
       <div
         className={cn(
           'relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-muted',
-          'sm:aspect-[4/3] sm:h-auto sm:w-full sm:rounded-none',
+          'sm:aspect-square sm:h-auto sm:w-full sm:rounded-none',
         )}
       >
-        {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className={cn(
-              'h-full w-full object-cover sm:transition-transform sm:duration-300',
-              unavailable ? 'grayscale' : 'sm:group-hover:scale-105',
-            )}
-            loading="lazy"
-          />
-        ) : (
-          <ImageFallback label={product.name} />
-        )}
+        <ProductImage
+          src={product.imageUrl}
+          alt={product.name}
+          unavailable={unavailable}
+          zoomOnHover
+        />
         {unavailable ? (
           <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-destructive px-2 py-1 text-[0.625rem] font-bold uppercase tracking-wide text-destructive-foreground shadow">
             Agotado
@@ -94,10 +102,16 @@ export function ProductCard({
             <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">
               Agotado
             </span>
+          ) : closed ? (
+            <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">
+              Cerrado
+            </span>
           ) : (
             <span
               className={cn(
-                'inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors sm:order-1 sm:h-9',
+                // 44px en móvil: es el botón que convierte y se toca con el
+                // pulgar. Estaba al revés (32px con el dedo, 36px con el mouse).
+                'inline-flex h-11 items-center gap-1 rounded-full px-4 text-xs font-semibold transition-colors sm:order-1 sm:h-9 sm:px-3',
                 'bg-primary text-primary-foreground hover:bg-red-700',
                 'sm:bg-muted sm:text-foreground sm:hover:bg-background',
               )}
@@ -109,16 +123,5 @@ export function ProductCard({
         </div>
       </div>
     </button>
-  );
-}
-
-function ImageFallback({ label }: { label: string }) {
-  const initial = label.trim().charAt(0).toUpperCase() || 'T';
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-background">
-      <span className="font-display text-5xl font-extrabold uppercase tracking-[0.04em] text-white/10 sm:text-7xl">
-        {initial}
-      </span>
-    </div>
   );
 }

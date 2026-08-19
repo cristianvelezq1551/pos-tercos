@@ -19,7 +19,7 @@ import {
   Gift,
   Layers,
   LineChart,
-  Megaphone,
+  Globe,
   MonitorPlay,
   Package,
   PackageOpen,
@@ -29,6 +29,7 @@ import {
   ShoppingBasket,
   Sparkles,
   Tag,
+  TrendingDown,
   TrendingUp,
   Truck,
   Users,
@@ -53,12 +54,15 @@ interface NavItem {
   icon: LucideIcon;
   /** Solo visible para el Dueño (anti-fraude / auditoría cruda). */
   onlyDueno?: boolean;
+  /** Solo visible para el Admin Operativo (caja — el Dueño no opera caja). */
+  onlyOperativo?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { section: 'Operación', label: 'Inicio', href: '/', icon: LayoutDashboard, onlyDueno: true },
+  { section: 'Operación', label: 'Caja', href: '/caja', icon: Wallet, onlyOperativo: true },
   { section: 'Operación', label: 'Turnero', href: '/turnero', icon: MonitorPlay },
-  { section: 'Operación', label: 'Publicidad web', href: '/publicidad', icon: Megaphone },
+  { section: 'Operación', label: 'Web del cliente', href: '/publicidad', icon: Globe },
   { section: 'Operación', label: 'Solicitudes', href: '/solicitudes', icon: Gift },
   { section: 'Operación', label: 'Cocina', href: '/cocina', icon: CookingPot },
   { section: 'Catálogo', label: 'Productos', href: '/products', icon: ShoppingBasket, onlyDueno: true },
@@ -70,10 +74,11 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Compras', label: 'Proveedores', href: '/suppliers', icon: Truck },
   { section: 'Compras', label: 'Sugerencias inteligentes', href: '/purchase-suggestions', icon: Sparkles },
   { section: 'Inventario', label: 'Existencias', href: '/inventory', icon: Box },
+  { section: 'Inventario', label: 'Deudas', href: '/inventory/negativos', icon: TrendingDown },
   { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements', icon: PackageOpen },
   { section: 'Inventario', label: 'Conteo físico', href: '/inventory/counts', icon: ClipboardCheck },
   { section: 'Caja', label: 'Turnos', href: '/shifts', icon: Wallet, onlyDueno: true },
-  { section: 'Caja', label: 'Medios de pago', href: '/medios-pago', icon: CreditCard },
+  { section: 'Caja', label: 'Medios de pago', href: '/medios-pago', icon: CreditCard, onlyDueno: true },
   { section: 'Personal', label: 'Usuarios', href: '/users', icon: Users, onlyDueno: true },
   { section: 'Personal', label: 'Nómina', href: '/workers/semana', icon: CalendarDays, onlyDueno: true },
   {
@@ -162,7 +167,11 @@ export function AdminSidebar({
 }) {
   const pathname = usePathname();
   const pendingCortesias = useCortesiaPendingCount();
-  const items = NAV_ITEMS.filter((i) => !i.onlyDueno || role === 'DUENO');
+  const items = NAV_ITEMS.filter(
+    (i) =>
+      (!i.onlyDueno || role === 'DUENO') &&
+      (!i.onlyOperativo || role === 'ADMIN_OPERATIVO'),
+  );
   const sections = Array.from(new Set(items.map((i) => i.section)));
   // Solo UN item activo: el que mejor matchea (prefijo más largo). Evita que
   // "Existencias" (/inventory) se prenda cuando estás en "Movimientos"

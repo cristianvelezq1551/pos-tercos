@@ -1,0 +1,57 @@
+# Nightly: las leyes matemáticas del ledger FIFO contra 20.000 historias
+# aleatorias (la corrida normal de CI usa 120 — rápida, pero de baja
+# profundidad). Así se encontró el bug real de la reversa post-corte del
+# snapshot (2026-08-14, semillas 1656071 y 7571564): con 1.200 historias
+# apareció; con 120 nunca. Este job convierte ese hallazgo en rutina: los
+# bugs de borde del dinero se cazan solos, de noche, gratis (~10 s de test).
+#
+# Si falla: el workflow queda rojo en Actions (y GitHub notifica por email al
+# dueño del repo). El mensaje del assert trae la SEMILLA — reproducir local:
+#   LEDGER_PROPERTY_RUNS=20000 pnpm -F @pos-tercos/domain exec vitest run src/cost-fifo/run-ledger.property.test.ts
+name: Nightly
+
+on:
+  schedule:
+    # 08:17 UTC = 3:17 AM Bogotá (hora muerta del negocio). Minuto impar a
+    # propósito: los crons de GitHub en horas en punto se encolan con demora.
+    - cron: '17 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ledger-properties:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Misma TZ que exige prod: el sistema asume hora local de Bogotá.
+      TZ: America/Bogota
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Leyes del ledger × 20.000 historias aleatorias
+        env:
+          LEDGER_PROPERTY_RUNS: '20000'
+        run: pnpm -F @pos-tercos/domain exec vitest run src/cost-fifo/run-ledger.property.test.ts
+
+      # La suite completa de domain con el mismo presupuesto alto: cubre
+      # también los property tests que se agreguen después sin tocar este
+      # workflow (hoy los demás archivos no leen la env var — corren normal).
+      - name: Suite completa de domain
+        env:
+          LEDGER_PROPERTY_RUNS: '5000'
+        run: pnpm -F @pos-tercos/domain test

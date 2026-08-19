@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: pos_dev
       POSTGRES_DB: pos_tercos_dev
     ports:
-      - "5432:5432"
+      # Bind solo a loopback: el Postgres de dev no queda expuesto a la LAN.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pos-tercos-pgdata:/var/lib/postgresql/data
     healthcheck:

@@ -3,6 +3,7 @@
 import { Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { fetchDailySummary } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Tarjeta on-demand: resumen del día en lenguaje natural para el dueño. */
 export function DailyAiSummaryCard() {
@@ -17,7 +18,7 @@ export function DailyAiSummaryCard() {
       const res = await fetchDailySummary();
       setText(res.text);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo generar el resumen');
+      setError(getErrorMessage(e, 'No se pudo generar el resumen'));
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ export function DailyAiSummaryCard() {
         </p>
       ) : (
         <p className="mt-2 text-sm text-muted-foreground">
-          Generá un resumen ejecutivo del día: ventas, anulaciones, descuadres, demoras de
+          Genera un resumen ejecutivo del día: ventas, anulaciones, descuadres, demoras de
           cocina y una sugerencia.
         </p>
       )}

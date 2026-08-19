@@ -30,7 +30,7 @@ export default async function InventoryCountsPage() {
       <PageHeader
         eyebrow="Inventario"
         title="Conteo físico del día"
-        description="Contá estos ítems hoy (rotan solos: nunca contados y más viejos primero). El conteo es ciego: el sistema no te muestra cuánto debería haber. Si difiere, se ajusta el stock y la pérdida aparece en Uso y mermas."
+        description="Cuenta estos ítems hoy (rotan solos: nunca contados y más viejos primero). El conteo es ciego: el sistema no te muestra cuánto debería haber. Si difiere, se ajusta el stock y la pérdida aparece en Uso y mermas."
         icon={<ClipboardCheck className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

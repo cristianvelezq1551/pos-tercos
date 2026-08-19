@@ -25,6 +25,8 @@ export interface ExpandedIngredientOneLevel {
   name: string;
   unitRecipe: string;
   totalQuantity: number;
+  /** Ver `blocksAvailability` abajo. */
+  blocksAvailability: boolean;
 }
 
 export interface ExpandedSubproductOneLevel {
@@ -32,6 +34,8 @@ export interface ExpandedSubproductOneLevel {
   name: string;
   unit: string;
   totalQuantity: number;
+  /** Ver `blocksAvailability` abajo. */
+  blocksAvailability: boolean;
 }
 
 /**
@@ -44,6 +48,12 @@ export interface ExpandedSubproductOneLevel {
  *   expansión de las recetas de subproductos por separado cuando quiera
  *   producirlos.
  * - Función pura, sin IO.
+ *
+ * ⚠️ REGLA DURA — `blocksAvailability` se ANOTA, NUNCA se filtra acá. Esta
+ * función alimenta DOS caminos: la disponibilidad (que sí ignora los
+ * no-bloqueantes) y el CONSUMO/COSTEO (que los descuenta y costea como a
+ * cualquier otro). Filtrar acá dejaría de descontar las servilletas y su costo
+ * desaparecería del COGS. El filtro vive solo en `evaluateAvailability`.
  *
  * @param graph Grafo (necesita products+subproducts+ingredients+edges del root)
  * @param root  Parent (producto o subproducto) a expandir
@@ -63,7 +73,8 @@ export function expandRecipeOneLevel(
   for (const edge of edges) {
     const grossQty = grossQuantity(edge.quantityNeta, edge.mermaPct);
     const amount = grossQty * multiplier;
-    addChild(graph, edge.child, amount, out);
+    // Solo un `false` explícito libera (undefined = bloquea, ver types.ts).
+    addChild(graph, edge.child, amount, edge.blocksAvailability !== false, out);
   }
   return out;
 }
@@ -72,6 +83,7 @@ function addChild(
   graph: RecipeGraph,
   child: ChildRef,
   amount: number,
+  blocks: boolean,
   out: ExpandedRecipeOneLevel,
 ): void {
   if (child.kind === 'ingredient') {
@@ -80,12 +92,16 @@ function addChild(
     const existing = out.ingredients.get(ing.id);
     if (existing) {
       existing.totalQuantity += amount;
+      // Mismo child por dos edges con flags distintos: gana el bloqueante
+      // (conservador — si en alguna línea es crítico, frena).
+      existing.blocksAvailability = existing.blocksAvailability || blocks;
     } else {
       out.ingredients.set(ing.id, {
         ingredientId: ing.id,
         name: ing.name,
         unitRecipe: ing.unitRecipe,
         totalQuantity: amount,
+        blocksAvailability: blocks,
       });
     }
     return;
@@ -99,6 +115,7 @@ function addChild(
   const existing = out.subproducts.get(sub.id);
   if (existing) {
     existing.totalQuantity += amount;
+    existing.blocksAvailability = existing.blocksAvailability || blocks;
   } else {
     out.subproducts.set(sub.id, {
       subproductId: sub.id,
@@ -107,6 +124,7 @@ function addChild(
       // El backend re-resuelve la unit por lookup propio cuando lo necesita.
       unit: '',
       totalQuantity: amount,
+      blocksAvailability: blocks,
     });
   }
 }

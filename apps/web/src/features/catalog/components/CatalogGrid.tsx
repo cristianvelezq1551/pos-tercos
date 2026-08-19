@@ -4,6 +4,7 @@ import type { PublicMenuProduct } from '@pos-tercos/types';
 import { cn } from '@pos-tercos/ui';
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useBusiness } from '../../business';
 import { useCartStore } from '../../cart/store/cart-store';
 import { useAvailability } from '../hooks/useAvailability';
 import { ProductCard } from './ProductCard';
@@ -20,6 +21,10 @@ export function CatalogGrid({
 }) {
   const addItem = useCartStore((s) => s.addItem);
   const availability = useAvailability();
+  // Con el local cerrado (o los pedidos pausados) el menú se puede LEER pero no
+  // se puede armar un pedido: el servidor lo rechazaría igual, y dejar agregar
+  // productos para frenar recién en el checkout es hacerle perder el tiempo.
+  const acceptingOrders = useBusiness((s) => s.business.acceptingOrders);
   const [selected, setSelected] = useState<PublicMenuProduct | null>(null);
   const [open, setOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>(ALL);
@@ -103,7 +108,7 @@ export function CatalogGrid({
           No hay productos {query ? `para "${query}"` : 'disponibles en esta categoría'}.
         </div>
       ) : (
-        <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
+        <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
           {visible.map((p) => {
             const avail = availability.get(p.id);
             const unavailable = avail ? !avail.available : false;
@@ -112,8 +117,9 @@ export function CatalogGrid({
                 key={p.id}
                 product={p}
                 unavailable={unavailable}
+                closed={!acceptingOrders}
                 onClick={() => {
-                  if (unavailable) return;
+                  if (unavailable || !acceptingOrders) return;
                   setSelected(p);
                   setOpen(true);
                 }}
@@ -148,7 +154,9 @@ function CategoryTab({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'inline-flex h-9 shrink-0 items-center rounded-full px-4 text-xs font-semibold transition-colors sm:h-8',
+        // Los chips se tocan con el pulgar mientras se scrollea la fila: 44px
+        // en móvil evita el toque fallado. En escritorio quedan compactos.
+        'inline-flex h-11 shrink-0 items-center rounded-full px-4 text-xs font-semibold transition-colors sm:h-8',
         active
           ? 'bg-primary text-primary-foreground sm:bg-background sm:text-foreground sm:shadow-sm'
           : 'border border-border bg-card text-muted-foreground hover:text-foreground sm:border-0 sm:bg-transparent',

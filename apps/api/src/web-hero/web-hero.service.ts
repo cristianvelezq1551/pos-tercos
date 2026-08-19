@@ -8,12 +8,13 @@ import type {
   CreateWebHeroSlide,
   HeroMediaType,
   UpdateWebHeroSlide,
-  WebHeroConfig,
   WebHeroSlide,
+  WebStorefrontConfig,
 } from '@pos-tercos/types';
 import type { StorageProvider } from '@pos-tercos/domain';
 import type { WebHeroSlide as DbSlide } from '@prisma/client';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const MEDIA_PREFIX = 'web-hero/media';
@@ -53,16 +54,25 @@ export class WebHeroService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly businessConfig: BusinessConfigService,
   ) {}
 
-  /** Config pública que consume el storefront (solo activas, ya ordenadas). */
-  async getPublicConfig(): Promise<WebHeroConfig> {
-    const slides = await this.prisma.webHeroSlide.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-    });
+  /**
+   * TODA la config del storefront en una respuesta: publicidad activa +
+   * contacto, horarios, redes y "Nosotros" (decisión del dueño 2026-07-16 — un
+   * solo fetch, todo editable desde el admin).
+   */
+  async getPublicConfig(): Promise<WebStorefrontConfig> {
+    const [slides, business] = await Promise.all([
+      this.prisma.webHeroSlide.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      }),
+      this.businessConfig.getPublicInfo(),
+    ]);
     return {
       slides: slides.map((s) => this.toDto(s)),
+      business,
       asOf: new Date().toISOString(),
     };
   }

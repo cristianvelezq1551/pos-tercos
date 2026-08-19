@@ -8,6 +8,7 @@ import { logError } from '../../../lib/client-log';
 import { listAds, reorderAds } from '../api/client';
 import { AdCard } from './AdCard';
 import { AdEditModal } from './AdEditModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Administra la publicidad del storefront: grilla de piezas + alta + orden. */
 export function PublicidadManager() {
@@ -19,7 +20,7 @@ export function PublicidadManager() {
     listAds()
       .then(setAds)
       .catch((e) => {
-        setError(e instanceof Error ? e.message : 'Error cargando');
+        setError(getErrorMessage(e, 'Error cargando'));
         setAds([]);
       });
   }, []);
@@ -64,7 +65,7 @@ export function PublicidadManager() {
       {ads && ads.length === 0 ? (
         <EmptyState
           title="Todavía no hay publicidad configurada"
-          description="Mientras no agregues piezas, la web muestra su portada por defecto. Agregá una imagen para que aparezca arriba del menú."
+          description="Mientras no agregues piezas, la web muestra su portada por defecto. Agrega una imagen para que aparezca arriba del menú."
           action={<Button onClick={() => setEditing('new')}>Agregar publicidad</Button>}
         />
       ) : null}

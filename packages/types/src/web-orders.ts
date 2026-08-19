@@ -5,8 +5,11 @@ import { CreateSaleItemSchema } from './sales';
 // WEB ORDER — pedido público desde apps/web (FASE 7)
 // ====================================================================
 
-/** Solo WEB_PICKUP (recoger en local). COUNTER viene del POS. */
-export const WebOrderTypeEnum = z.enum(['WEB_PICKUP']);
+/**
+ * Recoger en el local o entrega a domicilio. COUNTER viene del POS.
+ * WEB_DELIVERY vuelve en 2026-07-16 (la v2 lo había eliminado).
+ */
+export const WebOrderTypeEnum = z.enum(['WEB_PICKUP', 'WEB_DELIVERY']);
 export type WebOrderType = z.infer<typeof WebOrderTypeEnum>;
 
 /**
@@ -30,6 +33,49 @@ export const CreateWebOrderSchema = z
     customerName: z.string().min(1).max(120),
     customerPhone: PhoneSchema,
     notes: z.string().max(500).optional(),
+    /**
+     * GPS del navegador. Se guarda con la venta (abre el mapa desde la caja)
+     * pero YA NO decide la zona de cobertura: mide dónde está el TELÉFONO, que
+     * no es a dónde va la comida. Quien pide desde el trabajo para su casa se
+     * medía desde el trabajo. Eso ahora lo resuelve `addressToken` (§7.v23).
+     */
+    customerLat: z.number().min(-90).max(90).optional(),
+    customerLng: z.number().min(-180).max(180).optional(),
+    /**
+     * Sobre FIRMADO por el server con las coordenadas de la dirección elegida
+     * (`POST /web/address/resolve`). Es la única fuente válida de la ubicación
+     * de entrega: el cliente lo transporta pero no lo puede alterar, y sin eso
+     * el rechazo por distancia sería decorativo (bastaría editar el lat/lng).
+     * Obligatorio para domicilio cuando el dueño activó el rechazo por radio.
+     */
+    addressToken: z.string().max(2000).optional(),
+    /**
+     * Dirección de entrega. OBLIGATORIA en WEB_DELIVERY y prohibida en
+     * WEB_PICKUP. Texto libre: el repartidor necesita "torre 2, apto 502,
+     * portería azul" — el GPS no alcanza para tocar un timbre.
+     */
+    deliveryAddress: z.string().trim().min(8).max(300).optional(),
+    /** Referencias extra: punto de encuentro, "el timbre no suena", etc. */
+    deliveryNotes: z.string().trim().max(300).optional(),
+  })
+  .refine((d) => (d.customerLat === undefined) === (d.customerLng === undefined), {
+    message: 'Envía latitud y longitud juntas, o ninguna.',
+  })
+  .superRefine((d, ctx) => {
+    if (d.type === 'WEB_DELIVERY' && !d.deliveryAddress) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['deliveryAddress'],
+        message: 'Para domicilio necesitamos la dirección de entrega.',
+      });
+    }
+    if (d.type === 'WEB_PICKUP' && (d.deliveryAddress || d.deliveryNotes)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['deliveryAddress'],
+        message: 'Un pedido para recoger no lleva dirección de entrega.',
+      });
+    }
   });
 export type CreateWebOrder = z.infer<typeof CreateWebOrderSchema>;
 
@@ -67,6 +113,14 @@ export const PublicWebOrderSchema = z.object({
   total: z.number().nonnegative(),
   /** Detalle del pedido (con adiciones) — para el tracking del cliente. */
   items: z.array(PublicWebOrderItemSchema).default([]),
+  /**
+   * Costo del envío, ya incluido en `total`. 0 = todavía no cotizado (el local
+   * lo pregunta al domiciliario) ⇒ en domicilio, el `total` NO es final.
+   */
+  deliveryFee: z.number().nonnegative().default(0),
+  /** A dónde se entrega. null en WEB_PICKUP. El cliente la ve para verificarla. */
+  deliveryAddress: z.string().nullable().default(null),
+  deliveryNotes: z.string().nullable().default(null),
   createdAt: z.string().datetime(),
   /**
    * Instrucciones de pago canónicas (Nequi/transferencia). El backend es la

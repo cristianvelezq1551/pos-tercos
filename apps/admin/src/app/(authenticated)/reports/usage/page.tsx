@@ -37,7 +37,7 @@ export default async function ReportsUsagePage({ searchParams }: PageProps) {
       <PageHeader
         eyebrow="Reportes"
         title="Uso y mermas de insumos"
-        description="Cuánto consumió la venta y la producción de cada insumo, cuánto se declaró como merma y cuánta plata se está perdiendo fuera de la caja."
+        description="Cuánto consumió la venta y la producción de cada insumo, cuánto se declaró como merma y cuánto dinero se está perdiendo fuera de la caja."
         icon={<Recycle className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

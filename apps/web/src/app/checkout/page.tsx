@@ -2,36 +2,33 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { CheckoutForm } from '../../features/checkout';
 import { CheckoutSteps } from '../../components/CheckoutSteps';
+import { BusinessHydrator } from '../../features/business';
 import { getMenuServer } from '../../features/catalog';
+import { getHeroServer } from '../../features/hero';
 import { PromotionsHydrator } from '../../features/promotions';
+import { ClosedNotice } from './ClosedNotice';
 
-// Kill-switch (#13): si el dueño apagó los pedidos web, el checkout no se
-// renderiza (el API igual rechaza el POST — esto es la cara amable).
+// El checkout no se renderiza si no se aceptan pedidos: kill-switch (#13) o
+// fuera de horario. El API igual rechaza el POST — esto es la cara amable.
 export const dynamic = 'force-dynamic';
 
 export default async function CheckoutPage() {
-  const menu = await getMenuServer();
-  if (!menu.webOrdersEnabled) {
-    return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background px-6 text-center text-foreground">
-        <h1 className="font-display text-3xl font-extrabold">Pedidos online pausados</h1>
-        <p className="max-w-md text-sm text-muted-foreground">
-          Los pedidos por la web están temporalmente deshabilitados. ¡Te esperamos en el
-          local!
-        </p>
-        <Link href="/" className="text-sm font-semibold text-primary hover:underline">
-          ← Volver al menú
-        </Link>
-      </div>
-    );
+  const [menu, hero] = await Promise.all([getMenuServer(), getHeroServer()]);
+  const { business } = hero;
+
+  if (!business.acceptingOrders) {
+    return <ClosedNotice business={business} />;
   }
+
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <PromotionsHydrator promotions={menu.promotions} />
+      <BusinessHydrator business={business} />
       <header className="flex items-center justify-between border-b border-border px-6 py-4 sm:px-12 lg:px-20">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
+          // -my-2/py-2: crece el área de toque a 44px sin mover el diseño.
+          className="-my-2 inline-flex min-h-11 items-center gap-2 py-2 text-sm font-medium text-primary transition-colors hover:text-red-500"
         >
           <ArrowLeft className="h-4 w-4" strokeWidth={2} />
           Volver al menú

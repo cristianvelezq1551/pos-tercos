@@ -19,12 +19,12 @@ const fontDisplay = Big_Shoulders({
 
 const BUSINESS_NAME = process.env.NEXT_PUBLIC_BUSINESS_NAME ?? 'TERCOS';
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
-const DESCRIPTION = `Pedí online en ${BUSINESS_NAME} y recogé en tienda. Smash burgers, burros y mac & papas.`;
+const DESCRIPTION = `Pedir online en ${BUSINESS_NAME} y recoger en tienda. Smash burgers, burros y mac & papas.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${BUSINESS_NAME} — Pedí online`,
+    default: `${BUSINESS_NAME} — Pedir online`,
     template: `%s · ${BUSINESS_NAME}`,
   },
   description: DESCRIPTION,
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     siteName: BUSINESS_NAME,
-    title: `${BUSINESS_NAME} — Pedí online`,
+    title: `${BUSINESS_NAME} — Pedir online`,
     description: DESCRIPTION,
     url: SITE_URL,
     locale: 'es_CO',
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${BUSINESS_NAME} — Pedí online`,
+    title: `${BUSINESS_NAME} — Pedir online`,
     description: DESCRIPTION,
     images: ['/brand/wordmark-tercos-dark.png'],
   },

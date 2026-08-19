@@ -8,9 +8,11 @@ import {
   Input,
   NumberInput,
   formatNumber,
+  pluralizeUnit,
 } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { produceSubproduct } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Diálogo para registrar una tanda de producción de un subproducto.
@@ -49,7 +51,7 @@ export function ProductionDialog({
 
   const submit = async (): Promise<void> => {
     if (qty === null || qty <= 0) {
-      setError('Ingresá una cantidad mayor a 0.');
+      setError('Ingresa una cantidad mayor a 0.');
       return;
     }
     setError(null);
@@ -62,7 +64,7 @@ export function ProductionDialog({
       });
       onSuccess(run);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar la producción.');
+      setError(getErrorMessage(e, 'No se pudo registrar la producción.'));
     } finally {
       setPending(false);
     }
@@ -97,7 +99,7 @@ export function ProductionDialog({
           label={`Cantidad producida (${subproduct.unit})`}
           hint={
             subproduct.yield !== 1
-              ? `La receta rinde ${formatNumber(subproduct.yield)} ${subproduct.unit} por preparación.`
+              ? `La receta rinde ${formatNumber(subproduct.yield)} ${pluralizeUnit(subproduct.unit, subproduct.yield)} por preparación.`
               : undefined
           }
           required

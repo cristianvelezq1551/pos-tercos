@@ -20,11 +20,6 @@ async function requestVoid(path: string, init: RequestInit): Promise<void> {
   }
 }
 
-/** Header con el PIN de aprobación del Dueño (toda acción de nómina lo exige). */
-function pinHeader(pin: string): Record<string, string> {
-  return { 'X-Approval-Pin': pin };
-}
-
 // --- Nómina semanal: abonos parciales por días ---
 
 export function getWeeklyPayroll(week?: string): Promise<WeeklyPayrollReport> {
@@ -32,8 +27,8 @@ export function getWeeklyPayroll(week?: string): Promise<WeeklyPayrollReport> {
   return request(`/workers/weekly${qs}`, { method: 'GET' }, WeeklyPayrollReportSchema);
 }
 
-/** Paga días seleccionados de la semana con comprobante (multipart). El pago se
- *  reparte por bolsillo: cashAmount (efectivo) + bankAmount (cuenta) = total. */
+/** Paga días seleccionados de la semana (multipart). El comprobante es opcional.
+ *  El pago se reparte por bolsillo: cashAmount (efectivo) + bankAmount (cuenta) = total. */
 export async function payWeekDays(
   input: {
     userId: string;
@@ -43,16 +38,14 @@ export async function payWeekDays(
     bankAmount: number;
     note?: string;
   },
-  proof: File,
-  pin: string,
+  proof: File | null,
 ): Promise<PayrollWeekPayment> {
   const fd = new FormData();
-  fd.append('proof', proof);
+  if (proof) fd.append('proof', proof);
   fd.append('payload', JSON.stringify(input));
   const res = await fetch('/api/workers/weekly/pay', {
     method: 'POST',
     credentials: 'include',
-    headers: pinHeader(pin),
     body: fd,
   });
   if (!res.ok) {
@@ -62,11 +55,8 @@ export async function payWeekDays(
   return PayrollWeekPaymentSchema.parse((await res.json()) as unknown);
 }
 
-export function voidWeekPayment(paymentId: string, pin: string): Promise<void> {
-  return requestVoid(`/workers/weekly/payment/${paymentId}/void`, {
-    method: 'POST',
-    headers: pinHeader(pin),
-  });
+export function voidWeekPayment(paymentId: string): Promise<void> {
+  return requestVoid(`/workers/weekly/payment/${paymentId}/void`, { method: 'POST' });
 }
 
 /** Agrega un bono/descuento a la semana de un empleado. */
@@ -95,15 +85,11 @@ export function weekPaymentProofUrl(paymentId: string): string {
 
 // --- Excepciones de día (DIARIO): llegada tarde, ausencia, monto distinto ---
 
-export function setPayrollDay(userId: string, input: SetPayrollDay, pin: string): Promise<PayrollDay> {
+export function setPayrollDay(userId: string, input: SetPayrollDay): Promise<PayrollDay> {
   SetPayrollDaySchema.parse(input);
-  return request(
-    `/workers/${userId}/day`,
-    { method: 'POST', body: JSON.stringify(input), headers: pinHeader(pin) },
-    PayrollDaySchema,
-  );
+  return request(`/workers/${userId}/day`, { method: 'POST', body: JSON.stringify(input) }, PayrollDaySchema);
 }
 
-export function deletePayrollDay(userId: string, date: string, pin: string): Promise<void> {
-  return requestVoid(`/workers/${userId}/day?date=${date}`, { method: 'DELETE', headers: pinHeader(pin) });
+export function deletePayrollDay(userId: string, date: string): Promise<void> {
+  return requestVoid(`/workers/${userId}/day?date=${date}`, { method: 'DELETE' });
 }

@@ -12,7 +12,10 @@
     "package:win": "node build.mjs && npx -y @yao-pkg/pkg@latest dist/agent.cjs --targets node22-win-x64 --output dist/tercos-print-agent.exe --public",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage"
   },
   "dependencies": {
     "@pos-tercos/domain": "workspace:*",
@@ -23,6 +26,7 @@
     "@types/node": "^22.10.5",
     "esbuild": "^0.25.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
   }
 }

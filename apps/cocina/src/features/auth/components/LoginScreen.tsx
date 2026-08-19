@@ -12,7 +12,9 @@ export function LoginScreen() {
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const redirectAfterLogin = params.get('redirect') ?? '/';
+  const rawRedirect = params.get('redirect') ?? '/';
+  // Open-redirect guard (CWE-601): solo rutas relativas same-origin.
+  const redirectAfterLogin = /^\/(?!\/)/.test(rawRedirect) ? rawRedirect : '/';
 
   const handleSubmit = async ({ email, password }: { email: string; password: string }) => {
     setError(null);
@@ -71,7 +73,7 @@ export function LoginScreen() {
                   a la obra.
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Consultá recetas, registrá producción y mantené el inventario al día.
+                  Consulta recetas, registra producción y mantén el inventario al día.
                 </p>
               </header>
             }

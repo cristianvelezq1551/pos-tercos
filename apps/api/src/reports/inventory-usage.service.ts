@@ -3,6 +3,12 @@ import { roundCost, roundMoney } from '@pos-tercos/domain';
 import type { InventoryUsageReport, InventoryUsageRow } from '@pos-tercos/types';
 import { PrismaService } from '../prisma/prisma.service';
 
+/** Consumo por cortesía y su anulación: se contabilizan en el estado
+ *  financiero, no como pérdida operativa. Fuera de este reporte los DOS. */
+const CORTESIA_SOURCE_TYPES = ['cortesia', 'cortesia_reversal'];
+/** Anulación de merma: netea la merma original en vez de ser un ajuste. */
+const WASTE_REVERSAL_SOURCE_TYPE = 'waste_reversal';
+
 interface UsageAcc {
   entityType: 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT';
   entityId: string;
@@ -27,10 +33,14 @@ export class InventoryUsageService {
 
   async getUsage(from: Date, to: Date): Promise<InventoryUsageReport> {
     const grouped = await this.prisma.inventoryMovement.groupBy({
-      by: ['entityType', 'ingredientId', 'productId', 'subproductId', 'type'],
+      // `sourceType` va en el groupBy —no solo en el where— porque las REVERSAS
+      // son `MANUAL_ADJUSTMENT` y hay que distinguirlas de un ajuste común para
+      // netearlas contra la merma en vez de sumarlas a `adjustments` (ver abajo).
+      by: ['entityType', 'ingredientId', 'productId', 'subproductId', 'type', 'sourceType'],
       // Las cortesías NO son merma ni faltante: su costo se contabiliza en el
-      // estado financiero. Se excluyen para que "Uso y mermas" sea pura
-      // pérdida operativa (mermas + faltantes + ajustes reales).
+      // estado financiero. Se excluyen —junto con su reversa, o el reverso
+      // positivo quedaría contado como un ajuste que tapa faltantes reales—
+      // para que "Uso y mermas" sea pura pérdida operativa.
       //
       // ⚠️ Gotcha Prisma: `{ not: 'cortesia' }` se traduce a SQL
       // `source_type <> 'cortesia'`, que es NULL (no TRUE) para filas con
@@ -40,7 +50,7 @@ export class InventoryUsageService {
       // excluye solo las cortesías reales.
       where: {
         createdAt: { gte: from, lte: to },
-        OR: [{ sourceType: null }, { sourceType: { not: 'cortesia' } }],
+        OR: [{ sourceType: null }, { sourceType: { notIn: CORTESIA_SOURCE_TYPES } }],
       },
       _sum: { delta: true },
     });
@@ -65,6 +75,16 @@ export class InventoryUsageService {
         accByEntity.set(key, acc);
       }
       const delta = Number(g._sum.delta ?? 0);
+      // Anulación de merma (§7.v18): es un `MANUAL_ADJUSTMENT` positivo, pero NO
+      // es un ajuste de inventario — es la merma original que se deshace. Se
+      // resta de `waste` para que este reporte cuente la MISMA pérdida que el
+      // P&G (que ya la netea vía `waste_reversal` en el ledger FIFO). Sumarla a
+      // `adjustments` dejaba la merma inflada para siempre acá y, peor, el neto
+      // positivo cancelaba faltantes reales de conteo físico del mismo período.
+      if (g.sourceType === WASTE_REVERSAL_SOURCE_TYPE) {
+        acc.waste -= delta;
+        continue;
+      }
       switch (g.type) {
         case 'SALE':
           // Consumos negativos + reversos de anulación positivos → neto.
@@ -156,10 +176,16 @@ export class InventoryUsageService {
       }
 
       const consumed = acc.sales + acc.productionOut;
+      // `acc.waste` puede quedar NEGATIVO si en esta ventana se anuló una merma
+      // registrada en una ventana anterior. El neto se muestra tal cual (es la
+      // verdad: se recuperó más de lo que se tiró acá), pero el % y la plata
+      // perdida se calculan sobre la parte positiva — un porcentaje de una
+      // merma negativa no significa nada.
+      const wasteForLoss = Math.max(0, acc.waste);
       const wastePct =
-        consumed + acc.waste > 0 ? acc.waste / (consumed + acc.waste) : null;
+        consumed + wasteForLoss > 0 ? wasteForLoss / (consumed + wasteForLoss) : null;
       // Pérdida = mermas declaradas + faltantes de conteo (ajustes negativos).
-      const lostQty = acc.waste + Math.max(0, -acc.adjustments);
+      const lostQty = wasteForLoss + Math.max(0, -acc.adjustments);
       const wasteCost =
         unitCost !== null && lostQty > 0 ? roundMoney(lostQty * unitCost) : unitCost !== null ? 0 : null;
 

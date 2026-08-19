@@ -1,44 +1,60 @@
 'use client';
 
-import {
-  PAYMENT_METHOD_LABELS,
-  type PaymentMethodSetting,
-} from '@pos-tercos/types';
-import { Button, LoadingSkeleton } from '@pos-tercos/ui';
+import type { PaymentMethodSetting } from '@pos-tercos/types';
+import { Button, ConfirmDialog, LoadingSkeleton } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
-import { listAllPaymentMethods, updatePaymentMethods } from '../api/client';
+import { deletePaymentMethod, listAllPaymentMethods, updatePaymentMethod } from '../api/client';
+import { PaymentMethodFormDialog } from './PaymentMethodFormDialog';
+import { PaymentMethodRow } from './PaymentMethodRow';
+import { getErrorMessage } from '../../../lib/errors';
 
-const HINTS: Record<string, string> = {
-  CASH: 'Billetes y monedas. Abre el cajón y entra al arqueo de efectivo.',
-  CARD: 'Datáfono. El cajero verifica el voucher antes de confirmar.',
-  TRANSFER: 'Transferencia bancaria. Verificación de comprobante + arqueo digital.',
-  NEQUI: 'Verificación de comprobante + reconciliación con el CSV de Nequi.',
-  DAVIPLATA: 'Verificación de comprobante + reconciliación CSV.',
-  QR_BANCOLOMBIA: 'QR del banco. Verificación de comprobante + reconciliación CSV.',
-};
+type FormState =
+  | { open: false }
+  | { open: true; mode: 'create' }
+  | { open: true; mode: 'edit'; initial: PaymentMethodSetting };
 
-/** Habilitar/deshabilitar los métodos que el POS ofrece al cobrar. */
+/** CRUD de los medios de pago que el POS ofrece al cobrar. */
 export function PaymentMethodsManager() {
   const [methods, setMethods] = useState<PaymentMethodSetting[] | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>({ open: false });
+  const [deleteTarget, setDeleteTarget] = useState<PaymentMethodSetting | null>(null);
 
   useEffect(() => {
     listAllPaymentMethods()
       .then(setMethods)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Error cargando'));
+      .catch((e) => setError(getErrorMessage(e, 'Error cargando')));
   }, []);
 
+  const upsert = (m: PaymentMethodSetting) =>
+    setMethods((prev) => {
+      const rest = (prev ?? []).filter((x) => x.code !== m.code);
+      return [...rest, m].sort((a, b) => a.sortOrder - b.sortOrder);
+    });
+
   const toggle = async (m: PaymentMethodSetting) => {
-    setPending(m.method);
+    setPending(m.code);
     setError(null);
     try {
-      const next = await updatePaymentMethods({
-        methods: [{ method: m.method, enabled: !m.enabled }],
-      });
-      setMethods(next);
+      upsert(await updatePaymentMethod(m.code, { enabled: !m.enabled }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error guardando');
+      setError(getErrorMessage(e, 'Error guardando'));
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setPending(deleteTarget.code);
+    setError(null);
+    try {
+      await deletePaymentMethod(deleteTarget.code);
+      setMethods((prev) => (prev ?? []).filter((x) => x.code !== deleteTarget.code));
+      setDeleteTarget(null);
+    } catch (e) {
+      setError(getErrorMessage(e, 'No se pudo borrar'));
     } finally {
       setPending(null);
     }
@@ -51,47 +67,65 @@ export function PaymentMethodsManager() {
       </p>
     );
   }
-  if (!methods) return <LoadingSkeleton shape="text" count={6} />;
+  if (!methods) return <LoadingSkeleton shape="text" count={5} />;
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {methods.filter((m) => m.enabled).length} activos · {methods.length} en total
+        </p>
+        <Button size="sm" onClick={() => setForm({ open: true, mode: 'create' })}>
+          + Agregar medio de pago
+        </Button>
+      </div>
+
       {error ? (
         <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       ) : null}
+
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <ul className="divide-y divide-border">
           {methods.map((m) => (
-            <li key={m.method} className="flex items-center gap-4 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-foreground">
-                  {PAYMENT_METHOD_LABELS[m.method]}
-                  {m.enabled ? (
-                    <span className="ml-2 rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-xs font-semibold text-success">
-                      activo en el POS
-                    </span>
-                  ) : null}
-                </p>
-                <p className="text-xs text-muted-foreground">{HINTS[m.method] ?? ''}</p>
-              </div>
-              <Button
-                variant={m.enabled ? 'outline' : 'default'}
-                size="sm"
-                onClick={() => toggle(m)}
-                disabled={pending !== null}
-              >
-                {pending === m.method ? '…' : m.enabled ? 'Deshabilitar' : 'Habilitar'}
-              </Button>
-            </li>
+            <PaymentMethodRow
+              key={m.code}
+              method={m}
+              busy={pending !== null}
+              onToggle={() => toggle(m)}
+              onEdit={() => setForm({ open: true, mode: 'edit', initial: m })}
+              onDelete={() => setDeleteTarget(m)}
+            />
           ))}
         </ul>
       </div>
+
       <p className="text-xs text-muted-foreground">
-        Los métodos deshabilitados desaparecen del cobro en el POS (incluida la cuenta
-        dividida) y el backend rechaza cualquier cobro que los use. Sin conexión, el POS
-        cobra con Efectivo y Transferencia.
+        Los métodos deshabilitados desaparecen del cobro en el POS (incluida la cuenta dividida) y
+        el servidor rechaza cualquier cobro que los use. Sin conexión, el POS cobra con Efectivo y
+        Transferencia.
       </p>
+
+      {form.open ? (
+        <PaymentMethodFormDialog
+          open
+          mode={form.mode}
+          initial={form.mode === 'edit' ? form.initial : undefined}
+          onClose={() => setForm({ open: false })}
+          onSaved={upsert}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Borrar ${deleteTarget?.name ?? ''}`}
+        description="Los pagos ya registrados con este método se conservan; solo deja de ofrecerse al cobrar."
+        confirmLabel="Borrar"
+        destructive
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

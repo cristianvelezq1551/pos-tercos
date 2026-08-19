@@ -19,8 +19,8 @@ export function toPromotionDef(p: PublicMenuPromotion): PromotionDef {
     daysOfWeekMask: p.daysOfWeekMask,
     timeStart: p.timeStart,
     timeEnd: p.timeEnd,
-    activeFrom: p.activeFrom ? new Date(`${p.activeFrom}T00:00:00`) : null,
-    activeTo: p.activeTo ? new Date(`${p.activeTo}T00:00:00`) : null,
+    activeFrom: p.activeFrom ?? null,
+    activeTo: p.activeTo ?? null,
     productIds: new Set(p.productIds),
   };
 }

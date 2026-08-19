@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, Req, Res, UnauthorizedException,
 import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { isProd } from '../common/assert-env';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthService } from './auth.service';
@@ -13,10 +14,15 @@ const ACCESS_COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Cookies por app. En dev admin y pos comparten host (localhost, distinto puerto)
+ * Cookies por app. En dev las apps comparten host (localhost, distinto puerto)
  * y las cookies se aíslan por hostname — no por puerto. Nombres distintos evitan
- * que una sesión de cajero pise/active la de admin y viceversa. El frontend
- * declara su app con el header `X-Client-App`. Default `pos` por compatibilidad.
+ * que una sesión pise/active la de otra app. El frontend declara su app con el
+ * header `X-Client-App`.
+ *
+ * `pos` es LEGACY del cutover POS→admin (§7.v10+): ninguna app viva lo declara
+ * (la caja corre dentro del admin), pero se honra si llega explícito. El
+ * default sin header es `admin` — antes era `pos` y un login sin header emitía
+ * cookies `pos_*` que ninguna app reenviaba (sesión fantasma).
  */
 type ClientApp = 'admin' | 'pos' | 'cocina';
 
@@ -29,9 +35,9 @@ const COOKIE_NAMES: Record<ClientApp, { access: string; refresh: string }> = {
 function resolveApp(req: Request): ClientApp {
   const header = req.headers['x-client-app'];
   const value = Array.isArray(header) ? header[0] : header;
-  if (value === 'admin') return 'admin';
+  if (value === 'pos') return 'pos';
   if (value === 'cocina') return 'cocina';
-  return 'pos';
+  return 'admin';
 }
 
 @Controller('auth')
@@ -101,18 +107,18 @@ export class AuthController {
     accessToken: string,
     refresh: string,
   ): void {
-    const isProd = process.env.NODE_ENV === 'production';
+    const secure = isProd();
     const names = COOKIE_NAMES[app];
     res.cookie(names.access, accessToken, {
       httpOnly: true,
-      secure: isProd,
+      secure,
       sameSite: 'lax',
       maxAge: ACCESS_COOKIE_MAX_AGE_MS,
       path: '/',
     });
     res.cookie(names.refresh, refresh, {
       httpOnly: true,
-      secure: isProd,
+      secure,
       sameSite: 'lax',
       maxAge: REFRESH_COOKIE_MAX_AGE_MS,
       path: '/',

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PaymentMethodEnum } from './sales';
+import { PaymentMethodCodeSchema, PaymentMethodEnum } from './sales';
 
 // ====================================================================
 // SHIFT (turno de caja) — FASE 5 cubre solo apertura
@@ -159,13 +159,27 @@ export const CurrentShiftStatusSchema = z.object({
 });
 export type CurrentShiftStatus = z.infer<typeof CurrentShiftStatusSchema>;
 
-/** Efectivo esperado autoritativo de una caja OPEN (target del cierre). */
+/** Esperado por método NO-efectivo (ventas + movimientos digitales del turno). */
+export const ExpectedDigitalLineSchema = z.object({
+  method: PaymentMethodCodeSchema,
+  /** Nombre vivo del catálogo (el code es el fallback). */
+  name: z.string(),
+  expected: z.number(),
+});
+export type ExpectedDigitalLine = z.infer<typeof ExpectedDigitalLineSchema>;
+
+/**
+ * Esperado autoritativo de una caja OPEN (target del cierre). `digital` lista
+ * los métodos que el cierre EXIGE arquear — misma fuente que usa `close`, así
+ * la caja nunca pide un método que el cajero no vio en pantalla.
+ */
 export const ExpectedCashSchema = z.object({
   expectedCash: z.number(),
   openingCash: z.number(),
   cashSalesTotal: z.number(),
   cashIn: z.number(),
   cashOut: z.number(),
+  digital: z.array(ExpectedDigitalLineSchema).default([]),
 });
 export type ExpectedCash = z.infer<typeof ExpectedCashSchema>;
 
@@ -177,6 +191,8 @@ export const ShiftSessionOrderSchema = z.object({
   id: z.string().uuid(),
   receiptNumber: z.number().int(),
   type: z.string(),
+  /** Costo del envío incluido en `total`. Plata del repartidor, no del negocio. */
+  deliveryFee: z.number().nonnegative().default(0),
   status: z.string(),
   total: z.number(),
   paymentMethod: z.string().nullable(),
@@ -227,7 +243,14 @@ export const ShiftSessionSummarySchema = z.object({
   voidCount: z.number().int(),
   /** Pedidos cancelados (CANCELADO_NO_PAGO + CANCELADO_SIN_REEMBOLSO). */
   canceledCount: z.number().int().default(0),
+  /** Vendido SIN el envío: esa plata es del repartidor (§7.v24/§7.v28). */
   totalRevenue: z.number(),
+  /**
+   * Envíos cobrados en el turno. NO está en `totalRevenue` ni en `byMethod`:
+   * esa plata se le paga al repartidor en el momento (§7.v30). Se expone solo
+   * como dato del turno.
+   */
+  deliveryCollected: z.number().default(0),
   cashRevenue: z.number(),
   transferRevenue: z.number(),
   byMethod: z.array(z.object({ method: z.string(), count: z.number().int(), total: z.number() })),

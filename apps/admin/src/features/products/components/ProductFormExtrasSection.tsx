@@ -64,7 +64,7 @@ export function ProductFormExtrasSection({
       </legend>
       <p className="text-xs text-muted-foreground">
         Agregados que el cliente marca (ej. tocineta extra +$3.000). Si el extra gasta
-        inventario (doble carne, queso extra), configurá qué descuenta — si no, esa
+        inventario (doble carne, queso extra), configura qué descuenta — si no, esa
         porción sale del stock sin registrarse.
       </p>
 

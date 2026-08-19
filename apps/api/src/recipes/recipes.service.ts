@@ -81,6 +81,8 @@ export class RecipesService {
               childSubproductId: e.childType === 'subproduct' ? e.childId : null,
               quantityNeta: e.quantityNeta,
               mermaPct: e.mermaPct ?? 0,
+              // null = hereda el flag del insumo/subproducto.
+              blocksAvailability: e.blocksAvailability ?? null,
             },
           }),
         ),
@@ -128,6 +130,8 @@ export class RecipesService {
               childSubproductId: e.childType === 'subproduct' ? e.childId : null,
               quantityNeta: e.quantityNeta,
               mermaPct: e.mermaPct ?? 0,
+              // null = hereda el flag del insumo/subproducto.
+              blocksAvailability: e.blocksAvailability ?? null,
             },
           }),
         ),
@@ -144,7 +148,7 @@ export class RecipesService {
     });
     if (!size) throw new NotFoundException(`Variante ${sizeId} no existe`);
     if (size.productId !== productId) {
-      throw new BadRequestException(`La variante ${sizeId} no pertenece al producto ${productId}`);
+      throw new BadRequestException(`Esa variante no pertenece a este producto.`);
     }
   }
 
@@ -180,6 +184,7 @@ export class RecipesService {
               : { kind: 'subproduct', id: e.childSubproductId as string },
           quantityNeta: Number(e.quantityNeta),
           mermaPct: Number(e.mermaPct),
+          blocksAvailability: e.blocksAvailability ?? undefined,
         }))
       : [];
 
@@ -200,11 +205,10 @@ export class RecipesService {
           { id: i.id, name: i.name, unitRecipe: i.unitRecipe },
         ]),
       ),
-      edgesByParent: groupEdgesByParent([
-        ...productEdges,
-        ...sizeNodes,
-        ...subproductEdges,
-      ]),
+      edgesByParent: groupEdgesByParent(
+        [...productEdges, ...sizeNodes, ...subproductEdges],
+        buildBlocksDefaults(ingredients, subproducts),
+      ),
     };
 
     return { graph, root: { kind: 'product', id: productId } };
@@ -246,7 +250,7 @@ export class RecipesService {
           { id: i.id, name: i.name, unitRecipe: i.unitRecipe },
         ]),
       ),
-      edgesByParent: groupEdgesByParent(edges),
+      edgesByParent: groupEdgesByParent(edges, buildBlocksDefaults(ingredients, subproducts)),
     };
   }
 
@@ -320,7 +324,7 @@ export class RecipesService {
               quantity: cc.quantity,
               unitCost: null,
               costContribution: null,
-              missingReason: `Componente productId=${cc.productId} no existe`,
+              missingReason: `Un componente del combo ya no existe en el catálogo.`,
             });
             continue;
           }
@@ -434,13 +438,13 @@ export class RecipesService {
     } catch (err) {
       if (err instanceof RecipeCycleError) {
         throw new BadRequestException({
-          message: 'Recipe contains a cycle',
+          message: 'La receta se referencia a sí misma: revisa sus subproductos.',
           cyclePath: err.cyclePath,
         });
       }
       if (err instanceof RecipeMissingNodeError) {
         throw new BadRequestException({
-          message: 'Recipe references missing node',
+          message: 'La receta usa un item que ya no existe en el catálogo.',
           missingId: err.missingId,
           kind: err.kind,
         });
@@ -502,7 +506,7 @@ export class RecipesService {
                 productName: '(eliminado)',
                 quantity: cc.quantity,
                 unitCost: null,
-                missingReason: `Componente productId=${cc.productId} no existe`,
+                missingReason: `Un componente del combo ya no existe en el catálogo.`,
               };
             }
             const r = costOf(comp);
@@ -584,7 +588,7 @@ export class RecipesService {
         const costContribution = unitCost !== null ? round(e.totalQuantity * unitCost) : null;
         if (unitCost === null) {
           allKnown = false;
-          missing.push(`Insumo "${e.name}" sin costo (no aparece en facturas confirmadas)`);
+          missing.push(`Falta el costo de "${e.name}" (sin facturas de compra confirmadas)`);
         } else {
           total += costContribution!;
         }
@@ -610,11 +614,11 @@ export class RecipesService {
       };
     } catch (err) {
       if (err instanceof RecipeCycleError) {
-        throw new BadRequestException({ message: 'Recipe contains a cycle', cyclePath: err.cyclePath });
+        throw new BadRequestException({ message: 'La receta se referencia a sí misma: revisa sus subproductos.', cyclePath: err.cyclePath });
       }
       if (err instanceof RecipeMissingNodeError) {
         throw new BadRequestException({
-          message: 'Recipe references missing node',
+          message: 'La receta usa un item que ya no existe en el catálogo.',
           missingId: err.missingId,
           kind: err.kind,
         });
@@ -719,7 +723,7 @@ export class RecipesService {
     if (kind !== 'subproduct') return;
     const selfRef = edges.find((e) => e.childType === 'subproduct' && e.childId === parentId);
     if (selfRef) {
-      throw new BadRequestException(`Subproduct ${parentId} cannot reference itself in its recipe`);
+      throw new BadRequestException(`Un subproducto no puede usarse a sí mismo en su receta.`);
     }
   }
 
@@ -794,13 +798,13 @@ export class RecipesService {
     } catch (err) {
       if (err instanceof RecipeCycleError) {
         throw new BadRequestException({
-          message: 'Recipe would create a cycle',
+          message: 'Ese cambio haría que la receta se referencie a sí misma.',
           cyclePath: err.cyclePath,
         });
       }
       if (err instanceof RecipeMissingNodeError) {
         throw new BadRequestException({
-          message: 'Recipe references missing node',
+          message: 'La receta usa un item que ya no existe en el catálogo.',
           missingId: err.missingId,
           kind: err.kind,
         });
@@ -825,16 +829,43 @@ function toRecipeEdgeDto(row: DbRecipeEdge): RecipeEdge {
     childSubproductId: row.childSubproductId,
     quantityNeta: Number(row.quantityNeta),
     mermaPct: Number(row.mermaPct),
+    blocksAvailability: row.blocksAvailability,
     createdAt: row.createdAt.toISOString(),
   };
 }
 
+/**
+ * Defaults de `blocksAvailability` por child (`i:<id>` / `s:<id>`), para que
+ * `groupEdgesByParent` resuelva el valor EFECTIVO de cada edge.
+ */
+export function buildBlocksDefaults(
+  ingredients: Array<{ id: string; blocksAvailability: boolean }>,
+  subproducts: Array<{ id: string; blocksAvailability: boolean }>,
+): Map<string, boolean> {
+  const m = new Map<string, boolean>();
+  for (const i of ingredients) m.set(`i:${i.id}`, i.blocksAvailability);
+  for (const s of subproducts) m.set(`s:${s.id}`, s.blocksAvailability);
+  return m;
+}
+
+/**
+ * ÚNICO lugar donde se resuelve `blocksAvailability`: `edge ?? insumo ?? true`.
+ * El dominio recibe siempre el valor efectivo ya resuelto (y así viaja también
+ * al snapshot offline). Sin defaults → todo bloquea (comportamiento histórico).
+ */
 function groupEdgesByParent(
   edges: Array<DbRecipeEdge | RecipeEdgeNode>,
+  blocksDefaults?: Map<string, boolean>,
 ): Map<string, RecipeEdgeNode[]> {
   const map = new Map<string, RecipeEdgeNode[]>();
   for (const e of edges) {
-    const node: RecipeEdgeNode = isDbEdge(e) ? dbEdgeToNode(e) : e;
+    const raw: RecipeEdgeNode = isDbEdge(e) ? dbEdgeToNode(e) : e;
+    const childKey = `${raw.child.kind === 'ingredient' ? 'i' : 's'}:${raw.child.id}`;
+    const node: RecipeEdgeNode = {
+      ...raw,
+      blocksAvailability:
+        raw.blocksAvailability ?? blocksDefaults?.get(childKey) ?? true,
+    };
     const key =
       node.parent.kind === 'product' ? `p:${node.parent.id}` : `s:${node.parent.id}`;
     const list = map.get(key);
@@ -865,5 +896,7 @@ function dbEdgeToNode(row: DbRecipeEdge): RecipeEdgeNode {
     child,
     quantityNeta: Number(row.quantityNeta),
     mermaPct: Number(row.mermaPct),
+    // null en DB = "hereda" → undefined para que groupEdgesByParent resuelva.
+    blocksAvailability: row.blocksAvailability ?? undefined,
   };
 }

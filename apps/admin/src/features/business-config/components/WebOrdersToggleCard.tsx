@@ -5,6 +5,7 @@ import { Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { updateBusinessConfig } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Kill-switch de pedidos web (#13): ante abuso del formulario público (cada
@@ -24,7 +25,7 @@ export function WebOrdersToggleCard({ enabled }: { enabled: boolean }) {
       await updateBusinessConfig({ webOrdersEnabled: !enabled });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
     } finally {
       setPending(false);
     }
@@ -38,7 +39,7 @@ export function WebOrdersToggleCard({ enabled }: { enabled: boolean }) {
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         {enabled
-          ? 'Los clientes pueden pedir desde la web. Si hay abuso (pedidos basura / spam de WhatsApp), apagalos acá al instante.'
+          ? 'Los clientes pueden pedir desde la web. Si hay abuso (pedidos basura / spam de WhatsApp), apágalos aquí al instante.'
           : 'PAUSADOS: la web muestra el menú pero no deja pedir, y el API rechaza pedidos nuevos.'}
       </p>
       <div className="mt-3 flex items-center justify-between">

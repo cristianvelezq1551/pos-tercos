@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { listSlides, listTracks } from '../api/client';
 import { SlidesPanel } from './SlidesPanel';
 import { TracksPanel } from './TracksPanel';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Pantalla del dueño para administrar el turnero: qué productos/fotos/precios
@@ -22,7 +23,7 @@ export function TurneroManager() {
         setSlides(s);
         setTracks(t);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Error cargando'));
+      .catch((e) => setError(getErrorMessage(e, 'Error cargando')));
   }, []);
 
   return (

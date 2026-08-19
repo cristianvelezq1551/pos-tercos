@@ -3,6 +3,7 @@
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { setOwnApprovalPin } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface ChangeMyPinDialogProps {
   onClose: () => void;
@@ -28,7 +29,7 @@ export function ChangeMyPinDialog({ onClose, onSuccess }: ChangeMyPinDialogProps
       await setOwnApprovalPin(pin, password);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar el PIN.');
+      setError(getErrorMessage(e, 'No se pudo guardar el PIN.'));
     } finally {
       setPending(false);
     }
@@ -39,7 +40,7 @@ export function ChangeMyPinDialog({ onClose, onSuccess }: ChangeMyPinDialogProps
       open
       onClose={onClose}
       title="Cambiar mi PIN de aprobación"
-      description="Tu PIN autoriza acciones sensibles (anular ventas, nómina, abrir el cajón sin venta). Solo vos puedes cambiarlo."
+      description="Tu PIN autoriza acciones sensibles (anular ventas, nómina, abrir el cajón sin venta). Solo tú puedes cambiarlo."
       maxWidth="max-w-md"
       footer={
         <>

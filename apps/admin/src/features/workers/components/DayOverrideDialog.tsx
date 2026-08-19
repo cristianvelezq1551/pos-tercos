@@ -1,9 +1,10 @@
 'use client';
 
-import { Button, Dialog, FormField, Input, MoneyInput, PinField, formatCop, isValidPin } from '@pos-tercos/ui';
+import { Button, Dialog, FormField, Input, MoneyInput, formatCop } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { deletePayrollDay, setPayrollDay } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Edita el valor de UN día de un trabajador DIARIO: llegada tarde (monto
  *  menor), ausencia ($0) o un monto distinto. El valor por defecto es el
@@ -30,12 +31,11 @@ export function DayOverrideDialog({
   const router = useRouter();
   const [amountInput, setAmountInput] = useState(String(Math.round(currentAmount)));
   const [note, setNote] = useState('');
-  const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const amount = Math.max(0, Math.round((Number(amountInput) || 0) * 100) / 100);
-  const valid = isValidPin(pin) && amountInput.trim() !== '';
+  const valid = amountInput.trim() !== '';
 
   const run = async (fn: () => Promise<unknown>): Promise<void> => {
     setError(null);
@@ -45,7 +45,7 @@ export function DayOverrideDialog({
       router.refresh();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+      setError(getErrorMessage(e, 'No se pudo guardar.'));
       setPending(false);
     }
   };
@@ -55,7 +55,7 @@ export function DayOverrideDialog({
       open
       onClose={pending ? () => {} : onClose}
       title={`Editar día · ${date}`}
-      description={`${workerName} · valor/día ${formatCop(defaultAmount)}. Poné $0 para una ausencia o un monto menor por llegada tarde.`}
+      description={`${workerName} · valor/día ${formatCop(defaultAmount)}. Escribe $0 para una ausencia o un monto menor por llegada tarde.`}
       maxWidth="max-w-sm"
       footer={
         <>
@@ -63,11 +63,11 @@ export function DayOverrideDialog({
             Cancelar
           </Button>
           {hasOverride ? (
-            <Button variant="ghost" onClick={() => run(() => deletePayrollDay(userId, date, pin))} disabled={pending || !isValidPin(pin)}>
+            <Button variant="ghost" onClick={() => run(() => deletePayrollDay(userId, date))} disabled={pending}>
               Quitar excepción
             </Button>
           ) : null}
-          <Button onClick={() => run(() => setPayrollDay(userId, { workDate: date, amount, note: note.trim() || undefined }, pin))} disabled={pending || !valid}>
+          <Button onClick={() => run(() => setPayrollDay(userId, { workDate: date, amount, note: note.trim() || undefined }))} disabled={pending || !valid}>
             {pending ? 'Guardando…' : `Guardar ${formatCop(amount)}`}
           </Button>
         </>
@@ -88,10 +88,6 @@ export function DayOverrideDialog({
 
         <FormField label="Motivo" hint="Opcional (ej. llegó tarde, permiso)">
           <Input value={note} onChange={(e) => setNote(e.target.value)} disabled={pending} maxLength={300} />
-        </FormField>
-
-        <FormField label="PIN de aprobación (Dueño)" required>
-          <PinField value={pin} onChange={setPin} disabled={pending} />
         </FormField>
 
         {error ? (

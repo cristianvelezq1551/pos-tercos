@@ -49,10 +49,21 @@ export function isOrderExpired(order: ActiveOrder | null): boolean {
   return Date.now() - order.createdAt > TTL_MS;
 }
 
+/**
+ * Estados en los que la página del cliente YA NO va a cambiar.
+ *
+ * Incluye **PAGADO** desde §7.v25: la web dejó de mostrar el progreso del
+ * pedido (preparando / listo / en camino) porque ese avance lo marca el cajero
+ * a mano y no siempre ocurre. Una vez confirmado el pago no queda nada que la
+ * página pueda contar — lo que sigue llega por WhatsApp—, así que no tiene
+ * sentido seguir consultando ni mostrar el pedido como "en curso".
+ *
+ * Fuente ÚNICA: el poller importa esto en vez de mantener su propia lista (se
+ * habían desincronizado antes).
+ */
 const TERMINAL_STATUSES = new Set([
-  // LISTO_DESPACHO es el estado FINAL del pedido web ("listo para retirar"):
-  // limpia la orden activa del localStorage para que el banner no la muestre
-  // como "en curso" indefinidamente. Debe coincidir con isTerminal() del poller.
+  'PAGADO',
+  'EN_PREPARACION',
   'LISTO_DESPACHO',
   'ENTREGADO',
   'CANCELADO_NO_PAGO',

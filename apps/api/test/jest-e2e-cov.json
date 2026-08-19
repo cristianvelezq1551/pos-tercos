@@ -1,0 +1,31 @@
+{
+  "//": "Igual que jest-e2e.json pero con rootDir en la raíz de la app, para que la cobertura pueda instrumentar src/ (jest no colecta fuera de rootDir).",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "tsconfig": "<rootDir>/tsconfig.json"
+      }
+    ]
+  },
+  "moduleNameMapper": {
+    "^@pos-tercos/types$": "<rootDir>/../../packages/types/dist/index.js",
+    "^@pos-tercos/domain$": "<rootDir>/../../packages/domain/dist/index.js"
+  },
+  "testTimeout": 30000,
+  "globalSetup": "<rootDir>/test/global-setup.ts",
+  "setupFiles": ["<rootDir>/test/setup-env.ts"],
+  "coverageProvider": "v8",
+  "collectCoverageFrom": [
+    "src/**/*.ts",
+    "!src/**/*.spec.ts",
+    "!src/main.ts",
+    "!src/**/*.module.ts",
+    "!src/**/dto/**"
+  ],
+  "coverageReporters": ["text-summary", "json-summary", "html"]
+}

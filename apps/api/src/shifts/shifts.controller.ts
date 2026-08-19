@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -33,6 +34,7 @@ import {
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { localMidnightOfYmd, ymdLocal } from '../common/local-dates';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ShiftsService } from './shifts.service';
 
@@ -98,7 +100,14 @@ export class ShiftsController {
 
   @CashierAccess()
   @Get(':id/cash-movements')
-  cashMovements(@Param('id', ParseUUIDPipe) id: string): Promise<CashMovement[]> {
+  async cashMovements(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CashMovement[]> {
+    // §2.14: los movimientos de una caja (montos + motivos) son de SU cajero.
+    // Era el único endpoint de caja sin el check — cualquier cajero leía las
+    // entradas/salidas de cajas ajenas. El dueño ve cualquiera.
+    await this.assertShiftOwnership(user, id);
     return this.shifts.listCashMovements(id);
   }
 
@@ -171,7 +180,7 @@ export class ShiftsController {
     const includeMargin = COST_VISIBLE_ROLES.has(user.role);
     const detail = await this.shifts.getSessionDetail(id, includeMargin);
     if (!OVERSIGHT_ROLES.has(user.role) && detail.shift.cashierId !== user.sub) {
-      throw new ForbiddenException('Solo podés ver el detalle de tu propia caja.');
+      throw new ForbiddenException('Solo puedes ver el detalle de tu propia caja.');
     }
     return detail;
   }
@@ -195,7 +204,7 @@ export class ShiftsController {
   ): Promise<Shift> {
     const shift = await this.shifts.getById(id);
     if (!OVERSIGHT_ROLES.has(user.role) && shift.cashierId !== user.sub) {
-      throw new ForbiddenException('Solo podés ver tu propia caja.');
+      throw new ForbiddenException('Solo puedes ver tu propia caja.');
     }
     return shift;
   }
@@ -207,14 +216,28 @@ export class ShiftsController {
     @Query('cashier_id') cashierId?: string,
     @Query('status') status?: string,
     @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ): Promise<Shift[]> {
     const parsedStatus = status ? ShiftStatusEnum.parse(status) : undefined;
     // El cajero solo ve SUS cajas (no los Z-report de otros); solo el Dueño ve todas.
     const scopedCashier = OVERSIGHT_ROLES.has(user.role) ? cashierId : user.sub;
+    const fromDate = from ? parseLocalDay('from', from) : undefined;
+    // Bound exclusivo: el día `to` entra completo (hasta las 23:59:59.999).
+    let toDate: Date | undefined;
+    if (to) {
+      toDate = parseLocalDay('to', to);
+      toDate.setDate(toDate.getDate() + 1);
+    }
+    if (fromDate && toDate && fromDate >= toDate) {
+      throw new BadRequestException("'from' debe ser <= 'to'");
+    }
     return this.shifts.list({
       cashierId: scopedCashier,
       status: parsedStatus,
       limit: limit ? Math.min(Number(limit), 200) : undefined,
+      from: fromDate,
+      to: toDate,
     });
   }
 
@@ -223,7 +246,22 @@ export class ShiftsController {
     if (OVERSIGHT_ROLES.has(user.role)) return;
     const shift = await this.shifts.getById(shiftId);
     if (shift.cashierId !== user.sub) {
-      throw new ForbiddenException('Solo podés ver tu propia caja.');
+      throw new ForbiddenException('Solo puedes ver tu propia caja.');
     }
   }
+}
+
+/**
+ * YYYY-MM-DD → medianoche LOCAL. `openedAt` es timestamp, así que la ventana
+ * va en hora local (convención de `common/local-dates`). Inválido → 400 del
+ * cliente, nunca un Invalid Date que Prisma convierta en 500.
+ */
+function parseLocalDay(label: string, value: string): Date {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? localMidnightOfYmd(value) : null;
+  // Roundtrip: `new Date(2026, 12, 45)` NO es NaN — JS desborda en silencio a
+  // otro mes. Solo comparando el YMD de vuelta se detecta la fecha irreal.
+  if (!d || Number.isNaN(d.getTime()) || ymdLocal(d) !== value) {
+    throw new BadRequestException(`Parámetro '${label}' inválido: ${value}`);
+  }
+  return d;
 }

@@ -82,9 +82,9 @@ export function buildCostIncreaseAlertMessage(input: {
     return `· ${it.name}: ${formatCop(it.oldUnitCost)} → ${formatCop(it.newUnitCost)} (+${pct.toFixed(0)}%)`;
   });
   return (
-    `[${input.businessName}] 📈 Suba de costos en factura confirmada` +
+    `[${input.businessName}] 📈 Aumento de costos en factura confirmada` +
     `${input.supplierName ? ` de ${input.supplierName}` : ''}:\n\n` +
     `${lines.join('\n')}\n\n` +
-    `Revisá si los precios de venta siguen dando el margen esperado.`
+    `Revisa si los precios de venta siguen dando el margen esperado.`
   );
 }

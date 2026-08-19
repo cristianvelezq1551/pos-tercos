@@ -3,12 +3,14 @@ import {
   CreateInventoryMovementSchema,
   CreateStockCountSchema,
   ResolveStockCountSchema,
+  ReverseWasteSchema,
   StockableTypeEnum,
   type CountTask,
   type CreateInventoryMovement,
   type CreateStockCount,
   type InventoryMovement,
   type ResolveStockCount,
+  type ReverseWaste,
   type Stockable,
   type StockableType,
   type StockCount,
@@ -34,10 +36,12 @@ export class InventoryController {
   listStock(
     @Query('only_active') onlyActive?: string,
     @Query('low_stock') lowStock?: string,
+    @Query('negative') negative?: string,
   ): Promise<Stockable[]> {
     return this.inventory.listStockables({
       onlyActive: onlyActive === 'true',
       lowStock: lowStock === 'true',
+      negative: negative === 'true',
     });
   }
 
@@ -48,7 +52,7 @@ export class InventoryController {
   ): Promise<Stockable> {
     const parsed = StockableTypeEnum.safeParse(entityType.toUpperCase());
     if (!parsed.success) {
-      throw new BadRequestException('entityType debe ser INGREDIENT, PRODUCT o SUBPRODUCT');
+      throw new BadRequestException('El tipo debe ser insumo, producto o subproducto.');
     }
     return this.inventory.getStockableById(parsed.data, id);
   }
@@ -174,6 +178,34 @@ export class InventoryController {
         delta: movement.delta,
         type: movement.type,
         notes: movement.notes,
+      },
+    });
+
+    return movement;
+  }
+
+  /**
+   * Anula una merma registrada por error (total o parcial). Es la ÚNICA forma
+   * de sacar una pérdida del P&G: un ajuste manual devuelve la cantidad pero
+   * deja el costo restando del neto para siempre.
+   */
+  @Post('movements/:id/reverse-waste')
+  async reverseWaste(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ReverseWasteSchema)) body: ReverseWaste,
+  ): Promise<InventoryMovement> {
+    const movement = await this.inventory.reverseWaste(id, body, user.sub);
+
+    await this.audit.log({
+      userId: user.sub,
+      action: 'INVENTORY_MOVEMENT_WASTE_REVERSED',
+      entityType: 'inventory_movement',
+      entityId: id,
+      after: {
+        reversalMovementId: movement.id,
+        delta: movement.delta,
+        reason: body.reason,
       },
     });
 

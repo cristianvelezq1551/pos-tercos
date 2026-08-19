@@ -47,12 +47,6 @@ export const UpdateWebHeroSlideSchema = z.object({
 });
 export type UpdateWebHeroSlide = z.infer<typeof UpdateWebHeroSlideSchema>;
 
-/**
- * Config pública que consume la web. Solo piezas ACTIVAS, ya ordenadas.
- * Si `slides` viene vacío, la web cae a su hero estático (no se rompe).
- */
-export const WebHeroConfigSchema = z.object({
-  slides: z.array(WebHeroSlideSchema),
-  asOf: z.string().datetime(),
-});
-export type WebHeroConfig = z.infer<typeof WebHeroConfigSchema>;
+// La respuesta pública (`GET /web-hero/config`) vive en `web-config.ts`: dejó de
+// ser solo publicidad y ahora lleva contacto, horarios, redes y "Nosotros".
+// Ver `WebStorefrontConfigSchema`.

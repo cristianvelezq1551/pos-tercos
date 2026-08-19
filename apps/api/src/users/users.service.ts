@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { User as DbUser, Prisma } from '@prisma/client';
+import { USER_ROLE_LABELS } from '@pos-tercos/types';
 import type {
   CreateUser,
   ManagedUser,
@@ -21,6 +22,10 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const BCRYPT_ROUNDS = 10;
 const PIN_ROLES = ['ADMIN_OPERATIVO', 'DUENO'];
+// El negocio cierra los lunes: todo empleado nuevo nace descansando el lunes
+// (1 = lunes, 0=domingo … 6=sábado) para que la nómina/P&G no lo cuente por
+// defecto. Se ajusta después en el perfil si el trabajador sí opera los lunes.
+const DEFAULT_REST_DAYS = [1];
 
 @Injectable()
 export class UsersService {
@@ -109,7 +114,7 @@ export class UsersService {
       throw new ConflictException(`Ya existe un usuario con el correo ${email}.`);
     }
     if (dto.pin && !PIN_ROLES.includes(dto.role)) {
-      throw new BadRequestException('Solo ADMIN_OPERATIVO o DUENO pueden tener PIN.');
+      throw new BadRequestException(`Solo un ${USER_ROLE_LABELS.ADMIN_OPERATIVO} o el ${USER_ROLE_LABELS.DUENO} pueden tener PIN.`);
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
@@ -126,6 +131,7 @@ export class UsersService {
         hireDate: dto.hireDate ? new Date(`${dto.hireDate}T00:00:00.000Z`) : null,
         payType: dto.payType ?? null,
         salaryAmount: dto.salaryAmount ?? null,
+        restDaysOfWeek: DEFAULT_REST_DAYS,
       },
     });
 
@@ -159,13 +165,13 @@ export class UsersService {
       });
       if (otherActiveDuenos === 0) {
         throw new BadRequestException(
-          'No podés dejar el sistema sin un Dueño activo. asigna otro Dueño primero.',
+          'No puedes dejar el sistema sin un Dueño activo. Asigna otro Dueño primero.',
         );
       }
     }
     // No auto-desactivarse (evita quedar fuera de tu propia sesión).
     if (dto.active === false && id === actorId) {
-      throw new BadRequestException('No podés desactivar tu propio usuario.');
+      throw new BadRequestException('No puedes desactivar tu propio usuario.');
     }
     // El dueño principal no se puede desactivar ni cambiar de rol (sí editar nombre/teléfono).
     if (willBeRole !== 'DUENO' || !willBeActive) {
@@ -331,11 +337,11 @@ export class UsersService {
         where: { role: 'DUENO', active: true, id: { not: id } },
       });
       if (otherActiveDuenos === 0) {
-        throw new BadRequestException('No podés terminar al único Dueño activo.');
+        throw new BadRequestException('No puedes terminar al único Dueño activo.');
       }
     }
     if (id === actorId) {
-      throw new BadRequestException('No podés terminar tu propio empleo.');
+      throw new BadRequestException('No puedes terminar tu propio empleo.');
     }
     const updated = await this.prisma.user.update({
       where: { id },
@@ -374,14 +380,14 @@ export class UsersService {
     const approverId = await this.approvals.verify(pin); // 403 si el PIN no matchea
     await this.assertNotPrimaryOwner(id, 'No se puede eliminar al dueño principal.');
     if (id === actorId) {
-      throw new BadRequestException('No podés eliminar tu propio usuario.');
+      throw new BadRequestException('No puedes eliminar tu propio usuario.');
     }
     if (existing.role === 'DUENO') {
       const otherDuenos = await this.prisma.user.count({
         where: { role: 'DUENO', id: { not: id } },
       });
       if (otherDuenos === 0) {
-        throw new BadRequestException('No podés eliminar al único Dueño.');
+        throw new BadRequestException('No puedes eliminar al único Dueño.');
       }
     }
     // El audit_log registra TODA acción (login, ventas, turnos, inventario…) con
@@ -390,7 +396,7 @@ export class UsersService {
     const historyCount = await this.prisma.auditLog.count({ where: { userId: id } });
     if (historyCount > 0) {
       throw new ConflictException(
-        'No se puede eliminar: el usuario tiene historial (inició sesión u operó: ventas, turnos, etc.). Usá "Terminar empleo" para inactivarlo; su historial se conserva.',
+        'No se puede eliminar: el usuario tiene historial (inició sesión u operó: ventas, turnos, etc.). Usa "Terminar empleo" para inactivarlo; su historial se conserva.',
       );
     }
     try {
@@ -405,7 +411,7 @@ export class UsersService {
       // Red de seguridad: cualquier FK residual → mismo mensaje guía.
       if ((e as { code?: string }).code?.startsWith('P2') ?? false) {
         throw new ConflictException(
-          'No se puede eliminar: el usuario tiene historial operativo. Usá "Terminar empleo" para inactivarlo; su historial se conserva.',
+          'No se puede eliminar: el usuario tiene historial operativo. Usa "Terminar empleo" para inactivarlo; su historial se conserva.',
         );
       }
       throw e;

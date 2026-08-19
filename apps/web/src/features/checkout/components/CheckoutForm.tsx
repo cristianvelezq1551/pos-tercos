@@ -3,20 +3,25 @@
 import { cn, FormField, Input } from '@pos-tercos/ui';
 import { MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
+import { buildWebOrderLink } from '@pos-tercos/domain';
+import type { ResolvedAddressResponse, WebOrderType } from '@pos-tercos/types';
 import {
   cartLinesToCreateItems,
   useCartStore,
 } from '../../cart';
+import { useBusiness } from '../../business';
 import { computeCartPromoTotals, usePromotions } from '../../promotions';
 import { createWebOrder } from '../api/create-order';
 import { useCartReconcile } from '../hooks/use-cart-reconcile';
 import { useActiveOrder } from '../store/active-order-store';
 import { randomUUID } from '../../../lib/uuid';
 import { CartChangesBanner } from './CartChangesBanner';
+import { FulfillmentPicker } from './FulfillmentPicker';
 import { OrderSummaryCard } from './OrderSummaryCard';
 import { WhatsAppPaymentInfo } from './WhatsAppPaymentInfo';
 import { COP } from '../../../lib/format';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function CheckoutForm() {
   const router = useRouter();
@@ -24,12 +29,40 @@ export function CheckoutForm() {
   const hydrated = useCartStore((s) => s.hydrated);
   const clear = useCartStore((s) => s.clear);
   const setActiveOrder = useActiveOrder((s) => s.setOrder);
+  // Teléfono del local: es el destinatario del chat que se abre al confirmar.
+  const businessPhone = useBusiness((s) => s.business.contact.phone);
 
   const [name, setName] = useState('');
   const [phone10, setPhone10] = useState('');
   const [notes, setNotes] = useState('');
+  const [type, setType] = useState<WebOrderType>('WEB_PICKUP');
+  const [addressNotes, setAddressNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /**
+   * Dirección VERIFICADA por el server (con coordenadas firmadas y el veredicto
+   * de cobertura). null mientras el cliente no elija una de la lista.
+   */
+  const [address, setAddress] = useState<ResolvedAddressResponse | null>(null);
+
+  const onResolvedAddress = useCallback(
+    (resolved: ResolvedAddressResponse | null) => setAddress(resolved),
+    [],
+  );
+
+  // §3.2: la idempotency-key se genera UNA vez por sesión de checkout (no por
+  // intento). Si el POST llegó al server pero la respuesta se perdió, reintentar
+  // con la MISMA key hace que el backend devuelva el pedido ganador — antes se
+  // regeneraba en cada submit y un reintento creaba un SEGUNDO pedido real.
+  const [idempotencyKey] = useState(() => randomUUID());
+
+  // §3.1: al volver a "Recoger", olvidar la dirección — si no, un "fuera de
+  // zona" viejo dejaba el botón trabado para siempre y sin explicación (el
+  // componente que mostraba el motivo ya no estaba en pantalla).
+  const onType = useCallback((next: WebOrderType) => {
+    setType(next);
+    if (next !== 'WEB_DELIVERY') setAddress(null);
+  }, []);
 
   const { change, hasChanges, apply } = useCartReconcile();
 
@@ -41,9 +74,18 @@ export function CheckoutForm() {
   // de WhatsApp del pedido, por eso no aceptamos fijos ni números imposibles.
   const phoneValid = /^3\d{9}$/.test(phone10);
   const nameValid = name.trim().length >= 2;
-  // No dejar pagar mientras haya cambios sin revisar (precio viejo / producto
-  // desactivado) — el cliente confirma el pedido actualizado primero.
-  const canSubmit = items.length > 0 && nameValid && phoneValid && !hasChanges;
+  // Un domicilio necesita una dirección ELEGIDA de la lista: sin coordenadas
+  // verificadas no se puede saber si llegamos hasta allá.
+  const addressValid = type !== 'WEB_DELIVERY' || address !== null;
+  /**
+   * No dejar pedir con: cambios del carrito sin revisar (precio viejo / producto
+   * desactivado), un domicilio sin dirección verificada, o una dirección que
+   * quedó fuera de la zona. El backend rechaza los tres igual — esto es la cara
+   * amable, para que el cliente no llegue hasta el submit para enterarse.
+   */
+  const outOfRange = type === 'WEB_DELIVERY' && address !== null && !address.inRange;
+  const canSubmit =
+    items.length > 0 && nameValid && phoneValid && addressValid && !hasChanges && !outOfRange;
 
   if (hydrated && items.length === 0) {
     return (
@@ -65,15 +107,42 @@ export function CheckoutForm() {
     if (!canSubmit || pending) return;
     setError(null);
     setPending(true);
+
+    /**
+     * La pestaña de WhatsApp se abre ACÁ, dentro del gesto del cliente.
+     *
+     * Antes había un botón aparte en la pantalla siguiente ("Enviar mi pedido
+     * por WhatsApp") que mucha gente no iba a tocar — y sin ese mensaje el
+     * pedido quedaba esperando a que el cajero se acordara de escribir. El
+     * motivo técnico que lo justificaba (que el cliente escribiera primero para
+     * abrir la ventana de 24 h de la API de Meta) desapareció cuando los avisos
+     * pasaron a salir del WhatsApp del cajero: ya no hay ventana ni templates.
+     *
+     * Se abre en blanco antes del `await` porque un `window.open` posterior a
+     * una espera lo bloquea el navegador (no viene de un gesto). Si el
+     * bloqueador igual la mata, `SendOrderByWhatsApp` sigue en la pantalla de
+     * seguimiento como respaldo.
+     */
+    const waTab = window.open('', '_blank');
+
     try {
-      const idempotencyKey = randomUUID();
       const result = await createWebOrder(
         {
-          type: 'WEB_PICKUP',
+          type,
           items: cartLinesToCreateItems(items),
           customerName: name.trim(),
           customerPhone: `+57${phone10}`,
           notes: notes.trim() || undefined,
+          ...(type === 'WEB_DELIVERY' && address
+            ? {
+                deliveryAddress: address.formatted,
+                deliveryNotes: addressNotes.trim() || undefined,
+                // El sobre firmado por el server: lleva las coordenadas de la
+                // dirección y es lo único con lo que se puede sostener el
+                // rechazo por distancia (un lat/lng suelto se edita).
+                addressToken: address.addressToken,
+              }
+            : {}),
         },
         idempotencyKey,
       );
@@ -83,12 +152,34 @@ export function CheckoutForm() {
         receiptNumber: result.order.receiptNumber,
         createdAt: Date.now(),
       });
+
+      const wa = buildWebOrderLink({
+        businessPhone,
+        receiptNumber: result.order.receiptNumber,
+        customerName: result.order.customerName,
+        items: result.order.items.map((it) => ({
+          productName: it.productName,
+          sizeName: it.sizeName,
+          quantity: it.quantity,
+          modifiers: it.modifiers,
+          notes: it.notes,
+        })),
+        total: result.order.total,
+        deliveryAddress: result.order.deliveryAddress,
+        deliveryNotes: result.order.deliveryNotes,
+      });
+      // Sin teléfono del negocio configurado no hay a dónde escribir: se cierra
+      // la pestaña en blanco en vez de dejarla colgada.
+      if (waTab && wa) waTab.location.href = wa.url;
+      else waTab?.close();
+
       clear();
       router.push(
         `/checkout/success/${result.order.id}?token=${encodeURIComponent(result.token)}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      waTab?.close();
+      setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
   };
@@ -96,6 +187,13 @@ export function CheckoutForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-8">
       {hasChanges ? <CartChangesBanner change={change} onApply={apply} /> : null}
+      <FulfillmentPicker
+        type={type}
+        addressNotes={addressNotes}
+        onType={onType}
+        onResolvedAddress={onResolvedAddress}
+        onAddressNotes={setAddressNotes}
+      />
 
       <OrderSummaryCard items={items} />
 
@@ -169,7 +267,7 @@ export function CheckoutForm() {
         </div>
       </section>
 
-      <WhatsAppPaymentInfo />
+      <WhatsAppPaymentInfo isDelivery={type === 'WEB_DELIVERY'} />
 
       {error ? (
         <p
@@ -190,11 +288,11 @@ export function CheckoutForm() {
           style={{ height: 52 }}
         >
           <MessageCircle className="h-5 w-5" strokeWidth={2} />
-          {pending ? 'Enviando pedido…' : 'Confirmar y recibir datos de pago'}
+          {pending ? 'Enviando pedido…' : 'Confirmar y abrir WhatsApp'}
         </button>
         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
           <MessageCircle className="h-3.5 w-3.5 text-[#25D366]" strokeWidth={2} />
-          Te enviaremos un mensaje de WhatsApp para coordinar la transferencia
+          Se abre el chat con tu pedido ya escrito: solo tienes que enviarlo
         </p>
       </div>
     </form>

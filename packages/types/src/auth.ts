@@ -61,5 +61,10 @@ export const JwtAccessPayloadSchema = z.object({
    *  revocado (baja/cambio de rol/reset). Opcional para no invalidar tokens
    *  viejos (se tratan como tv=0) al desplegar. */
   tv: z.number().int().optional(),
+  /** Alcance del token. Ausente = credencial de sesión completa (cookie
+   *  httpOnly). `'ws'` = token efímero que SÍ es legible por el JS de la
+   *  página, emitido solo para el handshake de WebSocket: el guard HTTP lo
+   *  RECHAZA, así que robarlo por XSS no da acceso a la API. */
+  scope: z.literal('ws').optional(),
 });
 export type JwtAccessPayload = z.infer<typeof JwtAccessPayloadSchema>;

@@ -13,7 +13,7 @@ import {
   roundsToZeroAt4,
   type PromotionDef,
 } from '@pos-tercos/domain';
-import { DIGITAL_PAYMENT_METHODS, REFUND_VOID_REASON_PREFIX } from '@pos-tercos/types';
+import { isWebSaleType, REFUND_VOID_REASON_PREFIX, saleStatusLabel } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -23,6 +23,7 @@ import type {
   PaymentMethod,
   Sale,
   SaleStatus,
+  SaleType,
   SaleStatusLogEntry,
   Shift,
   VoidSale,
@@ -193,7 +194,7 @@ export class SalesService {
       shift = await this.shifts.getActiveTodayShift(cashierId);
       if (!shift) {
         throw new BadRequestException(
-          'No tenés un turno abierto. Abrí turno antes de vender (POST /shifts/open).',
+          'No tienes un turno abierto. Abre la caja antes de vender.',
         );
       }
     }
@@ -216,7 +217,7 @@ export class SalesService {
         ? Promise.resolve([])
         : this.promotions.loadActiveAt(
             now,
-            input.type === 'WEB_PICKUP' ? 'WEB' : 'POS',
+            isWebSaleType(input.type) ? 'WEB' : 'POS',
           ),
     ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
@@ -265,6 +266,13 @@ export class SalesService {
             customerName: input.customerName ?? null,
             customerPhone: input.customerPhone ?? null,
             customerNit: input.customerNit ?? null,
+            // Defensa en profundidad además del Zod y del CHECK de la DB: los
+            // datos de entrega SOLO existen en un domicilio.
+            deliveryAddress:
+              input.type === 'WEB_DELIVERY' ? (input.deliveryAddress ?? null) : null,
+            deliveryNotes: input.type === 'WEB_DELIVERY' ? (input.deliveryNotes ?? null) : null,
+            deliveryLat: input.type === 'WEB_DELIVERY' ? (input.deliveryLat ?? null) : null,
+            deliveryLng: input.type === 'WEB_DELIVERY' ? (input.deliveryLng ?? null) : null,
             subtotal,
             discountTotal,
             total,
@@ -422,7 +430,15 @@ export class SalesService {
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
     if (existing.status !== 'PENDIENTE_PAGO') {
       throw new BadRequestException(
-        `Sale está en status ${existing.status}, no se puede cobrar (solo PENDIENTE_PAGO).`,
+        `Este pedido está en estado "${saleStatusLabel(existing.status)}" y ya no se puede cobrar.`,
+      );
+    }
+    // Un domicilio se cobra CON el envío ya cotizado (el fee es > 0 por regla).
+    // fee 0 = "sin asignar" → cobrar ahora dejaría el envío incobrable (después
+    // ya no se puede setear). Bloquear evita la pérdida silenciosa.
+    if (existing.type === 'WEB_DELIVERY' && Number(existing.deliveryFee) <= 0) {
+      throw new BadRequestException(
+        'Asigna el costo del envío antes de cobrar el domicilio.',
       );
     }
     const total = Number(existing.total);
@@ -448,6 +464,7 @@ export class SalesService {
     );
 
     let movementsCreated = 0;
+    let forcedProductIds: string[] = [];
     const updated = await runWithSerializationRetry(() =>
       this.prisma.$transaction(
         async (tx) => {
@@ -466,7 +483,7 @@ export class SalesService {
           const partsSum = parts.reduce((acc, p) => acc + p.amount, 0);
           if (Math.abs(partsSum - freshTotal) > 0.005) {
             throw new BadRequestException(
-              `El pedido cambió mientras se cobraba: el total ahora es ${freshTotal}. Recargá y volvé a cobrar.`,
+              `El pedido cambió mientras se cobraba: el total ahora es ${freshTotal}. Recarga y vuelve a cobrar.`,
             );
           }
           // B4 (auditoría): la caja destino debe seguir ABIERTA — si cerró entre
@@ -478,17 +495,18 @@ export class SalesService {
             });
             if (!shift || shift.status !== 'OPEN') {
               throw new BadRequestException(
-                'La caja se cerró mientras se cobraba. Abrí caja e intentá de nuevo.',
+                'La caja se cerró mientras se cobraba. Abre caja e intenta de nuevo.',
               );
             }
           }
-          const stockMovementsToCreate = await this.buildSaleStockMovements(
+          const built = await this.buildSaleStockMovements(
             fresh.items,
             saleId,
             fresh.id,
             userId,
           );
-          movementsCreated = stockMovementsToCreate.length;
+          movementsCreated = built.movements.length;
+          forcedProductIds = built.forcedProductIds;
           return this.applyConfirmPaymentTx(tx, {
             saleId,
             summaryMethod,
@@ -497,7 +515,8 @@ export class SalesService {
             cashierId,
             userId,
             notes: input.notes,
-            stockMovementsToCreate,
+            stockMovementsToCreate: built.movements,
+            tolerateStockKeys: built.tolerateKeys,
           });
         },
         SALE_TX_OPTS,
@@ -517,6 +536,23 @@ export class SalesService {
       },
     });
 
+    // Bitácora: la venta incluyó productos "forzados disponibles" → se saltó el
+    // guard de stock y algún insumo/subproducto pudo quedar en negativo. Queda
+    // registrado para que el dueño lo concilie (stock físico no registrado).
+    if (forcedProductIds.length > 0) {
+      const forcedProducts = await this.prisma.product.findMany({
+        where: { id: { in: forcedProductIds } },
+        select: { id: true, name: true },
+      });
+      await this.audit.log({
+        userId,
+        action: 'SALE_FORCED_STOCK',
+        entityType: 'sale',
+        entityId: saleId,
+        metadata: { products: forcedProducts.map((p) => ({ id: p.id, name: p.name })) },
+      });
+    }
+
     const dto = toSaleDto(updated);
     // Notifica al cliente via WhatsApp que el pago fue verificado (WEB_PICKUP).
     // `silent` (cobro retroactivo offline) lo omite — el cliente ya retiró.
@@ -535,7 +571,7 @@ export class SalesService {
    *    venta se cuelga de la caja abierta del que cobra (la plata entra AHÍ).
    */
   private async resolvePaymentShift(
-    type: string,
+    type: SaleType,
     currentShiftId: string | null,
     currentCashierId: string | null,
     userId: string,
@@ -554,9 +590,9 @@ export class SalesService {
     const shift = await this.shifts.getActiveTodayShift(userId);
     if (!shift) {
       throw new BadRequestException(
-        type === 'WEB_PICKUP'
-          ? 'Abrí la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).'
-          : 'La caja de esta venta ya cerró y no hay caja abierta. Abrí caja antes de cobrar.',
+        isWebSaleType(type)
+          ? 'Abre la caja antes de confirmar pagos web (la venta debe entrar al cierre de caja).'
+          : 'La caja de esta venta ya cerró y no hay caja abierta. Abre caja antes de cobrar.',
       );
     }
     // El cajero original se conserva si existía (atribución de la venta); la
@@ -574,7 +610,12 @@ export class SalesService {
     saleId: string,
     saleShortRef: string,
     userId: string,
-  ): Promise<Prisma.InventoryMovementCreateManyInput[]> {
+  ): Promise<{
+    movements: Prisma.InventoryMovementCreateManyInput[];
+    /** Claves TYPE:id de consumos de productos "forzados disponibles". */
+    tolerateKeys: Set<string>;
+    forcedProductIds: string[];
+  }> {
     const consumptionSpecs = await this.consumption.computeConsumptionSpecs(
       items.map((it) => ({
         productId: it.productId,
@@ -586,18 +627,31 @@ export class SalesService {
       })),
       `Sale ${saleShortRef.slice(0, 8)}`,
     );
-    return consumptionSpecs.map((s) => ({
+    // Faltantes que NO frenan el cobro: productos forzados disponibles +
+    // consumibles (servilletas). El negativo resultante se audita.
+    const lineProductIds = Array.from(new Set(items.map((it) => it.productId)));
+    const forced = await this.prisma.product.findMany({
+      where: { id: { in: lineProductIds }, forceAvailable: true },
+      select: { id: true },
+    });
+    const forcedProductIds = forced.map((p) => p.id);
+    const tolerateKeys = this.consumption.tolerableKeys(
+      consumptionSpecs,
+      new Set(forcedProductIds),
+    );
+    const movements = consumptionSpecs.map((s) => ({
       entityType: s.entityType,
       ingredientId: s.ingredientId ?? null,
       productId: s.productId ?? null,
       subproductId: s.subproductId ?? null,
       delta: s.delta,
-      type: 'SALE',
+      type: 'SALE' as const,
       sourceType: 'sale',
       sourceId: saleId,
       userId,
       notes: s.note,
     }));
+    return { movements, tolerateKeys, forcedProductIds };
   }
 
   /**
@@ -617,10 +671,20 @@ export class SalesService {
       userId: string;
       notes: string | undefined;
       stockMovementsToCreate: Prisma.InventoryMovementCreateManyInput[];
+      tolerateStockKeys: ReadonlySet<string>;
     },
   ): Promise<Prisma.SaleGetPayload<{ include: ReturnType<typeof includeFull> }>> {
-    const { saleId, summaryMethod, parts, shiftId, cashierId, userId, notes, stockMovementsToCreate } =
-      args;
+    const {
+      saleId,
+      summaryMethod,
+      parts,
+      shiftId,
+      cashierId,
+      userId,
+      notes,
+      stockMovementsToCreate,
+      tolerateStockKeys,
+    } = args;
     const res = await tx.sale.updateMany({
       where: { id: saleId, status: 'PENDIENTE_PAGO' },
       data: {
@@ -659,16 +723,95 @@ export class SalesService {
       // Defensa contra stock negativo: el cajero ya pasó por el sold-out gate del
       // POS, pero si la ventana de availability se desactualizó, bloqueamos acá
       // antes de crear el movement.
-      await this.consumption.assertStockSufficient(tx, stockMovementsToCreate);
+      await this.consumption.assertStockSufficient(tx, stockMovementsToCreate, tolerateStockKeys);
       await tx.inventoryMovement.createMany({ data: stockMovementsToCreate });
     }
     return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
   }
 
   /**
-   * Pedido WEB pagado → LISTO_DESPACHO: el cajero marca "listo para retirar" y se
-   * dispara el WhatsApp al cliente (sin cocina/KDS).
-   * Solo WEB_PICKUP en PAGADO; LISTO_DESPACHO es el estado final del pedido web.
+   * El cajero asigna el costo del envío a un domicilio (2026-07-17).
+   *
+   * El sistema NO calcula la tarifa: el cajero se la pregunta al domiciliario
+   * por otro chat y la carga acá. El envío entra al `total` porque el cliente
+   * transfiere UN solo monto — sin esto, `confirmPayment` (que valida monto
+   * exacto) rechazaría los $33.000 esperando $27.000.
+   *
+   * Recién al asignarlo sale el WhatsApp con las instrucciones de pago: pedirle
+   * plata antes de saber el envío sería pedirle un total que va a cambiar.
+   *
+   * Solo antes de cobrar: después el monto ya se validó contra el pago.
+   */
+  async setDeliveryFee(saleId: string, fee: number, userId: string): Promise<Sale> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { type: true, status: true, subtotal: true, discountTotal: true, deliveryFee: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (existing.type !== 'WEB_DELIVERY') {
+      throw new BadRequestException('Solo un pedido a domicilio lleva costo de envío.');
+    }
+    if (existing.status !== 'PENDIENTE_PAGO') {
+      throw new BadRequestException(
+        'El envío se asigna antes de cobrar: este pedido ya está cobrado.',
+      );
+    }
+
+    const rounded = roundMoney(fee);
+    const total = roundMoney(
+      Number(existing.subtotal) - Number(existing.discountTotal) + rounded,
+    );
+    // Si el envío CAMBIA (corrección de tarifa), el cliente ya recibió un total
+    // viejo → hay que reenviarle el nuevo. Se libera el flag idempotente en la
+    // MISMA escritura para que el notify() de abajo vuelva a disparar. Sin esto
+    // el 2º WhatsApp nunca salía (flag ya en true) y el cliente transfería mal.
+    const feeChanged = rounded !== Number(existing.deliveryFee);
+    // Guard condicionado por status Y por subtotal/descuento: si un cobro o una
+    // EDICIÓN de ítems entró entre la lectura y esta escritura, el `total` que
+    // calculamos quedó stale → lo condicionamos también por subtotal/discount
+    // para no escribir un total incoherente (violaría el CHECK → 500). count=0
+    // = "el pedido cambió, recargá" (400 limpio, no 500).
+    const claim = await this.prisma.sale.updateMany({
+      where: {
+        id: saleId,
+        status: 'PENDIENTE_PAGO',
+        subtotal: existing.subtotal,
+        discountTotal: existing.discountTotal,
+      },
+      data: {
+        deliveryFee: rounded,
+        total,
+        ...(feeChanged ? { notified_payment_instructions: false } : {}),
+      },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException('El pedido cambió — recarga y vuelve a intentar.');
+    }
+
+    await this.audit.log({
+      userId,
+      action: 'SALE_DELIVERY_FEE_SET',
+      entityType: 'sale',
+      entityId: saleId,
+      before: { deliveryFee: Number(existing.deliveryFee) },
+      after: { deliveryFee: rounded, total },
+    });
+
+    // AHORA sí: el cliente recibe el total real (comida + envío).
+    void this.notifications.notify(saleId, 'payment_instructions');
+
+    const row = await this.prisma.sale.findUniqueOrThrow({
+      where: { id: saleId },
+      include: includeFull(),
+    });
+    return toSaleDto(row);
+  }
+
+  /**
+   * Pedido WEB pagado → LISTO_DESPACHO: el cajero lo marca y se dispara el
+   * WhatsApp al cliente (sin cocina/KDS). Los dos tipos web pasan por acá, pero
+   * significan cosas distintas: en RECOGER es el estado final ("pasa a buscarlo");
+   * en DOMICILIO es "salió hacia la dirección" y todavía falta `markWebDelivered`.
    */
   async markWebReady(saleId: string, userId: string): Promise<Sale> {
     const existing = await this.prisma.sale.findUnique({
@@ -676,11 +819,11 @@ export class SalesService {
       select: { type: true, status: true },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (existing.type !== 'WEB_PICKUP') {
-      throw new BadRequestException('Solo los pedidos web se marcan listos para retirar.');
+    if (!isWebSaleType(existing.type)) {
+      throw new BadRequestException('Solo los pedidos web se marcan listos.');
     }
     if (existing.status !== 'PAGADO') {
-      throw new BadRequestException(`No se puede marcar listo en estado ${existing.status}.`);
+      throw new BadRequestException(`No se puede marcar listo un pedido en estado "${saleStatusLabel(existing.status)}".`);
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -691,7 +834,7 @@ export class SalesService {
         data: { status: 'LISTO_DESPACHO', readyAt: new Date() },
       });
       if (claim.count === 0) {
-        throw new BadRequestException('El pedido cambió de estado. Refrescá.');
+        throw new BadRequestException('El pedido cambió de estado. Actualiza la vista.');
       }
       await tx.saleStatusLog.create({
         data: { saleId, statusFrom: 'PAGADO', statusTo: 'LISTO_DESPACHO', userId },
@@ -712,6 +855,58 @@ export class SalesService {
   }
 
   /**
+   * Domicilio despachado → ENTREGADO: el cajero confirma que el pedido llegó.
+   *
+   * Solo WEB_DELIVERY: un pedido para RECOGER termina en LISTO_DESPACHO (nadie
+   * le avisa al local que el cliente ya se fue con la bolsa), pero un domicilio
+   * sin este paso queda para siempre indistinguible entre "va en la moto" y
+   * "el cliente ya comió" — y ahí se pierde el tiempo de reparto.
+   *
+   * Sin WhatsApp: el cliente ya tiene la comida en la mano; un mensaje
+   * avisándole de eso es ruido.
+   */
+  async markWebDelivered(saleId: string, userId: string): Promise<Sale> {
+    const existing = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { type: true, status: true },
+    });
+    if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
+    if (existing.type !== 'WEB_DELIVERY') {
+      throw new BadRequestException('Solo un pedido a domicilio se marca entregado.');
+    }
+    if (existing.status !== 'LISTO_DESPACHO') {
+      throw new BadRequestException(
+        `Un pedido en estado "${saleStatusLabel(existing.status)}" no se puede marcar entregado: primero hay que despacharlo.`,
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Guard condicionado por status, igual que markWebReady: dos toques
+      // concurrentes no escriben dos veces la transición ni su bitácora.
+      const claim = await tx.sale.updateMany({
+        where: { id: saleId, status: 'LISTO_DESPACHO' },
+        data: { status: 'ENTREGADO' },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException('El pedido cambió de estado. Actualiza la vista.');
+      }
+      await tx.saleStatusLog.create({
+        data: { saleId, statusFrom: 'LISTO_DESPACHO', statusTo: 'ENTREGADO', userId },
+      });
+      return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'SALE_STATUS_CHANGED',
+      entityType: 'sale',
+      entityId: saleId,
+      metadata: { from: 'LISTO_DESPACHO', to: 'ENTREGADO', by: 'mark-delivered' },
+    });
+    return toSaleDto(updated);
+  }
+
+  /**
    * Defensa server-side de las partes de pago (no confiar solo en el Zod del
    * controller): suma exacta al total, comprobante verificado por cada parte
    * digital (y monto exacto si declara recibido), efectivo recibido >= parte.
@@ -725,9 +920,11 @@ export class SalesService {
     const disabledPart = parts.find((p) => !enabled.has(p.method));
     if (disabledPart) {
       throw new BadRequestException(
-        `El medio de pago ${disabledPart.method} no está habilitado. Configuralo en el admin.`,
+        `El medio de pago ${disabledPart.method} no está habilitado. Actívalo en el admin.`,
       );
     }
+    // Qué métodos exigen verificar comprobante lo define el catálogo, no el code.
+    const requiresVerification = await this.paymentMethods.requiresVerificationSet();
     const sum = parts.reduce((acc, p) => acc + p.amount, 0);
     if (Math.abs(sum - total) > 0.005) {
       throw new BadRequestException(
@@ -735,9 +932,7 @@ export class SalesService {
       );
     }
     for (const p of parts) {
-      const isDigital = (DIGITAL_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
-        p.method as PaymentMethod,
-      );
+      const isDigital = requiresVerification.has(p.method);
       if (isDigital) {
         if (!p.digitalVerified) {
           throw new BadRequestException(
@@ -806,7 +1001,7 @@ export class SalesService {
     const current = await this.shifts.getActiveTodayShift(userId);
     if (!current) {
       throw new BadRequestException(
-        'La caja de esta venta ya cerró: abrí caja para registrar la devolución de la plata.',
+        'La caja de esta venta ya cerró: abre caja para registrar la devolución del dinero.',
       );
     }
     return current.id;
@@ -835,7 +1030,7 @@ export class SalesService {
     });
     if (!shift || shift.status !== 'OPEN') {
       throw new BadRequestException(
-        'La caja se cerró mientras se registraba la devolución. Abrí caja e intentá de nuevo.',
+        'La caja se cerró mientras se registraba la devolución. Abre caja e intenta de nuevo.',
       );
     }
     // Venta histórica sin filas en sale_payments (previa a la tabla o migrada):
@@ -1032,7 +1227,7 @@ export class SalesService {
     if (!REFUNDABLE.includes(existing.status as (typeof REFUNDABLE)[number])) {
       throw new BadRequestException(
         existing.status === 'PAGADO'
-          ? 'La cocina aún no inició este pedido — usá "Anular" (revierte el stock).'
+          ? 'La cocina aún no inició este pedido — usa "Anular" (revierte el stock).'
           : `No se puede reembolsar en estado ${existing.status}.`,
       );
     }
@@ -1045,7 +1240,7 @@ export class SalesService {
         data: { status: 'VOID', voidReason: `${REFUND_VOID_REASON_PREFIX} ${input.reason}` },
       });
       if (res.count === 0) {
-        throw new BadRequestException('El pedido cambió de estado — recargá e intentá de nuevo.');
+        throw new BadRequestException('El pedido cambió de estado — recarga e intenta de nuevo.');
       }
       await tx.saleStatusLog.create({
         data: {
@@ -1150,7 +1345,7 @@ export class SalesService {
           statusTo: 'CANCELADO_NO_PAGO',
           userId: cashierId,
           notes:
-            existing.type === 'WEB_PICKUP'
+            isWebSaleType(existing.type)
               ? 'Pedido web rechazado por el cajero'
               : existing.isOpenTab
                 ? 'Cuenta abierta cancelada por el cajero'
@@ -1207,7 +1402,7 @@ export class SalesService {
       data: { shiftId: null },
     });
     if (res.count === 0) {
-      throw new BadRequestException('La cuenta cambió de estado — recargá los pedidos.');
+      throw new BadRequestException('La cuenta cambió de estado — recarga los pedidos.');
     }
     await this.audit.log({
       userId,
@@ -1232,7 +1427,16 @@ export class SalesService {
     if (filter.status) where.status = filter.status as DbSaleStatus;
     if (filter.cashierId) where.cashierId = filter.cashierId;
     if (filter.shiftId) where.shiftId = filter.shiftId;
-    if (filter.type) where.type = filter.type as Prisma.SaleWhereInput['type'];
+    // Acepta CSV ("WEB_PICKUP,WEB_DELIVERY"), igual que `GET /audit?action=`:
+    // el panel del cajero pide los DOS tipos web en una sola consulta.
+    if (filter.type) {
+      const types = filter.type
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean) as SaleType[];
+      if (types.length === 1) where.type = types[0];
+      else if (types.length > 1) where.type = { in: types };
+    }
     if (filter.from || filter.to) {
       where.createdAt = {};
       if (filter.from) where.createdAt.gte = filter.from;
@@ -1320,7 +1524,7 @@ export function computeLine(
     throw new NotFoundException(`Product ${input.productId} not found`);
   }
   if (!product.isActive) {
-    throw new BadRequestException(`Product "${product.name}" is inactive`);
+    throw new BadRequestException(`El producto "${product.name}" está desactivado.`);
   }
 
   let basePrice = Number(product.basePrice);

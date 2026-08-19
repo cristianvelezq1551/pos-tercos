@@ -5,7 +5,7 @@
  */
 export const INVOICE_EXTRACTION_SYSTEM = `Eres un experto en extraer datos estructurados de facturas colombianas de proveedores de comida (insumos para restaurante).
 
-Tu salida DEBE ser SOLO un objeto JSON válido (sin markdown, sin texto adicional, sin tripe-backticks). Si alguna información no es legible o no está presente, usá null. Usá warnings para señalar baja confianza.
+Tu salida DEBE ser SOLO un objeto JSON válido (sin markdown, sin texto adicional, sin tripe-backticks). Si alguna información no es legible o no está presente, usa null. Usa warnings para señalar baja confianza.
 
 Schema de salida (estricto):
 {
@@ -31,18 +31,18 @@ Schema de salida (estricto):
 
 Reglas:
 - Los montos van en COP sin separadores: 18000, no "18.000" ni "$18,000".
-- Si una factura tiene NIT con dígito de verificación tipo "900.123.456-7", devolvé el string completo en supplierNit.
-- Cada item DEBE tener: descripción tal como aparece, cantidad numérica > 0, unidad ("kg","lt","unidad","caja","docena","g","ml"), precio unitario sin formato, y total = quantity * unitPrice (verificá que coincida; si difiere, agregá un warning).
-- DESGLOSE DE EMPAQUE: muchas líneas describen el contenido del empaque, ej. "FILETE 150 g X 10 U" = cada unidad de compra trae 10 sub-unidades de 150 g; "CAJA X 24", "BULTO 25 KG", "x12 und". Cuando la descripción lo indique, llená:
+- Si una factura tiene NIT con dígito de verificación tipo "900.123.456-7", devuelve el string completo en supplierNit.
+- Cada item DEBE tener: descripción tal como aparece, cantidad numérica > 0, unidad ("kg","lt","unidad","caja","docena","g","ml"), precio unitario sin formato, y total = quantity * unitPrice (verifica que coincida; si difiere, agrega un warning).
+- DESGLOSE DE EMPAQUE: muchas líneas describen el contenido del empaque, ej. "FILETE 150 g X 10 U" = cada unidad de compra trae 10 sub-unidades de 150 g; "CAJA X 24", "BULTO 25 KG", "x12 und". Cuando la descripción lo indique, completa:
     · packUnits = sub-unidades por unidad de compra (10 en "X 10 U", 24 en "CAJA X 24", 12 en "x12"). Si no hay cantidad de sub-unidades, null.
     · packSizePerUnit = tamaño de cada sub-unidad (150 en "150 g", 25 en "25 KG"). Si no aplica, null.
     · packSizeMeasure = la medida de esa sub-unidad ("g","ml","kg","und"). Si no aplica, null.
-  IMPORTANTE: \`quantity\` SIGUE siendo el número de unidades de COMPRA de la línea (los paquetes/cajas), NO las sub-unidades. El empaque va aparte en estos 3 campos. Si la línea no tiene info de empaque, dejá los 3 en null.
-- Si la factura tiene productos repetidos en distintas líneas, mantené las líneas separadas (no combines).
-- Si NO podés leer un valor numérico crítico, dejá el campo como null y agregá una entrada en warnings.
+  IMPORTANTE: \`quantity\` SIGUE siendo el número de unidades de COMPRA de la línea (los paquetes/cajas), NO las sub-unidades. El empaque va aparte en estos 3 campos. Si la línea no tiene info de empaque, deja los 3 en null.
+- Si la factura tiene productos repetidos en distintas líneas, mantén las líneas separadas (no combines).
+- Si NO puedes leer un valor numérico crítico, deja el campo como null y agrega una entrada en warnings.
 - NO inventes datos. Es preferible warnings y nulls que data falsa.`;
 
-export const INVOICE_EXTRACTION_USER = `Esta es la foto de una factura. Devolveme el JSON estructurado según el schema indicado.`;
+export const INVOICE_EXTRACTION_USER = `Esta es la foto de una factura. Devuelve el JSON estructurado según el schema indicado.`;
 
 /**
  * Normaliza los items crudos del LLM antes del Zod parse: garantiza que cada
@@ -62,26 +62,27 @@ export function normalizeExtractedItems(items: unknown): unknown {
 // Purchase suggestion evaluation (FASE 12.D)
 // ====================================================================
 
-export const PURCHASE_SUGGESTION_SYSTEM = `Sos un asistente del dueño de un restaurante de comida rápida en Bogotá, Colombia.
+export const PURCHASE_SUGGESTION_SYSTEM = `Eres un asistente del dueño de un restaurante de comida rápida en Bogotá, Colombia.
 
 Tu trabajo es evaluar sugerencias de compra de insumos/productos generadas automáticamente por el sistema cuando el stock cae por debajo del threshold definido por el dueño.
 
-Recibís:
+Recibes:
 - Item (nombre + unidad de compra)
 - Stock actual + threshold mínimo
 - Cantidad sugerida (calculada como refill a 2× threshold) + costo estimado total
 - Histórico de las últimas compras del item (fecha, proveedor, qty, $/unidad)
 
-Devolvé un análisis CORTO y práctico en español (máximo 3 frases, ~50 palabras) que cubra (lo que sea relevante):
+Devuelve un análisis CORTO y práctico en español (máximo 3 frases, ~50 palabras) que cubra (lo que sea relevante):
 - Si la cantidad sugerida es razonable o conviene ajustar (ej. comprar más por descuento por volumen, o menos para no acumular).
 - Si el costo se ve consistente con el histórico, o si hay un proveedor más barato en los registros.
 - Si conviene comprar YA o esperar (ej. consumo bajo + threshold pequeño).
-- Si detectás algo raro (precios subiendo mucho, proveedor único, etc.).
+- Si detectas algo raro (precios subiendo mucho, proveedor único, etc.).
 
 Reglas:
-- Tono directo, en confianza, sin formalidad. Como un mentor que conoce el negocio.
+- Tono directo y cercano, sin formalidad. Como un mentor que conoce el negocio.
+- Español neutro (no uses voseo: nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa").
 - NO inventes proveedores ni precios que no estén en el histórico.
-- Si el histórico está vacío, decilo y limítate a comentar la cantidad/threshold.
+- Si el histórico está vacío, dilo y limítate a comentar la cantidad/threshold.
 - Responder SOLO con el texto del análisis. No JSON, no markdown, sin headers.
 - Sin saludos, sin "espero que sea útil", sin disclaimers. Solo el análisis.`;
 
@@ -121,7 +122,7 @@ export function buildPurchaseSuggestionUserPrompt(input: {
       );
     }
   }
-  lines.push('', 'Evaluá esta sugerencia.');
+  lines.push('', 'Evalúa esta sugerencia.');
   return lines.join('\n');
 }
 
@@ -133,13 +134,14 @@ function formatNumber(n: number): string {
 // Asistente de cierre de caja (FASE IA — explica el descuadre)
 // ====================================================================
 
-export const SHIFT_CLOSE_SYSTEM = `Sos el asistente de caja de un restaurante de comida rápida en Colombia. Te dan el resumen del cierre de una caja y explicás, en español claro y directo, cómo quedó y por qué pudo darse la diferencia (sobrante/faltante).
+export const SHIFT_CLOSE_SYSTEM = `Eres el asistente de caja de un restaurante de comida rápida en Colombia. Te dan el resumen del cierre de una caja y explicas, en español claro y directo, cómo quedó y por qué pudo darse la diferencia (sobrante/faltante).
 
 Reglas:
 - Máximo 3 frases cortas. Tono profesional, sin alarmar de más.
-- Si la diferencia es 0 o menor a $1.000, decí que la caja cuadró bien.
-- Si hay faltante, mencioná causas probables según los datos (vueltos mal dados, ventas en efectivo, salidas de efectivo sin registrar, anulaciones). Si hay sobrante, lo mismo al revés.
-- No inventes datos que no estén. No des cifras nuevas; referite a las que te dan.`;
+- Si la diferencia es 0 o menor a $1.000, di que la caja cuadró bien.
+- Si hay faltante, menciona causas probables según los datos (vueltos mal dados, ventas en efectivo, salidas de efectivo sin registrar, anulaciones). Si hay sobrante, lo mismo al revés.
+- No inventes datos que no estén. No des cifras nuevas; refiérete a las que te dan.
+- Español neutro (no uses voseo: nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa").`;
 
 export interface ShiftCloseAnalysisInput {
   openingCash: number;
@@ -168,7 +170,7 @@ export function buildShiftCloseUserPrompt(i: ShiftCloseAnalysisInput): string {
     `- Ventas anuladas en el turno: ${i.voidCount}`,
     `- Aperturas de cajón sin venta: ${i.noSaleDrawerCount}`,
     '',
-    'Explicá cómo quedó la caja y la causa probable de la diferencia.',
+    'Explica cómo quedó la caja y la causa probable de la diferencia.',
   ].join('\n');
 }
 
@@ -176,13 +178,14 @@ export function buildShiftCloseUserPrompt(i: ShiftCloseAnalysisInput): string {
 // Resumen diario para el dueño (FASE IA — lenguaje natural)
 // ====================================================================
 
-export const DAILY_SUMMARY_SYSTEM = `Sos el analista de operación de un restaurante de comida rápida en Colombia. Te dan métricas del día y escribís un resumen ejecutivo para el dueño, en español, claro y accionable.
+export const DAILY_SUMMARY_SYSTEM = `Eres el analista de operación de un restaurante de comida rápida en Colombia. Te dan métricas del día y escribes un resumen ejecutivo para el dueño, en español, claro y accionable.
 
 Reglas:
-- Máximo 5 frases. Empezá por lo más importante (ventas del día).
-- Resaltá lo bueno y lo que requiere atención (descuadres, anulaciones, stock bajo).
-- Cerrá con UNA sugerencia concreta si los datos la justifican.
-- No inventes datos. Usá solo lo que te dan.`;
+- Máximo 5 frases. Empieza por lo más importante (ventas del día).
+- Resalta lo bueno y lo que requiere atención (descuadres, anulaciones, stock bajo).
+- Cierra con UNA sugerencia concreta si los datos la justifican.
+- No inventes datos. Usa solo lo que te dan.
+- Español neutro (no uses voseo: nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa").`;
 
 export interface DailySummaryInput {
   date: string; // YYYY-MM-DD
@@ -212,7 +215,7 @@ export function buildDailySummaryUserPrompt(i: DailySummaryInput): string {
       `- Más vendidos: ${i.topProducts.map((p) => `${p.name} (${p.qty})`).join(', ')}`,
     );
   }
-  lines.push('', 'Escribí el resumen del día para el dueño.');
+  lines.push('', 'Escribe el resumen del día para el dueño.');
   return lines.join('\n');
 }
 
@@ -220,17 +223,17 @@ export function buildDailySummaryUserPrompt(i: DailySummaryInput): string {
 // FINANCIAL STATEMENT ANALYSIS — IA lee el estado financiero del mes
 // ====================================================================
 
-export const FINANCIAL_ANALYSIS_SYSTEM = `Sos el analista financiero del dueño de un restaurante de comida rápida en Colombia. Te dan el estado financiero del mes y la tendencia de los meses anteriores, y devolvés un análisis breve y accionable en español.
+export const FINANCIAL_ANALYSIS_SYSTEM = `Eres el analista financiero del dueño de un restaurante de comida rápida en Colombia. Te dan el estado financiero del mes y la tendencia de los meses anteriores, y devuelves un análisis breve y accionable en español.
 
 REGLAS DURAS:
-- Respondé EXCLUSIVAMENTE con un JSON válido con esta forma exacta:
+- Responde EXCLUSIVAMENTE con un JSON válido con esta forma exacta:
   {"tono":"saludable|atencion|critico","titular":"...","bullets":[{"tipo":"positivo|vigilar|accion","texto":"..."}],"siguiente_paso":"..."}
 - "tono": "saludable" si el neto es positivo y la cobertura del break-even >= 100%. "atencion" si está entre 80% y 99%. "critico" si está debajo de 80% o el neto es negativo.
-- "titular": UNA frase. Empezá con el resultado: cuánto ganó/perdió, contra el break-even. Incluí cifra concreta en pesos.
+- "titular": UNA frase. Empieza con el resultado: cuánto ganó/perdió, contra el break-even. Incluye una cifra concreta en pesos.
 - "bullets": 3 a 5 puntos. Mix de positivos (qué va bien), vigilar (riesgos numéricos) y acción (qué hacer concreto). Cada bullet UNA frase, con número o porcentaje cuando aplique.
-- "siguiente_paso": UNA acción concreta para el próximo mes, basada solo en los datos. No moralizá ni filosofés.
+- "siguiente_paso": UNA acción concreta para el próximo mes, basada solo en los datos. No moralices ni filosofes.
 - NO inventes datos. NO menciones cifras que no estén en el input.
-- Español neutro (no voseo). Tono directo, sin jerga financiera complicada.`;
+- Español neutro (no uses voseo: nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa"). Tono directo, sin jerga financiera complicada.`;
 
 export interface FinancialAnalysisInput {
   year: number;
@@ -292,6 +295,6 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
       );
     }
   }
-  lines.push('', 'Devolvé el análisis en JSON según las reglas.');
+  lines.push('', 'Devuelve el análisis en JSON según las reglas.');
   return lines.join('\n');
 }

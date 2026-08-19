@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { USER_ROLE_LABELS } from '@pos-tercos/types';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -78,11 +79,11 @@ export class ApprovalsService {
     });
     if (!user) throw new NotFoundException(`User ${userId} not found`);
     if (!user.active) {
-      throw new BadRequestException(`User ${userId} is inactive`);
+      throw new BadRequestException(`Ese usuario está desactivado.`);
     }
     if (user.role !== 'ADMIN_OPERATIVO' && user.role !== 'DUENO') {
       throw new BadRequestException(
-        `Solo ADMIN_OPERATIVO o DUENO pueden tener PIN (este user es ${user.role})`,
+        `Solo un ${USER_ROLE_LABELS.ADMIN_OPERATIVO} o el ${USER_ROLE_LABELS.DUENO} pueden tener PIN (este usuario es ${USER_ROLE_LABELS[user.role] ?? user.role}).`,
       );
     }
 
@@ -115,7 +116,7 @@ export class ApprovalsService {
         `PIN lockout activo: ${this.failedPinAttempts.length} intentos fallidos en la ventana`,
       );
       throw new ForbiddenException(
-        'Demasiados intentos de PIN fallidos. Esperá 5 minutos e intentá de nuevo.',
+        'Demasiados intentos de PIN fallidos. Espera 5 minutos e intenta de nuevo.',
       );
     }
   }
@@ -133,7 +134,7 @@ export class ApprovalsService {
     if (candidates.length === 0) {
       this.logger.warn('No approval PINs configured — every approval will fail');
       throw new ForbiddenException(
-        'No hay PINs de aprobación configurados. Pedí al Dueño que setee uno.',
+        'No hay PINes de aprobación configurados. Pídele al Dueño que configure uno.',
       );
     }
     for (const c of candidates) {

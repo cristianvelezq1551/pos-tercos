@@ -1,5 +1,21 @@
 import { z } from 'zod';
 
+/**
+ * Etiqueta de unidad (de compra, receta, stock…): una palabra como "g", "ml",
+ * "unidad", "porción". NUNCA un número puro ("1", "2"): un número como unidad se
+ * renderiza pegado a la cantidad ("2 1") y es ilegible. Debe tener al menos una
+ * letra.
+ */
+export const UNIT_LABEL_ERROR = 'La unidad debe ser una palabra (g, ml, unidad…), no un número.';
+
+/** Una unidad válida tiene al menos una letra (no es un número puro "1"). */
+export function isValidUnitLabel(s: string): boolean {
+  return /\p{L}/u.test(s.trim());
+}
+
+export const unitLabel = (max = 20) =>
+  z.string().trim().min(1).max(max).refine(isValidUnitLabel, { message: UNIT_LABEL_ERROR });
+
 // ====================================================================
 // INGREDIENTS
 // ====================================================================
@@ -18,6 +34,13 @@ export const IngredientSchema = z.object({
   // al confirmar facturas (espejo de Product.lastUnitCost).
   lastUnitCost: z.number().nullable(),
   lastUnitCostDate: z.string().datetime().nullable(),
+  /**
+   * Si al faltar su stock se frena la venta del producto que lo usa.
+   * false = CONSUMIBLE (servilletas, sal): nunca bloquea y se oculta del panel
+   * de deudas. Se sigue descontando y costeando igual. Default por insumo —
+   * cada receta puede pisarlo (`RecipeEdge.blocksAvailability`).
+   */
+  blocksAvailability: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -26,11 +49,12 @@ export type Ingredient = z.infer<typeof IngredientSchema>;
 
 export const CreateIngredientSchema = z.object({
   name: z.string().min(1).max(120),
-  unitPurchase: z.string().min(1).max(20),
-  unitRecipe: z.string().min(1).max(20),
+  unitPurchase: unitLabel(),
+  unitRecipe: unitLabel(),
   conversionFactor: z.number().positive(),
   thresholdMin: z.number().nonnegative().optional(),
   portionSize: z.number().positive().nullable().optional(),
+  blocksAvailability: z.boolean().optional(),
 });
 export type CreateIngredient = z.infer<typeof CreateIngredientSchema>;
 
@@ -54,6 +78,8 @@ export const SubproductSchema = z.object({
   portionSize: z.number().positive().nullable(),
   /** Paso a paso de preparación (biblia del cocinero). */
   preparationSteps: z.array(z.string()),
+  /** Ver `Ingredient.blocksAvailability`. false = no frena la venta. */
+  blocksAvailability: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -66,10 +92,11 @@ export const PreparationStepsSchema = z.array(z.string().trim().min(1).max(500))
 export const CreateSubproductSchema = z.object({
   name: z.string().min(1).max(120),
   yield: z.number().positive(),
-  unit: z.string().min(1).max(20).optional(),
+  unit: unitLabel().optional(),
   thresholdMin: z.number().nonnegative().optional(),
   portionSize: z.number().positive().nullable().optional(),
   preparationSteps: PreparationStepsSchema.optional(),
+  blocksAvailability: z.boolean().optional(),
 });
 export type CreateSubproduct = z.infer<typeof CreateSubproductSchema>;
 
@@ -282,6 +309,12 @@ export const ProductSchema = z.object({
   isActive: z.boolean(),
   /** "86" manual: agotado, no vendible (cajero + web) sin tocar el catálogo. */
   soldOut: z.boolean(),
+  /**
+   * "Forzar disponible": vendible aunque el stock de sus insumos/subproductos
+   * no alcance en el sistema (stock físico no registrado). Pisa el cómputo de
+   * disponibilidad y salta el guard de stock al cobrar. Excluyente con soldOut.
+   */
+  forceAvailable: z.boolean(),
   // Direct-resale fields (FASE 4 refactor)
   directResale: z.boolean(),
   unitPurchase: z.string().nullable(),
@@ -319,7 +352,17 @@ export const CreateProductSchema = z
     description: z.string().max(500).nullable().optional(),
     preparationSteps: PreparationStepsSchema.optional(),
     basePrice: z.number().nonnegative(),
-    category: z.string().max(60).nullable().optional(),
+    /**
+     * OBLIGATORIA al crear. Todo el catálogo se navega por categoría —los chips
+     * de la caja y los de la web— así que un producto sin ella solo aparece
+     * bajo "Todo": el cajero que filtra "Burgers" no lo encuentra y el cliente
+     * que navega por categorías tampoco. Si no encaja en ninguna, se crea una
+     * "Otros" (el propio formulario deja crearla ahí mismo).
+     *
+     * En `UpdateProductSchema` sigue siendo opcional: hay productos viejos sin
+     * categoría y editarles el precio no puede obligar a clasificarlos.
+     */
+    category: z.string().trim().min(1, 'Elige una categoría para el producto.').max(60),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
     emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
@@ -328,8 +371,8 @@ export const CreateProductSchema = z
     // Direct-resale fields. Si directResale=true → los 3 (unitPurchase,
     // unitStock, conversionFactor) son requeridos.
     directResale: z.boolean().optional(),
-    unitPurchase: z.string().min(1).max(20).optional(),
-    unitStock: z.string().min(1).max(20).optional(),
+    unitPurchase: unitLabel().optional(),
+    unitStock: unitLabel().optional(),
     conversionFactor: z.number().positive().optional(),
     thresholdMin: z.number().nonnegative().optional(),
     sizes: z.array(ProductSizeInputSchema).optional(),
@@ -340,14 +383,14 @@ export const CreateProductSchema = z
     if (data.isCombo && (data.comboPrice === undefined || data.comboPrice === null)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'comboPrice is required when isCombo is true',
+        message: 'Un combo necesita un precio de combo.',
         path: ['comboPrice'],
       });
     }
     if (!data.isCombo && data.comboPrice !== undefined && data.comboPrice !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'comboPrice must be null/omitted when isCombo is false',
+        message: 'Solo los combos llevan precio de combo.',
         path: ['comboPrice'],
       });
     }
@@ -355,28 +398,28 @@ export const CreateProductSchema = z
       if (!data.unitPurchase) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'unitPurchase required when directResale=true',
+          message: 'Falta la unidad de compra (obligatoria en un producto de reventa directa).',
           path: ['unitPurchase'],
         });
       }
       if (!data.unitStock) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'unitStock required when directResale=true',
+          message: 'Falta la unidad de venta (obligatoria en un producto de reventa directa).',
           path: ['unitStock'],
         });
       }
       if (data.conversionFactor === undefined || data.conversionFactor === null) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'conversionFactor required when directResale=true',
+          message: 'Falta el factor de conversión (obligatorio en un producto de reventa directa).',
           path: ['conversionFactor'],
         });
       }
       if (data.isCombo) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'directResale and isCombo cannot both be true',
+          message: 'Un producto no puede ser de reventa directa y combo a la vez.',
           path: ['directResale'],
         });
       }
@@ -398,8 +441,8 @@ export const UpdateProductSchema = z
     comboPrice: z.number().nonnegative().nullable().optional(),
     isActive: z.boolean().optional(),
     directResale: z.boolean().optional(),
-    unitPurchase: z.string().min(1).max(20).nullable().optional(),
-    unitStock: z.string().min(1).max(20).nullable().optional(),
+    unitPurchase: unitLabel().nullable().optional(),
+    unitStock: unitLabel().nullable().optional(),
     conversionFactor: z.number().positive().nullable().optional(),
     thresholdMin: z.number().nonnegative().optional(),
   })
@@ -458,6 +501,10 @@ export const ProductAvailabilityResponseSchema = z.array(ProductAvailabilitySche
 export const SetSoldOutSchema = z.object({ soldOut: z.boolean() });
 export type SetSoldOut = z.infer<typeof SetSoldOutSchema>;
 
+/** Forzar disponible (o revertir a automático). Excluyente con soldOut. */
+export const SetForceAvailableSchema = z.object({ forceAvailable: z.boolean() });
+export type SetForceAvailable = z.infer<typeof SetForceAvailableSchema>;
+
 // ====================================================================
 // RECIPES
 // ====================================================================
@@ -479,6 +526,12 @@ export const RecipeEdgeInputSchema = z.intersection(
   z.object({
     quantityNeta: z.number().positive(),
     mermaPct: z.number().min(0).lt(1).optional(),
+    /**
+     * Override POR RECETA de si este child frena la venta cuando falta su stock.
+     * null/ausente = hereda el flag del insumo/subproducto.
+     * NO afecta el consumo ni el costo — solo la disponibilidad del catálogo.
+     */
+    blocksAvailability: z.boolean().nullable().optional(),
   }),
 );
 export type RecipeEdgeInput = z.infer<typeof RecipeEdgeInputSchema>;
@@ -498,6 +551,8 @@ export const RecipeEdgeSchema = z.object({
   childSubproductId: z.string().uuid().nullable(),
   quantityNeta: z.number(),
   mermaPct: z.number(),
+  /** Override por receta. null = hereda del insumo/subproducto. */
+  blocksAvailability: z.boolean().nullable(),
   createdAt: z.string().datetime(),
 });
 export type RecipeEdge = z.infer<typeof RecipeEdgeSchema>;

@@ -54,7 +54,13 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     TokenVersionModule,
     ClientLogsModule,
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // El mensaje viaja tal cual a la pantalla del cajero: por defecto Nest
+    // manda "ThrottlerException: Too Many Requests", que no le dice nada a
+    // quien está tratando de entrar. Se explica QUÉ pasó y QUÉ hacer.
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      errorMessage: 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentar.',
+    }),
     PrismaModule,
     AuditModule,
     BusinessConfigModule,

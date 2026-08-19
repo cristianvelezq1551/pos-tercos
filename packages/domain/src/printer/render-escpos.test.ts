@@ -98,6 +98,17 @@ describe('renderReceiptEscPos', () => {
     expect(text).not.toContain('Cliente:');
   });
 
+  it('imprime la línea de Domicilio cuando deliveryFee > 0 (§1.5)', () => {
+    const out = renderReceiptEscPos({ ...RECEIPT_BASE, deliveryFee: 6000 });
+    const text = out.toString('latin1');
+    expect(text).toContain('Domicilio');
+  });
+
+  it('omite Domicilio cuando no hay envío', () => {
+    const out = renderReceiptEscPos(RECEIPT_BASE);
+    expect(out.toString('latin1')).not.toContain('Domicilio');
+  });
+
   it('incluye Cliente: cuando customerName está set', () => {
     const out = renderReceiptEscPos({
       ...RECEIPT_BASE,

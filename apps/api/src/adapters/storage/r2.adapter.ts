@@ -147,7 +147,7 @@ function required(name: string): string {
   if (!v) {
     throw new Error(
       `R2StorageAdapter requires env var ${name}. ` +
-        `Set STORAGE_PROVIDER=local en dev si no querés configurar R2.`,
+        `Usa STORAGE_PROVIDER=local en dev si no quieres configurar R2.`,
     );
   }
   return v;

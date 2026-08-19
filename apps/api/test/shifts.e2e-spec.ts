@@ -378,7 +378,7 @@ describe('Shifts E2E', () => {
         .expect(404);
     });
 
-    it('vende CASH y cierra con esperado = apertura + ventas + entradas − salidas + arqueo', async () => {
+    it('exige arquear la cuenta y cierra con esperado = apertura + ventas + entradas − salidas', async () => {
       const saleRes = await request
         .post('/sales')
         .set('Authorization', `Bearer ${cajeroToken}`)
@@ -407,6 +407,29 @@ describe('Shifts E2E', () => {
           digitalDoubleVerified: true,
         })
         .expect(201);
+
+      // El esperado autoritativo dice QUÉ medios de cuenta hay que arquear.
+      const target = await request
+        .get(`/shifts/${shiftId}/expected-cash`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(target.body.digital).toEqual([
+        expect.objectContaining({ method: 'TRANSFER', expected: 8000 }),
+      ]);
+
+      // Sin arquear la cuenta NO cierra: esa plata quedaría sin verificar y
+      // fuera del descuadre (el arqueo del cajón daría "cuadra" igual).
+      const sinArqueo = await request
+        .post(`/shifts/${shiftId}/close`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ countedCash: 67000 })
+        .expect(400);
+      expect(String(sinArqueo.body.message)).toMatch(/arquear/i);
+      const stillOpen = await request
+        .get(`/shifts/${shiftId}`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(stillOpen.body.status).toBe('OPEN');
 
       // 50000 (apertura) + 10000 (venta CASH) + 10000 (entrada) − 3000 (salida) = 67000.
       // El movimiento TRANSFER (−2000) NO toca el cajón físico.

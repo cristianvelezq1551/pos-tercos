@@ -26,22 +26,72 @@ import { log } from './logger';
 /** ESC p 0 50 50 — pulso de apertura del cajón monedero. */
 const DRAWER_KICK = Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32]);
 
+export interface DriverConfig {
+  printerName: string | null;
+  vendorId: number | null;
+  productId: number | null;
+  device: string | null;
+  fallbackDir: string;
+}
+
 /** Lee la config del entorno EN CADA LLAMADA (el agent carga su .env tarde). */
-function readConfig() {
+export function readConfig(env: NodeJS.ProcessEnv = process.env): DriverConfig {
   return {
-    printerName: process.env.PRINTER_NAME ?? null,
-    vendorId: process.env.PRINTER_USB_VENDOR_ID
-      ? parseHexOrDec(process.env.PRINTER_USB_VENDOR_ID)
-      : null,
-    productId: process.env.PRINTER_USB_PRODUCT_ID
-      ? parseHexOrDec(process.env.PRINTER_USB_PRODUCT_ID)
-      : null,
-    device: process.env.PRINTER_DEVICE ?? null,
-    fallbackDir: resolve(
-      process.cwd(),
-      process.env.PRINT_AGENT_LOG_DIR ?? './tmp/print-out',
-    ),
+    printerName: env.PRINTER_NAME ?? null,
+    vendorId: env.PRINTER_USB_VENDOR_ID ? parseHexOrDec(env.PRINTER_USB_VENDOR_ID) : null,
+    productId: env.PRINTER_USB_PRODUCT_ID ? parseHexOrDec(env.PRINTER_USB_PRODUCT_ID) : null,
+    device: env.PRINTER_DEVICE ?? null,
+    fallbackDir: resolve(process.cwd(), env.PRINT_AGENT_LOG_DIR ?? './tmp/print-out'),
   };
+}
+
+/** A dónde van los bytes. `error` y `dump` son destinos, no fallos del envío. */
+export type PrintTarget =
+  | { mode: 'windows-raw'; printerName: string }
+  | { mode: 'usb'; vendorId: number; productId: number }
+  | { mode: 'device'; device: string }
+  | { mode: 'dump'; dir: string }
+  | { mode: 'error'; message: string };
+
+/**
+ * Elige el destino de impresión. PURA: es la regla de ruteo del agent, y el
+ * orden de prioridad importa (una impresora explícita del POS gana sobre el
+ * `.env`; en Windows sin nombre hay que FALLAR, no guardar a disco en silencio).
+ */
+export function selectPrintTarget(
+  cfg: DriverConfig,
+  platform: string,
+  targetPrinter?: string | null,
+): PrintTarget {
+  // Impresora destino explícita (Windows): el POS rutea cada documento a la
+  // impresora asignada por nombre. Tiene prioridad sobre el .env.
+  if (platform === 'win32' && targetPrinter) {
+    return { mode: 'windows-raw', printerName: targetPrinter };
+  }
+  // Modo 1: Windows spooler RAW (recomendado en el mostrador).
+  if (platform === 'win32' && cfg.printerName) {
+    return { mode: 'windows-raw', printerName: cfg.printerName };
+  }
+  // Modo 2: USB directo (macOS/Linux) via libusb.
+  if (cfg.vendorId !== null && cfg.productId !== null) {
+    return { mode: 'usb', vendorId: cfg.vendorId, productId: cfg.productId };
+  }
+  // Modo 3: device file (Linux).
+  if (cfg.device) {
+    return { mode: 'device', device: cfg.device };
+  }
+  // En Windows, sin PRINTER_NAME no hay forma de imprimir → error claro
+  // (en vez de "guardar a disco" silencioso que parece que no hace nada).
+  if (platform === 'win32') {
+    return {
+      mode: 'error',
+      message:
+        'Falta PRINTER_NAME en el .env (junto al .exe). Debe ser igual al nombre de Get-Printer | Select Name. ' +
+        'Atención: el archivo debe llamarse .env (no .env.txt).',
+    };
+  }
+  // Modo 4: dump a disco (dev sin hardware).
+  return { mode: 'dump', dir: cfg.fallbackDir };
 }
 
 /**
@@ -54,50 +104,31 @@ export async function sendBytes(
   bytes: Buffer,
   targetPrinter?: string | null,
 ): Promise<void> {
-  const cfg = readConfig();
+  const target = selectPrintTarget(readConfig(), process.platform, targetPrinter);
 
-  // Impresora destino explícita (Windows): el POS rutea cada documento a la
-  // impresora asignada por nombre. Tiene prioridad sobre el .env.
-  if (process.platform === 'win32' && targetPrinter) {
-    await writeWindowsRaw(targetPrinter, bytes);
-    return;
+  switch (target.mode) {
+    case 'windows-raw':
+      await writeWindowsRaw(target.printerName, bytes);
+      return;
+    case 'usb':
+      await writeUsb(target.vendorId, target.productId, bytes);
+      return;
+    case 'device':
+      await writeFile(target.device, bytes);
+      return;
+    case 'error':
+      throw new Error(target.message);
+    case 'dump': {
+      await mkdir(target.dir, { recursive: true });
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const path = join(target.dir, `${ts}.bin`);
+      await writeFile(path, bytes);
+      console.log(
+        `[print-agent] sin PRINTER_NAME/PRINTER_USB_*/PRINTER_DEVICE — ${bytes.length}B a ${path}`,
+      );
+      return;
+    }
   }
-
-  // Modo 1: Windows spooler RAW (recomendado en el mostrador).
-  if (process.platform === 'win32' && cfg.printerName) {
-    await writeWindowsRaw(cfg.printerName, bytes);
-    return;
-  }
-
-  // Modo 2: USB directo (macOS/Linux) via libusb.
-  if (cfg.vendorId !== null && cfg.productId !== null) {
-    await writeUsb(cfg.vendorId, cfg.productId, bytes);
-    return;
-  }
-
-  // Modo 3: device file (Linux).
-  if (cfg.device) {
-    await writeFile(cfg.device, bytes);
-    return;
-  }
-
-  // En Windows, sin PRINTER_NAME no hay forma de imprimir → error claro
-  // (en vez de "guardar a disco" silencioso que parece que no hace nada).
-  if (process.platform === 'win32') {
-    throw new Error(
-      'Falta PRINTER_NAME en el .env (junto al .exe). Debe ser igual al nombre de Get-Printer | Select Name. ' +
-        'Atención: el archivo debe llamarse .env (no .env.txt).',
-    );
-  }
-
-  // Modo 4: dump a disco (dev sin hardware).
-  await mkdir(cfg.fallbackDir, { recursive: true });
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const path = join(cfg.fallbackDir, `${ts}.bin`);
-  await writeFile(path, bytes);
-  console.log(
-    `[print-agent] sin PRINTER_NAME/PRINTER_USB_*/PRINTER_DEVICE — ${bytes.length}B a ${path}`,
-  );
 }
 
 export async function kickDrawer(targetPrinter?: string | null): Promise<void> {
@@ -288,7 +319,8 @@ async function writeUsb(
   }
 }
 
-function parseHexOrDec(s: string): number {
+/** Los IDs USB se escriben tanto `0x04b8` como `1208` — se aceptan los dos. */
+export function parseHexOrDec(s: string): number {
   const trimmed = s.trim();
   if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) {
     return parseInt(trimmed, 16);

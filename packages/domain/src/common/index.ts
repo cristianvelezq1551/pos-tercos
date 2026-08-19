@@ -4,6 +4,12 @@ export {
   sameBusinessDay,
   startOfBusinessDay,
 } from './business-day';
+export {
+  colombianHolidays,
+  easterSunday,
+  isColombianHoliday,
+  isColombianHolidayYmd,
+} from './colombia-holidays';
 export { roundCost, roundMoney, roundsToZeroAt4 } from './money';
 export {
   manualDiscountAmount,

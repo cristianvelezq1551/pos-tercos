@@ -119,6 +119,10 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
     out.push(latin1(twoCol('Descuentos', `-${formatCop(receipt.discountTotal)}`, 32)));
     out.push(LF);
   }
+  if (receipt.deliveryFee && receipt.deliveryFee > 0) {
+    out.push(latin1(twoCol('Domicilio', formatCop(receipt.deliveryFee), 32)));
+    out.push(LF);
+  }
   out.push(BOLD_ON);
   out.push(SIZE_2H);
   out.push(latin1(twoCol('TOTAL', formatCop(receipt.total), 16)));

@@ -12,6 +12,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Pagos divididos E2E', () => {
   let app: INestApplication;
@@ -35,6 +36,10 @@ describe('Pagos divididos E2E', () => {
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
+    // Auto-aislada: no confiar en que la suite anterior limpió. Esta suite lee
+    // agregados GLOBALES (reportes / ledger de inventario), así que un residuo
+    // de otra suite mueve los números y el fallo depende del orden de archivos.
+    await cleanDb(prisma);
     const hash = await bcrypt.hash('dev12345', 10);
     await prisma.user.createMany({
       data: [
@@ -62,15 +67,15 @@ describe('Pagos divididos E2E', () => {
 
     // NEQUI viene deshabilitado por defecto (medios de pago configurables).
     await request
-      .put('/payment-methods')
+      .patch('/payment-methods/NEQUI')
       .set('Authorization', `Bearer ${duenoToken}`)
-      .send({ methods: [{ method: 'NEQUI', enabled: true }] })
+      .send({ enabled: true })
       .expect(200);
 
     const prodRes = await request
       .post('/products')
       .set('Authorization', `Bearer ${duenoToken}`)
-      .send({
+      .send({ category: 'Test',
         name: 'Coca Split',
         basePrice: 5000,
         directResale: true,
@@ -180,7 +185,7 @@ describe('Pagos divididos E2E', () => {
   });
 
   it('la reconciliación matchea la transferencia por SU parte ($7.000), no por el total', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hoyLocal();
     const csv = `fecha,monto,referencia\n${today},7000,NEQ-SPLIT-1`;
     const res = await request
       .post('/reports/payment-reconciliation/import?source=NEQUI_CSV')

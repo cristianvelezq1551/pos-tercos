@@ -41,7 +41,7 @@ export default async function SubproductsPage() {
       <PageHeader
         eyebrow="Catálogo"
         title="Subproductos"
-        description="Intermedios cocinados que se usan en la receta de productos vendibles. Definí el rendimiento (porciones por preparación) para que el sistema calcule el consumo proporcional."
+        description="Intermedios cocinados que se usan en la receta de productos vendibles. Define el rendimiento (porciones por preparación) para que el sistema calcule el consumo proporcional."
         icon={<BrandIcon name="knife" className="h-6 w-6" />}
         actions={
           <Link href="/subproducts/new">

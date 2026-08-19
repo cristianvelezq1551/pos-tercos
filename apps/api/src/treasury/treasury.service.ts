@@ -197,6 +197,28 @@ export class TreasuryService {
 
   // --- Panel ---
 
+  /**
+   * Saldo de los bolsillos (efectivo/banco) desde el ancla. Deriva de las
+   * fuentes canónicas (sale_payments + pagos de facturas/nómina/costos fijos/
+   * payables + treasury_movements) — NUNCA de cash_movements (§7.v17).
+   *
+   * ⚠️ Limitaciones conocidas (§1.13 auditoría — documentadas, aceptadas para v1):
+   *  - Una venta pagada ANTES del ancla y REEMBOLSADA/anulada DESPUÉS sobreestima
+   *    el bolsillo: el ingreso pre-ancla no se cuenta (está implícito en el
+   *    initialCash que el dueño contó al anclar), pero la devolución posterior no
+   *    lo compensa (el void solo sale por status, y ese ingreso nunca entró al
+   *    agregado). Para ventas POST-ancla el neteo por status sí funciona. Si pasa,
+   *    el dueño corrige con un ajuste de tesorería manual.
+   *  - Movimientos de tesorería con `occurredAt` ANTERIOR al ancla se aceptan pero
+   *    no afectan el saldo (el filtro `>= anchor` los excluye) — quedan en el
+   *    listado. Footgun menor; no se backdatea antes del ancla en la práctica.
+   *  - `method === 'CASH'` (abajo) parte efectivo/banco por el CODE, no por el flag
+   *    `isCash` del catálogo. Correcto hoy: CASH es el único built-in de efectivo
+   *    y los métodos custom nacen `isCash=false`. Si algún día hay otro método
+   *    efectivo, habría que leer el flag del catálogo.
+   *  - Un `payableCommitment` PAGADO no tiene reversa (unmark) — facturas/costos
+   *    fijos/nómina sí. Un pago por error queda como gasto hasta un ajuste manual.
+   */
   async getSummary(): Promise<TreasurySummary> {
     const cfg = await this.getConfig();
     // El corte es un día calendario elegido por el dueño y se compara contra

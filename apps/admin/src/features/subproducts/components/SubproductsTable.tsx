@@ -6,6 +6,7 @@ import {
   EmptyState,
   Quantity,
   formatCop,
+  pluralizeUnit,
   type DataTableColumn,
 } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
@@ -79,9 +80,9 @@ export function SubproductsTable({
         return (
           <span className="flex items-center justify-end gap-2">
             <Quantity value={stock} maxDecimals={2} />
-            <span className="text-[11px] text-muted-foreground">{s.unit}</span>
+            <span className="text-[11px] text-muted-foreground">{pluralizeUnit(s.unit, stock)}</span>
             {low ? (
-              <Badge tone="warning" size="sm" title={`Umbral: ${s.thresholdMin} ${s.unit}`}>
+              <Badge tone="warning" size="sm" title={`Umbral: ${s.thresholdMin} ${pluralizeUnit(s.unit, s.thresholdMin)}`}>
                 Bajo
               </Badge>
             ) : null}

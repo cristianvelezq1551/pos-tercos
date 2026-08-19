@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import {
-  UpdatePaymentMethodsSchema,
+  CreatePaymentMethodSchema,
+  UpdatePaymentMethodSchema,
+  type CreatePaymentMethod,
   type PaymentMethodSetting,
-  type UpdatePaymentMethods,
+  type UpdatePaymentMethod,
   type JwtAccessPayload,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminAccess, CashierAccess } from '../auth/decorators/roles.decorator';
+import { AdminAccess, CashierAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PaymentMethodsService } from './payment-methods.service';
 
@@ -28,13 +30,38 @@ export class PaymentMethodsController {
     return this.methods.listAll();
   }
 
-  /** Habilitar/deshabilitar métodos. Admin/Dueño. */
-  @AdminAccess()
-  @Put()
+  // §3.8: las ESCRITURAS son Dueño-only. El operativo que cobra no debe poder
+  // apagar `requiresVerification` de un método digital y auto-confirmarse pagos
+  // sin doble verificación (era AdminAccess → superficie de fraude).
+  /** Crear un medio de pago custom (digital). Solo Dueño. */
+  @OnlyDueno()
+  @Post()
+  create(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(CreatePaymentMethodSchema)) body: CreatePaymentMethod,
+  ): Promise<PaymentMethodSetting> {
+    return this.methods.create(body, user.sub);
+  }
+
+  /** Editar un medio de pago (nombre, habilitado, verificación, reconciliación, orden). Solo Dueño. */
+  @OnlyDueno()
+  @Patch(':code')
   update(
     @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(UpdatePaymentMethodsSchema)) body: UpdatePaymentMethods,
-  ): Promise<PaymentMethodSetting[]> {
-    return this.methods.update(body, user.sub);
+    @Param('code') code: string,
+    @Body(new ZodValidationPipe(UpdatePaymentMethodSchema)) body: UpdatePaymentMethod,
+  ): Promise<PaymentMethodSetting> {
+    return this.methods.update(code, body, user.sub);
+  }
+
+  /** Borrar un medio de pago (no built-in de sistema). Solo Dueño. */
+  @OnlyDueno()
+  @Delete(':code')
+  async remove(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('code') code: string,
+  ): Promise<{ ok: true }> {
+    await this.methods.remove(code, user.sub);
+    return { ok: true };
   }
 }

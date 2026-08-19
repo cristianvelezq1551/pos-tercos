@@ -23,6 +23,7 @@ import {
 import { RecipeDraftTable, type DraftEdge } from './RecipeDraftTable';
 import { RecipeAddEdgeForm } from './RecipeAddEdgeForm';
 import { RecipeExpandedCostView } from './RecipeExpandedCostView';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface RecipeEditorProps {
   parentType: 'product' | 'subproduct';
@@ -44,13 +45,14 @@ function recipeToDraft(recipe: RecipeResponse): DraftEdge[] {
     childId: (e.childIngredientId ?? e.childSubproductId) as string,
     quantityNeta: e.quantityNeta,
     mermaPct: e.mermaPct,
+    blocksAvailability: e.blocksAvailability,
   }));
 }
 
 function sameEdges(a: DraftEdge[], b: DraftEdge[]): boolean {
   if (a.length !== b.length) return false;
   const norm = (e: DraftEdge): string =>
-    `${e.childType}:${e.childId}:${e.quantityNeta}:${e.mermaPct}`;
+    `${e.childType}:${e.childId}:${e.quantityNeta}:${e.mermaPct}:${e.blocksAvailability}`;
   const sa = a.map(norm).sort();
   const sb = b.map(norm).sort();
   return sa.every((x, i) => x === sb[i]);
@@ -119,7 +121,7 @@ export function RecipeEditor({
       .catch((err) => {
         if (!cancelled) {
           setExpandedCost(null);
-          setExpandedCostError(err instanceof Error ? err.message : 'Error');
+          setExpandedCostError(getErrorMessage(err, 'No se pudo calcular el costo.'));
         }
       });
     // Lotes FIFO (best-effort): solo para el rendimiento por lote, no bloquea el costo.
@@ -151,7 +153,14 @@ export function RecipeEditor({
     }
     setDraft((d) => [
       ...d,
-      { childType: addType, childId: addChildId, quantityNeta: qty, mermaPct: mermaPercent / 100 },
+      {
+        childType: addType,
+        childId: addChildId,
+        quantityNeta: qty,
+        mermaPct: mermaPercent / 100,
+        // Nueva línea: hereda el flag del insumo/subproducto.
+        blocksAvailability: null,
+      },
     ]);
     setAddChildId('');
     setAddQty('');
@@ -163,8 +172,20 @@ export function RecipeEditor({
     setSavingState('saving');
     const edges: RecipeEdgeInput[] = draft.map((d) =>
       d.childType === 'ingredient'
-        ? { childType: 'ingredient', childId: d.childId, quantityNeta: d.quantityNeta, mermaPct: d.mermaPct }
-        : { childType: 'subproduct', childId: d.childId, quantityNeta: d.quantityNeta, mermaPct: d.mermaPct },
+        ? {
+            childType: 'ingredient',
+            childId: d.childId,
+            quantityNeta: d.quantityNeta,
+            mermaPct: d.mermaPct,
+            blocksAvailability: d.blocksAvailability,
+          }
+        : {
+            childType: 'subproduct',
+            childId: d.childId,
+            quantityNeta: d.quantityNeta,
+            mermaPct: d.mermaPct,
+            blocksAvailability: d.blocksAvailability,
+          },
     );
     try {
       const updated = sizeId
@@ -177,7 +198,7 @@ export function RecipeEditor({
       setSavedSnapshot(next);
       startTransition(() => { router.refresh(); });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al guardar');
+      setError(getErrorMessage(e, 'Error al guardar'));
     } finally {
       setSavingState('idle');
     }
@@ -205,6 +226,11 @@ export function RecipeEditor({
         ingredientById={ingredientById}
         subproductById={subproductById}
         onRemove={(index) => setDraft((d) => d.filter((_, i) => i !== index))}
+        onChangeBlocks={(index, value) =>
+          setDraft((d) =>
+            d.map((e, i) => (i === index ? { ...e, blocksAvailability: value } : e)),
+          )
+        }
       />
 
       <RecipeAddEdgeForm

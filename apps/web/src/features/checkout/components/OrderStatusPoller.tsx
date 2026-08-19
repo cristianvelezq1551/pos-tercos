@@ -4,15 +4,17 @@ import type { PublicWebOrder } from '@pos-tercos/types';
 import { useEffect, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import { getWebOrder } from '../api/get-order';
+import { isTerminalStatus } from '../store/active-order-store';
 
 const POLL_INTERVAL_MS = 5_000;
 
 export type OrderConnState = 'live' | 'reconnecting' | 'stopped';
 
 /**
- * Polling cada 5s del estado de la orden. Detiene el polling cuando el
- * status entra a un estado terminal (LISTO_DESPACHO, ENTREGADO, CANCELADO_*,
- * VOID) — el cliente puede recargar manualmente.
+ * Polling cada 5s del estado de la orden, hasta que la página no tenga nada
+ * más que mostrar (`isTerminalStatus`). Desde §7.v25 eso ocurre al CONFIRMARSE
+ * EL PAGO: la web ya no cuenta el progreso del pedido, así que a partir de ahí
+ * consultar sería gastar requests para redibujar lo mismo.
  *
  * Razones para POLL en vez de SSE:
  *  - Ya hay rate-limit (120/60s para GET) y polling cada 5s = 12/min, OK.
@@ -26,10 +28,10 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
 
   // Deps SOLO [initial.id, token]: el interval se crea UNA vez y se detiene
   // solo cuando el status entra a terminal (clear interno), no en cada
-  // transición. Antes dependía de order.status → cada cambio (PENDIENTE→PAGADO
-  // →EN_PREP→LISTO) reiniciaba el interval y disparaba un tick redundante.
+  // transición. Antes dependía de order.status → cada cambio reiniciaba el
+  // interval y disparaba un tick redundante.
   useEffect(() => {
-    if (isTerminal(initial.status)) {
+    if (isTerminalStatus(initial.status)) {
       setConn('stopped');
       return;
     }
@@ -46,7 +48,7 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
         const fresh = await getWebOrder(initial.id, token);
         if (cancelled) return;
         setOrder(fresh);
-        if (isTerminal(fresh.status)) {
+        if (isTerminalStatus(fresh.status)) {
           setConn('stopped');
           stop();
         } else {
@@ -68,7 +70,7 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
-    timer = setInterval(tick, POLL_INTERVAL_MS);
+    timer = setInterval(() => void tick(), POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       stop();
@@ -80,17 +82,4 @@ export function useOrderPoller(initial: PublicWebOrder, token: string) {
   }, [initial.id, initial.status, token]);
 
   return { order, conn };
-}
-
-function isTerminal(status: string): boolean {
-  return [
-    // El pedido web termina en LISTO_DESPACHO ("listo para retirar"): es el
-    // estado final del flujo (sin cocina ni seguimiento de entrega). ENTREGADO
-    // queda por compatibilidad con pedidos históricos.
-    'LISTO_DESPACHO',
-    'ENTREGADO',
-    'CANCELADO_NO_PAGO',
-    'CANCELADO_SIN_REEMBOLSO',
-    'VOID',
-  ].includes(status);
 }

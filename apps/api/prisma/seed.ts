@@ -1,38 +1,11 @@
 import { createHash } from 'crypto';
 import { PrismaClient, type UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { assertNotProduction } from './assert-not-production';
+
+assertNotProduction('seed', 'usuarios con la clave pública dev12345 y catálogo de prueba');
 
 const prisma = new PrismaClient();
-
-// El seed crea usuarios con password de dev conocida (`dev12345`) y catálogo de
-// prueba — correrlo contra prod sería una brecha de seguridad inmediata. Guard
-// duro: solo corre contra hosts locales, salvo override explícito FORCE_SEED=1
-// (para un entorno de staging deliberado, nunca prod).
-function assertNotProduction(): void {
-  if (process.env.FORCE_SEED === '1') return;
-  const problems: string[] = [];
-  if (process.env.NODE_ENV === 'production') {
-    problems.push('NODE_ENV=production');
-  }
-  const dbUrl = process.env.DATABASE_URL ?? '';
-  try {
-    const host = new URL(dbUrl).hostname;
-    if (!['localhost', '127.0.0.1', 'host.docker.internal'].includes(host)) {
-      problems.push(`DATABASE_URL apunta a host no-local: ${host}`);
-    }
-  } catch {
-    problems.push('DATABASE_URL ausente o inválida');
-  }
-  if (problems.length > 0) {
-    console.error(
-      `✗ Seed ABORTADO (${problems.join(' + ')}).\n` +
-        '  Este seed crea usuarios dev12345 — NUNCA correrlo en prod.\n' +
-        '  Si esto es un entorno de staging deliberado: FORCE_SEED=1 pnpm prisma db seed',
-    );
-    process.exit(1);
-  }
-}
-assertNotProduction();
 
 const DEV_PASSWORD = 'dev12345';
 
@@ -53,7 +26,9 @@ function slugUuid(slug: string): string {
 const SEED_USERS: Array<{ email: string; fullName: string; role: UserRole }> = [
   { email: 'dueno@dev.local', fullName: 'Dueño Dev', role: 'DUENO' },
   { email: 'admin@dev.local', fullName: 'Admin Operativo Dev', role: 'ADMIN_OPERATIVO' },
-  { email: 'cajero@dev.local', fullName: 'Cajero Dev', role: 'CAJERO' },
+  // Operador de caja de dev: ADMIN_OPERATIVO (el rol CAJERO se retiró de la
+  // operación en el cutover POS→admin — no entra a ninguna app).
+  { email: 'cajero@dev.local', fullName: 'Cajero Dev', role: 'ADMIN_OPERATIVO' },
   { email: 'cocinero@dev.local', fullName: 'Cocinero Dev', role: 'COCINERO' },
   { email: 'trabajador@dev.local', fullName: 'Trabajador Dev', role: 'TRABAJADOR' },
 ];
@@ -214,7 +189,28 @@ const MENU: MenuProduct[] = [
   },
 ];
 
+/**
+ * Las categorías que usan los productos del menú, como filas propias.
+ *
+ * El seed escribe los productos con Prisma directo, salteándose el servicio
+ * —que exige que la categoría exista—, así que `product_categories` quedaba
+ * VACÍA con 19 productos cargados. Consecuencia: la pantalla de Categorías se
+ * veía sin nada y crear un producto nuevo tecleando "Burgers" fallaba con
+ * "la categoría no existe". El bootstrap de producción sí las crea; el de dev
+ * no, y es el que se usa para probar.
+ */
+async function seedCategories(): Promise<void> {
+  const names = [...new Set(MENU.map((m) => m.category))];
+  const result = await prisma.productCategory.createMany({
+    data: names.map((name, sortOrder) => ({ name, sortOrder })),
+    skipDuplicates: true,
+  });
+  console.log(`✓ ${result.count} categorías: ${names.join(', ')}`);
+}
+
 async function seedMenu(): Promise<void> {
+  await seedCategories();
+
   // 1ra pasada: productos simples + variantes + bebidas (los combos los
   // referencian, así que van antes).
   for (const p of MENU.filter((m) => !m.combo)) {

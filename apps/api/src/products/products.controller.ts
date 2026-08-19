@@ -24,6 +24,7 @@ import type { Response } from 'express';
 import {
   CreateProductSchema,
   SetComboComponentsSchema,
+  SetForceAvailableSchema,
   SetProductOptionsSchema,
   SetSoldOutSchema,
   UpdateProductSchema,
@@ -32,6 +33,7 @@ import {
   type Product,
   type ProductAvailability,
   type SetComboComponents,
+  type SetForceAvailable,
   type SetProductOptions,
   type SetSoldOut,
   type UpdateProduct,
@@ -82,7 +84,9 @@ export class ProductsController {
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get('availability')
   async availability(): Promise<ProductAvailability[]> {
-    const full = await this.products.getAvailability();
+    // §2.8: la variante cacheada (TTL corto) — endpoint público polleado por
+    // anónimos; el cajero usa el interno, siempre fresco.
+    const full = await this.products.getAvailabilityCached();
     return full.map((r) => ({
       productId: r.productId,
       available: r.available,
@@ -121,6 +125,20 @@ export class ProductsController {
     @Body(new ZodValidationPipe(SetSoldOutSchema)) body: SetSoldOut,
   ): Promise<Product> {
     return this.products.setSoldOut(id, body.soldOut);
+  }
+
+  /**
+   * Fuerza disponible (o revierte a automático). Cajero o admin. Permite
+   * vender aunque el stock del sistema no alcance — para no frenar ventas
+   * cuando el stock físico existe pero no se registró.
+   */
+  @CashierAccess()
+  @Post(':id/force-available')
+  setForceAvailable(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetForceAvailableSchema)) body: SetForceAvailable,
+  ): Promise<Product> {
+    return this.products.setForceAvailable(id, body.forceAvailable);
   }
 
   @OnlyDueno()
@@ -187,7 +205,7 @@ export class ProductsController {
     const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
     if (!detected) {
       throw new BadRequestException(
-        'Formato no soportado. Usá PNG, JPG, WebP, GIF, BMP, TIFF, HEIC o AVIF (SVG no permitido).',
+        'Formato no soportado. Usa PNG, JPG, WebP, GIF, BMP, TIFF, HEIC o AVIF (SVG no permitido).',
       );
     }
     return this.products.uploadImage({

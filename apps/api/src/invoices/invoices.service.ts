@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import type { LLMInvoiceExtractionResult, StorageProvider } from '@pos-tercos/domain';
 import { buildCostIncreaseAlertMessage, roundCost, type CostIncreaseItem } from '@pos-tercos/domain';
 import {
+  INVOICE_STATUS_LABELS,
   ExtractedInvoiceSchema,
   type ConfirmInvoice,
   type ExtractedInvoice,
@@ -236,7 +237,7 @@ export class InvoicesService {
       // Si la IA falló, no dejamos la foto huérfana — limpiamos ya mismo.
       await this.storage.delete(stored.key).catch(() => {});
       throw new BadRequestException({
-        message: 'IA no pudo extraer la factura. Probá con otra foto o cargala manualmente.',
+        message: 'La IA no pudo extraer la factura. Prueba con otra foto o cárgala manualmente.',
         cause: err instanceof Error ? err.message : String(err),
       });
     }
@@ -342,10 +343,10 @@ export class InvoicesService {
     const existing = await this.prisma.invoice.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
     if (existing.status === 'CONFIRMED') {
-      throw new BadRequestException('Invoice is already confirmed');
+      throw new BadRequestException('Esta factura ya fue confirmada.');
     }
     if (existing.status === 'REJECTED') {
-      throw new BadRequestException('Invoice is rejected; cannot confirm');
+      throw new BadRequestException('Esta factura fue rechazada: no se puede confirmar.');
     }
 
     const { ingredients, products } = await this.loadAndValidateEntities(input);
@@ -363,6 +364,20 @@ export class InvoicesService {
     let updated;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
+        // Claim ATÓMICO: el check de status de arriba corre FUERA de la tx, así que
+        // dos confirms concurrentes (doble-click / auto-retry — no hay idempotency
+        // key acá) lo pasarían los dos y escribirían los PURCHASE movements DOS
+        // veces (inventory_movements es insert-only → stock doble-contado,
+        // lastUnitCost doble-aplicado, lotes fantasma en el FIFO). El updateMany
+        // condicionado toma el lock de fila: el 2º confirm matchea 0 (status ya
+        // CONFIRMED) y aborta — mismo patrón que todo el money-path.
+        const claim = await tx.invoice.updateMany({
+          where: { id, status: 'PENDING_REVIEW' },
+          data: { status: 'CONFIRMED' },
+        });
+        if (claim.count === 0) {
+          throw new BadRequestException('La factura ya fue confirmada o rechazada');
+        }
         const invoiceUpdated = await this.replaceItemsAndHeader(tx, id, input, supplier.id, userId, payment);
         await this.writePurchaseMovements(tx, id, input, ingredients, products, supplier, userId);
         await this.upsertSupplierProductsAndCosts(tx, input, ingredients, products, supplier);
@@ -452,11 +467,11 @@ export class InvoicesService {
 
     const missingIng = ingredientIds.filter((iid) => !ingredients.some((i) => i.id === iid));
     if (missingIng.length > 0) {
-      throw new BadRequestException(`Items refer to missing ingredients: ${missingIng.join(', ')}`);
+      throw new BadRequestException(`La factura referencia insumos que ya no existen.`);
     }
     const missingProd = productIds.filter((pid) => !products.some((p) => p.id === pid));
     if (missingProd.length > 0) {
-      throw new BadRequestException(`Items refer to missing products: ${missingProd.join(', ')}`);
+      throw new BadRequestException(`La factura referencia productos que ya no existen.`);
     }
 
     const inactiveIng = ingredients.filter((i) => !i.isActive).map((i) => i.id);
@@ -515,15 +530,15 @@ export class InvoicesService {
     const sourceKey = p.useInvoicePhotoAsProof ? photoStorageKey : (p.proofStorageKey as string);
     if (!sourceKey) {
       throw new BadRequestException(
-        'Esta factura no tiene foto para usar como comprobante — subí una imagen del comprobante.',
+        'Esta factura no tiene foto para usar como comprobante — sube una imagen del comprobante.',
       );
     }
     const buffer = await this.storage.get(sourceKey).catch(() => null);
     if (!buffer) {
       throw new BadRequestException(
         p.useInvoicePhotoAsProof
-          ? 'La foto de la factura ya no está disponible. Volvé a subirla.'
-          : 'El comprobante ya no está disponible. Volvé a subirlo.',
+          ? 'La foto de la factura ya no está disponible. Vuelve a subirla.'
+          : 'El comprobante ya no está disponible. Vuelve a subirlo.',
       );
     }
     const ext = sourceKey.split('.').pop() ?? 'jpg';
@@ -817,14 +832,14 @@ export class InvoicesService {
     }
     if (source.status !== 'CONFIRMED') {
       throw new BadRequestException(
-        'Solo se pueden clonar facturas confirmadas. Reanudá la draft directamente.',
+        'Solo se pueden clonar facturas confirmadas. Retoma el borrador directamente.',
       );
     }
     // FASE 4 ajustes 2.12: rechazar source con 0 items (caso patológico
     // que dejaría una draft no-confirmable porque CreateInvoice exige >=1).
     if (source.items.length === 0) {
       throw new BadRequestException(
-        'La factura origen no tiene items, no se puede clonar. Editala manualmente o subí una nueva.',
+        'La factura origen no tiene items, no se puede clonar. Edítala manualmente o sube una nueva.',
       );
     }
 
@@ -855,7 +870,7 @@ export class InvoicesService {
         packSizePerUnit: null,
         packSizeMeasure: null,
       })),
-      warnings: [`Clonado de factura ${sourceShort}. Revisá cantidades y precios antes de confirmar.`],
+      warnings: [`Clonado de factura ${sourceShort}. Revisa cantidades y precios antes de confirmar.`],
     };
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -953,7 +968,7 @@ export class InvoicesService {
       total: null,
       iva: null,
       items: [],
-      warnings: ['Carga manual — la IA no extrajo datos. Ingresá proveedor, items y totales.'],
+      warnings: ['Carga manual — la IA no extrajo datos. Ingresa proveedor, items y totales.'],
     };
 
     const created = await this.prisma.invoice.create({
@@ -1014,7 +1029,7 @@ export class InvoicesService {
     if (!existing) throw new NotFoundException(`Invoice ${id} not found`);
     if (existing.status !== 'PENDING_REVIEW') {
       throw new BadRequestException(
-        `Solo se pueden borrar borradores PENDING_REVIEW (status actual: ${existing.status}). Para anular una factura confirmada usá REJECTED.`,
+        `Solo se pueden borrar facturas en borrador. Esta ya está ${INVOICE_STATUS_LABELS[existing.status] ?? existing.status}; para dejarla sin efecto, recházala.`,
       );
     }
 

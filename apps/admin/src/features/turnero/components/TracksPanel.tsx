@@ -6,6 +6,7 @@ import { Music, Trash2, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { logError } from '../../../lib/client-log';
 import { createTrack, deleteTrack, listTracks, updateTrack } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 const MAX_MB = 50;
 
@@ -24,7 +25,7 @@ export function TracksPanel({
 
   const upload = async (file: File) => {
     if (file.size > MAX_MB * 1024 * 1024) {
-      setError(`El archivo supera ${MAX_MB} MB. Comprimí el MP3 o usá uno más liviano.`);
+      setError(`El archivo supera ${MAX_MB} MB. Comprime el MP3 o usa uno más liviano.`);
       return;
     }
     setBusy(true);
@@ -37,7 +38,7 @@ export function TracksPanel({
       );
       onChange(await listTracks());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error subiendo');
+      setError(getErrorMessage(e, 'Error subiendo'));
     } finally {
       setBusy(false);
       setUploading(null);
@@ -116,8 +117,8 @@ export function TracksPanel({
         <div className="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center">
           <Music className="mx-auto h-6 w-6 text-muted-foreground" />
           <p className="mt-2 text-sm text-muted-foreground">
-            Sin música. El turnero funciona igual (la campana de llamado suena siempre); subí pistas
-            si querés ambiente musical. Recomendado: MP3 hasta {MAX_MB} MB.
+            Sin música. El turnero funciona igual (la campana de llamado suena siempre); sube pistas
+            si quieres ambiente musical. Recomendado: MP3 hasta {MAX_MB} MB.
           </p>
         </div>
       ) : null}

@@ -18,7 +18,6 @@ import { TokenVersionService } from '../auth/token-version/token-version.service
 import { wsCorsOrigin } from '../common/ws-cors';
 
 const ALLOWED_ROLES = new Set(['CAJERO', 'ADMIN_OPERATIVO', 'DUENO']);
-const ACCESS_COOKIE = 'pos_access';
 
 @WebSocketGateway({
   namespace: POS_NAMESPACE,
@@ -45,6 +44,7 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       payload = await this.jwt.verifyAsync(token, {
         secret: process.env.JWT_ACCESS_SECRET,
+        algorithms: ['HS256'],
       });
     } catch {
       this.deny(client, 'invalid token');
@@ -104,11 +104,10 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (typeof authToken === 'string' && authToken.length > 0) {
       return authToken;
     }
-    const cookieHeader = client.handshake.headers['cookie'];
-    if (typeof cookieHeader === 'string') {
-      const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${ACCESS_COOKIE}=([^;]+)`));
-      if (match) return decodeURIComponent(match[1]!);
-    }
+    // Sin fallback de cookie: la cookie `pos_access` era del POS standalone
+    // (cutover §7.v10+) y el handshake real siempre viaja por auth.token
+    // (ws-token de 120s) o Bearer. Una vía de auth que nadie usa es una vía
+    // que nadie prueba.
     return null;
   }
 

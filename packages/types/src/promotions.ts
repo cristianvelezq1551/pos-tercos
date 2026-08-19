@@ -40,7 +40,7 @@ export const DAY_MASK = {
 
 /** Regex HH:MM:SS 24h. Coincide con CHECK constraint en DB. */
 const TIME_REGEX = /^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
-const TimeStringSchema = z.string().regex(TIME_REGEX, 'time must be HH:MM:SS (24h)');
+const TimeStringSchema = z.string().regex(TIME_REGEX, 'La hora debe tener el formato HH:MM:SS (24h).');
 
 // ====================================================================
 // PROMOTION — wire format
@@ -107,7 +107,7 @@ export const CreatePromotionSchema = z
         if (data.discountPct === undefined) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'discountPct requerido para PERCENT_OFF',
+            message: 'Falta el porcentaje de descuento.',
             path: ['discountPct'],
           });
         }
@@ -120,7 +120,7 @@ export const CreatePromotionSchema = z
         if (data.discountFixed === undefined) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'discountFixed requerido para FIXED_OFF',
+            message: 'Falta el monto del descuento.',
             path: ['discountFixed'],
           });
         }
@@ -133,14 +133,14 @@ export const CreatePromotionSchema = z
         if (data.bogoBuyQty === undefined) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'bogoBuyQty requerido para BOGO',
+            message: 'Falta cuántas unidades se llevan.',
             path: ['bogoBuyQty'],
           });
         }
         if (data.bogoGetQty === undefined) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'bogoGetQty requerido para BOGO',
+            message: 'Falta cuántas unidades se pagan.',
             path: ['bogoGetQty'],
           });
         }
@@ -155,7 +155,7 @@ export const CreatePromotionSchema = z
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message:
-              'COMBO_OFF requiere exactamente uno: discountPct O discountFixed (no ambos, no ninguno)',
+              'Un combo lleva descuento en porcentaje O en pesos: elige uno de los dos.',
             path: ['type'],
           });
         }
@@ -168,7 +168,7 @@ export const CreatePromotionSchema = z
     if (data.activeFrom && data.activeTo && data.activeTo < data.activeFrom) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'activeTo debe ser >= activeFrom',
+        message: 'La fecha de fin no puede ser anterior a la de inicio.',
         path: ['activeTo'],
       });
     }
@@ -176,7 +176,7 @@ export const CreatePromotionSchema = z
     if (data.timeStart === data.timeEnd) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'timeStart y timeEnd no pueden ser iguales (ventana 0)',
+        message: 'La hora de inicio y la de fin no pueden ser iguales.',
         path: ['timeEnd'],
       });
     }
@@ -192,11 +192,26 @@ function rejectField(
   if (data[field] !== undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `${field} no aplica para ${forType}`,
+      message: `${CAMPO_LABEL[field]} no aplica a una promoción de tipo "${TIPO_LABEL[forType]}".`,
       path: [field],
     });
   }
 }
+
+/** Nombres legibles para los mensajes de validación (espejan la UI del admin). */
+const CAMPO_LABEL: Record<'discountPct' | 'discountFixed' | 'bogoBuyQty' | 'bogoGetQty', string> = {
+  discountPct: 'El porcentaje de descuento',
+  discountFixed: 'El monto del descuento',
+  bogoBuyQty: 'La cantidad que se lleva',
+  bogoGetQty: 'La cantidad que se paga',
+};
+
+const TIPO_LABEL: Record<PromotionType, string> = {
+  PERCENT_OFF: 'Descuento %',
+  FIXED_OFF: 'Descuento $',
+  BOGO: 'Lleva X paga Y',
+  COMBO_OFF: 'Combo',
+};
 
 // ====================================================================
 // UPDATE PROMOTION

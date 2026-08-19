@@ -6,6 +6,7 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
+    "start:prod": "prisma migrate deploy && node dist/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "test": "jest --config ./test/jest-unit.json --passWithNoTests",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --forceExit",
@@ -14,7 +15,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force"
+    "bootstrap:prod": "ts-node -r tsconfig-paths/register prisma/bootstrap-prod.ts",
+    "db:reset": "prisma migrate reset --force",
+    "test:cov": "jest --config ./test/jest-unit.json --passWithNoTests --coverage",
+    "test:e2e:cov": "jest --config ./test/jest-e2e-cov.json --runInBand --forceExit --coverage"
   },
   "prisma": {
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
@@ -34,7 +38,7 @@
     "@pos-tercos/domain": "workspace:*",
     "@pos-tercos/types": "workspace:*",
     "@prisma/client": "^6.2.0",
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "helmet": "^8.2.0",
     "multer": "^2.2.0",

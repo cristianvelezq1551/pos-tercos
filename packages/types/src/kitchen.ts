@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { StockableTypeEnum } from './inventory';
+import { StockableTypeEnum, STOCKABLE_TYPE_LABELS } from './inventory';
 
 // ====================================================================
 // COCINA (app del cocinero) — merma, conteo ciego, incidencias, checklist
@@ -26,7 +26,7 @@ function requireMatchingId(
   if (!data[expected]) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `${expected} es requerido cuando entityType=${data.entityType}`,
+      message: `Falta indicar a qué ${STOCKABLE_TYPE_LABELS[data.entityType]} corresponde.`,
       path: [expected],
     });
   }
@@ -41,6 +41,9 @@ export const RegisterWasteSchema = z
     quantity: z.number().positive(),
     /** Motivo obligatorio (auditable): "se quemó", "vencido", "se cayó", etc. */
     reason: z.string().min(3).max(300),
+    /** §3.3: idempotencia — un reintento tras respuesta perdida NO registra una
+     *  segunda merma (movements insert-only → sería doble descuento). */
+    idempotencyKey: z.string().uuid().optional(),
   })
   .superRefine(requireMatchingId);
 export type RegisterWaste = z.infer<typeof RegisterWasteSchema>;

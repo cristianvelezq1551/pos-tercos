@@ -1,8 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { existsSync, readFileSync, readSync } from 'fs';
-import { timingSafeEqual } from 'crypto';
 import { dirname, resolve } from 'path';
-import { z } from 'zod';
+import { applyEnvPairs, parseEnvFile } from './env-file';
 import { log, LOG_FILE } from './logger';
 
 // Carga el `.env` (PRINTER_NAME / IDs USB / puerto) ANTES de leer env. Lo busca
@@ -20,13 +19,7 @@ function loadEnv(): void {
       if (typeof process.loadEnvFile === 'function') {
         process.loadEnvFile(path);
       } else {
-        for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
-          if (line.trimStart().startsWith('#')) continue;
-          const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-          if (!m) continue;
-          const val = m[2].trim().replace(/^["']|["']$/g, '');
-          if (process.env[m[1]] === undefined) process.env[m[1]] = val;
-        }
+        applyEnvPairs(parseEnvFile(readFileSync(path, 'utf8')), process.env);
       }
       console.log(`[print-agent] .env cargado desde: ${path}`);
     } catch (e) {
@@ -43,25 +36,13 @@ function loadEnv(): void {
 }
 loadEnv();
 
-import { renderReceiptEscPos, type ReceiptData } from '@pos-tercos/domain';
+import { renderReceiptEscPos } from '@pos-tercos/domain';
+import { isDangerouslyExposed, resolveHost, secretOk } from './auth';
+import { createPrintQueue } from './print-queue';
+import { businessFromEnv, DrawerBodySchema, PrintBodySchema } from './schemas';
 import { sendBytes, kickDrawer, listPrinters } from './printer-driver';
 
-/**
- * Cola de impresión: procesa los /print y /drawer DE A UNO. El POS dispara
- * varios casi simultáneos (comanda cocina + comanda completa + factura ×N
- * impresoras); imprimir RAW en paralelo por el spooler de Windows puede trabar
- * o intercalar bytes. Serializar lo hace confiable.
- */
-let printChain: Promise<void> = Promise.resolve();
-function enqueuePrint<T>(work: () => Promise<T>): Promise<T> {
-  const result = printChain.then(work);
-  // La cadena nunca se rompe por un fallo de un trabajo (el siguiente sigue).
-  printChain = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
-}
+const printQueue = createPrintQueue();
 
 /**
  * Print Agent — servicio Node local que corre en la Raspberry Pi del
@@ -84,93 +65,7 @@ function enqueuePrint<T>(work: () => Promise<T>): Promise<T> {
 const PORT = Number(process.env.PRINT_AGENT_PORT ?? 9120);
 const SHARED_SECRET = process.env.PRINT_AGENT_SECRET ?? null;
 
-/**
- * A qué interfaz escucha. FRONTERA DE SEGURIDAD real (el CORS `*` es obligatorio
- * para el Private Network Access de Chrome y NO protege nada). Regla fail-safe:
- *
- * - SIN `PRINT_AGENT_SECRET` → escucha SOLO en `127.0.0.1`: inalcanzable desde
- *   la LAN o desde cualquier web → nadie de la red puede abrir el cajón/imprimir.
- *   Sirve para el caso "agent en la misma PC que el navegador del POS".
- * - CON secret → escucha en toda la red (`0.0.0.0`) para el caso "agent en la Pi
- *   sirviendo tablets por LAN", pero cada request debe traer el secret válido.
- *
- * `PRINT_AGENT_HOST` permite forzar la interfaz explícitamente.
- */
-const HOST = process.env.PRINT_AGENT_HOST ?? (SHARED_SECRET ? '0.0.0.0' : '127.0.0.1');
-
-/** Compara el secret en tiempo constante (evita fuga por timing sobre la LAN). */
-function secretOk(headerVal: string | string[] | undefined): boolean {
-  if (!SHARED_SECRET) return true; // sin secret → auth off (protegido por HOST=127.0.0.1)
-  const provided = Array.isArray(headerVal) ? headerVal[0] : headerVal;
-  if (!provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(SHARED_SECRET);
-  if (a.length !== b.length) return false; // longitudes distintas: no llamar timingSafeEqual (lanza)
-  return timingSafeEqual(a, b);
-}
-
-/**
- * Recibo en datos (sin `business`): el POS lo manda así cuando imprime
- * SIN backend (offline). El agent rinde los bytes ESC/POS con
- * `renderReceiptEscPos` y rellena el negocio desde su propio `.env`
- * (BUSINESS_*). Espeja `ReceiptData` de @pos-tercos/domain salvo `business`.
- */
-const ModifierSchema = z.object({
-  name: z.string(),
-  priceDelta: z.number(),
-});
-const ReceiptItemSchema = z.object({
-  productName: z.string(),
-  sizeName: z.string().nullable(),
-  quantity: z.number(),
-  unitPrice: z.number(),
-  lineSubtotal: z.number(),
-  lineDiscount: z.number(),
-  lineTotal: z.number(),
-  appliedPromotionName: z.string().nullable(),
-  modifiers: z.array(ModifierSchema),
-});
-const ReceiptInputSchema = z.object({
-  receiptNumber: z.number(),
-  provisionalNumber: z.string().nullable().optional(),
-  createdAt: z.string(),
-  cashierName: z.string().nullable(),
-  customerName: z.string().nullable(),
-  items: z.array(ReceiptItemSchema),
-  subtotal: z.number(),
-  discountTotal: z.number(),
-  total: z.number(),
-  reprintLabel: z.string().nullable(),
-  openDrawer: z.boolean().optional(),
-});
-
-// El /print acepta DOS formas: bytes ya renderizados (online, vienen del
-// backend) o el recibo en datos (offline, lo rinde el agent). Al menos una.
-const PrintBodySchema = z
-  .object({
-    escposBase64: z.string().min(1).optional(),
-    receipt: ReceiptInputSchema.optional(),
-    // Impresora destino (nombre Windows). El POS rutea cada documento a la
-    // impresora asignada; si falta, el agent usa la del .env.
-    printer: z.string().min(1).nullable().optional(),
-  })
-  .refine((b) => Boolean(b.escposBase64) || Boolean(b.receipt), {
-    message: 'Falta escposBase64 o receipt',
-  });
-
-const DrawerBodySchema = z
-  .object({ printer: z.string().min(1).nullable().optional() })
-  .optional();
-
-/** Datos del negocio para el recibo offline — del .env del agent (misma PC). */
-function businessFromEnv(): ReceiptData['business'] {
-  return {
-    name: process.env.BUSINESS_NAME ?? 'POS Tercos',
-    address: process.env.BUSINESS_ADDRESS ?? 'Dirección por configurar',
-    nit: process.env.BUSINESS_NIT ?? '900.000.000-0',
-    phone: process.env.BUSINESS_PHONE ?? null,
-  };
-}
+const HOST = resolveHost(SHARED_SECRET, process.env.PRINT_AGENT_HOST);
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -213,7 +108,7 @@ const server = createServer(async (req, res) => {
 
     // Auth via header X-Agent-Secret (timing-safe). Si no hay secret configurado,
     // el agent solo escucha en 127.0.0.1 (ver HOST) → no es alcanzable desde la red.
-    if (!secretOk(req.headers['x-agent-secret'])) {
+    if (!secretOk(req.headers['x-agent-secret'], SHARED_SECRET)) {
       json(res, 401, { error: 'invalid agent secret' });
       return;
     }
@@ -246,13 +141,13 @@ const server = createServer(async (req, res) => {
         ? Buffer.from(parsed.data.escposBase64, 'base64')
         : renderReceiptEscPos({
             ...parsed.data.receipt!,
-            business: businessFromEnv(),
+            business: businessFromEnv(process.env),
           });
       const mode = parsed.data.escposBase64 ? 'bytes' : 'receipt';
       const dest = parsed.data.printer ?? '(.env)';
       const t0 = Date.now();
       try {
-        await enqueuePrint(() => {
+        await printQueue.enqueue(() => {
           log(`[print-agent] → enviando ${bytes.length}B a "${dest}" (modo ${mode})…`);
           return sendBytes(bytes, parsed.data.printer ?? null);
         });
@@ -271,7 +166,7 @@ const server = createServer(async (req, res) => {
       const parsed = DrawerBodySchema.safeParse(body ? JSON.parse(body) : undefined);
       const printer = parsed.success ? (parsed.data?.printer ?? null) : null;
       log(`[print-agent] /drawer-open (impresora ${printer ?? '(.env)'})`);
-      await enqueuePrint(() => kickDrawer(printer));
+      await printQueue.enqueue(() => kickDrawer(printer));
       json(res, 200, { ok: true });
       return;
     }
@@ -288,11 +183,11 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   log(`[print-agent] listening on ${HOST}:${PORT}  (plataforma: ${process.platform})`);
   log(`[print-agent] log file → ${LOG_FILE}`);
-  if (!SHARED_SECRET && HOST !== '127.0.0.1' && HOST !== 'localhost') {
+  if (isDangerouslyExposed(SHARED_SECRET, HOST)) {
     log(
       `[print-agent] ⚠ SIN PRINT_AGENT_SECRET y escuchando en ${HOST} (red). ` +
         `Cualquier dispositivo de la LAN puede abrir el cajón/imprimir. ` +
-        `Configurá PRINT_AGENT_SECRET o dejá HOST en 127.0.0.1.`,
+        `Configura PRINT_AGENT_SECRET o deja HOST en 127.0.0.1.`,
     );
   }
   log(
@@ -320,7 +215,7 @@ function fatal(context: string, err: unknown): never {
   log(`[print-agent] ✗ FATAL (${context}): ${msg}`);
   if (process.stdin.isTTY) {
     console.log('\n>>> El print-agent NO pudo arrancar (ver el error de arriba).');
-    console.log('>>> Presioná Enter para cerrar esta ventana…');
+    console.log('>>> Presiona Enter para cerrar esta ventana…');
     try {
       readSync(0, Buffer.alloc(1), 0, 1, null); // bloquea hasta Enter
     } catch {
@@ -339,11 +234,11 @@ function fatal(context: string, err: unknown): never {
 function alreadyRunning(): never {
   log(
     `[print-agent] El puerto ${PORT} ya está en uso → ya hay un print-agent corriendo. ` +
-      `Cierro esta copia (es normal). Verificá en http://localhost:${PORT}/health.`,
+      `Cierro esta copia (es normal). Verifica en http://localhost:${PORT}/health.`,
   );
   if (process.stdin.isTTY) {
     console.log('\n>>> Ya hay un print-agent corriendo (esto es normal).');
-    console.log('>>> Presioná Enter para cerrar esta ventana…');
+    console.log('>>> Presiona Enter para cerrar esta ventana…');
     try {
       readSync(0, Buffer.alloc(1), 0, 1, null);
     } catch {

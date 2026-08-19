@@ -65,7 +65,7 @@ export function BibliaView() {
         ) : loading ? (
           <p className="text-sm text-muted-foreground">Cargando…</p>
         ) : filtered.length === 0 ? (
-          <EmptyState title="Nada por acá" description="No hay recetas que coincidan." size="sm" />
+          <EmptyState title="Nada por aquí" description="No hay recetas que coincidan." size="sm" />
         ) : (
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
             {filtered.map((e) => (

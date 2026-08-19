@@ -1,7 +1,7 @@
 'use client';
 
 import type { RecipeBookEntry } from '@pos-tercos/types';
-import { Dialog } from '@pos-tercos/ui';
+import { Dialog, pluralizeUnit } from '@pos-tercos/ui';
 
 /** Detalle de una receta: composición (qué lleva) + paso a paso. */
 export function RecipeDetail({
@@ -19,7 +19,8 @@ export function RecipeDetail({
       <div className="space-y-5">
         {entry.kind === 'SUBPRODUCT' && entry.yield ? (
           <p className="text-xs text-muted-foreground">
-            Rinde <b className="text-foreground">{entry.yield}</b> {entry.unit ?? 'u'} por tanda
+            Rinde <b className="text-foreground">{fmt(entry.yield)}</b>{' '}
+            {pluralizeUnit(entry.unit, entry.yield)} por tanda
           </p>
         ) : null}
         {entry.description ? <p className="text-sm text-muted-foreground">{entry.description}</p> : null}
@@ -43,7 +44,7 @@ export function RecipeDetail({
                 <li key={`${c.type}-${c.id}`} className="flex items-baseline justify-between gap-2">
                   <span className="text-foreground">{c.name}</span>
                   <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {fmt(c.quantity)} {c.unit}
+                    {fmt(c.quantity)} {pluralizeUnit(c.unit, c.quantity)}
                     {c.mermaPct > 0 ? (
                       <span className="ml-1 text-[0.625rem] text-warning">
                         +{Math.round(c.mermaPct * 100)}% merma

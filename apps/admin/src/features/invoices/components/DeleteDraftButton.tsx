@@ -4,6 +4,7 @@ import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { deleteInvoiceDraft } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * FASE 4 ajustes 2.10. Solo renderear cuando invoice.status === 'PENDING_REVIEW'.
@@ -30,7 +31,7 @@ export function DeleteDraftButton({
       router.push('/invoices');
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
       setPending(false);
     }
   };

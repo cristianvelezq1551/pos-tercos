@@ -53,7 +53,7 @@ describe('computeProductCost', () => {
       ingredientCosts: new Map(),
     });
     expect(result.totalCost).toBeNull();
-    expect(result.missingReasons[0]).toMatch(/sin lastUnitCost/);
+    expect(result.missingReasons[0]).toMatch(/Falta el costo de "Producto"/);
   });
 
   it('directResale sin conversionFactor → null con razón explícita', () => {
@@ -63,7 +63,7 @@ describe('computeProductCost', () => {
       ingredientCosts: new Map(),
     });
     expect(result.totalCost).toBeNull();
-    expect(result.missingReasons[0]).toMatch(/sin conversionFactor/);
+    expect(result.missingReasons[0]).toMatch(/equivalencia entre la unidad/);
   });
 
   it('combo → null y deriva a computeComboCost', () => {
@@ -112,7 +112,7 @@ describe('computeProductCost', () => {
       ingredientCosts: costs,
     });
     expect(result.totalCost).toBeNull();
-    expect(result.missingReasons[0]).toMatch(/"pan" sin costo/);
+    expect(result.missingReasons[0]).toMatch(/Falta el costo de "pan"/);
     // El breakdown conserva lo que SÍ se sabe.
     const carne = result.ingredientBreakdown.find((b) => b.ingredientId === 'carne');
     expect(carne?.costContribution).toBe(3000);
@@ -137,7 +137,7 @@ describe('computeProductCost', () => {
       ingredientCosts: new Map(),
     });
     expect(result.totalCost).toBeNull();
-    expect(result.missingReasons[0]).toMatch(/ni tiene receta/);
+    expect(result.missingReasons[0]).toMatch(/no tiene receta cargada/);
   });
 
   it('redondea a 4 decimales', () => {

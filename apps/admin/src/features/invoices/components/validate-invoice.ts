@@ -37,7 +37,7 @@ export function validateInvoice(input: ValidateInvoiceInput): Validation {
   let nit = '';
   let name = '';
   if (supplierMode === 'existing') {
-    if (!supplierId) return { valid: false, reason: 'Seleccioná un proveedor.' };
+    if (!supplierId) return { valid: false, reason: 'Selecciona un proveedor.' };
     const found = suppliers.find((s) => s.id === supplierId);
     if (!found) return { valid: false, reason: 'Proveedor seleccionado no existe.' };
     nit = found.nit;

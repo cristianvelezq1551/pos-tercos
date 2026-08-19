@@ -15,6 +15,7 @@ import {
   ChefHat,
   PackageCheck,
   Sparkles,
+  TrendingDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
@@ -31,7 +32,9 @@ const POLL_MS = 15_000;
  */
 export function LiveDashboardSections({ initial }: { initial: DashboardSummary }) {
   const [summary, setSummary] = useState<DashboardSummary>(initial);
-  const [updatedAt, setUpdatedAt] = useState<Date>(new Date());
+  // Arranca en null: la hora del servidor y la del navegador nunca coinciden y
+  // el reloj vive en un atributo (title) que React no repara al hidratar.
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [stale, setStale] = useState(false);
   const firstRender = useRef(true);
 
@@ -39,6 +42,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
     // Saltamos el primer fetch — ya tenemos `initial` desde SSR.
     if (firstRender.current) {
       firstRender.current = false;
+      setUpdatedAt(new Date());
     }
 
     let cancelled = false;
@@ -55,7 +59,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
       }
     };
 
-    const id = window.setInterval(tick, POLL_MS);
+    const id = window.setInterval(() => void tick(), POLL_MS);
     const onFocus = (): void => {
       if (document.visibilityState !== 'hidden') void tick();
     };
@@ -71,6 +75,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
 
   return (
     <>
+      <NegativeStockAlert count={summary.negativeStockCount} />
       <Section
         eyebrow="Hoy en números"
         title="Pulso del local"
@@ -82,7 +87,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
                 'inline-flex items-center gap-1.5 text-[0.6875rem]',
                 stale ? 'text-warning' : 'text-success',
               )}
-              title={`Actualizado: ${updatedAt.toLocaleTimeString('es-CO')}`}
+              title={updatedAt ? `Actualizado: ${updatedAt.toLocaleTimeString('es-CO')}` : undefined}
             >
               <span
                 className={cn(
@@ -172,6 +177,40 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
         </div>
       </Section>
     </>
+  );
+}
+
+/**
+ * Deuda de inventario: solo aparece cuando hay algo que arreglar (no es un KPI
+ * que deba mirarse en 0 todo el día). Es la señal de "te falta subir una
+ * factura" — la causa raíz de que el inventario se desincronice.
+ */
+function NegativeStockAlert({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <Link href="/inventory/negativos" className="group block">
+      <Card
+        variant="accent"
+        tone="warning"
+        interactive
+        className="mb-4 flex items-center gap-3 px-5 py-4"
+      >
+        <TrendingDown className="h-5 w-5 shrink-0 text-warning" strokeWidth={1.75} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">
+            {count === 1 ? '1 insumo en negativo' : `${count} insumos en negativo`}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Se vendió más de lo registrado. Probablemente falta subir una factura o registrar una
+            producción.
+          </p>
+        </div>
+        <span className="caps hidden shrink-0 items-center gap-1 text-[0.6875rem] text-primary group-hover:underline sm:inline-flex">
+          Revisar
+          <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
+        </span>
+      </Card>
+    </Link>
   );
 }
 

@@ -23,7 +23,7 @@ export function CountForm({ stockables, onDone }: { stockables: Stockable[]; onD
       .filter((s) => values[s.id]?.trim() !== '' && values[s.id] !== undefined)
       .map((s) => ({ ...stockableRef(s), countedQty: Number(values[s.id]) }))
       .filter((i) => Number.isFinite(i.countedQty) && i.countedQty >= 0);
-    if (items.length === 0) return setError('Contá al menos un ítem.');
+    if (items.length === 0) return setError('Cuenta al menos un ítem.');
     setPending(true);
     setError(null);
     try {
@@ -41,7 +41,7 @@ export function CountForm({ stockables, onDone }: { stockables: Stockable[]; onD
   return (
     <div className="space-y-3">
       <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        Conteo a ciegas: contá lo que hay y escribí la cantidad. El administrador revisa y aprueba tu
+        Conteo a ciegas: cuenta lo que hay y escribe la cantidad. El administrador revisa y aprueba tu
         conteo antes de que ajuste el inventario — no te mostramos lo esperado.
       </p>
 

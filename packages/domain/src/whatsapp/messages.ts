@@ -10,7 +10,13 @@ import type {
   WhatsAppSaleSnapshot,
 } from './types';
 
-/** Cajero aceptó el pedido → pedimos pago + comprobante. */
+/**
+ * Cajero aceptó el pedido → pedimos pago + comprobante.
+ *
+ * En domicilio esto sale recién cuando el cajero asigna el envío: el total ya
+ * lo incluye (el cliente transfiere UN solo monto). Antes de eso el número no
+ * sería real.
+ */
 export function buildPaymentInstructionsMessage(
   sale: WhatsAppSaleSnapshot,
   opts: WhatsAppMessageOptions,
@@ -18,10 +24,18 @@ export function buildPaymentInstructionsMessage(
   const instr = opts.paymentInstructions?.trim()
     ? `\n\n${opts.paymentInstructions.trim()}`
     : '';
+  // Con envío se muestra el DESGLOSE: el cliente vio un número en la web y
+  // ahora le llega otro más alto. "Ya incluye el domicilio" no le dice cuánto
+  // fue —y ese es justo el dato que va a querer discutir—.
+  const fee = sale.deliveryFee ?? 0;
+  const total =
+    fee > 0
+      ? `${formatCop(sale.total)} (${formatCop(sale.total - fee)} del pedido + ${formatCop(fee)} de domicilio)`
+      : formatCop(sale.total);
   return (
     `${greet(sale.customerName)}, recibimos tu pedido #${sale.receiptNumber} en ${opts.businessName}. ` +
-    `Total: ${formatCop(sale.total)}.${instr}\n\n` +
-    `Cuando pagues, enviános el comprobante por este chat para confirmarlo. ¡Gracias!`
+    `Total: ${total}.${instr}\n\n` +
+    `Cuando pagues, envíanos el comprobante por este chat para confirmarlo. ¡Gracias!`
   );
 }
 
@@ -36,11 +50,22 @@ export function buildPaymentReceivedMessage(
   );
 }
 
-/** Cocina marcó listo → retirar en el local. */
+/**
+ * El pedido está listo. Un domicilio NO se retira: va en camino, así que el
+ * texto se bifurca por la dirección de entrega. La dirección se repite en el
+ * mensaje para que el cliente pueda corregirla antes de que salga.
+ */
 export function buildPickupReadyMessage(
   sale: WhatsAppSaleSnapshot,
   opts: WhatsAppMessageOptions,
 ): string {
+  const deliveryAddress = sale.deliveryAddress?.trim();
+  if (deliveryAddress) {
+    return (
+      `${greet(sale.customerName)}, tu pedido #${sale.receiptNumber} va en camino 🛵 ` +
+      `Lo llevamos a: ${deliveryAddress}. — ${opts.businessName}`
+    );
+  }
   const addr = opts.businessAddressShort?.trim()
     ? ` Te esperamos en ${opts.businessAddressShort.trim()}.`
     : '';
@@ -56,7 +81,7 @@ export function buildCanceledMessage(
 ): string {
   return (
     `${greet(sale.customerName)}, lamentablemente tu pedido #${sale.receiptNumber} fue cancelado. ` +
-    `Si creés que es un error o querés volver a pedir, escribinos por este chat. — ${opts.businessName}`
+    `Si crees que es un error o quieres volver a pedir, escríbenos por este chat. — ${opts.businessName}`
   );
 }
 

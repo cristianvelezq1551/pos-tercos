@@ -3,6 +3,7 @@
 import { Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { fetchCloseAnalysis } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /** Botón on-demand que pide a la IA explicar el cierre/descuadre de una caja. */
 export function ShiftCloseAiButton({ shiftId }: { shiftId: string }) {
@@ -17,7 +18,7 @@ export function ShiftCloseAiButton({ shiftId }: { shiftId: string }) {
       const res = await fetchCloseAnalysis(shiftId);
       setText(res.text);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo generar el análisis');
+      setError(getErrorMessage(e, 'No se pudo generar el análisis'));
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ export function ShiftCloseAiButton({ shiftId }: { shiftId: string }) {
         </p>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">
-          Pedile a la IA que explique cómo quedó la caja y la causa probable de la diferencia.
+          Pídele a la IA que explique cómo quedó la caja y la causa probable de la diferencia.
         </p>
       )}
     </div>

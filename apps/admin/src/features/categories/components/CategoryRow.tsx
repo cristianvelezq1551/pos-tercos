@@ -133,7 +133,7 @@ export function CategoryRow({
           size="sm"
           variant="ghost"
           disabled={busy || count > 0}
-          title={count > 0 ? 'Reasigná sus productos antes de borrar' : 'Borrar categoría'}
+          title={count > 0 ? 'Reasigna sus productos antes de borrar' : 'Borrar categoría'}
           onClick={onDelete}
         >
           <Trash2 className="h-4 w-4 text-destructive" />

@@ -25,8 +25,8 @@ export const PayableCommitmentSchema = z.object({
 export type PayableCommitment = z.infer<typeof PayableCommitmentSchema>;
 
 export const CreatePayableSchema = z.object({
-  beneficiary: z.string().min(1, 'Indicá a quién se le debe').max(120),
-  description: z.string().min(1, 'Describí el compromiso').max(300),
+  beneficiary: z.string().min(1, 'Indica a quién se le debe').max(120),
+  description: z.string().min(1, 'Describe el compromiso').max(300),
   amount: z.number().positive('El monto debe ser mayor a 0'),
 });
 export type CreatePayable = z.infer<typeof CreatePayableSchema>;

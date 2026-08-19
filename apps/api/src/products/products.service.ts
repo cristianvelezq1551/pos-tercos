@@ -205,10 +205,10 @@ export class ProductsService {
     const nextComboPrice = input.comboPrice ?? (input.isCombo === false ? null : undefined);
 
     if (nextIsCombo && nextComboPrice === null) {
-      throw new BadRequestException('comboPrice cannot be null when isCombo is true');
+      throw new BadRequestException('Un combo necesita un precio de combo.');
     }
     if (!nextIsCombo && nextComboPrice !== null && nextComboPrice !== undefined) {
-      throw new BadRequestException('comboPrice must be null when isCombo is false');
+      throw new BadRequestException('Solo los combos llevan precio de combo.');
     }
 
     // Normaliza la categoría contra el catálogo curado (evita duplicados por tipeo).
@@ -262,7 +262,7 @@ export class ProductsService {
     for (const s of input.sizes) {
       if (s.id) {
         if (!existingIds.has(s.id)) {
-          throw new BadRequestException(`La variante ${s.id} no pertenece a este producto`);
+          throw new BadRequestException(`Una de las variantes no pertenece a este producto.`);
         }
         incomingIds.add(s.id);
       }
@@ -369,8 +369,42 @@ export class ProductsService {
    * Hace ~3 queries + 1 grafo (sin N+1): stock de productos, stock de insumos
    * y el grafo completo de recetas; la expansión por producto es en memoria.
    */
+  /** SIEMPRE fresco. Lo usa el endpoint INTERNO (cajero) y el snapshot offline,
+   *  donde reponer stock / agotar debe reflejarse al instante. */
   async getAvailability(): Promise<ProductAvailability[]> {
     return evaluateAvailability(await this.loadAvailabilityData());
+  }
+
+  /**
+   * §2.8: variante con caché TTL corto para el endpoint `@Public` (web).
+   * `loadAvailabilityData` hace 3 groupBy FULL-TABLE sobre inventory_movements
+   * (insert-only → crece para siempre) + el grafo de recetas. El público lo
+   * pollea cualquier cliente anónimo → sin caché, a 12-18 meses de historia cada
+   * hit son 3 seq-scans que degradan el API entero. Memoizar la PROMESA dedupe
+   * además los hits concurrentes. El cajero (interno) NO pasa por acá → ve el
+   * cambio al instante; la web tolera ≤ TTL de staleness (86/forzado invalidan).
+   */
+  async getAvailabilityCached(): Promise<ProductAvailability[]> {
+    const now = Date.now();
+    if (this.availabilityCache && now - this.availabilityCache.at < ProductsService.AVAILABILITY_TTL_MS) {
+      return this.availabilityCache.promise;
+    }
+    const promise = this.getAvailability();
+    this.availabilityCache = { promise, at: now };
+    // No cachear un error: si falla, limpiar para reintentar en el próximo hit.
+    void promise.catch(() => {
+      if (this.availabilityCache?.promise === promise) this.availabilityCache = null;
+    });
+    return promise;
+  }
+
+  private static readonly AVAILABILITY_TTL_MS = 15_000;
+  private availabilityCache: { promise: Promise<ProductAvailability[]>; at: number } | null = null;
+
+  /** Invalida el caché público de disponibilidad (86 manual / forzar disponible
+   *  se reflejan en la web al instante; ventas/producciones, dentro del TTL). */
+  private invalidateAvailability(): void {
+    this.availabilityCache = null;
   }
 
   /** Productos + stock (productos/insumos/subproductos) + grafo (sin N+1). */
@@ -390,6 +424,7 @@ export class ProductsService {
           directResale: true,
           isCombo: true,
           soldOut: true,
+          forceAvailable: true,
           comboComponents: { select: { productId: true, quantity: true } },
         },
       }),
@@ -449,9 +484,31 @@ export class ProductsService {
     if (!exists) throw new NotFoundException(`Product ${id} not found`);
     const row = await this.prisma.product.update({
       where: { id },
-      data: { soldOut },
+      // 86 y forzado son excluyentes: agotar a mano limpia el forzado.
+      data: { soldOut, ...(soldOut ? { forceAvailable: false } : {}) },
       include: { sizes: true, modifiers: true, comboComponents: true },
     });
+    this.invalidateAvailability();
+    return toProductDto(row);
+  }
+
+  /**
+   * Fuerza (o revierte) que un producto sea vendible aunque su stock de
+   * insumos/subproductos no alcance en el sistema. Excluyente con soldOut:
+   * forzar limpia el 86 manual.
+   */
+  async setForceAvailable(id: string, forceAvailable: boolean): Promise<Product> {
+    const exists = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException(`Product ${id} not found`);
+    const row = await this.prisma.product.update({
+      where: { id },
+      data: { forceAvailable, ...(forceAvailable ? { soldOut: false } : {}) },
+      include: { sizes: true, modifiers: true, comboComponents: true },
+    });
+    this.invalidateAvailability();
     return toProductDto(row);
   }
 
@@ -507,15 +564,15 @@ export class ProductsService {
     const ids = components.map((c) => c.productId);
     const found = await this.prisma.product.findMany({
       where: { id: { in: ids } },
-      select: { id: true, isCombo: true },
+      select: { id: true, name: true, isCombo: true },
     });
     const missing = ids.filter((id) => !found.some((p) => p.id === id));
     if (missing.length > 0) {
-      throw new BadRequestException(`Combo references missing products: ${missing.join(', ')}`);
+      throw new BadRequestException(`El combo incluye productos que ya no existen en el catálogo.`);
     }
     const nestedCombo = found.find((p) => p.isCombo);
     if (nestedCombo) {
-      throw new BadRequestException(`Combo cannot include another combo (${nestedCombo.id})`);
+      throw new BadRequestException(`Un combo no puede incluir otro combo ("${nestedCombo.name}").`);
     }
   }
 }
@@ -535,6 +592,7 @@ function toProductDto(row: ProductWithChildren): Product {
     comboPrice: row.comboPrice !== null ? Number(row.comboPrice) : null,
     isActive: row.isActive,
     soldOut: row.soldOut,
+    forceAvailable: row.forceAvailable,
     directResale: row.directResale,
     unitPurchase: row.unitPurchase,
     unitStock: row.unitStock,

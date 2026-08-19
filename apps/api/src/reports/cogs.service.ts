@@ -21,6 +21,7 @@ import {
   type ProductMargin,
   type ProductMarginReport,
 } from '@pos-tercos/types';
+import { ymdLocal } from '../common/local-dates';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -55,20 +56,23 @@ export class CogsService {
   //   1. El seed lleva lotes restantes + waste/cortesía históricos + costo por
   //      cortesía → valuación, lotes y cortesías son EXACTOS en incremental.
   //   2. Los costos POR VENTA pre-corte NO están en el incremental → un
-  //      reporte cuyo rango empiece ANTES del corte usa replay completo
-  //      (parámetro `rangeFrom` de runLedger).
+  //      reporte usa el snapshot MÁS NUEVO cuyo corte sea <= el inicio de su
+  //      rango (`rangeFrom`). Como los snapshots de todos los meses quedan
+  //      guardados, los reportes históricos también corren incrementales; solo
+  //      cae a replay completo lo anterior al PRIMER corte.
   //   3. Una reversa (void/edición/anulación de cortesía) que cruza el corte
   //      enciende `needsFullReplay` → fallback automático a replay completo.
   //      Nunca hay resultado incorrecto, solo uno más lento.
   // ==================================================================
 
   /**
-   * Caché del ledger con TTL corto, una entrada por modo (incremental / full).
+   * Caché del ledger con TTL corto, una entrada por corte usado (`full` o
+   * `inc:<corte>`).
    * Memoizar la PROMESA deduplica llamados concurrentes. Sin invalidación por
    * escritura a propósito: un reporte de COGS tolera ≤ TTL de staleness.
    */
   private static readonly LEDGER_TTL_MS = 60_000;
-  private ledgerCache = new Map<'incremental' | 'full', { promise: Promise<LedgerFifo>; at: number }>();
+  private ledgerCache = new Map<string, { promise: Promise<LedgerFifo>; at: number }>();
 
   /** Limpia la caché (tras crear un snapshot, y para tests). */
   invalidateLedgerCache(): void {
@@ -82,25 +86,31 @@ export class CogsService {
    *   (valuación, lotes, cortesías) el incremental siempre sirve: el seed
    *   preserva lotes y agregados históricos completos.
    */
-  private runLedger(rangeFrom?: Date): Promise<LedgerFifo> {
-    return this.cachedLedger('incremental', async () => {
-      const snapshot = await this.latestSnapshot();
-      if (!snapshot) return this.computeLedger(null);
-      if (rangeFrom && rangeFrom < snapshot.cutoffAt) {
-        // Rango histórico: necesita costos de ventas pre-corte.
-        return this.fullLedger();
-      }
-      const incremental = await this.computeLedger(snapshot);
-      if (incremental.needsFullReplay) {
-        // Reversa cruzó el corte (void de una venta del mes pasado): el
-        // incremental es incompleto. Recomputar completo — correcto siempre.
-        this.logger.warn(
-          `Reversa cruza el corte del snapshot (${snapshot.cutoffAt.toISOString()}) → replay completo`,
-        );
-        return this.fullLedger();
-      }
-      return incremental;
-    });
+  private async runLedger(rangeFrom?: Date): Promise<LedgerFifo> {
+    // ⚠️ Qué snapshot se usa se resuelve ANTES de tocar la caché, y la clave de
+    // la caché lleva SU CORTE. Con una sola entrada de "incremental", un
+    // cache-hit de otro caller (p.ej. la valuación, que llama sin rango y usa
+    // el corte más nuevo) le devolvería ese resultado a un reporte histórico
+    // que necesita un corte anterior → COGS de las ventas pre-corte en $0
+    // (margen inflado). El corte en la clave hace imposible ese cruce.
+    const snapshot = await this.pickSnapshot(rangeFrom);
+    if (!snapshot) {
+      // Sin snapshot que cubra el rango (historia anterior al primer corte).
+      return this.fullLedger();
+    }
+    const incremental = await this.cachedLedger(
+      `inc:${snapshot.cutoffAt.toISOString()}`,
+      () => this.computeLedger(snapshot),
+    );
+    if (incremental.needsFullReplay) {
+      // Reversa cruzó el corte (void de una venta del mes pasado): el
+      // incremental es incompleto. Recomputar completo — correcto siempre.
+      this.logger.warn(
+        `Reversa cruza el corte del snapshot (${snapshot.cutoffAt.toISOString()}) → replay completo`,
+      );
+      return this.fullLedger();
+    }
+    return incremental;
   }
 
   /** Replay completo (sin seed), con su propia entrada de caché. */
@@ -108,8 +118,9 @@ export class CogsService {
     return this.cachedLedger('full', () => this.computeLedger(null));
   }
 
+  /** `key` = 'full' o `inc:<corte ISO>` — ver la nota de `runLedger`. */
   private cachedLedger(
-    mode: 'incremental' | 'full',
+    mode: string,
     compute: () => Promise<LedgerFifo>,
   ): Promise<LedgerFifo> {
     const now = Date.now();
@@ -124,8 +135,27 @@ export class CogsService {
     return promise;
   }
 
-  private async latestSnapshot(): Promise<{ cutoffAt: Date; seed: LedgerSeed } | null> {
+  /**
+   * Snapshot MÁS NUEVO que sirve para costear ventas desde `rangeFrom`.
+   *
+   * Los snapshots de todos los meses quedan guardados (nunca se borran), pero
+   * antes solo se miraba el último: cualquier reporte histórico (el P&G del mes
+   * pasado, la tendencia de 6 meses) tenía su rango ANTES de ese corte y caía a
+   * replay completo desde el génesis, aunque existiera un snapshot justo de esa
+   * época. Eligiendo el corte que cubre el rango, esos reportes también corren
+   * incrementales.
+   *
+   * Sin `rangeFrom` (valuación, lotes, cortesías) sirve el último: el seed
+   * preserva los agregados históricos completos.
+   */
+  private async pickSnapshot(
+    rangeFrom?: Date,
+  ): Promise<{ cutoffAt: Date; seed: LedgerSeed } | null> {
     const row = await this.prisma.ledgerSnapshot.findFirst({
+      // El corte debe ser <= rangeFrom: si fuera posterior, las ventas del
+      // arranque del rango quedarían DENTRO del snapshot y sus costos por venta
+      // no están en el seed (a propósito) → COGS en $0.
+      where: rangeFrom ? { cutoffAt: { lte: rangeFrom } } : undefined,
       orderBy: { cutoffAt: 'desc' },
       select: { cutoffAt: true, payload: true },
     });
@@ -170,11 +200,49 @@ export class CogsService {
   }
 
   private async computeLedger(snapshot: { cutoffAt: Date; seed: LedgerSeed } | null): Promise<LedgerFifo> {
+    const opts = { fallbackUnitCost: await this.loadFallbackUnitCost() };
     if (!snapshot) {
-      return runLedgerFifo(await this.loadMovements({}));
+      return runLedgerFifo(await this.loadMovements({}), undefined, opts);
     }
     const plain = await this.loadMovements({ createdAt: { gte: snapshot.cutoffAt } });
-    return runLedgerFifo(plain, snapshot.seed);
+    return runLedgerFifo(plain, snapshot.seed, opts);
+  }
+
+  /**
+   * Respaldo para ESTIMAR el faltante de una venta sin stock cuando el replay
+   * todavía no vio ninguna entrada de ese stockable (primera venta, sin compras
+   * previas). Solo insumos y productos de reventa: los subproductos no tienen
+   * precio histórico (su costo se deriva de la producción, y el replay ya lo
+   * recuerda solo).
+   *
+   * ⚠️ `lastUnitCost` está en unit_PURCHASE ($/bulto) y el ledger trabaja en
+   * unit_STOCK ($/gramo) → se divide por `conversionFactor` (mismo criterio que
+   * el reporte de uso y mermas).
+   */
+  private async loadFallbackUnitCost(): Promise<Record<string, number>> {
+    const [ingredients, products] = await Promise.all([
+      this.prisma.ingredient.findMany({
+        where: { lastUnitCost: { not: null } },
+        select: { id: true, lastUnitCost: true, conversionFactor: true },
+      }),
+      this.prisma.product.findMany({
+        where: { directResale: true, lastUnitCost: { not: null } },
+        select: { id: true, lastUnitCost: true, conversionFactor: true },
+      }),
+    ]);
+    const out: Record<string, number> = {};
+    for (const i of ingredients) {
+      const factor = Number(i.conversionFactor);
+      if (!(factor > 0)) continue;
+      out[`INGREDIENT:${i.id}`] = Number(i.lastUnitCost) / factor;
+    }
+    for (const p of products) {
+      // conversionFactor null en reventa = 1 (se compra y vende por unidad).
+      const factor = p.conversionFactor !== null ? Number(p.conversionFactor) : 1;
+      if (!(factor > 0)) continue;
+      out[`PRODUCT:${p.id}`] = Number(p.lastUnitCost) / factor;
+    }
+    return out;
   }
 
   // ==================================================================
@@ -212,7 +280,11 @@ export class CogsService {
       throw new Error('El corte del snapshot debe ser al menos 1 hora en el pasado');
     }
     const movements = await this.loadMovements({ createdAt: { lt: cutoffAt } });
-    const full = runLedgerFifo(movements);
+    // Mismo fallback que el replay normal: si no, una deuda sembrada guardaría
+    // un estimado distinto al que calcula `runLedger` y el corte movería costos.
+    const full = runLedgerFifo(movements, undefined, {
+      fallbackUnitCost: await this.loadFallbackUnitCost(),
+    });
     const seed = buildLedgerSeed(full, cutoffAt.toISOString());
     await this.prisma.ledgerSnapshot.upsert({
       where: { cutoffAt },
@@ -235,7 +307,9 @@ export class CogsService {
   }
 
   /** Costo FIFO real por solicitud de cortesía (sourceId → costo). Cacheado. */
-  async getCortesiaCostBySource(): Promise<Map<string, { cost: number; unknownQty: number }>> {
+  async getCortesiaCostBySource(): Promise<
+    Map<string, { cost: number; unknownQty: number; estimatedCost: number }>
+  > {
     const ledger = await this.runLedger();
     return ledger.cortesiaCostBySource;
   }
@@ -249,7 +323,7 @@ export class CogsService {
   async getApprovedCortesiaCost(
     from: Date,
     to: Date,
-  ): Promise<{ total: number; count: number; unknownQty: number }> {
+  ): Promise<{ total: number; count: number; unknownQty: number; estimatedCost: number }> {
     const [ledger, approved] = await Promise.all([
       this.runLedger(),
       this.prisma.cortesiaRequest.findMany({
@@ -259,31 +333,48 @@ export class CogsService {
     ]);
     let total = 0;
     let unknownQty = 0;
+    let estimatedCost = 0;
     for (const r of approved) {
       const entry = ledger.cortesiaCostBySource.get(r.id);
       total += entry?.cost ?? 0;
       // FIFO sin lote disponible al aprobar → costo desconocido. Lo arrastramos
       // para avisar que la pérdida real puede estar subestimada.
       unknownQty += entry?.unknownQty ?? 0;
+      // Parte valuada al último precio conocido: es un número honesto pero
+      // provisional, y la UI tiene que decirlo (se corrige con la factura).
+      estimatedCost += entry?.estimatedCost ?? 0;
     }
-    return { total: round(total), count: approved.length, unknownQty: round(unknownQty) };
+    return {
+      total: round(total),
+      count: approved.length,
+      unknownQty: round(unknownQty),
+      estimatedCost: round(estimatedCost),
+    };
   }
 
   // ==================================================================
   // P&L del período
   // ==================================================================
 
-  /** Suma el costo FIFO atribuido a una venta (insumos + reventa + subproductos). */
-  private saleCost(ledger: LedgerFifo, saleId: string): { cost: number; unknownQty: number } {
+  /** Suma el costo FIFO atribuido a una venta (insumos + reventa + subproductos).
+   *  `estimatedQty` = unidades costeadas con un ESTIMADO (venta forzada sin stock,
+   *  aún sin factura que confirme el precio real) → el COGS de esa venta no es
+   *  exacto todavía; se corrige al subir la factura. */
+  private saleCost(
+    ledger: LedgerFifo,
+    saleId: string,
+  ): { cost: number; unknownQty: number; estimatedQty: number } {
     let cost = 0;
     let unknownQty = 0;
+    let estimatedQty = 0;
     for (const m of [ledger.saleIngredientCost, ledger.saleProductCost, ledger.saleSubproductCost]) {
       for (const e of m.get(saleId)?.values() ?? []) {
         cost += e.cost;
         unknownQty += e.unknownQty;
+        estimatedQty += e.estimatedQty;
       }
     }
-    return { cost, unknownQty };
+    return { cost, unknownQty, estimatedQty };
   }
 
   async getPnl(from: Date, to: Date): Promise<PnlReport> {
@@ -293,7 +384,7 @@ export class CogsService {
       this.runLedger(from),
       this.prisma.sale.findMany({
         where: { paidAt: { gte: from, lte: to }, status: { notIn: [...EXCLUDED_STATUSES] } },
-        select: { id: true, total: true },
+        select: { id: true, total: true, discountTotal: true, deliveryFee: true },
       }),
       // Reembolsos del período: VOID con stock NO revertido (la comida ya se
       // preparó). Su costo FIFO quedó en el ledger pero la venta está excluida
@@ -310,13 +401,31 @@ export class CogsService {
     ]);
 
     let revenue = 0;
+    // Descuentos ya restados de `revenue`. Se acumulan aparte porque el P&G
+    // mostraba el neto sin decir en ningún lado cuánto se regaló.
+    let discountTotal = 0;
     let cogs = 0;
     let unknownQty = 0;
+    let estimatedQty = 0;
+    // El envío NO es ingreso del negocio (decisión del dueño 2026-07-27): esa
+    // plata es del domiciliario y solo pasa por la caja. Se descuenta de
+    // `revenue` y se reporta aparte — si se sumara, además de inflar las
+    // ventas subiría el margen bruto (no consume inventario) y ensuciaría el
+    // punto de equilibrio.
+    let deliveryCollected = 0;
+    let deliveryOrderCount = 0;
     for (const s of sales) {
-      revenue += Number(s.total);
+      const fee = Number(s.deliveryFee ?? 0);
+      revenue += Number(s.total) - fee;
+      discountTotal += Number(s.discountTotal ?? 0);
+      if (fee > 0) {
+        deliveryCollected += fee;
+        deliveryOrderCount += 1;
+      }
       const c = this.saleCost(ledger, s.id);
       cogs += c.cost;
       unknownQty += c.unknownQty;
+      estimatedQty += c.estimatedQty;
     }
 
     let refundCost = 0;
@@ -329,26 +438,43 @@ export class CogsService {
 
     const fromIso = from.toISOString();
     const toIso = to.toISOString();
-    const wasteCost = ledger.waste
-      .filter((w) => w.createdAt >= fromIso && w.createdAt <= toIso)
-      .reduce((s, w) => s + w.cost, 0);
-    const cortesiaCost = ledger.cortesia
-      .filter((c) => c.createdAt >= fromIso && c.createdAt <= toIso)
-      .reduce((s, c) => s + c.cost, 0);
+    const wasteInRange = ledger.waste.filter(
+      (w) => w.createdAt >= fromIso && w.createdAt <= toIso,
+    );
+    const cortesiaInRange = ledger.cortesia.filter(
+      (c) => c.createdAt >= fromIso && c.createdAt <= toIso,
+    );
+    const wasteCost = wasteInRange.reduce((s, w) => s + w.cost, 0);
+    const cortesiaCost = cortesiaInRange.reduce((s, c) => s + c.cost, 0);
+    const wasteEstimatedCost = wasteInRange.reduce((s, w) => s + w.estimatedCost, 0);
+    const cortesiaEstimatedCost = cortesiaInRange.reduce((s, c) => s + c.estimatedCost, 0);
 
     const grossMargin = revenue - cogs;
     return {
-      periodFrom: fromIso.slice(0, 10),
-      periodTo: toIso.slice(0, 10),
+      // Día calendario LOCAL: `to` llega a las 23:59:59.999 locales, que en
+      // Bogotá ya es el día siguiente en UTC → `toISOString().slice(0,10)`
+      // mostraba "01 jul – 01 ago" para el rango de julio (ver local-dates.ts).
+      periodFrom: ymdLocal(from),
+      periodTo: ymdLocal(to),
       revenue: round(revenue),
+      discountTotal: round(discountTotal),
+      grossRevenue: round(revenue + discountTotal),
       cogs: round(cogs),
       grossMargin: round(grossMargin),
       grossMarginPct: revenue > 0 ? Math.round((grossMargin / revenue) * 10000) / 10000 : null,
       wasteCost: round(wasteCost),
       cortesiaCost: round(cortesiaCost),
       refundCost: round(refundCost),
+      deliveryCollected: round(deliveryCollected),
+      deliveryOrderCount,
       salesCount: sales.length,
       cogsUnknownQty: Math.round((unknownQty + refundUnknownQty) * 10000) / 10000,
+      // §1.12: unidades costeadas con ESTIMADO (venta forzada sin stock). El COGS
+      // aún NO es exacto para esas unidades — se corrige al subir la factura. Un
+      // COGS 100% estimado se veía como exacto (cogsPartial=false).
+      cogsEstimatedQty: Math.round(estimatedQty * 10000) / 10000,
+      wasteEstimatedCost: round(wasteEstimatedCost),
+      cortesiaEstimatedCost: round(cortesiaEstimatedCost),
     };
   }
 
@@ -550,8 +676,9 @@ export class CogsService {
     const tCogs = list.reduce((s, p) => s + p.cogs, 0);
     const tMargin = tRevenue - tCogs;
     return {
-      periodFrom: from.toISOString().slice(0, 10),
-      periodTo: to.toISOString().slice(0, 10),
+      // Día calendario LOCAL — mismo motivo que en `getPnl`.
+      periodFrom: ymdLocal(from),
+      periodTo: ymdLocal(to),
       products: list,
       totals: {
         revenue: round(tRevenue),

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { manualDiscountAmount, roundMoney, type ManualDiscountSpec } from '@pos-tercos/domain';
+import { isWebSaleType } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ChangeSalePayment,
@@ -132,7 +133,7 @@ export class SalesEditService {
             ? Promise.resolve([])
             : this.promotions.loadActiveAt(
                 now,
-                existing.type === 'WEB_PICKUP' ? 'WEB' : 'POS',
+                isWebSaleType(existing.type) ? 'WEB' : 'POS',
               ),
         ]);
         const productMap = new Map(products.map((p) => [p.id, p]));
@@ -187,14 +188,19 @@ export class SalesEditService {
           ? manualDiscountAmount(roundMoney(subtotal - lineDiscountTotal), orderDiscountSpec)
           : 0;
         const discountTotal = roundMoney(lineDiscountTotal + orderDiscountAmount);
-        const total = roundMoney(subtotal - discountTotal);
+        // El envío (WEB_DELIVERY) es parte del total y NO se recalcula al editar
+        // ítems: entra tal cual al breakdown (CHECK sales_total_matches_breakdown =
+        // subtotal − descuento + envío). Omitirlo violaba el CHECK → 500 en cada
+        // edición de un domicilio con envío asignado.
+        const deliveryFee = Number(existing.deliveryFee);
+        const total = roundMoney(subtotal - discountTotal + deliveryFee);
         const oldTotal = Number(existing.total);
 
         // Cuenta dividida + total distinto: no hay forma única de repartir la
         // diferencia entre las partes → se corrige el pago aparte (changePayment).
         if (existing.payments.length > 1 && Math.abs(total - oldTotal) > 0.005) {
           throw new BadRequestException(
-            'La cuenta está dividida y el total cambiaría. Ajustá los pagos con "Cambiar pago" después de igualar el total, o anulá y recobrá.',
+            'La cuenta está dividida y el total cambiaría. Ajusta los pagos con "Cambiar pago" después de igualar el total, o anula y vuelve a cobrar.',
           );
         }
 
@@ -204,34 +210,44 @@ export class SalesEditService {
         const stockWasDeducted = STOCK_DEDUCTED_STATUSES.includes(
           existing.status as (typeof STOCK_DEDUCTED_STATUSES)[number],
         );
-        const deltaMovements = stockWasDeducted
-          ? this.consumptionDelta(
-              ...(await Promise.all([
-                this.consumption.computeConsumptionSpecs(
-                  existing.items.map((it) => ({
-                    productId: it.productId,
-                    quantity: it.quantity,
-                    sizeId: it.sizeId,
-                    modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map(
-                      (m) => ({ modifierId: m.modifierId }),
-                    ),
-                  })),
-                  `Sale ${saleId.slice(0, 8)}`,
-                ),
-                this.consumption.computeConsumptionSpecs(
-                  input.items.map((it) => ({
-                    productId: it.productId,
-                    quantity: it.quantity,
-                    sizeId: it.sizeId ?? null,
-                    modifiers: it.modifiers,
-                  })),
-                  `Sale ${saleId.slice(0, 8)}`,
-                ),
-              ])),
-              saleId,
-              userId,
-            )
-          : [];
+        let deltaMovements: Prisma.InventoryMovementCreateManyInput[] = [];
+        // Faltantes tolerados al ajustar (mismo criterio que el cobro):
+        // productos forzados disponibles + consumibles.
+        let tolerateStockKeys = new Set<string>();
+        if (stockWasDeducted) {
+          const [oldSpecs, newSpecs] = await Promise.all([
+            this.consumption.computeConsumptionSpecs(
+              existing.items.map((it) => ({
+                productId: it.productId,
+                quantity: it.quantity,
+                sizeId: it.sizeId,
+                modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
+                  modifierId: m.modifierId,
+                })),
+              })),
+              `Sale ${saleId.slice(0, 8)}`,
+            ),
+            this.consumption.computeConsumptionSpecs(
+              input.items.map((it) => ({
+                productId: it.productId,
+                quantity: it.quantity,
+                sizeId: it.sizeId ?? null,
+                modifiers: it.modifiers,
+              })),
+              `Sale ${saleId.slice(0, 8)}`,
+            ),
+          ]);
+          deltaMovements = this.consumptionDelta(oldSpecs, newSpecs, saleId, userId);
+          const lineProductIds = Array.from(new Set(input.items.map((it) => it.productId)));
+          const forced = await this.prisma.product.findMany({
+            where: { id: { in: lineProductIds }, forceAvailable: true },
+            select: { id: true },
+          });
+          tolerateStockKeys = this.consumption.tolerableKeys(
+            newSpecs,
+            new Set(forced.map((p) => p.id)),
+          );
+        }
 
         // Comanda incremental (#3): preservar lo YA enviado a cocina. Las filas
         // se recrean, así que la cantidad enviada se transfiere por huella de
@@ -291,7 +307,7 @@ export class SalesEditService {
         });
         if (res.count === 0) {
           throw new BadRequestException(
-            'El pedido cambió de estado — recargá e intentá de nuevo.',
+            'El pedido cambió de estado — recarga e intenta de nuevo.',
           );
         }
         await tx.saleItem.deleteMany({ where: { saleId } });
@@ -328,7 +344,7 @@ export class SalesEditService {
         }
 
         if (deltaMovements.length > 0) {
-          await this.consumption.assertStockSufficient(tx, deltaMovements);
+          await this.consumption.assertStockSufficient(tx, deltaMovements, tolerateStockKeys);
           await tx.inventoryMovement.createMany({ data: deltaMovements });
         }
 
@@ -437,7 +453,7 @@ export class SalesEditService {
         (fresh.shift && fresh.shift.status !== 'OPEN')
       ) {
         throw new BadRequestException(
-          'El estado de la venta o la caja cambió — recargá e intentá de nuevo.',
+          'El estado de la venta o la caja cambió — recarga e intenta de nuevo.',
         );
       }
       await tx.salePayment.deleteMany({ where: { saleId } });

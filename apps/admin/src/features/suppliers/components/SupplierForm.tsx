@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Supplier } from '@pos-tercos/types';
 import { createSupplier, deactivateSupplier, updateSupplier } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface SupplierFormProps {
   initial?: Supplier;
@@ -81,7 +82,7 @@ export function SupplierForm({ initial }: SupplierFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     }
   };
 
@@ -95,7 +96,7 @@ export function SupplierForm({ initial }: SupplierFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setConfirmDeactivate(false);
     }

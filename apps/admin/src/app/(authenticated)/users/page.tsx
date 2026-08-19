@@ -13,7 +13,7 @@ export default async function UsersPage() {
       <PageHeader
         eyebrow="Equipo"
         title="Usuarios"
-        description="Gestioná el personal: crea empleados, asigna roles, resetea contraseñas y PIN de aprobación, y desactiva a quien ya no trabaja."
+        description="Gestiona el personal: crea empleados, asigna roles, resetea contraseñas y PIN de aprobación, y desactiva a quien ya no trabaja."
         icon={<Users className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

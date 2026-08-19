@@ -16,13 +16,20 @@ export async function request<T>(
     credentials: 'include',
     ...init,
     headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      // Con FormData NO se setea: el browser tiene que poner el multipart con su
+      // boundary. Forzar el header acá deja al server sin poder parsear el body.
+      ...(init.body && !(init.body instanceof FormData)
+        ? { 'Content-Type': 'application/json' }
+        : {}),
       ...(init.headers ?? {}),
     },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${res.status})`);
+    // El `status` viaja pegado al error: si el backend no mandó mensaje (o
+    // mandó uno técnico), `mensajeDeError` arma uno entendible a partir del
+    // código. Antes salía "Request failed (429)" a la pantalla.
+    throw Object.assign(new Error(body.message ?? ''), { status: res.status });
   }
   const json = (await res.json()) as unknown;
   return schema.parse(json);

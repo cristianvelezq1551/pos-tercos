@@ -4,6 +4,7 @@ import type { Stockable } from '@pos-tercos/types';
 import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { getErrorMessage } from '../../lib/errors';
+import { randomUUID } from '../../lib/uuid';
 import { registerWaste, stockableRef } from './api';
 
 /** Registrar merma/desperdicio de un stockable. Motivo obligatorio. */
@@ -22,6 +23,7 @@ export function WasteModal({
   const [reason, setReason] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => randomUUID());
 
   if (!stockable) return null;
 
@@ -29,17 +31,23 @@ export function WasteModal({
     setQty('');
     setReason('');
     setError(null);
+    // §3.3: resetear `pending` SIEMPRE al cerrar. El camino de éxito hacía
+    // `onDone(); close()` sin bajar `pending` → como el modal vive montado, la
+    // 2ª merma abría con "Registrando…", botones deshabilitados y sin poder
+    // cerrarse (onClose gateado por pending) → única salida, recargar.
+    setPending(false);
+    setIdempotencyKey(randomUUID());
     onClose();
   };
 
   const submit = async () => {
     const n = Number(qty);
     if (!Number.isFinite(n) || n <= 0) return setError('Cantidad mayor a 0.');
-    if (reason.trim().length < 3) return setError('Escribí un motivo.');
+    if (reason.trim().length < 3) return setError('Escribe un motivo.');
     setPending(true);
     setError(null);
     try {
-      await registerWaste({ ...stockableRef(stockable), quantity: n, reason: reason.trim() });
+      await registerWaste({ ...stockableRef(stockable), quantity: n, reason: reason.trim(), idempotencyKey });
       onDone();
       close();
     } catch (e) {

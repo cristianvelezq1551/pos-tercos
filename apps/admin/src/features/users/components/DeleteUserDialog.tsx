@@ -4,6 +4,7 @@ import type { ManagedUser } from '@pos-tercos/types';
 import { Button, Dialog, PinField, isValidPin } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { deleteUser } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface DeleteUserDialogProps {
   user: Pick<ManagedUser, 'id' | 'fullName' | 'email'>;
@@ -28,7 +29,7 @@ export function DeleteUserDialog({ user, onClose, onSuccess }: DeleteUserDialogP
       await deleteUser(user.id, pin);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo eliminar el usuario.');
+      setError(getErrorMessage(e, 'No se pudo eliminar el usuario.'));
     } finally {
       setPending(false);
     }

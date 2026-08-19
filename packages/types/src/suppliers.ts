@@ -53,6 +53,6 @@ export const SupplierProductSchema = z
     (d) =>
       (d.entityType === 'INGREDIENT' && d.ingredientId !== null && d.productId === null) ||
       (d.entityType === 'PRODUCT' && d.productId !== null && d.ingredientId === null),
-    'entityType debe coincidir con ingredientId xor productId',
+    'El tipo de item no coincide con el item enviado.',
   );
 export type SupplierProduct = z.infer<typeof SupplierProductSchema>;

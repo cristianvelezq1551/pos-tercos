@@ -7,6 +7,7 @@ import { createIngredient } from '../../ingredients';
 import { createProduct } from '../../products';
 import { StockableTypeSelector } from './StockableTypeSelector';
 import { ProductPricingFields } from './ProductPricingFields';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface CreateStockableInlineProps {
   defaultName: string;
@@ -76,6 +77,7 @@ export function CreateStockableInline({
           isActive: created.isActive,
           currentStock: 0,
           lowStock: false,
+          blocksAvailability: created.blocksAvailability,
           category: null,
           basePrice: null,
         });
@@ -86,10 +88,17 @@ export function CreateStockableInline({
           setSubmitting(false);
           return;
         }
+        // La categoría es obligatoria en un producto: sin ella solo aparece
+        // bajo "Todo" y nadie lo encuentra filtrando.
+        if (!category.trim()) {
+          setErr('Elige una categoría para el producto.');
+          setSubmitting(false);
+          return;
+        }
         const created = await createProduct({
           name: name.trim(),
           basePrice: priceNum,
-          category: category.trim() || null,
+          category: category.trim(),
           directResale: true,
           unitPurchase: unitPurchase.trim(),
           unitStock: unitStock.trim(),
@@ -107,19 +116,21 @@ export function CreateStockableInline({
           isActive: created.isActive,
           currentStock: 0,
           lowStock: false,
+          // Reventa directa: su stock ES lo que se vende → siempre bloquea.
+          blocksAvailability: true,
           category: created.category,
           basePrice: created.basePrice,
         });
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Error desconocido';
+      const msg = getErrorMessage(e);
       // Solo el dueño crea PRODUCTOS (definen precio de venta). El cajero/operativo
       // SÍ puede crear insumos acá. Si el backend rechaza el producto por rol,
       // mostramos una guía clara en vez del "not allowed" crudo.
       const forbidden = /not allowed|forbidden|403/i.test(msg);
       setErr(
         forbidden && type === 'PRODUCT'
-          ? 'Solo el dueño puede crear productos de reventa (definen precio de venta). Registralo como insumo, o pedile al dueño que cree el producto.'
+          ? 'Solo el dueño puede crear productos de reventa (definen precio de venta). Regístralo como insumo, o pídele al dueño que cree el producto.'
           : msg,
       );
     } finally {
@@ -140,7 +151,7 @@ export function CreateStockableInline({
           <p className="text-[11px] text-blue-300">
             📦 La IA detectó que <strong>1 {unitPurchase || invoiceUnit} = {packUnits}
             {packSizePerUnit ? ` × ${packSizePerUnit} ${packSizeMeasure ?? ''}`.trimEnd() : ' unidades'}</strong>.
-            Elegí cómo trackearlo:
+            Elige cómo controlarlo:
           </p>
           <div className="flex flex-wrap gap-2">
             <Button

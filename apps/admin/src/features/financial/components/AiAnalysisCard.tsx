@@ -5,6 +5,7 @@ import { Button } from '@pos-tercos/ui';
 import { AlertTriangle, CheckCircle2, Lightbulb, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { analyzeFinancial } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface Props {
   year: number;
@@ -40,7 +41,7 @@ export function AiAnalysisCard({ year, month }: Props) {
     try {
       setData(await analyzeFinancial(year, month));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo generar el análisis.');
+      setError(getErrorMessage(e, 'No se pudo generar el análisis.'));
     } finally {
       setPending(false);
     }

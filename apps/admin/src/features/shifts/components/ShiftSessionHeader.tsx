@@ -50,8 +50,8 @@ export function ShiftSessionHeader({ shift }: { shift: ShiftSessionDetail['shift
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <CashStat label="Apertura" value={shift.openingCash} />
-        <CashStat label="Esperado" value={shift.expectedCash} />
-        <CashStat label="Contado" value={shift.countedCash} />
+        <CashStat label="Efectivo esperado" value={shift.expectedCash} />
+        <CashStat label="Efectivo contado" value={shift.countedCash} />
         <DiffStat value={shift.difference} />
       </div>
       {shift.notes ? (
@@ -88,7 +88,7 @@ function DiffStat({ value }: { value: number | null }) {
           : 'text-warning';
   return (
     <div className="rounded-lg bg-muted/40 px-3 py-2">
-      <p className="caps text-[0.625rem] text-muted-foreground">Diferencia</p>
+      <p className="caps text-[0.625rem] text-muted-foreground">Diferencia en efectivo</p>
       <p className={`text-base font-semibold tabular-nums ${tone}`}>
         {value === null
           ? '—'

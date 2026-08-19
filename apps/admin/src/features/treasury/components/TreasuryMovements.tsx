@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { voidTreasuryMovement } from '../api/client';
 import { AdjustmentModal } from './AdjustmentModal';
 import { TransferModal } from './TransferModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function TreasuryMovements({ movements }: { movements: TreasuryMovement[] }) {
   const router = useRouter();
@@ -22,7 +23,7 @@ export function TreasuryMovements({ movements }: { movements: TreasuryMovement[]
       await voidTreasuryMovement(id);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo anular el movimiento.');
+      setError(getErrorMessage(e, 'No se pudo anular el movimiento.'));
     } finally {
       setBusy(null);
     }
@@ -47,7 +48,7 @@ export function TreasuryMovements({ movements }: { movements: TreasuryMovement[]
       {movements.length === 0 ? (
         <EmptyState
           title="Sin movimientos manuales"
-          description="Registrá un traspaso (mover plata entre efectivo y cuenta) o un ajuste cuando haga falta."
+          description="Registra un traspaso (mover dinero entre efectivo y cuenta) o un ajuste cuando haga falta."
         />
       ) : (
         <Card className="px-5 py-3">

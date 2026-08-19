@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
 import { formatNumber } from '../../../lib/format';
 import { registerCount } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface CountTasksPanelProps {
   tasks: CountTask[];
@@ -62,7 +63,7 @@ function CountTaskRow({
   const submit = async () => {
     const counted = Number(value);
     if (!Number.isFinite(counted) || counted < 0) {
-      setError('Ingresá la cantidad contada (número ≥ 0).');
+      setError('Ingresa la cantidad contada (número ≥ 0).');
       return;
     }
     setPending(true);
@@ -80,7 +81,7 @@ function CountTaskRow({
       };
       onRegistered(await registerCount(input));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error registrando el conteo.');
+      setError(getErrorMessage(err, 'Error registrando el conteo.'));
     } finally {
       setPending(false);
     }

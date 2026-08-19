@@ -4,12 +4,32 @@
 # verifica el dump (gunzip -t + pg_restore --list sobre formato custom)
 # antes de subirlo, y el job falla ruidosamente si algo no cuadra.
 #
-# Secrets requeridos (Settings → Secrets and variables → Actions):
+# Secrets requeridos — van en el ENVIRONMENT `production-backup`, NO a nivel
+# repositorio (Settings → Environments → production-backup → Secrets):
 #   RAILWAY_DB_URL        — postgres://… de la DB de producción
 #   R2_ACCOUNT_ID         — account de Cloudflare (7f706ea0…)
 #   R2_ACCESS_KEY_ID      — credencial S3 del bucket
 #   R2_SECRET_ACCESS_KEY  — credencial S3 del bucket
 #   R2_BACKUP_BUCKET      — ej. pos-tercos-prod (prefijo backups/)
+#   HEALTHCHECKS_URL      — opcional (dead-man's-switch)
+#
+# Por qué un Environment y no secrets del repo: estas son las credenciales más
+# valiosas que existe (Postgres de PRODUCCIÓN + escritura en R2). Como secrets
+# de repositorio los ve cualquier workflow de cualquier rama, y `workflow_dispatch`
+# deja elegir el ref — así que bastaba empujar una rama con este archivo modificado
+# para mandarse la DATABASE_URL a un host externo, sin tocar `main` jamás.
+# El Environment cierra eso, pero SOLO si se completan estos 3 pasos a mano en
+# GitHub. El YAML puede pedir el Environment, no configurarlo — y GitHub lo crea
+# vacío (sin reglas) apenas lo referencia, así que sin esto no protege nada:
+#   1. Settings → Environments → New environment → `production-backup`.
+#   2. Deployment branches → "Selected branches" → solo `main`. ESTE es el
+#      candado que importa: un dispatch desde otra rama no recibe los secrets.
+#   3. Cargar los 6 secrets DENTRO del Environment, nunca en Settings → Secrets
+#      → Actions. A nivel repo los lee cualquier workflow de cualquier rama y
+#      el paso 2 se vuelve irrelevante.
+#
+# NO usar "Required reviewers" acá: esa regla aplica también al `schedule`, así
+# que el backup de cada 6h quedaría esperando aprobación manual para siempre.
 #
 # Retención: 30 días por nombre de archivo (la limpieza corre acá mismo —
 # R2 no tiene lifecycle rules gratuitas por prefijo).
@@ -21,15 +41,27 @@ on:
     # pérdida de datos a ~6h (Railway hobby no tiene PITR). El dump es chico y
     # GitHub Actions es gratis — no hay razón para conformarse con 24h.
     - cron: '0 1,7,13,19 * * *'
-  workflow_dispatch: {} # corrida manual para probar el pipeline
+  workflow_dispatch: {} # corrida manual — gateada por el Environment (ver cabecera)
+
+# Default a nivel WORKFLOW: cualquier job que se agregue acá abajo arranca en
+# solo-lectura en vez de heredar el default read-write del repo. `ci.yml` ya lo
+# hacía así; este archivo, que es el que tiene los secrets de prod, no.
+permissions:
+  contents: read
 
 jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # ⚠️ Esta línea SOLA no protege nada: GitHub crea el Environment al
+    # referenciarlo, sin reglas. Lo que cierra el agujero es la config manual
+    # (ver cabecera) — y sobre todo MOVER los secrets del repo al Environment.
+    # Mientras sigan siendo secrets de repositorio, cualquier workflow de
+    # cualquier rama los lee y esta línea es decorativa.
+    environment: production-backup
     permissions:
       contents: read
-      issues: write
+      issues: write # requerido por el paso de alerta (github-script)
     steps:
       - name: Instalar cliente Postgres 16
         run: |
@@ -111,7 +143,7 @@ jobs:
       # manda mail al dueño del repo. Canal independiente de WhatsApp/Railway.
       - name: Alertar fallo (GitHub Issue)
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const title = '🔴 Backup nocturno de Postgres FALLÓ';

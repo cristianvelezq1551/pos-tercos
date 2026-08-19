@@ -1,5 +1,5 @@
 import type { InventoryMovement, Stockable, Subproduct } from '@pos-tercos/types';
-import { Badge, Quantity, formatNumber } from '@pos-tercos/ui';
+import { Badge, Quantity, formatNumber, pluralizeUnit } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { ProduceSubproductAction } from './ProduceSubproductAction';
 
@@ -57,7 +57,7 @@ export function SubproductStockPanel({
               <span className="font-display text-3xl font-bold tabular-nums text-foreground">
                 {formatNumber(current, { maxDecimals: 2 })}
               </span>
-              <span className="text-sm text-muted-foreground">{subproduct.unit}</span>
+              <span className="text-sm text-muted-foreground">{pluralizeUnit(subproduct.unit, current)}</span>
               {low ? (
                 <Badge tone="warning" size="sm">
                   Falta producir
@@ -66,7 +66,7 @@ export function SubproductStockPanel({
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {threshold > 0
-                ? `Umbral mínimo: ${formatNumber(threshold, { maxDecimals: 2 })} ${subproduct.unit}`
+                ? `Umbral mínimo: ${formatNumber(threshold, { maxDecimals: 2 })} ${pluralizeUnit(subproduct.unit, threshold)}`
                 : 'Sin umbral mínimo configurado.'}
             </p>
           </div>
@@ -96,7 +96,7 @@ export function SubproductStockPanel({
         </div>
         {movements.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-            Sin movimientos todavía. Producí una tanda para empezar.
+            Sin movimientos todavía. Produce una tanda para empezar.
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -126,7 +126,7 @@ export function SubproductStockPanel({
                   {m.delta > 0 ? '+' : ''}
                   <Quantity value={m.delta} maxDecimals={2} />
                   <span className="ml-1 text-[11px] text-muted-foreground">
-                    {subproduct.unit}
+                    {pluralizeUnit(subproduct.unit, m.delta)}
                   </span>
                 </span>
               </li>

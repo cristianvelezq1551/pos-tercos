@@ -4,6 +4,7 @@ import type { ManagedUser, PayType } from '@pos-tercos/types';
 import { Button, Checkbox, Dialog, FormField, Input, MoneyInput, Select } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { setEmployment } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface EditSalaryDialogProps {
   user: Pick<ManagedUser, 'id' | 'fullName' | 'payType' | 'salaryAmount' | 'hireDate'> & {
@@ -13,9 +14,10 @@ interface EditSalaryDialogProps {
   onSuccess: (u: ManagedUser) => void;
 }
 
-/** 0=domingo, 1=lunes, … 6=sábado. */
+/** Lunes (1) = descanso del negocio SIEMPRE (no abrimos lunes salvo festivo); se
+ *  fuerza en restDaysOfWeek y no es togglable. Aquí solo Mar…Dom. */
+const MONDAY = 1;
 const DOW_LABELS: Array<{ value: number; label: string }> = [
-  { value: 1, label: 'Lun' },
   { value: 2, label: 'Mar' },
   { value: 3, label: 'Mié' },
   { value: 4, label: 'Jue' },
@@ -29,7 +31,10 @@ export function EditSalaryDialog({ user, onClose, onSuccess }: EditSalaryDialogP
   const [payType, setPayType] = useState<PayType>(user.payType ?? 'MONTHLY');
   const [salary, setSalary] = useState(user.salaryAmount != null ? String(user.salaryAmount) : '');
   const [hireDate, setHireDate] = useState(user.hireDate ? user.hireDate.slice(0, 10) : '');
-  const [restDays, setRestDays] = useState<Set<number>>(new Set(user.restDaysOfWeek ?? []));
+  // El lunes se fuerza al guardar; el estado editable solo lleva Mar…Dom.
+  const [restDays, setRestDays] = useState<Set<number>>(
+    new Set((user.restDaysOfWeek ?? []).filter((d) => d !== MONDAY)),
+  );
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -43,7 +48,9 @@ export function EditSalaryDialog({ user, onClose, onSuccess }: EditSalaryDialogP
     });
   };
 
-  const allRest = restDays.size >= 7;
+  // Lunes forzado + los días marcados. 7 = descansaría toda la semana → inválido.
+  const effectiveRest = new Set<number>([MONDAY, ...restDays]);
+  const allRest = effectiveRest.size >= 7;
   const valid = /^\d{6}$/.test(pin) && Number(salary) > 0 && !allRest;
 
   const submit = async (): Promise<void> => {
@@ -56,13 +63,13 @@ export function EditSalaryDialog({ user, onClose, onSuccess }: EditSalaryDialogP
           payType,
           salaryAmount: Number(salary),
           hireDate: hireDate || null,
-          restDaysOfWeek: Array.from(restDays).sort((a, b) => a - b),
+          restDaysOfWeek: Array.from(effectiveRest).sort((a, b) => a - b),
         },
         pin,
       );
       onSuccess(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar el salario.');
+      setError(getErrorMessage(e, 'No se pudo guardar el salario.'));
     } finally {
       setPending(false);
     }
@@ -104,11 +111,14 @@ export function EditSalaryDialog({ user, onClose, onSuccess }: EditSalaryDialogP
           label="Días de descanso (no pagos)"
           hint={
             payType === 'DAILY'
-              ? 'Solo aplica a DIARIO. Ej. trabajador de fin de semana → marcá lunes-jueves.'
+              ? 'Solo aplica a DIARIO. El lunes ya es descanso fijo (no abrimos). Ej. trabajador de fin de semana → marca martes-jueves.'
               : 'Solo aplica a DIARIO; el salario mensual se paga independiente del día.'
           }
         >
           <div>
+            <p className="mb-2 text-xs text-muted-foreground">
+              El lunes siempre es descanso (el negocio no abre) y no se cuenta en la nómina.
+            </p>
             <div className="flex flex-wrap gap-2">
               {DOW_LABELS.map((d) => (
                 <Checkbox

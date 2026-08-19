@@ -47,6 +47,14 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
   const currentUser = await getCurrentUserServer();
   const isDueno = currentUser?.role === 'DUENO';
+  // El Dueño gestiona el pago de cualquier factura; el Admin Operativo solo el
+  // de las que él creó (así nadie más le toca su compra). Ver comprobante lo
+  // puede cualquier admin. El backend hace el enforcement real.
+  const canManagePayment =
+    isDueno ||
+    (currentUser?.role === 'ADMIN_OPERATIVO' && invoice.uploadedById === currentUser.id);
+  const canViewProof =
+    currentUser?.role === 'DUENO' || currentUser?.role === 'ADMIN_OPERATIVO';
 
   return (
     <>
@@ -87,7 +95,11 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           </span>
         </div>
 
-      <InvoicePaymentSection invoice={invoice} canAct={isDueno} />
+      <InvoicePaymentSection
+        invoice={invoice}
+        canManage={canManagePayment}
+        canViewProof={canViewProof}
+      />
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Número factura" value={invoice.invoiceNumber ?? '—'} />

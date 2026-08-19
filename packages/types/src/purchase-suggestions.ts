@@ -65,15 +65,36 @@ export const HistoricalSupplierSchema = z.object({
 });
 export type HistoricalSupplier = z.infer<typeof HistoricalSupplierSchema>;
 
-/** Body para enviar la sugerencia a un proveedor por WhatsApp. */
+/** Body para armar el pedido a un proveedor. */
 export const SendToSupplierSchema = z.object({
   supplierId: z.string().uuid(),
   /** Cantidad final a pedir (opcional; default = sugerencia). */
   quantity: z.number().positive().optional(),
+  /** Día en que se quiere recibir (YYYY-MM-DD, hora local). */
+  neededBy: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Elige una fecha válida para la entrega.')
+    .optional(),
   /** Nota extra del usuario en el mensaje al proveedor. */
   note: z.string().max(500).optional(),
 });
 export type SendToSupplier = z.infer<typeof SendToSupplierSchema>;
+
+/**
+ * Pedido listo para abrir en WhatsApp. El sistema NO lo envía: arma el texto y
+ * el link, y quien compra lo manda desde su propio WhatsApp (puede editarlo
+ * antes). `url` es null cuando el proveedor no tiene teléfono cargado.
+ */
+export const SupplierOrderLinkSchema = z.object({
+  supplierId: z.string().uuid(),
+  supplierName: z.string(),
+  /** Teléfono en dígitos wa.me (`573001112233`). null ⇒ no hay chat que abrir. */
+  phone: z.string().nullable(),
+  url: z.string().url().nullable(),
+  /** El mensaje sin encodear — se muestra como vista previa. */
+  messagePlain: z.string(),
+});
+export type SupplierOrderLink = z.infer<typeof SupplierOrderLinkSchema>;
 
 /** Resultado del envío de un pedido (o resumen) por WhatsApp. */
 export const WhatsAppSendOutcomeSchema = z.object({

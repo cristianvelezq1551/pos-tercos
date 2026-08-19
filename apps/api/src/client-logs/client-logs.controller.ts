@@ -14,6 +14,18 @@ const ClientLogSchema = z.object({
 type ClientLog = z.infer<typeof ClientLogSchema>;
 
 /**
+ * Aplana saltos de línea y caracteres de control (CWE-117). El texto lo manda
+ * el cliente: con un `\n` se pueden FORJAR líneas de log completas —
+ * "2026-01-01 ERROR [Auth] login exitoso admin@…"— y ensuciar justo la
+ * evidencia que se mira cuando algo huele mal. Requiere sesión de cajero, así
+ * que el atacante sería del equipo: exactamente el caso que el log documenta.
+ */
+function singleLine(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\u0000-\u001F\u007F]/g, ' ');
+}
+
+/**
  * Errores best-effort del POS (impresora, IndexedDB, sockets) reportados al
  * servidor: quedan en los logs de Railway con prefijo [client] para
  * diagnosticar "no imprimió" / "se perdió una venta" sin ir al mostrador.
@@ -33,8 +45,8 @@ export class ClientLogsController {
     @Body(new ZodValidationPipe(ClientLogSchema)) body: ClientLog,
   ): void {
     this.logger.warn(
-      `[client] ${body.scope} :: ${body.message} :: user=${user.email}${
-        body.context ? ` :: ${JSON.stringify(body.context).slice(0, 300)}` : ''
+      `[client] ${singleLine(body.scope)} :: ${singleLine(body.message)} :: user=${user.email}${
+        body.context ? ` :: ${singleLine(JSON.stringify(body.context).slice(0, 300))}` : ''
       }`,
     );
   }

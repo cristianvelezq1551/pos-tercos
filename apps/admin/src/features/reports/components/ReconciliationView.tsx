@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatCop, formatDate } from '../../../lib/format';
 import { importReconciliation } from '../api/reconciliation';
+import { getErrorMessage } from '../../../lib/errors';
 
 const SOURCE_LABEL: Record<ReconciliationSource, string> = {
   NEQUI_CSV: 'Nequi (CSV)',
@@ -25,7 +26,7 @@ export function ReconciliationView() {
     e.preventDefault();
     const file = fileInput.current?.files?.[0];
     if (!file) {
-      setError('Seleccioná un archivo CSV.');
+      setError('Selecciona un archivo CSV.');
       return;
     }
     setError(null);
@@ -39,7 +40,7 @@ export function ReconciliationView() {
         router.refresh();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
     } finally {
       setPending(false);
     }

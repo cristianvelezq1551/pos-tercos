@@ -30,6 +30,7 @@ export const AuditActionEnum = z.enum([
   // Inventory
   'INVENTORY_MOVEMENT_MANUAL',
   'INVENTORY_MOVEMENT_WASTE',
+  'INVENTORY_MOVEMENT_WASTE_REVERSED',
   'INVENTORY_MOVEMENT_INITIAL',
   'INVENTORY_MOVEMENT_PURCHASE',
   'INVENTORY_MOVEMENT_SALE',
@@ -37,6 +38,9 @@ export const AuditActionEnum = z.enum([
   // Sales / cash (FASE 5+)
   'SALE_CREATED',
   'SALE_PAID',
+  // Venta con un producto "forzado disponible": se salta el guard de stock y
+  // algún insumo/subproducto queda en negativo (stock físico no registrado).
+  'SALE_FORCED_STOCK',
   'SALE_VOIDED',
   'SALE_REFUNDED',
   'CORTESIA_REQUESTED',
@@ -72,6 +76,8 @@ export const AuditActionEnum = z.enum([
   'COMANDA_CANCELLED',
   'SALE_ITEMS_EDITED',
   'SALE_PAYMENT_CHANGED',
+  /** El cajero asignó el costo del envío a un domicilio (2026-07-17). */
+  'SALE_DELIVERY_FEE_SET',
   'SALE_CARRIED_OVER',
   'STALE_SALES_SWEPT',
   'OFFLINE_SYNC_CLOCK_DRIFT',
@@ -105,8 +111,14 @@ export const AuditActionEnum = z.enum([
   'PURCHASE_SUGGESTION_SENT_SUPPLIER',
   'PURCHASE_SUGGESTION_SUMMARY_SENT',
 
-  // WhatsApp wa.me semi-automático (FASE 9)
+  // WhatsApp wa.me semi-automático (FASE 9) — legacy, ya no se emite.
   'WHATSAPP_LINK_OPENED',
+  /**
+   * El cajero abrió el chat del cliente para avisarle desde SU WhatsApp
+   * (§7.v22). Acción propia y no reutilizar `WHATSAPP_LINK_OPENED`: aquella es
+   * del flujo v1 y mezclarlas haría ilegible el histórico.
+   */
+  'WHATSAPP_MANUAL_SENT',
 
   // RRHH / Nómina
   'USER_SALARY_CHANGED',
@@ -147,6 +159,10 @@ export const AuditActionEnum = z.enum([
   // Alerta puntual al dueño por WhatsApp (descuadre, void, cajón sin venta,
   // suba de costos). metadata.kind distingue el tipo.
   'OWNER_ALERT_SENT',
+  // Aviso de que el mes va con margen de CONTRIBUCIÓN negativo (cada venta
+  // pierde plata). Acción propia —y no `metadata.kind` de OWNER_ALERT_SENT—
+  // para poder consultarla por acción y mandar UNA sola por mes.
+  'OWNER_MARGIN_ALERT_SENT',
   // Conteo físico ciclado registrado (con o sin diferencia).
   'STOCK_COUNT_REGISTERED',
   'STOCK_COUNT_APPROVED',

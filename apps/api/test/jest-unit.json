@@ -15,5 +15,9 @@
     "^@pos-tercos/types$": "<rootDir>/../../packages/types/dist/index.js",
     "^@pos-tercos/domain$": "<rootDir>/../../packages/domain/dist/index.js"
   },
-  "testTimeout": 10000
+  "testTimeout": 10000,
+  "//coverageProvider": "v8 y no el default 'babel': babel-plugin-istanbul@6 exige Babel ^7 y el monorepo ya está en Babel 8 (instrumentar revienta el suite entero).",
+  "coverageProvider": "v8",
+  "collectCoverageFrom": ["src/common/**/*.ts", "!src/**/*.spec.ts"],
+  "coverageReporters": ["text-summary", "json-summary", "html"]
 }

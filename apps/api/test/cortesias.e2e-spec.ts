@@ -8,6 +8,7 @@
  * Cubre la máquina de estados, el efecto sobre el inventario y los guards.
  */
 
+import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
@@ -89,6 +90,68 @@ describe('Cortesías E2E', () => {
     expect(movements).toHaveLength(1);
     expect(movements[0]!.productId).toBe(productId);
     expect(Number(movements[0]!.delta)).toBe(-2); // 2 unidades consumidas ya
+  });
+
+  it('el mismo Idempotency-Key no crea una segunda cortesía (retry seguro)', async () => {
+    const key = randomUUID();
+    const body = { productId, quantity: 2, reason: 'Doble-click / retry' };
+
+    const first = await request
+      .post('/cortesias')
+      .set(auth(cajeroToken))
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    const second = await request
+      .post('/cortesias')
+      .set(auth(cajeroToken))
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+
+    // El retry devuelve la MISMA cortesía, no una nueva.
+    expect(second.body.id).toBe(first.body.id);
+    // Y el stock se descontó UNA sola vez (no dos movimientos por el doble envío).
+    const movements = await consumeMovements(first.body.id as string);
+    expect(movements).toHaveLength(1);
+    expect(Number(movements[0]!.delta)).toBe(-2);
+    // No quedó una segunda fila colgada para ese producto.
+    const total = await prisma.cortesiaRequest.count({
+      where: { productId, reason: 'Doble-click / retry' },
+    });
+    expect(total).toBe(1);
+  });
+
+  it('el historial del día trae TODAS las cortesías, no solo las propias', async () => {
+    const { id } = await createCortesia(1, 'Para el historial');
+    // Una registrada por OTRO usuario (el dueño): el historial de la caja no
+    // filtra por cajero — un pedido regalado es del día, no de quien lo dio.
+    const otra = await request
+      .post('/cortesias')
+      .set(auth(duenoToken))
+      .send({ productId, quantity: 1, reason: 'Regalada por el dueño' })
+      .expect(201);
+
+    const from = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const res = await request
+      .get(`/cortesias/day?from=${encodeURIComponent(from)}`)
+      .set(auth(cajeroToken))
+      .expect(200);
+    const ids = (res.body as { id: string }[]).map((c) => c.id);
+    expect(ids).toContain(id);
+    expect(ids).toContain(otra.body.id as string);
+
+    // Fuera de la ventana no aparece nada (el historial es del día, no de siempre).
+    const futuro = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const vacio = await request
+      .get(`/cortesias/day?from=${encodeURIComponent(futuro)}`)
+      .set(auth(cajeroToken))
+      .expect(200);
+    expect(vacio.body).toHaveLength(0);
+  });
+
+  it('un `from` inválido es 400 del cliente, no un 500 de Prisma', async () => {
+    await request.get('/cortesias/day?from=ayer').set(auth(cajeroToken)).expect(400);
   });
 
   it('un rol no-admin no puede anular (403)', async () => {

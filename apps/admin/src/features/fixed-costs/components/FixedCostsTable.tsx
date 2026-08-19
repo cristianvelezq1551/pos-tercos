@@ -108,7 +108,7 @@ export function FixedCostsTable({
         <EmptyState
           illustration={<LineArtIllustration name="empty-plate" />}
           title="Aún no tienes costos fijos cargados"
-          description="Cargá arriendo, servicios, internet, software, etc. Se descuentan automáticamente al calcular si tu negocio gana o pierde plata cada mes."
+          description="Carga arriendo, servicios, internet, software, etc. Se descuentan automáticamente al calcular si tu negocio gana o pierde dinero cada mes."
           action={<Button onClick={onCreate}>Crear primer costo fijo</Button>}
         />
       }

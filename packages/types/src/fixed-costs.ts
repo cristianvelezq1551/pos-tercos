@@ -99,11 +99,20 @@ export const MonthlyFinancialStatementSchema = z.object({
   periodStart: z.string(), // YYYY-MM-DD
   periodEnd: z.string(), // YYYY-MM-DD
   revenue: z.number(),
+  /** Descuentos otorgados en el mes (promos + manuales). YA restados de
+   *  `revenue`; se muestran aparte para que el dueño vea cuánto regaló. */
+  discountTotal: z.number(),
+  /** `revenue + discountTotal`: lo que habría entrado sin descuentos. */
+  grossRevenue: z.number(),
   cogs: z.number(),
   /** true si parte del COGS/refund se valuó sin lote FIFO (cold-start / factura
    *  faltante) → el costo está SUBESTIMADO y la utilidad neta sobreestimada.
    *  Mostrar aviso de "COGS parcial" para que el dueño no lea una ganancia falsa. */
   cogsPartial: z.boolean(),
+  /** §1.12: true si parte del COGS se costeó con un ESTIMADO (venta forzada sin
+   *  stock, sin factura aún). El costo se corrige al subir la factura → hasta
+   *  entonces el margen es aproximado. */
+  cogsEstimated: z.boolean(),
   grossMargin: z.number(),
   /** grossMargin / revenue. 0 si revenue=0. */
   grossMarginPct: z.number(),
@@ -118,11 +127,36 @@ export const MonthlyFinancialStatementSchema = z.object({
   /** true si alguna cortesía se valuó sin lote FIFO disponible → la pérdida real
    *  por cortesías puede estar subestimada (mostrar aviso). */
   cortesiasCostPartial: z.boolean(),
+  /** true si parte del costo de cortesías salió del último precio conocido y no
+   *  de un lote real (se regaló insumo sin cargar). Provisional: se corrige al
+   *  subir la factura. */
+  cortesiasCostEstimated: z.boolean(),
   /** Costo (a COGS FIFO) de los pedidos reembolsados en el período: la comida se
    *  preparó pero se devolvió la plata → pérdida real que baja el neto. */
   refundCost: z.number(),
+  /** Costo (a COGS FIFO) de la merma del período: insumo/producto tirado → pérdida
+   *  real que baja el neto (decisión del dueño 2026-07-21). Línea aparte del COGS. */
+  wasteCost: z.number(),
+  /** true si parte de la merma se valuó con el último precio conocido (se tiró
+   *  insumo que no estaba cargado). Provisional hasta la factura. */
+  wasteCostEstimated: z.boolean(),
+  /** Domicilios cobrados al cliente. NO entra en `revenue`: es plata del
+   *  repartidor que solo pasa por la caja (decisión del dueño 2026-07-27). */
+  deliveryCollected: z.number(),
+  /** Pedidos a domicilio con envío cobrado en el período. */
+  deliveryOrderCount: z.number().int().nonnegative(),
+  /** Ventas cobradas en el período. Da contexto a los promedios y evita leer
+   *  un margen "negativo" que en realidad son cuatro tickets y una merma. */
+  salesCount: z.number().int().nonnegative(),
   netResult: z.number(),
-  /** Ventas necesarias para cubrir todo (≈ totalFixed / grossMarginPct). null si no se puede calcular. */
+  /** Ingresos − COGS − merma − cortesías − reembolsos: lo que queda de cada
+   *  venta para pagar los fijos. Es la base del punto de equilibrio. */
+  contributionMargin: z.number(),
+  /** contributionMargin / revenue. null si no hay ingresos. */
+  contributionMarginPct: z.number().nullable(),
+  /** Ventas necesarias para cubrir los fijos recurrentes
+   *  (= totalFixed / contributionMarginPct). null si el margen de contribución
+   *  no es positivo: ahí NO hay volumen que alcance. */
   breakEven: z.number().nullable(),
   /** revenue / breakEven (0..1+). null si no se puede. */
   breakEvenCoverage: z.number().nullable(),

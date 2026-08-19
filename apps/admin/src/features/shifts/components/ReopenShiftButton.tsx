@@ -5,6 +5,7 @@ import { RotateCcw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { reopenShift } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Reabre la caja del día si fue cerrada por error. Conserva el monto de apertura
@@ -24,7 +25,7 @@ export function ReopenShiftButton({ shiftId }: { shiftId: string }) {
       setConfirming(false);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al reabrir');
+      setError(getErrorMessage(e, 'Error al reabrir'));
     } finally {
       setBusy(false);
     }

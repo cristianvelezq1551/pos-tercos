@@ -68,6 +68,10 @@ describe('Consumo de stock E2E (online + offline)', () => {
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
+    // Auto-aislada: no confiar en que la suite anterior limpió. Esta suite lee
+    // agregados GLOBALES (reportes / ledger de inventario), así que un residuo
+    // de otra suite mueve los números y el fallo depende del orden de archivos.
+    await cleanDb(prisma);
 
     const hash = await bcrypt.hash('dev12345', 10);
     await prisma.user.createMany({
@@ -142,7 +146,8 @@ describe('Consumo de stock E2E (online + offline)', () => {
       const res = await request
         .post('/products')
         .set('Authorization', `Bearer ${duenoToken}`)
-        .send(body)
+        // La categoría es obligatoria al crear; acá es incidental al test.
+        .send({ category: 'Test', ...body })
         .expect(201);
       return res.body.id as string;
     };
@@ -361,6 +366,7 @@ describe('Consumo de stock E2E (online + offline)', () => {
       .set('Authorization', `Bearer ${duenoToken}`)
       .send({
         name: 'Perro Consumo',
+        category: 'Test',
         basePrice: 10000,
         directResale: false,
         isCombo: false,

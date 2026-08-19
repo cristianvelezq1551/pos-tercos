@@ -4,6 +4,7 @@ import type { ManagedUser } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { resetUserPassword } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface ResetPasswordDialogProps {
   user: ManagedUser;
@@ -27,7 +28,7 @@ export function ResetPasswordDialog({ user, onClose, onSuccess }: ResetPasswordD
       await resetUserPassword(user.id, pwd);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo resetear la contraseña.');
+      setError(getErrorMessage(e, 'No se pudo resetear la contraseña.'));
     } finally {
       setPending(false);
     }

@@ -9,6 +9,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 import type { WeeklyPayrollReport } from '@pos-tercos/types';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Nómina semanal unificada E2E', () => {
   let app: INestApplication;
@@ -23,6 +24,10 @@ describe('Nómina semanal unificada E2E', () => {
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
+    // Auto-aislada: no confiar en que la suite anterior limpió. Esta suite lee
+    // agregados GLOBALES (reportes / ledger de inventario), así que un residuo
+    // de otra suite mueve los números y el fallo depende del orden de archivos.
+    await cleanDb(prisma);
     const hash = await bcrypt.hash('dev12345', 10);
     const oldHire = new Date(Date.UTC(2020, 0, 1));
     const [, mUser, dUser] = await Promise.all([
@@ -114,14 +119,6 @@ describe('Nómina semanal unificada E2E', () => {
   it('un abono semanal aparece en /finanzas (paidPayroll) y baja el pendiente del cash-flow', async () => {
     // /finanzas ahora lee los abonos SEMANALES (payrollWeekPayment), no las
     // quincenas. El abono se paga 100% por cuenta (sin caja abierta).
-    await request
-      .post('/approvals/pin')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ pin: '135790', password: 'dev12345' })
-      .expect((res) => {
-        if (res.status >= 300) throw new Error(`PIN setup falló: ${res.status} ${JSON.stringify(res.body)}`);
-      });
-
     const wk = await getWeek();
     // El abono cae con paidAt = ahora → consultamos /finanzas del mes actual.
     const now = new Date();
@@ -141,7 +138,6 @@ describe('Nómina semanal unificada E2E', () => {
     const payRes = await request
       .post('/workers/weekly/pay')
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: ABONO }))
       .attach('proof', png, 'proof.png')
       .expect(201);
@@ -154,14 +150,72 @@ describe('Nómina semanal unificada E2E', () => {
     expect(pendingOf(after.body)).toBe(pendingBefore - ABONO);
   });
 
-  it('rechaza un abono que supera lo que falta de la semana (anti doble-abono)', async () => {
-    await request
-      .post('/approvals/pin')
+  it('un abono EN EFECTIVO no toca la caja: sin movimientos y el esperado no se mueve', async () => {
+    // Regresión (§7.v17): la nómina en efectivo creaba un CashMovement OUT en la
+    // caja abierta, así que el arqueo del cajero mostraba una salida que nunca
+    // salió del cajón (el dueño paga del bolsillo EFECTIVO de tesorería, que NO
+    // es el cajón). Los movimientos de caja son inherentes a la caja: solo se
+    // crean a mano desde el POS.
+    const OPENING = 100_000;
+    const openRes = await request
+      .post('/shifts/open')
       .set('Authorization', `Bearer ${token}`)
-      .send({ pin: '135790', password: 'dev12345' })
-      .expect((r) => {
-        if (r.status >= 300) throw new Error(`PIN: ${r.status}`);
-      });
+      .send({ openingCash: OPENING })
+      .expect(201);
+    const shiftId = openRes.body.id as string;
+
+    const wk = await getWeek();
+    const ana = wk.entries.find((e) => e.userId === monthlyId)!;
+    const ABONO = Math.min(50_000, ana.remaining);
+    expect(ABONO).toBeGreaterThan(0);
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
+      'base64',
+    );
+    await request
+      .post('/workers/weekly/pay')
+      .set('Authorization', `Bearer ${token}`)
+      .field('payload', JSON.stringify({ userId: monthlyId, weekStart: wk.weekStart, days: [], cashAmount: ABONO, bankAmount: 0 }))
+      .attach('proof', png, 'p.png')
+      .expect(201);
+
+    // El cajón no se enteró: ni un movimiento, y el esperado sigue siendo la apertura.
+    const movs = await request
+      .get(`/shifts/${shiftId}/cash-movements`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(movs.body).toHaveLength(0);
+
+    const expected = await request
+      .get(`/shifts/${shiftId}/expected-cash`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(expected.body.expectedCash).toBe(OPENING);
+
+    // Pero tesorería SÍ lo cuenta como gasto del bolsillo efectivo.
+    const paid = await prisma.payrollWeekPayment.findFirst({
+      where: { userId: monthlyId, status: 'PAID' },
+      orderBy: { paidAt: 'desc' },
+    });
+    expect(Number(paid!.cashAmount)).toBe(ABONO);
+    expect(paid!.cashMovementId).toBeNull();
+
+    // Sin caja abierta tampoco falla (antes exigía caja para pagar en efectivo).
+    await request
+      .post(`/shifts/${shiftId}/close`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ countedCash: OPENING })
+      .expect(201);
+    await request
+      .post('/workers/weekly/pay')
+      .set('Authorization', `Bearer ${token}`)
+      .field('payload', JSON.stringify({ userId: monthlyId, weekStart: wk.weekStart, days: [], cashAmount: 1_000, bankAmount: 0 }))
+      .attach('proof', png, 'p.png')
+      .expect(201);
+  });
+
+  it('rechaza un abono que supera lo que falta de la semana (anti doble-abono)', async () => {
     const png = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/an3AAAAAElFTkSuQmCC',
       'base64',
@@ -173,7 +227,6 @@ describe('Nómina semanal unificada E2E', () => {
       await request
         .post('/workers/weekly/pay')
         .set('Authorization', `Bearer ${token}`)
-        .set('X-Approval-Pin', '135790')
         .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: luis.remaining }))
         .attach('proof', png, 'p.png')
         .expect(201);
@@ -183,7 +236,6 @@ describe('Nómina semanal unificada E2E', () => {
     await request
       .post('/workers/weekly/pay')
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .field('payload', JSON.stringify({ userId: dailyId, weekStart: wk.weekStart, days: [], cashAmount: 0, bankAmount: 1_000 }))
       .attach('proof', png, 'p.png')
       .expect(400);
@@ -210,20 +262,30 @@ describe('Nómina semanal unificada E2E', () => {
   });
 
   it('editar el valor de un día (llegada tarde / ausencia) cambia el adeudo y se revierte', async () => {
-    const entry = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    // Trabajador FRESCO sin abonos: el guard §1.7 solo actúa sobre semanas con
+    // pagos (dailyId ya quedó 100% pagado en el test anterior → editar su día a
+    // la baja sería overpay, cubierto por el test siguiente).
+    const hash = await bcrypt.hash('dev12345', 10);
+    const fresh = await prisma.user.create({
+      data: {
+        email: 'diario-edit@test.local', fullName: 'Edu Editable', role: 'TRABAJADOR',
+        passwordHash: hash, mustChangePwd: false, active: true,
+        payType: 'DAILY', salaryAmount: 60_000, hireDate: new Date(Date.UTC(2020, 0, 1)),
+      },
+    });
+    const entry = (await getWeek()).entries.find((e) => e.userId === fresh.id)!;
     const target = entry.days.find((d) => d.amount === 60_000 && !d.isPaid && !d.isFuture)!;
     expect(target).toBeDefined();
     const owedBefore = entry.owedTotal;
 
     // Llegada tarde: el día vale 20.000 en vez de 60.000.
     await request
-      .post(`/workers/${dailyId}/day`)
+      .post(`/workers/${fresh.id}/day`)
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .send({ workDate: target.date, amount: 20_000, note: 'llegó tarde' })
       .expect(201);
 
-    const edited = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    const edited = (await getWeek()).entries.find((e) => e.userId === fresh.id)!;
     const dayEdited = edited.days.find((d) => d.date === target.date)!;
     expect(dayEdited.amount).toBe(20_000);
     expect(dayEdited.hasOverride).toBe(true);
@@ -231,14 +293,29 @@ describe('Nómina semanal unificada E2E', () => {
 
     // Quitar la excepción → vuelve al valor/día.
     await request
-      .delete(`/workers/${dailyId}/day?date=${target.date}`)
+      .delete(`/workers/${fresh.id}/day?date=${target.date}`)
       .set('Authorization', `Bearer ${token}`)
-      .set('X-Approval-Pin', '135790')
       .expect(200);
 
-    const reverted = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    const reverted = (await getWeek()).entries.find((e) => e.userId === fresh.id)!;
     expect(reverted.days.find((d) => d.date === target.date)!.amount).toBe(60_000);
     expect(reverted.owedTotal).toBe(owedBefore);
+  });
+
+  it('§1.7: editar un día a la baja en una semana YA PAGADA se bloquea (evita overpay)', async () => {
+    // dailyId quedó 100% pagado en "rechaza un abono que supera lo que falta".
+    // Bajar un día ahora dejaría el restante NEGATIVO (plata de más ya entregada)
+    // → se bloquea. El dueño debe anular el abono primero.
+    const entry = (await getWeek()).entries.find((e) => e.userId === dailyId)!;
+    expect(entry.paidTotal).toBeGreaterThan(0);
+    const target = entry.days.find((d) => d.amount === 60_000 && !d.isFuture)!;
+    expect(target).toBeDefined();
+    const res = await request
+      .post(`/workers/${dailyId}/day`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ workDate: target.date, amount: 20_000, note: 'llegó tarde' })
+      .expect(400);
+    expect(JSON.stringify(res.body)).toContain('NEGATIVO');
   });
 
   it('la semana EN CURSO entra al pendiente de /finanzas como devengado a hoy (inProgress)', async () => {
@@ -257,15 +334,20 @@ describe('Nómina semanal unificada E2E', () => {
       .get(`/reports/finance-summary?year=${n.getFullYear()}&month=${n.getMonth() + 1}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    const inProgressRows = (
+    // §4.1: filtrar la fila de la SEMANA ACTUAL por su periodStart (NO por el
+    // flag inProgress). El último día de la semana `weekEnd <= hoy` ya la cuenta
+    // como CERRADA → misma fila y mismo MONTO pero SIN el flag; el test fallaba
+    // los domingos/último-día. dailyId acumula muchas semanas viejas impagas →
+    // filtrar solo por userId daría N filas; por eso se acota a la semana actual.
+    const currentWeekRows = (
       fin.body.pendingPayroll as Array<{
         userId: string; total: number; inProgress?: boolean; accruedThrough?: string; periodStart: string;
       }>
-    ).filter((p) => p.userId === dailyId && p.inProgress === true);
+    ).filter((p) => p.userId === dailyId && p.periodStart === wk.weekStart);
 
     if (wk.weekStart > todayYmd) {
       // Hoy es descanso → payrollWeekFor devuelve la semana SIGUIENTE: nada en curso.
-      expect(inProgressRows).toHaveLength(0);
+      expect(currentWeekRows).toHaveLength(0);
       return;
     }
 
@@ -276,14 +358,41 @@ describe('Nómina semanal unificada E2E', () => {
     const expected = Math.round((accrued + entry.adjustmentsTotal - entry.paidTotal) * 100) / 100;
 
     if (expected > 0.01) {
-      expect(inProgressRows).toHaveLength(1);
-      expect(inProgressRows[0].accruedThrough).toBe(todayYmd);
-      expect(inProgressRows[0].periodStart).toBe(wk.weekStart);
-      expect(inProgressRows[0].total).toBeCloseTo(expected, 2);
+      expect(currentWeekRows).toHaveLength(1);
+      expect(currentWeekRows[0].total).toBeCloseTo(expected, 2);
       // Los días futuros de la semana NO son deuda: devengado ≤ restante total.
-      expect(inProgressRows[0].total).toBeLessThanOrEqual(entry.remaining + 0.01);
+      expect(currentWeekRows[0].total).toBeLessThanOrEqual(entry.remaining + 0.01);
+      // En curso (todavía NO es el último día) → flag inProgress + accruedThrough.
+      // El último día ya cuenta cerrada (sin flag), pero el monto es el mismo.
+      if (todayYmd < wk.weekEnd) {
+        expect(currentWeekRows[0].inProgress).toBe(true);
+        expect(currentWeekRows[0].accruedThrough).toBe(todayYmd);
+      }
     } else {
-      expect(inProgressRows).toHaveLength(0);
+      expect(currentWeekRows).toHaveLength(0);
     }
+  });
+  it('sin ?week= abre la semana de HOY en hora local, no la de UTC', async () => {
+    // `new Date().toISOString().slice(0,10)` es UTC: en Bogotá, desde las
+    // 7 p.m. devuelve MAÑANA. Un domingo por la noche eso saltaba a la semana
+    // siguiente y la nómina aparecía vacía justo cuando se cierra el pago.
+    const porDefecto = await request
+      .get('/workers/weekly')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const conHoyLocal = await request
+      .get(`/workers/weekly?week=${hoyLocal()}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const a = porDefecto.body as { weekStart: string; weekEnd: string };
+    const b = conHoyLocal.body as { weekStart: string; weekEnd: string };
+    expect(a.weekStart).toBe(b.weekStart);
+    expect(a.weekEnd).toBe(b.weekEnd);
+    // OJO: no se puede exigir que la semana CONTENGA a hoy. El lunes es el
+    // descanso —el borde entre semanas— y el dominio lo mapea a la semana que
+    // arranca el martes; un lunes, `weekStart` es mañana. Lo que se fija acá es
+    // que el default y la fecha local resuelvan la MISMA semana, que es donde
+    // se colaba el corrimiento de UTC.
   });
 });

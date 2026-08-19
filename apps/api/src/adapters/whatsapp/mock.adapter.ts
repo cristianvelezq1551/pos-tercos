@@ -7,12 +7,15 @@ import type {
 
 /**
  * Dev: no envía nada real. Loggea el mensaje para inspección. Default cuando
- * no hay vars KAPSO ni OPENWA configuradas. Implementa también `sendTemplate`
+ * no hay vars KAPSO configuradas. Implementa también `sendTemplate`
  * para poder probar el branch de templates sin Kapso
  * (WHATSAPP_TEMPLATES_ENABLED=true en dev).
  */
 @Injectable()
 export class MockWhatsAppAdapter implements WhatsAppProvider {
+  /** No entrega nada: quien lo use NO debe registrar el mensaje como enviado. */
+  readonly delivers = false;
+
   private readonly logger = new Logger(MockWhatsAppAdapter.name);
 
   async sendText(phoneE164: string, text: string): Promise<WhatsAppSendResult> {

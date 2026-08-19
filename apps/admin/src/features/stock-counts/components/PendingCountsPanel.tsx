@@ -4,6 +4,7 @@ import type { StockCount } from '@pos-tercos/types';
 import { Badge, Button, Card, EmptyState, Input, Quantity, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { approveCount, fetchPendingCounts, rejectCount } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 /**
  * Conteos del cocinero pendientes de aprobación (#7). El conteo es CIEGO para el
@@ -25,7 +26,7 @@ export function PendingCountsPanel({ initial }: { initial: StockCount[] }) {
       else await rejectCount(id, note);
       setRows(await fetchPendingCounts());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error resolviendo el conteo');
+      setError(getErrorMessage(e, 'Error resolviendo el conteo'));
     } finally {
       setBusyId(null);
     }
@@ -35,7 +36,7 @@ export function PendingCountsPanel({ initial }: { initial: StockCount[] }) {
     return (
       <EmptyState
         title="Sin conteos por aprobar"
-        description="Cuando el cocinero registre un conteo físico, aparecerá acá para que lo valides."
+        description="Cuando el cocinero registre un conteo físico, aparecerá aquí para que lo valides."
         size="sm"
       />
     );

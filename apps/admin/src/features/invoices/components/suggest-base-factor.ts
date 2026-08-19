@@ -19,7 +19,7 @@ function normUnit(u: string): string {
     .replace('litro', 'lt');
 }
 
-function unitsMatch(a: string, b: string): boolean {
+export function unitsMatch(a: string, b: string): boolean {
   const na = normUnit(a);
   const nb = normUnit(b);
   return na === nb || na.startsWith(nb) || nb.startsWith(na);
@@ -43,4 +43,28 @@ export function suggestBaseFactor(stockable: Stockable, line: LinePack): number 
   }
   if (unitsMatch(line.unit, base)) return 1;
   return stockable.conversionFactor && stockable.conversionFactor > 0 ? stockable.conversionFactor : 1;
+}
+
+/**
+ * ¿La conversión que se va a confirmar es sospechosa?
+ *
+ * Cuando la factura viene en la MISMA unidad en que se compra el insumo
+ * (dice "kg" y el insumo se compra en "kg"), el factor tiene que ser el del
+ * insumo: 1 kg = 1.000 g. Cualquier otro número está mal, y el daño es
+ * silencioso: entra menos mercancía de la que llegó Y el costo del insumo
+ * queda disparado, que después se propaga al costo de cada plato.
+ *
+ * Caso real: 1 kg de queso confirmado con factor 40 → entraron 40 g en vez de
+ * 1.000, y el kilo quedó costando $750.000 habiendo pagado $30.000.
+ */
+export function conversionSospechosa(opts: {
+  lineUnit: string;
+  unitPurchase: string;
+  conversionFactor: number;
+  factorElegido: number;
+}): boolean {
+  if (!opts.lineUnit || !opts.unitPurchase) return false;
+  if (!(opts.conversionFactor > 0)) return false;
+  if (!unitsMatch(opts.lineUnit, opts.unitPurchase)) return false;
+  return Math.abs(opts.factorElegido - opts.conversionFactor) > 1e-9;
 }

@@ -13,12 +13,31 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
 
       {/* Bloque ingresos → margen bruto */}
       <div className="space-y-1.5 text-sm">
-        <Row label="Ingresos del mes" value={formatCop(s.revenue)} />
+        {/* Los descuentos ya están restados del ingreso. Sin esta línea el dueño
+            no podía ver cuánto regaló ni separar "vendí menos" de "descontué más". */}
+        {s.discountTotal > 0 ? (
+          <>
+            <Row label="Ventas a precio de lista" value={formatCop(s.grossRevenue)} muted />
+            <Row
+              label="− Descuentos y promociones"
+              value={`−${formatCop(s.discountTotal)}`}
+              muted
+            />
+            <Row label="Ingresos del mes (ya con descuentos)" value={formatCop(s.revenue)} strong />
+          </>
+        ) : (
+          <Row label="Ingresos del mes" value={formatCop(s.revenue)} />
+        )}
         <Row label="− COGS (costo real FIFO)" value={`−${formatCop(s.cogs)}`} muted />
         {s.cogsPartial ? (
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            Parte del costo se vendió sin lote costeado a FIFO (cargá las facturas de compra). El
+            Parte del costo se vendió sin lote costeado a FIFO (carga las facturas de compra). El
             COGS está subestimado y la ganancia mostrada es mayor a la real.
+          </p>
+        ) : s.cogsEstimated ? (
+          <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+            Parte del COGS se costeó con un <strong>estimado</strong> (ventas forzadas sin stock).
+            El margen es aproximado hasta que subas la factura de compra que confirma el precio.
           </p>
         ) : null}
         <div className="my-2 border-t border-border" />
@@ -27,6 +46,7 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
           value={`${formatCop(s.grossMargin)} (${grossPct}%)`}
           strong
         />
+
       </div>
 
       {/* Bloque costos fijos (recurrentes) */}
@@ -72,8 +92,13 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
           />
           {s.cortesiasCostPartial ? (
             <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-              Algunas cortesías se regalaron sin stock costeado a FIFO, así que esta pérdida puede
-              estar subestimada.
+              Algunas cortesías tienen insumos sin ningún precio de compra en el sistema, así que
+              esta pérdida está subestimada.
+            </p>
+          ) : s.cortesiasCostEstimated ? (
+            <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+              Parte de estas cortesías se valuó con un <strong>estimado</strong> (se regaló producto
+              con insumos que no estaban cargados). Se corrige al subir la factura de compra.
             </p>
           ) : null}
         </div>
@@ -87,6 +112,23 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
             value={`−${formatCop(s.refundCost)}`}
             muted
           />
+        </div>
+      ) : null}
+
+      {/* Merma: insumo/producto tirado, valuado a costo FIFO (§1.2). */}
+      {s.wasteCost > 0 ? (
+        <div className="space-y-1.5 text-sm">
+          <Row
+            label="− Merma (insumo/producto tirado, a costo)"
+            value={`−${formatCop(s.wasteCost)}`}
+            muted
+          />
+          {s.wasteCostEstimated ? (
+            <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+              Parte de la merma se valuó con un <strong>estimado</strong> (se tiró insumo que no
+              estaba cargado en inventario). Se corrige al subir la factura de compra.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

@@ -8,6 +8,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 
 const ACCESS_TOKEN_TTL = '24h';
+/**
+ * El token de WS vive en JavaScript (la cookie httpOnly no viaja al handshake),
+ * así que es lo único que un XSS puede robar — por eso dura minutos, no horas.
+ * 120s alcanza de sobra para SSR → hidratación → connect; si igual venciera,
+ * `keepSocketAuthFresh` pide uno nuevo en `connect_error` y el socket se cura solo.
+ */
+const WS_TOKEN_TTL = '120s';
 const REFRESH_TOKEN_TTL_DAYS = 7;
 const REFRESH_TOKEN_BYTES = 48;
 const BCRYPT_ROUNDS = 10;
@@ -49,7 +56,7 @@ export class AuthService {
         action: 'AUTH_LOGIN_FAILED',
         metadata: { email, reason: 'inactive' },
       });
-      throw new ForbiddenException('Tu usuario está inactivo. Contactá al administrador.');
+      throw new ForbiddenException('Tu usuario está inactivo. Contacta al administrador.');
     }
 
     const accessToken = await this.signAccess(user.id, user.role, user.email, user.tokenVersion);
@@ -168,6 +175,11 @@ export class AuthService {
    * la cookie httpOnly, así que los sockets reciben el JWT por handshake; al
    * reconectar después de horas el token original puede haber vencido — este
    * endpoint emite uno nuevo a partir de la sesión (cookie) vigente.
+   *
+   * NO devuelve el access token: emite uno con `scope: 'ws'` y 120s de vida,
+   * que el `JwtAuthGuard` rechaza. Antes acá se reemitía el access de 24h tal
+   * cual, así que un XSS en la caja se llevaba una credencial completa de la
+   * API — justo lo que la cookie httpOnly existe para evitar.
    */
   async mintWsToken(current: JwtAccessPayload): Promise<{ token: string }> {
     const user = await this.prisma.user.findUnique({
@@ -177,7 +189,7 @@ export class AuthService {
     if (!user || !user.active) {
       throw new UnauthorizedException('Usuario inactivo o inexistente');
     }
-    return { token: await this.signAccess(user.id, user.role, user.email, user.tokenVersion) };
+    return { token: await this.signWs(user.id, user.role, user.email, user.tokenVersion) };
   }
 
   private async signAccess(
@@ -195,6 +207,26 @@ export class AuthService {
     return this.jwt.signAsync(payload, {
       secret: process.env.JWT_ACCESS_SECRET,
       expiresIn: ACCESS_TOKEN_TTL,
+    });
+  }
+
+  /** Credencial de un solo uso para el handshake WS. Ver `mintWsToken`. */
+  private async signWs(
+    userId: string,
+    role: string,
+    email: string,
+    tokenVersion: number,
+  ): Promise<string> {
+    const payload: JwtAccessPayload = {
+      sub: userId,
+      role: role as JwtAccessPayload['role'],
+      email,
+      tv: tokenVersion,
+      scope: 'ws',
+    };
+    return this.jwt.signAsync(payload, {
+      secret: process.env.JWT_ACCESS_SECRET,
+      expiresIn: WS_TOKEN_TTL,
     });
   }
 

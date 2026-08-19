@@ -1,4 +1,5 @@
 import { CatalogGrid, getMenuServer } from '../features/catalog';
+import { BusinessHydrator, StatusBanner } from '../features/business';
 import { PromotionsHydrator } from '../features/promotions';
 import { WebTopbar } from '../components/WebTopbar';
 import { EmptyState } from '@pos-tercos/ui';
@@ -19,17 +20,14 @@ export default async function Home() {
   return (
     <div className="flex min-h-dvh flex-col bg-background pb-24 text-foreground md:pb-0">
       <PromotionsHydrator promotions={menu.promotions} />
+      <BusinessHydrator business={hero.business} />
       <WebTopbar transparent />
       <ActiveOrderBanner />
       <main className="flex-1">
         {hero.slides.length > 0 ? <HeroCarousel slides={hero.slides} /> : <Hero />}
-        {!menu.webOrdersEnabled ? (
-          <div className="mx-auto mt-6 max-w-2xl px-6">
-            <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
-              Los pedidos online están temporalmente pausados. ¡Te esperamos en el local!
-            </p>
-          </div>
-        ) : null}
+        {/* Cubre los dos motivos por los que no se puede pedir: kill-switch (#13)
+            y fuera de horario. Reemplaza al banner que solo miraba el switch. */}
+        <StatusBanner />
         {hasMenu ? (
           <CatalogGrid products={menu.products} categories={menu.categories} />
         ) : (

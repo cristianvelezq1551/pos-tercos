@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
-import { ProductsTable } from '../../../features/products';
+import { ProductsTable, type RealCost } from '../../../features/products';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import { getCurrentUserServer } from '../../../features/auth/server';
-import type { Product, ProductCostSummary } from '@pos-tercos/types';
+import type { Product, ProductCostSummary, ProductMarginReport } from '@pos-tercos/types';
 
 async function loadProducts(): Promise<Product[] | { error: string }> {
   try {
@@ -26,11 +26,33 @@ async function loadCostsByProductId(): Promise<Map<string, ProductCostSummary>> 
   }
 }
 
+// Costo REAL de lo vendido (FIFO) para contrastarlo contra el estimado en la
+// misma fila. El reporte es del dueño: para otros roles falla y la tabla
+// simplemente no muestra esas columnas.
+async function loadRealCostsByProductId(): Promise<Map<string, RealCost>> {
+  try {
+    const report = await serverFetchJson<ProductMarginReport>('/reports/cogs/product-margins');
+    return new Map(
+      report.products.map((p) => [
+        p.productId,
+        {
+          unitCost: p.unitsSold > 0 ? p.cogs / p.unitsSold : null,
+          marginPct: p.marginPct === null ? null : p.marginPct * 100,
+          partial: p.cogsPartial,
+        },
+      ]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
 export default async function ProductsPage() {
-  const [result, user, costsById] = await Promise.all([
+  const [result, user, costsById, realCostById] = await Promise.all([
     loadProducts(),
     getCurrentUserServer(),
     loadCostsByProductId(),
+    loadRealCostsByProductId(),
   ]);
 
   return (
@@ -49,7 +71,12 @@ export default async function ProductsPage() {
 
       <Container size="7xl" padY="md">
         {Array.isArray(result) ? (
-          <ProductsTable products={result} costsById={costsById} userRole={user?.role} />
+          <ProductsTable
+            products={result}
+            costsById={costsById}
+            realCostById={realCostById}
+            userRole={user?.role}
+          />
         ) : (
           <p
             role="alert"

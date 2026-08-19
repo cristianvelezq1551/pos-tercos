@@ -8,6 +8,7 @@ import { listStock } from '../../inventory';
 import { discardPhoto, uploadInvoicePhoto } from '../api/client';
 import { listSuppliers } from '../utils/suppliers-api';
 import { InvoiceConfirmModal } from './InvoiceConfirmModal';
+import { getErrorMessage } from '../../../lib/errors';
 
 const ACCEPTED_TYPES = 'image/jpeg,image/png,image/webp,image/gif';
 
@@ -96,7 +97,7 @@ export function InvoiceUploader() {
       setIaContext({ photoStorageKey: res.photoStorageKey, aiModelUsed: res.aiModelUsed });
       setDraft(buildSyntheticDraft(res.extraction, res.aiModelUsed));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setUploading(false);
     }

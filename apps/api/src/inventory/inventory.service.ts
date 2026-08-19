@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { roundCost, roundsToZeroAt4 } from '@pos-tercos/domain';
 import type {
   CreateInventoryMovement,
   InventoryMovement,
@@ -11,6 +12,7 @@ import type {
   Product as DbProduct,
   Subproduct as DbSubproduct,
 } from '@prisma/client';
+import { runWithSerializationRetry } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 
 type DbInventoryMovement = Prisma.InventoryMovementGetPayload<{
@@ -79,7 +81,15 @@ export class InventoryService {
    * Lista unificada: insumos + productos direct-resale + subproductos.
    * Los 3 son stockables de primera clase con su propio inventario.
    */
-  async listStockables(opts: { onlyActive?: boolean; lowStock?: boolean } = {}): Promise<Stockable[]> {
+  /**
+   * `negative` = stock por DEBAJO de cero: se vendió/consumió más de lo
+   * registrado (venta forzada, offline o cortesía). Es una DEUDA de inventario
+   * y casi siempre significa que falta subir una factura o registrar una
+   * producción. Independiente de `lowStock` (que compara contra el umbral).
+   */
+  async listStockables(
+    opts: { onlyActive?: boolean; lowStock?: boolean; negative?: boolean } = {},
+  ): Promise<Stockable[]> {
     const ingredientWhere: Prisma.IngredientWhereInput = opts.onlyActive ? { isActive: true } : {};
     const productWhere: Prisma.ProductWhereInput = {
       directResale: true,
@@ -106,6 +116,13 @@ export class InventoryService {
 
     let merged = [...ingrItems, ...prodItems, ...subItems];
     if (opts.lowStock) merged = merged.filter((s) => s.lowStock);
+    // Los negativos se ordenan por el faltante MÁS grande primero (la deuda
+    // más urgente arriba), no alfabéticamente.
+    if (opts.negative) {
+      return merged
+        .filter((s) => s.currentStock < 0)
+        .sort((a, b) => a.currentStock - b.currentStock);
+    }
     return merged.sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -125,7 +142,7 @@ export class InventoryService {
     const row = await this.prisma.product.findUnique({ where: { id } });
     if (!row) throw new NotFoundException(`Product ${id} not found`);
     if (!row.directResale) {
-      throw new BadRequestException(`Product ${id} is not direct-resale; no own stock.`);
+      throw new BadRequestException(`Este producto no se vende por reventa directa, así que no lleva stock propio.`);
     }
     const current = await this.getCurrentStock('PRODUCT', id);
     return productToStockable(row, current);
@@ -142,7 +159,7 @@ export class InventoryService {
       });
       if (!ing) throw new NotFoundException(`Ingredient ${input.ingredientId} not found`);
       if (!ing.isActive) {
-        throw new BadRequestException(`Ingredient ${input.ingredientId} is inactive`);
+        throw new BadRequestException(`Ese insumo está desactivado.`);
       }
     } else if (input.entityType === 'SUBPRODUCT') {
       const sub = await this.prisma.subproduct.findUnique({
@@ -151,7 +168,7 @@ export class InventoryService {
       });
       if (!sub) throw new NotFoundException(`Subproduct ${input.subproductId} not found`);
       if (!sub.isActive) {
-        throw new BadRequestException(`Subproduct ${input.subproductId} is inactive`);
+        throw new BadRequestException(`Ese subproducto está desactivado.`);
       }
     } else {
       const prod = await this.prisma.product.findUnique({
@@ -160,7 +177,7 @@ export class InventoryService {
       });
       if (!prod) throw new NotFoundException(`Product ${input.productId} not found`);
       if (!prod.isActive) {
-        throw new BadRequestException(`Product ${input.productId} is inactive`);
+        throw new BadRequestException(`Ese producto está desactivado.`);
       }
       if (!prod.directResale) {
         throw new BadRequestException(
@@ -186,7 +203,7 @@ export class InventoryService {
       });
       if (existingInitial) {
         throw new BadRequestException(
-          'Este item ya tiene un "Stock inicial" registrado. Para corregir el stock usá un ajuste manual.',
+          'Este item ya tiene un "Stock inicial" registrado. Para corregir el stock usa un ajuste manual.',
         );
       }
     }
@@ -227,6 +244,101 @@ export class InventoryService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Anula (total o parcialmente) una merma registrada por error.
+   *
+   * `inventory_movements` es insert-only, así que la corrección es un
+   * movimiento compensatorio con `sourceType='waste_reversal'` apuntando al id
+   * de la merma original. El ledger FIFO lo reconoce y devuelve las unidades
+   * con su base de costo REAL, neteando la pérdida en el P&G — un
+   * `MANUAL_ADJUSTMENT` suelto devolvía la cantidad pero dejaba el costo
+   * restando del neto para siempre, sin camino de corrección.
+   *
+   * Reversas parciales acumulables: el dueño puede devolver de a poco, pero
+   * nunca más de lo que se tiró.
+   */
+  async reverseWaste(
+    movementId: string,
+    input: { reason: string; quantity?: number | null },
+    userId: string,
+  ): Promise<InventoryMovement> {
+    // Leer "lo ya devuelto" y escribir la nueva reversa TIENEN que ir en la
+    // misma tx Serializable. Sueltas, dos clics en el botón "Anular" (o un
+    // retry de red) leen ambos `alreadyReturned = 0`, los dos pasan el tope y
+    // se crean DOS reversas completas: el insumo vuelve al doble y la merma
+    // desaparece del P&G por partida doble. Y como `inventory_movements` es
+    // insert-only, ese fantasma ya no se borra — solo se compensa a mano.
+    // Con Serializable, Postgres aborta a una de las dos (40001) y el reintento
+    // lee el total actualizado, así que devuelve lo que falta o rechaza.
+    const created = await runWithSerializationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const original = await tx.inventoryMovement.findUnique({
+            where: { id: movementId },
+            select: {
+              id: true,
+              type: true,
+              delta: true,
+              entityType: true,
+              ingredientId: true,
+              productId: true,
+              subproductId: true,
+            },
+          });
+          if (!original) throw new NotFoundException(`Movimiento ${movementId} no encontrado`);
+          if (original.type !== 'WASTE') {
+            throw new BadRequestException(
+              'Solo se anulan movimientos de MERMA. Para corregir otro movimiento usa un ajuste manual.',
+            );
+          }
+
+          const wasted = Math.abs(Number(original.delta));
+          // Lo ya devuelto por reversas previas (acumulables).
+          const prior = await tx.inventoryMovement.aggregate({
+            where: { sourceType: 'waste_reversal', sourceId: movementId },
+            _sum: { delta: true },
+          });
+          const alreadyReturned = Number(prior._sum.delta ?? 0);
+          const pending = roundCost(wasted - alreadyReturned);
+          if (pending <= 0) {
+            throw new BadRequestException('Esta merma ya fue anulada por completo.');
+          }
+
+          const requested = input.quantity ?? pending;
+          if (requested > pending + 1e-9) {
+            throw new BadRequestException(
+              `No se puede devolver ${requested}: la merma tiene ${pending} sin anular.`,
+            );
+          }
+          const delta = roundCost(requested);
+          if (roundsToZeroAt4(delta)) {
+            throw new BadRequestException('La cantidad a devolver redondea a cero.');
+          }
+
+          return tx.inventoryMovement.create({
+            data: {
+              entityType: original.entityType,
+              ingredientId: original.ingredientId,
+              productId: original.productId,
+              subproductId: original.subproductId,
+              delta,
+              // El costo lo resuelve el ledger devolviendo los lotes originales.
+              unitCost: null,
+              type: 'MANUAL_ADJUSTMENT',
+              sourceType: 'waste_reversal',
+              sourceId: movementId,
+              notes: `Anulación de merma: ${input.reason}`.slice(0, 500),
+              userId,
+            },
+            include: includeFull(),
+          });
+        },
+        { isolationLevel: 'Serializable' },
+      ),
+    );
+    return toMovementDto(created);
   }
 
   async listMovements(filter: ListMovementsFilter = {}): Promise<InventoryMovement[]> {
@@ -285,6 +397,7 @@ function ingredientToStockable(row: DbIngredient, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    blocksAvailability: row.blocksAvailability,
     portionSize,
     portions: portionsOf(portionSize, current),
     category: null,
@@ -305,6 +418,8 @@ function productToStockable(row: DbProduct, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    // Reventa directa: su stock ES lo que se vende → nunca es un consumible.
+    blocksAvailability: true,
     // Reventa directa: se vende por unidad, no aplica "porciones".
     portionSize: null,
     portions: null,
@@ -328,6 +443,7 @@ function subproductToStockable(row: DbSubproduct, current: number): Stockable {
     isActive: row.isActive,
     currentStock: current,
     lowStock: row.isActive && current < thresholdMin,
+    blocksAvailability: row.blocksAvailability,
     portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
     portions: portionsOf(row.portionSize, current),
     category: null,

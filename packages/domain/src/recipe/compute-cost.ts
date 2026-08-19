@@ -56,7 +56,7 @@ export function computeProductCost(input: {
     return {
       totalCost: null,
       ingredientBreakdown: [],
-      missingReasons: [`Product ${product.id} is a combo — usar computeComboCost`],
+      missingReasons: [`El combo "${product.name}" se costea a partir de sus componentes.`],
     };
   }
 
@@ -68,8 +68,8 @@ export function computeProductCost(input: {
         ingredientBreakdown: [],
         missingReasons: [
           product.lastUnitCost === null
-            ? `Producto "${product.name}" sin lastUnitCost (no se ha confirmado factura)`
-            : `Producto "${product.name}" sin conversionFactor`,
+            ? `Falta el costo de "${product.name}" (sin facturas de compra confirmadas)`
+            : `"${product.name}" no tiene definida la equivalencia entre la unidad de compra y la de venta.`,
         ],
       };
     }
@@ -83,7 +83,7 @@ export function computeProductCost(input: {
       totalCost: null,
       ingredientBreakdown: [],
       missingReasons: [
-        `Producto "${product.name}" no es direct-resale ni tiene receta cargada`,
+        `"${product.name}" no tiene receta cargada y tampoco está marcado como producto de reventa.`,
       ],
     };
   }
@@ -99,7 +99,7 @@ export function computeProductCost(input: {
     const contribution = unitCost !== null ? roundCost(ing.totalQuantity * unitCost) : null;
     if (unitCost === null) {
       allKnown = false;
-      missing.push(`Ingrediente "${ing.name}" sin costo (lastUnitCost null)`);
+      missing.push(`Falta el costo de "${ing.name}" (sin facturas de compra confirmadas)`);
     } else {
       total += contribution!;
     }

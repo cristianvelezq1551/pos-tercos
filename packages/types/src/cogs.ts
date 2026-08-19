@@ -9,7 +9,20 @@ import { z } from 'zod';
 export const PnlReportSchema = z.object({
   periodFrom: z.string(),
   periodTo: z.string(),
+  /**
+   * Ingresos del NEGOCIO: comida vendida, ya neta de descuentos y SIN el cobro
+   * de domicilios (esa plata es del repartidor — ver `deliveryCollected`).
+   */
   revenue: z.number(),
+  /**
+   * Descuentos otorgados en el período (promos + descuento manual de línea y de
+   * total). YA están restados de `revenue` — se reportan aparte porque son
+   * plata que el negocio decidió no cobrar: sin esta línea el dueño no puede
+   * ver cuánto regaló ni distinguir "vendí menos" de "descontué más".
+   */
+  discountTotal: z.number(),
+  /** `revenue + discountTotal`: lo que habría entrado sin descuentos. */
+  grossRevenue: z.number(),
   /** Costo real (FIFO) de lo vendido en el período. */
   cogs: z.number(),
   grossMargin: z.number(),
@@ -24,9 +37,30 @@ export const PnlReportSchema = z.object({
    * tiene. Se reporta aparte para que el neto la reste explícitamente.
    */
   refundCost: z.number(),
+  /**
+   * Domicilios cobrados al cliente en el período. NO está dentro de `revenue`:
+   * es plata de un TERCERO (el domiciliario) que solo pasa por la caja
+   * (decisión del dueño 2026-07-27). Se reporta para poder arquearla y para que
+   * el dueño sepa cuánto tiene que pagarle al repartidor.
+   *
+   * Antes se sumaba a los ingresos y, como no consume inventario, subía el
+   * margen bruto con plata que no se quedaba en el negocio.
+   */
+  deliveryCollected: z.number(),
+  /** Cuántos pedidos a domicilio cobraron envío en el período. */
+  deliveryOrderCount: z.number().int().nonnegative(),
   salesCount: z.number().int().nonnegative(),
   /** Unidades de insumo consumidas sin costo conocido (termómetro de datos). */
   cogsUnknownQty: z.number(),
+  /** Unidades costeadas con ESTIMADO (venta forzada sin stock, sin factura que
+   *  confirme el precio real). El COGS de esas unidades NO es exacto todavía; se
+   *  corrige al subir la factura. >0 ⇒ mostrar "COGS parcialmente estimado". */
+  cogsEstimatedQty: z.number(),
+  /** Parte de `wasteCost` valuada con el último precio conocido y no con un lote
+   *  real (se tiró insumo que no estaba cargado). Se corrige al subir la factura. */
+  wasteEstimatedCost: z.number(),
+  /** Ídem para `cortesiaCost`. */
+  cortesiaEstimatedCost: z.number(),
 });
 export type PnlReport = z.infer<typeof PnlReportSchema>;
 

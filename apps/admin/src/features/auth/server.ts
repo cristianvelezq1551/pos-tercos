@@ -30,6 +30,32 @@ export async function getCurrentUserServer(): Promise<User | null> {
 }
 
 /**
+ * Token para el handshake WS del SSR (caja unificada, Fase 2e).
+ *
+ * Pide uno con `scope: 'ws'` (120s, inútil contra la API) en vez de devolver la
+ * cookie de access cruda: este valor se serializa como prop de un componente
+ * cliente, o sea que queda legible por cualquier JS de la página. Devolver el
+ * access de 24h acá anulaba la cookie httpOnly igual que hacerlo por el endpoint.
+ */
+export async function getWsTokenServer(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const access = cookieStore.get(ACCESS_COOKIE);
+  if (!access) return null;
+
+  try {
+    const res = await fetch(`${API_URL}/auth/ws-token`, {
+      headers: { Cookie: `${ACCESS_COOKIE}=${access.value}`, 'X-Client-App': 'admin' },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const { token } = (await res.json()) as { token?: string };
+    return token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Guard de página/layout: exige rol DUEÑO. El ADMIN_OPERATIVO (= cajero de
  * confianza) no maneja catálogo (precios de venta, promos, recetas) — eso es
  * del dueño. Si no es dueño lo mandamos a Facturas (su área: compras/inventario).
@@ -39,5 +65,18 @@ export async function getCurrentUserServer(): Promise<User | null> {
 export async function requireDuenoServer(): Promise<User> {
   const user = await getCurrentUserServer();
   if (!user || user.role !== 'DUENO') redirect('/invoices');
+  return user;
+}
+
+/**
+ * Guard del segmento de Caja (`/caja/*`). La caja es SOLO del ADMIN_OPERATIVO
+ * (el cajero de confianza). El DUEÑO no opera caja (decisión del dueño) — se
+ * redirige al Inicio. Sin sesión → login. Enforcement real en el backend
+ * (@CashierAccess). Ver UNIFICACION-POS-ADMIN.md.
+ */
+export async function requireOperativoServer(): Promise<User> {
+  const user = await getCurrentUserServer();
+  if (!user) redirect('/login');
+  if (user.role !== 'ADMIN_OPERATIVO') redirect('/');
   return user;
 }

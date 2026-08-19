@@ -30,6 +30,9 @@ export class SubproductsService {
         unit: input.unit ?? 'unidad',
         thresholdMin: input.thresholdMin ?? 0,
         portionSize: input.portionSize ?? null,
+        ...(input.blocksAvailability !== undefined && {
+          blocksAvailability: input.blocksAvailability,
+        }),
         preparationSteps: input.preparationSteps ?? [],
       },
     });
@@ -46,6 +49,9 @@ export class SubproductsService {
         ...(input.unit !== undefined && { unit: input.unit }),
         ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
         ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
+        ...(input.blocksAvailability !== undefined && {
+          blocksAvailability: input.blocksAvailability,
+        }),
         ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
       },
@@ -81,7 +87,7 @@ export class SubproductsService {
     }
     if (hasMovements > 0) {
       throw new ConflictException(
-        'No se puede eliminar: el subproducto tiene historial de movimientos (producción/venta). Usá "Desactivar" para sacarlo del catálogo sin perder la trazabilidad.',
+        'No se puede eliminar: el subproducto tiene historial de movimientos (producción/venta). Usa "Desactivar" para sacarlo del catálogo sin perder la trazabilidad.',
       );
     }
     await this.prisma.$transaction([
@@ -106,6 +112,7 @@ function toSubproductDto(row: DbSubproduct): Subproduct {
     unit: row.unit,
     thresholdMin: Number(row.thresholdMin),
     portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
+    blocksAvailability: row.blocksAvailability,
     preparationSteps: row.preparationSteps,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),

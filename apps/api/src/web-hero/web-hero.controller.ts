@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -23,11 +24,12 @@ import {
   type CreateWebHeroSlide,
   type Reorder,
   type UpdateWebHeroSlide,
-  type WebHeroConfig,
   type WebHeroSlide,
+  type WebStorefrontConfig,
 } from '@pos-tercos/types';
 import { AdminAccess } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { detectImageMime, detectVideoMime } from '../common/image-mime';
 import { sendBufferWithRangeSupport } from '../common/http-range';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -39,15 +41,33 @@ const MAX_MEDIA_BYTES = 50 * 1024 * 1024; // 50 MB
 
 @Controller('web-hero')
 export class WebHeroController {
-  constructor(private readonly hero: WebHeroService) {}
+  constructor(
+    private readonly hero: WebHeroService,
+    private readonly businessConfig: BusinessConfigService,
+  ) {}
 
   // ── Público: lo que consume el storefront ─────────────────────────
   /** 60 reqs / 60s por IP (igual que /web/menu). */
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get('config')
-  config(): Promise<WebHeroConfig> {
+  config(): Promise<WebStorefrontConfig> {
     return this.hero.getPublicConfig();
+  }
+
+  /**
+   * Foto de "Nosotros". Vive acá y no en /business-config (que es admin) para
+   * que TODOS los medios del storefront salgan del mismo origen público.
+   */
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Get('about-image')
+  async aboutImage(@Res() res: Response): Promise<void> {
+    const image = await this.businessConfig.getAboutImage();
+    if (!image) throw new NotFoundException('No hay foto de Nosotros cargada.');
+    res.setHeader('Content-Type', image.mime);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(image.buffer);
   }
 
   // Límite holgado: un <video> dispara varios range requests por reproducción

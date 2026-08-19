@@ -39,6 +39,10 @@ export const CortesiaRequestSchema = z.object({
   costAmount: z.number().nullable(),
   /** Costo FIFO REAL (solo autorizadas; null si pendiente/rechazada o s/d). */
   fifoCost: z.number().nullable().optional(),
+  /** true si parte de `fifoCost` se valuó al último precio conocido porque el
+   *  insumo no estaba cargado. Es un costo honesto pero PROVISIONAL: se corrige
+   *  solo al subir la factura de compra. La UI lo marca como estimado. */
+  fifoCostEstimated: z.boolean().optional(),
   salePrice: z.number(),
   requestedById: z.string(),
   requestedByName: z.string().nullable(),
@@ -59,8 +63,11 @@ export const CortesiaGivenSummarySchema = z.object({
   /** Costo FIFO de las cortesías autorizadas cuya aprobación cae en la ventana. */
   total: z.number(),
   count: z.number().int().nonnegative(),
-  /** true si alguna cortesía no tenía lote FIFO al aprobar → el total puede estar
-   *  subestimado. */
+  /** true si alguna cortesía no tenía lote FIFO al aprobar NI precio con qué
+   *  estimarla → el total puede estar subestimado. */
   partial: z.boolean(),
+  /** Parte del total valuada con el último precio conocido (el insumo no estaba
+   *  cargado). >0 ⇒ el número es provisional hasta que entre la factura. */
+  estimatedCost: z.number(),
 });
 export type CortesiaGivenSummary = z.infer<typeof CortesiaGivenSummarySchema>;

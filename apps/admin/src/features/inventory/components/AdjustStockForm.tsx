@@ -14,6 +14,7 @@ import { useMemo, useState, useTransition } from 'react';
 import type { Stockable } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
 import { createMovement } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface AdjustStockFormProps {
   stockable: Stockable;
@@ -94,7 +95,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     } finally {
       setSubmitting(false);
     }
@@ -211,7 +212,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
           label={`Costo por ${stockable.unitStock} (opcional)`}
           hint={
             unitCost === null || unitCost <= 0
-              ? 'Sin costo, este stock entra como "costo desconocido" y el COGS de lo que salga de él quedará parcial. Idealmente cargá el stock por factura (captura el costo solo).'
+              ? 'Sin costo, este stock entra como "costo desconocido" y el COGS de lo que salga de él quedará parcial. Idealmente carga el stock por factura (captura el costo solo).'
               : magnitude !== null && magnitude > 0
                 ? `Costo total de esta entrada: ${formatCop(unitCost * magnitude)}`
                 : 'Costo unitario de este lote para el cálculo FIFO.'

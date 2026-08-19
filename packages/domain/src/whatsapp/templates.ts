@@ -24,6 +24,11 @@ export const WHATSAPP_TEMPLATE_NAMES = {
   payment_instructions: 'payment_instructions',
   payment_received: 'payment_received',
   pickup_ready: 'pickup_ready',
+  /** §2.6: un DOMICILIO no se retira — va en camino. Template propio cuya
+   *  variable 4 es la dirección de ENTREGA (no la del local). Registrar en Meta
+   *  junto a los otros (kapso-setup.md). Sin esto, un domicilio "listo" recibía
+   *  el template de retiro ("te esperamos en el local"). */
+  delivery_on_way: 'delivery_en_camino',
   canceled: 'order_canceled',
   /** Alerta interna al dueño (descuadres, anulaciones, descuentos…). */
   owner_alert: 'alerta_negocio',
@@ -86,8 +91,19 @@ export function buildNotificationTemplate(
         languageCode,
         variables: [nombre, recibo, negocio],
       };
-    case 'pickup_ready':
-      // 1=nombre · 2=recibo · 3=negocio · 4=dirección
+    case 'pickup_ready': {
+      // §2.6: un DOMICILIO va en camino (template propio, var 4 = dirección de
+      // ENTREGA); un pedido para RECOGER se retira en el local (var 4 = local).
+      const delivery = sale.deliveryAddress?.trim();
+      if (delivery) {
+        // 1=nombre · 2=recibo · 3=negocio · 4=dirección de entrega
+        return {
+          name: WHATSAPP_TEMPLATE_NAMES.delivery_on_way,
+          languageCode,
+          variables: [nombre, recibo, negocio, sanitizeTemplateParam(delivery)],
+        };
+      }
+      // 1=nombre · 2=recibo · 3=negocio · 4=dirección del local
       return {
         name: WHATSAPP_TEMPLATE_NAMES.pickup_ready,
         languageCode,
@@ -100,6 +116,7 @@ export function buildNotificationTemplate(
             : 'el local',
         ],
       };
+    }
     case 'canceled':
       // 1=nombre · 2=recibo · 3=negocio
       return {

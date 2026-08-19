@@ -1,9 +1,11 @@
 import {
   CreateInventoryMovementSchema,
   InventoryMovementSchema,
+  ReverseWasteSchema,
   StockableSchema,
   type CreateInventoryMovement,
   type InventoryMovement,
+  type ReverseWaste,
   type Stockable,
   type StockableType,
 } from '@pos-tercos/types';
@@ -14,11 +16,12 @@ const StockListSchema = z.array(StockableSchema);
 const MovementsListSchema = z.array(InventoryMovementSchema);
 
 export function listStock(
-  filter: { onlyActive?: boolean; lowStock?: boolean } = {},
+  filter: { onlyActive?: boolean; lowStock?: boolean; negative?: boolean } = {},
 ): Promise<Stockable[]> {
   const params = new URLSearchParams();
   if (filter.onlyActive) params.set('only_active', 'true');
   if (filter.lowStock) params.set('low_stock', 'true');
+  if (filter.negative) params.set('negative', 'true');
   const qs = params.toString() ? `?${params.toString()}` : '';
   return request(`/inventory/stock${qs}`, { method: 'GET' }, StockListSchema);
 }
@@ -54,6 +57,22 @@ export function createMovement(input: CreateInventoryMovement): Promise<Inventor
   CreateInventoryMovementSchema.parse(input);
   return request(
     '/inventory/movements',
+    { method: 'POST', body: JSON.stringify(input) },
+    InventoryMovementSchema,
+  );
+}
+
+/**
+ * Anula una merma registrada por error. `quantity` omitido = la merma entera.
+ * Es la única forma de sacar esa pérdida del estado financiero.
+ */
+export function reverseWaste(
+  movementId: string,
+  input: ReverseWaste,
+): Promise<InventoryMovement> {
+  ReverseWasteSchema.parse(input);
+  return request(
+    `/inventory/movements/${movementId}/reverse-waste`,
     { method: 'POST', body: JSON.stringify(input) },
     InventoryMovementSchema,
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import type { SubproductProductionStatus } from '@pos-tercos/types';
-import { Badge, Button, EmptyState } from '@pos-tercos/ui';
+import { Badge, Button, EmptyState, pluralizeUnit } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { getErrorMessage } from '../../lib/errors';
 import { logError } from '../../lib/client-log';
@@ -68,7 +68,7 @@ export function ProduccionView() {
                     {s.low ? <Badge tone="warning">Falta producir</Badge> : null}
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Stock {fmt(s.currentStock)} {s.unit}
+                    Stock {fmt(s.currentStock)} {pluralizeUnit(s.unit, s.currentStock)}
                     {s.thresholdMin > 0 ? ` · mínimo ${fmt(s.thresholdMin)}` : ''}
                   </p>
                 </div>

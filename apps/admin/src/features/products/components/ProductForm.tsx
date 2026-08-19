@@ -27,6 +27,7 @@ import { ProductFormExtrasSection } from './ProductFormExtrasSection';
 import { ProductFormComboSection } from './ProductFormComboSection';
 import { ProductFormCostInfoPanel } from './ProductFormCostInfoPanel';
 import { ProductFormPreparedCostPanel } from './ProductFormPreparedCostPanel';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface ProductFormProps {
   initial?: Product;
@@ -113,6 +114,14 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
     e.preventDefault();
     setError(null);
 
+    // Al crear, la categoría es obligatoria. El `required` del select ya lo
+    // frena con el globo del navegador, pero ese globo depende del navegador y
+    // no habla nuestro idioma: dejamos el mensaje explícito del formulario.
+    if (!isEdit && !form.category.trim()) {
+      setError('Elige una categoría para el producto.');
+      return;
+    }
+
     const parsed = parseFormValues(form);
     if (!parsed.ok) {
       setError(parsed.error);
@@ -143,7 +152,7 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
         router.refresh();
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(getErrorMessage(err, 'Error desconocido'));
     }
   };
 
@@ -157,7 +166,7 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
         router.refresh();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error desconocido');
+      setError(getErrorMessage(e, 'Error desconocido'));
     }
   };
 
@@ -175,6 +184,7 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
           setForm={setForm}
           pending={pending}
           categories={categories}
+          isEdit={isEdit}
         />
 
         {isEdit && initial?.directResale && (

@@ -35,7 +35,7 @@ export function ProductPricingFields({
             Se guarda automáticamente al confirmar.
           </li>
           <li>
-            <strong>Precio de venta:</strong> lo que cobras al cliente final. Definilo abajo.
+            <strong>Precio de venta:</strong> lo que cobras al cliente final. Defínelo abajo.
           </li>
         </ul>
       </div>

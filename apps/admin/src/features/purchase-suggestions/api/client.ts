@@ -4,12 +4,14 @@ import {
   ResolveSuggestionSchema,
   ScanResultSchema,
   SendToSupplierSchema,
+  SupplierOrderLinkSchema,
   WhatsAppSendOutcomeSchema,
   type HistoricalSupplier,
   type PurchaseSuggestion,
   type ResolveSuggestion,
   type ScanResult,
   type SendToSupplier,
+  type SupplierOrderLink,
   type WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import { z } from 'zod';
@@ -17,8 +19,8 @@ import { request } from '../../../lib/api-client';
 
 const SuggestionListSchema = z.array(PurchaseSuggestionSchema);
 const SupplierListSchema = z.array(HistoricalSupplierSchema);
-const SendOutcomeWithSuggestionSchema = z.object({
-  outcome: WhatsAppSendOutcomeSchema,
+const SupplierOrderResultSchema = z.object({
+  link: SupplierOrderLinkSchema,
   suggestion: PurchaseSuggestionSchema,
 });
 
@@ -104,16 +106,29 @@ export function listSuggestionSuppliers(id: string): Promise<HistoricalSupplier[
   return request(`/purchase-suggestions/${id}/suppliers`, { method: 'GET' }, SupplierListSchema);
 }
 
-/** Envía el pedido a UN proveedor por WhatsApp; marca la sugerencia ACCEPTED. */
-export function sendToSupplier(
+/** Vista previa del pedido (texto + link wa.me). No cambia el estado. */
+export function previewSupplierOrder(
   id: string,
   input: SendToSupplier,
-): Promise<{ outcome: WhatsAppSendOutcome; suggestion: PurchaseSuggestion }> {
+): Promise<SupplierOrderLink> {
   SendToSupplierSchema.parse(input);
   return request(
-    `/purchase-suggestions/${id}/send-to-supplier`,
+    `/purchase-suggestions/${id}/supplier-order/preview`,
     { method: 'POST', body: JSON.stringify(input) },
-    SendOutcomeWithSuggestionSchema,
+    SupplierOrderLinkSchema,
+  );
+}
+
+/** Marca la sugerencia ACEPTADA tras abrir el chat del proveedor. */
+export function markSupplierOrder(
+  id: string,
+  input: SendToSupplier,
+): Promise<{ link: SupplierOrderLink; suggestion: PurchaseSuggestion }> {
+  SendToSupplierSchema.parse(input);
+  return request(
+    `/purchase-suggestions/${id}/supplier-order`,
+    { method: 'POST', body: JSON.stringify(input) },
+    SupplierOrderResultSchema,
   );
 }
 

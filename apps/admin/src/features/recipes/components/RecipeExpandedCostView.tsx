@@ -1,5 +1,5 @@
 import type { ExpandedCostResponse, FifoLotsResponse } from '@pos-tercos/types';
-import { formatCop } from '@pos-tercos/ui';
+import { formatCop, pluralizeUnit } from '@pos-tercos/ui';
 import { FifoYieldBreakdown } from './FifoYieldBreakdown';
 import { Th, Td, formatRecipeNumber } from './RecipeTablePrimitives';
 
@@ -90,9 +90,14 @@ export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: Recip
             </ul>
           </div>
         )}
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          Usa el <strong>último costo de compra</strong> de cada insumo (no un promedio). Cambia
-          cuando confirmas una factura con un precio distinto.
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          Es un <strong>estimado</strong>: usa el <strong>último costo de compra</strong> de cada
+          insumo (no un promedio) y cambia cuando confirmas una factura con un precio distinto.
+          <br />
+          El costo <strong>real</strong> de lo que ya vendiste puede ser otro y lo ves en{' '}
+          <strong>Reportes → Costos</strong>: ahí se calcula por FIFO, gastando primero el lote
+          más viejo. Si compraste el mismo insumo a dos precios, lo vendido sale al precio del
+          lote que se consumió, no al último que pagaste.
         </p>
       </div>
 
@@ -125,7 +130,7 @@ export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: Recip
                 <Td align="right" mono>
                   {formatRecipeNumber(t.totalQuantity)}
                 </Td>
-                <Td>{t.unitRecipe}</Td>
+                <Td>{pluralizeUnit(t.unitRecipe, t.totalQuantity)}</Td>
                 <Td align="right" mono>
                   {t.unitCostInRecipe !== null ? (
                     <span className="inline-flex items-center justify-end gap-1.5">

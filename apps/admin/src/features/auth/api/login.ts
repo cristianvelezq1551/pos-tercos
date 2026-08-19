@@ -10,11 +10,12 @@ export async function loginRequest(input: LoginRequest): Promise<LoginResponse> 
 
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error('Credenciales inválidas');
+      throw new Error('Correo o contraseña incorrectos.');
     }
     // 403 (usuario inactivo) y otros: mostrar el mensaje del backend.
     const body = (await res.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? `Error ${res.status}`);
+    // Sin mensaje del backend, el helper compartido arma uno por código.
+    throw Object.assign(new Error(body?.message ?? ''), { status: res.status });
   }
 
   const json = (await res.json()) as unknown;

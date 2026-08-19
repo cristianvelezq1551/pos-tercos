@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SaleTypeEnum } from './sales';
 
 // ====================================================================
 // REPORTS — anomalías por cajero (FASE 11.D)
@@ -141,14 +142,17 @@ export const SalesBucketSchema = z.object({
 export type SalesBucket = z.infer<typeof SalesBucketSchema>;
 
 export const SalesByTypeSchema = z.object({
-  type: z.enum(['COUNTER', 'WEB_PICKUP']),
+  // El enum canónico, no una copia: al reponer WEB_DELIVERY una lista duplicada
+  // acá habría hecho que el reporte rechazara los domicilios.
+  type: SaleTypeEnum,
   count: z.number().int().nonnegative(),
   revenue: z.number().nonnegative(),
 });
 export type SalesByType = z.infer<typeof SalesByTypeSchema>;
 
 export const SalesByMethodSchema = z.object({
-  method: z.enum(['CASH', 'NEQUI', 'DAVIPLATA', 'QR_BANCOLOMBIA', 'TRANSFER']),
+  // Método dinámico (catálogo de medios de pago): cualquier code habilitado.
+  method: z.string().min(1),
   count: z.number().int().nonnegative(),
   revenue: z.number().nonnegative(),
 });
@@ -160,10 +164,20 @@ export const SalesSummarySchema = z.object({
   granularity: SalesGranularityEnum,
   totals: z.object({
     count: z.number().int().nonnegative(),
+    /**
+     * Lo que se queda el negocio: NO incluye el cobro del domicilio (esa plata
+     * es del repartidor y solo pasa por la caja — decisión del dueño 2026-07-27).
+     */
     revenue: z.number().nonnegative(),
     discount: z.number().nonnegative(),
     voidCount: z.number().int().nonnegative(),
     avgTicket: z.number().nonnegative(),
+    /**
+     * Domicilios cobrados al cliente en el período. Plata de TERCEROS: se
+     * reporta para poder arquearla y para explicar por qué `byMethod` suma más
+     * que `revenue`, pero nunca se suma a los ingresos.
+     */
+    deliveryCollected: z.number().nonnegative(),
   }),
   buckets: z.array(SalesBucketSchema),
   byType: z.array(SalesByTypeSchema),
@@ -218,14 +232,14 @@ export const HourHeatmapReportSchema = z.object({
 export type HourHeatmapReport = z.infer<typeof HourHeatmapReportSchema>;
 
 // ====================================================================
-// WHATSAPP METRICS — cobertura por stage desde tabla whatsapp_messages (v2/OpenWA)
+// WHATSAPP METRICS — cobertura por stage desde tabla whatsapp_messages
 // ====================================================================
 
 export const WhatsAppStageCoverageSchema = z.object({
   stage: z.enum(['payment_instructions', 'payment_received', 'pickup_ready']),
   /** Cantidad de sales web elegibles para este stage en el período. */
   eligible: z.number().int().nonnegative(),
-  /** Cantidad de sales con al menos 1 mensaje OpenWA enviado (status=sent). */
+  /** Cantidad de sales con al menos 1 mensaje WhatsApp enviado (status=sent). */
   reached: z.number().int().nonnegative(),
   /** % cobertura = reached / eligible. 0..1. null si eligible=0. */
   coveragePct: z.number().nullable(),
@@ -281,6 +295,12 @@ export const DashboardSummarySchema = z.object({
   /** Stockables bajo threshold (ingredient/product directResale activos). */
   lowStockCount: z.number().int().nonnegative(),
   pendingSuggestions: z.number().int().nonnegative(),
+  /**
+   * Stockables con stock NEGATIVO = deuda de inventario (se vendió/consumió más
+   * de lo registrado). Señal de que falta subir una factura o registrar una
+   * producción. Incluye subproductos e ignora el umbral.
+   */
+  negativeStockCount: z.number().int().nonnegative(),
 });
 export type DashboardSummary = z.infer<typeof DashboardSummarySchema>;
 

@@ -69,6 +69,7 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
     })),
     subtotal: sale.subtotal,
     discountTotal: sale.discountTotal,
+    deliveryFee: sale.deliveryFee ?? 0,
     total: sale.total,
     payments: (sale.payments ?? []).map((p) => ({
       method: p.method,
@@ -96,6 +97,10 @@ export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
     createdAt: sale.createdAt,
     type: sale.type,
     customerName: sale.customerName,
+    // El repartidor se lleva ESTE papel: sin dirección no sale el domicilio.
+    deliveryAddress: sale.deliveryAddress ?? null,
+    deliveryNotes: sale.deliveryNotes ?? null,
+    customerPhone: sale.customerPhone,
     items: (sale.items ?? []).map((it) => ({
       productName: it.productName ?? '(sin nombre)',
       sizeName: it.sizeName ?? null,
@@ -164,7 +169,18 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     orderDiscountAmount: Number(row.orderDiscountAmount),
     discountReason: row.discountReason,
     voidReason: row.voidReason,
+    deliveryFee: Number(row.deliveryFee),
+    deliveryAddress: row.deliveryAddress,
+    deliveryNotes: row.deliveryNotes,
+    deliveryLat: row.deliveryLat === null ? null : Number(row.deliveryLat),
+    deliveryLng: row.deliveryLng === null ? null : Number(row.deliveryLng),
     idempotencyKey: row.idempotencyKey,
+    notified: {
+      paymentInstructions: row.notified_payment_instructions,
+      paymentReceived: row.notified_payment_received,
+      readyForPickup: row.notified_ready_for_pickup,
+      canceled: row.notified_canceled,
+    },
     payments: (row.payments ?? []).map((p) => ({
       id: p.id,
       method: p.method,

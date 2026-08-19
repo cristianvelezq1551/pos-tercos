@@ -1,6 +1,28 @@
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 /**
+ * Catálogo de categorías de producto que asumen los e2e. `products.create`
+ * exige que la categoría exista (ProductCategoriesService.resolveCanonicalName),
+ * y la migración solo hace backfill desde productos ya existentes → en una DB de
+ * test recién migrada la tabla nace VACÍA y todo `POST /products` daría 400.
+ */
+const PRODUCT_CATEGORIES = ['Comidas', 'Bebidas', 'Combos', 'Test'] as const;
+
+/**
+ * Siembra el catálogo de categorías. Idempotente. La llaman `bootstrapApp` (toda
+ * suite lo corre en beforeAll) y `cleanDb` (que TRUNCA la tabla y debe reponerla).
+ * Va en los dos lados a propósito: la mayoría de las suites solo limpia en
+ * afterAll, así que sembrar únicamente en cleanDb dejaría sin categorías a la
+ * primera suite en correr — el resultado dependería del orden de ejecución.
+ */
+export async function seedProductCategories(prisma: PrismaService): Promise<void> {
+  await prisma.productCategory.createMany({
+    data: PRODUCT_CATEGORIES.map((name, sortOrder) => ({ name, sortOrder })),
+    skipDuplicates: true,
+  });
+}
+
+/**
  * Limpia las tablas creadas durante los tests en orden correcto de FKs.
  * Diseñado para correr en afterEach/afterAll sin tocar migraciones.
  */
@@ -44,6 +66,7 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
     product_sizes,
     combo_components,
     products,
+    product_categories,
     subproducts,
     ingredients,
     purchase_suggestions,
@@ -69,4 +92,6 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
     refresh_tokens,
     users
   RESTART IDENTITY CASCADE`);
+
+  await seedProductCategories(prisma);
 }

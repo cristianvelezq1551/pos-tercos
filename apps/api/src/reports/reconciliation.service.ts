@@ -10,16 +10,53 @@ import {
 } from '@pos-tercos/types';
 import type { PaymentReconciliation, Prisma, User } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Tolerancia para considerar match temporal: ±N horas entre CSV y sale.paidAt. */
 const TIME_TOLERANCE_HOURS = 24;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Medianoche LOCAL del día calendario que trae la fecha (parseada en UTC). */
+const localDayStart = (d: Date): Date =>
+  new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+
+/**
+ * Qué tan lejos está un pago del POS de la fecha que trae el extracto.
+ *
+ * Una línea sin hora ("2026-07-25") no es un instante: es TODO el día local.
+ * El parser la deja en medianoche UTC, que en Bogotá son las 7 p.m. del día
+ * ANTERIOR — comparar contra ese punto dejaba la ventana de ±24 h cerrando a
+ * las 7 p.m. del día del extracto, así que ningún pago de la noche matcheaba
+ * con su propia línea del banco (y encima el banco quedaba marcado como
+ * "plata sin venta en el POS", que es la alarma de fraude). Justo la franja
+ * en la que este negocio vende.
+ *
+ * Con el día como INTERVALO, un pago dentro del día del extracto tiene
+ * distancia 0 y la tolerancia queda para el desfase real de acreditación.
+ * Si la línea trae hora, sí es un instante y se compara como tal.
+ */
+export function distanceToCsvDate(paidAt: Date, csvDate: Date): number {
+  const traeHora =
+    csvDate.getUTCHours() !== 0 ||
+    csvDate.getUTCMinutes() !== 0 ||
+    csvDate.getUTCSeconds() !== 0;
+  if (traeHora) return Math.abs(paidAt.getTime() - csvDate.getTime());
+
+  const inicio = localDayStart(csvDate).getTime();
+  const fin = inicio + DAY_MS;
+  const t = paidAt.getTime();
+  if (t >= inicio && t < fin) return 0;
+  return t < inicio ? inicio - t : t - fin;
+}
 
 @Injectable()
 export class ReconciliationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly paymentMethods: PaymentMethodsService,
   ) {}
 
   // ==================================================================
@@ -135,18 +172,16 @@ export class ReconciliationService {
     // (auditoría 2026-07-05). Se computa ACÁ para que el fetch de candidatos
     // cubra la ventana completa (en UTC-5, periodEndExcl > periodTo+24h; con el
     // buffer solo, las ventas de 19:00-24:00 del último día ni se cargaban).
-    const localDayStart = (d: Date): Date =>
-      new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
     const periodStart = localDayStart(periodFrom);
     const periodEndExcl = new Date(localDayStart(periodTo).getTime() + 24 * 60 * 60 * 1000);
     const fetchFrom = new Date(
       Math.min(periodFrom.getTime() - bufferMs, periodStart.getTime()),
     );
     const fetchTo = new Date(Math.max(periodTo.getTime() + bufferMs, periodEndExcl.getTime()));
-    const compatibleMethods = methodsForSource(source);
+    const compatibleMethods = await this.paymentMethods.methodsForReconciliation(source);
     const paymentRows = await this.prisma.salePayment.findMany({
       where: {
-        method: { in: compatibleMethods as Prisma.EnumPaymentMethodFilter['in'] },
+        method: { in: compatibleMethods },
         sale: {
           status: {
             in: [
@@ -192,7 +227,7 @@ export class ReconciliationService {
       for (const cand of candidates) {
         if (usedPaymentIds.has(cand.paymentId)) continue;
         if (cand.amount !== csv.amount) continue;
-        const dt = Math.abs(cand.paidAt!.getTime() - csv.date.getTime());
+        const dt = distanceToCsvDate(cand.paidAt!, csv.date);
         if (dt > bufferMs) continue;
         match = cand;
         break;
@@ -262,12 +297,6 @@ export class ReconciliationService {
       rows,
     };
   }
-}
-
-function methodsForSource(source: ReconciliationSource): string[] {
-  if (source === 'NEQUI_CSV') return ['NEQUI'];
-  // Bancolombia CSV puede traer transferencias y QR Bancolombia.
-  return ['DAVIPLATA', 'QR_BANCOLOMBIA', 'TRANSFER'];
 }
 
 type SavedRowWithUser = PaymentReconciliation & {

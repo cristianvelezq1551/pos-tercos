@@ -1,11 +1,14 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { assertNotProduction } from './assert-not-production';
 
 /**
  * Deja la base con UN solo usuario Dueño (con PIN), para probar desde cero.
  *   pnpm prisma migrate reset --force --skip-seed
  *   pnpm dlx tsx prisma/seed-dueno.ts
  */
+assertNotProduction('seed-dueno', 'dueno@dev.local con clave dev12345 y PIN 123456');
+
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {

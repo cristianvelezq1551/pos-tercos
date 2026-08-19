@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { getExpandedCost } from '../../recipes';
 import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
+import { getErrorMessage } from '../../../lib/errors';
 
 interface ProductFormPreparedCostPanelProps {
   productId: string;
@@ -36,7 +37,7 @@ export function ProductFormPreparedCostPanel({
         }
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Error');
+        if (!cancelled) setError(getErrorMessage(e, 'Error'));
       });
     return () => {
       cancelled = true;

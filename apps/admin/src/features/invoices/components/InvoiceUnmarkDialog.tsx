@@ -4,6 +4,7 @@ import type { Invoice } from '@pos-tercos/types';
 import { Button, Dialog, PinField, isValidPin } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { unmarkInvoicePayment } from '../api/client';
+import { getErrorMessage } from '../../../lib/errors';
 
 export function InvoiceUnmarkDialog({
   invoice,
@@ -25,7 +26,7 @@ export function InvoiceUnmarkDialog({
       await unmarkInvoicePayment(invoice.id, pin);
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo desmarcar.');
+      setError(getErrorMessage(e, 'No se pudo desmarcar.'));
     } finally {
       setPending(false);
     }

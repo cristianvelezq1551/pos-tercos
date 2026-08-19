@@ -3,6 +3,7 @@
 import type { DisplaySlide } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, Textarea } from '@pos-tercos/ui';
 import { useEffect, useRef, useState } from 'react';
+import { getErrorMessage } from '../../../lib/errors';
 import {
   createSlide,
   listSlides,
@@ -67,7 +68,7 @@ export function SlideEditModal({
       }
       onSaved(await listSlides());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error guardando');
+      setError(getErrorMessage(e, 'Error guardando'));
     } finally {
       setBusy(false);
     }
@@ -78,7 +79,7 @@ export function SlideEditModal({
       open
       onClose={onClose}
       title={isNew ? 'Agregar producto al turnero' : 'Editar producto'}
-      description="Lo que escribís acá es lo que se ve en la pantalla del local."
+      description="Lo que escribes aquí es lo que se ve en la pantalla del local."
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
