@@ -63,20 +63,22 @@ jobs:
       contents: read
       issues: write # requerido por el paso de alerta (github-script)
     steps:
-      - name: Instalar cliente Postgres 16
-        # El runner ubuntu-24.04 ya trae pg_dump 16 — apt es solo el respaldo.
-        # Con timeout propio y reintentos: un mirror caído debe FALLAR rápido,
-        # no colgar el job 15 min en silencio (pasó el 2026-08-19, run 32302621060).
+      - name: Instalar cliente Postgres 18
+        # El Postgres de prod (Railway) es 18.x y pg_dump aborta si el server es
+        # más nuevo que él — el 16 preinstalado del runner NO alcanza. El repo
+        # PGDG ya viene configurado en la imagen. Con timeout propio y
+        # reintentos: un mirror caído debe FALLAR rápido, no colgar el job
+        # 15 min en silencio (pasó el 2026-08-19, run 32302621060).
         timeout-minutes: 4
         run: |
-          if pg_dump --version 2>/dev/null | grep -Eq ' 1[6-9]| [2-9][0-9]'; then
+          if pg_dump --version 2>/dev/null | grep -Eq ' 1[8-9]\.| [2-9][0-9]\.'; then
             pg_dump --version
-            echo "pg_dump ya presente en la imagen — se omite apt"
+            echo "pg_dump >= 18 ya presente — se omite apt"
             exit 0
           fi
           sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y -o Acquire::Retries=3 postgresql-client-16 \
-            || sudo apt-get install -y -o Acquire::Retries=3 postgresql-client
+          sudo apt-get install -y -o Acquire::Retries=3 postgresql-client-18
+          pg_dump --version
 
       - name: Dump (formato custom, comprimido)
         env:
