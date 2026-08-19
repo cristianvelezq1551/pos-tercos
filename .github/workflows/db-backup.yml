@@ -88,7 +88,10 @@ jobs:
             -o Dir::Etc::sourcelist="sources.list.d/pgdg.list" \
             -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
           sudo apt-get install -y -o Acquire::Retries=3 postgresql-client-18
-          pg_dump --version
+          # El wrapper /usr/bin/pg_dump sigue eligiendo el cluster 16 de la
+          # imagen — se antepone el bin del 18 al PATH de los pasos siguientes.
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/18/bin/pg_dump --version
 
       - name: Dump (formato custom, comprimido)
         env:
