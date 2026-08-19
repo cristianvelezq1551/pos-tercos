@@ -20,7 +20,7 @@
 > (sin turnos). COUNTER termina en PAGADO; el cajero marca los pedidos WEB como
 > "listo" desde `admin/caja`.
 >
-> ✅ **App WEB de cocina** (`apps/cocina`, §7.v11) — 4º/5º frontend, ver §2.2.
+> ✅ **App WEB de cocina** (`apps/cocina`, §7.v11) — 4º frontend, ver §2.2.
 >
 > **Pre-requisitos cumplidos** (ver `pendientes-externos-y-deploy.md`):
 > - Cuenta Cloudflare R2 + bucket `pos-tercos-prod`.
@@ -191,10 +191,12 @@ El cliente pide desde `tercos.co`. Antes de abrir, confirmar en admin
   — **obligatoria en prod** (lista separada por comas de los orígenes de los 4
   frontends reales; sin ella el boot CRASHEA a propósito). Ya NO incluye
   `pos.tercos.co` salvo que lo aliasees a `admin.tercos.co/caja`.
-- `TRUST_PROXY_HOPS=1` — nº de proxies delante del API (§2.9). Con **Cloudflare
-  proxied delante de Railway** hay DOS saltos → poner **`2`** (si no, el throttler
-  agrupa a todos los clientes en la IP del edge de CF = auto-DoS del login).
-  **Verificar `req.ip` real en QA** antes de fijarlo. Default 1.
+- `TRUST_PROXY_HOPS` — nº de proxies delante del API (§2.9). **OBLIGATORIA en
+  producción: el boot FALLA si está ausente o no es un entero ≥ 1**
+  (`assert-env.ts` — es una decisión deliberada, no hay default silencioso).
+  Con **Cloudflare proxied delante de Railway** hay DOS saltos → poner **`2`**
+  (si no, el throttler agrupa a todos los clientes en la IP del edge de CF =
+  auto-DoS del login). **Verificar `req.ip` real en QA** antes de fijarlo.
 
 **Database:**
 - `DATABASE_URL=${{Postgres.DATABASE_URL}}` (Railway internal)
@@ -228,12 +230,25 @@ El cliente pide desde `tercos.co`. Antes de abrir, confirmar en admin
 - `R2_BUCKET=pos-tercos-prod`
 - `R2_PUBLIC_URL_BASE=https://media.tercos.co` (opcional, custom domain CF)
 
+**WhatsApp — ⚠️ DECISIÓN VIGENTE (2026-07-27, §7.v22 de CLAUDE.md): el aviso al
+cliente es MANUAL por wa.me** (el cajero abre el chat desde su propio WhatsApp;
+el sistema arma el mensaje). Kapso queda DORMIDO hasta que el dueño decida
+encender el envío automático. Implicaciones para el deploy:
+
+- **Para salir a prod SIN Kapso** (el caso actual): NO configurar `KAPSO_*` ni
+  `WHATSAPP_REQUIRED` (ni `OPENWA_*`). El backend instancia el Mock, que declara
+  `delivers:false` — no envía ni finge, y los botones de wa.me hacen el trabajo.
+  Consecuencia a aceptar: las alertas automáticas al dueño (descuadres, 5xx,
+  digest 21:30) NO llegan → **UptimeRobot (§8) pasa de recomendado a ÚNICA red
+  de alertas.**
+- **Si/cuando se encienda Kapso**, ahí sí lo de abajo:
+
 **WhatsApp automático — KAPSO (Cloud API oficial; derrotero en `kapso-setup.md`):**
 - `KAPSO_API_KEY=...` — API key de producción de Kapso
 - `KAPSO_PHONE_NUMBER_ID=...` — phone number id del número de producción
-- `WHATSAPP_REQUIRED=true` — **recomendado en prod** (§2.5): sin proveedor
-  configurado el boot CRASHEA en vez de arrancar en Mock (el pedido web y las
-  alertas dependen 100% de WhatsApp — arrancar mudo es peor que no arrancar).
+- `WHATSAPP_REQUIRED=true` — recomendado SOLO con Kapso configurado (§2.5): sin
+  proveedor el boot CRASHEA en vez de arrancar en Mock. **Con la decisión manual
+  vigente, ponerla en true SIN las llaves Kapso mata el arranque.**
 - `WHATSAPP_TEMPLATES_ENABLED=true` — recién cuando los templates estén APROBADOS
   en Meta. Registrar **6 templates** (los 5 + el nuevo `delivery_en_camino` para
   el "va en camino" de domicilios — §2.6; sin él un domicilio "listo" recibiría el
@@ -244,10 +259,23 @@ El cliente pide desde `tercos.co`. Antes de abrir, confirmar en admin
 
 > El factory elige por prioridad `KAPSO_*` → `OPENWA_*` → Mock, y CRASHEA al
 > boot si una config queda PARCIAL. Sin ninguna, instancia
-> `MockWhatsAppAdapter` (loggea, no envía) — en prod tienen que estar las
-> `KAPSO_*`. Las `OPENWA_*` son el camino LEGACY (riesgo de baneo,
-> `openwa-setup.md`): no setearlas en prod nueva; si existen de antes,
-> borrarlas al activar Kapso.
+> `MockWhatsAppAdapter` (declara `delivers:false`: no envía NI finge) — válido
+> en prod bajo la decisión manual vigente. Las `OPENWA_*` son el camino LEGACY
+> (riesgo de baneo, `openwa-setup.md`): no setearlas en prod nueva; si existen
+> de antes, borrarlas al activar Kapso.
+
+**Domicilios (solo si `deliveryEnabled` va a estar encendido):**
+- `GOOGLE_MAPS_API_KEY=AIza...` — Places API (New), key restringida a esa API
+  (Google Cloud Console). La llave NUNCA va al navegador (el autocompletado
+  pasa por `/web/address/*` del backend). **Sin ella el sistema cae al
+  `StubAddressAdapter`, que INVENTA direcciones** — el candado de radio queda
+  decorativo. Si el día 1 no hay domicilios, se puede omitir con
+  `deliveryEnabled` apagado.
+
+**Anti-abuso web (opcional):**
+- `WEB_ORDER_MAX_PER_IP_PER_DAY=25` — tope diario de pedidos web por IP
+  (default 25; una var inválida cae al default). En memoria → atado al
+  invariante `numReplicas:1`.
 
 **Negocio (mensajes WhatsApp + recibos):**
 - `BUSINESS_NAME=Tercos`
@@ -329,9 +357,10 @@ web y la impresión apuntan a `localhost` y la comanda falla EN LA VENTA):**
 ### 2.2 App de cocina (`apps/cocina`) — VIVA (§7.v11, construida 2026-06-27)
 
 > Este apartado decía "eliminada" — eso era el KDS Flutter (§7.v10). La app
-> WEB de cocina existe y se despliega como 5º frontend en Vercel.
+> WEB de cocina existe y es el 4º frontend en Vercel (admin, web, cocina,
+> public-display — `apps/pos` NO se despliega desde el cutover).
 
-- Proyecto Vercel `tercos-cocina` (mismo patrón que admin/pos), dominio
+- Proyecto Vercel `tercos-cocina` (mismo patrón que admin), dominio
   `cocina.tercos.co`.
 - Env vars: `API_INTERNAL_URL=https://api.tercos.co` +
   `JWT_ACCESS_SECRET` (mismo valor que el API — middleware Edge).
@@ -492,17 +521,18 @@ falten. Bloques nuevos desde la v2 (los más recientes primero):
    print-agent (papel + cajón abre) con el **# de recibo**.
 5. **Pantalla del local**: `display.tercos.co` muestra el carrusel de
    productos + publicidad + música (sin turnos).
-6. **Pedido web**: hacer pedido en `tercos.co` → el cliente recibe
-   **automáticamente** las instrucciones de pago por WhatsApp (Kapso;
-   verificar fila `sent` en `whatsapp_messages`) → el pedido aparece en
-   el modal de pedidos web de `admin.tercos.co/caja`. **Si es domicilio**,
-   el cajero primero **asigna el costo del envío** (obligatorio, > 0) antes de
-   cobrar; el WhatsApp con el total real sale al asignarlo.
-7. **Confirmar pago** del pedido web en la caja → WhatsApp "pago
-   recibido" automático → **"Marcar listo"** → WhatsApp "listo para retirar"
-   (pickup) o "va en camino" (domicilio) automático → el tracking en
-   `tercos.co/checkout/success/[id]?token=` refleja cada estado
-   (termina en LISTO_DESPACHO).
+6. **Pedido web**: hacer pedido en `tercos.co` → al confirmar, al CLIENTE se le
+   abre su WhatsApp con el pedido ya escrito (modelo MANUAL §7.v22) → el pedido
+   aparece en el modal de pedidos web de `admin.tercos.co/caja`. **Si es
+   domicilio**, el cajero primero **asigna el costo del envío** (obligatorio,
+   > 0) antes de cobrar; al asignarlo se abre wa.me con el total real ya
+   escrito. *(Solo con Kapso encendido: verificar además la fila `sent` en
+   `whatsapp_messages`; en modo manual las filas quedan `manual`.)*
+7. **Confirmar pago** del pedido web en la caja → botón de WhatsApp "avisar que
+   el pago entró" abre wa.me con el texto → **"Marcar listo"** → botón "avisar
+   que está listo / va en camino" ídem → el tracking en
+   `tercos.co/checkout/success/[id]?token=` muestra "¡Pago confirmado!"
+   (la web no promete más avance — §7.v25).
 8. **Conteo físico**: en admin `/inventory/counts` crear un conteo de
    un insumo → verificar que el ajuste compensatorio aparece en
    `/inventory/movements`.
@@ -536,14 +566,22 @@ falten. Bloques nuevos desde la v2 (los más recientes primero):
 
 ## 7. Backup Postgres
 
-**IMPLEMENTADO** en `.github/workflows/db-backup.yml` (cron 2 AM Colombia + corrida
-manual con `workflow_dispatch`). Cada corrida hace `pg_dump -Fc`, **verifica el
-dump** (`pg_restore --list`, mínimo 10 tablas con datos), sube a R2
-(`backups/pos-tercos-YYYY-MM-DD-HHMM.dump`) y aplica retención de 30 días.
+**IMPLEMENTADO** en `.github/workflows/db-backup.yml` (cron **cada 6 horas** +
+corrida manual con `workflow_dispatch`). Cada corrida hace `pg_dump -Fc`,
+**verifica el dump** (`pg_restore --list`, mínimo 10 tablas con datos), sube a R2
+(`backups/pos-tercos-YYYY-MM-DD-HHMM.dump`), aplica retención de 30 días, abre un
+Issue si falla y pinguea el dead-man's-switch.
 
-Secrets a configurar en GitHub (Settings → Secrets → Actions):
-`RAILWAY_DB_URL`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
-`R2_BACKUP_BUCKET`.
+**Secrets: van en un ENVIRONMENT de GitHub, NO a nivel repo** (un secret a nivel
+repo es exfiltrable desde cualquier rama con un workflow modificado). Los 3 pasos
+manuales exactos están en la cabecera del propio `db-backup.yml`:
+
+1. Repo → Settings → Environments → crear **`production-backup`**.
+2. Deployment branches → **solo `main`**.
+3. Cargar los 6 secrets DENTRO del environment: `RAILWAY_DB_URL` (URL pública
+   del Postgres prod), `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY` (token scoped SOLO al bucket de backups),
+   `R2_BACKUP_BUCKET`, `HEALTHCHECKS_URL` (ping de healthchecks.io).
 
 **Restore (simulacro obligatorio antes de inaugurar, y luego 1 vez al mes):**
 

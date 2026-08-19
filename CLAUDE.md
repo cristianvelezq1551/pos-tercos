@@ -47,7 +47,7 @@ POS para restaurante de comida rápida en Colombia. 1 punto de venta, 1 cajero p
 |---|---|---|---|
 | API | `apps/api` | NestJS backend | FASE 0-9 + 11 + 12 + 13 + 14 + 15 backend ✅ + WS-1/2/3/4 v2 ✅ |
 | Admin | `apps/admin` | Next.js — gestión catálogo / inventario / facturas / auditoría / turnos / reportes (ventas/productos/operación) / promos / sugerencias IA / RRHH | FASE 0-4 + 11 + 12 + 13 + 14 UI ✅ |
-| POS Cajero | `apps/pos` | Next.js PWA (manifest + SW offline) — venta + drawer pedidos web (con "Marcar listo") + cierre turno | FASE 5.E + 7.E + 11 + 15.D UI ✅ |
+| ~~POS Cajero~~ | ~~`apps/pos`~~ | **ELIMINADA en el cutover 2026-07-21** (`feat/unify-pos-admin`): la caja vive en `apps/admin` bajo `/caja/*` (features `caja-shifts`, `caja-cortesias`, `catalog`, `sales`, `offline`, `printing`; PWA + SW propios; rol de operación = ADMIN_OPERATIVO — CAJERO retirado). §7.bis abajo es historial. | Cutover ✅ |
 | Pantalla del local | `apps/public-display` | Next.js — kiosko de **productos + publicidad + música** (B-roll, sin auth, **sin turnos**) | §7.v10 |
 | Cocina | `apps/cocina` | Next.js (responsive, puerto 3006, cookies `cocina_*`) — biblia + producción + inventario de cocina (merma + conteo ciego) + incidencias + checklist | §7.v11 ✅ |
 | Web Pública | `apps/web` | Next.js — menú + checkout WEB_PICKUP + status tracking | FASE 7.C-D UI ✅ |

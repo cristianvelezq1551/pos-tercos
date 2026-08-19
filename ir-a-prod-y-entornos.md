@@ -169,8 +169,14 @@ Cargar TODAS las de `deploy.md §1.2`. Las que **no se pueden olvidar**:
 - [ ] **`TRUST_PROXY_HOPS=2`** ⚠️ — con Cloudflare proxied delante de Railway. **Verificá `req.ip` real en QA
       antes** (mal valor = DoS del login o bypass de fuerza bruta de PINs). Ver §6 abajo.
 - [ ] `TZ=America/Bogota`, `NODE_ENV=production`.
-- [ ] `KAPSO_API_KEY` + `KAPSO_PHONE_NUMBER_ID` + `WHATSAPP_REQUIRED=true`.
+- [ ] **WhatsApp — decisión vigente (§7.v22): aviso MANUAL por wa.me.** Para salir
+      SIN Kapso: **no configurar `KAPSO_*` ni `WHATSAPP_REQUIRED`** (ponerla en
+      true sin las llaves CRASHEA el boot). Consecuencia: sin alertas automáticas
+      al dueño → UptimeRobot (Paso 10) es la única red. Si se enciende Kapso:
+      `KAPSO_API_KEY` + `KAPSO_PHONE_NUMBER_ID` + `WHATSAPP_REQUIRED=true`.
 - [ ] `PRINTER_PROVIDER=escpos` + `PRINT_AGENT_URL` + `PRINT_AGENT_SECRET`.
+- [ ] `GOOGLE_MAPS_API_KEY` **si habrá domicilios** (sin ella el autocompletado
+      corre con el stub que INVENTA direcciones; con delivery apagado se omite).
 - [ ] `OWNER_WHATSAPP_PHONE`, `ANTHROPIC_API_KEY`, `BUSINESS_*`, `PAYMENT_INSTRUCTIONS_*`.
 
 ### Paso 3 — Primer deploy + migraciones
@@ -220,8 +226,11 @@ Env vars con **scope Production** (`deploy.md §2.1`). Críticas:
       `PRINT_AGENT_SECRET` = el del backend) + túnel al backend (Cloudflare Tunnel o Tailscale). `deploy.md §3`.
 
 ### Paso 9 — Backups + restore drill
-- [ ] Configurar los **5 secrets de GitHub** (`RAILWAY_DB_URL`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
-      `R2_SECRET_ACCESS_KEY`, `R2_BACKUP_BUCKET`) del workflow `db-backup.yml`.
+- [ ] Crear el **Environment `production-backup`** en GitHub (Settings → Environments),
+      restringido a la rama `main`, y cargar los **6 secrets DENTRO del environment**
+      (`RAILWAY_DB_URL`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+      `R2_BACKUP_BUCKET`, `HEALTHCHECKS_URL`) — pasos exactos en la cabecera de
+      `db-backup.yml`. **No van a nivel repo** (serían exfiltrables desde cualquier rama).
 - [ ] Corrida manual (`workflow_dispatch`) de prueba.
 - [ ] **Simulacro de restore** (obligatorio antes de inaugurar): bajar un dump de R2 y restaurarlo en una DB
       vacía. Un backup que nunca se restauró no cuenta.
@@ -231,7 +240,9 @@ Env vars con **scope Production** (`deploy.md §2.1`). Críticas:
 
 ### Paso 11 — Smoke test (8 pasos, `deploy.md §6`)
 - [ ] Login → abrir caja → vender → cobrar (CASH + digital) → imprimir recibo → cerrar caja.
-- [ ] Pedido web desde `tercos.co` → llega al admin → confirmar pago → "listo para retirar" → WhatsApp real llega.
+- [ ] Pedido web desde `tercos.co` → llega al admin → confirmar pago → "listo para retirar" → el botón de
+      WhatsApp abre wa.me con el mensaje ya escrito (modelo manual §7.v22; con Kapso encendido, verificar
+      además que el mensaje automático llegue de verdad).
 - [ ] Cocina: producir una tanda. Pantalla: muestra productos/publicidad.
 
 ### Paso 12 — Verificación final de seguridad

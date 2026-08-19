@@ -1,5 +1,11 @@
 # Plan de Arranque — POS Comida Rápida
 
+> ⚠️ **DOCUMENTO HISTÓRICO (archivado 2026-08-19). NO usar como checklist de deploy.**
+> Describe el arranque de 2026 con supuestos que ya no existen: Mapbox, Meta WABA
+> directa, Twilio, Sentry, subdominios `pos./kds./repa.`, KDS y repartidor — todo
+> eliminado o reemplazado. Los documentos vigentes son **`ir-a-prod-y-entornos.md`**
+> (runbook de lanzamiento) y **`deploy.md`** (detalle exhaustivo).
+
 > Te asume con cero infra, cero cuentas y cero código. Saca el proyecto del papel y lo lleva a Sprint 0 ejecutado en ~7-10 días, en paralelo a las gestiones externas (Meta WABA, contador, hardware).
 
 ---
