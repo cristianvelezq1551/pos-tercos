@@ -49,10 +49,10 @@ export function MobileTabBar() {
   }, [pathname]);
 
   const active: TabKey = cartIsOpen ? 'cart' : moreOpen ? 'more' : pageTab;
-
-  if (cartIsOpen || moreOpen) {
-    return <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} />;
-  }
+  // La barra se OCULTA (no se desmonta el árbol) cuando hay una hoja abierta:
+  // si el return cambiara de forma, React remontaría MoreSheet y su estado
+  // interno (el modal de Horarios recién abierto) se perdería en silencio.
+  const barHidden = cartIsOpen || moreOpen;
 
   const goHome = () => {
     setPageTab('home');
@@ -83,6 +83,7 @@ export function MobileTabBar() {
     <>
       <nav
         aria-label="Navegación principal"
+        hidden={barHidden}
         className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2 md:hidden"
       >
         <div className="pointer-events-auto flex h-[62px] items-center gap-1 rounded-full border border-border bg-card/95 p-1 shadow-2xl backdrop-blur-md">
