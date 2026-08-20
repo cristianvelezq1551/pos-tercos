@@ -93,7 +93,11 @@ export class ProductsService {
       include: { sizes: true, modifiers: true, comboComponents: true },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
-    return rows.map(toProductDto);
+    // Una categoría desactivada oculta sus productos de los listados de VENTA
+    // (only_active = caja/web). El admin sin only_active los sigue viendo.
+    const hidden = opts.onlyActive ? await this.categories.inactiveNames() : null;
+    const visible = hidden ? rows.filter((r) => !r.category || !hidden.has(r.category)) : rows;
+    return visible.map(toProductDto);
   }
 
   async getById(id: string): Promise<Product> {

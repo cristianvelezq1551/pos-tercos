@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { PublicMenuProduct, PublicMenuResponse } from '@pos-tercos/types';
 import { BusinessConfigService } from '../business-config/business-config.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProductCategoriesService } from '../product-categories/product-categories.service';
 import { PromotionsService } from '../promotions/promotions.service';
 
 @Injectable()
@@ -9,6 +11,7 @@ export class WebMenuService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly businessConfig: BusinessConfigService,
+    private readonly categories: ProductCategoriesService,
     private readonly promotions: PromotionsService,
   ) {}
 
@@ -34,39 +37,21 @@ export class WebMenuService {
   }
 
   private async loadMenu(): Promise<PublicMenuResponse> {
-    const rows = await this.prisma.product.findMany({
-      where: { isActive: true },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
-      include: {
-        sizes: { orderBy: { sortOrder: 'asc' } },
-        modifiers: { orderBy: { name: 'asc' } },
-      },
-    });
-
-    const products: PublicMenuProduct[] = rows.map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      basePrice: Number(p.basePrice),
-      category: p.category,
-      imageUrl: p.imageUrl,
-      modifiersEnabled: p.modifiersEnabled,
-      isCombo: p.isCombo,
-      comboPrice: p.comboPrice !== null ? Number(p.comboPrice) : null,
-      sizes: p.sizes.map((s) => ({
-        id: s.id,
-        productId: s.productId,
-        name: s.name,
-        priceModifier: Number(s.priceModifier),
-        sortOrder: s.sortOrder,
-      })),
-      modifiers: p.modifiers.map((m) => ({
-        id: m.id,
-        productId: m.productId,
-        name: m.name,
-        priceDelta: Number(m.priceDelta),
-      })),
-    }));
+    const [allRows, hiddenCategories] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { isActive: true },
+        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        include: {
+          sizes: { orderBy: { sortOrder: 'asc' } },
+          modifiers: { orderBy: { name: 'asc' } },
+        },
+      }),
+      // Una categoría desactivada oculta sus productos del menú público
+      // (misma regla que el catálogo de la caja).
+      this.categories.inactiveNames(),
+    ]);
+    const rows = allRows.filter((p) => !p.category || !hiddenCategories.has(p.category));
+    const products = rows.map(toPublicMenuProduct);
 
     const seen = new Set<string>();
     const categories: string[] = [];
@@ -89,4 +74,33 @@ export class WebMenuService {
       asOf: new Date().toISOString(),
     };
   }
+}
+
+type MenuRow = Prisma.ProductGetPayload<{ include: { sizes: true; modifiers: true } }>;
+
+function toPublicMenuProduct(p: MenuRow): PublicMenuProduct {
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    basePrice: Number(p.basePrice),
+    category: p.category,
+    imageUrl: p.imageUrl,
+    modifiersEnabled: p.modifiersEnabled,
+    isCombo: p.isCombo,
+    comboPrice: p.comboPrice !== null ? Number(p.comboPrice) : null,
+    sizes: p.sizes.map((s) => ({
+      id: s.id,
+      productId: s.productId,
+      name: s.name,
+      priceModifier: Number(s.priceModifier),
+      sortOrder: s.sortOrder,
+    })),
+    modifiers: p.modifiers.map((m) => ({
+      id: m.id,
+      productId: m.productId,
+      name: m.name,
+      priceDelta: Number(m.priceDelta),
+    })),
+  };
 }

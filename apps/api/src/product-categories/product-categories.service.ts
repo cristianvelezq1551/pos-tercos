@@ -113,6 +113,19 @@ export class ProductCategoriesService {
   }
 
   /**
+   * Nombres de las categorías INACTIVAS. Los listados de venta (caja y menú
+   * web) los usan para ocultar productos de una categoría desactivada — sin
+   * esto el toggle "Activa/Inactiva" de /categories no tendría ningún efecto.
+   */
+  async inactiveNames(): Promise<Set<string>> {
+    const rows = await this.prisma.productCategory.findMany({
+      where: { isActive: false },
+      select: { name: true },
+    });
+    return new Set(rows.map((r) => r.name));
+  }
+
+  /**
    * Normaliza el nombre de categoría de un producto contra el catálogo curado:
    * - vacío/null → null (producto sin categoría).
    * - match case-insensitive → devuelve el nombre CANÓNICO guardado (evita
