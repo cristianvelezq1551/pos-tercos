@@ -43,10 +43,13 @@ jobs:
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
 
+      # --testTimeout: con 20.000 historias, LEY 3 y LEY 6 superan los 5s del
+      # default de vitest en el runner de GitHub (falló el 2026-08-20 por
+      # timeout, no por una ley rota). El presupuesto va acorde a la escala.
       - name: Leyes del ledger × 20.000 historias aleatorias
         env:
           LEDGER_PROPERTY_RUNS: '20000'
-        run: pnpm -F @pos-tercos/domain exec vitest run src/cost-fifo/run-ledger.property.test.ts
+        run: pnpm -F @pos-tercos/domain exec vitest run --testTimeout 300000 src/cost-fifo/run-ledger.property.test.ts
 
       # La suite completa de domain con el mismo presupuesto alto: cubre
       # también los property tests que se agreguen después sin tocar este
@@ -54,4 +57,4 @@ jobs:
       - name: Suite completa de domain
         env:
           LEDGER_PROPERTY_RUNS: '5000'
-        run: pnpm -F @pos-tercos/domain test
+        run: pnpm -F @pos-tercos/domain exec vitest run --testTimeout 120000
