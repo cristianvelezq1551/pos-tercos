@@ -21,7 +21,9 @@ import {
   type CreateWebOrderResponse,
   type PublicWebOrder,
 } from '@pos-tercos/types';
+import { buildPaymentAccountsText } from '@pos-tercos/domain';
 import { Public } from '../auth/decorators/public.decorator';
+import { BusinessConfigService } from '../business-config/business-config.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { WebOrderTokenService } from './web-order-token.service';
 import { WebOrdersService } from './web-orders.service';
@@ -32,7 +34,25 @@ export class WebOrdersController {
   constructor(
     private readonly orders: WebOrdersService,
     private readonly tokens: WebOrderTokenService,
+    private readonly businessConfig: BusinessConfigService,
   ) {}
+
+  /**
+   * A dónde paga el cliente, con el MISMO texto que el WhatsApp: manda la
+   * config del negocio (editable en el admin) y las env vars son el respaldo.
+   * Si las dos pantallas dijeran cuentas distintas, el cliente no sabría a cuál
+   * transferir.
+   */
+  private async paymentAccountsText(): Promise<string | null> {
+    const { paymentAccounts } = await this.businessConfig.get();
+    const fromConfig = buildPaymentAccountsText(paymentAccounts);
+    if (fromConfig) return fromConfig;
+    const parts = [
+      process.env.PAYMENT_INSTRUCTIONS_NEQUI,
+      process.env.PAYMENT_INSTRUCTIONS_TRANSFER,
+    ].filter((p): p is string => Boolean(p && p.trim()));
+    return parts.length ? parts.join('\n') : null;
+  }
 
   /** 30 reqs / 60s por IP + tope diario de 25 pedidos por IP (anti-abuso). */
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
@@ -58,7 +78,7 @@ export class WebOrdersController {
       order,
       token,
       tokenExpiresAt: expiresAt.toISOString(),
-      paymentInstructions: buildPaymentInstructions(order),
+      paymentInstructions: buildPaymentInstructions(order, await this.paymentAccountsText()),
     };
     return CreateWebOrderResponseSchema.parse(payload);
   }
@@ -73,7 +93,10 @@ export class WebOrdersController {
     if (!token) throw new BadRequestException('token query param required');
     this.tokens.verify(token, id);
     const order = await this.orders.getPublic(id);
-    return { ...order, paymentInstructions: buildPaymentInstructions(order) };
+    return {
+      ...order,
+      paymentInstructions: buildPaymentInstructions(order, await this.paymentAccountsText()),
+    };
   }
 
   // Flujo cajero-driven: el cliente nunca afirma pago. Las instrucciones de pago
@@ -81,14 +104,12 @@ export class WebOrdersController {
   // el comprobante y confirma desde el POS (/sales/:id/confirm-payment).
 }
 
-function buildPaymentInstructions(order: PublicWebOrder): string {
-  const nequi = process.env.PAYMENT_INSTRUCTIONS_NEQUI ?? '';
-  const transfer = process.env.PAYMENT_INSTRUCTIONS_TRANSFER ?? '';
+function buildPaymentInstructions(order: PublicWebOrder, accounts: string | null): string {
   const lines: string[] = [`Total a pagar: $${order.total.toLocaleString('es-CO')}`, ''];
-  if (nequi || transfer) {
-    lines.push('Métodos disponibles:');
-    if (nequi) lines.push(`• Nequi: ${nequi}`);
-    if (transfer) lines.push(`• Transferencia: ${transfer}`);
+  if (accounts) {
+    lines.push('Puedes pagar a:');
+    lines.push('');
+    lines.push(accounts);
   } else {
     // Sin métodos configurados: mensaje GENÉRICO al cliente (nunca exponer un
     // texto de debug sobre env vars en el camino de pago).

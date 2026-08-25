@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { roundMoney, roundsToZeroAt4 } from '@pos-tercos/domain';
+import { buildCortesiaAlertMessage, roundMoney, roundsToZeroAt4 } from '@pos-tercos/domain';
 import type {
   CortesiaGivenSummary,
   CortesiaRequest,
@@ -9,6 +9,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { BusinessConfigService } from '../business-config/business-config.service';
+import { businessName } from '../common/business-name';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -160,13 +161,22 @@ export class CortesiasService {
       entityId: created.id,
       metadata: { productId: input.productId, quantity: input.quantity, costAmount, salePrice, reason: input.reason, auto: true },
     });
+    const dto = (await this.toDtos([created]))[0]!;
+    // Se avisa DESPUÉS del dto porque de ahí sale el nombre de quien la dio: una
+    // cortesía sin responsable es la única alerta del dueño que no dice quién.
     void this.ownerNotifications.alert(
       'cortesia_given',
-      `Cortesía registrada: ${input.quantity}x ${product.name} — ${input.reason}`,
+      buildCortesiaAlertMessage({
+        businessName: businessName(),
+        cashierName: dto.requestedByName,
+        quantity: input.quantity,
+        productName: product.name,
+        costAmount,
+        reason: input.reason,
+      }),
       { cortesiaId: created.id },
     );
 
-    const dto = (await this.toDtos([created]))[0]!;
     if (idempotencyKey) {
       await this.idempotency.cache({ key: idempotencyKey, endpoint, body: dto, statusCode: 201, userId });
     }

@@ -24,7 +24,7 @@ describe('whatsapp messages', () => {
   it('instrucciones: incluye primer nombre, pedido, total y datos de pago', () => {
     const msg = buildPaymentInstructionsMessage(SALE, OPTS);
     expect(msg).toContain('Hola Juan');
-    expect(msg).toContain('#42');
+    expect(msg).toContain('*#42*');
     expect(msg).toContain('$25.500');
     expect(msg).toContain('Tercos');
     expect(msg).toContain('Nequi: 300 123 4567');
@@ -33,14 +33,13 @@ describe('whatsapp messages', () => {
 
   it('instrucciones: sin paymentInstructions omite el bloque de pago', () => {
     const msg = buildPaymentInstructionsMessage(SALE, { businessName: 'Tercos' });
-    expect(msg).toContain('#42');
+    expect(msg).toContain('*#42*');
     expect(msg).not.toContain('Nequi');
   });
 
   it('recibido: incluye check, cocina y nombre del local', () => {
     const msg = buildPaymentReceivedMessage(SALE, OPTS);
-    expect(msg).toContain('#42');
-    expect(msg).toContain('✅');
+    expect(msg).toContain('*#42*');
     expect(msg).toContain('cocina');
     expect(msg).toContain('Tercos');
   });

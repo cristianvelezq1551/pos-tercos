@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCortesiaAlertMessage,
   buildCostIncreaseAlertMessage,
+  buildManualDiscountAlertMessage,
   buildNoSaleDrawerAlertMessage,
   buildVoidAlertMessage,
 } from './owner-alerts';
@@ -40,7 +42,7 @@ describe('buildNoSaleDrawerAlertMessage', () => {
       cashierName: 'Laura',
       reason: 'Cambio para el turno',
     });
-    expect(msg).toContain('SIN venta');
+    expect(msg).toContain('Cajón abierto sin venta');
     expect(msg).toContain('Laura');
     expect(msg).toContain('Cambio para el turno');
   });
@@ -72,5 +74,47 @@ describe('buildCostIncreaseAlertMessage', () => {
     });
     expect(msg).not.toContain(' de null');
     expect(msg).toContain('+100%');
+  });
+});
+
+/**
+ * Todas las alertas al dueño llegan mezcladas con sus chats personales: si cada
+ * una arranca distinto, tiene que abrirlas para saber si son del negocio.
+ */
+describe('formato común de las alertas al dueño', () => {
+  const base = { businessName: 'Tercos', cashierName: 'Laura', reason: 'motivo' };
+  const todas = [
+    buildVoidAlertMessage({ ...base, receiptNumber: 1, total: 1000 }),
+    buildVoidAlertMessage({ ...base, receiptNumber: 1, total: 1000, kind: 'refund' }),
+    buildNoSaleDrawerAlertMessage(base),
+    buildManualDiscountAlertMessage({
+      ...base, receiptNumber: 1, customerName: null, subtotal: 1000, discountTotal: 100, total: 900,
+    }),
+    buildCortesiaAlertMessage({ ...base, quantity: 1, productName: 'Burger', costAmount: 3000 }),
+    buildCostIncreaseAlertMessage({
+      businessName: 'Tercos', supplierName: null,
+      items: [{ name: 'Pan', oldUnitCost: 100, newUnitCost: 200 }],
+    }),
+  ];
+
+  it('arrancan con [negocio] *título* y una línea en blanco', () => {
+    for (const msg of todas) expect(msg).toMatch(/^\[Tercos\] \*[^*]+\*\n\n/);
+  });
+
+  it('ningún mensaje lleva emoji fuera del plano básico', () => {
+    // Los de 4 bytes llegaban como `�` en el teléfono del dueño (2026-08-24).
+    for (const msg of todas) {
+      expect([...msg].every((c) => c.codePointAt(0)! <= 0xffff)).toBe(true);
+    }
+  });
+
+  it('un reembolso no se lee igual que una anulación', () => {
+    expect(todas[0]).toContain('Venta anulada');
+    expect(todas[1]).toContain('Reembolso');
+  });
+
+  it('la cortesía dice quién la dio y cuánto costó', () => {
+    expect(todas[4]).toContain('Laura');
+    expect(todas[4]).toContain('$3.000');
   });
 });

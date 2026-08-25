@@ -14,6 +14,11 @@
  * pasada ancla la conversación en el peor lugar posible.
  *
  * ⚠️ Este link NO envía nada: deja el texto escrito y la persona toca enviar.
+ *
+ * ⚠️ Sin emoji (2026-08-24, ver owner-alerts.ts): llegaban como `�`. Los
+ * iconos que rotulaban cada bloque (fecha, nota, entrega, contacto) pasaron a
+ * ser etiquetas escritas — el proveedor tiene que poder leer el pedido desde
+ * cualquier teléfono, incluido uno viejo.
  */
 
 import type { WhatsAppLinkResult } from './types';
@@ -58,7 +63,7 @@ export function buildSupplierOrderMessage(input: SupplierOrderLinkInput): string
   const lines: string[] = [];
   const supplier = input.supplierName.trim();
 
-  lines.push(supplier ? `Hola, *${supplier}* 👋` : 'Hola 👋');
+  lines.push(supplier ? `Hola, *${supplier}*` : 'Hola');
   lines.push(`Te escribimos de *${input.businessName}*.`);
   lines.push('');
   lines.push(
@@ -77,19 +82,19 @@ export function buildSupplierOrderMessage(input: SupplierOrderLinkInput): string
   const neededBy = input.neededByLabel?.trim();
   if (neededBy) {
     lines.push('');
-    lines.push(`📅 Lo necesitamos: ${neededBy}`);
+    lines.push(`Lo necesitamos: *${neededBy}*`);
   }
 
   const note = input.note?.trim();
   if (note) {
     if (!neededBy) lines.push('');
-    lines.push(`📝 ${note}`);
+    lines.push(`Nota: ${note}`);
   }
 
   const address = input.deliveryAddress?.trim();
   if (address) {
     lines.push('');
-    lines.push(`📍 Entrega en: ${address}`);
+    lines.push(`Entrega en: ${address}`);
   }
 
   const contactName = input.requestedBy?.trim();
@@ -97,12 +102,12 @@ export function buildSupplierOrderMessage(input: SupplierOrderLinkInput): string
   if (contactName || contactPhone) {
     const parts = [contactName, contactPhone].filter(Boolean).join(' · ');
     if (!address) lines.push('');
-    lines.push(`📞 Contacto: ${parts}`);
+    lines.push(`Contacto: ${parts}`);
   }
 
   lines.push('');
   lines.push('¿Nos confirmas si lo tienes y a qué hora lo puedes despachar?');
-  lines.push('Gracias! 🙌');
+  lines.push('¡Gracias!');
 
   return lines.join('\n');
 }

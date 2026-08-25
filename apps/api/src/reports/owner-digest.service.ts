@@ -1,8 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { buildOwnerAlert } from '@pos-tercos/domain';
 import type { WhatsAppProvider } from '@pos-tercos/domain';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
+import { businessName } from '../common/business-name';
 import { localMidnightOfYmd } from '../common/local-dates';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -64,8 +66,11 @@ export class OwnerDigestService {
     }
 
     const summary = await this.salesReports.getDailyAiSummary(date);
-    const businessName = process.env.BUSINESS_NAME ?? 'Tercos';
-    const text = `📊 *Resumen del día — ${businessName}*\n\n${summary.text}`;
+    const text = buildOwnerAlert({
+      businessName: businessName(),
+      title: 'Resumen del día',
+      body: summary.text,
+    });
 
     const result = await this.wa.sendText(phone, text);
     if (!result.ok) {
@@ -147,18 +152,20 @@ export class OwnerDigestService {
       return { sent: false, reason: 'ya se avisó este mes', contributionMargin: st.contributionMargin };
     }
 
-    const negocio = process.env.BUSINESS_NAME ?? 'Tercos';
     const cop = (n: number): string => `$${Math.round(n).toLocaleString('es-CO')}`;
     const pct = Math.abs(Math.round(st.contributionMarginPct * 100));
-    const text =
-      `⚠️ *${negocio}* — ${st.monthLabel} va perdiendo plata en cada venta.\n\n` +
-      `Vendiste ${cop(st.revenue)}. Después del costo de la comida (${cop(st.cogs)}), ` +
+    const text = buildOwnerAlert({
+      businessName: businessName(),
+      title: `${st.monthLabel} va perdiendo plata en cada venta`,
+      body:
+        `Vendiste ${cop(st.revenue)}. Después del costo de la comida (${cop(st.cogs)}), ` +
       `la merma (${cop(st.wasteCost)}), las cortesías (${cop(st.cortesiasCost)}) y los ` +
       `reembolsos (${cop(st.refundCost)}), quedan ${cop(st.contributionMargin)}.\n\n` +
       `Eso es ${pct}% NEGATIVO: por cada $100 que vendes, pierdes $${pct} antes de pagar ` +
-      `arriendo y nómina. Vender más no arregla esto — hay que subir precios o bajar ` +
-      `el costo de la comida y la merma.\n\n` +
-      `Míralo en Finanzas → Estado.`;
+        `arriendo y nómina. Vender más no arregla esto — hay que subir precios o bajar ` +
+        `el costo de la comida y la merma.\n\n` +
+        `Míralo en Finanzas → Estado.`,
+    });
 
     const delivered = await this.ownerNotifications.alert('negative_contribution_margin', text, {
       month: st.monthLabel,

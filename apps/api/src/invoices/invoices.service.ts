@@ -15,6 +15,7 @@ import { LLMService } from '../adapters/llm/llm.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
+import { businessName } from '../common/business-name';
 import { detectImageMime, extensionForMime, mimeForExtension, type SupportedImageMime } from '../common/image-mime';
 import { ymdLocal } from '../common/local-dates';
 import { pocketOf, resolvePocketSplit } from '../common/pocket-split';
@@ -804,7 +805,7 @@ export class InvoicesService {
       void this.ownerNotifications.alert(
         'cost_increase',
         buildCostIncreaseAlertMessage({
-          businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+          businessName: businessName(),
           supplierName: supplier.name,
           items: increases,
         }),

@@ -36,6 +36,7 @@ export function SendOrderByWhatsApp({ order }: { order: PublicWebOrder }) {
     total: order.total,
     deliveryAddress: order.deliveryAddress,
     deliveryNotes: order.deliveryNotes,
+    notes: order.notes,
   });
 
   // §3.6: sin teléfono configurado (o SSR del hero caído) no hay a dónde

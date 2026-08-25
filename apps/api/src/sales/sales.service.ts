@@ -31,6 +31,7 @@ import type {
 import type { Prisma, SaleStatus as DbSaleStatus } from '@prisma/client';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
+import { businessName } from '../common/business-name';
 import { runWithSerializationRetry } from '../common/tx';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -398,7 +399,7 @@ export class SalesService {
       void this.ownerNotifications.alert(
         'manual_discount',
         buildManualDiscountAlertMessage({
-          businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+          businessName: businessName(),
           cashierName: dto.cashierName ?? null,
           receiptNumber: dto.receiptNumber,
           customerName: dto.customerName,
@@ -1176,7 +1177,7 @@ export class SalesService {
     void this.ownerNotifications.alert(
       'sale_voided',
       buildVoidAlertMessage({
-        businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+        businessName: businessName(),
         cashierName: dto.cashierName ?? null,
         receiptNumber: dto.receiptNumber,
         total: dto.total,
@@ -1288,11 +1289,12 @@ export class SalesService {
     void this.ownerNotifications.alert(
       'sale_voided',
       buildVoidAlertMessage({
-        businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+        businessName: businessName(),
         cashierName: dto.cashierName ?? null,
         receiptNumber: dto.receiptNumber,
         total: dto.total,
-        reason: `REEMBOLSO — ${input.reason}`,
+        reason: input.reason,
+        kind: 'refund',
       }),
       { saleId, receiptNumber: dto.receiptNumber, refund: true },
     );

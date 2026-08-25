@@ -8,12 +8,13 @@ import {
 import {
   SHIFT_CLOSE_SYSTEM,
   buildDiscrepancyAlertLink,
+  buildOwnerAlert,
   buildShiftCloseUserPrompt,
   businessDayWindow,
   netOfDeliveryFee,
   startOfBusinessDay,
 } from '@pos-tercos/domain';
-import { NON_REVENUE_SALE_STATUSES } from '@pos-tercos/types';
+import { NON_REVENUE_SALE_STATUSES, paymentMethodLabel } from '@pos-tercos/types';
 import type {
   AiSummary,
   CashCountLine,
@@ -32,6 +33,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
+import { businessName } from '../common/business-name';
 import { runWithSerializationRetry } from '../common/tx';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
@@ -819,7 +821,15 @@ export class ShiftsService {
     });
     void this.ownerNotifications.alert(
       'shift_discrepancy',
-      `[${process.env.BUSINESS_NAME ?? 'Tercos'}] ⚠ Descuadre en cierre de caja\n\nEfectivo: ${signedCop(cashDifference)}\nCuenta: ${signedCop(digitalDifference)}\nTotal: ${signedCop(total)}\n\nShift: ${shiftId.slice(0, 8)}`,
+      buildOwnerAlert({
+        businessName: businessName(),
+        title: 'Descuadre en el cierre de caja',
+        body:
+          `Efectivo: ${signedCop(cashDifference)}\n` +
+          `Cuenta: ${signedCop(digitalDifference)}\n` +
+          `Total: ${signedCop(total)}\n\n` +
+          `Míralo en Turnos.`,
+      }),
       { shiftId, kind: 'combined' },
     );
   }
@@ -934,7 +944,7 @@ export class ShiftsService {
       difference,
       shiftId,
       closedAt: closed.closedAt,
-      businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+      businessName: businessName(),
     });
     await this.audit.log({
       userId: cashierId,
@@ -967,10 +977,15 @@ export class ShiftsService {
       (d) => d.difference !== null && Math.abs(d.difference) >= DISCREPANCY_THRESHOLD_COP,
     );
     if (digitalMismatch.length === 0) return false;
+    // El code crudo (`TRANSFER`, `RAPPI`) no es lo que el cajero ve en pantalla
+    // ni lo que el dueño llama a ese medio — el nombre sale del catálogo.
+    const catalog = Object.fromEntries(
+      (await this.paymentMethods.listAll()).map((m) => [m.code, m.name]),
+    );
     const detail = digitalMismatch
       .map(
         (d) =>
-          `${d.method}: esperado $${d.expected.toLocaleString('es-CO')}, app $${(d.counted ?? 0).toLocaleString('es-CO')} (${d.difference! > 0 ? '+' : ''}$${d.difference!.toLocaleString('es-CO')})`,
+          `${paymentMethodLabel(d.method, catalog)}: esperado $${d.expected.toLocaleString('es-CO')}, app $${(d.counted ?? 0).toLocaleString('es-CO')} (${signedCop(d.difference!)})`,
       )
       .join('\n');
     await this.audit.log({
@@ -982,7 +997,11 @@ export class ShiftsService {
     });
     void this.ownerNotifications.alert(
       'shift_discrepancy',
-      `[${process.env.BUSINESS_NAME ?? 'Tercos'}] ⚠ Descuadre DIGITAL en cierre de caja\n\n${detail}\n\nShift: ${shiftId.slice(0, 8)}`,
+      buildOwnerAlert({
+        businessName: businessName(),
+        title: 'Descuadre en la cuenta al cerrar caja',
+        body: `${detail}\n\nMíralo en Turnos.`,
+      }),
       { shiftId, kind: 'digital' },
     );
     return true;
@@ -1311,11 +1330,11 @@ function sumDigitalDifference(lines: DigitalCountLine[]): number {
   return lines.reduce((acc, d) => acc + (d.difference ?? 0), 0);
 }
 
-/** "+$1.000" / "−$25.000" / "$0" para los mensajes de novedad. */
+/** "+$1.000" / "-$25.000" / "$0" para los mensajes de novedad. */
 function signedCop(amount: number): string {
   const rounded = Math.round(amount);
   if (rounded === 0) return '$0';
-  return `${rounded > 0 ? '+' : '−'}$${Math.abs(rounded).toLocaleString('es-CO')}`;
+  return `${rounded > 0 ? '+' : '-'}$${Math.abs(rounded).toLocaleString('es-CO')}`;
 }
 
 /** Fecha legible (DD/MM/YYYY HH:mm) en hora local del server, para mensajes. */

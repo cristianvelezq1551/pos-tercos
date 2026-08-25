@@ -9,6 +9,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   buildManualNotificationLink,
   buildNotificationMessage,
+  buildPaymentAccountsText,
   buildNotificationTemplate,
   WHATSAPP_TEMPLATE_LANG_DEFAULT,
   type WhatsAppNotificationStage,
@@ -17,6 +18,8 @@ import {
 } from '@pos-tercos/domain';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
+import { BusinessConfigService } from '../business-config/business-config.service';
+import { businessName } from '../common/business-name';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Días de retención de los registros de envío de WhatsApp (PII en claro). */
@@ -53,12 +56,13 @@ export function templatesEnabled(): boolean {
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
-  private readonly businessName = process.env.BUSINESS_NAME ?? 'Tercos';
+  private readonly businessName = businessName();
   private readonly addressShort = process.env.BUSINESS_ADDRESS_SHORT ?? null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly businessConfig: BusinessConfigService,
     @Inject(WHATSAPP_PROVIDER) private readonly wa: WhatsAppProvider,
   ) {}
 
@@ -120,7 +124,7 @@ export class NotificationService {
         businessName: this.businessName,
         businessAddressShort: this.addressShort,
         paymentInstructions:
-          stage === 'payment_instructions' ? this.paymentInstructions() : null,
+          stage === 'payment_instructions' ? await this.paymentInstructions() : null,
       };
       // El texto humano SIEMPRE se arma: es el fallback de sendText y lo que
       // queda auditado en whatsapp_messages (aunque el envío vaya por template).
@@ -244,7 +248,7 @@ export class NotificationService {
         businessName: this.businessName,
         businessAddressShort: this.addressShort,
         paymentInstructions:
-          stage === 'payment_instructions' ? this.paymentInstructions() : null,
+          stage === 'payment_instructions' ? await this.paymentInstructions() : null,
       },
     );
     if (!link) {
@@ -405,7 +409,22 @@ export class NotificationService {
     }
   }
 
-  private paymentInstructions(): string | null {
+  /**
+   * A dónde paga el cliente. Manda la config del negocio (el dueño la edita en
+   * el admin); las env vars `PAYMENT_INSTRUCTIONS_*` quedan como respaldo para
+   * no dejar el mensaje sin datos de pago mientras nadie cargó las cuentas.
+   */
+  private async paymentInstructions(): Promise<string | null> {
+    try {
+      const { paymentAccounts } = await this.businessConfig.get();
+      const text = buildPaymentAccountsText(paymentAccounts);
+      if (text) return text;
+    } catch (err) {
+      // Un fallo leyendo la config no puede dejar al cliente sin a dónde pagar.
+      this.logger.warn(
+        `No se pudo leer las cuentas de pago: ${err instanceof Error ? err.message : err}`,
+      );
+    }
     const parts = [
       process.env.PAYMENT_INSTRUCTIONS_NEQUI,
       process.env.PAYMENT_INSTRUCTIONS_TRANSFER,

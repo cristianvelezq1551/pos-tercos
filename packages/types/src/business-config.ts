@@ -37,6 +37,31 @@ const CoordsSchema = z
     message: 'Usa "latitud,longitud" (ej. 6.1658173,-75.580882).',
   });
 
+/**
+ * Un dato de pago que el cliente tiene que COPIAR (un Nequi, una cuenta).
+ *
+ * `value` va separado de su rótulo a propósito: en el mensaje de WhatsApp se
+ * imprime SOLO en su línea, sin texto alrededor, para que el cliente lo
+ * seleccione de un toque. Metido dentro de una frase ("Nequi: 3046706847") hay
+ * que arrastrar la selección a mano sobre el teléfono, y ahí es donde se
+ * equivoca un dígito.
+ */
+export const PaymentAccountSchema = z.object({
+  /** "Nequi", "Bancolombia ahorros". */
+  label: z.string(),
+  /** El número, solo. Es lo único que va en su línea. */
+  value: z.string(),
+  /** "a nombre de Tercos S.A.S." — opcional, cadena vacía si no aplica. */
+  note: z.string(),
+});
+export type PaymentAccount = z.infer<typeof PaymentAccountSchema>;
+
+export const PaymentAccountInputSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  value: z.string().trim().min(1).max(60),
+  note: z.string().trim().max(120).default(''),
+});
+
 export const BusinessConfigSchema = z.object({
   monthStartDay: z.number().int().min(1).max(28),
   webOrdersEnabled: z.boolean(),
@@ -58,6 +83,11 @@ export const BusinessConfigSchema = z.object({
   aboutValues: z.array(BusinessValueSchema),
   /** URL de la foto de "Nosotros". null = no hay. Se sube por su propio endpoint. */
   aboutImageUrl: z.string().nullable(),
+  /**
+   * A dónde paga el cliente. Vacío ⇒ se cae a `PAYMENT_INSTRUCTIONS_*` (env),
+   * que es donde vivían antes: cambiar de cuenta exigía entrar a Railway.
+   */
+  paymentAccounts: z.array(PaymentAccountSchema),
 });
 export type BusinessConfig = z.infer<typeof BusinessConfigSchema>;
 
@@ -81,6 +111,7 @@ export const DEFAULT_BUSINESS_CONFIG: BusinessConfig = {
   aboutStory: '',
   aboutValues: [],
   aboutImageUrl: null,
+  paymentAccounts: [],
 };
 
 const AboutValueInputSchema = z.object({
@@ -108,6 +139,8 @@ export const UpdateBusinessConfigSchema = z
     aboutHeadline: z.string().trim().max(120).optional(),
     aboutStory: z.string().trim().max(2000).optional(),
     aboutValues: z.array(AboutValueInputSchema).max(6).optional(),
+    // 6 formas de pago ya es más de lo que alguien lee en un chat.
+    paymentAccounts: z.array(PaymentAccountInputSchema).max(6).optional(),
   })
   .refine((d) => Object.keys(d).length > 0, {
     message: 'Indica al menos un campo a actualizar.',

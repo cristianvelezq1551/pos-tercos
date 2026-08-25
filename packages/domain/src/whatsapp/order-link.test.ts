@@ -17,7 +17,7 @@ describe('buildWebOrderLink', () => {
     const link = buildWebOrderLink(BASE)!;
     expect(link.url.startsWith('https://wa.me/573207615261?text=')).toBe(true);
     // El texto plano queda legible (auditoría); el URL va encodeado.
-    expect(link.messagePlain).toContain('pedido #108');
+    expect(link.messagePlain).toContain('pedido *#108*');
     expect(link.url).not.toContain(' ');
   });
 
@@ -27,12 +27,12 @@ describe('buildWebOrderLink', () => {
     expect(messagePlain).toContain('+ Tocineta');
     expect(messagePlain).toContain('* sin cebolla');
     expect(messagePlain).toContain('1x Coca-Cola (400ml)');
-    expect(messagePlain).toContain('Total: $59.000');
+    expect(messagePlain).toContain('Total: *$59.000*');
   });
 
   it('el número de pedido va SIEMPRE: es lo que ata el chat a la venta', () => {
     const { messagePlain } = buildWebOrderLink({ ...BASE, customerName: null })!;
-    expect(messagePlain).toContain('#108');
+    expect(messagePlain).toContain('*#108*');
   });
 
   it('un domicilio lleva la dirección y las referencias', () => {
@@ -74,14 +74,14 @@ describe('buildWebOrderLink — el envío todavía no se sabe', () => {
       deliveryAddress: 'Cra 43A #5-15, apto 502',
     })!;
     // "Total: $59.000" sería mentira: falta el domicilio.
-    expect(messagePlain).toContain('Pedido: $59.000');
+    expect(messagePlain).toContain('Pedido: *$59.000*');
     expect(messagePlain).not.toContain('Total:');
-    expect(messagePlain).toContain('¿Cuánto sale el domicilio?');
+    expect(messagePlain).toContain('¿Cuánto cuesta el domicilio?');
   });
 
   it('para recoger el total SÍ es final', () => {
     const { messagePlain } = buildWebOrderLink(BASE)!;
-    expect(messagePlain).toContain('Total: $59.000');
+    expect(messagePlain).toContain('Total: *$59.000*');
     expect(messagePlain).not.toContain('domicilio');
   });
 });

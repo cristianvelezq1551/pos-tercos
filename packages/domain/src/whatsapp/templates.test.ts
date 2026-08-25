@@ -88,8 +88,8 @@ describe('buildNotificationTemplate', () => {
 
 describe('buildOwnerAlertTemplate', () => {
   it('aplana la alerta multi-línea a una variable', () => {
-    const t = buildOwnerAlertTemplate('[Tercos] 🚫 Venta ANULADA\n\nRecibo: #5\nMonto: $10.000');
+    const t = buildOwnerAlertTemplate('[Tercos] *Venta anulada*\n\nRecibo: #5\nMonto: $10.000');
     expect(t.name).toBe('alerta_negocio');
-    expect(t.variables).toEqual(['[Tercos] 🚫 Venta ANULADA | Recibo: #5 | Monto: $10.000']);
+    expect(t.variables).toEqual(['[Tercos] *Venta anulada* | Recibo: #5 | Monto: $10.000']);
   });
 });

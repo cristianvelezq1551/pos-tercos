@@ -7,6 +7,7 @@ import { logError } from '../../../lib/client-log';
 import { getBusinessConfig } from '../api/client';
 import { AboutSection } from './AboutSection';
 import { ContactSection } from './ContactSection';
+import { PaymentAccountsSection } from './PaymentAccountsSection';
 import { RadiusSection } from './RadiusSection';
 import { ScheduleSection } from './ScheduleSection';
 import { SocialSection } from './SocialSection';
@@ -53,6 +54,7 @@ export function WebConfigManager() {
       <ContactSection config={config} onSaved={setConfig} />
       <ScheduleSection config={config} onSaved={setConfig} />
       <RadiusSection config={config} onSaved={setConfig} />
+      <PaymentAccountsSection config={config} onSaved={setConfig} />
       <SocialSection config={config} onSaved={setConfig} />
       <AboutSection config={config} onSaved={setConfig} />
     </div>
