@@ -23,6 +23,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { businessName } from '../common/business-name';
 import { runWithSerializationRetry } from '../common/tx';
 import { buildComandaData, buildReceiptData, includeFull, toSaleDto } from './sales.mappers';
 
@@ -237,7 +238,7 @@ export class SalesReceiptService {
         title,
         // Tanda 2+ → rótulo ADICIÓN: cocina sabe que se SUMA al pedido anterior.
         reprintLabel: batch > 1 ? 'ADICIÓN' : null,
-        footer: process.env.BUSINESS_NAME ?? 'Tercos',
+        footer: businessName(),
       });
       const kitchenLines = hasKitchenItem ? pendingLines : [];
       const kitchen = base(kitchenLines, 'COMANDA COCINA');
@@ -369,7 +370,7 @@ export class SalesReceiptService {
       void this.ownerNotifications.alert(
         'drawer_no_sale',
         buildNoSaleDrawerAlertMessage({
-          businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+          businessName: businessName(),
           cashierName: cashier?.fullName ?? null,
           reason: input.reason,
         }),

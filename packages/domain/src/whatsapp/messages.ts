@@ -1,6 +1,11 @@
 /**
  * Builders puros del TEXTO de los mensajes WhatsApp al cliente. El envío
  * lo hace un WhatsAppProvider (apps/api). Sin IO, tree-shakable.
+ *
+ * ⚠️ Sin emoji (2026-08-24, ver owner-alerts.ts): llegaban como `�` y un
+ * mensaje al cliente no puede depender de que su teléfono los soporte. El
+ * número de pedido y el total van en negrita — son los dos datos que el
+ * cliente vuelve a buscar cuando reabre el chat para pagar.
  */
 
 import { formatCop, greet } from './format';
@@ -30,10 +35,10 @@ export function buildPaymentInstructionsMessage(
   const fee = sale.deliveryFee ?? 0;
   const total =
     fee > 0
-      ? `${formatCop(sale.total)} (${formatCop(sale.total - fee)} del pedido + ${formatCop(fee)} de domicilio)`
-      : formatCop(sale.total);
+      ? `*${formatCop(sale.total)}* (${formatCop(sale.total - fee)} del pedido + ${formatCop(fee)} de domicilio)`
+      : `*${formatCop(sale.total)}*`;
   return (
-    `${greet(sale.customerName)}, recibimos tu pedido #${sale.receiptNumber} en ${opts.businessName}. ` +
+    `${greet(sale.customerName)}, recibimos tu pedido *#${sale.receiptNumber}* en ${opts.businessName}. ` +
     `Total: ${total}.${instr}\n\n` +
     `Cuando pagues, envíanos el comprobante por este chat para confirmarlo. ¡Gracias!`
   );
@@ -45,7 +50,7 @@ export function buildPaymentReceivedMessage(
   opts: WhatsAppMessageOptions,
 ): string {
   return (
-    `${greet(sale.customerName)}, tu pago del pedido #${sale.receiptNumber} fue confirmado ✅. ` +
+    `${greet(sale.customerName)}, tu pago del pedido *#${sale.receiptNumber}* fue confirmado. ` +
     `Ya pasó a cocina y te avisamos cuando esté listo. — ${opts.businessName}`
   );
 }
@@ -62,7 +67,7 @@ export function buildPickupReadyMessage(
   const deliveryAddress = sale.deliveryAddress?.trim();
   if (deliveryAddress) {
     return (
-      `${greet(sale.customerName)}, tu pedido #${sale.receiptNumber} va en camino 🛵 ` +
+      `${greet(sale.customerName)}, tu pedido *#${sale.receiptNumber}* va en camino. ` +
       `Lo llevamos a: ${deliveryAddress}. — ${opts.businessName}`
     );
   }
@@ -70,7 +75,7 @@ export function buildPickupReadyMessage(
     ? ` Te esperamos en ${opts.businessAddressShort.trim()}.`
     : '';
   return (
-    `${greet(sale.customerName)}, tu pedido #${sale.receiptNumber} ya está listo para retirar.${addr} — ${opts.businessName}`
+    `${greet(sale.customerName)}, tu pedido *#${sale.receiptNumber}* ya está listo para retirar.${addr} — ${opts.businessName}`
   );
 }
 
@@ -80,7 +85,7 @@ export function buildCanceledMessage(
   opts: WhatsAppMessageOptions,
 ): string {
   return (
-    `${greet(sale.customerName)}, lamentablemente tu pedido #${sale.receiptNumber} fue cancelado. ` +
+    `${greet(sale.customerName)}, lamentablemente tu pedido *#${sale.receiptNumber}* fue cancelado. ` +
     `Si crees que es un error o quieres volver a pedir, escríbenos por este chat. — ${opts.businessName}`
   );
 }

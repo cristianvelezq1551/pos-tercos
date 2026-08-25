@@ -1,7 +1,9 @@
 import { Catch, HttpException, Logger, type ArgumentsHost } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
+import { buildOwnerAlert } from '@pos-tercos/domain';
 import type { Request, Response } from 'express';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
+import { businessName } from './business-name';
 
 /** Máximo una alerta cada 10 min por firma de error (no spamear al dueño). */
 const ALERT_THROTTLE_MS = 10 * 60 * 1000;
@@ -30,7 +32,7 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
 
     // Un 5xx DELIBERADO del negocio (ej. el 503 del kill-switch de pedidos
     // web) no es un error del sistema: con el switch apagado, cada intento
-    // bloqueado alertaría al dueño como "🔴 Error". Solo alertan los 5xx
+    // bloqueado alertaría al dueño como "Error del sistema". Solo alertan los 5xx
     // INESPERADOS: excepciones no-HTTP (bugs/DB caída) o un 500 explícito.
     const deliberate5xx = isHttp && status !== 500;
 
@@ -51,7 +53,11 @@ export class ServerErrorAlertFilter extends BaseExceptionFilter {
         this.lastAlertAt.set(signature, now);
         void this.ownerNotifications.alert(
           'server_error',
-          `[${process.env.BUSINESS_NAME ?? 'Tercos'}] 🔴 Error del sistema\n\n${signature}\n\nSi se repite, revisa los registros del servidor.`,
+          buildOwnerAlert({
+            businessName: businessName(),
+            title: 'Error del sistema',
+            body: `${signature}\n\nSi se repite, revisa los registros del servidor.`,
+          }),
           { signature, status },
         );
       }

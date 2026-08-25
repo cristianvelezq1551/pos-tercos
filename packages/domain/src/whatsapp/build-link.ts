@@ -10,6 +10,7 @@
  */
 
 import { formatCop } from './format';
+import { buildOwnerAlert } from './owner-alerts';
 import type { WhatsAppLinkResult } from './types';
 import { normalizeWaPhone, toWaLink } from './wa-link';
 
@@ -24,17 +25,24 @@ export function buildDiscrepancyAlertLink(input: {
   const phone = normalizeWaPhone(input.ownerPhone);
   if (!phone) return null;
 
-  const sign = input.difference >= 0 ? '+' : '';
+  const sign = input.difference >= 0 ? '+' : '-';
+  // 'es-CO' devuelve "06:10 p. m." — ya termina en punto, así que la hora va
+  // en su propia línea sin puntuación adicional (antes salía "p. m..").
   const closedHour = input.closedAt.toLocaleTimeString('es-CO', {
     hour: '2-digit',
     minute: '2-digit',
   });
-  const messagePlain =
-    `[${input.businessName}] ⚠ Descuadre detectado en turno cerrado a las ${closedHour}.\n\n` +
-    `Cajero: ${input.cashierName}\n` +
-    `Diferencia: ${sign}${formatCop(Math.abs(input.difference))} ` +
-    `(${input.difference >= 0 ? 'sobrante' : 'faltante'})\n` +
-    `Shift: ${input.shiftId.slice(0, 8)}\n\n` +
-    `Revisar el detalle en /shifts/${input.shiftId}.`;
+  // Ni el id del turno ni la ruta de la app: al dueño no le sirven para nada
+  // y no puede tocarlos. El turno se identifica por cajero y hora de cierre.
+  const messagePlain = buildOwnerAlert({
+    businessName: input.businessName,
+    title: 'Descuadre en el cierre de caja',
+    body:
+      `Cajero: ${input.cashierName}\n` +
+      `Diferencia: ${sign}${formatCop(Math.abs(input.difference))} ` +
+      `(${input.difference >= 0 ? 'sobrante' : 'faltante'})\n` +
+      `Cerró a las ${closedHour}\n\n` +
+      `Míralo en Turnos.`,
+  });
   return toWaLink(phone, messagePlain);
 }

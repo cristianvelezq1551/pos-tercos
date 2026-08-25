@@ -1416,6 +1416,10 @@ model BusinessConfig {
   aboutValues   Json     @default("[]") @map("about_values")
   aboutImageKey  String? @map("about_image_key")
   aboutImageMime String? @map("about_image_mime")
+  /// [{label, value, note}] — a dónde paga el cliente. El `value` (el número)
+  /// va aparte de su rótulo: en el mensaje se imprime solo en su línea para
+  /// que se copie de un toque. Vacío ⇒ fallback a `PAYMENT_INSTRUCTIONS_*`.
+  paymentAccounts Json  @default("[]") @map("payment_accounts")
 
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 

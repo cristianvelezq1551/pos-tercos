@@ -167,6 +167,7 @@ export function CheckoutForm() {
         total: result.order.total,
         deliveryAddress: result.order.deliveryAddress,
         deliveryNotes: result.order.deliveryNotes,
+        notes: result.order.notes,
       });
       // Sin teléfono del negocio configurado no hay a dónde escribir: se cierra
       // la pestaña en blanco en vez de dejarla colgada.

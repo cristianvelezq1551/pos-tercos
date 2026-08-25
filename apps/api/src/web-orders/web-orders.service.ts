@@ -236,6 +236,7 @@ export class WebOrdersService {
       // antes de que salga el repartidor.
       deliveryAddress: sale.deliveryAddress ?? null,
       deliveryNotes: sale.deliveryNotes ?? null,
+      notes: sale.notes ?? null,
       createdAt: sale.createdAt,
       items: (sale.items ?? []).map((it) => ({
         productName: it.productName ?? 'Producto',

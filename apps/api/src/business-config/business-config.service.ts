@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BusinessValueSchema,
   DEFAULT_OPENING_HOURS,
+  PaymentAccountSchema,
   OpeningHoursSchema,
   type BusinessConfig,
   type OpeningHours,
@@ -28,6 +29,7 @@ const SINGLETON_ID = 'singleton';
 const ABOUT_IMAGE_PREFIX = 'business/about';
 
 const AboutValuesSchema = z.array(BusinessValueSchema);
+const PaymentAccountsSchema = z.array(PaymentAccountSchema);
 
 /**
  * Config global del negocio (fila única). Dos familias:
@@ -306,6 +308,7 @@ export class BusinessConfigService {
       aboutStory: row.aboutStory,
       aboutValues: this.parseValues(row.aboutValues),
       aboutImageUrl: row.aboutImageKey ? '/api/web-hero/about-image' : null,
+      paymentAccounts: this.parseAccounts(row.paymentAccounts),
     };
   }
 
@@ -323,6 +326,16 @@ export class BusinessConfigService {
 
   private parseValues(raw: unknown): BusinessConfig['aboutValues'] {
     const parsed = AboutValuesSchema.safeParse(raw);
+    return parsed.success ? parsed.data : [];
+  }
+
+  /**
+   * Columna JSON libre. Ante cualquier cosa rara devolvemos lista vacía, que
+   * hace caer el mensaje al fallback de env vars: preferimos los datos viejos
+   * a un mensaje de pago a medio armar.
+   */
+  private parseAccounts(raw: unknown): BusinessConfig['paymentAccounts'] {
+    const parsed = PaymentAccountsSchema.safeParse(raw);
     return parsed.success ? parsed.data : [];
   }
 }

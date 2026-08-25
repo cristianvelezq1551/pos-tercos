@@ -2133,6 +2133,80 @@ P&G refleja el costo real cuando vence el TTL.
 
 ---
 
+## 7.v33 Ningún mensaje de WhatsApp depende de un emoji (2026-08-24)
+
+> El dueño mostró un pedido que le llegó con `�` donde iban los iconos y sin el
+> comentario que el cliente había escrito. Verificado: typecheck 12/12, lint 0,
+> domain 388, api unit 121, admin 177, web 22, types 168.
+> Migración: `20260824120000_payment_accounts` (**sin aplicar**: Docker abajo).
+> ⚠️ e2e NO corridos en la sesión (el daemon de Docker no levantó); las suites
+> que tocan estos textos afirman subcadenas que sobreviven al cambio.
+
+### La nota del cliente nunca llegaba al chat
+`buildWebOrderLink` acepta `notes` desde siempre, pero el campo se cortaba en dos
+puntos: `PublicWebOrderSchema` no lo exponía y **ninguno** de los dos que arman el
+link lo pasaba (`CheckoutForm`, `SendOrderByWhatsApp`). El cliente escribía "sin
+cebolla" en el checkout, se guardaba en la venta y nadie lo veía. Ahora viaja en
+el DTO público (y en la proyección del panel del cajero, `saleToPublicWebOrder`).
+
+### Sin emoji, en ningún mensaje (regla dura)
+Todos los pictogramas que usábamos están **fuera del plano básico de Unicode**
+(4 bytes: 🛵 🙌 👋 📅 📍 …). El código y el `encodeURIComponent` estaban bien —se
+verificó byte a byte en fuente y en `dist`— pero en el teléfono del dueño llegaban
+como `�`. Los únicos de 3 bytes que sobrevivían eran `✅` y `⚠`, o sea casi
+ninguno: elegir "emoji seguros" no era una salida.
+
+- La jerarquía la da la **negrita de WhatsApp** (`*texto*`) y el salto de línea.
+  En los mensajes al cliente van en negrita el `#pedido` y el total — los dos
+  datos que vuelve a buscar cuando reabre el chat.
+- En el pedido al proveedor, los iconos que rotulaban cada bloque pasaron a ser
+  etiquetas escritas (`Lo necesitamos:`, `Nota:`, `Entrega en:`, `Contacto:`).
+- ⚠️ Al quitar un emoji hay que mirar la puntuación: `va en camino 🛵 Lo llevamos
+  a:` quedaba como frase corrida.
+- Un test de propiedad en `owner-alerts.test.ts` recorre las alertas y falla si
+  reaparece un codepoint > U+FFFF.
+
+### Los datos de pago salen del admin y el número se copia de un toque
+Decisión del dueño: **sin QR** — el número de cuenta, fácil de copiar. Un link
+`wa.me` solo transporta texto (no hay forma de adjuntar una imagen), así que un
+QR habría exigido encender Kapso o adjuntarlo a mano en cada pedido.
+
+- `buildPaymentAccountsText` (domain, puro, 4 tests) imprime cada cuenta como
+  **rótulo / número solo en su línea / a nombre de**. El número va sin rótulo
+  pegado, sin `:` y **sin negrita** (los asteriscos de WhatsApp se cuelan en el
+  portapapeles de algunos clientes): así el cliente lo toca dos veces y lo copia
+  entero, en vez de arrastrar la selección con el dedo y perder un dígito.
+- **`business_config.payment_accounts`** (`[{label, value, note}]`, migración
+  `20260824120000_payment_accounts`): el dueño las edita en admin → Web del
+  cliente → **Datos de pago**. Antes vivían en `PAYMENT_INSTRUCTIONS_NEQUI` /
+  `_TRANSFER`, o sea que cambiar de cuenta exigía entrar a Railway y reiniciar.
+  Las env vars quedan de **respaldo** si la lista está vacía o la config no
+  responde — un pedido sin a dónde pagar es peor que un dato viejo.
+- El MISMO texto alimenta el WhatsApp y la pantalla de seguimiento del pedido
+  (`web-orders.controller`): si dijeran cuentas distintas, el cliente no sabría
+  a cuál transferir.
+- ⚠️ El aviso con el costo del domicilio **ya existía**: es el stage
+  `payment_instructions`, y en domicilio lo dispara el botón *"Cobrar por
+  WhatsApp"* del campo de envío (§7.v24) — no sale al crear el pedido porque
+  ahí el total todavía no es real.
+
+### Las 14 alertas al dueño se leen como el mismo remitente
+`buildOwnerAlert({businessName, title, body})` (domain) es la **única** forma de
+armar una alerta: `[Negocio] *Título*` + línea en blanco + cuerpo. Llegan mezcladas
+con los chats personales del dueño; con cada una empezando distinto tenía que
+abrirlas para saber si eran del negocio. `businessName()`
+(`apps/api/src/common/business-name.ts`) reemplaza las 13 copias de
+`process.env.BUSINESS_NAME ?? 'Tercos'`.
+
+Además: un **reembolso** ya no se lee igual que una anulación (`kind: 'refund'`);
+la **cortesía** dice quién la dio y cuánto costó (antes era una línea suelta sin
+cajero ni valor); el descuadre digital muestra el **nombre** del medio del catálogo
+(`Transferencia`) y no el code (`TRANSFER`); y de los mensajes salieron el `Shift:`
+en inglés, el id truncado, la ruta `/shifts/<uuid>` y el `p. m..` con doble punto
+— al dueño no le sirven y no puede tocarlos. El faltante ahora trae su signo.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

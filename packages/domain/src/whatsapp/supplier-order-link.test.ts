@@ -72,19 +72,19 @@ describe('buildSupplierOrderMessage', () => {
       requestedBy: 'Cristian Vélez',
       businessPhoneDisplay: '320 761 5261',
     });
-    expect(msg).toContain('📅 Lo necesitamos: mañana, martes 28 de julio');
-    expect(msg).toContain('📝 que venga fresco');
-    expect(msg).toContain('📍 Entrega en: Cra 1 #2-3');
-    expect(msg).toContain('📞 Contacto: Cristian Vélez · 320 761 5261');
+    expect(msg).toContain('Lo necesitamos: *mañana, martes 28 de julio*');
+    expect(msg).toContain('Nota: que venga fresco');
+    expect(msg).toContain('Entrega en: Cra 1 #2-3');
+    expect(msg).toContain('Contacto: Cristian Vélez · 320 761 5261');
     expect(msg.includes('\n\n\n')).toBe(false);
   });
 
   it('omite las líneas de día, nota, dirección y contacto si no hay datos', () => {
     const msg = buildSupplierOrderMessage(base);
-    expect(msg).not.toContain('📅');
-    expect(msg).not.toContain('📝');
-    expect(msg).not.toContain('📍');
-    expect(msg).not.toContain('📞');
+    expect(msg).not.toContain('Lo necesitamos:');
+    expect(msg).not.toContain('Nota:');
+    expect(msg).not.toContain('Entrega en:');
+    expect(msg).not.toContain('Contacto:');
     expect(msg.includes('\n\n\n')).toBe(false);
   });
 

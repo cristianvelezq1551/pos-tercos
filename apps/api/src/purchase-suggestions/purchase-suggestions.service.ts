@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
+  buildOwnerAlert,
   buildPurchaseSuggestionUserPrompt,
   buildSupplierOrderMessage,
   normalizeWaPhone,
@@ -31,6 +32,7 @@ import { AuditService } from '../audit/audit.service';
 import { BusinessConfigService } from '../business-config/business-config.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { businessName } from '../common/business-name';
 import { localMidnightOfYmd, ymdLocal } from '../common/local-dates';
 
 type DbSuggestionWithRelations = Prisma.PurchaseSuggestionGetPayload<{
@@ -549,7 +551,7 @@ export class PurchaseSuggestionsService {
     const message = buildSupplierOrderMessage({
       supplierPhone: supplier.phone,
       supplierName: supplier.name,
-      businessName: process.env.BUSINESS_NAME ?? 'Tercos',
+      businessName: businessName(),
       neededByLabel: input.neededBy ? formatNeededByLabel(input.neededBy) : null,
       requestedBy: actor?.fullName ?? null,
       businessPhoneDisplay: config.phoneDisplay || config.phone || null,
@@ -680,14 +682,16 @@ export class PurchaseSuggestionsService {
       return `• ${name}: ${qty} ${s.unitPurchase}${cost}`;
     });
     const total = open.reduce((acc, s) => acc + (s.estTotal === null ? 0 : Number(s.estTotal)), 0);
-    const message = [
-      '📋 *Compras pendientes de gestionar*',
-      '',
-      ...lines,
-      '',
-      `Total estimado: $${Math.round(total).toLocaleString('es-CO')}`,
-      `(${open.length} ${open.length === 1 ? 'sugerencia abierta' : 'sugerencias abiertas'})`,
-    ].join('\n');
+    const message = buildOwnerAlert({
+      businessName: businessName(),
+      title: 'Compras pendientes de gestionar',
+      body: [
+        ...lines,
+        '',
+        `Total estimado: $${Math.round(total).toLocaleString('es-CO')}`,
+        `(${open.length} ${open.length === 1 ? 'sugerencia abierta' : 'sugerencias abiertas'})`,
+      ].join('\n'),
+    });
 
     const recipients: WhatsAppSendOutcome['recipients'] = [];
     let sent = 0;

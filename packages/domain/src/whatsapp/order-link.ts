@@ -13,7 +13,11 @@
  *
  * El `#N` del pedido es lo que después permite atar el mensaje entrante a la
  * venta. El cliente puede borrarlo (el texto es editable), así que quien lea el
- * mensaje —persona o bot— tiene que poder caer al teléfono del remitente.
+ * mensaje —persona o bot— tiene que poder caer al teléfono del remitente. Por
+ * eso va en negrita: es el dato que quien atiende busca de un vistazo.
+ *
+ * ⚠️ Sin emoji (2026-08-24, ver owner-alerts.ts): llegaban como `�`. Lo que
+ * antes marcaba un icono ahora lo marca la negrita de WhatsApp.
  */
 
 import { formatCop } from './format';
@@ -38,7 +42,8 @@ export interface OrderLinkInput {
   /** Presente ⇒ es domicilio: la dirección va en el mensaje. */
   deliveryAddress?: string | null;
   deliveryNotes?: string | null;
-  /** Notas del pedido (no de la entrega). */
+  /** Notas del pedido (no de la entrega) — lo que el cliente escribió en el
+   *  checkout. Sin esto el chat pierde la única indicación que dio. */
   notes?: string | null;
 }
 
@@ -48,7 +53,7 @@ export function buildWebOrderLink(input: OrderLinkInput): WhatsAppLinkResult | n
   if (!phone) return null;
 
   const lines: string[] = [];
-  lines.push(`Hola! Este es mi pedido #${input.receiptNumber}`);
+  lines.push(`¡Hola! Este es mi pedido *#${input.receiptNumber}*`);
   if (input.customerName?.trim()) lines.push(`Nombre: ${input.customerName.trim()}`);
   lines.push('');
 
@@ -63,16 +68,20 @@ export function buildWebOrderLink(input: OrderLinkInput): WhatsAppLinkResult | n
   const address = input.deliveryAddress?.trim();
   // En domicilio el total NO es final: falta el envío, que el local cotiza con
   // el domiciliario. Decir "Total: $27.000" a secas sería mentirle al cliente.
-  lines.push(address ? `Pedido: ${formatCop(input.total)}` : `Total: ${formatCop(input.total)}`);
+  lines.push(
+    address
+      ? `Pedido: *${formatCop(input.total)}*`
+      : `Total: *${formatCop(input.total)}*`,
+  );
 
   if (address) {
     lines.push('');
-    lines.push('🛵 A domicilio');
+    lines.push('*A domicilio*');
     lines.push(`Dirección: ${address}`);
     if (input.deliveryNotes?.trim()) lines.push(`Referencias: ${input.deliveryNotes.trim()}`);
   } else {
     lines.push('');
-    lines.push('🏪 Paso a recogerlo al local');
+    lines.push('*Paso a recogerlo al local*');
   }
 
   if (input.notes?.trim()) {
@@ -83,8 +92,8 @@ export function buildWebOrderLink(input: OrderLinkInput): WhatsAppLinkResult | n
   lines.push('');
   lines.push(
     address
-      ? '¿Cuánto sale el domicilio? Quedo atento para pagar 🙌'
-      : 'Quedo atento al pago 🙌',
+      ? '¿Cuánto cuesta el domicilio? Quedo pendiente para pagar.'
+      : 'Quedo pendiente del pago.',
   );
 
   return toWaLink(phone, lines.join('\n'));

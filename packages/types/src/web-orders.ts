@@ -121,6 +121,13 @@ export const PublicWebOrderSchema = z.object({
   /** A dónde se entrega. null en WEB_PICKUP. El cliente la ve para verificarla. */
   deliveryAddress: z.string().nullable().default(null),
   deliveryNotes: z.string().nullable().default(null),
+  /**
+   * Lo que el cliente escribió en "Notas" del checkout ("sin cebolla"). Viaja
+   * al DTO público porque el mensaje de WhatsApp que arma la web se construye
+   * desde acá: sin este campo, la única indicación que dio el cliente no
+   * llegaba al chat (se guardaba en la venta y nadie la veía).
+   */
+  notes: z.string().nullable().default(null),
   createdAt: z.string().datetime(),
   /**
    * Instrucciones de pago canónicas (Nequi/transferencia). El backend es la

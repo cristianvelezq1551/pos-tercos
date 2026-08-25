@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { buildOwnerAlert } from '@pos-tercos/domain';
+import { businessName } from '../common/business-name';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -77,10 +79,15 @@ export class InstanceGuardService implements OnModuleInit {
       );
       void this.ownerNotifications.alert(
         'multi_instance',
-        `⚠️ El sistema detectó ${alive} instancias del servidor corriendo a la vez. ` +
-          'Está diseñado para UNA sola — así el límite anti-abuso y los avisos de ' +
-          'pedidos web en el POS dejan de ser confiables. Entrar a Railway y fijar ' +
-          'el servicio en 1 réplica (sin autoscale).',
+        buildOwnerAlert({
+          businessName: businessName(),
+          title: 'Hay más de un servidor corriendo',
+          body:
+            `El sistema detectó ${alive} instancias a la vez y está diseñado para ` +
+            'UNA sola: así el límite anti-abuso y los avisos de pedidos web en la ' +
+            'caja dejan de ser confiables. Entrar a Railway y fijar el servicio en ' +
+            '1 réplica (sin autoscale).',
+        }),
         { alive, instanceId: this.instanceId },
       );
     } catch (err) {
