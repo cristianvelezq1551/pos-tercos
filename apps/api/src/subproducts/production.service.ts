@@ -294,8 +294,13 @@ export class ProductionService {
       }
     }
 
+    // Los consumibles (`blocksAvailability=false`: papel film, servilletas) no
+    // frenan la producción — mismo criterio que la venta (§forzar-disponible):
+    // se descuentan y se costean igual (quedan en negativo, con deuda FIFO),
+    // pero un consumible sin registrar no puede dejar la cocina sin producir.
     const shortages: string[] = [];
     for (const [ingId, item] of expansion.ingredients) {
+      if (!item.blocksAvailability) continue;
       const stock = ingStock.get(ingId) ?? 0;
       if (stock < item.totalQuantity) {
         shortages.push(
@@ -304,6 +309,7 @@ export class ProductionService {
       }
     }
     for (const [subId, item] of expansion.subproducts) {
+      if (!item.blocksAvailability) continue;
       const stock = subStock.get(subId) ?? 0;
       if (stock < item.totalQuantity) {
         shortages.push(

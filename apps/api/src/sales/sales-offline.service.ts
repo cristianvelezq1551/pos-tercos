@@ -153,6 +153,20 @@ export class SalesOfflineService {
 
     const updated = await runWithSerializationRetry(() =>
      this.prisma.$transaction(async (tx) => {
+      // B4 (espejo del cobro online): la caja se resolvió ANTES de la tx; si el
+      // cierre commiteó en el medio, la venta quedaría colgada de una caja ya
+      // CERRADA — plata fuera del arqueo congelado, para siempre. Releer el
+      // status acá además crea la dependencia r-w que hace abortar al SSI si el
+      // cierre corre en paralelo.
+      const freshShift = await tx.shift.findUnique({
+        where: { id: shift.id },
+        select: { status: true },
+      });
+      if (!freshShift || freshShift.status !== 'OPEN') {
+        throw new BadRequestException(
+          'La caja se cerró mientras se sincronizaba la venta. Abre caja y reintenta desde la bandeja.',
+        );
+      }
       const [{ next }] = await tx.$queryRaw<{ next: bigint }[]>`
         SELECT nextval('receipt_seq') AS next
       `;

@@ -252,4 +252,25 @@ describe('Aviso manual por WhatsApp E2E', () => {
     expect(msgs).toHaveLength(2);
     expect(msgs.every((m) => m.status === 'manual')).toBe(true);
   });
+
+  it('la cobertura del reporte cuenta el aviso MANUAL como alcanzado', async () => {
+    // Bug: getWhatsAppMetrics solo contaba status 'sent' — sin Kapso el único canal vivo es el manual y la cobertura marcaba 0% aunque el cajero avisara todo.
+    const created = await order({
+      type: 'WEB_DELIVERY',
+      deliveryAddress: DIRECCION,
+      ...CERCA,
+    }).expect(201);
+    const saleId = created.body.order.id as string;
+    await request.patch(`/sales/${saleId}/delivery-fee`).set(auth()).send({ fee: 7000 }).expect(200);
+    await request
+      .post(`/sales/${saleId}/whatsapp/payment_instructions`)
+      .set(auth())
+      .expect(201);
+
+    const res = await request.get('/reports/whatsapp-metrics').set(auth()).expect(200);
+    const stages = res.body.stages as Array<{ stage: string; eligible: number; reached: number }>;
+    const stage = stages.find((s) => s.stage === 'payment_instructions');
+    expect(stage).toBeDefined();
+    expect(stage!.reached).toBeGreaterThanOrEqual(1); // antes: 0 (la fila era 'manual', no 'sent')
+  });
 });

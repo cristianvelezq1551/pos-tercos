@@ -216,23 +216,53 @@ export class InventoryService {
       if (existing) return toMovementDto(existing);
     }
 
+    const entityWhere =
+      input.entityType === 'INGREDIENT'
+        ? { ingredientId: input.ingredientId! }
+        : input.entityType === 'SUBPRODUCT'
+          ? { subproductId: input.subproductId! }
+          : { productId: input.productId! };
+    const data = {
+      entityType: input.entityType,
+      ingredientId: input.entityType === 'INGREDIENT' ? input.ingredientId : null,
+      productId: input.entityType === 'PRODUCT' ? input.productId : null,
+      subproductId: input.entityType === 'SUBPRODUCT' ? input.subproductId : null,
+      delta: input.delta,
+      // El costo solo aplica a entradas (delta > 0); en consumos lo resuelve FIFO.
+      unitCost: input.delta > 0 ? (input.unitCost ?? null) : null,
+      type: input.type,
+      notes: input.notes ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
+      userId: userId ?? null,
+    };
+
     try {
-      const created = await this.prisma.inventoryMovement.create({
-        data: {
-          entityType: input.entityType,
-          ingredientId: input.entityType === 'INGREDIENT' ? input.ingredientId : null,
-          productId: input.entityType === 'PRODUCT' ? input.productId : null,
-          subproductId: input.entityType === 'SUBPRODUCT' ? input.subproductId : null,
-          delta: input.delta,
-          // El costo solo aplica a entradas (delta > 0); en consumos lo resuelve FIFO.
-          unitCost: input.delta > 0 ? (input.unitCost ?? null) : null,
-          type: input.type,
-          notes: input.notes ?? null,
-          idempotencyKey: input.idempotencyKey ?? null,
-          userId: userId ?? null,
-        },
-        include: includeFull(),
-      });
+      // Un ajuste manual NEGATIVO no puede dejar el stock bajo cero: a
+      // diferencia de la merma (que estima el faltante y deja deuda, §7.v32),
+      // el ajuste no deja rastro en el ledger — las unidades "desaparecen" del
+      // replay en silencio y la valuación queda sobrestimada para siempre.
+      // Tx SERIALIZABLE: dos ajustes concurrentes no pueden pasar el piso juntos.
+      const created =
+        input.type === 'MANUAL_ADJUSTMENT' && input.delta < 0
+          ? await runWithSerializationRetry(() =>
+              this.prisma.$transaction(
+                async (tx) => {
+                  const agg = await tx.inventoryMovement.aggregate({
+                    where: entityWhere,
+                    _sum: { delta: true },
+                  });
+                  const current = Number(agg._sum.delta ?? 0);
+                  if (current + input.delta < -1e-6) {
+                    throw new BadRequestException(
+                      `El ajuste dejaría el stock en negativo (hay ${current}). Si la pérdida es real, regístrala como merma.`,
+                    );
+                  }
+                  return tx.inventoryMovement.create({ data, include: includeFull() });
+                },
+                { isolationLevel: 'Serializable', timeout: 10_000 },
+              ),
+            )
+          : await this.prisma.inventoryMovement.create({ data, include: includeFull() });
       return toMovementDto(created);
     } catch (err) {
       if (

@@ -361,7 +361,17 @@ export const CreateSaleItemSchema = z.object({
   productId: z.string().uuid(),
   sizeId: z.string().uuid().optional(),
   quantity: z.number().int().positive().max(MAX_SALE_LINE_QTY),
-  modifiers: z.array(CreateSaleItemModifierSchema).optional(),
+  /** Sin duplicados: el mismo modificador N veces sumaría su precio y su
+   *  consumo N veces (la UI usa checkboxes; repetirlo nunca es legítimo, y en
+   *  `POST /web/orders` —público— apilar un delta negativo manipula el precio). */
+  modifiers: z
+    .array(CreateSaleItemModifierSchema)
+    .max(30)
+    .refine(
+      (mods) => new Set(mods.map((m) => m.modifierId)).size === mods.length,
+      { message: 'La línea trae el mismo modificador repetido.' },
+    )
+    .optional(),
   /** Notas de cocina por línea (ej. "sin cebolla"). */
   notes: z.string().max(200).optional(),
   /** Descuento manual de la línea (#5b). Exige discountReason en la venta. */

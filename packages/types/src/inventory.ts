@@ -93,6 +93,23 @@ export const CreateInventoryMovementSchema = z
         });
       }
     }
+    // Signo por tipo. La UI ya lo fuerza; la API pública no lo hacía: una
+    // "merma" con delta positivo entraba como lote fantasma al ledger (sin
+    // costo) y `reverse-waste` sobre esa fila fabricaba stock una segunda vez.
+    if (data.type === 'WASTE' && data.delta > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Una merma siempre resta stock: la cantidad debe ser negativa.',
+        path: ['delta'],
+      });
+    }
+    if (data.type === 'INITIAL' && data.delta < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'La carga inicial de stock debe ser positiva.',
+        path: ['delta'],
+      });
+    }
   });
 export type CreateInventoryMovement = z.infer<typeof CreateInventoryMovementSchema>;
 

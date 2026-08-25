@@ -238,9 +238,19 @@ export class SalesEditService {
             ),
           ]);
           deltaMovements = this.consumptionDelta(oldSpecs, newSpecs, saleId, userId);
-          const lineProductIds = Array.from(new Set(input.items.map((it) => it.productId)));
+          // Igual que el cobro: componentes de combos incluidos, para que un
+          // componente forzado no frene la edición (espeja evaluateAvailability).
+          const candidateProductIds = Array.from(
+            new Set(
+              newSpecs.flatMap((s) =>
+                s.componentProductId !== undefined
+                  ? [s.originProductId, s.componentProductId]
+                  : [s.originProductId],
+              ),
+            ),
+          );
           const forced = await this.prisma.product.findMany({
-            where: { id: { in: lineProductIds }, forceAvailable: true },
+            where: { id: { in: candidateProductIds }, forceAvailable: true },
             select: { id: true },
           });
           tolerateStockKeys = this.consumption.tolerableKeys(

@@ -277,6 +277,29 @@ export class StockCountsService {
                 },
               });
             }
+            if (autoApprove) {
+              // Igual que `approve`: los PENDING previos del MISMO stockable se
+              // calcularon contra un ledger que no incluye este ajuste —
+              // aprobarlos después doble-aplicaría la discrepancia (el conteo
+              // del cocinero de la mañana + el del admin de la tarde restaban
+              // dos veces). Se supersede acá también.
+              await tx.stockCount.updateMany({
+                where: {
+                  id: { not: count.id },
+                  status: 'PENDING',
+                  entityType: input.entityType,
+                  ingredientId: input.ingredientId ?? null,
+                  productId: input.productId ?? null,
+                  subproductId: input.subproductId ?? null,
+                },
+                data: {
+                  status: 'REJECTED',
+                  resolvedById: userId,
+                  resolvedAt: new Date(),
+                  resolverNote: 'Reemplazado por un conteo aprobado más reciente del mismo ítem.',
+                },
+              });
+            }
             return count;
           },
           { isolationLevel: 'Serializable', timeout: 10_000 },

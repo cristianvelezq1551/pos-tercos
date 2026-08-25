@@ -58,7 +58,7 @@ export class WebOrderDailyLimitGuard implements CanActivate {
 
     if (entry.count >= this.maxPerIpPerDay) {
       throw new HttpException(
-        'Alcanzaste el máximo de pedidos por hoy. Escribinos por WhatsApp para ayudarte.',
+        'Alcanzaste el máximo de pedidos por hoy. Escríbenos por WhatsApp para ayudarte.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

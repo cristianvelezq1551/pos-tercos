@@ -97,9 +97,7 @@ export class ReportsController {
     @Query('year') year?: string,
     @Query('month') month?: string,
   ): Promise<MonthlyFinancialStatement> {
-    const now = new Date();
-    const y = year ? Number(year) : now.getFullYear();
-    const m = month ? Number(month) : now.getMonth() + 1;
+    const { y, m } = parseYearMonth(year, month);
     return this.financial.getMonthlyStatement(y, m);
   }
 
@@ -111,8 +109,10 @@ export class ReportsController {
     @Query('month') month?: string,
   ): Promise<MonthlyTrend> {
     const n = Math.max(1, Math.min(Number(months) || 6, 12));
-    const y = year ? Number(year) : undefined;
-    const m = month ? Number(month) : undefined;
+    if (year === undefined && month === undefined) {
+      return this.financial.getMonthlyTrend(n, undefined, undefined);
+    }
+    const { y, m } = parseYearMonth(year, month);
     return this.financial.getMonthlyTrend(n, y, m);
   }
 
@@ -123,9 +123,7 @@ export class ReportsController {
     @Query('year') year?: string,
     @Query('month') month?: string,
   ): Promise<FinancialAnalysis> {
-    const now = new Date();
-    const y = year ? Number(year) : now.getFullYear();
-    const m = month ? Number(month) : now.getMonth() + 1;
+    const { y, m } = parseYearMonth(year, month);
     return this.financial.analyze(y, m, user.sub);
   }
 
@@ -390,8 +388,31 @@ export class ReportsController {
 }
 
 /**
+ * Valida ?year=&month= de los endpoints financieros. Sin validar, `month=13`
+ * rebalsaba en silencio a enero del año siguiente (rollover de `new Date`) y
+ * `month=abc` terminaba en un 500 de Prisma con Invalid Date.
+ */
+function parseYearMonth(
+  year: string | undefined,
+  month: string | undefined,
+): { y: number; m: number } {
+  const now = new Date();
+  const y = year === undefined ? now.getFullYear() : Number(year);
+  const m = month === undefined ? now.getMonth() + 1 : Number(month);
+  if (!Number.isInteger(y) || y < 2020 || y > 2100) {
+    throw new BadRequestException('El año del reporte no es válido.');
+  }
+  if (!Number.isInteger(m) || m < 1 || m > 12) {
+    throw new BadRequestException('El mes del reporte debe estar entre 1 y 12.');
+  }
+  return { y, m };
+}
+
+/**
  * Parsea ?from=&to= como YYYY-MM-DD a Date local (00:00 from, 23:59 to).
- * Default: últimos `defaultDays` días (incluyendo hoy).
+ * Default: últimos `defaultDays` días (incluyendo hoy). Un valor PRESENTE pero
+ * mal formado es 400 (misma política que B9 en GET /sales): degradar en
+ * silencio devolvía "hoy" a quien creía haber pedido julio.
  */
 function parseDateRange(
   from: string | undefined,
@@ -399,15 +420,22 @@ function parseDateRange(
   defaultDays = 7,
 ): { from: Date; to: Date } {
   const now = new Date();
-  let toDate = to ? parseLocalDate(to) : now;
-  if (!toDate) toDate = now;
+  let toDate: Date;
+  if (to !== undefined) {
+    const parsed = parseLocalDate(to);
+    if (!parsed) throw new BadRequestException('?to debe tener formato YYYY-MM-DD');
+    toDate = parsed;
+  } else {
+    toDate = now;
+  }
   const toEnd = new Date(toDate);
   toEnd.setHours(23, 59, 59, 999);
 
   let fromDate: Date;
-  if (from) {
+  if (from !== undefined) {
     const parsed = parseLocalDate(from);
-    fromDate = parsed ?? new Date(toEnd);
+    if (!parsed) throw new BadRequestException('?from debe tener formato YYYY-MM-DD');
+    fromDate = parsed;
   } else {
     fromDate = new Date(toEnd);
     fromDate.setDate(fromDate.getDate() - (defaultDays - 1));

@@ -424,12 +424,14 @@ export class SalesReportsService {
       ['LISTO_DESPACHO', 'ENTREGADO'].includes(s.status),
     ).length;
 
-    // Mensajes WhatsApp realmente enviados (status='sent') de estos pedidos web.
+    // Mensajes WhatsApp que llegaron al cliente: 'sent' (automático, Kapso) y
+    // 'manual' (el cajero abrió wa.me — §7.v22, el ÚNICO canal vivo sin Kapso).
+    // Sin 'manual', la cobertura marcaba 0% aunque el cajero avisara todo.
     // Filtramos por saleId (no por createdAt del mensaje) para no perder mensajes
     // de etapas tardías — p. ej. "listo" se envía horas después de crear el pedido.
     const messages = webSaleIds.size
       ? await this.prisma.whatsAppMessage.findMany({
-          where: { status: 'sent', saleId: { in: [...webSaleIds] } },
+          where: { status: { in: ['sent', 'manual'] }, saleId: { in: [...webSaleIds] } },
           select: { saleId: true, stage: true },
         })
       : [];
