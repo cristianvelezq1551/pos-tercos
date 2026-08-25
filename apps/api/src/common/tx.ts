@@ -33,6 +33,23 @@ export function isUniqueViolation(e: unknown): boolean {
  */
 const DEFAULT_MAX_ATTEMPTS = 16;
 
+/**
+ * Espera antes de reintentar: exponencial con tope, más jitter.
+ *
+ * Sin esto los reintentos son un bucle cerrado: N transacciones que chocaron
+ * sobre las mismas filas vuelven a entrar TODAS en el mismo instante y vuelven
+ * a chocar. Con suficiente concurrencia sobre un punto caliente —ocho cobros
+ * del mismo producto tocando las mismas filas de inventario— se agotan los 16
+ * intentos y el cajero recibe un 500 en el camino del dinero. El jitter es lo
+ * que rompe la sincronía: sin él los reintentos siguen alineados.
+ */
+function retryDelayMs(attempt: number): number {
+  const base = Math.min(2 ** attempt, MAX_BACKOFF_MS);
+  return base + Math.random() * base;
+}
+
+const MAX_BACKOFF_MS = 60;
+
 /** Reintenta `work` mientras aborte por fallo de serialización. */
 export async function runWithSerializationRetry<T>(
   work: () => Promise<T>,
@@ -42,8 +59,8 @@ export async function runWithSerializationRetry<T>(
     try {
       return await work();
     } catch (e) {
-      if (attempt < maxAttempts && isSerializationFailure(e)) continue;
-      throw e;
+      if (attempt >= maxAttempts || !isSerializationFailure(e)) throw e;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
     }
   }
 }
