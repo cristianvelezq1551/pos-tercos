@@ -295,4 +295,22 @@ describe('Direcciones y zona de cobertura E2E', () => {
     expect(Number(sale.deliveryLat)).toBeGreaterThan(6);
     expect(Number(sale.deliveryLat)).toBeLessThan(7);
   });
+
+  // Bug: con token válido, deliveryAddress persistía el TEXTO LIBRE del body → un POST directo pasaba el candado del radio y escribía una dirección a 20 km.
+  it('con sobre firmado, la venta guarda la dirección VERIFICADA del token, no el texto libre del body', async () => {
+    const addr = await resolveAddress('Carrera 43A');
+    const res = await order({
+      type: 'WEB_DELIVERY',
+      // Texto del cliente que NO coincide con la dirección resuelta.
+      deliveryAddress: 'Vereda lejana falsa a 20 km',
+      addressToken: addr.addressToken,
+    }).expect(201);
+
+    const sale = await prisma.sale.findUniqueOrThrow({
+      where: { id: res.body.order.id },
+      select: { deliveryAddress: true },
+    });
+    expect(sale.deliveryAddress).toBe(addr.formatted);
+    expect(sale.deliveryAddress).not.toBe('Vereda lejana falsa a 20 km');
+  });
 });

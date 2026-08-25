@@ -162,10 +162,12 @@ export class InventoryUsageService {
         if (!prod) continue;
         name = prod.name;
         unit = prod.unitStock ?? 'unit';
+        // conversionFactor null en reventa = "se compra y vende por unidad"
+        // (factor 1) — MISMO criterio que CogsService, o la misma merma vale
+        // $X en el P&G y "desconocido" acá.
+        const cf = prod.conversionFactor === null ? 1 : Number(prod.conversionFactor);
         unitCost =
-          prod.lastUnitCost !== null && prod.conversionFactor !== null && Number(prod.conversionFactor) > 0
-            ? Number(prod.lastUnitCost) / Number(prod.conversionFactor)
-            : null;
+          prod.lastUnitCost !== null && cf > 0 ? Number(prod.lastUnitCost) / cf : null;
       } else {
         const sub = subMap.get(acc.entityId);
         if (!sub) continue;

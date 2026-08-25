@@ -630,9 +630,20 @@ export class SalesService {
     );
     // Faltantes que NO frenan el cobro: productos forzados disponibles +
     // consumibles (servilletas). El negativo resultante se audita.
-    const lineProductIds = Array.from(new Set(items.map((it) => it.productId)));
+    // Se consultan también los COMPONENTES de los combos vendidos: la
+    // disponibilidad salta un componente forzado, así que el guard debe
+    // tolerarlo igual o la UI dice "disponible" y el cobro rechaza con 409.
+    const candidateProductIds = Array.from(
+      new Set(
+        consumptionSpecs.flatMap((s) =>
+          s.componentProductId !== undefined
+            ? [s.originProductId, s.componentProductId]
+            : [s.originProductId],
+        ),
+      ),
+    );
     const forced = await this.prisma.product.findMany({
-      where: { id: { in: lineProductIds }, forceAvailable: true },
+      where: { id: { in: candidateProductIds }, forceAvailable: true },
       select: { id: true },
     });
     const forcedProductIds = forced.map((p) => p.id);

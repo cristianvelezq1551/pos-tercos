@@ -121,4 +121,81 @@ describe('Forzar disponible + consumibles en el cobro E2E', () => {
     expect(await stockOf('ingredient', pan.body.id)).toBe(99);
     expect(await stockOf('ingredient', serv.body.id)).toBe(-1); // se descontó igual
   });
+
+  it('combo NO forzado con un COMPONENTE forzado en 0 se cobra igual (regresión)', async () => {
+    // Bug: tolerableKeys solo miraba el forceAvailable del COMBO — la disponibilidad
+    // decía "sí" (salta componentes forzados) pero el cobro moría con 409.
+    const gaseosa = await request
+      .post('/products')
+      .set(auth())
+      .send({ category: 'Test', name: 'Gaseosa Combo FA', basePrice: 4000, directResale: true, unitPurchase: 'caja', unitStock: 'unit', conversionFactor: 24, modifiersEnabled: false })
+      .expect(201);
+    // El COMPONENTE queda forzado (stock 0); el combo NO.
+    await request.post(`/products/${gaseosa.body.id}/force-available`).set(auth()).send({ forceAvailable: true }).expect(201);
+
+    const combo = await request
+      .post('/products')
+      .set(auth())
+      .send({
+        category: 'Test',
+        name: 'Combo Gaseosa FA',
+        basePrice: 4000,
+        isCombo: true,
+        comboPrice: 4000,
+        modifiersEnabled: false,
+        comboComponents: [{ productId: gaseosa.body.id, quantity: 1 }],
+      })
+      .expect(201);
+
+    // Antes del fix: 409 pese a que la UI mostraba el combo disponible.
+    expect((await sellAndPay(combo.body.id, 4000)).status).toBe(201);
+    expect(await stockOf('product', gaseosa.body.id)).toBe(-1);
+  });
+
+  it('producir con un consumible (blocksAvailability=false) sin stock funciona y lo deja en negativo (regresión)', async () => {
+    // Bug: checkShortagesInTx contaba TODOS los hijos — un consumible en 0 frenaba la producción con 409.
+    const harina = await request
+      .post('/ingredients')
+      .set(auth())
+      .send({ name: 'Harina Prod FA', unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000, thresholdMin: 0 })
+      .expect(201);
+    await request
+      .post('/inventory/movements')
+      .set(auth())
+      .send({ entityType: 'INGREDIENT', ingredientId: harina.body.id, delta: 100, type: 'INITIAL', unitCost: 10 })
+      .expect(201);
+    // Consumible (papel film) SIN stock: se descuenta pero no frena.
+    const film = await request
+      .post('/ingredients')
+      .set(auth())
+      .send({ name: 'Papel Film FA', unitPurchase: 'rollo', unitRecipe: 'unit', conversionFactor: 50, thresholdMin: 0, blocksAvailability: false })
+      .expect(201);
+
+    const salsa = await request
+      .post('/subproducts')
+      .set(auth())
+      .send({ name: 'Salsa Prod FA', yield: 10, unit: 'porción' })
+      .expect(201);
+    await request
+      .put(`/subproducts/${salsa.body.id}/recipe`)
+      .set(auth())
+      .send({
+        edges: [
+          { childType: 'ingredient', childId: harina.body.id, quantityNeta: 5 },
+          { childType: 'ingredient', childId: film.body.id, quantityNeta: 3 },
+        ],
+      })
+      .expect(200);
+
+    // Antes del fix: 409 "Stock insuficiente" por el consumible en 0.
+    await request
+      .post(`/subproducts/${salsa.body.id}/produce`)
+      .set(auth())
+      .send({ quantityProduced: 10, idempotencyKey: `prod-fa-${Date.now()}` })
+      .expect(201);
+
+    expect(await stockOf('subproduct', salsa.body.id)).toBe(10);
+    expect(await stockOf('ingredient', harina.body.id)).toBe(95);
+    expect(await stockOf('ingredient', film.body.id)).toBe(-3); // se descontó igual
+  });
 });

@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import { CreateSaleItemSchema } from './sales';
 
+/**
+ * Línea de un pedido web. Es la línea del POS SIN los campos de confianza del
+ * cajero: `manualDiscount` (#5b) es una acción del CAJERO con motivo y alerta
+ * al dueño — heredarlo aquí dejaba que cualquier anónimo creara pedidos con
+ * hasta 100% de descuento por API.
+ */
+export const WebOrderItemSchema = CreateSaleItemSchema.omit({ manualDiscount: true });
+export type WebOrderItem = z.infer<typeof WebOrderItemSchema>;
+
 // ====================================================================
 // WEB ORDER — pedido público desde apps/web (FASE 7)
 // ====================================================================
@@ -29,7 +38,7 @@ const PhoneSchema = z
 export const CreateWebOrderSchema = z
   .object({
     type: WebOrderTypeEnum,
-    items: z.array(CreateSaleItemSchema).min(1).max(20),
+    items: z.array(WebOrderItemSchema).min(1).max(20),
     customerName: z.string().min(1).max(120),
     customerPhone: PhoneSchema,
     notes: z.string().max(500).optional(),

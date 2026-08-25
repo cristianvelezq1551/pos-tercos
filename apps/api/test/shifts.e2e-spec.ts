@@ -378,6 +378,35 @@ describe('Shifts E2E', () => {
         .expect(404);
     });
 
+    it('rechaza un movimiento con un medio de pago fuera del catálogo', async () => {
+      // Bug: un typo por API ("NEQUI2") creaba el movimiento igual, y el cierre
+      // (que arquea TODO medio con movimiento, §7.v20) obligaba a arquear un
+      // medio inexistente que no se podía quitar sin borrar el movimiento.
+      const res = await request
+        .post(`/shifts/${shiftId}/cash-movements`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ type: 'OUT', method: 'NO_EXISTE', amount: 1000, reason: 'Typo de medio' })
+        .expect(400);
+      expect(String(res.body.message)).toMatch(/no está habilitado/);
+
+      // Un medio habilitado del catálogo entra normal…
+      const ok = await request
+        .post(`/shifts/${shiftId}/cash-movements`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .send({ type: 'OUT', method: 'CASH', amount: 1000, reason: 'Medio válido' })
+        .expect(201);
+      // …y se elimina para no alterar el arqueo que verifica el test del cierre.
+      await request
+        .delete(`/shifts/${shiftId}/cash-movements/${ok.body.id as string}`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      const list = await request
+        .get(`/shifts/${shiftId}/cash-movements`)
+        .set('Authorization', `Bearer ${cajeroToken}`)
+        .expect(200);
+      expect(list.body).toHaveLength(3);
+    });
+
     it('exige arquear la cuenta y cierra con esperado = apertura + ventas + entradas − salidas', async () => {
       const saleRes = await request
         .post('/sales')
