@@ -1103,3 +1103,76 @@ describe('runLedgerFifo · reversa post-corte de un consumo forzado pre-corte (L
     expect(inc.needsFullReplay).toBe(true);
   });
 });
+
+describe('runLedgerFifo · anulación cross-mes (decisión 2026-08-25)', () => {
+  // La anulación netea la pérdida en el MES DEL CONSUMO, no en el de la
+  // reversa: antes, anular en agosto una merma de julio dejaba julio con la
+  // pérdida para siempre y agosto con merma NEGATIVA.
+  const julio = (d: number) => new Date(2026, 6, d, 12);
+  const agosto = (d: number) => new Date(2026, 7, d, 12);
+  const month = (isoLike: string) => isoLike.slice(0, 7);
+
+  it('anular en agosto una merma de julio netea la pérdida EN julio', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 8000, createdAt: julio(1) }),
+      mov({ id: 'w1', delta: -5, type: 'WASTE', createdAt: julio(10) }),
+      mov({
+        delta: 5,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'waste_reversal',
+        sourceId: 'w1',
+        createdAt: agosto(3),
+      }),
+    ]);
+    expect(r.waste).toHaveLength(2);
+    for (const w of r.waste) expect(month(w.createdAt)).toBe('2026-07');
+    expect(r.waste.reduce((a, w) => a + w.cost, 0)).toBe(0);
+  });
+
+  it('anular en agosto una cortesía de julio netea la pérdida EN julio', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 1000, createdAt: julio(1) }),
+      mov({
+        delta: -4,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'cortesia',
+        sourceId: 'cor1',
+        createdAt: julio(15),
+      }),
+      mov({
+        delta: 4,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'cortesia_reversal',
+        sourceId: 'cor1',
+        createdAt: agosto(2),
+      }),
+    ]);
+    expect(r.cortesia).toHaveLength(2);
+    for (const c of r.cortesia) expect(month(c.createdAt)).toBe('2026-07');
+    expect(r.cortesia.reduce((a, c) => a + c.cost, 0)).toBe(0);
+    expect(r.cortesiaCostBySource.get('cor1')?.cost).toBe(0);
+  });
+
+  it('la reversa PARCIAL también cae en el mes del consumo original', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 500, createdAt: julio(1) }),
+      mov({ id: 'w2', delta: -8, type: 'WASTE', createdAt: julio(20) }),
+      mov({
+        delta: 3,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'waste_reversal',
+        sourceId: 'w2',
+        createdAt: agosto(10),
+      }),
+    ]);
+    // Julio queda con la pérdida REAL post-corrección: 8×500 − 3×500 = 2500.
+    const julioCost = r.waste
+      .filter((w) => month(w.createdAt) === '2026-07')
+      .reduce((a, w) => a + w.cost, 0);
+    expect(julioCost).toBe(2500);
+    const agostoCost = r.waste
+      .filter((w) => month(w.createdAt) === '2026-08')
+      .reduce((a, w) => a + w.cost, 0);
+    expect(agostoCost).toBe(0);
+  });
+});
