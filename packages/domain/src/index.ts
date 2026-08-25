@@ -14,3 +14,4 @@ export * from './printer';
 export * from './whatsapp';
 export * from './payroll';
 export * from './finance';
+export * from './sales';

@@ -3,7 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { manualDiscountAmount, roundMoney, type ManualDiscountSpec } from '@pos-tercos/domain';
+import {
+  freezePaidLines,
+  manualDiscountAmount,
+  paidLineKey,
+  roundMoney,
+  type ManualDiscountSpec,
+  type PaidLineSnapshot,
+} from '@pos-tercos/domain';
 import { isWebSaleType } from '@pos-tercos/types';
 import type {
   AppliedModifier,
@@ -180,6 +187,9 @@ export class SalesEditService {
         const computedItems: ComputedSaleItem[] = input.items.map((it) =>
           computeLine(it, productMap, activePromotions, now),
         );
+        // Decisión 2026-08-25: una venta YA COBRADA no se re-precia al editar —
+        // las líneas que matchean una cobrada conservan su precio y promo.
+        this.freezePaidLinePricing(existing.status, existing.items, computedItems);
         const subtotal = roundMoney(computedItems.reduce((a, it) => a + it.lineSubtotal, 0));
         const lineDiscountTotal = roundMoney(
           computedItems.reduce((a, it) => a + it.lineDiscount, 0),
@@ -237,7 +247,27 @@ export class SalesEditService {
               `Sale ${saleId.slice(0, 8)}`,
             ),
           ]);
-          deltaMovements = this.consumptionDelta(oldSpecs, newSpecs, saleId, userId);
+          // Decisión 2026-08-25: los reversos se acotan por los movements
+          // REALES de la venta (no por la expansión de la receta VIGENTE). Si
+          // la receta cambió entre el cobro y la edición, la expansión devolvía
+          // gramos que nunca se descontaron — fantasma permanente (insert-only).
+          const recorded = await tx.inventoryMovement.groupBy({
+            by: ['entityType', 'ingredientId', 'productId', 'subproductId'],
+            where: { sourceType: 'sale', sourceId: saleId, type: 'SALE' },
+            _sum: { delta: true },
+          });
+          const recordedNet = new Map<string, number>();
+          for (const r of recorded) {
+            const k = `${r.entityType}|${r.ingredientId ?? ''}|${r.productId ?? ''}|${r.subproductId ?? ''}`;
+            recordedNet.set(k, (recordedNet.get(k) ?? 0) + Number(r._sum.delta ?? 0));
+          }
+          deltaMovements = this.consumptionDelta(
+            oldSpecs,
+            newSpecs,
+            saleId,
+            userId,
+            recordedNet,
+          );
           // Igual que el cobro: componentes de combos incluidos, para que un
           // componente forzado no frene la edición (espeja evaluateAvailability).
           const candidateProductIds = Array.from(
@@ -537,6 +567,101 @@ export class SalesEditService {
   }
 
   /** Movements netos por entidad: consumo nuevo − consumo viejo. */
+  /**
+   * Congela el precio de las líneas YA COBRADAS que la edición no toca
+   * (decisión 2026-08-25). Sin esto, editar un pedido pagado re-cotizaba TODAS
+   * las líneas al catálogo y promos de HOY: agregarle una gaseosa a las 20:05
+   * le quitaba a la hamburguesa la promo con la que se cobró a las 19:58 y el
+   * pago registrado subía sin que nadie cobrara esa diferencia.
+   *
+   * Identidad de línea = producto + tamaño + modificadores (SIN notas: corregir
+   * un "sin cebolla" no re-precia). Para cada línea nueva que matchea una
+   * cobrada se conservan unitPrice, el snapshot de modificadores y el descuento
+   * POR UNIDAD (escalado a la cantidad nueva — un BOGO reducido conserva su
+   * descuento proporcional, predecible para el cajero). Un descuento manual
+   * puesto AHORA sobre esa línea es una instrucción nueva: se aplica sobre el
+   * precio congelado. Las líneas realmente nuevas van a precio de hoy.
+   * PENDIENTE_PAGO (cuentas abiertas) no congela: nada se cobró todavía.
+   */
+  private freezePaidLinePricing(
+    status: string,
+    oldItems: ReadonlyArray<{
+      productId: string;
+      sizeId: string | null;
+      quantity: number;
+      unitPrice: Prisma.Decimal | number;
+      lineDiscount: Prisma.Decimal | number;
+      appliedPromotionId: string | null;
+      modifiersJson: Prisma.JsonValue;
+    }>,
+    computedItems: ComputedSaleItem[],
+  ): void {
+    if (!STOCK_DEDUCTED_STATUSES.includes(status as (typeof STOCK_DEDUCTED_STATUSES)[number])) {
+      return;
+    }
+    // El emparejamiento y el prorrateo viven en domain: el modal de edición del
+    // cajero aplica la MISMA regla para su total estimado (si se separan, el
+    // cajero ve un número y el sistema guarda otro).
+    const snapshots: PaidLineSnapshot[] = oldItems.map((it) => ({
+      key: paidLineKey(
+        it.productId,
+        it.sizeId,
+        ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => m.modifierId),
+      ),
+      quantity: it.quantity,
+      unitPrice: Number(it.unitPrice),
+      lineDiscount: Number(it.lineDiscount),
+    }));
+    const frozen = freezePaidLines(
+      snapshots,
+      computedItems.map((c) => ({
+        key: paidLineKey(c.productId, c.sizeId, c.modifiers.map((m) => m.modifierId)),
+        quantity: c.quantity,
+      })),
+      roundMoney,
+    );
+    // Snapshot de modificadores de la línea cobrada, para que un cambio de
+    // priceDelta en el catálogo tampoco altere lo ya cobrado.
+    const modifiersByKey = new Map<string, AppliedModifier[]>();
+    for (const it of oldItems) {
+      const mods = (it.modifiersJson as unknown as AppliedModifier[]) ?? [];
+      const k = paidLineKey(
+        it.productId,
+        it.sizeId,
+        mods.map((m) => m.modifierId),
+      );
+      if (!modifiersByKey.has(k)) modifiersByKey.set(k, mods);
+    }
+    computedItems.forEach((c, i) => {
+      const f = frozen[i];
+      if (!f) return;
+      const key = paidLineKey(c.productId, c.sizeId, c.modifiers.map((m) => m.modifierId));
+      c.unitPrice = f.unitPrice;
+      c.modifiers = modifiersByKey.get(key) ?? c.modifiers;
+      c.lineSubtotal = f.lineSubtotal;
+      if (c.manualDiscountKind !== null) {
+        // Un descuento manual puesto AHORA es una instrucción nueva del cajero:
+        // se aplica sobre el precio congelado.
+        c.lineDiscount = manualDiscountAmount(c.lineSubtotal, {
+          kind: c.manualDiscountKind,
+          value: c.manualDiscountValue ?? 0,
+        });
+        c.appliedPromotionId = null;
+      } else {
+        c.lineDiscount = f.lineDiscount;
+        c.appliedPromotionId = oldItems.find(
+          (it) =>
+            paidLineKey(
+              it.productId,
+              it.sizeId,
+              ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => m.modifierId),
+            ) === key,
+        )?.appliedPromotionId ?? null;
+      }
+      c.lineTotal = roundMoney(c.lineSubtotal - c.lineDiscount);
+    });
+  }
+
   private consumptionDelta(
     oldSpecs: ReadonlyArray<{
       entityType: string;
@@ -554,6 +679,8 @@ export class SalesEditService {
     }>,
     saleId: string,
     userId: string,
+    /** Neto REAL descontado por la venta (Σ movements SALE, ≤ 0 por entidad). */
+    recordedNet: ReadonlyMap<string, number>,
   ): Prisma.InventoryMovementCreateManyInput[] {
     type Key = string;
     const net = new Map<Key, { spec: (typeof oldSpecs)[number]; delta: number }>();
@@ -565,15 +692,37 @@ export class SalesEditService {
       cur.delta += s.delta;
       net.set(k, cur);
     }
+    // Consumo que la receta VIGENTE atribuye a los ítems viejos (≥ 0): es la
+    // referencia contra la cual se prorratea la devolución.
+    const oldExpanded = new Map<Key, number>();
     for (const s of oldSpecs) {
       const k = keyOf(s);
       const cur = net.get(k) ?? { spec: s, delta: 0 };
       cur.delta -= s.delta; // restar el consumo viejo (que era negativo)
       net.set(k, cur);
+      oldExpanded.set(k, (oldExpanded.get(k) ?? 0) + Math.max(0, -s.delta));
     }
     const out: Prisma.InventoryMovementCreateManyInput[] = [];
-    for (const { spec, delta } of net.values()) {
-      const rounded = Math.round(delta * 10_000) / 10_000;
+    for (const [k, { spec, delta }] of net.entries()) {
+      // Decisión 2026-08-25: lo que se DEVUELVE se prorratea contra lo que los
+      // movements registran de verdad, no contra la expansión de la receta
+      // VIGENTE. Si la receta cambió después del cobro, devolver por la receta
+      // nueva fabricaba stock (o dejaba gramos colgados) y el ledger es
+      // insert-only: el fantasma no se borra nunca.
+      //
+      // factor = descontado_real / descontado_según_receta_actual. Sin cambios
+      // de receta vale 1 y el cálculo es idéntico al de antes; quitar la línea
+      // entera devuelve exactamente el neto real; un insumo agregado a la receta
+      // después del cobro tiene factor 0 (nunca se descontó → no se devuelve).
+      // Consumir MÁS (delta < 0) nunca se escala: eso sí va a receta de hoy.
+      let adjusted = delta;
+      if (delta > 0) {
+        const actualAbs = Math.max(0, -(recordedNet.get(k) ?? 0));
+        const expectedAbs = oldExpanded.get(k) ?? 0;
+        const factor = expectedAbs > 1e-9 ? actualAbs / expectedAbs : 0;
+        adjusted = Math.min(delta * factor, actualAbs);
+      }
+      const rounded = Math.round(adjusted * 10_000) / 10_000;
       if (rounded === 0) continue;
       out.push({
         entityType: spec.entityType as 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT',

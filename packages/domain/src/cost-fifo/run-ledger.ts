@@ -325,6 +325,18 @@ export function runLedgerFifo(
     }
   }
   const drawsBySource = new Map<string, Draw[]>();
+  /**
+   * Fecha del CONSUMO original de cada merma/cortesía que luego se anula
+   * (solo se registra para orígenes con reversa, igual que los draws). La
+   * anulación netea la pérdida EN EL MES DEL CONSUMO (decisión 2026-08-25):
+   * netearla en el mes de la reversa dejaba el P&G del mes original con la
+   * pérdida para siempre y el mes nuevo podía mostrar merma NEGATIVA — la
+   * misma regla que ya seguía el saldo de deudas en `addLot`.
+   * En modo semilla, un consumo pre-corte no está acá; ese caso siempre
+   * dispara `needsFullReplay` (under-return o deuda tocada), así que el
+   * fallback a la fecha de la reversa nunca llega a un reporte.
+   */
+  const lossConsumedAt = new Map<string, string>();
 
   const out: LedgerFifo = {
     saleIngredientCost: new Map(),
@@ -862,7 +874,9 @@ export function runLedgerFifo(
         attributeToLoss(
           'cortesia',
           m.sourceId ?? '',
-          iso,
+          // El neteo cae en el MES del consumo original (decisión 2026-08-25):
+          // anular en agosto una cortesía de julio corrige el P&G de julio.
+          (m.sourceId && lossConsumedAt.get(m.sourceId)) || iso,
           -(returnedCost + cancelled.cost),
           -(returnedUnknown + cancelled.unknownQty),
           // Lo que cancela la deuda es exactamente la parte estimada.
@@ -898,7 +912,8 @@ export function runLedgerFifo(
         attributeToLoss(
           'waste',
           '',
-          iso,
+          // Mes del consumo original, no de la reversa (decisión 2026-08-25).
+          (m.sourceId && lossConsumedAt.get(m.sourceId)) || iso,
           -(returnedCost + cancelled.cost),
           -(returnedUnknown + cancelled.unknownQty),
           -cancelled.cost,
@@ -961,6 +976,7 @@ export function runLedgerFifo(
         const acc = drawsBySource.get(drawKey) ?? [];
         for (const d of draws) acc.push(d);
         drawsBySource.set(drawKey, acc);
+        if (!lossConsumedAt.has(m.id)) lossConsumedAt.set(m.id, iso);
       }
       attributeToLoss(
         'waste',
@@ -987,6 +1003,7 @@ export function runLedgerFifo(
         const acc = drawsBySource.get(drawKey) ?? [];
         for (const d of draws) acc.push(d);
         drawsBySource.set(drawKey, acc);
+        if (!lossConsumedAt.has(m.sourceId)) lossConsumedAt.set(m.sourceId, iso);
       }
       attributeToLoss(
         'cortesia',
