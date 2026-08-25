@@ -6,6 +6,7 @@ import type {
   UpdateSupplier,
 } from '@pos-tercos/types';
 import type { Prisma, Supplier as DbSupplier } from '@prisma/client';
+import { isUniqueViolation } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -100,14 +101,31 @@ export class SuppliersService {
   /**
    * Para uso de InvoicesService al confirmar una factura: si el NIT ya existe
    * lo retorna, si no lo crea con el name extraído.
+   *
+   * El `upsert` de Prisma es SELECT-y-después-INSERT, no atómico: dos confirms
+   * concurrentes de la MISMA factura (doble clic, reintento automático) con un
+   * proveedor que todavía no existe no encuentran nada los dos, insertan los
+   * dos, y el perdedor muere con P2002. Eso pasa ANTES del claim atómico del
+   * confirm, así que en vez del 400 limpio ("ya fue confirmada") el cajero veía
+   * un 500 —y al dueño le llegaba un WhatsApp de "Error del sistema" por una
+   * factura que se guardó bien—. El perdedor RELEE la fila ganadora, que es
+   * exactamente lo que quería: el proveedor existe, que es todo lo que importa.
    */
   async upsertByNit(nit: string, name: string): Promise<Supplier> {
-    const row = await this.prisma.supplier.upsert({
-      where: { nit },
-      create: { nit, name },
-      update: {},
-    });
-    return toSupplierDto(row);
+    try {
+      const row = await this.prisma.supplier.upsert({
+        where: { nit },
+        create: { nit, name },
+        update: {},
+      });
+      return toSupplierDto(row);
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e;
+      const winner = await this.prisma.supplier.findUnique({ where: { nit } });
+      // Sin ganador el P2002 vino de otra restricción → que suba como estaba.
+      if (!winner) throw e;
+      return toSupplierDto(winner);
+    }
   }
 
   private async assertExists(id: string): Promise<void> {
