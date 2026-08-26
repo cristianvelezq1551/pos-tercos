@@ -28,6 +28,7 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { DisplayModule } from './display/display.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { RecipeBookModule } from './recipe-book/recipe-book.module';
+import { PurchaseListsModule } from './purchase-lists/purchase-lists.module';
 import { PurchaseSuggestionsModule } from './purchase-suggestions/purchase-suggestions.module';
 import { WorkersModule } from './workers/workers.module';
 import { RecipesModule } from './recipes/recipes.module';
@@ -94,6 +95,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     WebOrdersModule,
     ReportsModule,
     PurchaseSuggestionsModule,
+    PurchaseListsModule,
     WorkersModule,
     FixedCostsModule,
     TreasuryModule,

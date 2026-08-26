@@ -1567,7 +1567,7 @@ model PurchaseList {
   /// Nombre libre para reconocerla: "Pedido del lunes", "Faltantes fin de mes".
   title         String?
   notes         String?
-  /// Revisión de la IA sobre si las cantidades alcanzan (12.D-style).
+  /// Revisión de la IA sobre si las cantidades alcanzan.
   aiRationale   String?            @map("ai_rationale")
   aiModel       String?            @map("ai_model")
   aiEvaluatedAt DateTime?          @map("ai_evaluated_at")

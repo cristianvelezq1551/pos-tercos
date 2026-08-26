@@ -9,3 +9,8 @@ export {
   type PurchaseOrderDoc,
   type PurchaseOrderItem,
 } from './render-purchase-order';
+export {
+  renderShortageListHtml,
+  type ShortageListDoc,
+  type ShortageListItem,
+} from './render-shortage-list';
