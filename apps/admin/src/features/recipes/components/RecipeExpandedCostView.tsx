@@ -28,12 +28,18 @@ function staleTitle(iso: string | null): string {
     : `Último costo hace ${d} días — puede estar desactualizado`;
 }
 
-export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: RecipeExpandedCostViewProps) {
+export function RecipeExpandedCostView({
+  cost,
+  error,
+  isDirty,
+  fifoLots,
+}: RecipeExpandedCostViewProps) {
   if (isDirty) {
     return (
       <section className="rounded-lg border border-warning-border bg-warning-bg/30 p-4">
         <p className="text-sm text-warning">
-          Hay cambios sin guardar. Guarda la receta para recalcular el costo y el desglose de insumos.
+          Hay cambios sin guardar. Guarda la receta para recalcular el costo y el desglose de
+          insumos.
         </p>
       </section>
     );
@@ -82,7 +88,9 @@ export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: Recip
           </p>
         ) : (
           <div className="mt-1.5">
-            <p className="text-sm font-medium text-warning">Todavía no se puede calcular el costo:</p>
+            <p className="text-sm font-medium text-warning">
+              Todavía no se puede calcular el costo:
+            </p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
               {cost.missingReasons.map((r, i) => (
                 <li key={i}>{r}</li>
@@ -95,9 +103,9 @@ export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: Recip
           insumo (no un promedio) y cambia cuando confirmas una factura con un precio distinto.
           <br />
           El costo <strong>real</strong> de lo que ya vendiste puede ser otro y lo ves en{' '}
-          <strong>Reportes → Costos</strong>: ahí se calcula por FIFO, gastando primero el lote
-          más viejo. Si compraste el mismo insumo a dos precios, lo vendido sale al precio del
-          lote que se consumió, no al último que pagaste.
+          <strong>Reportes → Costos</strong>: ahí se calcula por FIFO, gastando primero el lote más
+          viejo. Si compraste el mismo insumo a dos precios, lo vendido sale al precio del lote que
+          se consumió, no al último que pagaste.
         </p>
       </div>
 
@@ -111,53 +119,57 @@ export function RecipeExpandedCostView({ cost, error, isDirty, fifoLots }: Recip
         </p>
       </div>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <table className="min-w-full divide-y divide-border text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <Th>Insumo</Th>
-              <Th align="right">Cantidad</Th>
-              <Th>Unidad</Th>
-              <Th align="right">Costo unit.</Th>
-              <Th align="right">Costo</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {cost.totals.map((t) => (
-              <tr key={t.ingredientId} className="hover:bg-muted/40">
-                <Td>
-                  <span className="font-medium text-foreground">{t.name}</span>
-                </Td>
-                <Td align="right" mono>
-                  {formatRecipeNumber(t.totalQuantity)}
-                </Td>
-                <Td>{pluralizeUnit(t.unitRecipe, t.totalQuantity)}</Td>
-                <Td align="right" mono>
-                  {t.unitCostInRecipe !== null ? (
-                    <span className="inline-flex items-center justify-end gap-1.5">
-                      {isStale(t.lastUnitCostDate) && (
-                        <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
-                          title={staleTitle(t.lastUnitCostDate)}
-                          aria-label={staleTitle(t.lastUnitCostDate)}
-                        />
-                      )}
-                      {formatCop(t.unitCostInRecipe)}
-                    </span>
-                  ) : (
-                    <span className="text-warning">sin costo</span>
-                  )}
-                </Td>
-                <Td align="right" mono>
-                  {t.costContribution !== null ? (
-                    <span className="font-medium text-foreground">{formatCop(t.costContribution)}</span>
-                  ) : (
-                    <span className="text-ink-300">—</span>
-                  )}
-                </Td>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <Th>Insumo</Th>
+                <Th align="right">Cantidad</Th>
+                <Th>Unidad</Th>
+                <Th align="right">Costo unit.</Th>
+                <Th align="right">Costo</Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {cost.totals.map((t) => (
+                <tr key={t.ingredientId} className="hover:bg-muted/40">
+                  <Td>
+                    <span className="font-medium text-foreground">{t.name}</span>
+                  </Td>
+                  <Td align="right" mono>
+                    {formatRecipeNumber(t.totalQuantity)}
+                  </Td>
+                  <Td>{pluralizeUnit(t.unitRecipe, t.totalQuantity)}</Td>
+                  <Td align="right" mono>
+                    {t.unitCostInRecipe !== null ? (
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        {isStale(t.lastUnitCostDate) && (
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                            title={staleTitle(t.lastUnitCostDate)}
+                            aria-label={staleTitle(t.lastUnitCostDate)}
+                          />
+                        )}
+                        {formatCop(t.unitCostInRecipe)}
+                      </span>
+                    ) : (
+                      <span className="text-warning">sin costo</span>
+                    )}
+                  </Td>
+                  <Td align="right" mono>
+                    {t.costContribution !== null ? (
+                      <span className="font-medium text-foreground">
+                        {formatCop(t.costContribution)}
+                      </span>
+                    ) : (
+                      <span className="text-ink-300">—</span>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {hasStale && (

@@ -19,33 +19,38 @@ export function ShiftCashSection({
               Movimientos de caja
             </h3>
           </div>
-          <table className="min-w-full divide-y divide-border text-sm">
-            <tbody className="divide-y divide-border">
-              {cashMovements.map((m) => (
-                <tr key={m.id}>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className={
-                        m.type === 'IN' ? 'font-medium text-success' : 'font-medium text-destructive'
-                      }
-                    >
-                      {m.type === 'IN' ? 'Entrada' : 'Salida'}
-                    </span>
-                    {m.method !== 'CASH' ? (
-                      <span className="text-muted-foreground">
-                        {' '}· {PAYMENT_METHOD_LABELS[m.method]}
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-border text-sm">
+              <tbody className="divide-y divide-border">
+                {cashMovements.map((m) => (
+                  <tr key={m.id}>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className={
+                          m.type === 'IN'
+                            ? 'font-medium text-success'
+                            : 'font-medium text-destructive'
+                        }
+                      >
+                        {m.type === 'IN' ? 'Entrada' : 'Salida'}
                       </span>
-                    ) : null}
-                    <span className="text-muted-foreground"> · {m.reason}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-medium tabular-nums text-foreground">
-                    {m.type === 'IN' ? '' : '−'}
-                    {formatCop(m.amount)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {m.method !== 'CASH' ? (
+                        <span className="text-muted-foreground">
+                          {' '}
+                          · {PAYMENT_METHOD_LABELS[m.method]}
+                        </span>
+                      ) : null}
+                      <span className="text-muted-foreground"> · {m.reason}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-medium tabular-nums text-foreground">
+                      {m.type === 'IN' ? '' : '−'}
+                      {formatCop(m.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 
@@ -56,20 +61,22 @@ export function ShiftCashSection({
               Arqueo por denominación
             </h3>
           </div>
-          <table className="min-w-full divide-y divide-border text-sm">
-            <tbody className="divide-y divide-border">
-              {cashCountBreakdown.map((b) => (
-                <tr key={b.denomination}>
-                  <td className="px-4 py-2 tabular-nums text-muted-foreground">
-                    {formatCop(b.denomination)} × {b.count}
-                  </td>
-                  <td className="px-4 py-2 text-right font-medium tabular-nums text-foreground">
-                    {formatCop(b.denomination * b.count)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-border text-sm">
+              <tbody className="divide-y divide-border">
+                {cashCountBreakdown.map((b) => (
+                  <tr key={b.denomination}>
+                    <td className="px-4 py-2 tabular-nums text-muted-foreground">
+                      {formatCop(b.denomination)} × {b.count}
+                    </td>
+                    <td className="px-4 py-2 text-right font-medium tabular-nums text-foreground">
+                      {formatCop(b.denomination * b.count)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
     </section>

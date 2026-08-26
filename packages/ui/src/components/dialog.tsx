@@ -73,7 +73,10 @@ const Dialog: React.FC<DialogProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="ml-4 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            // 44px de área táctil en dedo (WCAG 2.5.5); en puntero fino se
+            // mantiene compacto. Cerrar es el gesto principal para salir y la
+            // caja corre en tablet: 32px se fallaba seguido.
+            className="ml-4 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-11 pointer-coarse:w-11"
             aria-label="Cerrar"
           >
             <svg

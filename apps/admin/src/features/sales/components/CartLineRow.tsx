@@ -97,8 +97,9 @@ export function CartLineRow({
         value={line.notes ?? ''}
         onChange={(e) => onNotes(e.target.value)}
         placeholder="Nota para cocina (ej. sin cebolla)"
+        aria-label={`Nota para cocina de ${line.productName}`}
         maxLength={200}
-        className="mt-2 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+        className="mt-2 min-h-9 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none pointer-coarse:min-h-11"
       />
     </li>
   );

@@ -12,6 +12,7 @@ overrides:
   multer@<2.2.0: '>=2.2.0'
   '@babel/core@<7.29.6': '>=7.29.6'
   brace-expansion@<1.1.16: 1.1.16
+  deepmerge-ts@<8.0.0: '>=8.0.0'
   body-parser@<2.3.0: '>=2.3.0'
   sharp@<0.35.0: '>=0.35.0'
   postcss@<8.5.18: '>=8.5.18'
@@ -3636,8 +3637,8 @@ packages:
   deep-is@0.1.4:
     resolution: {integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==}
 
-  deepmerge-ts@7.1.5:
-    resolution: {integrity: sha512-HOJkrhaYsweh+W+e74Yn7YStZOilkoPb6fycpwNLKzSPtruFs48nYis0zy5yJz1+ktUhHxoRDJ27RQAWLIJVJw==}
+  deepmerge-ts@8.0.1:
+    resolution: {integrity: sha512-szCXE7YLCvLKR9bFPJcvsezOShdalctSvrgN/LM/QGUEPZQajwjmsMObZ6/DuANT5lxzM/wtO8Feubwdkz8myA==}
     engines: {node: '>=16.0.0'}
 
   deepmerge@4.3.1:
@@ -8090,7 +8091,7 @@ snapshots:
   '@prisma/config@6.19.3(magicast@0.3.5)':
     dependencies:
       c12: 3.1.0(magicast@0.3.5)
-      deepmerge-ts: 7.1.5
+      deepmerge-ts: 8.0.1
       effect: 3.21.0
       empathic: 2.0.0
     transitivePeerDependencies:
@@ -9791,7 +9792,7 @@ snapshots:
 
   deep-is@0.1.4: {}
 
-  deepmerge-ts@7.1.5: {}
+  deepmerge-ts@8.0.1: {}
 
   deepmerge@4.3.1: {}
 

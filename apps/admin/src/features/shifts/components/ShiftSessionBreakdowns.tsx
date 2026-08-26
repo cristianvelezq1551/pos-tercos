@@ -42,21 +42,23 @@ function BreakdownTable({
       {rows.length === 0 ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">Sin datos.</p>
       ) : (
-        <table className="min-w-full divide-y divide-border text-sm">
-          <tbody className="divide-y divide-border">
-            {rows.map((r) => (
-              <tr key={r.label}>
-                <td className="px-4 py-2.5 text-foreground">{r.label}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                  {r.count}
-                </td>
-                <td className="px-4 py-2.5 text-right font-medium tabular-nums text-foreground">
-                  {formatCop(r.total)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <td className="px-4 py-2.5 text-foreground">{r.label}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                    {r.count}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-medium tabular-nums text-foreground">
+                    {formatCop(r.total)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

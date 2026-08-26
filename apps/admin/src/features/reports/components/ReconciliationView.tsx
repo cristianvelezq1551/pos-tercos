@@ -88,9 +88,7 @@ export function ReconciliationView() {
             disabled={pending}
             className="h-4 w-4"
           />
-          <span className="text-foreground">
-            Guardar este reporte en el historial
-          </span>
+          <span className="text-foreground">Guardar este reporte en el historial</span>
         </label>
         {error ? (
           <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
@@ -116,9 +114,7 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
         <Stat
           label="Sospechas"
           value={String(report.summary.unmatchedCsv + report.summary.unmatchedSale)}
-          tone={
-            report.summary.unmatchedCsv + report.summary.unmatchedSale > 0 ? 'bad' : 'muted'
-          }
+          tone={report.summary.unmatchedCsv + report.summary.unmatchedSale > 0 ? 'bad' : 'muted'}
         />
       </section>
 
@@ -128,53 +124,57 @@ function ReportDisplay({ report }: { report: ReconciliationReport }) {
       </p>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <table className="min-w-full divide-y divide-border text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <Th>Estado</Th>
-              <Th>Fecha CSV</Th>
-              <Th align="right">Monto CSV</Th>
-              <Th>Referencia</Th>
-              <Th align="right">Recibo</Th>
-              <Th align="right">Total venta</Th>
-              <Th>Pagado en</Th>
-              <Th>Método</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {report.rows.map((r, idx) => (
-              <tr
-                key={idx}
-                className={
-                  r.status === 'matched'
-                    ? 'hover:bg-muted/40'
-                    : r.status === 'unmatched_csv'
-                      ? 'bg-destructive/10 hover:bg-destructive/10'
-                      : 'bg-warning-bg/30 hover:bg-warning-bg/30'
-                }
-              >
-                <Td>
-                  <StatusBadge status={r.status} />
-                </Td>
-                <Td>{r.csvDate ? formatDate(r.csvDate, 'datetime') : <Dash />}</Td>
-                <Td align="right" mono>
-                  {r.csvAmount !== null ? formatCop(r.csvAmount) : <Dash />}
-                </Td>
-                <Td>
-                  <span className="text-xs text-muted-foreground">{r.csvReference ?? <Dash />}</span>
-                </Td>
-                <Td align="right" mono>
-                  {r.receiptNumber !== null ? `#${r.receiptNumber}` : <Dash />}
-                </Td>
-                <Td align="right" mono>
-                  {r.saleTotal !== null ? formatCop(r.saleTotal) : <Dash />}
-                </Td>
-                <Td>{r.salePaidAt ? formatDate(r.salePaidAt, 'datetime') : <Dash />}</Td>
-                <Td>{r.paymentMethod ?? <Dash />}</Td>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <Th>Estado</Th>
+                <Th>Fecha CSV</Th>
+                <Th align="right">Monto CSV</Th>
+                <Th>Referencia</Th>
+                <Th align="right">Recibo</Th>
+                <Th align="right">Total venta</Th>
+                <Th>Pagado en</Th>
+                <Th>Método</Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {report.rows.map((r, idx) => (
+                <tr
+                  key={idx}
+                  className={
+                    r.status === 'matched'
+                      ? 'hover:bg-muted/40'
+                      : r.status === 'unmatched_csv'
+                        ? 'bg-destructive/10 hover:bg-destructive/10'
+                        : 'bg-warning-bg/30 hover:bg-warning-bg/30'
+                  }
+                >
+                  <Td>
+                    <StatusBadge status={r.status} />
+                  </Td>
+                  <Td>{r.csvDate ? formatDate(r.csvDate, 'datetime') : <Dash />}</Td>
+                  <Td align="right" mono>
+                    {r.csvAmount !== null ? formatCop(r.csvAmount) : <Dash />}
+                  </Td>
+                  <Td>
+                    <span className="text-xs text-muted-foreground">
+                      {r.csvReference ?? <Dash />}
+                    </span>
+                  </Td>
+                  <Td align="right" mono>
+                    {r.receiptNumber !== null ? `#${r.receiptNumber}` : <Dash />}
+                  </Td>
+                  <Td align="right" mono>
+                    {r.saleTotal !== null ? formatCop(r.saleTotal) : <Dash />}
+                  </Td>
+                  <Td>{r.salePaidAt ? formatDate(r.salePaidAt, 'datetime') : <Dash />}</Td>
+                  <Td>{r.paymentMethod ?? <Dash />}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -187,9 +187,7 @@ function StatusBadge({ status }: { status: ReconciliationReport['rows'][number][
     unmatched_sale: { label: '? POS sin CSV', cls: 'bg-warning-bg text-warning' },
   } as const;
   const m = map[status];
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}>{m.label}</span>
-  );
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}>{m.label}</span>;
 }
 
 function Stat({
@@ -202,14 +200,12 @@ function Stat({
   tone?: 'good' | 'bad' | 'muted';
 }) {
   const cls =
-    tone === 'good'
-      ? 'text-success'
-      : tone === 'bad'
-        ? 'text-destructive'
-        : 'text-foreground';
+    tone === 'good' ? 'text-success' : tone === 'bad' ? 'text-destructive' : 'text-foreground';
   return (
     <div className="rounded-md bg-muted/40 px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
       <p className={`mt-0.5 text-base font-bold tabular-nums ${cls}`}>{value}</p>
     </div>
   );
@@ -219,13 +215,7 @@ function Dash() {
   return <span className="text-ink-500">—</span>;
 }
 
-function Th({
-  children,
-  align,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-}) {
+function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
   return (
     <th
       scope="col"
