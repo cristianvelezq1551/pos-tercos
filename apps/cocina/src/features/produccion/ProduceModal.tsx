@@ -82,13 +82,13 @@ export function ProduceModal({
       maxWidth="max-w-md"
       footer={
         done ? (
-          <Button onClick={close}>Listo</Button>
+          <Button className="min-h-11" onClick={close}>Listo</Button>
         ) : (
           <>
-            <Button variant="ghost" onClick={close} disabled={pending}>
+            <Button className="min-h-11" variant="ghost" onClick={close} disabled={pending}>
               Cancelar
             </Button>
-            <Button onClick={() => void submit()} disabled={pending}>
+            <Button className="min-h-11" onClick={() => void submit()} disabled={pending}>
               {pending ? 'Registrando…' : 'Registrar'}
             </Button>
           </>

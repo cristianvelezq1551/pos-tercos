@@ -131,7 +131,7 @@ export function ChecklistView() {
           </ul>
 
           {data.completedAt ? null : (
-            <Button className="mt-4 w-full" disabled={!allDone || pending} onClick={() => void submit()}>
+            <Button className="min-h-11 mt-4 w-full" disabled={!allDone || pending} onClick={() => void submit()}>
               {pending ? 'Cerrando…' : 'Cerrar rutina'}
             </Button>
           )}
@@ -147,7 +147,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+      className={`min-h-11 rounded-full border px-4 text-sm font-medium transition-colors ${
         active ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted/40'
       }`}
     >

@@ -1,4 +1,4 @@
-import { BookOpen, ClipboardCheck, CookingPot, Package, TriangleAlert } from 'lucide-react';
+import { BookOpen, ClipboardCheck, CookingPot, GraduationCap, Package, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { getCurrentUserServer } from '../../features/auth';
 
@@ -8,6 +8,7 @@ const LAUNCHER = [
   { href: '/inventario', label: 'Inventario', desc: 'Ver stock, registrar merma y contar', icon: Package },
   { href: '/incidencias', label: 'Incidencias', desc: 'Avisarle al dueño de un problema', icon: TriangleAlert },
   { href: '/checklist', label: 'Checklist', desc: 'Apertura y cierre de cocina', icon: ClipboardCheck },
+  { href: '/guia', label: 'Guía', desc: 'Cómo se hace cada cosa, paso a paso', icon: GraduationCap },
 ] as const;
 
 export default async function CocinaHome() {
@@ -26,7 +27,7 @@ export default async function CocinaHome() {
             <Link
               key={s.href}
               href={s.href}
-              className="group flex flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/40"
+              className="group flex min-h-[7rem] flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-muted/40 active:bg-muted/60"
             >
               <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <Icon className="h-6 w-6" strokeWidth={1.75} aria-hidden />

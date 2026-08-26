@@ -1,6 +1,6 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { BookOpen } from 'lucide-react';
-import { CHAPTERS, ChapterCard, GuiaSearch, TOTAL_SECTIONS } from '../../../features/guia';
+import { CHAPTERS, ChapterCard, GuiaSearch, TOTAL_SECTIONS } from '@pos-tercos/guia';
 
 export const metadata = { title: 'Guía de uso · POS Tercos' };
 

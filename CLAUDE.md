@@ -2529,13 +2529,54 @@ plata o deja rastro imborrable) y `Dato`.
   en sexto lugar. `searchSections` (puro, 10 tests) pesa **dónde** cae cada
   palabra: título > resumen > cuerpo, con premio a la frase completa.
 
-### Deuda conocida
-- **El cocinero NO puede abrirla**: `ADMIN_ALLOWED_ROLES` es
-  `[ADMIN_OPERATIVO, DUENO]`, así que un `COCINERO` que entre a `/guia` cae en
-  `/unauthorized`. Su capítulo existe y está completo, pero hoy solo lo ve
-  alguien con acceso al admin. Para cerrarlo hay que montar la guía también en
-  `apps/cocina` (mismo contenido, otro shell) — no se hizo porque el alcance
-  acordado fue una sola ruta en admin.
+### Deuda conocida — CERRADA en §7.v37
+- El cocinero no podía abrirla (`ADMIN_ALLOWED_ROLES` no lo incluye). Se cerró
+  moviendo el contenido a `packages/guia` y montando `/guia` también en
+  `apps/cocina`, filtrado por audiencia.
+
+## 7.v37 La cocina se usa con el pulgar: guía propia y UI de celular (2026-08-25)
+
+> Dos pedidos del dueño en modo ensayo: la guía en la app del cocinero, y que la
+> cocina sea cómoda de verdad. **El dispositivo es CELULAR** (dato del dueño),
+> no tableta. Verificado en Chromium a 390×844: typecheck 13/13, lint 0,
+> unit 11/11 paquetes (cocina 43, +11), e2e 46 suites/472. Sin migración.
+
+### El contenido de la guía se mudó a `packages/guia`
+No es del admin ni de la cocina: el admin muestra los 12 capítulos y la cocina
+filtra los que le tocan al cocinero (**10 temas de 80**, en 4 capítulos). El
+modelo de contenido ya declaraba `audience` por sección, así que `chaptersFor`
+poda cada capítulo y la guía de cocina queda al día sola cuando el contenido
+crece. Ponerlo en `domain` (lógica pura) o en `ui` (componentes) lo habría
+escondido donde nadie lo busca.
+
+### Cinco arreglos de UI, medidos y no opinados
+Auditoría con Playwright a 390 px contando cada control por debajo de 44 px
+(el mínimo que §7.v18 ya había fijado para web y caja — **a cocina solo le
+habían revisado el desbordamiento, nunca los toques**): de 7 a 17 controles
+chicos por pantalla a **cero**.
+
+1. **La nav medía 20 px.** Bug real, no preferencia: `CocinaNav` usa
+   `h-full items-stretch` y el contenedor móvil no tenía altura, así que cada
+   pestaña colapsaba al alto del ícono.
+2. **La nav pasa ABAJO en celular** (`CocinaTabBar`, 56 px, con safe-area).
+   En 844 px de alto el pulgar no llega arriba sin recolocar la mano, y en la
+   cocina se navega con una mano. En `sm+` sigue arriba.
+3. **Las pestañas ahora dicen su nombre.** Eran cinco íconos sin etiqueta
+   (`hidden md:inline`) justo en el único dispositivo que se usa.
+4. **Marcar un ítem del checklist tenía 17 px de área** (la etiqueta del
+   `Checkbox`), para la acción que más se repite en la app. Ahora la fila entera
+   es el botón, 56 px, con la marca a 28 px.
+5. **Stock negativo se veía igual que "Bajo"** (ámbar), y decía "−28 porc.",
+   que no significa nada. Ahora es "Sin cuadrar" en rojo, sin porciones, y con
+   el consejo que corresponde: a un insumo le falta la COMPRA, a un subproducto
+   le falta registrar la PRODUCCIÓN. `stock-state.ts` es puro y tiene 11 tests.
+
+### Regla que queda
+- **44 px es el piso de toque en cocina**, como en web y caja. El único control
+  por debajo es el `input[type=file]` de la foto, que es `sr-only` a propósito
+  (se toca el botón "Tomar foto").
+- El `Input` compartido mide 40 px: en cocina los buscadores lo suben a 44 con
+  `className="h-11"` en vez de tocar `packages/ui`, que usan las cinco apps.
 
 ## 8. Estado del proyecto (commits y FASES)
 

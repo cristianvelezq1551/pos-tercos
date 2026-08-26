@@ -77,10 +77,10 @@ export function WasteModal({
       maxWidth="max-w-md"
       footer={
         <>
-          <Button variant="ghost" onClick={close} disabled={pending}>
+          <Button className="min-h-11" variant="ghost" onClick={close} disabled={pending}>
             Cancelar
           </Button>
-          <Button variant="destructive" onClick={() => void submit()} disabled={pending || !photo}>
+          <Button className="min-h-11" variant="destructive" onClick={() => void submit()} disabled={pending || !photo}>
             {pending ? 'Registrando…' : 'Registrar merma'}
           </Button>
         </>

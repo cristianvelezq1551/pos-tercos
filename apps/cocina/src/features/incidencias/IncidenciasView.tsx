@@ -77,7 +77,7 @@ export function IncidenciasView() {
               type="button"
               onClick={() => setCategory(key)}
               aria-pressed={category === key}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              className={`min-h-11 rounded-full border px-4 text-sm font-medium transition-colors ${
                 category === key
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border text-muted-foreground hover:bg-muted/40'
@@ -97,7 +97,7 @@ export function IncidenciasView() {
         />
         <PhotoField file={photo} onChange={setPhoto} disabled={pending} label="Foto (opcional)" />
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-        <Button onClick={() => void submit()} disabled={pending}>
+        <Button className="min-h-11" onClick={() => void submit()} disabled={pending}>
           {pending ? 'Enviando…' : 'Enviar incidencia'}
         </Button>
       </div>
