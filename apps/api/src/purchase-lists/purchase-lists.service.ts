@@ -79,22 +79,31 @@ export class PurchaseListsService {
   // ================================================================
 
   async create(input: CreatePurchaseList, userId: string): Promise<PurchaseList> {
-    const created = await this.prisma.purchaseList.create({
-      data: {
-        title: input.title ?? null,
-        notes: input.notes ?? null,
-        createdById: userId,
-      },
-    });
-
     // Nace llena con lo que está bajo el mínimo: quien compra ajusta en vez de
     // teclear desde cero, que es donde se olvidan cosas.
-    if (input.prefillFromLowStock) {
-      const faltantes = await this.candidates.list(true);
-      for (const c of faltantes.slice(0, MAX_ITEMS)) {
-        await this.prisma.purchaseListItem.create({
-          data: {
-            listId: created.id,
+    //
+    // La lectura del catálogo va ANTES de la transacción: es la parte lenta y
+    // no hay por qué tener la tx abierta mientras corre.
+    const faltantes = input.prefillFromLowStock
+      ? (await this.candidates.list(true)).slice(0, MAX_ITEMS)
+      : [];
+
+    // Lista e ítems se crean JUNTOS. Antes eran hasta 200 inserts en serie y
+    // fuera de transacción: si fallaba en el ítem 50 quedaba una lista a medias
+    // que igual se registraba como "prellenada", y quien la abriera no tenía
+    // cómo saber que le faltaban insumos.
+    const created = await this.prisma.$transaction(async (tx) => {
+      const list = await tx.purchaseList.create({
+        data: {
+          title: input.title ?? null,
+          notes: input.notes ?? null,
+          createdById: userId,
+        },
+      });
+      if (faltantes.length > 0) {
+        await tx.purchaseListItem.createMany({
+          data: faltantes.map((c) => ({
+            listId: list.id,
             entityType: c.entityType,
             ingredientId: c.entityType === 'INGREDIENT' ? c.entityId : null,
             productId: c.entityType === 'PRODUCT' ? c.entityId : null,
@@ -107,10 +116,11 @@ export class PurchaseListsService {
             estUnitCost: c.estUnitCost,
             estTotal: ShortageCandidatesService.estTotalFor(c.suggestedQty, c.estUnitCost),
             supplierId: c.lastSupplierId,
-          },
+          })),
         });
       }
-    }
+      return list;
+    });
 
     await this.audit.log({
       userId,

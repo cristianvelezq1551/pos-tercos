@@ -10,6 +10,9 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { InventoryService } from '../src/inventory/inventory.service';
+import { ShortageCandidatesService } from '../src/purchase-lists/shortage-candidates.service';
+import type { ShortageCandidate } from '@pos-tercos/types';
 
 interface ListDto {
   id: string;
@@ -235,6 +238,166 @@ describe('Lista de faltantes E2E', () => {
     expect(alQuitar.item_removed).toBeDefined();
     expect(alQuitar.item_removed.userId).toBeTruthy();
     expect(alQuitar.item_removed.entityId).toBe(ingId);
+  });
+
+  it('si el prellenado falla a mitad NO queda una lista a medias', async () => {
+    // Antes eran hasta 200 inserts en serie y fuera de transacción: un fallo en
+    // el ítem 50 dejaba una lista con la mitad de los insumos, registrada en la
+    // bitácora como "prellenada". Quien la abriera no tenía cómo saber que le
+    // faltaban cosas — y sale a comprar con ese papel.
+    //
+    // El fallo se inyecta en el CANDIDATO (un insumo que no existe), no en el
+    // cliente de Prisma: dentro de `$transaction` el código usa `tx`, que es
+    // otro objeto, así que espiar `prisma.purchaseListItem` no lo intercepta.
+    // Así además el error es real (viola la FK), no simulado.
+    const candidates = app.get(ShortageCandidatesService);
+    const fantasma: ShortageCandidate = {
+      entityType: 'INGREDIENT',
+      entityId: '00000000-0000-4000-8000-000000000000',
+      name: 'PL Fantasma',
+      unitPurchase: 'bolsa',
+      unitStock: 'unidad',
+      conversionFactor: 1,
+      currentStock: 0,
+      thresholdMin: 10,
+      deficitStock: 10,
+      suggestedQty: 10,
+      estUnitCost: null,
+      belowMinimum: true,
+      lastSupplierId: null,
+      lastSupplierName: null,
+    };
+    const antes = await prisma.purchaseList.count();
+
+    const spy = jest.spyOn(candidates, 'list').mockResolvedValueOnce([fantasma]);
+    try {
+      await request
+        .post('/purchase-lists')
+        .set(auth())
+        .send({ prefillFromLowStock: true })
+        .expect(500);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // La transacción revirtió también la lista: no queda el encabezado huérfano.
+    expect(await prisma.purchaseList.count()).toBe(antes);
+  });
+
+  it('el snapshot que se guarda es IDÉNTICO al que muestra el buscador', async () => {
+    // `snapshotOf` dejó de recorrer el catálogo entero para consultar solo su
+    // entidad. Si los dos caminos se separan, el mismo insumo queda con datos
+    // distintos según si se prellenó o se agregó a mano — y el papel del
+    // proveedor sale con unidades que no son.
+    const ingId = await makeIngredient({
+      name: 'PL Espejo',
+      threshold: 40,
+      stock: 7,
+      conversionFactor: 6,
+      unitCost: 3300,
+    });
+    const list = await createList();
+
+    const cands = await request
+      .get('/purchase-lists/candidates')
+      .set(auth())
+      .expect(200);
+    const delBuscador = (cands.body as Array<Record<string, unknown>>).find(
+      (c) => c.entityId === ingId,
+    )!;
+    expect(delBuscador).toBeDefined();
+
+    const res = await request
+      .post(`/purchase-lists/${list.id}/items`)
+      .set(auth())
+      .send({ entityType: 'INGREDIENT', entityId: ingId })
+      .expect(201);
+    const renglon = (res.body as ListDto).items.find((i) => i.entityName === 'PL Espejo')!;
+
+    // Sin cantidad explícita, el renglón toma la sugerida por el buscador.
+    expect(renglon.quantity).toBe(delBuscador.suggestedQty);
+    expect(renglon.unitPurchase).toBe(delBuscador.unitPurchase);
+    expect(renglon.unitStock).toBe(delBuscador.unitStock);
+    expect(renglon.conversionFactor).toBe(delBuscador.conversionFactor);
+    expect(renglon.currentStock).toBe(delBuscador.currentStock);
+    expect(renglon.thresholdMin).toBe(delBuscador.thresholdMin);
+  });
+
+  it('agregar un ítem NO recalcula el inventario entero', async () => {
+    // El arreglo: antes cada alta pedía `list(false)`, que agrega
+    // `inventory_movements` completa. Armar una lista de 20 insumos a mano
+    // disparaba 20 recorridos de la tabla más grande del sistema.
+    const ingId = await makeIngredient({ name: 'PL Barata', threshold: 10, stock: 1 });
+    const list = await createList();
+    const inventory = app.get(InventoryService);
+    const spy = jest.spyOn(inventory, 'getCurrentStockMap');
+    try {
+      await request
+        .post(`/purchase-lists/${list.id}/items`)
+        .set(auth())
+        .send({ entityType: 'INGREDIENT', entityId: ingId, quantity: 2 })
+        .expect(201);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('un insumo desactivado ya no se puede agregar', async () => {
+    const ingId = await makeIngredient({ name: 'PL Baja', threshold: 10, stock: 1 });
+    await prisma.ingredient.update({ where: { id: ingId }, data: { isActive: false } });
+    const list = await createList();
+
+    await request
+      .post(`/purchase-lists/${list.id}/items`)
+      .set(auth())
+      .send({ entityType: 'INGREDIENT', entityId: ingId, quantity: 1 })
+      .expect(404);
+  });
+
+  it('el proveedor sugerido es el más reciente, y salta los inactivos', async () => {
+    const ingId = await makeIngredient({ name: 'PL ConProv', threshold: 10, stock: 1 });
+    const viejo = await prisma.supplier.create({
+      data: { name: 'PL Prov Viejo', nit: 'PL-900-1' },
+    });
+    const reciente = await prisma.supplier.create({
+      data: { name: 'PL Prov Reciente', nit: 'PL-900-2' },
+    });
+    const dadoDeBaja = await prisma.supplier.create({
+      data: { name: 'PL Prov Baja', nit: 'PL-900-3', isActive: false },
+    });
+    await prisma.supplierProduct.createMany({
+      data: [
+        {
+          supplierId: viejo.id,
+          entityType: 'INGREDIENT',
+          ingredientId: ingId,
+          lastPurchaseDate: new Date('2026-01-01'),
+        },
+        {
+          supplierId: reciente.id,
+          entityType: 'INGREDIENT',
+          ingredientId: ingId,
+          lastPurchaseDate: new Date('2026-06-01'),
+        },
+        // El más reciente de todos, pero dado de baja: no se sugiere.
+        {
+          supplierId: dadoDeBaja.id,
+          entityType: 'INGREDIENT',
+          ingredientId: ingId,
+          lastPurchaseDate: new Date('2026-08-01'),
+        },
+      ],
+    });
+
+    const list = await createList();
+    const res = await request
+      .post(`/purchase-lists/${list.id}/items`)
+      .set(auth())
+      .send({ entityType: 'INGREDIENT', entityId: ingId, quantity: 1 })
+      .expect(201);
+    const renglon = (res.body as ListDto).items.find((i) => i.entityName === 'PL ConProv')!;
+    expect(renglon.supplierName).toBe('PL Prov Reciente');
   });
 
   it('el total suma solo lo que tiene costo y avisa cuántos quedaron fuera', async () => {

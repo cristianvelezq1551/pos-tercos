@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { computeSuggestedPurchase, roundMoney } from '@pos-tercos/domain';
-import type { ShortageCandidate, StockableType } from '@pos-tercos/types';
+import type { ShortageCandidate, Stockable, StockableType } from '@pos-tercos/types';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -38,32 +38,9 @@ export class ShortageCandidatesService {
     const out: ShortageCandidate[] = [];
     for (const s of comprables) {
       const key = `${s.type}:${s.id}`;
-      const belowMinimum = s.thresholdMin > 0 && s.currentStock < s.thresholdMin;
-      if (onlyBelowMinimum && !belowMinimum) continue;
-
-      const { deficitStock, suggestedQty } = computeSuggestedPurchase({
-        currentStock: s.currentStock,
-        thresholdMin: s.thresholdMin,
-        conversionFactor: s.conversionFactor,
-      });
-      const last = lastSuppliers.get(key);
-
-      out.push({
-        entityType: s.type as StockableType,
-        entityId: s.id,
-        name: s.name,
-        unitPurchase: s.unitPurchase,
-        unitStock: s.unitStock,
-        conversionFactor: s.conversionFactor,
-        currentStock: s.currentStock,
-        thresholdMin: s.thresholdMin,
-        deficitStock,
-        suggestedQty,
-        estUnitCost: costs.get(key) ?? null,
-        belowMinimum,
-        lastSupplierId: last?.id ?? null,
-        lastSupplierName: last?.name ?? null,
-      });
+      const candidato = toCandidate(s, costs.get(key) ?? null, lastSuppliers.get(key) ?? null);
+      if (onlyBelowMinimum && !candidato.belowMinimum) continue;
+      out.push(candidato);
     }
 
     // Lo que falta primero, y dentro de eso lo más urgente arriba: quien arma
@@ -125,17 +102,110 @@ export class ShortageCandidatesService {
     return map;
   }
 
-  /** Snapshot de UN ítem, para congelarlo al agregarlo a una lista. */
+  /**
+   * Snapshot de UN ítem, para congelarlo al agregarlo a una lista.
+   *
+   * Consulta SOLO esa entidad. Antes pedía `list(false)` —el catálogo entero,
+   * con la agregación completa de `inventory_movements` adentro— para quedarse
+   * con una fila: armar una lista de 20 insumos a mano disparaba 20 recálculos
+   * del inventario. Los filtros son los mismos que los de `list` (activo, y
+   * en producto además reventa directa) para que "qué se puede agregar"
+   * signifique lo mismo en el buscador y al agregar.
+   */
   async snapshotOf(
     entityType: StockableType,
     entityId: string,
   ): Promise<ShortageCandidate | null> {
-    const all = await this.list(false);
-    return all.find((c) => c.entityType === entityType && c.entityId === entityId) ?? null;
+    // Los subproductos se producen, no se compran: `list` los filtra antes.
+    if (entityType === 'SUBPRODUCT') return null;
+
+    const comprable = await this.comprableConCosto(entityType, entityId);
+    if (!comprable) return null;
+
+    const [stockable, last] = await Promise.all([
+      // Por el mismo mapeador que usa `list`: los campos de un renglón no
+      // pueden depender de por dónde se pidió.
+      this.inventory.getStockableById(entityType, entityId),
+      this.lastSupplierOf(entityType, entityId),
+    ]);
+    return toCandidate(stockable, comprable.estUnitCost, last);
+  }
+
+  /** ¿Se puede comprar hoy? Devuelve su último costo de paso (misma fila). */
+  private async comprableConCosto(
+    entityType: StockableType,
+    entityId: string,
+  ): Promise<{ estUnitCost: number | null } | null> {
+    const row =
+      entityType === 'INGREDIENT'
+        ? await this.prisma.ingredient.findFirst({
+            where: { id: entityId, isActive: true },
+            select: { lastUnitCost: true },
+          })
+        : await this.prisma.product.findFirst({
+            where: { id: entityId, isActive: true, directResale: true },
+            select: { lastUnitCost: true },
+          });
+    if (!row) return null;
+    return { estUnitCost: row.lastUnitCost === null ? null : Number(row.lastUnitCost) };
+  }
+
+  /** Último proveedor de UN ítem. Espeja el orden de `loadLastSuppliers`. */
+  private async lastSupplierOf(
+    entityType: StockableType,
+    entityId: string,
+  ): Promise<{ id: string; name: string } | null> {
+    const row = await this.prisma.supplierProduct.findFirst({
+      where: {
+        ...(entityType === 'INGREDIENT' ? { ingredientId: entityId } : { productId: entityId }),
+        // `loadLastSuppliers` salta los inactivos ANTES de elegir, así que el
+        // pick cae en el siguiente activo — filtrarlos acá es equivalente.
+        supplier: { isActive: true },
+      },
+      orderBy: [{ lastPurchaseDate: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }],
+      select: { supplier: { select: { id: true, name: true } } },
+    });
+    return row ? { id: row.supplier.id, name: row.supplier.name } : null;
   }
 
   /** Costo total estimado de comprar `quantity` unidades de compra. */
   static estTotalFor(quantity: number, estUnitCost: number | null): number | null {
     return estUnitCost === null ? null : roundMoney(quantity * estUnitCost);
   }
+}
+
+/**
+ * Stockable + costo + proveedor → candidato.
+ *
+ * ÚNICO lugar donde se arma un `ShortageCandidate`: lo usan el listado (que
+ * resuelve todo en lote) y el snapshot de un ítem (que consulta solo el suyo).
+ * Con el mapeo duplicado, un renglón agregado a mano y el mismo renglón
+ * prellenado terminarían con datos distintos en el papel.
+ */
+function toCandidate(
+  s: Stockable,
+  estUnitCost: number | null,
+  last: { id: string; name: string } | null,
+): ShortageCandidate {
+  const { deficitStock, suggestedQty } = computeSuggestedPurchase({
+    currentStock: s.currentStock,
+    thresholdMin: s.thresholdMin,
+    conversionFactor: s.conversionFactor,
+  });
+  return {
+    entityType: s.type as StockableType,
+    entityId: s.id,
+    name: s.name,
+    unitPurchase: s.unitPurchase,
+    unitStock: s.unitStock,
+    conversionFactor: s.conversionFactor,
+    currentStock: s.currentStock,
+    thresholdMin: s.thresholdMin,
+    deficitStock,
+    suggestedQty,
+    estUnitCost,
+    belowMinimum: s.thresholdMin > 0 && s.currentStock < s.thresholdMin,
+    lastSupplierId: last?.id ?? null,
+    lastSupplierName: last?.name ?? null,
+  };
 }
