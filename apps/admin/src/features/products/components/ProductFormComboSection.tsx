@@ -5,6 +5,7 @@ import { Button, Input, Label, MoneyInput } from '@pos-tercos/ui';
 import { useMemo } from 'react';
 import { formatCop } from '../../../lib/format';
 import type { FormState } from './ProductFormTypes';
+import { newRowKey } from './ProductFormTypes';
 
 export function ProductFormComboSection({
   form,
@@ -28,7 +29,10 @@ export function ProductFormComboSection({
   const add = () =>
     setForm((f) => ({
       ...f,
-      comboComponents: [...f.comboComponents, { productId: '', quantity: '1' }],
+      comboComponents: [
+        ...f.comboComponents,
+        { rowKey: newRowKey(), productId: '', quantity: '1' },
+      ],
     }));
   const remove = (i: number) =>
     setForm((f) => ({
@@ -59,7 +63,7 @@ export function ProductFormComboSection({
       ) : (
         <ul className="space-y-2">
           {form.comboComponents.map((c, i) => (
-            <li key={i} className="flex items-center gap-2">
+            <li key={c.rowKey} className="flex items-center gap-2">
               <select
                 value={c.productId}
                 onChange={(e) => update(i, { productId: e.target.value })}

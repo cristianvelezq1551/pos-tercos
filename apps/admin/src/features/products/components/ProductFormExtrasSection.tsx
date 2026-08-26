@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { listIngredients } from '../../ingredients';
 import { listSubproducts } from '../../subproducts';
 import type { ExtraRow, FormState } from './ProductFormTypes';
+import { newRowKey } from './ProductFormTypes';
 
 interface ConsumeOption {
   id: string;
@@ -51,7 +52,14 @@ export function ProductFormExtrasSection({
       ...f,
       modifiers: [
         ...f.modifiers,
-        { name: '', priceDelta: '', consumeChildType: '', consumeChildId: '', consumeQty: '' },
+        {
+          rowKey: newRowKey(),
+          name: '',
+          priceDelta: '',
+          consumeChildType: '',
+          consumeChildId: '',
+          consumeQty: '',
+        },
       ],
     }));
   const remove = (i: number) =>
@@ -75,7 +83,7 @@ export function ProductFormExtrasSection({
       ) : (
         <ul className="space-y-3">
           {form.modifiers.map((m, i) => (
-            <li key={i} className="space-y-2 rounded-md border border-border/60 p-3">
+            <li key={m.rowKey} className="space-y-2 rounded-md border border-border/60 p-3">
               <div className="flex items-center gap-2">
                 <Input
                   placeholder="Nombre (ej. Tocineta extra)"
