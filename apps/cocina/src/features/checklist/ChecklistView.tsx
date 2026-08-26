@@ -1,17 +1,17 @@
 'use client';
 
-import { Checkbox, EmptyState } from '@pos-tercos/ui';
-import { Button } from '@pos-tercos/ui';
-import type { ChecklistToday, ChecklistType } from '@pos-tercos/types';
+import type { ChecklistDay, ChecklistDayItem, ChecklistType } from '@pos-tercos/types';
+import { Button, EmptyState } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { getErrorMessage } from '../../lib/errors';
 import { logError } from '../../lib/client-log';
-import { completeChecklist, fetchChecklist } from './api';
+import { ChecklistTaskRow } from './ChecklistTaskRow';
+import { completeChecklist, fetchChecklist, markChecklistItem } from './api';
 
 export function ChecklistView() {
   const [type, setType] = useState<ChecklistType>('OPEN');
-  const [data, setData] = useState<ChecklistToday | null>(null);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [data, setData] = useState<ChecklistDay | null>(null);
+  const [busyItems, setBusyItems] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,10 +19,7 @@ export function ChecklistView() {
   const load = useCallback(async (t: ChecklistType) => {
     setLoading(true);
     try {
-      const d = await fetchChecklist(t);
-      setData(d);
-      // Si ya se completó hoy, dejamos todo marcado.
-      setChecked(d.completedAt ? new Set(d.items.map((i) => i.id)) : new Set());
+      setData(await fetchChecklist(t));
       setError(null);
     } catch (e) {
       setError(getErrorMessage(e, 'No se pudo cargar el checklist'));
@@ -36,34 +33,55 @@ export function ChecklistView() {
     void load(type);
   }, [type, load]);
 
-  const toggle = (id: string) =>
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  /** Cada casilla se guarda al toque. Si el guardado falla, la casilla vuelve
+   *  a como estaba: dejarla marcada mentiría sobre lo que quedó registrado. */
+  const toggle = async (item: ChecklistDayItem) => {
+    if (!data || busyItems.has(item.itemId)) return;
+    const snapshot = data;
+    const done = !item.done;
+    setBusyItems((prev) => new Set(prev).add(item.itemId));
+    setData({
+      ...data,
+      items: data.items.map((i) => (i.itemId === item.itemId ? { ...i, done } : i)),
+      doneCount: data.doneCount + (done ? 1 : -1),
     });
-
-  const allDone = !!data && data.items.length > 0 && data.items.every((i) => checked.has(i.id));
+    try {
+      setData(await markChecklistItem({ type, itemId: item.itemId, done }));
+      setError(null);
+    } catch (e) {
+      setData(snapshot);
+      setError(getErrorMessage(e, 'No se pudo guardar. Revisa la conexión.'));
+      logError('checklist-mark', e);
+    } finally {
+      setBusyItems((prev) => {
+        const next = new Set(prev);
+        next.delete(item.itemId);
+        return next;
+      });
+    }
+  };
 
   const submit = async () => {
-    if (!data || !allDone) return;
+    if (!data || pending) return;
     setPending(true);
     setError(null);
     try {
-      const updated = await completeChecklist({ type, doneItemIds: [...checked] });
-      setData(updated);
+      setData(await completeChecklist({ type }));
     } catch (e) {
-      setError(getErrorMessage(e, 'No se pudo completar'));
+      setError(getErrorMessage(e, 'No se pudo cerrar la rutina'));
     } finally {
       setPending(false);
     }
   };
 
+  const allDone = !!data && data.totalCount > 0 && data.doneCount === data.totalCount;
+
   return (
     <div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
       <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground">Checklist</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Tareas de apertura y cierre de cocina.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Tareas de apertura y cierre de cocina. Cada una se guarda al marcarla.
+      </p>
 
       <div className="mt-4 flex gap-1.5">
         <TabBtn active={type === 'OPEN'} onClick={() => setType('OPEN')}>
@@ -78,12 +96,14 @@ export function ChecklistView() {
         <p role="alert" className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
-      ) : loading || !data ? (
+      ) : null}
+
+      {loading || !data ? (
         <p className="mt-4 text-sm text-muted-foreground">Cargando…</p>
       ) : data.items.length === 0 ? (
         <EmptyState
           title="Sin tareas configuradas"
-          description="El admin todavía no cargó los ítems de esta rutina."
+          description="El admin todavía no cargó las tareas de esta rutina."
           size="sm"
           className="mt-4"
         />
@@ -91,27 +111,30 @@ export function ChecklistView() {
         <>
           {data.completedAt ? (
             <p className="mt-4 rounded-md border border-success-border bg-success-bg px-3 py-2 text-sm text-success">
-              Completado hoy{data.completedByName ? ` por ${data.completedByName}` : ''}.
+              Rutina cerrada hoy{data.completedByName ? ` por ${data.completedByName}` : ''}.
             </p>
-          ) : null}
-          <ul className="mt-4 space-y-1.5">
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">
+              <b className="text-foreground">{data.doneCount}</b> de {data.totalCount} hechas.
+            </p>
+          )}
+
+          <ul className="mt-3 space-y-1.5">
             {data.items.map((item) => (
-              <li key={item.id} className="rounded-lg border border-border bg-card px-3 py-2.5">
-                <Checkbox
-                  checked={checked.has(item.id)}
-                  onChange={() => toggle(item.id)}
-                  label={item.label}
-                />
-              </li>
+              <ChecklistTaskRow
+                key={item.itemId}
+                item={item}
+                busy={busyItems.has(item.itemId)}
+                onToggle={() => void toggle(item)}
+              />
             ))}
           </ul>
-          <Button className="mt-4 w-full" disabled={!allDone || pending} onClick={() => void submit()}>
-            {pending
-              ? 'Guardando…'
-              : data.completedAt
-                ? 'Actualizar rutina'
-                : 'Marcar rutina completa'}
-          </Button>
+
+          {data.completedAt ? null : (
+            <Button className="mt-4 w-full" disabled={!allDone || pending} onClick={() => void submit()}>
+              {pending ? 'Cerrando…' : 'Cerrar rutina'}
+            </Button>
+          )}
         </>
       )}
     </div>

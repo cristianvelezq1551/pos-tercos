@@ -7,6 +7,8 @@ import {
 } from '@pos-tercos/types';
 import { Badge, Button, EmptyState } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { PhotoField } from '../../components/PhotoField';
+import { uploadEvidence } from '../../lib/evidence';
 import { getErrorMessage } from '../../lib/errors';
 import { logError } from '../../lib/client-log';
 import { createIncident, fetchIncidents } from './api';
@@ -20,6 +22,7 @@ export function IncidenciasView() {
   const [items, setItems] = useState<KitchenIncident[]>([]);
   const [category, setCategory] = useState<KitchenIncidentCategory>('INSUMO');
   const [note, setNote] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -46,8 +49,12 @@ export function IncidenciasView() {
     setPending(true);
     setError(null);
     try {
-      await createIncident({ category, note: note.trim() });
+      // La foto es opcional acá: "se fue la luz" no se fotografía, y exigirla
+      // haría que esas incidencias no se reporten.
+      const evidenceKey = photo ? await uploadEvidence(photo) : undefined;
+      await createIncident({ category, note: note.trim(), evidenceKey });
       setNote('');
+      setPhoto(null);
       await refresh();
     } catch (e) {
       setError(getErrorMessage(e, 'No se pudo registrar'));
@@ -59,7 +66,7 @@ export function IncidenciasView() {
   return (
     <div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
       <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground">Incidencias</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Avisale al dueño de un problema en cocina.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Avísale al dueño de un problema en cocina.</p>
 
       {/* Nueva incidencia */}
       <div className="mt-4 space-y-3 rounded-xl border border-border bg-card p-4">
@@ -88,6 +95,7 @@ export function IncidenciasView() {
           placeholder="Cuenta qué pasó…"
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
         />
+        <PhotoField file={photo} onChange={setPhoto} disabled={pending} label="Foto (opcional)" />
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
         <Button onClick={() => void submit()} disabled={pending}>
           {pending ? 'Enviando…' : 'Enviar incidencia'}
@@ -121,7 +129,23 @@ export function IncidenciasView() {
                   </span>
                 </div>
                 <p className="mt-1.5 text-sm text-foreground">{i.note}</p>
-                {i.authorName ? <p className="mt-1 text-[0.6875rem] text-muted-foreground">— {i.authorName}</p> : null}
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  {i.authorName ? (
+                    <p className="text-[0.6875rem] text-muted-foreground">— {i.authorName}</p>
+                  ) : (
+                    <span />
+                  )}
+                  {i.evidenceUrl ? (
+                    <a
+                      href={i.evidenceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[0.6875rem] font-medium text-primary hover:underline"
+                    >
+                      Ver foto
+                    </a>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>

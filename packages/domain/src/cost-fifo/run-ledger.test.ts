@@ -502,6 +502,32 @@ describe('runLedgerFifo · anulación de merma (base de costo real)', () => {
     expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 1000, unknownQty: 0 });
   });
 
+  it('el costo queda indexado por movimiento y la anulación netea ESE movimiento', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({ id: 'w1', delta: -3, type: 'WASTE' }),
+      mov({ id: 'w2', delta: -2, type: 'WASTE' }),
+      mov({ delta: 3, type: 'MANUAL_ADJUSTMENT', sourceType: 'waste_reversal', sourceId: 'w1' }),
+    ]);
+    // w1 se anuló entera → 0. w2 sigue costando lo suyo.
+    expect(r.wasteCostByMovement.get('w1')?.cost).toBe(0);
+    expect(r.wasteCostByMovement.get('w2')?.cost).toBe(200);
+    // Y la suma por movimiento coincide con el total que ve el P&G.
+    const porMovimiento = [...r.wasteCostByMovement.values()].reduce((s, w) => s + w.cost, 0);
+    expect(porMovimiento).toBe(r.waste.reduce((s, w) => s + w.cost, 0));
+  });
+
+  it('una merma sin lote deja su costo marcado como estimado en el índice', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 4, unitCost: 50 }),
+      // Se tira más de lo que había cargado: el faltante se estima (§7.v32).
+      mov({ id: 'w3', delta: -6, type: 'WASTE' }),
+    ]);
+    const entry = r.wasteCostByMovement.get('w3');
+    expect(entry?.cost).toBe(300); // 4×50 reales + 2×50 estimados
+    expect(entry?.estimatedCost).toBe(100);
+  });
+
   it('reversa PARCIAL solo netea lo devuelto (el dedo pesado se corrige a lo real)', () => {
     const r = runLedgerFifo([
       mov({ delta: 10, unitCost: 100 }),

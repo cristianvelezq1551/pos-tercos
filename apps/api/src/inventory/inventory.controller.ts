@@ -1,4 +1,17 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import {
   CreateInventoryMovementSchema,
   CreateStockCountSchema,
@@ -18,6 +31,7 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { detectImageMime } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { InventoryService } from './inventory.service';
@@ -110,6 +124,22 @@ export class InventoryController {
     @Body(new ZodValidationPipe(ResolveStockCountSchema)) body: ResolveStockCount,
   ): Promise<StockCount> {
     return this.stockCounts.reject(id, user.sub, body.note);
+  }
+
+  /**
+   * Sirve la foto de evidencia de un movimiento (merma de cocina o producción).
+   * Admin/Dueño por el gate de clase: la evidencia es material de control.
+   */
+  @Get('movements/:id/evidence')
+  async getMovementEvidence(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.inventory.getMovementEvidence(id);
+    if (!buffer) throw new NotFoundException('Ese registro no tiene foto.');
+    res.setHeader('Content-Type', detectImageMime(buffer) ?? 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.end(buffer);
   }
 
   @Get('movements')

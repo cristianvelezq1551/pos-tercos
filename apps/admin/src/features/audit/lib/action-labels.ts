@@ -100,6 +100,18 @@ const ACTION_LABELS: Record<string, string> = {
   USER_PIN_SET: 'Configuró PIN de usuario',
 
   KDS_ORDER_DELAYED: 'Pedido demorado en cocina',
+
+  // Cocina
+  SUBPRODUCT_PRODUCED: 'Produjo una tanda',
+  INVENTORY_MOVEMENT_WASTE_REVERSED: 'Anuló una merma',
+  KITCHEN_CHECKLIST_COMPLETED: 'Cerró una rutina de checklist',
+  KITCHEN_INCIDENT_LOGGED: 'Reportó una incidencia de cocina',
+  KITCHEN_INCIDENT_RESOLVED: 'Resolvió una incidencia de cocina',
+  CHECKLIST_ITEM_CREATED: 'Agregó una tarea al checklist',
+  CHECKLIST_ITEM_UPDATED: 'Editó una tarea del checklist',
+  STOCK_COUNT_REGISTERED: 'Registró un conteo físico',
+  STOCK_COUNT_APPROVED: 'Aprobó un conteo físico',
+  STOCK_COUNT_REJECTED: 'Rechazó un conteo físico',
 };
 
 /** Etiqueta legible para una acción; cae al código crudo si no está mapeada. */

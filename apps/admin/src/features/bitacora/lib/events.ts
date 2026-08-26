@@ -22,9 +22,24 @@ const STOCK_FORZADO: AuditAction[] = ['SALE_FORCED_STOCK', 'OFFLINE_NEGATIVE_STO
 const CAJON: AuditAction[] = ['CASH_DRAWER_OPENED', 'CASH_DRAWER_OPENED_NO_SALE'];
 const APROBACIONES: AuditAction[] = ['APPROVAL_GRANTED', 'APPROVAL_DENIED', 'APPROVAL_PIN_SET'];
 const SESIONES: AuditAction[] = ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED', 'AUTH_LOGOUT'];
-// Histórico: KDS_ORDER_DELAYED ya no se emite (cocina/KDS eliminados). El grupo
-// se conserva para poder filtrar registros previos a la eliminación.
-const COCINA: AuditAction[] = ['KDS_ORDER_DELAYED'];
+/**
+ * Cocina: lo que hace el cocinero durante el turno. `KDS_ORDER_DELAYED` ya no se
+ * emite (el KDS se eliminó en §7.v10) pero se conserva para leer histórico.
+ */
+const COCINA: AuditAction[] = [
+  'SUBPRODUCT_PRODUCED',
+  'INVENTORY_MOVEMENT_WASTE',
+  'INVENTORY_MOVEMENT_WASTE_REVERSED',
+  'KITCHEN_CHECKLIST_COMPLETED',
+  'KITCHEN_INCIDENT_LOGGED',
+  'KITCHEN_INCIDENT_RESOLVED',
+  'STOCK_COUNT_REGISTERED',
+  'STOCK_COUNT_APPROVED',
+  'STOCK_COUNT_REJECTED',
+  'CHECKLIST_ITEM_CREATED',
+  'CHECKLIST_ITEM_UPDATED',
+  'KDS_ORDER_DELAYED',
+];
 const CORTESIAS: AuditAction[] = [
   'CORTESIA_REQUESTED',
   'CORTESIA_APPROVED',
@@ -49,7 +64,7 @@ export const BITACORA_GROUPS: BitacoraGroup[] = [
   { key: 'aprobaciones', label: 'Aprobaciones', actions: APROBACIONES },
   { key: 'sesiones', label: 'Sesiones', actions: SESIONES },
   { key: 'personal', label: 'Personal / Nómina', actions: PERSONAL },
-  { key: 'cocina', label: 'Cocina (histórico)', actions: COCINA },
+  { key: 'cocina', label: 'Cocina', actions: COCINA },
 ];
 
 export type EventTone = 'neutral' | 'success' | 'warning' | 'danger';
@@ -61,9 +76,16 @@ export interface DescribedEvent {
 }
 
 function meta(entry: AuditLogEntry): Record<string, unknown> {
-  return (entry.metadata && typeof entry.metadata === 'object'
+  // Algunos registros dejan el detalle en `afterJson` (los movimientos de
+  // inventario que audita su controller) y otros en `metadata`. La bitácora
+  // mira los dos: con uno solo, media cocina se veía sin detalle.
+  const after = (entry.afterJson && typeof entry.afterJson === 'object'
+    ? (entry.afterJson as Record<string, unknown>)
+    : {});
+  const own = (entry.metadata && typeof entry.metadata === 'object'
     ? (entry.metadata as Record<string, unknown>)
     : {});
+  return { ...after, ...own };
 }
 
 function cop(n: unknown): string {
@@ -209,6 +231,66 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
       return {
         label: 'Día de pago',
         detail: m.removed ? `Quitó ${String(m.workDate ?? '')}` : `${String(m.workDate ?? '')}: ${cop(m.amount)}`,
+        tone: 'neutral',
+      };
+    case 'SUBPRODUCT_PRODUCED':
+      return {
+        label: 'Produjo una tanda',
+        detail: `${String(m.subproductName ?? 'subproducto')}: ${String(m.quantityProduced ?? '?')} ${String(m.unit ?? '')}`.trim(),
+        tone: 'success',
+      };
+    case 'INVENTORY_MOVEMENT_WASTE': {
+      // La merma de cocina trae nombre y motivo; la del admin, el movimiento crudo.
+      const qty = m.quantity ?? (typeof m.delta === 'number' ? Math.abs(m.delta) : null);
+      const que = m.name ? String(m.name) : 'un insumo';
+      return {
+        label: 'Registró merma',
+        detail:
+          `${que}${qty != null ? `: ${String(qty)} ${String(m.unit ?? '')}` : ''}` +
+          `${m.reason ?? m.notes ? ` · ${String(m.reason ?? m.notes)}` : ''}`.trimEnd(),
+        tone: 'warning',
+      };
+    }
+    case 'INVENTORY_MOVEMENT_WASTE_REVERSED':
+      return {
+        label: 'Anuló una merma',
+        detail: m.reason ? `Motivo: ${String(m.reason)}` : null,
+        tone: 'neutral',
+      };
+    case 'KITCHEN_CHECKLIST_COMPLETED':
+      return {
+        label: m.type === 'CLOSE' ? 'Cerró la rutina de cierre' : 'Cerró la rutina de apertura',
+        detail: m.items != null ? `${String(m.items)} tareas` : null,
+        tone: 'success',
+      };
+    case 'KITCHEN_INCIDENT_LOGGED':
+      return {
+        label: 'Reportó una incidencia',
+        detail: `${String(m.category ?? '')}${m.withPhoto ? ' · con foto' : ''}`.trim() || null,
+        tone: 'warning',
+      };
+    case 'KITCHEN_INCIDENT_RESOLVED':
+      return { label: 'Resolvió una incidencia', detail: null, tone: 'success' };
+    case 'STOCK_COUNT_REGISTERED':
+      return {
+        label: 'Contó inventario',
+        detail: `${String(m.name ?? '')}: contó ${String(m.countedQty ?? '?')}`.trim(),
+        tone: 'neutral',
+      };
+    case 'STOCK_COUNT_APPROVED':
+      return { label: 'Aprobó un conteo', detail: null, tone: 'success' };
+    case 'STOCK_COUNT_REJECTED':
+      return { label: 'Rechazó un conteo', detail: null, tone: 'warning' };
+    case 'CHECKLIST_ITEM_CREATED':
+      return {
+        label: 'Agregó una tarea al checklist',
+        detail: m.label ? String(m.label) : null,
+        tone: 'neutral',
+      };
+    case 'CHECKLIST_ITEM_UPDATED':
+      return {
+        label: m.isActive === false ? 'Quitó una tarea del checklist' : 'Editó una tarea del checklist',
+        detail: m.label ? String(m.label) : null,
         tone: 'neutral',
       };
     case 'KDS_ORDER_DELAYED':
