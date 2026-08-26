@@ -64,6 +64,8 @@ model User {
   payrollPayments             PayrollPayment[]
   payrollWeekPayments         PayrollWeekPayment[]
   fixedCostPayments           FixedCostPayment[]      @relation("FixedCostPaymentActor")
+  purchaseListsCreated        PurchaseList[]          @relation("PurchaseListCreatedBy")
+  purchaseListsClosed         PurchaseList[]          @relation("PurchaseListClosedBy")
 
   @@index([role, active])
   @@map("users")
@@ -128,6 +130,7 @@ model Product {
   recipeEdges           RecipeEdge[]         @relation("ProductRecipe")
   saleItems             SaleItem[]
   supplierResaleHistory SupplierProduct[]    @relation("SupplierProductResale")
+  purchaseListItems     PurchaseListItem[]
 
   @@index([category, isActive])
   @@index([isActive])
@@ -245,6 +248,7 @@ model Ingredient {
   consumedAs          RecipeEdge[]         @relation("IngredientChild")
   purchaseSuggestions PurchaseSuggestion[]
   supplierProducts    SupplierProduct[]
+  purchaseListItems   PurchaseListItem[]
 
   @@index([isActive])
   @@map("ingredients")
@@ -340,17 +344,18 @@ model AuditLog {
 }
 
 model Supplier {
-  id        String            @id @default(uuid())
-  nit       String            @unique
-  name      String
-  phone     String?
-  email     String?
-  notes     String?
-  isActive  Boolean           @default(true) @map("is_active")
-  createdAt DateTime          @default(now()) @map("created_at")
-  updatedAt DateTime          @updatedAt @map("updated_at")
-  invoices  Invoice[]
-  products  SupplierProduct[]
+  id                String             @id @default(uuid())
+  nit               String             @unique
+  name              String
+  phone             String?
+  email             String?
+  notes             String?
+  isActive          Boolean            @default(true) @map("is_active")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  invoices          Invoice[]
+  products          SupplierProduct[]
+  purchaseListItems PurchaseListItem[]
 
   @@index([isActive])
   @@map("suppliers")
@@ -1550,4 +1555,73 @@ model AppInstance {
   lastSeenAt DateTime @default(now()) @map("last_seen_at")
 
   @@map("app_instances")
+}
+
+/// Lista de faltantes armada A MANO por el admin (complemento de las
+/// sugerencias automáticas). Es un documento con varios ítems: se arma, se
+/// imprime —general o partida por proveedor— y queda como historial de qué se
+/// pidió y quién lo pidió.
+model PurchaseList {
+  id            String             @id @default(uuid())
+  status        PurchaseListStatus @default(DRAFT)
+  /// Nombre libre para reconocerla: "Pedido del lunes", "Faltantes fin de mes".
+  title         String?
+  notes         String?
+  /// Revisión de la IA sobre si las cantidades alcanzan (12.D-style).
+  aiRationale   String?            @map("ai_rationale")
+  aiModel       String?            @map("ai_model")
+  aiEvaluatedAt DateTime?          @map("ai_evaluated_at")
+  createdById   String             @map("created_by")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  closedAt      DateTime?          @map("closed_at")
+  closedById    String?            @map("closed_by")
+
+  createdBy User               @relation("PurchaseListCreatedBy", fields: [createdById], references: [id])
+  closedBy  User?              @relation("PurchaseListClosedBy", fields: [closedById], references: [id])
+  items     PurchaseListItem[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("purchase_lists")
+}
+
+/// Un renglón de la lista. Guarda SNAPSHOT de existencias, mínimo y unidades:
+/// el papel tiene que seguir diciendo lo mismo dentro de un mes, aunque el
+/// insumo cambie de unidad o de umbral.
+model PurchaseListItem {
+  id               String        @id @default(uuid())
+  listId           String        @map("list_id")
+  /// Polimórfico: exactamente uno de (ingredientId, productId), coherente con
+  /// entityType. Los SUBPRODUCTOS no entran: se producen, no se compran.
+  entityType       StockableType @map("entity_type")
+  ingredientId     String?       @map("ingredient_id")
+  productId        String?       @map("product_id")
+  /// Cantidad a comprar, en unidad de COMPRA. La escribe la persona.
+  quantity         Decimal       @db.Decimal(14, 4)
+  unitPurchase     String        @map("unit_purchase")
+  unitStock        String        @map("unit_stock")
+  conversionFactor Decimal       @map("conversion_factor") @db.Decimal(14, 6)
+  currentStock     Decimal       @map("current_stock") @db.Decimal(14, 4)
+  thresholdMin     Decimal       @map("threshold_min") @db.Decimal(14, 4)
+  estUnitCost      Decimal?      @map("est_unit_cost") @db.Decimal(14, 4)
+  estTotal         Decimal?      @map("est_total") @db.Decimal(14, 2)
+  /// Proveedor al que se le va a pedir. Permite partir el PDF por proveedor.
+  supplierId       String?       @map("supplier_id")
+  note             String?
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  list       PurchaseList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  ingredient Ingredient?  @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  product    Product?     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier   Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  /// Un ítem no se repite dentro de la misma lista.
+  @@unique([listId, entityType, ingredientId, productId])
+  @@index([listId])
+  @@map("purchase_list_items")
+}
+
+enum PurchaseListStatus {
+  DRAFT
+  CLOSED
 }

@@ -22,7 +22,7 @@ const CSP = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@pos-tercos/ui', '@pos-tercos/brand', '@pos-tercos/types'],
+  transpilePackages: ['@pos-tercos/ui', '@pos-tercos/brand', '@pos-tercos/types', '@pos-tercos/guia'],
   async headers() {
     return [
       {

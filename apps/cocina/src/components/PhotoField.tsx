@@ -75,7 +75,7 @@ export function PhotoField({ file, onChange, required, disabled, label = 'Foto' 
             variant="secondary"
             onClick={() => inputRef.current?.click()}
             disabled={disabled}
-            className="w-full sm:w-auto"
+            className="min-h-11 w-full sm:w-auto"
           >
             <Camera className="mr-2 h-5 w-5" aria-hidden />
             Tomar foto

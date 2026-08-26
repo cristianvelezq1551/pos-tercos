@@ -1,6 +1,6 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { notFound } from 'next/navigation';
-import { CHAPTERS, ChapterView, chapterIcon, findChapter } from '../../../../features/guia';
+import { CHAPTERS, ChapterView, chapterIcon, findChapter } from '@pos-tercos/guia';
 
 interface PageProps {
   params: Promise<{ chapterId: string }>;
