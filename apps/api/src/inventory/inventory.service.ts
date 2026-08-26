@@ -93,8 +93,17 @@ export class InventoryService {
    * y casi siempre significa que falta subir una factura o registrar una
    * producción. Independiente de `lowStock` (que compara contra el umbral).
    */
+  /**
+   * @param preloadedStock mapa de existencias ya calculado, para quien necesita
+   *   MÁS de una vista del mismo inventario en una sola request (el dashboard
+   *   pide "bajo mínimo" y "en deuda"). `getCurrentStockMap` agrega
+   *   `inventory_movements` ENTERA —insert-only, crece con cada venta— así que
+   *   repetirla es el trabajo más caro de la pantalla. Omitirlo mantiene el
+   *   comportamiento de siempre: se calcula acá.
+   */
   async listStockables(
     opts: { onlyActive?: boolean; lowStock?: boolean; negative?: boolean } = {},
+    preloadedStock?: ReadonlyMap<string, number>,
   ): Promise<Stockable[]> {
     const ingredientWhere: Prisma.IngredientWhereInput = opts.onlyActive ? { isActive: true } : {};
     const productWhere: Prisma.ProductWhereInput = {
@@ -107,7 +116,7 @@ export class InventoryService {
       this.prisma.ingredient.findMany({ where: ingredientWhere, orderBy: { name: 'asc' } }),
       this.prisma.product.findMany({ where: productWhere, orderBy: { name: 'asc' } }),
       this.prisma.subproduct.findMany({ where: subproductWhere, orderBy: { name: 'asc' } }),
-      this.getCurrentStockMap(),
+      preloadedStock ?? this.getCurrentStockMap(),
     ]);
 
     const ingrItems: Stockable[] = ingredients.map((i) =>

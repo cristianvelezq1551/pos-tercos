@@ -70,7 +70,9 @@ export class SalesReportsService {
         orderBy: { closedAt: 'desc' },
         select: { difference: true },
       }),
-      this.computeLowStockCount(),
+      // El resumen diario es otra request: arma su propio mapa (acá se pide
+      // una sola vista del inventario, así que no hay nada que compartir).
+      this.inventory.getCurrentStockMap().then((m) => this.computeLowStockCount(m)),
     ]);
 
     // Lo digital se suma de su propio lado en vez de calcularse como
@@ -533,6 +535,14 @@ export class SalesReportsService {
     // pasada (si no, en la mañana el WoW% siempre se ve fuertemente negativo).
     const lastWeekEnd = addDays(now, -7);
 
+    // UNA sola agregación de `inventory_movements` para los DOS contadores de
+    // inventario. Antes cada uno hacía la suya: son dos recorridos completos de
+    // la tabla que más crece (insert-only, una fila por consumo de cada venta)
+    // en la pantalla más visitada del admin, calculando casi lo mismo. Se
+    // arranca acá y se comparte; sigue entrando al Promise.all de abajo, así
+    // que no se pierde paralelismo con el resto de las consultas.
+    const stockMap = this.inventory.getCurrentStockMap();
+
     const [today, lastWeekSameDay, pendingWeb, toPrepare, ready, lowStock, pendingSugg, negativeStock] = await Promise.all([
       this.prisma.sale.aggregate({
         where: paidSalesWhere(dayStart, dayEnd),
@@ -565,7 +575,7 @@ export class SalesReportsService {
           readyAt: { gte: dayStart, lte: dayEnd },
         },
       }),
-      this.computeLowStockCount(),
+      stockMap.then((m) => this.computeLowStockCount(m)),
       this.prisma.purchaseSuggestion.count({
         where: { status: { in: ['PENDING', 'EVALUATED'] } },
       }),
@@ -573,7 +583,7 @@ export class SalesReportsService {
       // el contador del dashboard NO pueda divergir de la lista de /inventory
       // /negativos (incluye subproductos e ignora el umbral, a diferencia de
       // computeLowStockCount).
-      this.computeNegativeStockCount(),
+      stockMap.then((m) => this.computeNegativeStockCount(m)),
     ]);
 
     // Netos de domicilio en AMBOS lados: si solo se netea hoy, el WoW% compara
@@ -608,14 +618,17 @@ export class SalesReportsService {
    * CONSUMIBLES (servilletas, sal): su negativo es esperable y taparía la
    * señal que importa ("falta subir la factura del pollo").
    */
-  private async computeNegativeStockCount(): Promise<number> {
-    const negatives = await this.inventory.listStockables({ negative: true });
+  private async computeNegativeStockCount(
+    stockMap: ReadonlyMap<string, number>,
+  ): Promise<number> {
+    const negatives = await this.inventory.listStockables({ negative: true }, stockMap);
     return negatives.filter((s) => s.blocksAvailability).length;
   }
 
-  private async computeLowStockCount(): Promise<number> {
+  private async computeLowStockCount(stockMap: ReadonlyMap<string, number>): Promise<number> {
     // Stockables activos con thresholdMin > 0 cuyo stock actual está bajo.
-    const [ingredients, products, movements] = await Promise.all([
+    // Los subproductos quedan fuera a propósito: no se compran, se producen.
+    const [ingredients, products] = await Promise.all([
       this.prisma.ingredient.findMany({
         where: { isActive: true, thresholdMin: { gt: 0 } },
         select: { id: true, thresholdMin: true },
@@ -624,19 +637,7 @@ export class SalesReportsService {
         where: { isActive: true, directResale: true, thresholdMin: { gt: 0 } },
         select: { id: true, thresholdMin: true },
       }),
-      this.prisma.inventoryMovement.groupBy({
-        by: ['entityType', 'ingredientId', 'productId'],
-        _sum: { delta: true },
-      }),
     ]);
-
-    const stockMap = new Map<string, number>();
-    for (const r of movements) {
-      const id = r.entityType === 'INGREDIENT' ? r.ingredientId : r.productId;
-      if (!id) continue;
-      const key = `${r.entityType}:${id}`;
-      stockMap.set(key, Number(r._sum.delta ?? 0));
-    }
 
     let count = 0;
     for (const i of ingredients) {
