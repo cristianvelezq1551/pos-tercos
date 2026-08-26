@@ -113,6 +113,18 @@ export class CogsService {
     return incremental;
   }
 
+  /**
+   * Costo FIFO de cada merma, indexado por id del movimiento y ya neteado por
+   * sus anulaciones. `from` acota el replay: pedir un rango anterior al último
+   * corte cae en replay completo, así que el índice siempre cubre lo pedido.
+   */
+  async getWasteCostByMovement(
+    from: Date,
+  ): Promise<Map<string, { cost: number; unknownQty: number; estimatedCost: number }>> {
+    const ledger = await this.runLedger(from);
+    return ledger.wasteCostByMovement;
+  }
+
   /** Replay completo (sin seed), con su propia entrada de caché. */
   private fullLedger(): Promise<LedgerFifo> {
     return this.cachedLedger('full', () => this.computeLedger(null));

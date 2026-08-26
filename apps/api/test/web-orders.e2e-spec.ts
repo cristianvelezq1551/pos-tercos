@@ -354,4 +354,98 @@ describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
       expect(String(res.body.paymentInstructions)).not.toContain('Nequi');
     });
   });
+
+
+  // ================================================================
+  // Regresiones del Zod público de POST /web/orders (hardening)
+  // ================================================================
+
+  describe('hardening del payload público', () => {
+    let perroModsId: string;
+    let quesoModId: string;
+
+    beforeAll(async () => {
+      // Producto con un modificador REAL: el 400 de duplicados debe probarse
+      // contra un payload que sin la repetición sería perfectamente válido.
+      const prod = await request
+        .post('/products')
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .send({
+          name: 'Perro Web Mods',
+          category: 'Test',
+          basePrice: 8000,
+          directResale: false,
+          isCombo: false,
+          modifiersEnabled: true,
+          modifiers: [{ name: 'Queso extra', priceDelta: 2000 }],
+        })
+        .expect(201);
+      perroModsId = prod.body.id as string;
+      quesoModId = prod.body.modifiers[0].id as string;
+    });
+
+    // Bug: WebOrderItemSchema heredaba manualDiscount del POS → un anónimo creaba pedidos con hasta 100% de descuento por API.
+    it('manualDiscount en un ítem del pedido web se DESCARTA: el total sale completo', async () => {
+      const res = await request
+        .post('/web/orders')
+        .send({
+          type: 'WEB_PICKUP',
+          items: [
+            {
+              productId: gaseosaId,
+              quantity: 1,
+              manualDiscount: { kind: 'PERCENT', value: 100 },
+            },
+          ],
+          customerName: 'Cliente Vivo',
+          customerPhone: '+573017770001',
+        })
+        .expect(201);
+
+      // Antes: total $0. Ahora el Zod (strip) descarta el campo y se cobra completo.
+      expect(res.body.order.subtotal).toBe(5000);
+      expect(res.body.order.discountTotal).toBe(0);
+      expect(res.body.order.total).toBe(5000);
+      // Drenar el WhatsApp fire-and-forget (si queda en vuelo, deadlockea el
+      // TRUNCATE del afterAll).
+      await waitForWhatsApp(res.body.order.id as string, 'payment_instructions');
+    });
+
+    // Bug: `modifiers` aceptaba el mismo modifierId repetido → sumaba precio y consumo N veces (y en el endpoint público manipulaba el precio).
+    it('el mismo modificador repetido en una línea es 400; sin repetir, el mismo payload entra', async () => {
+      const base = {
+        type: 'WEB_PICKUP',
+        customerName: 'Cliente Mods',
+        customerPhone: '+573017770002',
+      };
+
+      const dup = await request
+        .post('/web/orders')
+        .send({
+          ...base,
+          items: [
+            {
+              productId: perroModsId,
+              quantity: 1,
+              modifiers: [{ modifierId: quesoModId }, { modifierId: quesoModId }],
+            },
+          ],
+        })
+        .expect(400);
+      expect(String(dup.body.message)).toContain('repetido');
+
+      // Control: el rechazo es por la repetición, no por el modificador en sí.
+      const ok = await request
+        .post('/web/orders')
+        .send({
+          ...base,
+          items: [
+            { productId: perroModsId, quantity: 1, modifiers: [{ modifierId: quesoModId }] },
+          ],
+        })
+        .expect(201);
+      expect(ok.body.order.total).toBe(10000); // 8000 + 2000 del extra, UNA sola vez
+      await waitForWhatsApp(ok.body.order.id as string, 'payment_instructions');
+    });
+  });
 });

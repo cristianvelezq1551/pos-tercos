@@ -1,5 +1,6 @@
 'use client';
 
+import { freezePaidLines, paidLineKey, roundMoney } from '@pos-tercos/domain';
 import type { ManualDiscount, Product, Promotion, Sale } from '@pos-tercos/types';
 import { Button, Dialog, Money } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
@@ -16,6 +17,10 @@ import type { CartLine } from '../lib/cart-types';
 import { computeCartTotals, type ManualCartDiscounts } from '../lib/totals';
 import { getErrorMessage } from '../../../lib/errors';
 import { logError } from '../../../lib/client-log';
+
+/** Estados donde la venta YA se cobró: su precio no se re-cotiza al editar. */
+const PRICING_FROZEN_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO'];
+const isPricingFrozen = (status: string): boolean => PRICING_FROZEN_STATUSES.includes(status);
 
 /**
  * Edición de un pedido YA COBRADO. Si la cocina ya lo inició, las líneas de
@@ -98,7 +103,35 @@ export function EditSaleModal({
       : undefined;
   })();
   const totals = computeCartTotals(cartLines, promotions, new Date(), manual);
-  const estimatedTotal = totals.total;
+  // Lo YA COBRADO no se re-precia al editar (decisión 2026-08-25): el server
+  // congela precio y descuento de las líneas que ya venían en la venta pagada,
+  // así que el estimado tiene que aplicar la MISMA regla de domain — si no, el
+  // cajero ve un total que el sistema no va a guardar (p. ej. una promo que
+  // venció entre el cobro y la corrección).
+  const estimatedTotal = (() => {
+    if (!sale) return totals.total;
+    if (!isPricingFrozen(sale.status) || manual) return totals.total;
+    const frozen = freezePaidLines(
+      (sale.items ?? []).map((it) => ({
+        key: paidLineKey(it.productId, it.sizeId, it.modifiers.map((m) => m.modifierId)),
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        lineDiscount: it.lineDiscount,
+      })),
+      lines.map((l) => ({
+        key: paidLineKey(l.productId, l.sizeId, l.modifierIds),
+        quantity: l.quantity,
+      })),
+      roundMoney,
+    );
+    const frozenTotal = lines.reduce((acc, l, i) => {
+      const f = frozen[i];
+      if (f) return acc + f.lineSubtotal - f.lineDiscount;
+      const t = totals.lines.find((tl) => tl.lineId === String(i));
+      return acc + (t ? t.lineSubtotal - t.lineDiscount : l.unitPrice * l.quantity);
+    }, 0);
+    return roundMoney(frozenTotal + (sale.deliveryFee ?? 0));
+  })();
   const diff = sale ? estimatedTotal - sale.total : 0;
   const canSave = lines.length > 0 && !pending;
 

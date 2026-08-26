@@ -14,6 +14,8 @@
  */
 
 /** YYYY-MM-DD del día calendario LOCAL de `d`. */
+import { BadRequestException } from '@nestjs/common';
+
 export function ymdLocal(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -35,4 +37,53 @@ export function utcDateOfLocalDay(d: Date): Date {
 export function localMidnightOfYmd(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
+}
+
+/**
+ * Parsea ?from=&to= como YYYY-MM-DD a Date local (00:00 from, 23:59 to).
+ * Default: últimos `defaultDays` días (incluyendo hoy).
+ */
+export function parseDateRange(
+  from: string | undefined,
+  to: string | undefined,
+  defaultDays = 7,
+): { from: Date; to: Date } {
+  const now = new Date();
+  // Una fecha con formato inválido NO cae de vuelta al default en silencio:
+  // así `?to=basura` devolvía el rango de hoy y el reporte salía "vacío pero
+  // correcto", sin que nadie supiera que la fecha se había ignorado (clase B9).
+  let toDate: Date;
+  if (to !== undefined) {
+    const parsed = parseLocalDate(to);
+    if (!parsed) throw new BadRequestException('La fecha final debe ser AAAA-MM-DD.');
+    toDate = parsed;
+  } else {
+    toDate = now;
+  }
+  const toEnd = new Date(toDate);
+  toEnd.setHours(23, 59, 59, 999);
+
+  let fromDate: Date;
+  if (from !== undefined) {
+    const parsed = parseLocalDate(from);
+    if (!parsed) throw new BadRequestException('La fecha inicial debe ser AAAA-MM-DD.');
+    fromDate = parsed;
+  } else {
+    fromDate = new Date(toEnd);
+    fromDate.setDate(fromDate.getDate() - (defaultDays - 1));
+  }
+  fromDate.setHours(0, 0, 0, 0);
+
+  if (fromDate > toEnd) {
+    throw new BadRequestException('La fecha inicial no puede ser posterior a la final.');
+  }
+  return { from: fromDate, to: toEnd };
+}
+
+function parseLocalDate(s: string): Date | null {
+  // YYYY-MM-DD → Date local 00:00. Devuelve null si formato inválido.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? null : d;
 }

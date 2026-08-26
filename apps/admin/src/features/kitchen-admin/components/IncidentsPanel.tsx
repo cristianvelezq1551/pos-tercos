@@ -80,6 +80,16 @@ export function IncidentsPanel() {
                 </span>
               </div>
               <p className="mt-1.5 text-sm text-foreground">{i.note}</p>
+              {i.evidenceUrl ? (
+                <a
+                  href={i.evidenceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 inline-block text-xs font-medium text-primary hover:underline"
+                >
+                  Ver foto
+                </a>
+              ) : null}
               {!i.resolvedAt ? (
                 <div className="mt-2 flex justify-end">
                   <Button size="sm" variant="outline" disabled={busy === i.id} onClick={() => void resolve(i.id)}>

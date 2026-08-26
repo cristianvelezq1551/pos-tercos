@@ -114,9 +114,13 @@ export class ShiftsService {
       throw new BadRequestException('Cierra la caja antes de analizarla con IA.');
     }
 
-    const [cashSales, { cashIn, cashOut }, voidCount, noSaleDrawerCount] =
+    const [cashPayments, { cashIn, cashOut }, voidCount, noSaleDrawerCount] =
       await Promise.all([
-        this.prisma.salePayment.aggregate({
+        // NETO del envío, igual que el expectedCash contra el que el LLM
+        // compara: con el bruto, la identidad "apertura + ventas + entradas −
+        // salidas" no cerraba en cajas con domicilios en efectivo y la IA
+        // explicaba un descuadre inexistente.
+        this.prisma.salePayment.findMany({
           where: {
             method: 'CASH',
             sale: {
@@ -124,7 +128,7 @@ export class ShiftsService {
               status: { notIn: NON_REVENUE_STATUSES_ARR },
             },
           },
-          _sum: { amount: true },
+          select: { amount: true, sale: { select: { total: true, deliveryFee: true } } },
         }),
         this.sumCashMovements(shiftId),
         this.prisma.sale.count({ where: { shiftId, status: 'VOID' } }),
@@ -140,7 +144,18 @@ export class ShiftsService {
       systemPrompt: SHIFT_CLOSE_SYSTEM,
       userPrompt: buildShiftCloseUserPrompt({
         openingCash: Math.round(Number(shift.openingCash)),
-        cashSalesTotal: Math.round(Number(cashSales._sum.amount ?? 0)),
+        cashSalesTotal: Math.round(
+          cashPayments.reduce(
+            (acc, p) =>
+              acc +
+              netOfDeliveryFee(
+                Number(p.amount),
+                Number(p.sale.total),
+                Number(p.sale.deliveryFee ?? 0),
+              ),
+            0,
+          ),
+        ),
         cashIn,
         cashOut,
         expectedCash: Math.round(Number(shift.expectedCash)),
@@ -1116,6 +1131,16 @@ export class ShiftsService {
     input: CreateCashMovement,
     userId: string,
   ): Promise<CashMovement> {
+    // Mismo criterio que el cobro (`assertPaymentParts`): solo medios del
+    // catálogo habilitados. Sin esto, un typo por API ("NEQUI2") creaba el
+    // movimiento y el cierre OBLIGABA a arquear un medio inexistente (§7.v20)
+    // que no se podía quitar sin borrar el movimiento.
+    const enabled = await this.paymentMethods.enabledSet();
+    if (!enabled.has(input.method)) {
+      throw new BadRequestException(
+        `El medio de pago "${input.method}" no está habilitado. Revisa Medios de pago en el admin.`,
+      );
+    }
     // Tx SERIALIZABLE (auditoría 2026-07-05): el cierre lee los movimientos y
     // congela el esperado; un movimiento READ COMMITTED podía commitear ENTRE
     // ese cómputo y el CLOSED → plata fuera del arqueo. Serializable + re-check

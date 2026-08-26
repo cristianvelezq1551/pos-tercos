@@ -12,7 +12,14 @@ const TABS = [
   { href: '/checklist', label: 'Checklist', icon: ClipboardCheck },
 ] as const;
 
-/** Navegación principal de la cocina. En pantallas chicas solo íconos. */
+/**
+ * Barra de secciones en escritorio (pestañas arriba). En celular NO se usa
+ * esta: va `CocinaTabBar`, abajo y al alcance del pulgar.
+ *
+ * `h-full items-stretch` solo funciona si el contenedor tiene altura — el
+ * topbar la tiene (h-14). Metido en un div sin altura, cada pestaña colapsaba
+ * al alto del ícono (20 px) y era imposible de acertar con el dedo.
+ */
 export function CocinaNav() {
   const pathname = usePathname();
   return (
@@ -32,7 +39,45 @@ export function CocinaNav() {
             }`}
           >
             <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-            <span className="hidden md:inline">{tab.label}</span>
+            <span>{tab.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/**
+ * Barra inferior del celular — el dispositivo con el que se usa la cocina.
+ *
+ * Va ABAJO porque en una pantalla de 844 px el pulgar no llega arriba sin
+ * recolocar la mano, y acá se navega con una mano mientras la otra está
+ * ocupada. Cada destino mide 56 px de alto y muestra SU NOMBRE: antes eran
+ * cinco íconos de 20 px sin etiqueta, o sea adivinar.
+ */
+export function CocinaTabBar() {
+  const pathname = usePathname();
+  return (
+    <nav
+      aria-label="Secciones de cocina"
+      className="grid shrink-0 grid-cols-5 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] sm:hidden"
+    >
+      {TABS.map((tab) => {
+        const active = pathname.startsWith(tab.href);
+        const Icon = tab.icon;
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            aria-current={active ? 'page' : undefined}
+            className={`flex min-h-14 flex-col items-center justify-center gap-1 px-1 py-2 transition-colors ${
+              active ? 'text-primary' : 'text-muted-foreground active:bg-muted'
+            }`}
+          >
+            <Icon className="h-6 w-6 shrink-0" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
+            <span className="w-full truncate text-center text-[0.6875rem] font-medium leading-none">
+              {tab.label}
+            </span>
           </Link>
         );
       })}

@@ -91,6 +91,16 @@ export interface LedgerFifo {
   cortesia: LossEntry[];
   /** Costo FIFO por solicitud de cortesía: sourceId → costo + desconocido + estimado. */
   cortesiaCostBySource: Map<string, { cost: number; unknownQty: number; estimatedCost: number }>;
+  /**
+   * Costo FIFO por movimiento de MERMA: id del movimiento → costo + desconocido
+   * + estimado, ya neteado por sus anulaciones. Espeja `cortesiaCostBySource`.
+   *
+   * NO viaja en el seed a propósito: son muchas más filas que las cortesías y
+   * crecerían el snapshot para siempre. Solo cubre la ventana efectivamente
+   * replayada, que es lo que necesita quien pregunta por un rango — pedir un
+   * rango anterior al corte ya cae en replay completo (regla 2 de CogsService).
+   */
+  wasteCostByMovement: Map<string, { cost: number; unknownQty: number; estimatedCost: number }>;
   /** Lotes restantes por stockable: `${entityType}:${id}` → valor/cantidad. */
   remaining: Map<string, { qty: number; value: number; unknownQty: number }>;
   /** Lotes restantes DETALLADOS (orden FIFO: más viejo primero) por stockable.
@@ -325,6 +335,18 @@ export function runLedgerFifo(
     }
   }
   const drawsBySource = new Map<string, Draw[]>();
+  /**
+   * Fecha del CONSUMO original de cada merma/cortesía que luego se anula
+   * (solo se registra para orígenes con reversa, igual que los draws). La
+   * anulación netea la pérdida EN EL MES DEL CONSUMO (decisión 2026-08-25):
+   * netearla en el mes de la reversa dejaba el P&G del mes original con la
+   * pérdida para siempre y el mes nuevo podía mostrar merma NEGATIVA — la
+   * misma regla que ya seguía el saldo de deudas en `addLot`.
+   * En modo semilla, un consumo pre-corte no está acá; ese caso siempre
+   * dispara `needsFullReplay` (under-return o deuda tocada), así que el
+   * fallback a la fecha de la reversa nunca llega a un reporte.
+   */
+  const lossConsumedAt = new Map<string, string>();
 
   const out: LedgerFifo = {
     saleIngredientCost: new Map(),
@@ -333,6 +355,7 @@ export function runLedgerFifo(
     waste: [],
     cortesia: [],
     cortesiaCostBySource: new Map(),
+    wasteCostByMovement: new Map(),
     remaining: new Map(),
     remainingLots: new Map(),
     endingLots: {},
@@ -461,21 +484,16 @@ export function runLedgerFifo(
       unknownQty: roundCost(unknownQty),
       estimatedCost: roundCost(estimatedCost),
     };
-    if (kind === 'waste') {
-      out.waste.push(entry);
-      return;
-    }
-    out.cortesia.push(entry);
+    const index = kind === 'waste' ? out.wasteCostByMovement : out.cortesiaCostBySource;
+    if (kind === 'waste') out.waste.push(entry);
+    else out.cortesia.push(entry);
+    // `consumerId` vacío = no hay a qué colgarlo (merma anulada sin origen).
     if (!consumerId) return;
-    const prev = out.cortesiaCostBySource.get(consumerId) ?? {
-      cost: 0,
-      unknownQty: 0,
-      estimatedCost: 0,
-    };
+    const prev = index.get(consumerId) ?? { cost: 0, unknownQty: 0, estimatedCost: 0 };
     prev.cost = roundCost(prev.cost + entry.cost);
     prev.unknownQty = roundCost(prev.unknownQty + entry.unknownQty);
     prev.estimatedCost = roundCost(prev.estimatedCost + entry.estimatedCost);
-    out.cortesiaCostBySource.set(consumerId, prev);
+    index.set(consumerId, prev);
   };
 
   /**
@@ -862,7 +880,9 @@ export function runLedgerFifo(
         attributeToLoss(
           'cortesia',
           m.sourceId ?? '',
-          iso,
+          // El neteo cae en el MES del consumo original (decisión 2026-08-25):
+          // anular en agosto una cortesía de julio corrige el P&G de julio.
+          (m.sourceId && lossConsumedAt.get(m.sourceId)) || iso,
           -(returnedCost + cancelled.cost),
           -(returnedUnknown + cancelled.unknownQty),
           // Lo que cancela la deuda es exactamente la parte estimada.
@@ -896,9 +916,12 @@ export function runLedgerFifo(
       flagIfReversalTouchedDebt(cancelled.qty);
       if (returnedQty + cancelled.qty > 0) {
         attributeToLoss(
+          // La anulación netea el costo del movimiento de merma ORIGINAL, no
+          // crea uno propio: `sourceId` apunta a la merma que corrige.
           'waste',
-          '',
-          iso,
+          m.sourceId ?? '',
+          // Mes del consumo original, no de la reversa (decisión 2026-08-25).
+          (m.sourceId && lossConsumedAt.get(m.sourceId)) || iso,
           -(returnedCost + cancelled.cost),
           -(returnedUnknown + cancelled.unknownQty),
           -cancelled.cost,
@@ -961,10 +984,11 @@ export function runLedgerFifo(
         const acc = drawsBySource.get(drawKey) ?? [];
         for (const d of draws) acc.push(d);
         drawsBySource.set(drawKey, acc);
+        if (!lossConsumedAt.has(m.id)) lossConsumedAt.set(m.id, iso);
       }
       attributeToLoss(
         'waste',
-        '',
+        m.id,
         iso,
         cost + est.estimatedCost,
         unknownQty + est.extraUnknown,
@@ -987,6 +1011,7 @@ export function runLedgerFifo(
         const acc = drawsBySource.get(drawKey) ?? [];
         for (const d of draws) acc.push(d);
         drawsBySource.set(drawKey, acc);
+        if (!lossConsumedAt.has(m.sourceId)) lossConsumedAt.set(m.sourceId, iso);
       }
       attributeToLoss(
         'cortesia',

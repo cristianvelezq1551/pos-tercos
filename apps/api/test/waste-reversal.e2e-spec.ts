@@ -447,4 +447,123 @@ describe('Anulación de merma E2E', () => {
     expect(row.adjustments).toBe(0);
     expect(row.waste).toBe(0);
   });
+
+  // ==================================================================
+  // Regresiones 2026-08: validación de movimientos manuales.
+  //
+  // Dos agujeros de la API pública (la UI ya forzaba el signo):
+  //  1. Un MANUAL_ADJUSTMENT negativo podía hundir el stock bajo cero — el
+  //     replay FIFO no deja deuda por ajustes, así que las unidades
+  //     desaparecían en silencio y la valuación quedaba sobrestimada.
+  //  2. Una "merma" con delta POSITIVO entraba al ledger como lote fantasma
+  //     sin costo, y reverse-waste sobre esa fila fabricaba stock de nuevo.
+  // ==================================================================
+  describe('Validación de movimientos manuales', () => {
+    /** Insumo limpio con stock 5 para probar el piso del ajuste. */
+    let ajusteIngredientId: string;
+
+    const newIngredient = async (name: string): Promise<string> => {
+      const res = await request
+        .post('/ingredients')
+        .set(auth(duenoToken))
+        .send({
+          name,
+          unitPurchase: 'kg',
+          unitRecipe: 'g',
+          conversionFactor: 1000,
+          thresholdMin: 0,
+          isActive: true,
+        })
+        .expect(201);
+      return (res.body as { id: string }).id;
+    };
+
+    beforeAll(async () => {
+      ajusteIngredientId = await newIngredient('Queso Ajuste-Negativo');
+      await request
+        .post('/inventory/movements')
+        .set(auth(duenoToken))
+        .send({
+          entityType: 'INGREDIENT',
+          ingredientId: ajusteIngredientId,
+          delta: 5,
+          type: 'INITIAL',
+          unitCost: 100,
+          notes: 'Carga inicial',
+        })
+        .expect(201);
+    });
+
+    // Bug: el ajuste bajo cero "desaparecía" unidades sin dejar deuda en el
+    // ledger — la valuación quedaba sobrestimada para siempre.
+    it('un ajuste manual negativo no puede dejar el stock bajo cero', async () => {
+      const res = await request
+        .post('/inventory/movements')
+        .set(auth(duenoToken))
+        .send({
+          entityType: 'INGREDIENT',
+          ingredientId: ajusteIngredientId,
+          delta: -8, // hay 5
+          type: 'MANUAL_ADJUSTMENT',
+          notes: 'Faltante mayor al stock',
+        })
+        .expect(400);
+      expect(String(res.body.message)).toMatch(/negativo/);
+      expect(String(res.body.message)).toMatch(/merma/);
+
+      // Un faltante que SÍ cabe en el stock entra normal…
+      await request
+        .post('/inventory/movements')
+        .set(auth(duenoToken))
+        .send({
+          entityType: 'INGREDIENT',
+          ingredientId: ajusteIngredientId,
+          delta: -3,
+          type: 'MANUAL_ADJUSTMENT',
+          notes: 'Faltante de conteo',
+        })
+        .expect(201);
+
+      // …y el stock queda exacto (5 − 3 = 2), nunca negativo.
+      const stock = await request
+        .get(`/inventory/stock/ingredient/${ajusteIngredientId}`)
+        .set(auth(duenoToken))
+        .expect(200);
+      expect((stock.body as { currentStock: number }).currentStock).toBe(2);
+    });
+
+    // Bug: la merma positiva entraba como lote fantasma sin costo y
+    // reverse-waste sobre esa fila fabricaba stock por segunda vez.
+    it('una merma con delta positivo se rechaza', async () => {
+      const res = await request
+        .post('/inventory/movements')
+        .set(auth(duenoToken))
+        .send({
+          entityType: 'INGREDIENT',
+          ingredientId,
+          delta: 10,
+          type: 'WASTE',
+          notes: 'Merma al revés',
+        })
+        .expect(400);
+      expect(String(res.body.message)).toMatch(/negativa/);
+    });
+
+    // Bug hermano: un INITIAL negativo invertía el signo del arranque del ledger.
+    it('una carga inicial negativa se rechaza', async () => {
+      const freshId = await newIngredient('Queso Inicial-Negativo');
+      const res = await request
+        .post('/inventory/movements')
+        .set(auth(duenoToken))
+        .send({
+          entityType: 'INGREDIENT',
+          ingredientId: freshId,
+          delta: -5,
+          type: 'INITIAL',
+          notes: 'Inicial al revés',
+        })
+        .expect(400);
+      expect(String(res.body.message)).toMatch(/positiva/);
+    });
+  });
 });

@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type { StorageProvider } from '@pos-tercos/domain';
 import type { CreateKitchenIncident, KitchenIncident } from '@pos-tercos/types';
 import type { KitchenIncident as DbKitchenIncident } from '@prisma/client';
+import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
@@ -16,18 +18,24 @@ export class KitchenIncidentsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly users: UsersService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   async create(input: CreateKitchenIncident, userId: string): Promise<KitchenIncident> {
     const row = await this.prisma.kitchenIncident.create({
-      data: { category: input.category, note: input.note, authorId: userId },
+      data: {
+        category: input.category,
+        note: input.note,
+        authorId: userId,
+        evidenceKey: input.evidenceKey ?? null,
+      },
     });
     await this.audit.log({
       userId,
       action: 'KITCHEN_INCIDENT_LOGGED',
       entityType: 'kitchen_incident',
       entityId: row.id,
-      metadata: { category: input.category },
+      metadata: { category: input.category, withPhoto: input.evidenceKey != null },
     });
     return this.toDto(row, await this.users.namesByIds([row.authorId]));
   }
@@ -63,6 +71,16 @@ export class KitchenIncidentsService {
     return this.toDto(row, await this.users.namesByIds([row.authorId, row.resolvedById ?? '']));
   }
 
+  /** Foto de la incidencia (o null si se reportó sin ella). */
+  async getEvidence(id: string): Promise<Buffer | null> {
+    const row = await this.prisma.kitchenIncident.findUnique({
+      where: { id },
+      select: { evidenceKey: true },
+    });
+    if (!row?.evidenceKey) return null;
+    return this.storage.get(row.evidenceKey);
+  }
+
   private toDto(row: DbKitchenIncident, names: Map<string, string>): KitchenIncident {
     return {
       id: row.id,
@@ -70,6 +88,7 @@ export class KitchenIncidentsService {
       note: row.note,
       authorId: row.authorId,
       authorName: names.get(row.authorId) ?? null,
+      evidenceUrl: row.evidenceKey ? `/api/kitchen/incidents/${row.id}/evidence` : null,
       resolvedAt: row.resolvedAt?.toISOString() ?? null,
       resolvedById: row.resolvedById,
       createdAt: row.createdAt.toISOString(),

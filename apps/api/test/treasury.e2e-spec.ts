@@ -20,6 +20,7 @@ import { cleanDb } from './helpers/db-cleaner';
 
 interface Pocket {
   initial: number;
+  income: number;
   transfersIn: number;
   transfersOut: number;
   adjustments: number;
@@ -224,6 +225,38 @@ describe('Treasury E2E', () => {
       .set(auth(duenoToken))
       .send({ anchorDate: null, initialCash: 100_000, initialBank: 50_000 })
       .expect(200);
+  });
+
+  it('el ingreso por ventas entra NETO del envío (§7.v30): el domicilio no infla el bolsillo', async () => {
+    // Bug: el summary sumaba el pago BRUTO — cada domicilio inflaba el bolsillo Efectivo con un envío que es plata del repartidor.
+    const before = await summary();
+
+    // Domicilio cobrado en CASH: $38.000 de comida + $7.000 de envío = $45.000.
+    // Venta+pago directo por prisma: lo que se prueba es la lectura del summary,
+    // no el flujo de cobro (ese vive en web-delivery.e2e-spec).
+    await prisma.sale.create({
+      data: {
+        type: 'WEB_DELIVERY',
+        status: 'PAGADO',
+        subtotal: 38_000,
+        total: 45_000, // CHECK: total = subtotal − descuento + delivery_fee
+        deliveryFee: 7_000,
+        deliveryAddress: 'Cra 43A #5-15, torre 2, apto 502',
+        customerName: 'Cliente Domicilio Treasury',
+        customerPhone: '+573001234567',
+        paidAt: new Date(),
+        paymentMethod: 'CASH',
+        payments: {
+          create: [{ method: 'CASH', amount: 45_000, amountReceived: 45_000 }],
+        },
+      },
+    });
+
+    const after = await summary();
+    // Solo la comida es del negocio: $38.000, no los $45.000 que entraron.
+    expect(after.cash.income - before.cash.income).toBe(38_000);
+    expect(after.cash.balance - before.cash.balance).toBe(38_000);
+    expect(after.bank.income).toBe(before.bank.income); // el pago fue CASH: la cuenta no se mueve
   });
 
   it('un costo fijo sin responsable se atribuye a su CATEGORÍA (no "Sin asignar")', async () => {

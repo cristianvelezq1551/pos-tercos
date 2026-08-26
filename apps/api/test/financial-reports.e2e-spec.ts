@@ -397,4 +397,32 @@ describe('Reportes financieros del dueño E2E', () => {
     expect(after.grossRevenue - before.grossRevenue).toBe(5000);
     expect(after.grossRevenue).toBe(after.revenue + after.discountTotal);
   });
+
+  // Solo lecturas con params rotos: no mueven los acumulados del mes que los
+  // tests de arriba miden por delta.
+  describe('validación de ?year=&month= y ?from=&to=', () => {
+    it('month fuera de rango → 400', async () => {
+      // Bug: month=13 rebalsaba en silencio a enero del año siguiente (rollover de new Date) y el dueño leía otro mes.
+      await request
+        .get(`/reports/financial/monthly?year=${now.getFullYear()}&month=13`)
+        .set(auth())
+        .expect(400);
+    });
+
+    it('month no numérico → 400', async () => {
+      // Bug: month=abc terminaba en un 500 de Prisma con Invalid Date.
+      await request
+        .get(`/reports/financial/monthly?year=${now.getFullYear()}&month=abc`)
+        .set(auth())
+        .expect(400);
+    });
+
+    it('un from presente pero mal formado → 400 (no degrada a "hoy")', async () => {
+      // Bug: parseDateRange ignoraba en silencio un from inválido y devolvía "hoy" a quien creía haber pedido julio.
+      await request
+        .get('/reports/sales-summary?from=2026/07/01')
+        .set(auth())
+        .expect(400);
+    });
+  });
 });

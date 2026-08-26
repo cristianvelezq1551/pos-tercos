@@ -133,6 +133,19 @@ export class WebOrdersService {
   }
 
   /**
+   * La dirección que guía al repartidor es la VERIFICADA del token firmado
+   * (la web manda exactamente `formatted`, así que para el cliente legítimo
+   * esto es un no-op). Sin esta atadura, un POST directo podía pasar el
+   * candado del radio con un token válido y escribir un texto a 20 km.
+   * Torre/apto/referencias viajan aparte en deliveryNotes.
+   */
+  private resolvedDeliveryAddress(input: CreateWebOrder): string | undefined {
+    if (input.type !== 'WEB_DELIVERY') return input.deliveryAddress;
+    const verified = input.addressToken ? this.addressTokens.verify(input.addressToken) : null;
+    return verified?.formatted ?? input.deliveryAddress;
+  }
+
+  /**
    * Crea una venta WEB_PICKUP en estado PENDIENTE_PAGO.
    * Reusa SalesService.create (que ya valida productos, calcula totales,
    * aplica promos y soporta idempotency-key). El cashierId queda en null
@@ -177,7 +190,7 @@ export class WebOrdersService {
         customerName: input.customerName,
         customerPhone: input.customerPhone,
         notes: input.notes,
-        deliveryAddress: input.deliveryAddress,
+        deliveryAddress: this.resolvedDeliveryAddress(input),
         deliveryNotes: input.deliveryNotes,
         // Coordenadas de la DIRECCIÓN verificada (o el GPS como respaldo):
         // sirven para abrir el mapa desde la caja. El texto que escribió el

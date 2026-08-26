@@ -3,6 +3,8 @@
 import type { Stockable } from '@pos-tercos/types';
 import { Button, Dialog, Input, Label } from '@pos-tercos/ui';
 import { useState } from 'react';
+import { PhotoField } from '../../components/PhotoField';
+import { uploadEvidence } from '../../lib/evidence';
 import { getErrorMessage } from '../../lib/errors';
 import { randomUUID } from '../../lib/uuid';
 import { registerWaste, stockableRef } from './api';
@@ -21,6 +23,7 @@ export function WasteModal({
 }) {
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => randomUUID());
@@ -30,6 +33,7 @@ export function WasteModal({
   const close = () => {
     setQty('');
     setReason('');
+    setPhoto(null);
     setError(null);
     // §3.3: resetear `pending` SIEMPRE al cerrar. El camino de éxito hacía
     // `onDone(); close()` sin bajar `pending` → como el modal vive montado, la
@@ -44,10 +48,19 @@ export function WasteModal({
     const n = Number(qty);
     if (!Number.isFinite(n) || n <= 0) return setError('Cantidad mayor a 0.');
     if (reason.trim().length < 3) return setError('Escribe un motivo.');
+    if (!photo) return setError('Toma una foto de lo que se descartó.');
     setPending(true);
     setError(null);
     try {
-      await registerWaste({ ...stockableRef(stockable), quantity: n, reason: reason.trim(), idempotencyKey });
+      // La foto va primero: si falla, no queda una merma registrada sin ella.
+      const evidenceKey = await uploadEvidence(photo);
+      await registerWaste({
+        ...stockableRef(stockable),
+        quantity: n,
+        reason: reason.trim(),
+        evidenceKey,
+        idempotencyKey,
+      });
       onDone();
       close();
     } catch (e) {
@@ -64,10 +77,10 @@ export function WasteModal({
       maxWidth="max-w-md"
       footer={
         <>
-          <Button variant="ghost" onClick={close} disabled={pending}>
+          <Button className="min-h-11" variant="ghost" onClick={close} disabled={pending}>
             Cancelar
           </Button>
-          <Button variant="destructive" onClick={() => void submit()} disabled={pending}>
+          <Button className="min-h-11" variant="destructive" onClick={() => void submit()} disabled={pending || !photo}>
             {pending ? 'Registrando…' : 'Registrar merma'}
           </Button>
         </>
@@ -85,6 +98,7 @@ export function WasteModal({
           <Label htmlFor="wreason">Motivo</Label>
           <Input id="wreason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="se quemó, vencido, se cayó…" />
         </div>
+        <PhotoField file={photo} onChange={setPhoto} required disabled={pending} />
         {error ? (
           <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}

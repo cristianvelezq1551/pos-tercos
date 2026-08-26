@@ -5,6 +5,7 @@ import type {
   RegisterWaste,
   Stockable,
 } from '@pos-tercos/types';
+import { AuditService } from '../audit/audit.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { StockCountsService } from '../inventory/stock-counts.service';
 
@@ -20,6 +21,7 @@ export class KitchenInventoryService {
   constructor(
     private readonly inventory: InventoryService,
     private readonly stockCounts: StockCountsService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -31,9 +33,16 @@ export class KitchenInventoryService {
     return this.inventory.listStockables({ onlyActive: true });
   }
 
-  /** Registra una merma (WASTE) como movement negativo. Motivo obligatorio. */
+  /**
+   * Registra una merma (WASTE) como movement negativo. Motivo y foto obligatorios.
+   *
+   * Se audita acá porque el log de movimientos vive en el controller de
+   * inventario, por el que la cocina NO pasa: sin esto, la merma del admin
+   * quedaba en la bitácora y la del cocinero —la que más importa vigilar— no
+   * dejaba rastro fuera del propio movimiento.
+   */
   async registerWaste(input: RegisterWaste, userId: string): Promise<Stockable> {
-    await this.inventory.createMovement(
+    const movement = await this.inventory.createMovement(
       {
         entityType: input.entityType,
         ingredientId: input.ingredientId,
@@ -44,6 +53,9 @@ export class KitchenInventoryService {
         notes: input.reason,
         // §3.3: un reintento tras respuesta perdida reusa la key → no duplica la merma.
         idempotencyKey: input.idempotencyKey,
+        // La foto es obligatoria en merma (lo exige el Zod): sin evidencia, la
+        // pérdida queda como la palabra de una persona.
+        evidenceKey: input.evidenceKey,
       },
       userId,
     );
@@ -53,7 +65,22 @@ export class KitchenInventoryService {
         : input.entityType === 'PRODUCT'
           ? input.productId!
           : input.subproductId!;
-    return this.inventory.getStockableById(input.entityType, entityId);
+    const stockable = await this.inventory.getStockableById(input.entityType, entityId);
+    await this.audit.log({
+      userId,
+      action: 'INVENTORY_MOVEMENT_WASTE',
+      entityType: 'inventory_movement',
+      entityId: movement.id,
+      metadata: {
+        stockableType: input.entityType,
+        name: stockable.name,
+        quantity: input.quantity,
+        unit: stockable.unitStock,
+        reason: input.reason,
+        source: 'cocina',
+      },
+    });
+    return stockable;
   }
 
   /**

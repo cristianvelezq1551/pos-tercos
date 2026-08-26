@@ -23,6 +23,13 @@ export interface ConsumptionSpec {
    */
   originProductId: string;
   /**
+   * Componente concreto del combo que generó este consumo (cuando la línea es
+   * un combo). `evaluateAvailability` salta los componentes forzados, así que
+   * el guard debe tolerarlos igual — si solo mirara el flag del combo, la UI
+   * diría "disponible" y el cobro rechazaría con 409 (cajero trabado).
+   */
+  componentProductId?: string;
+  /**
    * Si este consumo frena la venta cuando no alcanza el stock. `false` =
    * consumible (servilletas): se descuenta y se costea, pero no bloquea.
    * La reventa directa siempre bloquea (su stock ES el producto vendido).
@@ -139,6 +146,9 @@ export class SalesConsumptionService {
       originProductId: string,
       sizeId?: string | null,
     ): Promise<void> => {
+      // Consumo que viene de un componente de combo: se anota el componente
+      // para que su propio `forceAvailable` también tolere el faltante.
+      const componentProductId = p.id !== originProductId ? p.id : undefined;
       if (p.directResale) {
         specs.push({
           entityType: 'PRODUCT',
@@ -146,6 +156,7 @@ export class SalesConsumptionService {
           delta: -qty,
           note: `${notePrefix} item ${p.name}`,
           originProductId,
+          componentProductId,
           // Reventa directa: su stock ES lo que se vende → siempre bloquea.
           blocksAvailability: true,
         });
@@ -173,6 +184,7 @@ export class SalesConsumptionService {
           delta: -ing.totalQuantity,
           note: `${notePrefix} via "${p.name}"`,
           originProductId,
+          componentProductId,
           blocksAvailability: ing.blocksAvailability,
         });
       }
@@ -183,6 +195,7 @@ export class SalesConsumptionService {
           delta: -sub.totalQuantity,
           note: `${notePrefix} via "${p.name}"`,
           originProductId,
+          componentProductId,
           blocksAvailability: sub.blocksAvailability,
         });
       }
@@ -241,7 +254,10 @@ export class SalesConsumptionService {
       const id = s.ingredientId ?? s.productId ?? s.subproductId;
       if (!id) continue;
       const key = `${s.entityType}:${id}`;
-      if (forcedProductIds.has(s.originProductId) || !s.blocksAvailability) {
+      const forced =
+        forcedProductIds.has(s.originProductId) ||
+        (s.componentProductId !== undefined && forcedProductIds.has(s.componentProductId));
+      if (forced || !s.blocksAvailability) {
         tolerable.add(key);
       } else {
         blocking.add(key);

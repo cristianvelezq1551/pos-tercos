@@ -12,6 +12,17 @@ import { AnthropicLLMAdapter } from './anthropic.adapter';
 import { OpenAILLMAdapter } from './openai.adapter';
 
 /**
+ * Lo que ve la persona cuando no hay proveedor de IA configurado.
+ *
+ * Antes decía "No LLM provider configured. Set ANTHROPIC_API_KEY or
+ * OPENAI_API_KEY" y ese texto llegaba TAL CUAL al toast del admin: inglés,
+ * nombres de variables de entorno y ninguna acción posible para quien lo lee
+ * (§3). El detalle técnico va al log, que es donde sirve.
+ */
+const SIN_PROVEEDOR_IA =
+  'El asistente de IA no está configurado en el servidor, así que esta función no está disponible. Avísale al dueño para que active la llave.';
+
+/**
  * Compone una estrategia primary + fallback. La env var `LLM_PROVIDER`
  * controla cuál es el primario:
  *   - 'anthropic' (default): Anthropic primary, OpenAI fallback si falla
@@ -34,9 +45,8 @@ export class LLMService {
   ): Promise<LLMInvoiceExtractionResult> {
     const chain = this.buildChain();
     if (chain.length === 0) {
-      throw new ServiceUnavailableException(
-        'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.',
-      );
+      this.logNoProvider();
+      throw new ServiceUnavailableException(SIN_PROVEEDOR_IA);
     }
 
     let lastError: unknown;
@@ -64,9 +74,8 @@ export class LLMService {
   ): Promise<PurchaseSuggestionEvalResult> {
     const chain = this.buildChain();
     if (chain.length === 0) {
-      throw new ServiceUnavailableException(
-        'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.',
-      );
+      this.logNoProvider();
+      throw new ServiceUnavailableException(SIN_PROVEEDOR_IA);
     }
 
     let lastError: unknown;
@@ -91,9 +100,8 @@ export class LLMService {
   async complete(req: LLMCompletionRequest): Promise<LLMCompletionResult> {
     const chain = this.buildChain();
     if (chain.length === 0) {
-      throw new ServiceUnavailableException(
-        'No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.',
-      );
+      this.logNoProvider();
+      throw new ServiceUnavailableException(SIN_PROVEEDOR_IA);
     }
     let lastError: unknown;
     for (const provider of chain) {
@@ -109,6 +117,13 @@ export class LLMService {
       }
     }
     throw lastError instanceof Error ? lastError : new Error('All LLM providers failed');
+  }
+
+  /** El "qué hacer" real, para quien mira los logs del servidor. */
+  private logNoProvider(): void {
+    this.logger.error(
+      'Ningún proveedor de IA configurado: falta ANTHROPIC_API_KEY (o OPENAI_API_KEY) en el entorno del servidor.',
+    );
   }
 
   private buildChain(): LLMProvider[] {

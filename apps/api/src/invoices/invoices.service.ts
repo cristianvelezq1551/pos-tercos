@@ -11,6 +11,7 @@ import {
   type Invoice,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { describeLlmFailure } from '../adapters/llm/llm-failure';
 import { LLMService } from '../adapters/llm/llm.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { ApprovalsService } from '../approvals/approvals.service';
@@ -237,9 +238,15 @@ export class InvoicesService {
     } catch (err) {
       // Si la IA falló, no dejamos la foto huérfana — limpiamos ya mismo.
       await this.storage.delete(stored.key).catch(() => {});
+      // El error crudo va al LOG; a la pantalla va el motivo traducido. Antes
+      // el `cause` viajaba verbatim y el admin mostraba inglés técnico con
+      // nombres de variables de entorno (§3).
+      this.logger.error(
+        `Extracción de factura falló: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new BadRequestException({
         message: 'La IA no pudo extraer la factura. Prueba con otra foto o cárgala manualmente.',
-        cause: err instanceof Error ? err.message : String(err),
+        cause: describeLlmFailure(err),
       });
     }
 

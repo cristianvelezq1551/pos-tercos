@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { roundMoney } from '@pos-tercos/domain';
+import { netOfDeliveryFee, roundMoney } from '@pos-tercos/domain';
 import {
   NON_REVENUE_SALE_STATUSES,
   type CreateAdjustment,
@@ -227,10 +227,17 @@ export class TreasuryService {
     const anchor = cfg.anchorDate ? localMidnightOfYmd(cfg.anchorDate) : new Date(0);
 
     const [incomeRows, invPaid, fcPaid, pqPaid, pwPaid, paPaid, movements] = await Promise.all([
-      this.prisma.salePayment.groupBy({
-        by: ['method'],
+      // Por pago (no groupBy): el ingreso va NETO del envío (§7.v30 — el
+      // domicilio es plata del repartidor y sale al momento de entregar, de
+      // cualquier medio). Con el bruto, el bolsillo se inflaba exactamente el
+      // envío por cada domicilio, para siempre.
+      this.prisma.salePayment.findMany({
         where: { sale: { paidAt: { gte: anchor, not: null }, status: { notIn: EXCLUDED_SALE_STATUS } } },
-        _sum: { amount: true },
+        select: {
+          method: true,
+          amount: true,
+          sale: { select: { total: true, deliveryFee: true } },
+        },
       }),
       this.prisma.invoice.aggregate({
         where: { paymentStatus: 'PAID', paidAt: { gte: anchor } },
@@ -258,10 +265,16 @@ export class TreasuryService {
     let cashIncome = 0;
     let bankIncome = 0;
     for (const r of incomeRows) {
-      const v = Number(r._sum.amount ?? 0);
+      const v = netOfDeliveryFee(
+        Number(r.amount),
+        Number(r.sale.total),
+        Number(r.sale.deliveryFee ?? 0),
+      );
       if (r.method === 'CASH') cashIncome += v;
       else bankIncome += v;
     }
+    cashIncome = roundMoney(cashIncome);
+    bankIncome = roundMoney(bankIncome);
 
     // Todos los gastos traen su reparto por bolsillo (efectivo/cuenta/mixto).
     const cashExp =

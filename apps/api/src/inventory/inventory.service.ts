@@ -12,6 +12,9 @@ import type {
   Product as DbProduct,
   Subproduct as DbSubproduct,
 } from '@prisma/client';
+import { Inject } from '@nestjs/common';
+import type { StorageProvider } from '@pos-tercos/domain';
+import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { runWithSerializationRetry } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -40,7 +43,10 @@ interface ListMovementsFilter {
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+  ) {}
 
   /**
    * Stock por entidad. Devuelve mapa con clave `${entityType}:${id}`.
@@ -149,7 +155,9 @@ export class InventoryService {
   }
 
   async createMovement(
-    input: CreateInventoryMovement,
+    /** `evidenceKey` no está en el Zod público: la foto la exige la cocina
+     *  (merma), no un ajuste manual del admin. */
+    input: CreateInventoryMovement & { evidenceKey?: string },
     userId?: string,
   ): Promise<InventoryMovement> {
     if (input.entityType === 'INGREDIENT') {
@@ -216,23 +224,58 @@ export class InventoryService {
       if (existing) return toMovementDto(existing);
     }
 
+    const entityWhere =
+      input.entityType === 'INGREDIENT'
+        ? { ingredientId: input.ingredientId! }
+        : input.entityType === 'SUBPRODUCT'
+          ? { subproductId: input.subproductId! }
+          : { productId: input.productId! };
+    const data = {
+      entityType: input.entityType,
+      ingredientId: input.entityType === 'INGREDIENT' ? input.ingredientId : null,
+      productId: input.entityType === 'PRODUCT' ? input.productId : null,
+      subproductId: input.entityType === 'SUBPRODUCT' ? input.subproductId : null,
+      delta: input.delta,
+      // El costo solo aplica a entradas (delta > 0); en consumos lo resuelve FIFO.
+      unitCost: input.delta > 0 ? (input.unitCost ?? null) : null,
+      type: input.type,
+      notes: input.notes ?? null,
+      // Sin esta línea la foto se sube al storage y la fila se guarda SIN su
+      // clave: la merma queda sin evidencia y el endpoint que la sirve devuelve
+      // null para siempre. La firma la aceptaba y el lector la esperaba; solo
+      // faltaba escribirla.
+      evidenceKey: input.evidenceKey ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
+      userId: userId ?? null,
+    };
+
     try {
-      const created = await this.prisma.inventoryMovement.create({
-        data: {
-          entityType: input.entityType,
-          ingredientId: input.entityType === 'INGREDIENT' ? input.ingredientId : null,
-          productId: input.entityType === 'PRODUCT' ? input.productId : null,
-          subproductId: input.entityType === 'SUBPRODUCT' ? input.subproductId : null,
-          delta: input.delta,
-          // El costo solo aplica a entradas (delta > 0); en consumos lo resuelve FIFO.
-          unitCost: input.delta > 0 ? (input.unitCost ?? null) : null,
-          type: input.type,
-          notes: input.notes ?? null,
-          idempotencyKey: input.idempotencyKey ?? null,
-          userId: userId ?? null,
-        },
-        include: includeFull(),
-      });
+      // Un ajuste manual NEGATIVO no puede dejar el stock bajo cero: a
+      // diferencia de la merma (que estima el faltante y deja deuda, §7.v32),
+      // el ajuste no deja rastro en el ledger — las unidades "desaparecen" del
+      // replay en silencio y la valuación queda sobrestimada para siempre.
+      // Tx SERIALIZABLE: dos ajustes concurrentes no pueden pasar el piso juntos.
+      const created =
+        input.type === 'MANUAL_ADJUSTMENT' && input.delta < 0
+          ? await runWithSerializationRetry(() =>
+              this.prisma.$transaction(
+                async (tx) => {
+                  const agg = await tx.inventoryMovement.aggregate({
+                    where: entityWhere,
+                    _sum: { delta: true },
+                  });
+                  const current = Number(agg._sum.delta ?? 0);
+                  if (current + input.delta < -1e-6) {
+                    throw new BadRequestException(
+                      `El ajuste dejaría el stock en negativo (hay ${current}). Si la pérdida es real, regístrala como merma.`,
+                    );
+                  }
+                  return tx.inventoryMovement.create({ data, include: includeFull() });
+                },
+                { isolationLevel: 'Serializable', timeout: 10_000 },
+              ),
+            )
+          : await this.prisma.inventoryMovement.create({ data, include: includeFull() });
       return toMovementDto(created);
     } catch (err) {
       if (
@@ -244,6 +287,20 @@ export class InventoryService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Foto de evidencia de un movimiento (merma de cocina o tanda de producción).
+   * Se resuelve por id del movimiento y NUNCA por key suelta: un endpoint que
+   * sirva cualquier key deja el bucket entero a mano de quien la adivine.
+   */
+  async getMovementEvidence(movementId: string): Promise<Buffer | null> {
+    const mv = await this.prisma.inventoryMovement.findUnique({
+      where: { id: movementId },
+      select: { evidenceKey: true },
+    });
+    if (!mv?.evidenceKey) return null;
+    return this.storage.get(mv.evidenceKey);
   }
 
   /**
@@ -471,7 +528,9 @@ function toMovementDto(row: DbInventoryMovement): InventoryMovement {
     userId: row.userId,
     userFullName: row.user?.fullName ?? null,
     notes: row.notes,
-    evidenceUrl: row.evidenceKey ? `/api/subproducts/production/${row.sourceId}/evidence` : null,
+    // Por MOVIMIENTO, no por tanda: una merma de cocina no tiene `sourceId`,
+    // así que la ruta vieja (atada a producción) la dejaba sin forma de servirse.
+    evidenceUrl: row.evidenceKey ? `/api/inventory/movements/${row.id}/evidence` : null,
     idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
   };

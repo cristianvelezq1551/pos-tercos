@@ -138,4 +138,80 @@ describe('Conteo físico E2E', () => {
     expect(res.body[0].name).toBe('Harina Conteo');
     expect(res.body[0].userName).toBe('Dueño Conteo');
   });
+
+  it('un conteo del admin (autoApprove) supersede los PENDING previos del mismo ítem (regresión)', async () => {
+    // Bug: solo `approve` rechazaba los PENDING previos — el conteo directo del
+    // admin no, y aprobar después el PENDING viejo doble-aplicaba la diferencia.
+    const hash = await bcrypt.hash('dev12345', 10);
+    await prisma.user.create({
+      data: {
+        email: 'cocinero-count@test.local',
+        fullName: 'Cocinero Conteo',
+        role: 'COCINERO',
+        passwordHash: hash,
+        mustChangePwd: false,
+        active: true,
+      },
+    });
+    const cocineroToken = await loginAs(request, 'cocinero-count@test.local');
+
+    const ing = await request
+      .post('/ingredients')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ name: 'Azúcar Doble', unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000 })
+      .expect(201);
+    const azucarId = ing.body.id as string;
+    await request
+      .post('/inventory/movements')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ entityType: 'INGREDIENT', ingredientId: azucarId, delta: 50, type: 'INITIAL', unitCost: 4 })
+      .expect(201);
+
+    // 1. El cocinero cuenta 40 → PENDING (dif −10, sin ajustar).
+    await request
+      .post('/kitchen/count')
+      .set('Authorization', `Bearer ${cocineroToken}`)
+      .send({ items: [{ entityType: 'INGREDIENT', ingredientId: azucarId, countedQty: 40 }] })
+      .expect(201);
+    const pending = await request
+      .get('/inventory/counts/pending')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    const viejo = (pending.body as Array<{ id: string; entityId: string; status: string }>).find(
+      (c) => c.entityId === azucarId,
+    );
+    expect(viejo?.status).toBe('PENDING');
+
+    // 2. El admin registra SU conteo del mismo ítem (45) → autoApprove ajusta ya.
+    const adminCount = await request
+      .post('/inventory/counts')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ entityType: 'INGREDIENT', ingredientId: azucarId, countedQty: 45 })
+      .expect(201);
+    expect(adminCount.body.status).toBe('APPROVED');
+    expect(adminCount.body.difference).toBe(-5);
+
+    // 3. El PENDING viejo quedó REJECTED (superseded): ya no aparece y aprobarlo falla.
+    const row = await prisma.stockCount.findUnique({ where: { id: viejo!.id } });
+    expect(row?.status).toBe('REJECTED');
+    const stillPending = await request
+      .get('/inventory/counts/pending')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    expect(
+      (stillPending.body as Array<{ entityId: string }>).filter((c) => c.entityId === azucarId),
+    ).toHaveLength(0);
+    await request
+      .post(`/inventory/counts/${viejo!.id}/approve`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({})
+      .expect(400);
+
+    // 4. El stock quedó en lo que contó el admin (45) — sin doble aplicación (35).
+    const stock = await request
+      .get(`/inventory/stock/ingredient/${azucarId}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    expect(stock.body.currentStock).toBe(45);
+  });
 });

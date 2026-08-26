@@ -48,6 +48,7 @@ import { FinancialReportsService } from './financial-reports.service';
 import { ReconciliationService } from './reconciliation.service';
 import { ReportsService } from './reports.service';
 import { SalesReportsService } from './sales-reports.service';
+import { parseDateRange } from '../common/local-dates';
 
 const MAX_CSV_BYTES = 5 * 1024 * 1024; // 5 MB
 
@@ -97,9 +98,7 @@ export class ReportsController {
     @Query('year') year?: string,
     @Query('month') month?: string,
   ): Promise<MonthlyFinancialStatement> {
-    const now = new Date();
-    const y = year ? Number(year) : now.getFullYear();
-    const m = month ? Number(month) : now.getMonth() + 1;
+    const { y, m } = parseYearMonth(year, month);
     return this.financial.getMonthlyStatement(y, m);
   }
 
@@ -111,8 +110,10 @@ export class ReportsController {
     @Query('month') month?: string,
   ): Promise<MonthlyTrend> {
     const n = Math.max(1, Math.min(Number(months) || 6, 12));
-    const y = year ? Number(year) : undefined;
-    const m = month ? Number(month) : undefined;
+    if (year === undefined && month === undefined) {
+      return this.financial.getMonthlyTrend(n, undefined, undefined);
+    }
+    const { y, m } = parseYearMonth(year, month);
     return this.financial.getMonthlyTrend(n, y, m);
   }
 
@@ -123,9 +124,7 @@ export class ReportsController {
     @Query('year') year?: string,
     @Query('month') month?: string,
   ): Promise<FinancialAnalysis> {
-    const now = new Date();
-    const y = year ? Number(year) : now.getFullYear();
-    const m = month ? Number(month) : now.getMonth() + 1;
+    const { y, m } = parseYearMonth(year, month);
     return this.financial.analyze(y, m, user.sub);
   }
 
@@ -390,40 +389,23 @@ export class ReportsController {
 }
 
 /**
- * Parsea ?from=&to= como YYYY-MM-DD a Date local (00:00 from, 23:59 to).
- * Default: últimos `defaultDays` días (incluyendo hoy).
+ * Valida ?year=&month= de los endpoints financieros. Sin validar, `month=13`
+ * rebalsaba en silencio a enero del año siguiente (rollover de `new Date`) y
+ * `month=abc` terminaba en un 500 de Prisma con Invalid Date.
  */
-function parseDateRange(
-  from: string | undefined,
-  to: string | undefined,
-  defaultDays = 7,
-): { from: Date; to: Date } {
+function parseYearMonth(
+  year: string | undefined,
+  month: string | undefined,
+): { y: number; m: number } {
   const now = new Date();
-  let toDate = to ? parseLocalDate(to) : now;
-  if (!toDate) toDate = now;
-  const toEnd = new Date(toDate);
-  toEnd.setHours(23, 59, 59, 999);
-
-  let fromDate: Date;
-  if (from) {
-    const parsed = parseLocalDate(from);
-    fromDate = parsed ?? new Date(toEnd);
-  } else {
-    fromDate = new Date(toEnd);
-    fromDate.setDate(fromDate.getDate() - (defaultDays - 1));
+  const y = year === undefined ? now.getFullYear() : Number(year);
+  const m = month === undefined ? now.getMonth() + 1 : Number(month);
+  if (!Number.isInteger(y) || y < 2020 || y > 2100) {
+    throw new BadRequestException('El año del reporte no es válido.');
   }
-  fromDate.setHours(0, 0, 0, 0);
-
-  if (fromDate > toEnd) {
-    throw new BadRequestException('?from debe ser <= ?to');
+  if (!Number.isInteger(m) || m < 1 || m > 12) {
+    throw new BadRequestException('El mes del reporte debe estar entre 1 y 12.');
   }
-  return { from: fromDate, to: toEnd };
+  return { y, m };
 }
 
-function parseLocalDate(s: string): Date | null {
-  // YYYY-MM-DD → Date local 00:00. Devuelve null si formato inválido.
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return isNaN(d.getTime()) ? null : d;
-}

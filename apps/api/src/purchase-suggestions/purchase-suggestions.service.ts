@@ -9,6 +9,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   buildOwnerAlert,
   buildPurchaseSuggestionUserPrompt,
+  computeSuggestedPurchase,
+  normalizeConversionFactor,
   buildSupplierOrderMessage,
   normalizeWaPhone,
   roundMoney,
@@ -16,6 +18,7 @@ import {
   type WhatsAppProvider,
 } from '@pos-tercos/domain';
 import type {
+  EvaluateAllResult,
   HistoricalSupplier,
   PurchaseSuggestion,
   PurchaseSuggestionStatus,
@@ -26,6 +29,7 @@ import type {
   WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { describeLlmFailure } from '../adapters/llm/llm-failure';
 import { LLMService } from '../adapters/llm/llm.service';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
@@ -47,6 +51,40 @@ interface ListFilter {
   status?: PurchaseSuggestionStatus | PurchaseSuggestionStatus[];
   limit?: number;
 }
+
+/** Ítems que caben en el resumen por WhatsApp sin pasarse del largo máximo. */
+const MAX_LINEAS_RESUMEN = 40;
+
+/**
+ * Cuánto esperar antes de volver a sugerir un ítem que ya se resolvió.
+ *
+ * Sin esto, resolver una sugerencia NO servía de nada: el escaneo de la hora
+ * siguiente veía el stock todavía bajo (obvio: el pedido no ha llegado) y la
+ * creaba de nuevo. Aceptar "ya se lo pedí al proveedor" o rechazar "no lo voy
+ * a comprar" no tenía ningún efecto duradero.
+ *
+ * ACEPTADA = hay un pedido en camino. Se re-pregunta a los 2 días porque a esa
+ * altura o llegó (y el stock subió, así que no se sugiere nada) o el proveedor
+ * incumplió y hay que volver a moverlo.
+ *
+ * RECHAZADA = decisión de no comprar. Se respeta el resto del día y se vuelve
+ * a preguntar al siguiente: la razón para no comprar suele vencerse.
+ */
+/** Evaluaciones por corrida: cada una es una llamada al modelo. */
+const MAX_EVALUACIONES_POR_CORRIDA = 25;
+
+const REPREGUNTAR_TRAS_ACEPTAR_HS = 48;
+const REPREGUNTAR_TRAS_RECHAZAR_HS = 24;
+
+/**
+ * Textos que ve la persona. Antes decían "Suggestion already resolved
+ * (status=ACCEPTED)" y "Suggestion 8f3a-… not found": inglés, nombre de estado
+ * interno y UUID en pantalla (§3).
+ */
+const YA_RESUELTA =
+  'Esta sugerencia ya fue resuelta por alguien más. Recarga la página para ver cómo quedó.';
+const NO_EXISTE =
+  'No encontramos esa sugerencia. Puede que ya no exista o que el enlace esté viejo.';
 
 @Injectable()
 export class PurchaseSuggestionsService {
@@ -107,11 +145,15 @@ export class PurchaseSuggestionsService {
     // ahora" mientras corre el cron devuelve el resultado vacío sin duplicar.
     if (this.scanning) {
       this.logger.warn('scan ya en curso — se omite esta corrida');
+      // `skipped` para que la pantalla no reporte "0 revisados · 0 nuevas"
+      // como si hubiera revisado y no encontrado nada: no revisó nada.
       return {
         scannedAt: new Date().toISOString(),
         scannedCount: 0,
         createdCount: 0,
         staledCount: 0,
+        failedCount: 0,
+        skipped: true,
       };
     }
     this.scanning = true;
@@ -160,18 +202,49 @@ export class PurchaseSuggestionsService {
         productId: true,
       },
     });
-    const activeKeySet = new Set(
-      activeSuggestions.map((s) =>
-        s.entityType === 'INGREDIENT'
-          ? `INGREDIENT:${s.ingredientId}`
-          : `PRODUCT:${s.productId}`,
-      ),
-    );
+    const keyOf = (x: {
+      entityType: string;
+      ingredientId: string | null;
+      productId: string | null;
+    }): string =>
+      x.entityType === 'INGREDIENT'
+        ? `INGREDIENT:${x.ingredientId}`
+        : `PRODUCT:${x.productId}`;
+
+    const activeKeySet = new Set(activeSuggestions.map(keyOf));
+
+    // Ítems resueltos hace poco: no se vuelven a sugerir todavía (ver las
+    // constantes de arriba). Sin esto, aceptar o rechazar no tenía efecto.
+    const recentlyResolved = await this.prisma.purchaseSuggestion.findMany({
+      where: {
+        OR: [
+          {
+            status: 'ACCEPTED',
+            resolvedAt: { gte: hoursAgo(scannedAt, REPREGUNTAR_TRAS_ACEPTAR_HS) },
+          },
+          {
+            status: 'REJECTED',
+            resolvedAt: { gte: hoursAgo(scannedAt, REPREGUNTAR_TRAS_RECHAZAR_HS) },
+          },
+        ],
+      },
+      select: { entityType: true, ingredientId: true, productId: true },
+    });
+    const onCooldownKeySet = new Set(recentlyResolved.map(keyOf));
 
     let createdCount = 0;
     const lowStockKeys = new Set<string>();
 
+    let failedCount = 0;
+
     for (const s of stockables) {
+      // Los subproductos NO se compran: se PRODUCEN en cocina. Su faltante se
+      // atiende en Producción, no con un pedido a un proveedor — y la tabla
+      // solo acepta insumo o producto (CHECK chk_purchase_sugg_polymorphic).
+      // Sin este salto, un subproducto bajo mínimo tumbaba el escaneo entero
+      // con un 500 y la funcionalidad quedaba muerta.
+      if (s.type === 'SUBPRODUCT') continue;
+
       const thresholdMin = s.thresholdMin;
       if (thresholdMin <= 0) continue;
       const currentStock = s.currentStock;
@@ -181,46 +254,59 @@ export class PurchaseSuggestionsService {
       lowStockKeys.add(key);
 
       if (activeKeySet.has(key)) continue; // ya hay sugerencia abierta
+      if (onCooldownKeySet.has(key)) continue; // se resolvió hace poco
 
-      const suggestedQty = computeSuggestedQty(
-        thresholdMin,
+      const { suggestedQty } = computeSuggestedPurchase({
         currentStock,
-        s.conversionFactor,
-      );
+        thresholdMin,
+        conversionFactor: s.conversionFactor,
+      });
       const estUnitCost = costMap.get(key) ?? null;
       const estTotal =
         estUnitCost === null ? null : roundMoney(suggestedQty * estUnitCost);
 
-      const created = await this.prisma.purchaseSuggestion.create({
-        data: {
-          entityType: s.type,
-          ingredientId: s.type === 'INGREDIENT' ? s.id : null,
-          productId: s.type === 'PRODUCT' ? s.id : null,
-          currentStock,
-          thresholdMin,
-          unitPurchase: s.unitPurchase,
-          suggestedQty,
-          estUnitCost,
-          estTotal,
-        },
-      });
-      createdCount++;
+      // Un item que falla no puede llevarse el escaneo entero por delante: el
+      // resto de las sugerencias del día se perdería y la marca de vencidas
+      // (que va después del bucle) nunca correría.
+      try {
+        const created = await this.prisma.purchaseSuggestion.create({
+          data: {
+            entityType: s.type,
+            ingredientId: s.type === 'INGREDIENT' ? s.id : null,
+            productId: s.type === 'PRODUCT' ? s.id : null,
+            currentStock,
+            thresholdMin,
+            unitPurchase: s.unitPurchase,
+            unitStock: s.unitStock,
+            conversionFactor: s.conversionFactor,
+            suggestedQty,
+            estUnitCost,
+            estTotal,
+          },
+        });
+        createdCount++;
 
-      await this.audit.log({
-        userId: systemUserId,
-        action: 'PURCHASE_SUGGESTION_CREATED',
-        entityType: 'purchase_suggestion',
-        entityId: created.id,
-        metadata: {
-          stockableType: s.type,
-          stockableId: s.id,
-          stockableName: s.name,
-          currentStock,
-          thresholdMin,
-          suggestedQty,
-          estTotal,
-        },
-      });
+        await this.audit.log({
+          userId: systemUserId,
+          action: 'PURCHASE_SUGGESTION_CREATED',
+          entityType: 'purchase_suggestion',
+          entityId: created.id,
+          metadata: {
+            stockableType: s.type,
+            stockableId: s.id,
+            stockableName: s.name,
+            currentStock,
+            thresholdMin,
+            suggestedQty,
+            estTotal,
+          },
+        });
+      } catch (e) {
+        failedCount++;
+        this.logger.error(
+          `scan: no se pudo crear la sugerencia de ${s.type} ${s.name} (${s.id}): ${(e as Error).message}`,
+        );
+      }
     }
 
     // Stale: sugerencias activas cuya entidad ya no está bajo threshold
@@ -232,27 +318,37 @@ export class PurchaseSuggestionsService {
           : `PRODUCT:${sugg.productId}`;
       if (lowStockKeys.has(key)) continue;
 
-      await this.prisma.purchaseSuggestion.update({
-        where: { id: sugg.id },
-        data: {
-          status: 'STALE',
-          resolvedAt: scannedAt,
-          resolutionNote: 'Stock se repuso (auto-stale)',
-        },
-      });
-      staledCount++;
+      try {
+        await this.prisma.purchaseSuggestion.update({
+          where: { id: sugg.id },
+          data: {
+            status: 'STALE',
+            resolvedAt: scannedAt,
+            // No siempre se repuso: también entra acá un insumo desactivado o
+          // con el mínimo puesto en 0. Afirmar "se repuso" falsearía el
+          // historial de quien audite después.
+          resolutionNote: 'Cerrada automáticamente: el ítem ya no está bajo el mínimo',
+          },
+        });
+        staledCount++;
 
-      await this.audit.log({
-        userId: systemUserId,
-        action: 'PURCHASE_SUGGESTION_STALE',
-        entityType: 'purchase_suggestion',
-        entityId: sugg.id,
-      });
+        await this.audit.log({
+          userId: systemUserId,
+          action: 'PURCHASE_SUGGESTION_STALE',
+          entityType: 'purchase_suggestion',
+          entityId: sugg.id,
+        });
+      } catch (e) {
+        failedCount++;
+        this.logger.error(
+          `scan: no se pudo marcar como vencida la sugerencia ${sugg.id}: ${(e as Error).message}`,
+        );
+      }
     }
 
     this.logger.log(
       `Scan ${scannedAt.toISOString()}: ${stockables.length} stockables ` +
-        `→ ${createdCount} suggestions created, ${staledCount} staled`,
+        `→ ${createdCount} suggestions created, ${staledCount} staled, ${failedCount} failed`,
     );
 
     return {
@@ -260,6 +356,8 @@ export class PurchaseSuggestionsService {
       scannedCount: stockables.length,
       createdCount,
       staledCount,
+      failedCount,
+      skipped: false,
     };
   }
 
@@ -288,7 +386,7 @@ export class PurchaseSuggestionsService {
       where: { id },
       include: includeFull(),
     });
-    if (!row) throw new NotFoundException(`Suggestion ${id} not found`);
+    if (!row) throw new NotFoundException(NO_EXISTE);
     return toDto(row);
   }
 
@@ -309,14 +407,12 @@ export class PurchaseSuggestionsService {
       where: { id },
       include: includeFull(),
     });
-    if (!existing) throw new NotFoundException(`Suggestion ${id} not found`);
+    if (!existing) throw new NotFoundException(NO_EXISTE);
     if (
       existing.status !== 'PENDING' &&
       existing.status !== 'EVALUATED'
     ) {
-      throw new BadRequestException(
-        `Suggestion already resolved (status=${existing.status})`,
-      );
+      throw new BadRequestException(YA_RESUELTA);
     }
 
     // Histórico: invoice_items confirmados del mismo stockable, máx 10.
@@ -345,10 +441,10 @@ export class PurchaseSuggestionsService {
       existing.entityType === 'INGREDIENT'
         ? (existing.ingredient?.name ?? '(insumo eliminado)')
         : (existing.product?.name ?? '(producto eliminado)');
-    const unitStock =
-      existing.entityType === 'INGREDIENT'
-        ? 'unidad receta'
-        : 'unidad';
+    // La unidad REAL del inventario (g, unidad). Antes iba fija en "unidad
+    // receta" y el modelo no podía distinguir 2.500 gramos de 2.500 kilos, ni
+    // relacionarlo con el histórico de compras, que sí trae unidades de verdad.
+    const unitStock = existing.unitStock ?? existing.unitPurchase;
 
     const userPrompt = buildPurchaseSuggestionUserPrompt({
       itemName,
@@ -398,29 +494,54 @@ export class PurchaseSuggestionsService {
     return toDto(updated);
   }
 
-  /** Evaluar todas las PENDING sin rationale. Útil como botón "evaluar todas". */
-  async evaluateAllPending(userId: string): Promise<{
-    evaluated: number;
-    failed: number;
-  }> {
+  /**
+   * Evaluar todas las PENDING sin rationale. Útil como botón "evaluar todas".
+   *
+   * Devuelve el MOTIVO de los fallos, no solo cuántos: la causa casi siempre
+   * es la misma para todas (no hay llave de IA configurada, se acabó el saldo)
+   * y sin ese dato "3 fallaron" no le dice a nadie qué hacer.
+   */
+  async evaluateAllPending(userId: string): Promise<EvaluateAllResult> {
+    // Tope por corrida: cada evaluación es una llamada al modelo (~segundos y
+    // plata). Sin límite, 60 pendientes tardaban minutos, el navegador cortaba
+    // la petición y quien mirara volvía a tocar el botón mientras el servidor
+    // seguía gastando. Lo que queda fuera se DICE, no se recorta en silencio.
     const pending = await this.prisma.purchaseSuggestion.findMany({
       where: { status: 'PENDING' },
       select: { id: true },
+      orderBy: { createdAt: 'asc' },
+      take: MAX_EVALUACIONES_POR_CORRIDA + 1,
     });
+    const quedanFuera = Math.max(pending.length - MAX_EVALUACIONES_POR_CORRIDA, 0);
+    pending.length = Math.min(pending.length, MAX_EVALUACIONES_POR_CORRIDA);
     let evaluated = 0;
     let failed = 0;
+    const reasons = new Set<string>();
     for (const p of pending) {
       try {
         await this.evaluate(p.id, userId);
         evaluated++;
       } catch (e) {
         failed++;
+        // No todo fallo es de la IA: si alguien resolvió la sugerencia entre
+        // la consulta y la evaluación, el error es de negocio. Echarle la
+        // culpa al modelo mandaba a revisar la llave por nada.
+        const reason =
+          e instanceof BadRequestException || e instanceof NotFoundException
+            ? 'Alguna sugerencia se resolvió mientras se evaluaba, así que se saltó.'
+            : describeLlmFailure(e);
+        reasons.add(reason);
         this.logger.warn(
           `evaluateAllPending: ${p.id} failed: ${(e as Error).message}`,
         );
       }
     }
-    return { evaluated, failed };
+    if (quedanFuera > 0) {
+      reasons.add(
+        `Quedaron ${quedanFuera} sin evaluar en esta corrida. Vuelve a tocar el botón para seguir.`,
+      );
+    }
+    return { evaluated, failed, errors: [...reasons] };
   }
 
   // ==================================================================
@@ -452,22 +573,30 @@ export class PurchaseSuggestionsService {
     const existing = await this.prisma.purchaseSuggestion.findUnique({
       where: { id },
     });
-    if (!existing) throw new NotFoundException(`Suggestion ${id} not found`);
+    if (!existing) throw new NotFoundException(NO_EXISTE);
     if (existing.status !== 'PENDING' && existing.status !== 'EVALUATED') {
-      throw new BadRequestException(
-        `Suggestion already resolved (status=${existing.status})`,
-      );
+      throw new BadRequestException(YA_RESUELTA);
     }
 
+    // Claim condicionado por estado: si otra persona resolvió la sugerencia
+    // entre la lectura y esta escritura, el update no toca nada y salimos sin
+    // auditar. Antes ambos escribían y el registro quedaba con un ACEPTADA y
+    // un RECHAZADA para la misma sugerencia.
     const now = new Date();
-    const updated = await this.prisma.purchaseSuggestion.update({
-      where: { id },
+    const claim = await this.prisma.purchaseSuggestion.updateMany({
+      where: { id, status: { in: ['PENDING', 'EVALUATED'] } },
       data: {
         status,
         resolvedById: userId,
         resolvedAt: now,
         resolutionNote: note ?? null,
       },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(YA_RESUELTA);
+    }
+    const updated = await this.prisma.purchaseSuggestion.findUniqueOrThrow({
+      where: { id },
       include: includeFull(),
     });
 
@@ -499,7 +628,7 @@ export class PurchaseSuggestionsService {
       where: { id: suggestionId },
       select: { entityType: true, ingredientId: true, productId: true },
     });
-    if (!s) throw new NotFoundException(`Suggestion ${suggestionId} not found`);
+    if (!s) throw new NotFoundException(NO_EXISTE);
 
     const rows = await this.prisma.supplierProduct.findMany({
       where:
@@ -509,7 +638,12 @@ export class PurchaseSuggestionsService {
       include: {
         supplier: { select: { id: true, name: true, phone: true, isActive: true } },
       },
-      orderBy: [{ lastPurchaseDate: 'desc' }, { updatedAt: 'desc' }],
+      // NULLS LAST explícito: en Postgres, DESC pone los nulos PRIMERO, así
+      // que un proveedor sin fecha de compra se coronaría "el más reciente".
+      orderBy: [
+        { lastPurchaseDate: { sort: 'desc', nulls: 'last' } },
+        { updatedAt: 'desc' },
+      ],
     });
 
     if (rows.length === 0) return [];
@@ -561,12 +695,50 @@ export class PurchaseSuggestionsService {
     });
 
     const phone = normalizeWaPhone(supplier.phone);
+
+    // Mismo pedido en formato documento. Se arma acá —y no en la pantalla—
+    // porque los datos del negocio viven en la configuración del servidor: si
+    // el papel y el WhatsApp se armaran por separado terminarían diciendo
+    // cosas distintas.
+    const factor = normalizeConversionFactor(
+      sugg.conversionFactor === null ? null : Number(sugg.conversionFactor),
+    );
+    const unitStock = sugg.unitStock ?? sugg.unitPurchase;
+    const estUnitCost =
+      sugg.estUnitCost === null ? null : Number(sugg.estUnitCost);
+    const lineTotal =
+      estUnitCost === null ? null : roundMoney(quantity * estUnitCost);
+
     return {
       supplierId: supplier.id,
       supplierName: supplier.name,
       phone,
       url: phone ? toWaLink(phone, message).url : null,
       messagePlain: message,
+      document: {
+        businessName: businessName(),
+        businessPhone: config.phoneDisplay || config.phone || null,
+        businessAddress: config.address || null,
+        supplierName: supplier.name,
+        supplierPhone: supplier.phone,
+        issuedOnLabel: formatLongDate(new Date()),
+        neededByLabel: input.neededBy ? formatNeededByLabel(input.neededBy) : null,
+        requestedBy: actor?.fullName ?? null,
+        note: input.note ?? null,
+        items: [
+          {
+            name: itemName,
+            quantity,
+            unitPurchase: sugg.unitPurchase,
+            equivalence:
+              factor === 1 && unitStock === sugg.unitPurchase
+                ? null
+                : `${(quantity * factor).toLocaleString('es-CO', { maximumFractionDigits: 2 })} ${unitStock}`,
+            estTotal: lineTotal,
+          },
+        ],
+        estTotal: lineTotal,
+      },
     };
   }
 
@@ -589,9 +761,12 @@ export class PurchaseSuggestionsService {
         'El proveedor no tiene teléfono. Agrégalo en Proveedores para poder abrir el chat.',
       );
     }
+    // Con unidad y la fecha en palabras: "20" a secas no dice si son kilos o
+    // paquetes, y "2026-08-26" no se lee.
+    const pedido = link.document.items[0];
     const detail = [
-      input.quantity ? String(input.quantity) : null,
-      input.neededBy ? `para el ${input.neededBy}` : null,
+      pedido ? `${pedido.quantity} ${pedido.unitPurchase}` : null,
+      input.neededBy ? `para el ${formatNeededByLabel(input.neededBy)}` : null,
       input.note ?? null,
     ]
       .filter(Boolean)
@@ -632,16 +807,16 @@ export class PurchaseSuggestionsService {
       where: { id: suggestionId },
       include: includeFull(),
     });
-    if (!sugg) throw new NotFoundException(`Suggestion ${suggestionId} not found`);
+    if (!sugg) throw new NotFoundException(NO_EXISTE);
     if (sugg.status !== 'PENDING' && sugg.status !== 'EVALUATED') {
-      throw new BadRequestException(`Suggestion already resolved (status=${sugg.status})`);
+      throw new BadRequestException(YA_RESUELTA);
     }
 
     const supplier = await this.prisma.supplier.findUnique({
       where: { id: supplierId },
       select: { id: true, name: true, phone: true },
     });
-    if (!supplier) throw new NotFoundException(`Supplier ${supplierId} not found`);
+    if (!supplier) throw new NotFoundException('Ese proveedor ya no existe. Elige otro de la lista.');
 
     return { sugg, supplier };
   }
@@ -663,7 +838,7 @@ export class PurchaseSuggestionsService {
         sent: 0,
         failed: 0,
         recipients: [],
-        preview: 'No hay sugerencias pendientes — no se envió nada.',
+        preview: 'No hay sugerencias abiertas — no se envió nada.',
       };
     }
 
@@ -672,7 +847,13 @@ export class PurchaseSuggestionsService {
       select: { id: true, fullName: true, phone: true },
     });
 
-    const lines = open.map((s) => {
+    // Un mensaje de WhatsApp tiene tope de largo: con muchas sugerencias
+    // abiertas el envío falla ENTERO. Se acota y se DICE cuántas quedaron
+    // fuera — un recorte silencioso se lee como "esas son todas".
+    const mostradas = open.slice(0, MAX_LINEAS_RESUMEN);
+    const ocultas = open.length - mostradas.length;
+
+    const lines = mostradas.map((s) => {
       const name =
         s.entityType === 'INGREDIENT'
           ? (s.ingredient?.name ?? '(insumo)')
@@ -681,6 +862,10 @@ export class PurchaseSuggestionsService {
       const cost = s.estTotal === null ? '' : ` · ~$${Math.round(Number(s.estTotal)).toLocaleString('es-CO')}`;
       return `• ${name}: ${qty} ${s.unitPurchase}${cost}`;
     });
+    if (ocultas > 0) {
+      lines.push(`• …y ${ocultas} más. Míralas todas en el admin.`);
+    }
+    // El total SÍ suma todas: es la plata que hay que sacar, no una muestra.
     const total = open.reduce((acc, s) => acc + (s.estTotal === null ? 0 : Number(s.estTotal)), 0);
     const message = buildOwnerAlert({
       businessName: businessName(),
@@ -696,6 +881,37 @@ export class PurchaseSuggestionsService {
     const recipients: WhatsAppSendOutcome['recipients'] = [];
     let sent = 0;
     let failed = 0;
+
+    // Sin proveedor real (el mock de dev) NO se finge el envío: antes decía
+    // "Enviado a 2 destinatarios" y no salía ni un mensaje (§7.v22).
+    if (this.whatsapp.delivers === false) {
+      this.logger.log(
+        'Sin proveedor de WhatsApp: el resumen de compras NO se envió.',
+      );
+      await this.audit.log({
+        userId: actorId,
+        action: 'PURCHASE_SUGGESTION_SUMMARY_SENT',
+        entityType: 'purchase_suggestion',
+        metadata: {
+          suggestions: open.length,
+          sent: 0,
+          failed: 0,
+          delivered: false,
+          error: 'sin proveedor de WhatsApp',
+        },
+      });
+      return {
+        sent: 0,
+        failed: 0,
+        recipients: admins.map((a) => ({
+          name: a.fullName,
+          phone: a.phone ?? '—',
+          status: 'skipped' as const,
+          reason: 'no hay WhatsApp conectado en el servidor',
+        })),
+        preview: message,
+      };
+    }
 
     for (const a of admins) {
       if (!a.phone) {
@@ -729,6 +945,20 @@ export class PurchaseSuggestionsService {
 
     return { sent, failed, recipients, preview: message };
   }
+}
+
+/** El instante N horas antes de `from`. */
+function hoursAgo(from: Date, hours: number): Date {
+  return new Date(from.getTime() - hours * 60 * 60 * 1000);
+}
+
+/** Fecha de emisión de la orden, legible en español. */
+function formatLongDate(d: Date): string {
+  return new Intl.DateTimeFormat('es-CO', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(d);
 }
 
 /**
@@ -766,21 +996,6 @@ function normalizePhone(raw: string): string {
 // HELPERS
 // ====================================================================
 
-function computeSuggestedQty(
-  thresholdMin: number,
-  currentStock: number,
-  conversionFactor: number | null,
-): number {
-  // Refill target: 2× threshold (queda con 1 threshold de buffer post-compra).
-  const targetStockUnits = thresholdMin * 2;
-  const deficitStockUnits = Math.max(targetStockUnits - currentStock, 0);
-  const factor = conversionFactor && conversionFactor > 0 ? conversionFactor : 1;
-  const purchaseQty = deficitStockUnits / factor;
-  // Redondear al entero superior — no se compran fracciones de caja/bolsa.
-  // Mínimo 1 (la sugerencia tiene sentido si hay déficit).
-  return Math.max(Math.ceil(purchaseQty), 1);
-}
-
 function includeFull() {
   return {
     ingredient: { select: { name: true } },
@@ -801,6 +1016,11 @@ function toDto(row: DbSuggestionWithRelations): PurchaseSuggestion {
     productId: row.productId,
     entityName,
     unitPurchase: row.unitPurchase,
+    // Las sugerencias creadas antes de guardar la unidad de stock caen a la de
+    // compra con factor 1: es lo único honesto que se puede decir de ellas.
+    unitStock: row.unitStock ?? row.unitPurchase,
+    conversionFactor:
+      row.conversionFactor === null ? 1 : Number(row.conversionFactor),
     currentStock: Number(row.currentStock),
     thresholdMin: Number(row.thresholdMin),
     suggestedQty: Number(row.suggestedQty),

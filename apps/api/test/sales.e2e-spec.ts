@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { ShiftsService } from '../src/shifts/shifts.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 
@@ -536,6 +537,50 @@ describe('Sales E2E', () => {
       });
       expect(log).toBeTruthy();
       expect((log!.metadata as { kind?: string }).kind).toBe('cross_day_shift');
+    });
+
+    it('la caja se cierra en plena sincronización → 400 y la venta NO se crea', async () => {
+      // Bug (espejo de B4): la caja se resolvía ANTES de la tx; si el cierre
+      // commiteaba en el medio, la venta quedaba colgada de una caja CERRADA —
+      // plata fuera de un arqueo ya congelado, para siempre.
+      const shiftsService = app.get(ShiftsService);
+      const cajero = await prisma.user.findUniqueOrThrow({
+        where: { email: 'cajero-e2e@test.local' },
+        select: { id: true },
+      });
+      // Una caja que ya está CERRADA en la DB…
+      const closedRow = await prisma.shift.create({
+        data: {
+          cashierId: cajero.id,
+          openingCash: 0,
+          status: 'CLOSED',
+          openedAt: new Date(),
+          closedAt: new Date(),
+        },
+      });
+      const closedDto = await shiftsService.getById(closedRow.id);
+      // …que la resolución previa a la tx todavía "ve" abierta: la carrera
+      // real (cierre concurrente) hecha determinista con el spy.
+      const spy = jest
+        .spyOn(shiftsService, 'getActiveTodayShift')
+        .mockResolvedValue(closedDto);
+      const localId = randomUUID();
+      try {
+        const res = await request
+          .post('/sales/sync-offline')
+          .set('Authorization', `Bearer ${cajeroToken}`)
+          .send(buildBody(localId))
+          .expect(400);
+        expect(String(res.body.message)).toContain('cerró');
+        // Cero ventas con ese localId: el reintento desde la bandeja parte limpio.
+        const created = await prisma.sale.findUnique({
+          where: { idempotencyKey: localId },
+        });
+        expect(created).toBeNull();
+      } finally {
+        // Sin esto, el resto de la suite seguiría viendo la caja cerrada.
+        spy.mockRestore();
+      }
     });
   });
 

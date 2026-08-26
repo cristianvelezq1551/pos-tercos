@@ -8,6 +8,7 @@ import {
   applyPromotion,
   buildManualDiscountAlertMessage,
   buildVoidAlertMessage,
+  deliveryFeeShareOfPayment,
   manualDiscountAmount,
   roundMoney,
   roundsToZeroAt4,
@@ -630,9 +631,20 @@ export class SalesService {
     );
     // Faltantes que NO frenan el cobro: productos forzados disponibles +
     // consumibles (servilletas). El negativo resultante se audita.
-    const lineProductIds = Array.from(new Set(items.map((it) => it.productId)));
+    // Se consultan también los COMPONENTES de los combos vendidos: la
+    // disponibilidad salta un componente forzado, así que el guard debe
+    // tolerarlo igual o la UI dice "disponible" y el cobro rechaza con 409.
+    const candidateProductIds = Array.from(
+      new Set(
+        consumptionSpecs.flatMap((s) =>
+          s.componentProductId !== undefined
+            ? [s.originProductId, s.componentProductId]
+            : [s.originProductId],
+        ),
+      ),
+    );
     const forced = await this.prisma.product.findMany({
-      where: { id: { in: lineProductIds }, forceAvailable: true },
+      where: { id: { in: candidateProductIds }, forceAvailable: true },
       select: { id: true },
     });
     const forcedProductIds = forced.map((p) => p.id);
@@ -1055,6 +1067,74 @@ export class SalesService {
   }
 
   /**
+   * Devolución del ENVÍO cuando la caja de la venta sigue ABIERTA (decisión
+   * 2026-08-25: al cliente se le devuelve el total COMPLETO, envío incluido).
+   *
+   * El esperado de esa caja se auto-corrige por la parte de la COMIDA (el VOID
+   * queda excluido de las ventas, que ya van netas de envío §7.v30), pero el
+   * envío nunca estuvo en la caja — se lo llevó el repartidor al entregar. Si
+   * el cajero devuelve el bruto sin este OUT, el arqueo marca un faltante
+   * fantasma exactamente igual al envío. Un OUT por la parte del fee de cada
+   * pago (method-aware, como el reembolso cross-caja) deja la identidad
+   * cerrada: esperado baja neto+fee = bruto devuelto.
+   *
+   * En el camino cross-caja NO se llama: allá el OUT ya es por el BRUTO.
+   */
+  private async refundDeliveryFeeFromOpenShift(
+    tx: Prisma.TransactionClient,
+    sale: {
+      shiftId: string | null;
+      payments: ReadonlyArray<{ method: PaymentMethod; amount: Prisma.Decimal | number }>;
+      receiptNumber: bigint | number;
+      total: Prisma.Decimal | number;
+      deliveryFee: Prisma.Decimal | number | null;
+      paymentMethod: PaymentMethod | null;
+    },
+    userId: string,
+    kind: 'anulada' | 'reembolsada',
+  ): Promise<void> {
+    const fee = roundMoney(Number(sale.deliveryFee ?? 0));
+    if (fee <= 0 || !sale.shiftId) return;
+    const shift = await tx.shift.findUnique({
+      where: { id: sale.shiftId },
+      select: { status: true },
+    });
+    if (!shift || shift.status !== 'OPEN') {
+      throw new BadRequestException(
+        'La caja se cerró mientras se registraba la devolución. Abre caja e intenta de nuevo.',
+      );
+    }
+    const total = Number(sale.total);
+    const parts =
+      sale.payments.length > 0
+        ? sale.payments
+        : [{ method: sale.paymentMethod ?? ('CASH' as PaymentMethod), amount: sale.total }];
+    // Prorrateo del fee por pago; el remanente de redondeo va a la última parte
+    // para que la suma de los OUT sea exactamente el envío.
+    let assigned = 0;
+    const rows = parts
+      .map((p, i) => {
+        const isLast = i === parts.length - 1;
+        const raw = deliveryFeeShareOfPayment(Number(p.amount), total, fee);
+        const share = isLast ? roundMoney(fee - assigned) : roundMoney(raw);
+        assigned = roundMoney(assigned + share);
+        return { method: p.method, share };
+      })
+      .filter((r) => r.share > 0);
+    if (rows.length === 0) return;
+    await tx.cashMovement.createMany({
+      data: rows.map((r) => ({
+        shiftId: sale.shiftId!,
+        type: 'OUT' as const,
+        method: r.method,
+        amount: r.share,
+        reason: `Devolución del envío venta #${sale.receiptNumber} ${kind} (el envío también se devuelve)`,
+        userId,
+      })),
+    });
+  }
+
+  /**
    * Anula una venta. Requiere PIN de Admin/Dueño en `approverPin`. Si la
    * sale estaba PAGADO (o estados posteriores), revierte los movements
    * de stock con movements compensatorios (delta opuesto, type=SALE).
@@ -1148,6 +1228,10 @@ export class SalesService {
           cashierId,
           'anulada',
         );
+      } else {
+        // Caja original ABIERTA: el envío también se devuelve (nunca estuvo en
+        // la caja) → OUT explícito por la parte del fee.
+        await this.refundDeliveryFeeFromOpenShift(tx, existing, cashierId, 'anulada');
       }
       return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
     });
@@ -1219,6 +1303,7 @@ export class SalesService {
         shiftId: true,
         receiptNumber: true,
         total: true,
+        deliveryFee: true,
         paymentMethod: true,
         payments: true,
       },
@@ -1266,6 +1351,10 @@ export class SalesService {
           cashierId,
           'reembolsada',
         );
+      } else {
+        // Caja original ABIERTA: el envío también se devuelve (nunca estuvo en
+        // la caja) → OUT explícito por la parte del fee.
+        await this.refundDeliveryFeeFromOpenShift(tx, existing, cashierId, 'reembolsada');
       }
       return tx.sale.findUniqueOrThrow({ where: { id: saleId }, include: includeFull() });
     });

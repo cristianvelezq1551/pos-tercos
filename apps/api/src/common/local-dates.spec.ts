@@ -1,4 +1,5 @@
-import { localMidnightOfYmd, utcDateOfLocalDay, ymdLocal } from './local-dates';
+import { BadRequestException } from '@nestjs/common';
+import { localMidnightOfYmd, parseDateRange, utcDateOfLocalDay, ymdLocal } from './local-dates';
 
 // Las aserciones se construyen desde componentes LOCALES (new Date(y,m,d,…)),
 // así el spec pasa en cualquier TZ de máquina (Bogotá, UTC, CI).
@@ -51,5 +52,40 @@ describe('local-dates', () => {
       expect(ymdLocal(julTo)).not.toBe(ymdLocal(agoFrom));
       expect(agoFrom.getTime() - julTo.getTime()).toBe(1);
     }
+  });
+
+  describe('parseDateRange', () => {
+    // Regresión: al mover esta función del controller al módulo común se
+    // arrastró una copia ANTERIOR a la auditoría, que ante una fecha con
+    // formato inválido caía al default EN SILENCIO. El reporte salía vacío
+    // y correcto a la vista, sin señal de que la fecha se había ignorado.
+    it('rechaza ?to con formato inválido en vez de usar hoy', () => {
+      expect(() => parseDateRange(undefined, 'basura')).toThrow(BadRequestException);
+      expect(() => parseDateRange(undefined, '31-07-2026')).toThrow(BadRequestException);
+    });
+
+    it('rechaza ?from con formato inválido en vez de usar el fin del rango', () => {
+      expect(() => parseDateRange('basura', '2026-07-31')).toThrow(BadRequestException);
+    });
+
+    it('rechaza un rango invertido', () => {
+      expect(() => parseDateRange('2026-07-31', '2026-07-01')).toThrow(BadRequestException);
+    });
+
+    it('sin fechas usa la ventana por defecto terminando hoy', () => {
+      const { from, to } = parseDateRange(undefined, undefined, 7);
+      expect(to.getHours()).toBe(23);
+      expect(from.getHours()).toBe(0);
+      const days = Math.round((to.getTime() - from.getTime()) / 86_400_000);
+      expect(days).toBe(7); // 7 días completos (el último termina a las 23:59)
+    });
+
+    it('respeta el rango explícito en horas locales', () => {
+      const { from, to } = parseDateRange('2026-07-01', '2026-07-31');
+      expect(ymdLocal(from)).toBe('2026-07-01');
+      expect(ymdLocal(to)).toBe('2026-07-31');
+      expect(from.getHours()).toBe(0);
+      expect(to.getHours()).toBe(23);
+    });
   });
 });
