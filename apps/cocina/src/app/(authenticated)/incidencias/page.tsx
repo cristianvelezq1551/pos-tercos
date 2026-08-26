@@ -1,4 +1,4 @@
-import { IncidenciasView } from '../../../features/incidencias/IncidenciasView';
+import { IncidenciasView } from '../../../features/incidencias';
 
 export default function IncidenciasPage() {
   return <IncidenciasView />;

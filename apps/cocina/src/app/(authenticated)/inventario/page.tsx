@@ -1,4 +1,4 @@
-import { InventarioView } from '../../../features/inventario/InventarioView';
+import { InventarioView } from '../../../features/inventario';
 
 export default function InventarioPage() {
   return <InventarioView />;
