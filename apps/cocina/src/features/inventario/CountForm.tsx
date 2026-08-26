@@ -77,7 +77,7 @@ export function CountForm({ stockables, onDone }: { stockables: Stockable[]; onD
         </p>
       ) : null}
 
-      <Button className="w-full" disabled={pending || filledCount === 0} onClick={() => void submit()}>
+      <Button className="min-h-11 w-full" disabled={pending || filledCount === 0} onClick={() => void submit()}>
         {pending ? 'Registrando…' : `Registrar conteo (${filledCount})`}
       </Button>
     </div>

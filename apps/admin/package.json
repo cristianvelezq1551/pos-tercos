@@ -16,6 +16,7 @@
   "dependencies": {
     "@pos-tercos/brand": "workspace:*",
     "@pos-tercos/domain": "workspace:*",
+    "@pos-tercos/guia": "workspace:*",
     "@pos-tercos/types": "workspace:*",
     "@pos-tercos/ui": "workspace:*",
     "idb": "^8.0.3",

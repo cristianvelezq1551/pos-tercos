@@ -7,6 +7,7 @@ import { getErrorMessage } from '../../lib/errors';
 import { logError } from '../../lib/client-log';
 import { fetchKitchenStock } from './api';
 import { CountForm } from './CountForm';
+import { portionsToShow, stockState, unregisteredHint } from './stock-state';
 import { WasteModal } from './WasteModal';
 
 const TYPE_LABEL: Record<Stockable['type'], string> = {
@@ -67,27 +68,42 @@ export function InventarioView() {
       ) : tab === 'stock' ? (
         <>
           <div className="mt-3">
-            <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Input
+              className="h-11"
+              placeholder="Buscar…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
           </div>
           {filtered.length === 0 ? (
             <EmptyState title="Nada por aquí" description="No hay stock que coincida." size="sm" className="mt-4" />
           ) : (
             <ul className="mt-3 space-y-2">
               {filtered.map((s) => (
-                <li key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
+                <li key={s.id} className="flex min-h-[4.25rem] items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="truncate font-medium text-foreground">{s.name}</span>
-                      {s.lowStock ? <Badge tone="warning">Bajo</Badge> : null}
+                      {stockState(s) === 'unregistered' ? (
+                        <Badge tone="danger">Sin cuadrar</Badge>
+                      ) : stockState(s) === 'low' ? (
+                        <Badge tone="warning">Bajo</Badge>
+                      ) : null}
                     </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                    <p className="mt-0.5 text-sm text-muted-foreground">
                       {TYPE_LABEL[s.type]} · {fmt(s.currentStock)} {s.unitStock}
-                      {s.portions != null ? (
-                        <span className="text-foreground"> · {fmt(s.portions)} porc.</span>
+                      {portionsToShow(s) !== null ? (
+                        <span className="text-foreground"> · {fmt(portionsToShow(s)!)} porc.</span>
                       ) : null}
                     </p>
+                    {stockState(s) === 'unregistered' ? (
+                      // El cocinero no carga facturas: lo único que puede hacer
+                      // con esto es contarlo. Decirle "pide más" sería mandarlo
+                      // a producir sobre un número que no es real.
+                      <p className="mt-1 text-xs text-destructive">{unregisteredHint(s.type)}</p>
+                    ) : null}
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => setWasting(s)}>
+                  <Button variant="outline" className="min-h-11 shrink-0" onClick={() => setWasting(s)}>
                     Merma
                   </Button>
                 </li>
@@ -112,7 +128,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+      className={`min-h-11 rounded-full border px-4 text-sm font-medium transition-colors ${
         active ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted/40'
       }`}
     >

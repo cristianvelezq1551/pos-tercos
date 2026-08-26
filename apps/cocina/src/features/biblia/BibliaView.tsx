@@ -54,7 +54,12 @@ export function BibliaView() {
       </div>
 
       <div className="mt-3">
-        <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input
+              className="h-11"
+              placeholder="Buscar…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
       </div>
 
       <div className="mt-4">
@@ -107,7 +112,7 @@ function TabBtn({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+      className={`min-h-11 rounded-full border px-4 text-sm font-medium transition-colors ${
         active ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted/40'
       }`}
     >

@@ -64,6 +64,7 @@ const nextConfig: NextConfig = {
     '@pos-tercos/brand',
     '@pos-tercos/types',
     '@pos-tercos/domain',
+    '@pos-tercos/guia',
   ],
   async headers() {
     // Headers de seguridad base + CSP (ver el bloque `CSP` de arriba).

@@ -21,13 +21,14 @@ export function LogoutButton() {
   return (
     <Button
       variant="destructive"
-      size="sm"
+      // 44 px: en celular es un objetivo de pulgar como cualquier otro.
+      className="h-11 w-11 p-0"
       onClick={handleClick}
       disabled={pending}
       aria-label="Cerrar sesión"
       title="Cerrar sesión"
     >
-      <Power className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+      <Power className="h-5 w-5" strokeWidth={2.25} aria-hidden />
     </Button>
   );
 }

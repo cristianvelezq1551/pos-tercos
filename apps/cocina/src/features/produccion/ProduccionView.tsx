@@ -60,7 +60,7 @@ export function ProduccionView() {
             {items.map((s) => (
               <li
                 key={s.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
+                className="flex min-h-[4.25rem] items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -72,7 +72,7 @@ export function ProduccionView() {
                     {s.thresholdMin > 0 ? ` · mínimo ${fmt(s.thresholdMin)}` : ''}
                   </p>
                 </div>
-                <Button size="sm" onClick={() => setProducing(s)}>
+                <Button className="min-h-11 shrink-0" onClick={() => setProducing(s)}>
                   Producir
                 </Button>
               </li>
