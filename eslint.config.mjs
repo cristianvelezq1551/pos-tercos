@@ -241,8 +241,8 @@ export default tseslint.config(
     rules: { 'max-lines-per-function': 'off' },
   },
   {
-    // 21 archivos con imports cross-feature que saltan el barrel (auditoría
-    // 2026-08-14). Los de cocina son pages hacia features SIN index.ts (deuda
+    // Archivos con imports cross-feature que saltan el barrel (auditoría
+    // 2026-08-14). Los de cocina SALIERON: sus features ya tienen index.ts (deuda
     // estructural de §7.v11); el resto son los cruces documentados.
     files: [
       'apps/admin/src/app/caja/arqueos/\\[shiftId\\]/metodo/\\[method\\]/page.tsx',
@@ -256,11 +256,6 @@ export default tseslint.config(
       'apps/admin/src/features/sales/api/print.ts',
       'apps/admin/src/features/sales/hooks/useFacturaPrint.tsx',
       'apps/admin/src/lib/socket-auth.ts',
-      'apps/cocina/src/app/(authenticated)/biblia/page.tsx',
-      'apps/cocina/src/app/(authenticated)/checklist/page.tsx',
-      'apps/cocina/src/app/(authenticated)/incidencias/page.tsx',
-      'apps/cocina/src/app/(authenticated)/inventario/page.tsx',
-      'apps/cocina/src/app/(authenticated)/produccion/page.tsx',
       'apps/web/src/features/cart/components/CartDrawer.tsx',
       'apps/web/src/features/catalog/components/CatalogGrid.tsx',
       'apps/web/src/features/checkout/components/CartChangesBanner.tsx',
