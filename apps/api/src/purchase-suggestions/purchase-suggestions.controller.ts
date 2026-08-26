@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -11,6 +12,7 @@ import {
   PurchaseSuggestionStatusEnum,
   ResolveSuggestionSchema,
   SendToSupplierSchema,
+  type EvaluateAllResult,
   type HistoricalSupplier,
   type JwtAccessPayload,
   type PurchaseSuggestion,
@@ -29,8 +31,8 @@ import { PurchaseSuggestionsService } from './purchase-suggestions.service';
 /**
  * Endpoints de sugerencias de compra (FASE 12.C).
  *
- * - List/getById/accept/reject — Admin Operativo + Dueño
- * - Manual scan — Dueño-only (operación intrusiva, evita ruido)
+ * Todo el módulo es Admin Operativo + Dueño (`@AdminAccess`), incluido el
+ * escaneo manual.
  */
 @Controller('purchase-suggestions')
 export class PurchaseSuggestionsController {
@@ -43,8 +45,14 @@ export class PurchaseSuggestionsController {
     @Query('limit') limit?: string,
   ): Promise<PurchaseSuggestion[]> {
     const parsedStatus = status ? parseStatusList(status) : undefined;
-    const parsedLimit = limit ? Math.min(Number(limit) || 200, 500) : undefined;
-    return this.service.list({ status: parsedStatus, limit: parsedLimit });
+    // Un filtro que no existe devolvía lista vacía, indistinguible de "no hay
+    // nada pendiente": un enlace con un typo se veía como buenas noticias.
+    if (parsedStatus && parsedStatus.length === 0) {
+      throw new BadRequestException(
+        'Ese filtro de estado no existe. Vuelve al listado y elige uno de las pestañas.',
+      );
+    }
+    return this.service.list({ status: parsedStatus, limit: parseLimit(limit) });
   }
 
   @AdminAccess()
@@ -75,7 +83,7 @@ export class PurchaseSuggestionsController {
     return this.service.reject(id, user.sub, body);
   }
 
-  /** Scan manual (debugging / on-demand). Admin Operativo + Dueño. */
+  /** Escaneo manual, además del automático cada hora. */
   @AdminAccess()
   @Post('admin/scan')
   scan(@CurrentUser() user: JwtAccessPayload): Promise<ScanResult> {
@@ -95,10 +103,9 @@ export class PurchaseSuggestionsController {
   /** Evaluar todas las PENDING en batch. Admin Operativo + Dueño. */
   @AdminAccess()
   @Post('admin/evaluate-all-pending')
-  evaluateAllPending(@CurrentUser() user: JwtAccessPayload): Promise<{
-    evaluated: number;
-    failed: number;
-  }> {
+  evaluateAllPending(
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<EvaluateAllResult> {
     return this.service.evaluateAllPending(user.sub);
   }
 
@@ -140,6 +147,18 @@ export class PurchaseSuggestionsController {
   sendSummary(@CurrentUser() user: JwtAccessPayload): Promise<WhatsAppSendOutcome> {
     return this.service.sendSummaryToAdmins(user.sub);
   }
+}
+
+/**
+ * Tope de filas. Sin piso, `?limit=-3` llegaba a Prisma como `take: -3`, que
+ * es paginación HACIA ATRÁS: devolvía las 3 más VIEJAS en vez de las 3 más
+ * nuevas, sin error. Silencioso e incorrecto.
+ */
+function parseLimit(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return 200;
+  return Math.min(Math.floor(n), 500);
 }
 
 function parseStatusList(raw: string): PurchaseSuggestionStatus[] {

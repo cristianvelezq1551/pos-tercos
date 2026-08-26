@@ -1,4 +1,5 @@
 import {
+  EvaluateAllResultSchema,
   HistoricalSupplierSchema,
   PurchaseSuggestionSchema,
   ResolveSuggestionSchema,
@@ -6,6 +7,7 @@ import {
   SendToSupplierSchema,
   SupplierOrderLinkSchema,
   WhatsAppSendOutcomeSchema,
+  type EvaluateAllResult,
   type HistoricalSupplier,
   type PurchaseSuggestion,
   type ResolveSuggestion,
@@ -17,18 +19,14 @@ import {
 import { z } from 'zod';
 import { request } from '../../../lib/api-client';
 
+export type { EvaluateAllResult };
+
 const SuggestionListSchema = z.array(PurchaseSuggestionSchema);
 const SupplierListSchema = z.array(HistoricalSupplierSchema);
 const SupplierOrderResultSchema = z.object({
   link: SupplierOrderLinkSchema,
   suggestion: PurchaseSuggestionSchema,
 });
-
-const EvaluateAllResultSchema = z.object({
-  evaluated: z.number().int().nonnegative(),
-  failed: z.number().int().nonnegative(),
-});
-export type EvaluateAllResult = z.infer<typeof EvaluateAllResultSchema>;
 
 export function listSuggestions(opts: {
   status?: string;

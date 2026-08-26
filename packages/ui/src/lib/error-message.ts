@@ -29,6 +29,7 @@ const TECNICO: readonly RegExp[] = [
   /\b(validation failed|internal server error|bad request|forbidden|unauthorized|not found|too many requests)\b/i,
   /^\s*\{?\s*"?statusCode"?\s*:/, // un JSON crudo de la API
   /\bfetch\b.*\bfailed\b/i,
+  /^API \d{3}$/, //                 el fallback de ApiError: "API 500" en pantalla
 ];
 
 /** Mensajes por código HTTP, cuando el backend no mandó uno propio. */

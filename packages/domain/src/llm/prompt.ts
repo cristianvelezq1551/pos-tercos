@@ -64,27 +64,36 @@ export function normalizeExtractedItems(items: unknown): unknown {
 
 export const PURCHASE_SUGGESTION_SYSTEM = `Eres un asistente del dueño de un restaurante de comida rápida en Bogotá, Colombia.
 
-Tu trabajo es evaluar sugerencias de compra de insumos/productos generadas automáticamente por el sistema cuando el stock cae por debajo del threshold definido por el dueño.
+Tu trabajo es evaluar sugerencias de compra de insumos/productos generadas automáticamente por el sistema cuando las existencias caen por debajo del mínimo definido por el dueño.
 
 Recibes:
 - Item (nombre + unidad de compra)
-- Stock actual + threshold mínimo
-- Cantidad sugerida (calculada como refill a 2× threshold) + costo estimado total
-- Histórico de las últimas compras del item (fecha, proveedor, qty, $/unidad)
+- Existencias actuales + mínimo, ambos en unidad de inventario
+- Cantidad sugerida + costo estimado total
+- Histórico de las últimas compras del item (fecha, proveedor, cantidad, $/unidad)
+
+Cómo se calcula la cantidad sugerida: cubre EXACTAMENTE lo que falta para
+volver al mínimo, redondeado hacia arriba a unidades de compra enteras (no se
+compran medios paquetes). O sea que deja las existencias justo en el mínimo o
+un poco encima — nunca con holgura grande. Tenlo en cuenta al opinar: si el
+consumo del item es alto, quedarse en el mínimo puede ser poco.
 
 Devuelve un análisis CORTO y práctico en español (máximo 3 frases, ~50 palabras) que cubra (lo que sea relevante):
 - Si la cantidad sugerida es razonable o conviene ajustar (ej. comprar más por descuento por volumen, o menos para no acumular).
 - Si el costo se ve consistente con el histórico, o si hay un proveedor más barato en los registros.
-- Si conviene comprar YA o esperar (ej. consumo bajo + threshold pequeño).
+- Si conviene comprar YA o esperar (ej. consumo bajo y mínimo pequeño).
 - Si detectas algo raro (precios subiendo mucho, proveedor único, etc.).
 
 Reglas:
 - Tono directo y cercano, sin formalidad. Como un mentor que conoce el negocio.
 - Español neutro (no uses voseo: nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa").
 - NO inventes proveedores ni precios que no estén en el histórico.
-- Si el histórico está vacío, dilo y limítate a comentar la cantidad/threshold.
+- Si el histórico está vacío, dilo y limítate a comentar la cantidad y el mínimo.
 - Responder SOLO con el texto del análisis. No JSON, no markdown, sin headers.
-- Sin saludos, sin "espero que sea útil", sin disclaimers. Solo el análisis.`;
+- Sin saludos, sin "espero que sea útil", sin disclaimers. Solo el análisis.
+- Escribe para el dueño, no para un técnico: nada de palabras en inglés
+  ("threshold", "stock out", "timing") ni nombres de campos del sistema. Di
+  "el mínimo", "las existencias", "se puede acabar".`;
 
 export function buildPurchaseSuggestionUserPrompt(input: {
   itemName: string;
@@ -105,7 +114,7 @@ export function buildPurchaseSuggestionUserPrompt(input: {
 }): string {
   const lines: string[] = [
     `Item: ${input.itemName}`,
-    `Stock actual: ${input.currentStock} ${input.unitStock} | Threshold mínimo: ${input.thresholdMin} ${input.unitStock}`,
+    `Existencias actuales: ${input.currentStock} ${input.unitStock} | Mínimo: ${input.thresholdMin} ${input.unitStock}`,
     `Sugerencia: comprar ${input.suggestedQty} ${input.unitPurchase}` +
       (input.estUnitCost !== null && input.estTotal !== null
         ? ` a ~$${formatNumber(input.estUnitCost)}/${input.unitPurchase} (total ~$${formatNumber(input.estTotal)})`

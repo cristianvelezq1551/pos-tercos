@@ -40,6 +40,7 @@ describe('Sugerencias de compra E2E', () => {
     (await request.post('/purchase-suggestions/admin/scan').set(auth()).expect(201)).body as {
       createdCount: number;
       staledCount: number;
+      failedCount: number;
     };
 
   const suggestionsFor = async (ingredientId: string, status?: string) => {
@@ -64,13 +65,82 @@ describe('Sugerencias de compra E2E', () => {
     await app.close();
   });
 
-  it('el scan crea una sugerencia PENDING con la qty de refill a 2× umbral', async () => {
+  it('el scan sugiere exactamente lo que falta para llegar al mínimo', async () => {
     const ingId = await makeLowStockIngredient('Insumo Bajo', 10, 3); // 3 < 10
     await scan();
     const rows = await suggestionsFor(ingId, 'PENDING');
     expect(rows).toHaveLength(1);
-    // refill a 2×10=20; déficit 20−3=17; /factor 1 → ceil 17.
-    expect(rows[0].suggestedQty).toBe(17);
+    // Mínimo 10, hay 3 → faltan 7; factor 1 → 7. (Antes apuntaba a 2× el
+    // mínimo y pedía 17: el doble de lo necesario.)
+    expect(rows[0].suggestedQty).toBe(7);
+  });
+
+  it('un subproducto bajo mínimo no rompe el escaneo: se produce, no se compra', async () => {
+    // Los subproductos no caben en purchase_suggestions (CHECK insumo xor
+    // producto). Antes de saltarlos, uno solo bajo mínimo tumbaba el escaneo
+    // entero con un 500 y la funcionalidad quedaba muerta.
+    const sub = await prisma.subproduct.create({
+      data: { name: 'Sub Bajo PS', unit: 'unidad', yield: 1, thresholdMin: 20, isActive: true },
+    });
+    const ingId = await makeLowStockIngredient('Insumo Junto Al Sub', 10, 1);
+
+    const r = await scan();
+
+    expect(r.failedCount).toBe(0);
+    // El insumo que venía después del subproducto SÍ se registró.
+    expect(await suggestionsFor(ingId, 'PENDING')).toHaveLength(1);
+    const delSub = await prisma.purchaseSuggestion.count({
+      where: { entityType: 'SUBPRODUCT' },
+    });
+    expect(delSub).toBe(0);
+    await prisma.subproduct.delete({ where: { id: sub.id } });
+  });
+
+  it('aceptar una sugerencia la saca del listado y NO vuelve en el siguiente escaneo', async () => {
+    // Antes, resolver no servía de nada: el escaneo de la hora siguiente veía
+    // el stock todavía bajo (el pedido no ha llegado) y la creaba de nuevo.
+    const ingId = await makeLowStockIngredient('Insumo Ya Pedido', 10, 2);
+    await scan();
+    const [sugg] = await suggestionsFor(ingId, 'PENDING');
+    expect(sugg).toBeDefined();
+
+    await request.post(`/purchase-suggestions/${sugg.id}/accept`).set(auth()).send({}).expect(201);
+
+    const r = await scan();
+    expect(r.createdCount).toBe(0);
+    expect(await suggestionsFor(ingId, 'PENDING')).toHaveLength(0);
+  });
+
+  it('rechazar también se respeta: no reaparece en el siguiente escaneo', async () => {
+    const ingId = await makeLowStockIngredient('Insumo No Comprar', 10, 1);
+    await scan();
+    const [sugg] = await suggestionsFor(ingId, 'PENDING');
+    await request.post(`/purchase-suggestions/${sugg.id}/reject`).set(auth()).send({}).expect(201);
+
+    await scan();
+    expect(await suggestionsFor(ingId, 'PENDING')).toHaveLength(0);
+  });
+
+  it('dos personas resolviendo a la vez: solo una gana y la bitácora no se contradice', async () => {
+    const ingId = await makeLowStockIngredient('Insumo Carrera', 10, 3);
+    await scan();
+    const [sugg] = await suggestionsFor(ingId, 'PENDING');
+
+    const [a, b] = await Promise.all([
+      request.post(`/purchase-suggestions/${sugg.id}/accept`).set(auth()).send({ note: 'la acepto' }),
+      request.post(`/purchase-suggestions/${sugg.id}/reject`).set(auth()).send({ note: 'la rechazo' }),
+    ]);
+
+    const codes = [a.status, b.status].sort();
+    expect(codes).toEqual([201, 400]);
+
+    const audits = await prisma.auditLog.count({
+      where: {
+        entityId: sugg.id,
+        action: { in: ['PURCHASE_SUGGESTION_ACCEPTED', 'PURCHASE_SUGGESTION_REJECTED'] },
+      },
+    });
+    expect(audits).toBe(1);
   });
 
   it('re-escanear NO duplica la sugerencia abierta (dedupe)', async () => {

@@ -48,6 +48,7 @@ import { FinancialReportsService } from './financial-reports.service';
 import { ReconciliationService } from './reconciliation.service';
 import { ReportsService } from './reports.service';
 import { SalesReportsService } from './sales-reports.service';
+import { parseDateRange } from '../common/local-dates';
 
 const MAX_CSV_BYTES = 5 * 1024 * 1024; // 5 MB
 
@@ -408,50 +409,3 @@ function parseYearMonth(
   return { y, m };
 }
 
-/**
- * Parsea ?from=&to= como YYYY-MM-DD a Date local (00:00 from, 23:59 to).
- * Default: últimos `defaultDays` días (incluyendo hoy). Un valor PRESENTE pero
- * mal formado es 400 (misma política que B9 en GET /sales): degradar en
- * silencio devolvía "hoy" a quien creía haber pedido julio.
- */
-function parseDateRange(
-  from: string | undefined,
-  to: string | undefined,
-  defaultDays = 7,
-): { from: Date; to: Date } {
-  const now = new Date();
-  let toDate: Date;
-  if (to !== undefined) {
-    const parsed = parseLocalDate(to);
-    if (!parsed) throw new BadRequestException('?to debe tener formato YYYY-MM-DD');
-    toDate = parsed;
-  } else {
-    toDate = now;
-  }
-  const toEnd = new Date(toDate);
-  toEnd.setHours(23, 59, 59, 999);
-
-  let fromDate: Date;
-  if (from !== undefined) {
-    const parsed = parseLocalDate(from);
-    if (!parsed) throw new BadRequestException('?from debe tener formato YYYY-MM-DD');
-    fromDate = parsed;
-  } else {
-    fromDate = new Date(toEnd);
-    fromDate.setDate(fromDate.getDate() - (defaultDays - 1));
-  }
-  fromDate.setHours(0, 0, 0, 0);
-
-  if (fromDate > toEnd) {
-    throw new BadRequestException('?from debe ser <= ?to');
-  }
-  return { from: fromDate, to: toEnd };
-}
-
-function parseLocalDate(s: string): Date | null {
-  // YYYY-MM-DD → Date local 00:00. Devuelve null si formato inválido.
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return isNaN(d.getTime()) ? null : d;
-}
