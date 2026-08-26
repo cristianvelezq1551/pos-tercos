@@ -1,6 +1,14 @@
 'use client';
 
-import { Archive, History, LayoutDashboard, Settings, UtensilsCrossed, Wallet } from 'lucide-react';
+import {
+  Archive,
+  BookOpen,
+  History,
+  LayoutDashboard,
+  Settings,
+  UtensilsCrossed,
+  Wallet,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useUnseenCortesias } from '../features/caja-cortesias';
@@ -48,12 +56,24 @@ export function CajaNav() {
           </Link>
         );
       })}
+      {/* Ayuda: icon-only siempre. Es la salida cuando no te acuerdas de un
+          paso en plena venta, no una pestaña de trabajo — por eso no compite
+          por espacio con las de arriba. */}
+      <Link
+        href="/guia/caja-vender"
+        aria-label="Abrir la guía de uso"
+        title="Guía de uso"
+        className="ml-2 flex items-center rounded-md px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <BookOpen className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+      </Link>
+
       {/* Switch directo al modo Gestión (dashboard admin), separado de las
           pestañas de caja para leerse como "cambiar de modo". */}
       <Link
         href="/invoices"
         aria-label="Cambiar a Gestión (dashboard admin)"
-        className="ml-2 flex items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground"
+        className="flex items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground"
       >
         <LayoutDashboard className="h-5 w-5" strokeWidth={1.75} aria-hidden />
         <span className="hidden md:inline">Gestión</span>

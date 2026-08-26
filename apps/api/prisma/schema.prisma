@@ -22,48 +22,48 @@ datasource db {
 }
 
 model User {
-  id                 String                  @id @default(uuid())
-  email              String                  @unique
-  passwordHash       String                  @map("password_hash")
-  fullName           String                  @map("full_name")
-  phone              String?
-  role               UserRole
-  mustChangePwd      Boolean                 @default(true) @map("must_change_pwd")
-  tokenVersion       Int                     @default(0) @map("token_version")
-  active             Boolean                 @default(true)
+  id                          String                  @id @default(uuid())
+  email                       String                  @unique
+  passwordHash                String                  @map("password_hash")
+  fullName                    String                  @map("full_name")
+  phone                       String?
+  role                        UserRole
+  mustChangePwd               Boolean                 @default(true) @map("must_change_pwd")
+  tokenVersion                Int                     @default(0) @map("token_version")
+  active                      Boolean                 @default(true)
   /// Datos de empleo (RRHH). payType = MENSUAL (salario/mes) o DIARIO (valor/día).
   /// salaryAmount = salario mensual o valor por día según payType. La paga es
   /// SIEMPRE SEMANAL (lunes a domingo). terminationDate = fin del trabajo (null
   /// = activo). restDaysOfWeek = días de descanso cíclicos (0=domingo … 6=sábado);
   /// solo afecta a DAILY: esos días NO se pagan ni cuentan como trabajados.
-  hireDate           DateTime?               @map("hire_date")
-  payType            PayType?                @map("pay_type")
-  salaryAmount       Decimal?                @map("salary_amount") @db.Decimal(12, 2)
-  terminationDate    DateTime?               @map("termination_date")
-  restDaysOfWeek     Int[]                   @default([]) @map("rest_days_of_week")
-  createdAt          DateTime                @default(now()) @map("created_at")
-  approvalPin        ApprovalPin?
-  auditLogs          AuditLog[]
-  cashMovements      CashMovement[]
-  idempotencyKeys    IdempotencyKey[]
-  inventoryMovements InventoryMovement[]
-  stockCounts        StockCount[]
-  invoicesConfirmed  Invoice[]               @relation("InvoiceConfirmedBy")
-  invoicesPaid       Invoice[]               @relation("InvoicePaymentActor")
-  invoicesUploaded   Invoice[]               @relation("InvoiceUploadedBy")
-  promotionsCreated  Promotion[]
+  hireDate                    DateTime?               @map("hire_date")
+  payType                     PayType?                @map("pay_type")
+  salaryAmount                Decimal?                @map("salary_amount") @db.Decimal(12, 2)
+  terminationDate             DateTime?               @map("termination_date")
+  restDaysOfWeek              Int[]                   @default([]) @map("rest_days_of_week")
+  createdAt                   DateTime                @default(now()) @map("created_at")
+  approvalPin                 ApprovalPin?
+  auditLogs                   AuditLog[]
+  cashMovements               CashMovement[]
+  idempotencyKeys             IdempotencyKey[]
+  inventoryMovements          InventoryMovement[]
+  stockCounts                 StockCount[]
+  invoicesConfirmed           Invoice[]               @relation("InvoiceConfirmedBy")
+  invoicesPaid                Invoice[]               @relation("InvoicePaymentActor")
+  invoicesUploaded            Invoice[]               @relation("InvoiceUploadedBy")
+  promotionsCreated           Promotion[]
   purchaseSuggestionsResolved PurchaseSuggestion[]
-  refreshTokens      RefreshToken[]
-  saleStatusChanges  SaleStatusLog[]
-  salesAsCashier     Sale[]                  @relation("SaleCashier")
-  salesAsPaidBy      Sale[]                  @relation("SalePaidBy")
-  shifts             Shift[]
-  paymentReconciliations PaymentReconciliation[]
-  payrollDays        PayrollDay[]
-  payrollAdjustments PayrollAdjustment[]
-  payrollPayments    PayrollPayment[]
-  payrollWeekPayments PayrollWeekPayment[]
-  fixedCostPayments  FixedCostPayment[]      @relation("FixedCostPaymentActor")
+  refreshTokens               RefreshToken[]
+  saleStatusChanges           SaleStatusLog[]
+  salesAsCashier              Sale[]                  @relation("SaleCashier")
+  salesAsPaidBy               Sale[]                  @relation("SalePaidBy")
+  shifts                      Shift[]
+  paymentReconciliations      PaymentReconciliation[]
+  payrollDays                 PayrollDay[]
+  payrollAdjustments          PayrollAdjustment[]
+  payrollPayments             PayrollPayment[]
+  payrollWeekPayments         PayrollWeekPayment[]
+  fixedCostPayments           FixedCostPayment[]      @relation("FixedCostPaymentActor")
 
   @@index([role, active])
   @@map("users")
@@ -83,41 +83,41 @@ model RefreshToken {
 }
 
 model Product {
-  id                    String              @id @default(uuid())
+  id                    String               @id @default(uuid())
   name                  String
   description           String?
   /// Paso a paso de preparación (la "biblia" del cocinero). Ordenado. Editable
   /// desde el admin; lo lee el KDS por GET /recipe-book.
-  preparationSteps      String[]            @default([]) @map("preparation_steps")
-  basePrice             Decimal             @map("base_price") @db.Decimal(12, 2)
+  preparationSteps      String[]             @default([]) @map("preparation_steps")
+  basePrice             Decimal              @map("base_price") @db.Decimal(12, 2)
   category              String?
-  imageUrl              String?             @map("image_url")
+  imageUrl              String?              @map("image_url")
   /// Emoji representativo del producto (🍔🍟🥤). Alternativa ligera a la foto:
   /// se muestra en el menú web cuando no hay imageUrl. null = sin emoji.
   emoji                 String?
-  modifiersEnabled      Boolean             @default(false) @map("modifiers_enabled")
-  isCombo               Boolean             @default(false) @map("is_combo")
-  comboPrice            Decimal?            @map("combo_price") @db.Decimal(12, 2)
-  isActive              Boolean             @default(true) @map("is_active")
+  modifiersEnabled      Boolean              @default(false) @map("modifiers_enabled")
+  isCombo               Boolean              @default(false) @map("is_combo")
+  comboPrice            Decimal?             @map("combo_price") @db.Decimal(12, 2)
+  isActive              Boolean              @default(true) @map("is_active")
   /// "86" manual: el cajero/admin lo marca agotado y desaparece como vendible
   /// (cajero + web) sin tocar el catálogo. Independiente del stock de insumos.
-  soldOut               Boolean             @default(false) @map("sold_out")
+  soldOut               Boolean              @default(false) @map("sold_out")
   /// "Forzar disponible": el dueño lo vende aunque el stock de sus insumos/
   /// subproductos NO alcance en el sistema (stock físico no registrado). Pisa
   /// el cómputo de disponibilidad Y salta el guard de stock al cobrar (el
   /// faltante queda en negativo + bitácora). Excluyente con soldOut.
-  forceAvailable        Boolean             @default(false) @map("force_available")
-  createdAt             DateTime            @default(now()) @map("created_at")
-  updatedAt             DateTime            @updatedAt @map("updated_at")
-  conversionFactor      Decimal?            @map("conversion_factor") @db.Decimal(14, 6)
-  directResale          Boolean             @default(false) @map("direct_resale")
-  thresholdMin          Decimal             @default(0) @map("threshold_min") @db.Decimal(14, 4)
-  unitPurchase          String?             @map("unit_purchase")
-  unitStock             String?             @map("unit_stock")
-  lastUnitCost          Decimal?            @map("last_unit_cost") @db.Decimal(14, 4)
-  lastUnitCostDate      DateTime?           @map("last_unit_cost_date")
-  comboComponents       ComboComponent[]    @relation("ComboParent")
-  partOfCombos          ComboComponent[]    @relation("ComboChild")
+  forceAvailable        Boolean              @default(false) @map("force_available")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  conversionFactor      Decimal?             @map("conversion_factor") @db.Decimal(14, 6)
+  directResale          Boolean              @default(false) @map("direct_resale")
+  thresholdMin          Decimal              @default(0) @map("threshold_min") @db.Decimal(14, 4)
+  unitPurchase          String?              @map("unit_purchase")
+  unitStock             String?              @map("unit_stock")
+  lastUnitCost          Decimal?             @map("last_unit_cost") @db.Decimal(14, 4)
+  lastUnitCostDate      DateTime?            @map("last_unit_cost_date")
+  comboComponents       ComboComponent[]     @relation("ComboParent")
+  partOfCombos          ComboComponent[]     @relation("ComboChild")
   movements             InventoryMovement[]
   invoiceItems          InvoiceItem[]
   stockCounts           StockCount[]
@@ -125,9 +125,9 @@ model Product {
   sizes                 ProductSize[]
   promotionProducts     PromotionProduct[]
   purchaseSuggestions   PurchaseSuggestion[]
-  recipeEdges           RecipeEdge[]        @relation("ProductRecipe")
+  recipeEdges           RecipeEdge[]         @relation("ProductRecipe")
   saleItems             SaleItem[]
-  supplierResaleHistory SupplierProduct[]   @relation("SupplierProductResale")
+  supplierResaleHistory SupplierProduct[]    @relation("SupplierProductResale")
 
   @@index([category, isActive])
   @@index([isActive])
@@ -192,59 +192,59 @@ model ComboComponent {
 }
 
 model Subproduct {
-  id                  String              @id @default(uuid())
-  name                String
-  yield               Decimal             @db.Decimal(10, 4)
-  unit                String              @default("unidad")
+  id                 String              @id @default(uuid())
+  name               String
+  yield              Decimal             @db.Decimal(10, 4)
+  unit               String              @default("unidad")
   /// Paso a paso de preparación (biblia del cocinero). Ordenado.
-  preparationSteps    String[]            @default([]) @map("preparation_steps")
+  preparationSteps   String[]            @default([]) @map("preparation_steps")
   /// Umbral mínimo de stock (en `unit`). Si stock cae bajo este nivel
   /// debería sugerirse producir más. 0 = sin umbral.
-  thresholdMin        Decimal             @default(0) @db.Decimal(14, 4) @map("threshold_min")
+  thresholdMin       Decimal             @default(0) @map("threshold_min") @db.Decimal(14, 4)
   /// Tamaño de una porción, en `unit`. Null = sin porción definida.
-  portionSize         Decimal?            @db.Decimal(14, 4) @map("portion_size")
+  portionSize        Decimal?            @map("portion_size") @db.Decimal(14, 4)
   /// Si al faltar stock de este subproducto se frena la venta del producto que
   /// lo usa. false = no bloquea (ej. una salsa opcional). DEFAULT del
   /// subproducto; cada receta puede pisarlo (recipe_edges). Ver Ingredient.
-  blocksAvailability  Boolean             @default(true) @map("blocks_availability")
-  isActive            Boolean             @default(true) @map("is_active")
-  createdAt           DateTime            @default(now()) @map("created_at")
-  updatedAt           DateTime            @updatedAt @map("updated_at")
-  consumedAs          RecipeEdge[]        @relation("SubproductChild")
-  recipeEdges         RecipeEdge[]        @relation("SubproductRecipe")
-  inventoryMovements  InventoryMovement[]
-  stockCounts         StockCount[]
+  blocksAvailability Boolean             @default(true) @map("blocks_availability")
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  consumedAs         RecipeEdge[]        @relation("SubproductChild")
+  recipeEdges        RecipeEdge[]        @relation("SubproductRecipe")
+  inventoryMovements InventoryMovement[]
+  stockCounts        StockCount[]
 
   @@index([isActive])
   @@map("subproducts")
 }
 
 model Ingredient {
-  id               String              @id @default(uuid())
-  name             String
-  unitPurchase     String              @map("unit_purchase")
-  unitRecipe       String              @map("unit_recipe")
-  conversionFactor Decimal             @map("conversion_factor") @db.Decimal(14, 6)
-  thresholdMin     Decimal             @default(0) @map("threshold_min") @db.Decimal(14, 4)
+  id                  String               @id @default(uuid())
+  name                String
+  unitPurchase        String               @map("unit_purchase")
+  unitRecipe          String               @map("unit_recipe")
+  conversionFactor    Decimal              @map("conversion_factor") @db.Decimal(14, 6)
+  thresholdMin        Decimal              @default(0) @map("threshold_min") @db.Decimal(14, 4)
   /// Tamaño de una porción, en unitRecipe (ej. 150 = 150 g/porción). Null = sin porción.
-  portionSize      Decimal?            @map("portion_size") @db.Decimal(14, 4)
+  portionSize         Decimal?             @map("portion_size") @db.Decimal(14, 4)
   /// Costo histórico (FASE 4 ajustes 2.2). En unitPurchase. Auto-actualizado al confirmar facturas.
-  lastUnitCost     Decimal?            @map("last_unit_cost") @db.Decimal(14, 4)
-  lastUnitCostDate DateTime?           @map("last_unit_cost_date")
+  lastUnitCost        Decimal?             @map("last_unit_cost") @db.Decimal(14, 4)
+  lastUnitCostDate    DateTime?            @map("last_unit_cost_date")
   /// Si al faltar stock de este insumo se frena la venta del producto que lo usa.
   /// false = CONSUMIBLE (servilletas, sal): nunca bloquea y se oculta del panel
   /// de deudas de inventario. Se sigue descontando y costeando igual.
   /// Es el DEFAULT del insumo; cada receta puede pisarlo (recipe_edges).
-  blocksAvailability Boolean           @default(true) @map("blocks_availability")
-  isActive         Boolean             @default(true) @map("is_active")
-  createdAt        DateTime            @default(now()) @map("created_at")
-  updatedAt        DateTime            @updatedAt @map("updated_at")
-  movements        InventoryMovement[]
-  invoiceItems     InvoiceItem[]
-  stockCounts      StockCount[]
-  consumedAs       RecipeEdge[]        @relation("IngredientChild")
+  blocksAvailability  Boolean              @default(true) @map("blocks_availability")
+  isActive            Boolean              @default(true) @map("is_active")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  movements           InventoryMovement[]
+  invoiceItems        InvoiceItem[]
+  stockCounts         StockCount[]
+  consumedAs          RecipeEdge[]         @relation("IngredientChild")
   purchaseSuggestions PurchaseSuggestion[]
-  supplierProducts SupplierProduct[]
+  supplierProducts    SupplierProduct[]
 
   @@index([isActive])
   @@map("ingredients")
@@ -287,7 +287,7 @@ model InventoryMovement {
   /// Costo por unidad de stock/receta. Solo entradas (delta > 0: PURCHASE,
   /// INITIAL, ajuste+). NULL en consumos (el costo lo resuelve el motor FIFO)
   /// y en entradas sin costo conocido. Base del costeo real (COGS).
-  unitCost       Decimal?              @db.Decimal(14, 4) @map("unit_cost")
+  unitCost       Decimal?              @map("unit_cost") @db.Decimal(14, 4)
   sourceType     String?               @map("source_type")
   sourceId       String?               @map("source_id")
   userId         String?               @map("user_id")
@@ -312,6 +312,8 @@ model InventoryMovement {
   @@index([type, createdAt(sort: Desc)])
   /// Reversos/lecturas por origen (void, edición, cortesía, producción).
   @@index([sourceType, sourceId])
+  /// Producción y merma filtradas por trabajador (vista de cocina del dueño).
+  @@index([userId, createdAt(sort: Desc)])
   @@map("inventory_movements")
 }
 
@@ -384,46 +386,46 @@ model SupplierProduct {
 }
 
 model Invoice {
-  id               String        @id @default(uuid())
-  supplierId       String?       @map("supplier_id")
-  invoiceNumber    String?       @map("invoice_number")
-  total            Decimal?      @db.Decimal(14, 2)
-  iva              Decimal?      @db.Decimal(14, 2)
-  photoStorageKey  String?       @map("photo_storage_key")
-  aiExtractionJson Json?         @map("ai_extraction_json")
-  aiModelUsed      String?       @map("ai_model_used")
-  status           InvoiceStatus @default(PENDING_REVIEW)
-  uploadedById     String?       @map("uploaded_by_id")
-  confirmedById    String?       @map("confirmed_by_id")
-  confirmedAt      DateTime?     @map("confirmed_at")
-  notes            String?
+  id                String        @id @default(uuid())
+  supplierId        String?       @map("supplier_id")
+  invoiceNumber     String?       @map("invoice_number")
+  total             Decimal?      @db.Decimal(14, 2)
+  iva               Decimal?      @db.Decimal(14, 2)
+  photoStorageKey   String?       @map("photo_storage_key")
+  aiExtractionJson  Json?         @map("ai_extraction_json")
+  aiModelUsed       String?       @map("ai_model_used")
+  status            InvoiceStatus @default(PENDING_REVIEW)
+  uploadedById      String?       @map("uploaded_by_id")
+  confirmedById     String?       @map("confirmed_by_id")
+  confirmedAt       DateTime?     @map("confirmed_at")
+  notes             String?
   /// Control de pago al proveedor (independiente de `status` que es solo
   /// sobre la validación IA). NULL = aún no aplicable (factura sin confirmar);
   /// 'PENDING' = confirmada pero no transferida; 'PAID' = ya pagada con
   /// comprobante. Solo Dueño + PIN. CHECK al nivel DB.
-  paymentStatus    String?       @map("payment_status")
-  paidAt           DateTime?     @map("paid_at")
+  paymentStatus     String?       @map("payment_status")
+  paidAt            DateTime?     @map("paid_at")
   /// Storage key de la foto del comprobante de transferencia. Obligatorio
   /// si paymentStatus='PAID'.
-  paymentProofKey  String?       @map("payment_proof_key")
-  paymentActorId   String?       @map("payment_actor_id")
-  paymentNote      String?       @map("payment_note")
+  paymentProofKey   String?       @map("payment_proof_key")
+  paymentActorId    String?       @map("payment_actor_id")
+  paymentNote       String?       @map("payment_note")
   /// Bolsillo de tesorería del que salió el pago: 'EFECTIVO' | 'CUENTA'.
   /// (legacy; hoy el reparto real vive en payment_cash_amount/bank_amount).
-  paymentPocket    String        @default("CUENTA") @map("payment_pocket")
+  paymentPocket     String        @default("CUENTA") @map("payment_pocket")
   /// Reparto del pago por bolsillo (permite mixto). Suman el total.
-  paymentCashAmount Decimal      @default(0) @map("payment_cash_amount") @db.Decimal(14, 2)
-  paymentBankAmount Decimal      @default(0) @map("payment_bank_amount") @db.Decimal(14, 2)
+  paymentCashAmount Decimal       @default(0) @map("payment_cash_amount") @db.Decimal(14, 2)
+  paymentBankAmount Decimal       @default(0) @map("payment_bank_amount") @db.Decimal(14, 2)
   /// Responsable que asume este gasto (ej. Cristian / Pablo) — para el
   /// desglose de compromisos en Tesorería. NULL = sin asignar.
-  responsible      String?
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
-  items            InvoiceItem[]
-  confirmedBy      User?         @relation("InvoiceConfirmedBy", fields: [confirmedById], references: [id])
-  paymentActor     User?         @relation("InvoicePaymentActor", fields: [paymentActorId], references: [id])
-  supplier         Supplier?     @relation(fields: [supplierId], references: [id])
-  uploadedBy       User?         @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
+  responsible       String?
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  items             InvoiceItem[]
+  confirmedBy       User?         @relation("InvoiceConfirmedBy", fields: [confirmedById], references: [id])
+  paymentActor      User?         @relation("InvoicePaymentActor", fields: [paymentActorId], references: [id])
+  supplier          Supplier?     @relation(fields: [supplierId], references: [id])
+  uploadedBy        User?         @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
 
   @@index([status, createdAt(sort: Desc)])
   @@index([supplierId, createdAt(sort: Desc)])
@@ -464,73 +466,73 @@ model InvoiceItem {
 /// idempotency_key permite que el POS reintente POST /sales sin duplicar.
 /// El campo es UNIQUE pero opcional (web orders no lo usan).
 model Sale {
-  id                            String          @id @default(uuid())
-  receiptNumber                 BigInt          @unique @default(dbgenerated("nextval('receipt_seq'::regclass)")) @map("receipt_number")
+  id                            String            @id @default(uuid())
+  receiptNumber                 BigInt            @unique @default(dbgenerated("nextval('receipt_seq'::regclass)")) @map("receipt_number")
   type                          SaleType
-  status                        SaleStatus      @default(PENDIENTE_PAGO)
+  status                        SaleStatus        @default(PENDIENTE_PAGO)
   /// Turno mostrado al cliente. Se asigna al PAGAR (no al crear): secuencia
   /// diaria única compartida entre COUNTER y WEB_PICKUP. Null hasta el pago.
-  turnNumber                    Int?            @map("turn_number")
-  customerName                  String?         @map("customer_name")
-  customerPhone                 String?         @map("customer_phone")
-  customerNit                   String?         @map("customer_nit")
-  subtotal                      Decimal         @db.Decimal(14, 2)
-  discountTotal                 Decimal         @default(0) @map("discount_total") @db.Decimal(14, 2)
-  total                         Decimal         @db.Decimal(14, 2)
+  turnNumber                    Int?              @map("turn_number")
+  customerName                  String?           @map("customer_name")
+  customerPhone                 String?           @map("customer_phone")
+  customerNit                   String?           @map("customer_nit")
+  subtotal                      Decimal           @db.Decimal(14, 2)
+  discountTotal                 Decimal           @default(0) @map("discount_total") @db.Decimal(14, 2)
+  total                         Decimal           @db.Decimal(14, 2)
   /// Cuenta abierta (#3): venta COUNTER que vive en PENDIENTE_PAGO
   /// indefinidamente (cliente conocido). Exenta del sweep de abandonadas.
-  isOpenTab                     Boolean         @default(false) @map("is_open_tab")
+  isOpenTab                     Boolean           @default(false) @map("is_open_tab")
   /// Descuento manual (#5b): motivo obligatorio cuando hay descuento manual.
-  discountReason                String?         @map("discount_reason")
+  discountReason                String?           @map("discount_reason")
   /// Descuento manual sobre el TOTAL: 'FIXED' | 'PERCENT' (CHECK en DB).
-  orderDiscountKind             String?         @map("order_discount_kind")
-  orderDiscountValue            Decimal?        @map("order_discount_value") @db.Decimal(14, 2)
+  orderDiscountKind             String?           @map("order_discount_kind")
+  orderDiscountValue            Decimal?          @map("order_discount_value") @db.Decimal(14, 2)
   /// Monto resultante del descuento sobre el total (0 si no hay).
   /// discount_total = Σ line_discount + order_discount_amount.
-  orderDiscountAmount           Decimal         @default(0) @map("order_discount_amount") @db.Decimal(14, 2)
-  paymentMethod                 String?         @map("payment_method")
-  paidAt                        DateTime?       @map("paid_at")
+  orderDiscountAmount           Decimal           @default(0) @map("order_discount_amount") @db.Decimal(14, 2)
+  paymentMethod                 String?           @map("payment_method")
+  paidAt                        DateTime?         @map("paid_at")
   /// Momento en que la cocina marcó LISTO_DESPACHO. Ordena la cola de
   /// "listos por llamar" del cajero. Null hasta que esté listo.
-  readyAt                       DateTime?       @map("ready_at")
+  readyAt                       DateTime?         @map("ready_at")
   /// Momento en que el cajero llamó este turno a la pantalla pública. Null
   /// mientras está listo pero aún sin llamar. Permite "ya llamado" + re-llamar.
-  calledAt                      DateTime?       @map("called_at")
-  paidByUserId                  String?         @map("paid_by_user_id")
-  cashierId                     String?         @map("cashier_id")
-  shiftId                       String?         @map("shift_id")
+  calledAt                      DateTime?         @map("called_at")
+  paidByUserId                  String?           @map("paid_by_user_id")
+  cashierId                     String?           @map("cashier_id")
+  shiftId                       String?           @map("shift_id")
   notes                         String?
   /// Motivo de anulación (solo cuando status=VOID). Se muestra en el historial.
-  voidReason                    String?         @map("void_reason")
+  voidReason                    String?           @map("void_reason")
   /// ── Entrega a domicilio (solo type=WEB_DELIVERY; CHECK en DB) ──
   /// Costo del envío. El cajero lo carga a mano tras preguntarle la tarifa al
   /// domiciliario; entra al `total` porque el cliente transfiere UN solo monto.
   /// SÍ cuenta como ingreso (el reparto es un servicio que se vende); lo que se
   /// le paga al domiciliario es un gasto aparte en su módulo.
-  deliveryFee                   Decimal         @default(0) @map("delivery_fee") @db.Decimal(14, 2)
+  deliveryFee                   Decimal           @default(0) @map("delivery_fee") @db.Decimal(14, 2)
   /// Dirección escrita por el cliente. TEXTO LIBRE: el repartidor necesita
   /// "torre 2, apto 502, portería azul", no coordenadas.
-  deliveryAddress               String?         @map("delivery_address")
+  deliveryAddress               String?           @map("delivery_address")
   /// Referencias extra (punto de encuentro, "timbre roto", etc.).
-  deliveryNotes                 String?         @map("delivery_notes")
+  deliveryNotes                 String?           @map("delivery_notes")
   /// GPS del cliente al pedir. Valida la zona y abre el mapa; NO reemplaza a
   /// la dirección. Van juntas o ninguna (CHECK).
-  deliveryLat                   Float?          @map("delivery_lat")
-  deliveryLng                   Float?          @map("delivery_lng")
-  idempotencyKey                String?         @unique @map("idempotency_key")
-  createdAt                     DateTime        @default(now()) @map("created_at")
-  public_token                  String?         @unique
-  notified_payment_instructions Boolean         @default(false)
-  notified_payment_received     Boolean         @default(false)
-  notified_ready_for_pickup     Boolean         @default(false)
-  notified_canceled             Boolean         @default(false)
+  deliveryLat                   Float?            @map("delivery_lat")
+  deliveryLng                   Float?            @map("delivery_lng")
+  idempotencyKey                String?           @unique @map("idempotency_key")
+  createdAt                     DateTime          @default(now()) @map("created_at")
+  public_token                  String?           @unique
+  notified_payment_instructions Boolean           @default(false)
+  notified_payment_received     Boolean           @default(false)
+  notified_ready_for_pickup     Boolean           @default(false)
+  notified_canceled             Boolean           @default(false)
   items                         SaleItem[]
   statusLog                     SaleStatusLog[]
   payments                      SalePayment[]
   whatsappMessages              WhatsAppMessage[]
-  cashier                       User?           @relation("SaleCashier", fields: [cashierId], references: [id])
-  paidBy                        User?           @relation("SalePaidBy", fields: [paidByUserId], references: [id])
-  shift                         Shift?          @relation(fields: [shiftId], references: [id])
+  cashier                       User?             @relation("SaleCashier", fields: [cashierId], references: [id])
+  paidBy                        User?             @relation("SalePaidBy", fields: [paidByUserId], references: [id])
+  shift                         Shift?            @relation(fields: [shiftId], references: [id])
 
   @@unique([shiftId, turnNumber])
   @@index([status, createdAt(sort: Desc)])
@@ -548,30 +550,30 @@ model Sale {
 /// modifiers_json es snapshot (array de objetos con name/priceDelta) para
 /// preservar la información tal como estaba al momento de la venta.
 model SaleItem {
-  id                 String       @id @default(uuid())
-  saleId             String       @map("sale_id")
-  productId          String       @map("product_id")
-  sizeId             String?      @map("size_id")
-  quantity           Int
-  unitPrice          Decimal      @map("unit_price") @db.Decimal(12, 2)
-  modifiersJson      Json         @default("[]") @map("modifiers_json")
-  notes              String?
-  appliedPromotionId String?      @map("applied_promotion_id")
-  lineSubtotal       Decimal      @map("line_subtotal") @db.Decimal(14, 2)
-  lineDiscount       Decimal      @default(0) @map("line_discount") @db.Decimal(14, 2)
-  lineTotal          Decimal      @map("line_total") @db.Decimal(14, 2)
+  id                  String       @id @default(uuid())
+  saleId              String       @map("sale_id")
+  productId           String       @map("product_id")
+  sizeId              String?      @map("size_id")
+  quantity            Int
+  unitPrice           Decimal      @map("unit_price") @db.Decimal(12, 2)
+  modifiersJson       Json         @default("[]") @map("modifiers_json")
+  notes               String?
+  appliedPromotionId  String?      @map("applied_promotion_id")
+  lineSubtotal        Decimal      @map("line_subtotal") @db.Decimal(14, 2)
+  lineDiscount        Decimal      @default(0) @map("line_discount") @db.Decimal(14, 2)
+  lineTotal           Decimal      @map("line_total") @db.Decimal(14, 2)
   /// Comanda incremental (#3): unidades de esta línea YA enviadas a cocina.
   /// La comanda de una cuenta abierta imprime quantity - sent_to_kitchen_qty.
-  sentToKitchenQty   Int          @default(0) @map("sent_to_kitchen_qty")
-  sentToKitchenAt    DateTime?    @map("sent_to_kitchen_at")
+  sentToKitchenQty    Int          @default(0) @map("sent_to_kitchen_qty")
+  sentToKitchenAt     DateTime?    @map("sent_to_kitchen_at")
   /// Descuento manual por línea (#5b): 'FIXED' | 'PERCENT' (CHECK en DB).
   /// El monto resultante vive en line_discount (appliedPromotionId queda null).
-  manualDiscountKind  String?     @map("manual_discount_kind")
-  manualDiscountValue Decimal?    @map("manual_discount_value") @db.Decimal(14, 2)
-  appliedPromotion   Promotion?   @relation(fields: [appliedPromotionId], references: [id])
-  product            Product      @relation(fields: [productId], references: [id])
-  sale               Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  size               ProductSize? @relation(fields: [sizeId], references: [id])
+  manualDiscountKind  String?      @map("manual_discount_kind")
+  manualDiscountValue Decimal?     @map("manual_discount_value") @db.Decimal(14, 2)
+  appliedPromotion    Promotion?   @relation(fields: [appliedPromotionId], references: [id])
+  product             Product      @relation(fields: [productId], references: [id])
+  sale                Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  size                ProductSize? @relation(fields: [sizeId], references: [id])
 
   @@index([saleId])
   @@index([productId])
@@ -604,27 +606,27 @@ model SaleStatusLog {
 /// CHECK: solo puede haber 1 Shift OPEN por cajero a la vez (validado en
 /// service, no en DB porque requiere subquery).
 model Shift {
-  id           String      @id @default(uuid())
-  cashierId    String      @map("cashier_id")
-  openedAt     DateTime    @default(now()) @map("opened_at")
-  closedAt     DateTime?   @map("closed_at")
-  openingCash  Decimal     @map("opening_cash") @db.Decimal(14, 2)
-  expectedCash Decimal?    @map("expected_cash") @db.Decimal(14, 2)
-  countedCash  Decimal?    @map("counted_cash") @db.Decimal(14, 2)
-  difference   Decimal?    @db.Decimal(14, 2)
-  notes        String?
+  id                    String         @id @default(uuid())
+  cashierId             String         @map("cashier_id")
+  openedAt              DateTime       @default(now()) @map("opened_at")
+  closedAt              DateTime?      @map("closed_at")
+  openingCash           Decimal        @map("opening_cash") @db.Decimal(14, 2)
+  expectedCash          Decimal?       @map("expected_cash") @db.Decimal(14, 2)
+  countedCash           Decimal?       @map("counted_cash") @db.Decimal(14, 2)
+  difference            Decimal?       @db.Decimal(14, 2)
+  notes                 String?
   /// Arqueo por denominación al cerrar (JSON [{denomination, count}]). Opcional.
-  cashCountBreakdown Json?  @map("cash_count_breakdown")
-  digitalCountBreakdown Json?     @map("digital_count_breakdown")
+  cashCountBreakdown    Json?          @map("cash_count_breakdown")
+  digitalCountBreakdown Json?          @map("digital_count_breakdown")
   /// Propinas del día (efectivo aparte de la caja; se reparten en nómina).
-  tipsCollected Decimal? @map("tips_collected") @db.Decimal(14, 2)
+  tipsCollected         Decimal?       @map("tips_collected") @db.Decimal(14, 2)
   /// Idempotencia de la apertura OFFLINE (B.4b): UUID generado en el POS.
   /// NULL en aperturas online. UNIQUE (permite múltiples NULL).
-  offlineLocalId String? @unique @map("offline_local_id")
-  status       ShiftStatus @default(OPEN)
-  sales        Sale[]
-  cashMovements CashMovement[]
-  cashier      User        @relation(fields: [cashierId], references: [id])
+  offlineLocalId        String?        @unique @map("offline_local_id")
+  status                ShiftStatus    @default(OPEN)
+  sales                 Sale[]
+  cashMovements         CashMovement[]
+  cashier               User           @relation(fields: [cashierId], references: [id])
 
   @@index([cashierId, status])
   @@index([status, openedAt(sort: Desc)])
@@ -639,7 +641,7 @@ model CashMovement {
   shiftId   String           @map("shift_id")
   type      CashMovementType
   /// CASH = cajón físico; digital = cuenta del negocio (arqueo digital).
-  method String @default("CASH")
+  method    String           @default("CASH")
   amount    Decimal          @db.Decimal(14, 2)
   reason    String
   userId    String           @map("user_id")
@@ -733,33 +735,37 @@ model IdempotencyKey {
 /// por un adapter LLM que evalúa cada sugerencia (precio razonable, qty
 /// adecuada, alternativas).
 model PurchaseSuggestion {
-  id             String                   @id @default(uuid())
+  id               String                   @id @default(uuid())
   /// Polimórfico: una de (ingredientId, productId) NOT NULL coherente con entityType.
-  entityType     StockableType            @map("entity_type")
-  ingredientId   String?                  @map("ingredient_id")
-  productId      String?                  @map("product_id")
+  entityType       StockableType            @map("entity_type")
+  ingredientId     String?                  @map("ingredient_id")
+  productId        String?                  @map("product_id")
   /// Snapshot al momento de la sugerencia (auditable post-hoc).
-  currentStock   Decimal                  @map("current_stock") @db.Decimal(14, 4)
-  thresholdMin   Decimal                  @map("threshold_min") @db.Decimal(14, 4)
-  unitPurchase   String                   @map("unit_purchase")
-  /// Cantidad sugerida en unitPurchase. v1: refill a 2× threshold.
-  suggestedQty   Decimal                  @map("suggested_qty") @db.Decimal(14, 4)
+  currentStock     Decimal                  @map("current_stock") @db.Decimal(14, 4)
+  thresholdMin     Decimal                  @map("threshold_min") @db.Decimal(14, 4)
+  unitPurchase     String                   @map("unit_purchase")
+  /// Unidad del inventario (g, unidad): la de currentStock y thresholdMin.
+  unitStock        String?                  @map("unit_stock")
+  /// Unidades de stock por unidad de compra (1 kg = 1000 g).
+  conversionFactor Decimal?                 @map("conversion_factor") @db.Decimal(14, 6)
+  /// Cantidad sugerida en unitPurchase. Cubre el faltante contra el mínimo.
+  suggestedQty     Decimal                  @map("suggested_qty") @db.Decimal(14, 4)
   /// Costo unitario estimado (último conocido). NULL si nunca se compró.
-  estUnitCost    Decimal?                 @map("est_unit_cost") @db.Decimal(14, 4)
+  estUnitCost      Decimal?                 @map("est_unit_cost") @db.Decimal(14, 4)
   /// Total estimado = suggestedQty × estUnitCost. NULL si no hay costo.
-  estTotal       Decimal?                 @map("est_total") @db.Decimal(14, 2)
+  estTotal         Decimal?                 @map("est_total") @db.Decimal(14, 2)
   /// Análisis LLM (12.D). NULL hasta que un evaluador lo procese.
-  llmRationale   String?                  @map("llm_rationale")
-  llmModel       String?                  @map("llm_model")
-  llmEvaluatedAt DateTime?                @map("llm_evaluated_at")
-  status         PurchaseSuggestionStatus @default(PENDING)
-  resolvedById   String?                  @map("resolved_by")
-  resolvedAt     DateTime?                @map("resolved_at")
-  resolutionNote String?                  @map("resolution_note")
-  createdAt      DateTime                 @default(now()) @map("created_at")
-  ingredient     Ingredient?              @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
-  product        Product?                 @relation(fields: [productId], references: [id], onDelete: Cascade)
-  resolvedBy     User?                    @relation(fields: [resolvedById], references: [id])
+  llmRationale     String?                  @map("llm_rationale")
+  llmModel         String?                  @map("llm_model")
+  llmEvaluatedAt   DateTime?                @map("llm_evaluated_at")
+  status           PurchaseSuggestionStatus @default(PENDING)
+  resolvedById     String?                  @map("resolved_by")
+  resolvedAt       DateTime?                @map("resolved_at")
+  resolutionNote   String?                  @map("resolution_note")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  ingredient       Ingredient?              @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  product          Product?                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  resolvedBy       User?                    @relation(fields: [resolvedById], references: [id])
 
   @@index([status, createdAt(sort: Desc)])
   @@index([entityType, ingredientId, productId])
@@ -789,22 +795,22 @@ model ApprovalPin {
 /// (rows con status matched / unmatched_csv / unmatched_sale) va en
 /// `report_json`.
 model PaymentReconciliation {
-  id              String   @id @default(uuid())
-  source          String
+  id                String   @id @default(uuid())
+  source            String
   /// YYYY-MM-DD del primer txn detectado en el CSV.
-  periodFrom      String   @map("period_from")
+  periodFrom        String   @map("period_from")
   /// YYYY-MM-DD del último txn detectado en el CSV.
-  periodTo        String   @map("period_to")
-  csvRowsParsed   Int      @map("csv_rows_parsed")
-  posSalesEvaluated Int    @map("pos_sales_evaluated")
-  matched         Int
-  unmatchedCsv    Int      @map("unmatched_csv")
-  unmatchedSale   Int      @map("unmatched_sale")
+  periodTo          String   @map("period_to")
+  csvRowsParsed     Int      @map("csv_rows_parsed")
+  posSalesEvaluated Int      @map("pos_sales_evaluated")
+  matched           Int
+  unmatchedCsv      Int      @map("unmatched_csv")
+  unmatchedSale     Int      @map("unmatched_sale")
   /// Snapshot completo de ReconciliationReport (incluye filas).
-  reportJson      Json     @map("report_json")
-  importedById    String?  @map("imported_by_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  importedBy      User?    @relation(fields: [importedById], references: [id])
+  reportJson        Json     @map("report_json")
+  importedById      String?  @map("imported_by_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  importedBy        User?    @relation(fields: [importedById], references: [id])
 
   @@index([createdAt(sort: Desc)])
   @@index([source, createdAt(sort: Desc)])
@@ -859,25 +865,25 @@ model PayrollAdjustment {
 /// `amount` es snapshot del total al momento de marcar (sin auto-update).
 /// Solo Dueño + PIN. Unique(userId, periodStart): un solo registro por par.
 model PayrollPayment {
-  id              String   @id @default(uuid())
-  userId          String   @map("user_id")
-  periodStart     DateTime @map("period_start") @db.Date
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  periodStart   DateTime @map("period_start") @db.Date
   /// 'PAID' | 'CANCELLED'
-  status          String
-  amount          Decimal  @db.Decimal(12, 2)
-  resolvedAt      DateTime @map("resolved_at")
-  actorId         String?  @map("actor_id")
+  status        String
+  amount        Decimal  @db.Decimal(12, 2)
+  resolvedAt    DateTime @map("resolved_at")
+  actorId       String?  @map("actor_id")
   /// Bolsillo del que salió: 'EFECTIVO' | 'CUENTA' (legacy).
-  paymentPocket   String   @default("CUENTA") @map("payment_pocket")
+  paymentPocket String   @default("CUENTA") @map("payment_pocket")
   /// Reparto del pago por bolsillo (permite mixto). Suman amount.
-  cashAmount      Decimal  @default(0) @map("cash_amount") @db.Decimal(12, 2)
-  bankAmount      Decimal  @default(0) @map("bank_amount") @db.Decimal(12, 2)
+  cashAmount    Decimal  @default(0) @map("cash_amount") @db.Decimal(12, 2)
+  bankAmount    Decimal  @default(0) @map("bank_amount") @db.Decimal(12, 2)
   /// Clave en storage del comprobante (obligatorio si status=PAID).
-  proofImageKey   String?  @map("proof_image_key")
+  proofImageKey String?  @map("proof_image_key")
   /// Para CANCELLED, motivo; para PAID, nota opcional.
-  note            String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([userId, periodStart])
   @@index([periodStart])
@@ -1016,20 +1022,20 @@ enum PurchaseSuggestionStatus {
 /// que terminaron. La nómina NO se modela aquí — se jala automática del
 /// módulo workers para no duplicar.
 model FixedCost {
-  id        String              @id @default(uuid())
-  name      String
-  amount    Decimal             @db.Decimal(14, 2)
-  frequency FixedCostFrequency  @default(MONTHLY)
-  category  String              @default("Otros")
-  startedAt DateTime?           @map("started_at") @db.Date
-  endedAt   DateTime?           @map("ended_at") @db.Date
-  isActive  Boolean             @default(true) @map("is_active")
-  notes     String?
+  id          String             @id @default(uuid())
+  name        String
+  amount      Decimal            @db.Decimal(14, 2)
+  frequency   FixedCostFrequency @default(MONTHLY)
+  category    String             @default("Otros")
+  startedAt   DateTime?          @map("started_at") @db.Date
+  endedAt     DateTime?          @map("ended_at") @db.Date
+  isActive    Boolean            @default(true) @map("is_active")
+  notes       String?
   /// Responsable que asume este costo (ej. Cristian / Pablo). NULL = sin asignar.
   responsible String?
-  createdAt DateTime            @default(now()) @map("created_at")
-  updatedAt DateTime            @default(now()) @updatedAt @map("updated_at")
-  payments  FixedCostPayment[]
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @default(now()) @updatedAt @map("updated_at")
+  payments    FixedCostPayment[]
 
   @@index([isActive])
   @@map("fixed_costs")
@@ -1117,8 +1123,8 @@ model StockCount {
   ingredientId String?       @map("ingredient_id")
   productId    String?       @map("product_id")
   subproductId String?       @map("subproduct_id")
-  countedQty   Decimal       @db.Decimal(14, 4) @map("counted_qty")
-  ledgerQty    Decimal       @db.Decimal(14, 4) @map("ledger_qty")
+  countedQty   Decimal       @map("counted_qty") @db.Decimal(14, 4)
+  ledgerQty    Decimal       @map("ledger_qty") @db.Decimal(14, 4)
   difference   Decimal       @db.Decimal(14, 4)
   /// Conteo del cocinero (#7): nace PENDING y NO ajusta stock hasta que el admin
   /// aprueba (recién ahí se materializa la diferencia). Los conteos del admin
@@ -1154,14 +1160,14 @@ enum CountStatus {
 /// denormalizado: el método si es único, NULL si la cuenta se dividió.
 /// Caja, Z-report, reportes por método y reconciliación leen de acá.
 model SalePayment {
-  id             String        @id @default(uuid())
-  saleId         String        @map("sale_id")
+  id             String   @id @default(uuid())
+  saleId         String   @map("sale_id")
   method         String
-  amount         Decimal       @db.Decimal(12, 2)
+  amount         Decimal  @db.Decimal(12, 2)
   /// Efectivo recibido para ESTA parte (>= amount → vuelto). Null en digital.
-  amountReceived Decimal?      @db.Decimal(12, 2) @map("amount_received")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  sale           Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  amountReceived Decimal? @map("amount_received") @db.Decimal(12, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+  sale           Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@index([saleId])
   @@index([method, createdAt])
@@ -1292,45 +1298,45 @@ model PayrollWeekPayment {
 /// debe a alguien, fuera de facturas/costos fijos/nómina. Al pagarlo se reparte
 /// por bolsillo (efectivo/cuenta/mixto) y alimenta la Tesorería.
 model PayableCommitment {
-  id            String    @id @default(uuid())
+  id            String        @id @default(uuid())
   /// A quién se le debe (texto libre: Cristian, Pablo, …).
   beneficiary   String
   description   String
   amount        Decimal       @db.Decimal(14, 2)
   status        PayableStatus @default(PENDING)
   cashAmount    Decimal       @default(0) @map("cash_amount") @db.Decimal(14, 2)
-  bankAmount    Decimal   @default(0) @map("bank_amount") @db.Decimal(14, 2)
-  proofImageKey String?   @map("proof_image_key")
-  paidAt        DateTime? @map("paid_at")
-  actorId       String?   @map("actor_id")
-  createdById   String?   @map("created_by_id")
+  bankAmount    Decimal       @default(0) @map("bank_amount") @db.Decimal(14, 2)
+  proofImageKey String?       @map("proof_image_key")
+  paidAt        DateTime?     @map("paid_at")
+  actorId       String?       @map("actor_id")
+  createdById   String?       @map("created_by_id")
   note          String?
-  createdAt     DateTime  @default(now()) @map("created_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
 
   @@index([status])
   @@map("payable_commitments")
 }
 
 model CortesiaRequest {
-  id            String         @id @default(uuid())
-  status        CortesiaStatus @default(PENDING)
+  id              String         @id @default(uuid())
+  status          CortesiaStatus @default(PENDING)
   /// Pedido que acompañó la cortesía (contexto); null si fue un regalo suelto.
-  saleId        String?   @map("sale_id")
-  productId     String    @map("product_id")
-  sizeId        String?   @map("size_id")
-  quantity      Int
-  reason        String
+  saleId          String?        @map("sale_id")
+  productId       String         @map("product_id")
+  sizeId          String?        @map("size_id")
+  quantity        Int
+  reason          String
   /// COGS snapshot (costo real estimado del producto regalado).
-  costAmount    Decimal?  @map("cost_amount") @db.Decimal(14, 2)
+  costAmount      Decimal?       @map("cost_amount") @db.Decimal(14, 2)
   /// Precio de venta de referencia (lo que se habría cobrado).
-  salePrice     Decimal   @map("sale_price") @db.Decimal(14, 2)
-  requestedById String    @map("requested_by_id")
-  resolvedById  String?   @map("resolved_by_id")
-  resolvedAt    DateTime? @map("resolved_at")
-  resolverNote  String?   @map("resolver_note")
+  salePrice       Decimal        @map("sale_price") @db.Decimal(14, 2)
+  requestedById   String         @map("requested_by_id")
+  resolvedById    String?        @map("resolved_by_id")
+  resolvedAt      DateTime?      @map("resolved_at")
+  resolverNote    String?        @map("resolver_note")
   /// El cajero ya vio el resultado (acusa una cortesía "Observada").
-  seenByRequester Boolean @default(false) @map("seen_by_requester")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  seenByRequester Boolean        @default(false) @map("seen_by_requester")
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   @@index([status, createdAt])
   @@map("cortesia_requests")
@@ -1366,8 +1372,8 @@ model TreasuryMovement {
   reason     String
   status     TreasuryMovementStatus @default(ACTIVE)
   actorId    String?                @map("actor_id")
-  occurredAt DateTime @map("occurred_at")
-  createdAt  DateTime @default(now()) @map("created_at")
+  occurredAt DateTime               @map("occurred_at")
+  createdAt  DateTime               @default(now()) @map("created_at")
 
   @@index([occurredAt])
   @@map("treasury_movements")
@@ -1378,8 +1384,8 @@ model TreasuryMovement {
 /// financiero: ej. 25 = el mes va del 25 al 24 del mes siguiente. 1 = mes
 /// calendario (comportamiento por defecto).
 model BusinessConfig {
-  id            String   @id @default("singleton")
-  monthStartDay Int      @default(1) @map("month_start_day")
+  id               String  @id @default("singleton")
+  monthStartDay    Int     @default(1) @map("month_start_day")
   /// Kill-switch de pedidos web (#13): false = POST /web/orders rechazado y
   /// la web oculta el checkout. El dueño lo apaga ante abuso, sin deploy.
   webOrdersEnabled Boolean @default(true) @map("web_orders_enabled")
@@ -1387,41 +1393,41 @@ model BusinessConfig {
   /// ── Config de la web del cliente (2026-07-16) ──
   /// Sale por `GET /web-hero/config`. El dueño la edita desde el admin; antes
   /// estaba hardcodeada en apps/web o en variables de entorno de Vercel.
-  phone         String   @default("") @map("phone")
-  phoneDisplay  String   @default("") @map("phone_display")
-  address       String   @default("") @map("address")
-  mapsUrl       String   @default("") @map("maps_url")
+  phone                 String  @default("") @map("phone")
+  phoneDisplay          String  @default("") @map("phone_display")
+  address               String  @default("") @map("address")
+  mapsUrl               String  @default("") @map("maps_url")
   /// "lat,lng". Lo deduce el server del link de Maps; alimenta el mapa
   /// embebido y el deeplink de Waze.
-  coords        String   @default("") @map("coords")
+  coords                String  @default("") @map("coords")
   /// `OpeningHours` de @pos-tercos/types: {weekly, overrides, restDayHolidayShift}.
-  hours         Json     @default("{}") @map("hours")
+  hours                 Json    @default("{}") @map("hours")
   /// El switch del dueño: true = fuera de horario NO se toman pedidos web.
   /// Default false a propósito — que prenderlo sea un acto deliberado y no
   /// empiece a rechazar pedidos reales por un horario mal cargado.
   ordersRespectSchedule Boolean @default(false) @map("orders_respect_schedule")
   /// Domicilios activos. Default false: el toggle no aparece en la web hasta
   /// que el dueño diga que reparte.
-  deliveryEnabled Boolean @default(false) @map("delivery_enabled")
+  deliveryEnabled       Boolean @default(false) @map("delivery_enabled")
   /// Zona de cobertura: radio en km desde `coords`. CHECK (0, 100].
-  orderRadiusKm Float    @default(10) @map("order_radius_km")
+  orderRadiusKm         Float   @default(10) @map("order_radius_km")
   /// El switch del dueño: true = un pedido fuera del radio se rechaza. Default
   /// false por lo mismo que el horario — prenderlo es un acto deliberado.
-  ordersRespectRadius Boolean @default(false) @map("orders_respect_radius")
-  instagramUrl  String   @default("") @map("instagram_url")
-  tiktokUrl     String   @default("") @map("tiktok_url")
-  aboutHeadline String   @default("") @map("about_headline")
-  aboutStory    String   @default("") @map("about_story")
+  ordersRespectRadius   Boolean @default(false) @map("orders_respect_radius")
+  instagramUrl          String  @default("") @map("instagram_url")
+  tiktokUrl             String  @default("") @map("tiktok_url")
+  aboutHeadline         String  @default("") @map("about_headline")
+  aboutStory            String  @default("") @map("about_story")
   /// [{title, description}] — los valores de la página "Nosotros".
-  aboutValues   Json     @default("[]") @map("about_values")
-  aboutImageKey  String? @map("about_image_key")
-  aboutImageMime String? @map("about_image_mime")
+  aboutValues           Json    @default("[]") @map("about_values")
+  aboutImageKey         String? @map("about_image_key")
+  aboutImageMime        String? @map("about_image_mime")
   /// [{label, value, note}] — a dónde paga el cliente. El `value` (el número)
   /// va aparte de su rótulo: en el mensaje se imprime solo en su línea para
   /// que se copie de un toque. Vacío ⇒ fallback a `PAYMENT_INSTRUCTIONS_*`.
-  paymentAccounts Json  @default("[]") @map("payment_accounts")
+  paymentAccounts       Json    @default("[]") @map("payment_accounts")
 
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("business_config")
 }
@@ -1470,6 +1476,10 @@ model KitchenIncident {
   id           String                  @id @default(uuid())
   category     KitchenIncidentCategory
   note         String
+  /// Foto de evidencia (opcional). Storage key de la foto que sube el cocinero
+  /// al reportar. Opcional a propósito: una incidencia puede ser "se fue la luz",
+  /// y exigir foto ahí hace que no se reporte.
+  evidenceKey  String?                 @map("evidence_key")
   authorId     String                  @map("author_id")
   resolvedAt   DateTime?               @map("resolved_at")
   resolvedById String?                 @map("resolved_by_id")
@@ -1489,8 +1499,29 @@ model ChecklistItem {
   isActive  Boolean       @default(true) @map("is_active")
   createdAt DateTime      @default(now()) @map("created_at")
 
+  marks ChecklistMark[]
+
   @@index([type, isActive, sortOrder])
   @@map("checklist_items")
+}
+
+/// Marca de UNA tarea del checklist en UN día: quién la marcó y cuándo.
+/// Existe para poder responder "qué NO se cumplió" y atribuirlo por persona:
+/// `checklist_completions` solo guarda la rutina 100% completa y un único autor,
+/// así que un día a medias no dejaba ningún rastro.
+model ChecklistMark {
+  id       String        @id @default(uuid())
+  type     ChecklistType
+  /// Día local YYYY-MM-DD (mismo criterio que checklist_completions).
+  day      String
+  itemId   String        @map("item_id")
+  doneById String        @map("done_by_id")
+  doneAt   DateTime      @default(now()) @map("done_at")
+  item     ChecklistItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([type, day, itemId])
+  @@index([day, type])
+  @@map("checklist_marks")
 }
 
 /// Una rutina de checklist (apertura/cierre) completada en un día de negocio.

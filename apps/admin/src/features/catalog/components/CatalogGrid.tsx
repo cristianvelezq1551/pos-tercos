@@ -6,23 +6,27 @@ import { LineArtIllustration } from '@pos-tercos/brand';
 import { useMemo, useState } from 'react';
 import { usePolling } from '../../../lib/use-polling';
 import { fetchActivePromotions, useCartStore } from '../../sales';
-import { getActivePromoBadge } from '../../sales/lib/promo-preview';
+import {
+  getActivePromoBadge,
+  type ProductPromoBadge,
+} from '../../sales/lib/promo-preview';
 import { useAvailability } from '../hooks/useAvailability';
 import { useSoldOutToggle } from '../hooks/useSoldOutToggle';
-import { CategoryTab } from './CategoryTab';
+import { filterProductsByQuery } from '../lib/product-search';
+import { ALL_CATEGORIES, CatalogToolbar } from './CatalogToolbar';
 import { ProductPickerModal, type PickerSelection } from './ProductPickerModal';
 import { ProductTile } from './ProductTile';
 
 /** Re-fetch de promos cada 60s: refleja cambios rápido desde admin. */
 const PROMO_REFRESH_MS = 60_000;
 
-const ALL = '__all__';
-
 export function CatalogGrid({ products }: { products: Product[] }) {
   const addItem = useCartStore((s) => s.addItem);
   const [selected, setSelected] = useState<Product | null>(null);
   const [open, setOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string>(ALL);
+  const [activeCategory, setActiveCategory] = useState<string>(ALL_CATEGORIES);
+  const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const { byId, refresh } = useAvailability();
   const [promos, setPromos] = useState<Promotion[]>([]);
@@ -46,10 +50,37 @@ export function CatalogGrid({ products }: { products: Product[] }) {
     return Array.from(set).sort();
   }, [products]);
 
+  // Buscar manda sobre la categoría: el alcance es TODO el menú.
+  const searching = query.trim().length > 0;
   const visible = useMemo(() => {
-    if (activeCategory === ALL) return products;
+    if (searching) return filterProductsByQuery(products, query);
+    if (activeCategory === ALL_CATEGORIES) return products;
     return products.filter((p) => p.category === activeCategory);
-  }, [activeCategory, products]);
+  }, [activeCategory, products, query, searching]);
+
+  // El badge de promo se calcula UNA vez por (catálogo, promos), no por tile en
+  // cada render: `getActivePromoBadge` refiltra y remapea todas las promos por
+  // producto, y teclear re-renderiza la grilla entera. Se refresca solo cuando
+  // entra una tanda nueva de promos (cada 60s).
+  const promoById = useMemo(() => {
+    const at = new Date();
+    const map = new Map<string, ProductPromoBadge | null>();
+    for (const p of products) {
+      map.set(p.id, getActivePromoBadge(p.id, p.basePrice, promos, at, p.isCombo));
+    }
+    return map;
+  }, [products, promos]);
+
+  const handleQueryChange = (next: string) => {
+    setQuery(next);
+    // Al teclear, el filtro de categoría deja de aplicar: que los chips lo digan.
+    if (next.trim()) setActiveCategory(ALL_CATEGORIES);
+  };
+
+  const handleSelectCategory = (category: string) => {
+    setActiveCategory(category);
+    setQuery('');
+  };
 
   const openPicker = (p: Product) => {
     setSelected(p);
@@ -76,31 +107,27 @@ export function CatalogGrid({ products }: { products: Product[] }) {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {/* Categorías · chips que envuelven en varias líneas (sin scroll). */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5 sm:px-4">
-        <CategoryTab
-          label="Todo"
-          active={activeCategory === ALL}
-          onClick={() => setActiveCategory(ALL)}
-        />
-        {categories.map((c) => (
-          <CategoryTab
-            key={c}
-            label={c}
-            active={activeCategory === c}
-            onClick={() => setActiveCategory(c)}
-          />
-        ))}
-        <span className="caps ml-auto pl-2 text-[0.625rem] text-muted-foreground">
-          {visible.length} de {products.length}
-        </span>
-      </div>
+      <CatalogToolbar
+        categories={categories}
+        activeCategory={activeCategory}
+        onSelectCategory={handleSelectCategory}
+        query={query}
+        onQueryChange={handleQueryChange}
+        searchOpen={searchOpen}
+        onSearchOpenChange={setSearchOpen}
+        visibleCount={visible.length}
+        totalCount={products.length}
+      />
 
       {visible.length === 0 ? (
         <div className="flex flex-1 items-center justify-center p-8">
           <EmptyState
             illustration={<LineArtIllustration name="empty-plate" />}
-            title="No hay productos activos en esta categoría"
+            title={
+              searching
+                ? `No hay productos que coincidan con "${query.trim()}"`
+                : 'No hay productos activos en esta categoría'
+            }
             size="sm"
           />
         </div>
@@ -115,7 +142,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
             // 86 manual pisa todo; forzar disponible pisa la falta de stock.
             const unavailable = manualSoldOut || (!forced && computedUnavailable);
             const reason = manualSoldOut ? null : forced ? null : (avail?.reason ?? null);
-            const promoBadge = getActivePromoBadge(p.id, p.basePrice, promos, undefined, p.isCombo);
+            const promoBadge = promoById.get(p.id) ?? null;
             return (
               <ProductTile
                 key={p.id}

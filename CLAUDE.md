@@ -1111,6 +1111,12 @@ Bloque de hardening post-auditoría. Verificado: typecheck 12/12, lint 0, domain
 ### Decisiones cerradas (NO re-discutir)
 - Biblia **solo lectura** (el admin cura recetas/pasos). Recepción de insumos **NO** la hace el cocinero (rompería FIFO/COGS). Stock visible al cocinero **sin costos**. Conteo **ciego** (la pantalla de conteo no pre-llena lo esperado; el cocinero igual ve stock en la pestaña Stock — aceptable para 1 cocinero). Extras incluidos: bitácora de incidencias + checklist. PEPS/caducidad de lotes quedó para fase 2.
 
+> ⚠️ **Dos cosas de arriba ya no son exactas — ver §7.v34.** El **conteo del
+> cocinero ya NO ajusta stock**: nace PENDING y lo aprueba el admin en
+> `/inventory/counts` (`adjusted` vuelve 0 siempre). Y la **producción acepta
+> foto de evidencia** (`evidenceKey`). El checklist tampoco funciona como se
+> describe acá: se marca tarea por tarea con autoguardado.
+
 ---
 
 ## 7.v12 Bloque de ventas 2026-07 — cuentas abiertas, descuento manual, panel de pedidos (2026-07-05)
@@ -2206,6 +2212,330 @@ en inglés, el id truncado, la ruta `/shifts/<uuid>` y el `p. m..` con doble pun
 — al dueño no le sirven y no puede tocarlos. El faltante ahora trae su signo.
 
 ---
+
+## 7.v34 El dueño ve lo que hace la cocina (2026-08-24)
+
+> Pedido del dueño: conectar con el trabajo del cocinero — historial de checklist
+> por trabajador (qué cumplió y qué no), producción de cada uno, y merma e
+> incidencias **con foto**. Verificado: e2e 46 suites / 449, domain 390, admin
+> 184, api unit 123, lint 0, typecheck 12/12, build de admin OK.
+> Migración: `20260824170000_kitchen_owner_visibility`.
+
+### Lo que era imposible antes (3 fallas de MODELO, no de UI)
+1. **El checklist no podía decir qué NO se cumplió.** La rutina solo se guardaba
+   completa y con un único autor, así que un día a medias era indistinguible de
+   un día en que nadie abrió la app.
+2. **Merma e incidencias no tenían foto.** La columna `evidence_key` existía en
+   `inventory_movements` pero solo la usaba producción.
+3. **`evidenceUrl` estaba atada a producción** (`/subproducts/production/:sourceId/evidence`):
+   una merma no tiene `sourceId`, así que su foto no habría tenido cómo servirse.
+
+Y la **Bitácora ignoraba la cocina entera**: su grupo "Cocina" solo tenía el
+muerto `KDS_ORDER_DELAYED`.
+
+### Decisiones del dueño (NO re-discutir)
+- **Checklist con marca por tarea y autoguardado** (`checklist_marks`): cada
+  casilla se guarda al tocarla, con autor y hora. Es lo único que responde
+  "quién hizo qué" y "qué faltó".
+- **Foto OBLIGATORIA en merma, opcional en incidencia**: en una merma siempre hay
+  algo físico que fotografiar; una incidencia puede ser "se fue la luz" y exigir
+  foto haría que no se reporte.
+- **Las vistas viven en un hub `/cocina` con pestañas**, no en entradas sueltas
+  del sidebar ni dentro de Reportes.
+
+### Reglas duras nuevas
+- **La foto se sirve por el DUEÑO DEL DATO, nunca por key suelta**:
+  `GET /inventory/movements/:id/evidence` y `GET /kitchen/incidents/:id/evidence`.
+  Un endpoint que devuelva cualquier key deja el bucket a mano de quien la adivine.
+  `POST /kitchen/evidence` sube y devuelve la key; subir y registrar son dos pasos
+  para que un reintento del registro (idempotente) no re-suba megas.
+- **La cocina achica la foto antes de subir** (1600 px / JPEG 0.8, ~300 KB):
+  sin eso R2 se llena con mermas diarias. Si el navegador no puede decodificar
+  (HEIC), sube el original — mejor pesado que no poder registrar.
+- **`ChecklistDay` es el shape ÚNICO** de una rutina, para hoy y para el
+  histórico. `ChecklistToday` se eliminó: dos tipos para lo mismo ya se
+  desincronizaron en §7.v31 y §7.v32.
+- **Volver a marcar una tarea no cambia el autor** (interesa quién la hizo).
+  **Desmarcar después de cerrar reabre la rutina** — si no, el día diría
+  "cerrada" con una tarea pendiente.
+- **Qué tareas se esperaban un día viejo**: las creadas ese día o antes, activas
+  o marcadas ese día. Una tarea desactivada que nunca se marcó queda FUERA: no
+  guardamos cuándo se desactivó y contarla inventaría un incumplimiento.
+- **Días previos a la migración** se leen desde `checklist_completions.done_item_ids`
+  y vienen con `legacy: true`, sin autor por tarea. La UI lo dice, no inventa.
+- **La merma del cocinero AHORA se audita** (`KitchenInventoryService`): el log de
+  movimientos vive en el controller de inventario, por el que la cocina no pasa,
+  así que la merma del admin quedaba en la bitácora y la del cocinero no.
+
+### FIFO: el costo de la merma se indexa por movimiento
+`LedgerFifo.wasteCostByMovement` (espeja `cortesiaCostBySource`): la merma se
+atribuye a `m.id` y su anulación netea ESE movimiento vía `sourceId`. Se hizo así
+—en vez de estimar aparte con `lastUnitCost`— para que el costo de una merma sea
+**el mismo número** en el hub y en el P&G. **NO viaja en el seed** a propósito
+(son muchas más filas que las cortesías): cubre la ventana replayada, y pedir un
+rango anterior al corte ya cae en replay completo por la regla 2 de `CogsService`.
+
+### API nueva (todo `@AdminAccess` salvo lo de la app de cocina)
+- `POST /kitchen/evidence` `@KitchenAccess` · `POST /kitchen/checklist/mark` `@KitchenAccess`
+- `GET /kitchen/checklist/history?from&to` · `GET /kitchen/productions?from&to&user_id`
+  · `GET /kitchen/waste?from&to&user_id` · `GET /kitchen/activity?from&to`
+- `GET /inventory/movements/:id/evidence` · `GET /kitchen/incidents/:id/evidence`
+- `POST /kitchen/checklist/complete` ya **NO** lleva `doneItemIds` (el server
+  tiene las marcas; mandarlas otra vez solo habilita que discrepen).
+
+**La producción se lista por TANDA**, agrupada por `source_id`, acotando primero
+los encabezados: limitar sobre el total partiría una tanda al medio (entrada
+dentro del tope, consumos afuera).
+
+### UI
+- Admin `/cocina`: pestañas **Resumen · Producción · Merma · Checklist ·
+  Incidencias · Tareas**, con rango y trabajador en la URL (SSR). Las opciones
+  del filtro por persona salen de **quien realmente trabajó** en el rango —
+  `/workers/users` filtra por `payType != null` y se saltaría a un cocinero sin
+  nómina configurada.
+- Un día **sin tareas configuradas no cuenta como rutina incumplida**.
+- Cocina: cámara en merma (obligatoria) e incidencias (opcional), con galería
+  como respaldo si el permiso de cámara está denegado; checklist con
+  autoguardado y reversión si el guardado falla.
+- Bitácora: grupo **Cocina** vivo (producción, merma, anulación de merma,
+  checklist, incidencias, conteos, tareas). `describeEvent` lee `afterJson` **y**
+  `metadata` — los movimientos de inventario auditan en `after` y sin eso media
+  cocina salía sin detalle.
+
+### Deuda conocida
+- **58 de 133 acciones de auditoría no tienen etiqueta** en `/audit` y se
+  muestran con el código crudo (`TREASURY_TRANSFER_CREATED`, …). Las 10 de cocina
+  quedaron cubiertas; el resto es deuda vieja de otros dominios y viola §3
+  ("nada de nombres de excepción, códigos…").
+- `parseDateRange`/`parseLocalDate` se movieron de `reports.controller.ts` a
+  `common/local-dates.ts` (su casa documentada) — no volver a duplicarlos.
+
+---
+
+## 7.v35 Sugerencias de compra: llevaban meses muertas (2026-08-25)
+
+> El dueño reportó que "Revisar ahora" desbordaba la pantalla, que no se
+> generaban sugerencias y que la IA fallaba. Verificado: typecheck 12/12,
+> lint 0, domain 401, admin 198, api unit 123, **e2e 46 suites / 450**,
+> más verificación en navegador de las 3 pantallas y del PDF.
+> Migración: `20260825120000_purchase_suggestion_units`.
+
+### El escaneo llevaba caído desde §7.v4 y nadie se enteró
+`purchase_suggestions` solo acepta **insumo o producto** (CHECK
+`chk_purchase_sugg_polymorphic`), pero desde que los subproductos pasaron a ser
+stockables con `thresholdMin` propio, el escaneo los recorría igual. Un solo
+subproducto bajo mínimo —"Pollo sazonado", −12 de 20— reventaba el `create` y
+se llevaba por delante **el escaneo entero**: ni las sugerencias que venían
+después, ni la marca de vencidas (que corre al final del bucle). El cron
+horario venía fallando cada hora, en silencio, y el botón devolvía 500.
+
+- **Los subproductos se saltan a propósito**: no se compran, se **producen**.
+  Su faltante se atiende en Producción, no con un pedido a un proveedor.
+- **Un ítem que falla ya no tumba la corrida**: cada registro va en su propio
+  try/catch y el resultado reporta `failedCount`. Un escaneo "sin novedad" y
+  uno que falló en 3 insumos se veían exactamente igual.
+
+### La cantidad sugerida apuntaba al DOBLE del mínimo
+Regla vieja: reponer hasta `2 × mínimo`. Con 21 panes de 30 pedía **4
+paquetes**; con 2.500 g de pollo de 3.000, **4 kg**. Regla del dueño: cubrir
+**exactamente el faltante**. Ahora con 21 de 30 pide 1 paquete.
+
+- `computeSuggestedPurchase` (`packages/domain/src/purchasing/`, puro, 7 tests)
+  es la **única** fuente del cálculo: lo usa el escaneo y lo usa la pantalla
+  para explicarlo. Una regla así copiada en los dos lados se separa siempre.
+- El faltante se mide en unidad de **stock** (gramos, unidades) y se redondea
+  **hacia arriba** a unidad de **compra**: no se compran medios paquetes, y
+  quedarse corto dejaría el insumo bajo mínimo apenas llegue el pedido. Ley
+  probada: la compra sugerida SIEMPRE alcanza el mínimo.
+- ⚠️ Consecuencia aceptada: comprar lo justo deja el inventario **en** el
+  mínimo, así que la sugerencia vuelve a aparecer antes que con la regla vieja.
+  Es lo pedido; quien compra puede subir la cantidad en el diálogo.
+
+### "2.500 / 3.000" no decía de qué
+La sugerencia guardaba la unidad de COMPRA pero no la de **inventario** ni el
+factor de conversión, así que la pantalla mostraba números sin unidad y no
+podía decir si 4 kg alcanzaban. Columnas nuevas `unit_stock` +
+`conversion_factor` (nullable: las sugerencias viejas no lo tienen y no se
+puede inventar — caen a la unidad de compra con factor 1).
+
+`CoverageExplainer` lo dice en palabras, en la ficha y en el diálogo del
+pedido, recalculándose con la cantidad que quien compra escriba a mano:
+*"Hoy tienes −28 unidad (estás debiendo) y el mínimo es 20 unidad. Faltan 48
+unidad. Se compra por paquete, y cada paquete trae 12 unidad. Comprando 4
+paquete (48 unidad) quedas en 20 unidad: justo el mínimo."*
+
+### El encabezado se partía letra por letra
+La columna de acciones de `PageHeader` es `shrink-0`, así que su contenido
+define cuánto espacio queda para el título. `RunActionsBar` metía ahí el
+mensaje de resultado sin ancho máximo y el título quedaba en una letra por
+línea. El mensaje ahora va **acotado** (`max-w-xs`) y debajo de los botones.
+De paso: **una acción a la vez** — antes el verde de una acción convivía con
+el rojo de otra porque el error no limpiaba el mensaje anterior.
+
+### El resumen por WhatsApp decía que había enviado
+`sendSummaryToAdmins` llamaba `sendText` sin mirar `delivers`: con el mock de
+dev devolvía `ok:true` y la pantalla afirmaba "Enviado a 2 destinatarios" sin
+que saliera un solo mensaje. Mismo patrón que se cerró en §7.v22 — ahora sale
+temprano y reporta `skipped · no hay WhatsApp conectado en el servidor`.
+
+### La IA fallaba sin decir por qué
+`evaluateAllPending` se tragaba la excepción y devolvía "3 fallaron". El motivo
+casi siempre es el mismo para todas y es accionable (no hay llave, se acabó el
+saldo, no hay conexión): ahora viaja en `errors[]`, traducido a español por
+`describeEvalFailure`. **La llave y el modelo del código están bien**
+(`claude-haiku-4-5`, verificado contra la API real); si falla en producción es
+`ANTHROPIC_API_KEY` en Railway.
+
+### Segunda pasada de auditoría (mismo día): 15 defectos más
+
+- **Resolver una sugerencia no servía de nada.** El dedupe del escaneo solo
+  miraba las abiertas, así que aceptar ("ya se lo pedí al proveedor") o
+  rechazar ("no lo voy a comprar") duraba hasta el escaneo siguiente: el stock
+  seguía bajo —obvio, el pedido no ha llegado— y la volvía a crear. Ahora hay
+  ventana de re-pregunta: **48 h tras aceptar** (a esa altura llegó, y el stock
+  subió, o el proveedor incumplió) y **24 h tras rechazar** (la razón para no
+  comprar suele vencerse). Con test de regresión para los dos casos.
+- **Resolver no era atómico**: dos personas a la vez dejaban un ACEPTADA *y* un
+  RECHAZADA en la bitácora para la misma sugerencia. Ahora es claim
+  condicionado por estado (`updateMany` + `count === 1`), como el resto del
+  repo.
+- **El prompt del LLM mentía**: decía "refill a 2× threshold" cuando la regla
+  ya era cubrir el faltante, y le pasaba `'unidad receta'` fija en vez de la
+  unidad real, así que el modelo no podía distinguir 2.500 g de 2.500 kg ni
+  cruzarlo con el histórico de compras. Además el prompt tenía "threshold" cinco
+  veces y esa palabra se colaba al análisis que se muestra en pantalla.
+- **El PDF le mostraba al proveedor lo que nos cobró su competencia.**
+  `estUnitCost` sale de la última factura, sea de quien sea, y el papel se le
+  entrega a quien le estás comprando — justo lo que §7.v19 prohíbe en el
+  mensaje. El costo pasó a ser **opcional y apagado por defecto**, con el aviso
+  de que es interno.
+- **Un escaneo omitido se reportaba como exitoso**: al tocar "Revisar ahora"
+  mientras corría el automático, el guard devolvía todo en cero y la pantalla
+  pintaba en verde "0 revisados · 0 nuevas". Ahora el resultado lleva `skipped`
+  y lo dice.
+- **La pantalla llamaba "hoy" a una foto vieja.** Las existencias son del
+  momento de la detección; entre medias se vendió y se produjo. Decía "Hoy
+  tienes 2.500 g" sobre un dato de hace horas, justo donde se decide cuánto
+  pedir. Ahora dice "Al detectarla había…", muestra la fecha de la toma y avisa
+  cuando ya pasaron horas.
+- **Tras pedir por WhatsApp la pantalla seguía en "Pendiente"** (`useState`
+  ignora el prop que trae `router.refresh`), así que dejaba rechazar lo ya
+  aceptado y volver a mandar el mismo pedido. Ahora toma la sugerencia que
+  devuelve el endpoint.
+- **El chat podía decir una cantidad y el registro otra**: la vista previa se
+  rearma con 350 ms de retraso y el botón abría el link viejo con el valor
+  nuevo. Ahora no se puede abrir mientras el texto se recalcula.
+- **El precio del proveedor estaba rotulado con la unidad equivocada**:
+  `lastUnitPrice` es por la unidad de la FACTURA, no por la de compra — una
+  arroba a $200.000 se leía "$200.000 / kg". Se quitó el rótulo.
+- **Errores en inglés con estado interno y UUID en pantalla**: `Suggestion
+  already resolved (status=ACCEPTED)`, `Suggestion 8f3a-… not found`.
+  Traducidos, y el detalle pasa por `getErrorMessage` como el resto.
+- **`API 500` llegaba a la pantalla**: `mensajeDeError` no reconocía como
+  técnico el texto de respaldo de `ApiError`. Regla agregada, con test.
+- La **evaluación en lote** hacía N llamadas al modelo en serie dentro de una
+  request (60 pendientes = minutos, el navegador cortaba y quien mirara volvía
+  a tocar el botón mientras el servidor seguía gastando). Tope de 25 por
+  corrida, **diciendo** cuántas quedaron. Y un fallo de negocio ya no se le
+  achaca a la IA.
+- El **resumen por WhatsApp** no tenía tope: con muchas sugerencias abiertas el
+  mensaje se pasa del largo máximo y falla entero. Se acota a 40 líneas y dice
+  cuántas quedaron fuera; el total sigue sumando todas.
+- **"No hay sugerencias abiertas" se decía cuando sí las había** y lo que
+  faltaba era a quién avisarle (ningún dueño o admin activo con teléfono).
+- **`?limit=-3`** llegaba a Prisma como paginación hacia atrás y devolvía las 3
+  más VIEJAS, sin error. Y un filtro de estado inexistente devolvía lista vacía,
+  indistinguible de "no hay nada pendiente".
+- **"Stock se repuso (auto-stale)"** también se escribía cuando el insumo se
+  había desactivado o le habían puesto el mínimo en 0. Nota corregida: afirmar
+  que se repuso falseaba el historial.
+
+### El error de IA que reportó el dueño era de ENTORNO, no de código
+`ANTHROPIC_API_KEY` **no está configurada en Railway** (ni en qa ni en
+production). Por eso fallaban las dos cosas: la extracción de facturas y la
+evaluación de sugerencias. La llave del `.env` local se probó contra la API real
+y funciona; `claude-haiku-4-5` es el modelo correcto y **no existe un "Haiku 5"**
+(el listado de la API lo confirma: Opus 5, Sonnet 5, Fable 5 y Haiku 4.5).
+
+⚠️ El `.env` llega al proceso **solo como efecto colateral de importar
+`@prisma/client`** — no hay carga explícita de variables en `main.ts`. En
+Railway no importa (las inyecta la plataforma), pero explica por qué "está en
+el .env" y "el proceso la ve" no son lo mismo.
+
+De paso, el mensaje que llegaba a la pantalla era `No LLM provider configured.
+Set ANTHROPIC_API_KEY or OPENAI_API_KEY` — inglés y nombres de variables de
+entorno, contra §3. Ahora hay un traductor único
+(`adapters/llm/llm-failure.ts`) que usan facturas y sugerencias; el texto crudo
+va al log, que es donde sirve.
+
+### PDF de la orden de compra
+`renderPurchaseOrderHtml` (domain, puro, 4 tests) → el navegador ofrece
+"Guardar como PDF". **Sin librería de PDF**: el navegador ya lo hace y jsPDF o
+puppeteer serían cientos de KB (o un binario) por un documento de una página.
+Es el mismo camino del recibo del POS.
+
+- El documento lo arma el **servidor** junto al mensaje de WhatsApp: la
+  dirección y el teléfono del negocio viven en la configuración, y armarlos por
+  separado terminaría diciendo dos cosas distintas.
+- Lleva la equivalencia ("4 paquete = 48 unidad") y rotula el costo como **de
+  referencia interna, no un precio acordado** — el mensaje al proveedor sigue
+  sin hablar de precios (§7.v19).
+- **Imprimir NO resuelve la sugerencia**: sacar el papel no es haber pedido.
+- ⚠️ `window.open` va **sin `noopener`**: con esa bandera devuelve `null` y la
+  pestaña abre en blanco. Acá no hace falta — el contenido lo generamos
+  nosotros.
+
+
+## 7.v36 Biblia de capacitación: la guía vive dentro del admin (2026-08-25)
+
+> Pedido del dueño: una guía de la plataforma que explique **cada módulo** y el
+> paso a paso de cada procedimiento, visible para todos los usuarios.
+> Verificado: typecheck 12/12, lint 0, unit admin 208 (+10), build del admin OK,
+> anclas y buscador probados en navegador. Sin migración, sin backend.
+
+### Qué es
+`/guia` en `apps/admin` — **12 capítulos, 80 temas**. Cubre las 5 pantallas
+(caja, gestión, cocina, web del cliente, TV), todos los módulos y un capítulo
+final de **reglas de oro** con las decisiones de fondo que explican por qué los
+números son como son (domicilio fuera de todo total, nada cuesta cero,
+insert-only, día de negocio a las 4 am, avisos manuales por WhatsApp).
+
+Cada tema trae: a quién le sirve (Caja/Cocina/Dueño), **dónde está en la app**,
+el paso a paso y —cuando no es evidente— **por qué** es así. Los avisos se
+distinguen a propósito: `Regla` (romperla descuadra los números), `Ojo` (cuesta
+plata o deja rastro imborrable) y `Dato`.
+
+### Decisiones (NO re-discutir)
+- **Todos ven todo.** El item del menú NO lleva `onlyDueno`/`onlyOperativo`: un
+  operativo lee el capítulo de finanzas aunque no entre a esa pantalla. Sirve
+  para entrenar a alguien que va a rotar de puesto.
+- **El contenido es DATO TIPADO en el repo** (`features/guia/content/*.ts`), no
+  filas en la base: se versiona con git, se revisa en el PR y no se
+  desincroniza en silencio. Nadie lo edita desde la app. El `switch` del
+  renderer es exhaustivo — agregar un tipo de bloque rompe la compilación hasta
+  cubrirlo.
+- **Los `id` de sección son la URL** (`/guia/<cap>#<id>`). Cambiarlos rompe los
+  enlaces que la gente guardó.
+
+### Dos cosas que hubo que arreglar para que sirviera
+- **Las anclas no saltaban**: el contenedor con scroll es el `main` del shell
+  (no el documento) y la página llega en streaming, así que cuando el navegador
+  intenta el salto la sección todavía no existe — y no reintenta. Un resultado
+  del buscador aterrizaba al principio del capítulo, con la sección **5.574 px
+  más abajo**. Lo cierra `HashScroller` (reintenta por frames hasta que monta).
+  El offset bajo la barra lo pone `scroll-mt-24` en cada sección.
+- **El buscador ordenaba mal**: con AND puro, "cerrar caja" ponía primero
+  secciones que mencionan las dos palabras de pasada y dejaba *Cerrar el turno*
+  en sexto lugar. `searchSections` (puro, 10 tests) pesa **dónde** cae cada
+  palabra: título > resumen > cuerpo, con premio a la frase completa.
+
+### Deuda conocida
+- **El cocinero NO puede abrirla**: `ADMIN_ALLOWED_ROLES` es
+  `[ADMIN_OPERATIVO, DUENO]`, así que un `COCINERO` que entre a `/guia` cae en
+  `/unauthorized`. Su capítulo existe y está completo, pero hoy solo lo ve
+  alguien con acceso al admin. Para cerrarlo hay que montar la guía también en
+  `apps/cocina` (mismo contenido, otro shell) — no se hizo porque el alcance
+  acordado fue una sola ruta en admin.
 
 ## 8. Estado del proyecto (commits y FASES)
 
