@@ -44,6 +44,19 @@ describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
     return null;
   };
 
+  /** La respuesta cruda del create — los tests de datos de pago miran
+   *  `paymentInstructions`, que vive fuera de `order`. */
+  const createWebOrderRaw = (over: { customerPhone: string }) =>
+    request
+      .post('/web/orders')
+      .send({
+        type: 'WEB_PICKUP',
+        items: [{ productId: gaseosaId, quantity: 1 }],
+        customerName: 'Cliente Web',
+        ...over,
+      })
+      .expect(201);
+
   const createWebOrder = async (): Promise<{ id: string; total: number }> => {
     const res = await request
       .post('/web/orders')
@@ -252,6 +265,96 @@ describe('Web Orders — ciclo de vida + mark-ready E2E', () => {
     const reopened = await request.post('/web/orders').send(body).expect(201);
     await waitForWhatsApp(reopened.body.order.id as string, 'payment_instructions');
   });
+  /**
+   * La nota del cliente ("sin cebolla") se guardaba en la venta pero NO salía
+   * en el DTO público, así que el mensaje de WhatsApp que arma la web —que se
+   * construye desde ese DTO— la perdía: el cliente escribía una indicación y
+   * nadie la veía nunca. Sin este test el campo se puede volver a caer sin que
+   * nada se ponga rojo.
+   */
+  it('la nota del pedido viaja al DTO público, al crear y al consultar', async () => {
+    const res = await request
+      .post('/web/orders')
+      .send({
+        type: 'WEB_PICKUP',
+        items: [{ productId: gaseosaId, quantity: 1 }],
+        customerName: 'Cliente Web',
+        customerPhone: '+573001234599',
+        notes: 'sin cebolla, salsa aparte',
+      })
+      .expect(201);
+    expect(res.body.order.notes).toBe('sin cebolla, salsa aparte');
+
+    const consultado = await request
+      .get(`/web/orders/${res.body.order.id}?token=${encodeURIComponent(res.body.token as string)}`)
+      .expect(200);
+    expect(consultado.body.notes).toBe('sin cebolla, salsa aparte');
+  });
+
+  it('un pedido sin nota devuelve null, no undefined ni cadena vacía', async () => {
+    const { id } = await createWebOrder();
+    const sale = await prisma.sale.findUnique({ where: { id }, select: { notes: true } });
+    expect(sale?.notes).toBeNull();
+  });
+
+  /**
+   * Los datos de pago pasaron de variables de entorno a `business_config`
+   * (editables por el dueño en el admin). Las env vars quedaron de RESPALDO:
+   * si la lista está vacía el cliente no puede quedarse sin saber a dónde pagar.
+   */
+  describe('datos de pago', () => {
+    afterEach(async () => {
+      await prisma.businessConfig.update({
+        where: { id: 'singleton' },
+        data: { paymentAccounts: [] },
+      });
+    });
+
+    it('las cuentas cargadas por el dueño salen en las instrucciones', async () => {
+      await prisma.businessConfig.upsert({
+        where: { id: 'singleton' },
+        update: {
+          paymentAccounts: [
+            { label: 'Nequi', value: '3046706847', note: 'a nombre de Tercos' },
+            { label: 'Bancolombia ahorros', value: '12345678', note: '' },
+          ],
+        },
+        create: { id: 'singleton' },
+      });
+
+      const res = await createWebOrderRaw({ customerPhone: '+573001234588' });
+      const instrucciones = String(res.body.paymentInstructions);
+
+      // El número va SOLO en su línea: es lo que permite copiarlo de un toque.
+      expect(instrucciones.split('\n')).toContain('3046706847');
+      expect(instrucciones.split('\n')).toContain('12345678');
+      expect(instrucciones).toContain('Nequi');
+      expect(instrucciones).toContain('a nombre de Tercos');
+    });
+
+    it('sin cuentas cargadas no se deja al cliente sin a dónde pagar', async () => {
+      const res = await createWebOrderRaw({ customerPhone: '+573001234577' });
+      const instrucciones = String(res.body.paymentInstructions);
+      // Sin cuentas Y sin env vars: mensaje genérico, nunca un texto vacío ni
+      // un detalle técnico sobre variables de entorno.
+      expect(instrucciones).toContain('Total a pagar');
+      expect(instrucciones.trim().length).toBeGreaterThan(20);
+      expect(instrucciones).not.toContain('undefined');
+      expect(instrucciones).not.toContain('PAYMENT_INSTRUCTIONS');
+    });
+
+    it('una cuenta a medio cargar no se cuela en el mensaje', async () => {
+      await prisma.businessConfig.update({
+        where: { id: 'singleton' },
+        // Rótulo sin número: mostrarlo sería decirle "paga a Nequi" sin decir
+        // a cuál. El builder la descarta.
+        data: { paymentAccounts: [{ label: 'Nequi', value: '   ', note: '' }] },
+      });
+      const res = await createWebOrderRaw({ customerPhone: '+573001234566' });
+      expect(String(res.body.paymentInstructions)).not.toContain('Nequi');
+    });
+  });
+
 
   // ================================================================
   // Regresiones del Zod público de POST /web/orders (hardening)

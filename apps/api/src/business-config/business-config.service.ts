@@ -274,10 +274,19 @@ export class BusinessConfigService {
   }
 
   private async row(): Promise<DbConfig> {
-    // Muchos endpoints leen la config en paralelo (estado + trend, menú web,
-    // etc.): con la tabla vacía dos upserts concurrentes chocan creando el
-    // singleton (P2002, el upsert de Prisma no es atómico sin fila) → el
-    // perdedor relee la fila ganadora.
+    // Lectura primero: el upsert de abajo TOMA EL LOCK de la fila aunque no
+    // cambie nada, y esta fila es un singleton que leen el menú web, el estado
+    // financiero y —desde que los datos de pago viven acá— el seguimiento del
+    // pedido, que el cliente pollea cada 5 s. Escribir en el camino de lectura
+    // ponía a todos a hacer fila sobre el mismo registro sin necesidad.
+    const existing = await this.prisma.businessConfig.findUnique({
+      where: { id: SINGLETON_ID },
+    });
+    if (existing) return existing;
+
+    // Solo la primera vez (tabla vacía): dos creaciones concurrentes chocan
+    // (P2002, el upsert de Prisma no es atómico sin fila) → el perdedor relee
+    // la fila ganadora.
     return this.prisma.businessConfig
       .upsert({ where: { id: SINGLETON_ID }, update: {}, create: { id: SINGLETON_ID } })
       .catch((e: unknown) => {
