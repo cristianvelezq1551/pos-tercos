@@ -8,7 +8,9 @@ import { useEffect, useState } from 'react';
 interface Props {
   items: PurchaseListItem[];
   editable: boolean;
-  onChangeQty: (itemId: string, quantity: number) => Promise<void>;
+  /** `false` = el servidor la rechazó; la fila vuelve a la cantidad guardada.
+   *  Quien llama es el dueño de MOSTRAR el porqué. */
+  onChangeQty: (itemId: string, quantity: number) => Promise<boolean>;
   onRemove: (itemId: string) => Promise<void>;
 }
 
@@ -63,7 +65,7 @@ function ItemRow({
 }: {
   item: PurchaseListItem;
   editable: boolean;
-  onChangeQty: (itemId: string, quantity: number) => Promise<void>;
+  onChangeQty: (itemId: string, quantity: number) => Promise<boolean>;
   onRemove: (itemId: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(String(item.quantity));
@@ -87,7 +89,11 @@ function ItemRow({
       return;
     }
     setPending(true);
-    await onChangeQty(item.id, qty).catch(() => setDraft(String(item.quantity)));
+    // Si el servidor rechaza, se vuelve a lo guardado — pero el aviso lo pinta
+    // el padre. Revertir en silencio deja a la persona viendo cómo su número se
+    // deshace solo, sin saber por qué.
+    const ok = await onChangeQty(item.id, qty);
+    if (!ok) setDraft(String(item.quantity));
     setPending(false);
   }
 

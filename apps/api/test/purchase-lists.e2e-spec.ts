@@ -191,15 +191,50 @@ describe('Lista de faltantes E2E', () => {
       .send({ entityType: 'INGREDIENT', entityId: ingId, quantity: 4 })
       .expect(201);
 
-    const entries = await prisma.auditLog.findMany({
-      where: { action: 'PURCHASE_LIST_UPDATED', entityId: list.id },
-    });
-    const deItem = entries.filter(
-      (e) => (e.metadata as { stage?: string } | null)?.stage === 'item',
-    );
-    expect(deItem).toHaveLength(1);
-    expect(deItem[0].userId).toBeTruthy();
-    expect((deItem[0].metadata as { quantity?: number }).quantity).toBe(4);
+    const stages = async (): Promise<Record<string, Record<string, unknown>>> => {
+      const entries = await prisma.auditLog.findMany({
+        where: { action: 'PURCHASE_LIST_UPDATED', entityId: list.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      const out: Record<string, Record<string, unknown>> = {};
+      for (const e of entries) {
+        const md = (e.metadata ?? {}) as Record<string, unknown>;
+        if (typeof md.stage === 'string') out[md.stage] = { ...md, userId: e.userId };
+      }
+      return out;
+    };
+
+    const alAgregar = await stages();
+    expect(alAgregar.item_added).toBeDefined();
+    expect(alAgregar.item_added.userId).toBeTruthy();
+    expect(alAgregar.item_added.quantity).toBe(4);
+
+    // Subir la cantidad es cambiar cuánta plata se va a gastar: tiene que
+    // constar, y con el valor ANTERIOR ("pasó de 4 a 40", no "quedó en 40").
+    const conItem = await request.get(`/purchase-lists/${list.id}`).set(auth()).expect(200);
+    const itemId = (conItem.body as ListDto).items[0].id;
+    await request
+      .patch(`/purchase-lists/${list.id}/items/${itemId}`)
+      .set(auth())
+      .send({ quantity: 40 })
+      .expect(200);
+
+    const alEditar = await stages();
+    expect(alEditar.item_updated).toBeDefined();
+    expect(alEditar.item_updated.userId).toBeTruthy();
+    expect(alEditar.item_updated.quantityBefore).toBe(4);
+    expect(alEditar.item_updated.quantity).toBe(40);
+
+    // Sacar un insumo de la lista también: si nadie lo compró, alguien lo quitó.
+    await request
+      .delete(`/purchase-lists/${list.id}/items/${itemId}`)
+      .set(auth())
+      .expect(200);
+
+    const alQuitar = await stages();
+    expect(alQuitar.item_removed).toBeDefined();
+    expect(alQuitar.item_removed.userId).toBeTruthy();
+    expect(alQuitar.item_removed.entityId).toBe(ingId);
   });
 
   it('el total suma solo lo que tiene costo y avisa cuántos quedaron fuera', async () => {

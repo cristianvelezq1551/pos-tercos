@@ -3,7 +3,6 @@
 import type { PurchaseList } from '@pos-tercos/types';
 import { PURCHASE_LIST_STATUS_LABELS } from '@pos-tercos/types';
 import { Button, Money, StatusBadge, type StatusMapping } from '@pos-tercos/ui';
-import { Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { getErrorMessage } from '../../../lib/errors';
@@ -16,6 +15,7 @@ import {
   updateItem,
 } from '../api';
 import { AddItemPicker } from './AddItemPicker';
+import { AiReviewSection } from './AiReviewSection';
 import { ListItemsTable } from './ListItemsTable';
 import { PrintMenu } from './PrintMenu';
 
@@ -29,6 +29,10 @@ export function PurchaseListDetail({ initial }: { initial: PurchaseList }) {
   const [list, setList] = useState(initial);
   const [pending, setPending] = useState<'close' | 'review' | 'delete' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Aparte del `error` de abajo: un fallo al editar un renglón se reporta JUNTO
+  // a la tabla. El aviso del pie queda fuera de pantalla cuando la lista es
+  // larga, que es justo cuando se editan cantidades.
+  const [itemError, setItemError] = useState<string | null>(null);
 
   const editable = list.status === 'DRAFT';
   const yaEnLista = new Set(
@@ -56,8 +60,7 @@ export function PurchaseListDetail({ initial }: { initial: PurchaseList }) {
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={list.status} mapping={STATUS_MAPPING} size="sm" />
         <span className="text-sm text-muted-foreground">
-          Armada por {list.createdByName} el{' '}
-          {new Date(list.createdAt).toLocaleString('es-CO')}
+          Armada por {list.createdByName} el {new Date(list.createdAt).toLocaleString('es-CO')}
         </span>
       </div>
 
@@ -85,12 +88,33 @@ export function PurchaseListDetail({ initial }: { initial: PurchaseList }) {
           items={list.items}
           editable={editable}
           onChangeQty={async (itemId, quantity) => {
-            setList(await updateItem(list.id, itemId, { quantity }));
+            setItemError(null);
+            try {
+              setList(await updateItem(list.id, itemId, { quantity }));
+              return true;
+            } catch (e) {
+              setItemError(getErrorMessage(e, 'No se pudo cambiar la cantidad.'));
+              return false;
+            }
           }}
           onRemove={async (itemId) => {
-            setList(await removeItem(list.id, itemId));
+            setItemError(null);
+            try {
+              setList(await removeItem(list.id, itemId));
+            } catch (e) {
+              setItemError(getErrorMessage(e, 'No se pudo quitar ese insumo de la lista.'));
+            }
           }}
         />
+
+        {itemError ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {itemError}
+          </p>
+        ) : null}
       </section>
 
       {editable ? (
@@ -111,47 +135,18 @@ export function PurchaseListDetail({ initial }: { initial: PurchaseList }) {
         </section>
       ) : null}
 
-      <section className="rounded-lg border border-border bg-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">
-            ¿Las cantidades alcanzan?
-          </h2>
-          <Button
-            size="sm"
-            variant="ghost"
-            type="button"
-            disabled={pending !== null || list.items.length === 0}
-            onClick={() =>
-              void run('review', () => reviewWithAi(list.id), (r) => setList(r))
-            }
-          >
-            <Sparkles className="mr-1 h-3.5 w-3.5" strokeWidth={1.75} />
-            {pending === 'review'
-              ? 'Revisando…'
-              : list.aiRationale
-                ? 'Revisar otra vez'
-                : 'Revisar con IA'}
-          </Button>
-        </div>
-        {list.aiRationale ? (
-          <div className="mt-3 space-y-2">
-            <p className="rounded-md bg-muted px-4 py-3 text-sm leading-relaxed text-foreground">
-              {list.aiRationale}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              <span title={list.aiModel ?? undefined}>Revisado por IA</span>
-              {list.aiEvaluatedAt
-                ? ` · ${new Date(list.aiEvaluatedAt).toLocaleString('es-CO')}`
-                : ''}
-            </p>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-muted-foreground">
-            La IA compara lo que vas a comprar contra el mínimo y contra lo que consumiste en
-            los últimos 30 días, y te dice en cuáles te vas a quedar corto.
-          </p>
-        )}
-      </section>
+      <AiReviewSection
+        list={list}
+        disabled={pending !== null}
+        reviewing={pending === 'review'}
+        onReview={() =>
+          void run(
+            'review',
+            () => reviewWithAi(list.id),
+            (r) => setList(r),
+          )
+        }
+      />
 
       <section className="rounded-lg border border-border bg-card p-5">
         <h2 className="mb-3 text-sm font-semibold text-foreground">Imprimir o guardar en PDF</h2>
@@ -165,10 +160,14 @@ export function PurchaseListDetail({ initial }: { initial: PurchaseList }) {
             type="button"
             disabled={pending !== null}
             onClick={() =>
-              void run<void>('delete', () => deletePurchaseList(list.id), () => {
-                router.push('/purchase-lists');
-                router.refresh();
-              })
+              void run<void>(
+                'delete',
+                () => deletePurchaseList(list.id),
+                () => {
+                  router.push('/purchase-lists');
+                  router.refresh();
+                },
+              )
             }
           >
             {pending === 'delete' ? 'Borrando…' : 'Borrar borrador'}
@@ -178,10 +177,14 @@ export function PurchaseListDetail({ initial }: { initial: PurchaseList }) {
             disabled={pending !== null || list.items.length === 0}
             title="Marca la lista como pedida. Deja de editarse y queda en el historial."
             onClick={() =>
-              void run('close', () => closePurchaseList(list.id), (r) => {
-                setList(r);
-                router.refresh();
-              })
+              void run(
+                'close',
+                () => closePurchaseList(list.id),
+                (r) => {
+                  setList(r);
+                  router.refresh();
+                },
+              )
             }
           >
             {pending === 'close' ? 'Cerrando…' : 'Marcar como pedida'}

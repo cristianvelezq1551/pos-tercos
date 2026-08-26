@@ -235,24 +235,37 @@ export class PurchaseListsService {
       }
     }
 
-    // Cambiar QUÉ y CUÁNTO se va a comprar es la mutación con consecuencia de
-    // plata de esta feature; sus hermanas (crear/editar/cerrar/borrar) ya
-    // dejaban rastro y esta no. Se registra bajo la misma acción para no
-    // inventar un tipo nuevo: la lista cambió, y consta quién la cambió.
+    await this.auditItem(listId, userId, 'item_added', input.entityType, input.entityId, {
+      quantity,
+    });
+
+    return this.getById(listId);
+  }
+
+  /**
+   * Rastro de un cambio de renglón.
+   *
+   * Cambiar CUÁNTO se compra o sacar un insumo de la lista tiene exactamente la
+   * misma consecuencia de plata que agregarlo, así que las tres mutaciones
+   * dejan el mismo tipo de registro. Van todas bajo `PURCHASE_LIST_UPDATED`
+   * —con `stage` distinto— para no inventar tres acciones nuevas: lo que pasó
+   * es que la lista cambió, y consta quién la cambió.
+   */
+  private async auditItem(
+    listId: string,
+    userId: string,
+    stage: 'item_added' | 'item_updated' | 'item_removed',
+    entityType: StockableType,
+    entityId: string | null,
+    extra: Record<string, unknown> = {},
+  ): Promise<void> {
     await this.audit.log({
       userId,
       action: 'PURCHASE_LIST_UPDATED',
       entityType: 'purchase_list',
       entityId: listId,
-      metadata: {
-        stage: 'item',
-        entityType: input.entityType,
-        entityId: input.entityId,
-        quantity,
-      },
+      metadata: { stage, entityType, entityId, ...extra },
     });
-
-    return this.getById(listId);
   }
 
   /** Lista editable, ítem comprable y con cupo. Devuelve su snapshot. */
@@ -314,7 +327,7 @@ export class PurchaseListsService {
     listId: string,
     itemId: string,
     input: UpdatePurchaseListItem,
-    _userId: string,
+    userId: string,
   ): Promise<PurchaseList> {
     await this.loadDraftOrThrow(listId);
     const item = await this.prisma.purchaseListItem.findFirst({
@@ -324,7 +337,8 @@ export class PurchaseListsService {
       throw new NotFoundException('Ese renglón ya no está en la lista. Recarga la página.');
     }
 
-    const quantity = input.quantity ?? Number(item.quantity);
+    const previa = Number(item.quantity);
+    const quantity = input.quantity ?? previa;
     await this.prisma.purchaseListItem.update({
       where: { id: itemId },
       data: {
@@ -337,17 +351,31 @@ export class PurchaseListsService {
         ...(input.note !== undefined ? { note: input.note } : {}),
       },
     });
+    // Se guarda la cantidad ANTERIOR además de la nueva: "quedó en 200" no dice
+    // nada; "pasó de 2 a 200" es lo que se revisa cuando llega la factura.
+    await this.auditItem(listId, userId, 'item_updated', item.entityType, item.ingredientId ?? item.productId, {
+      quantityBefore: previa,
+      quantity,
+    });
     return this.getById(listId);
   }
 
-  async removeItem(listId: string, itemId: string): Promise<PurchaseList> {
+  async removeItem(listId: string, itemId: string, userId: string): Promise<PurchaseList> {
     await this.loadDraftOrThrow(listId);
+    // Se lee ANTES de borrar: después de un deleteMany no queda de dónde sacar
+    // qué insumo se sacó de la lista.
+    const item = await this.prisma.purchaseListItem.findFirst({
+      where: { id: itemId, listId },
+    });
     const borrados = await this.prisma.purchaseListItem.deleteMany({
       where: { id: itemId, listId },
     });
-    if (borrados.count === 0) {
+    if (borrados.count === 0 || !item) {
       throw new NotFoundException('Ese renglón ya no está en la lista. Recarga la página.');
     }
+    await this.auditItem(listId, userId, 'item_removed', item.entityType, item.ingredientId ?? item.productId, {
+      quantity: Number(item.quantity),
+    });
     return this.getById(listId);
   }
 }

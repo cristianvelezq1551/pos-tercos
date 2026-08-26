@@ -124,8 +124,9 @@ export class PurchaseListsController {
   removeItem(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('itemId', ParseUUIDPipe) itemId: string,
+    @CurrentUser() user: JwtAccessPayload,
   ): Promise<PurchaseList> {
-    return this.lists.removeItem(id, itemId);
+    return this.lists.removeItem(id, itemId, user.sub);
   }
 
   // ---- papeles ----
