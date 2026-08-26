@@ -82,6 +82,7 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
     payment_reconciliations,
     business_config,
     kitchen_incidents,
+    checklist_marks,
     checklist_completions,
     checklist_items,
     promotion_products,

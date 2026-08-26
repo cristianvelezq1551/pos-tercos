@@ -6,6 +6,7 @@
  */
 import { PrismaService } from '../src/prisma/prisma.service';
 import { InventoryService } from '../src/inventory/inventory.service';
+import { LocalFilesystemStorageAdapter } from '../src/adapters/storage/local-filesystem.adapter';
 import { RecipesService } from '../src/recipes/recipes.service';
 import { CogsService } from '../src/reports/cogs.service';
 
@@ -18,7 +19,9 @@ function check(label: string, ok: boolean, extra = ''): void {
 async function main(): Promise<void> {
   const prisma = new PrismaService();
   await prisma.$connect();
-  const inventory = new InventoryService(prisma);
+  // El storage no se usa acá (nada de este script sube fotos), pero el
+  // service lo pide para servir la evidencia de merma/producción.
+  const inventory = new InventoryService(prisma, new LocalFilesystemStorageAdapter());
   const cogs = new CogsService(prisma, new RecipesService(prisma));
 
   const sal = await prisma.ingredient.create({

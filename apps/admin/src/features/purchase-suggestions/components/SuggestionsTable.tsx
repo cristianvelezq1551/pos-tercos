@@ -16,6 +16,12 @@ interface SuggestionsTableProps {
   suggestions: PurchaseSuggestion[];
 }
 
+const ENTITY_LABELS: Record<PurchaseSuggestion['entityType'], string> = {
+  INGREDIENT: 'Insumo',
+  PRODUCT: 'Producto',
+  SUBPRODUCT: 'Preparación',
+};
+
 const STATUS_MAPPING: StatusMapping<PurchaseSuggestion['status']> = {
   PENDING: { label: 'Pendiente', tone: 'warning', pulse: true },
   EVALUATED: { label: 'Evaluada', tone: 'info' },
@@ -33,7 +39,7 @@ export function SuggestionsTable({ suggestions }: SuggestionsTableProps) {
         <span className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium text-foreground">{s.entityName}</span>
           <span className="text-xs text-muted-foreground">
-            {s.entityType === 'INGREDIENT' ? 'Insumo' : 'Producto'}
+            {ENTITY_LABELS[s.entityType]}
           </span>
         </span>
       ),
@@ -45,28 +51,57 @@ export function SuggestionsTable({ suggestions }: SuggestionsTableProps) {
     },
     {
       key: 'stock',
-      header: 'Existencias',
+      header: 'Existencias / mínimo',
       align: 'right',
       numeric: true,
       cell: (s) => (
-        <span>
-          <span className={s.currentStock < s.thresholdMin ? 'font-semibold text-destructive' : ''}>
-            <Quantity value={s.currentStock} decimals={1} className="text-current" />
+        <span className="inline-flex flex-col items-end">
+          <span>
+            <span className={s.currentStock < s.thresholdMin ? 'font-semibold text-destructive' : ''}>
+              <Quantity value={s.currentStock} maxDecimals={1} className="text-current" />
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {' / '}
+              <Quantity value={s.thresholdMin} maxDecimals={1} className="text-current" />
+              {` ${s.unitStock}`}
+            </span>
           </span>
-          <span className="text-xs text-muted-foreground">
-            {' / '}
-            <Quantity value={s.thresholdMin} decimals={1} className="text-current" />
-          </span>
+          {s.currentStock < s.thresholdMin ? (
+            <span className="text-xs text-muted-foreground">
+              faltan{' '}
+              <Quantity
+                value={s.thresholdMin - s.currentStock}
+                unit={s.unitStock}
+                maxDecimals={1}
+                className="text-current"
+              />
+            </span>
+          ) : null}
         </span>
       ),
     },
     {
       key: 'suggested',
-      header: 'Sugerido',
+      header: 'Comprar',
       align: 'right',
       numeric: true,
       hideOnMobile: true,
-      cell: (s) => <Quantity value={s.suggestedQty} unit={s.unitPurchase} decimals={0} />,
+      cell: (s) => (
+        <span className="inline-flex flex-col items-end">
+          <Quantity value={s.suggestedQty} unit={s.unitPurchase} maxDecimals={2} />
+          {s.conversionFactor !== 1 || s.unitPurchase !== s.unitStock ? (
+            <span className="text-xs text-muted-foreground">
+              ={' '}
+              <Quantity
+                value={s.suggestedQty * s.conversionFactor}
+                unit={s.unitStock}
+                maxDecimals={1}
+                className="text-current"
+              />
+            </span>
+          ) : null}
+        </span>
+      ),
     },
     {
       key: 'estTotal',

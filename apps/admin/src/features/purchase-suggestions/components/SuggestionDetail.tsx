@@ -11,6 +11,8 @@ import {
   evaluateSuggestion,
   rejectSuggestion,
 } from '../api';
+import { getErrorMessage } from '../../../lib/errors';
+import { CoverageExplainer } from './CoverageExplainer';
 import { SendToSupplierDialog } from './SendToSupplierDialog';
 
 interface SuggestionDetailProps {
@@ -37,7 +39,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
       const updated = await evaluateSuggestion(suggestion.id);
       setSuggestion(updated);
     } catch (e) {
-      setError((e as Error).message);
+      setError(getErrorMessage(e, 'No se pudo evaluar con IA.'));
     }
     setPending(null);
   }
@@ -51,13 +53,15 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
       setSuggestion(updated);
       router.refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(getErrorMessage(e, 'No se pudo resolver la sugerencia.'));
     }
     setPending(null);
   }
 
   return (
     <div className="max-w-3xl space-y-6">
+      <CoverageExplainer suggestion={suggestion} />
+
       <div className="rounded-lg border border-border bg-card p-5">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Row label="Insumo / producto" value={suggestion.entityName} />
@@ -68,13 +72,13 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
             }
           />
           <Row
-            label="Existencias actuales"
-            value={`${formatNumber(suggestion.currentStock, { decimals: 2 })}`}
+            label="Existencias al detectarla"
+            value={`${formatNumber(suggestion.currentStock, { decimals: 2 })} ${suggestion.unitStock}`}
             mono
           />
           <Row
             label="Mínimo de alerta"
-            value={`${formatNumber(suggestion.thresholdMin, { decimals: 2 })}`}
+            value={`${formatNumber(suggestion.thresholdMin, { decimals: 2 })} ${suggestion.unitStock}`}
             mono
           />
           <Row
@@ -83,7 +87,7 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
             mono
           />
           <Row
-            label="Costo unitario est."
+            label={`Costo est. por ${suggestion.unitPurchase}`}
             value={
               suggestion.estUnitCost === null
                 ? '—'
@@ -153,17 +157,19 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
               {suggestion.llmRationale}
             </p>
             <p className="text-xs text-muted-foreground">
-              {suggestion.llmModel} ·{' '}
+              {/* El código del modelo (claude-haiku-4-5-20251001) no le dice
+                  nada a quien lee; queda en el título por si hace falta. */}
+              <span title={suggestion.llmModel ?? undefined}>Analizado por IA</span>
               {suggestion.llmEvaluatedAt
-                ? new Date(suggestion.llmEvaluatedAt).toLocaleString('es-CO')
+                ? ` · ${new Date(suggestion.llmEvaluatedAt).toLocaleString('es-CO')}`
                 : ''}
             </p>
           </div>
         ) : (
           <p className="mt-3 text-sm text-muted-foreground">
             Aún no fue evaluada. Al evaluar, el asistente revisa el costo
-            estimado contra el histórico de compras y comenta si la cantidad +
-            timing son razonables.
+            estimado contra el histórico de compras y comenta si la cantidad y
+            el momento de comprar son razonables.
           </p>
         )}
       </div>
@@ -217,9 +223,13 @@ export function SuggestionDetail({ initial }: SuggestionDetailProps) {
         <SendToSupplierDialog
           suggestion={suggestion}
           onClose={() => setSendOpen(false)}
-          onSuccess={() => {
+          onSuccess={(updated) => {
             setSendOpen(false);
-            // Recargar para reflejar el nuevo estado.
+            // El estado local NO se actualiza solo con `router.refresh()`:
+            // `useState` ignora el prop nuevo porque el componente no se
+            // remonta. Sin esto la pantalla seguía diciendo "Pendiente" y
+            // dejaba rechazar —o volver a pedir— algo ya aceptado.
+            setSuggestion(updated);
             router.refresh();
           }}
         />

@@ -12,6 +12,9 @@ import type {
   Product as DbProduct,
   Subproduct as DbSubproduct,
 } from '@prisma/client';
+import { Inject } from '@nestjs/common';
+import type { StorageProvider } from '@pos-tercos/domain';
+import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { runWithSerializationRetry } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -40,7 +43,10 @@ interface ListMovementsFilter {
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+  ) {}
 
   /**
    * Stock por entidad. Devuelve mapa con clave `${entityType}:${id}`.
@@ -149,7 +155,9 @@ export class InventoryService {
   }
 
   async createMovement(
-    input: CreateInventoryMovement,
+    /** `evidenceKey` no está en el Zod público: la foto la exige la cocina
+     *  (merma), no un ajuste manual del admin. */
+    input: CreateInventoryMovement & { evidenceKey?: string },
     userId?: string,
   ): Promise<InventoryMovement> {
     if (input.entityType === 'INGREDIENT') {
@@ -232,6 +240,11 @@ export class InventoryService {
       unitCost: input.delta > 0 ? (input.unitCost ?? null) : null,
       type: input.type,
       notes: input.notes ?? null,
+      // Sin esta línea la foto se sube al storage y la fila se guarda SIN su
+      // clave: la merma queda sin evidencia y el endpoint que la sirve devuelve
+      // null para siempre. La firma la aceptaba y el lector la esperaba; solo
+      // faltaba escribirla.
+      evidenceKey: input.evidenceKey ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
       userId: userId ?? null,
     };
@@ -274,6 +287,20 @@ export class InventoryService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Foto de evidencia de un movimiento (merma de cocina o tanda de producción).
+   * Se resuelve por id del movimiento y NUNCA por key suelta: un endpoint que
+   * sirva cualquier key deja el bucket entero a mano de quien la adivine.
+   */
+  async getMovementEvidence(movementId: string): Promise<Buffer | null> {
+    const mv = await this.prisma.inventoryMovement.findUnique({
+      where: { id: movementId },
+      select: { evidenceKey: true },
+    });
+    if (!mv?.evidenceKey) return null;
+    return this.storage.get(mv.evidenceKey);
   }
 
   /**
@@ -501,7 +528,9 @@ function toMovementDto(row: DbInventoryMovement): InventoryMovement {
     userId: row.userId,
     userFullName: row.user?.fullName ?? null,
     notes: row.notes,
-    evidenceUrl: row.evidenceKey ? `/api/subproducts/production/${row.sourceId}/evidence` : null,
+    // Por MOVIMIENTO, no por tanda: una merma de cocina no tiene `sourceId`,
+    // así que la ruta vieja (atada a producción) la dejaba sin forma de servirse.
+    evidenceUrl: row.evidenceKey ? `/api/inventory/movements/${row.id}/evidence` : null,
     idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
   };

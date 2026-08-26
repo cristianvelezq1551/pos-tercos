@@ -6,6 +6,7 @@ import {
   ArrowLeftRight,
   Banknote,
   BarChart3,
+  BookOpen,
   Box,
   CalendarDays,
   CalendarRange,
@@ -155,6 +156,10 @@ const NAV_ITEMS: NavItem[] = [
     icon: History,
     onlyDueno: true,
   },
+  // Sin `onlyDueno` ni `onlyOperativo` A PROPÓSITO: la guía la ve todo el que
+  // entra al admin, con los capítulos de todos los módulos. Sirve para entrenar
+  // a alguien que va a rotar de puesto.
+  { section: 'Ayuda', label: 'Guía de uso', href: '/guia', icon: BookOpen },
 ];
 
 export function AdminSidebar({

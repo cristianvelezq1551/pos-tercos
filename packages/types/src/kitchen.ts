@@ -44,6 +44,10 @@ export const RegisterWasteSchema = z
     /** §3.3: idempotencia — un reintento tras respuesta perdida NO registra una
      *  segunda merma (movements insert-only → sería doble descuento). */
     idempotencyKey: z.string().uuid().optional(),
+    /** Storage key de la foto, OBLIGATORIA (la devuelve POST /kitchen/evidence).
+     *  Decisión del dueño: en una merma siempre hay algo físico que fotografiar,
+     *  y sin evidencia la pérdida es la palabra de una persona. */
+    evidenceKey: z.string().min(1).max(300),
   })
   .superRefine(requireMatchingId);
 export type RegisterWaste = z.infer<typeof RegisterWasteSchema>;
@@ -72,6 +76,14 @@ export const KitchenCountResultSchema = z.object({
 });
 export type KitchenCountResult = z.infer<typeof KitchenCountResultSchema>;
 
+// ── Evidencia fotográfica ────────────────────────────────────────────
+
+/** Respuesta de POST /kitchen/evidence: la key que se pasa luego al registro.
+ *  Subir la foto y registrar el hecho son dos pasos a propósito — así una foto
+ *  pesada no se reintenta junto con la escritura. */
+export const EvidenceUploadSchema = z.object({ key: z.string() });
+export type EvidenceUpload = z.infer<typeof EvidenceUploadSchema>;
+
 // ── Bitácora de incidencias ──────────────────────────────────────────
 
 export const KitchenIncidentCategoryEnum = z.enum([
@@ -92,6 +104,10 @@ export const KITCHEN_INCIDENT_CATEGORY_LABELS: Record<KitchenIncidentCategory, s
 export const CreateKitchenIncidentSchema = z.object({
   category: KitchenIncidentCategoryEnum,
   note: z.string().min(3).max(1000),
+  /** Foto de evidencia. Opcional A PROPÓSITO (decisión del dueño): una
+   *  incidencia puede ser "se fue la luz" y exigir foto haría que no se
+   *  reporte. En merma sí es obligatoria. */
+  evidenceKey: z.string().min(1).max(300).optional(),
 });
 export type CreateKitchenIncident = z.infer<typeof CreateKitchenIncidentSchema>;
 
@@ -101,6 +117,8 @@ export const KitchenIncidentSchema = z.object({
   note: z.string(),
   authorId: z.string().uuid(),
   authorName: z.string().nullable(),
+  /** Ruta de la foto, o null si se reportó sin ella (es opcional acá). */
+  evidenceUrl: z.string().nullable(),
   resolvedAt: z.string().datetime().nullable(),
   resolvedById: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
@@ -136,20 +154,160 @@ export const UpdateChecklistItemSchema = z.object({
 });
 export type UpdateChecklistItem = z.infer<typeof UpdateChecklistItemSchema>;
 
-/** Estado del checklist de hoy: ítems + si ya se completó esa rutina hoy. */
-export const ChecklistTodaySchema = z.object({
+/** Una tarea dentro de la rutina de un día: si se marcó, quién y cuándo. */
+export const ChecklistDayItemSchema = z.object({
+  itemId: z.string().uuid(),
+  label: z.string(),
+  done: z.boolean(),
+  doneById: z.string().uuid().nullable(),
+  doneByName: z.string().nullable(),
+  doneAt: z.string().datetime().nullable(),
+});
+export type ChecklistDayItem = z.infer<typeof ChecklistDayItemSchema>;
+
+/**
+ * Una rutina (apertura o cierre) de UN día, con lo que se hizo y lo que faltó.
+ *
+ * Es el mismo shape para la cocina (el día de hoy) y para el histórico del
+ * dueño: dos tipos para la misma cosa se desincronizan siempre — ya pasó con
+ * `ShiftZReport` (§7.v31) y con `CortesiasPanel` (§7.v32).
+ */
+export const ChecklistDaySchema = z.object({
+  /** Día local YYYY-MM-DD. */
+  day: z.string(),
   type: ChecklistTypeEnum,
-  items: z.array(ChecklistItemSchema),
-  /** Última vez que se completó esta rutina HOY (null si aún no). */
+  items: z.array(ChecklistDayItemSchema),
+  doneCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+  /** Cerrada por el cocinero (exige todas las tareas marcadas). */
   completedAt: z.string().datetime().nullable(),
   completedById: z.string().uuid().nullable(),
   completedByName: z.string().nullable(),
+  /** Día anterior a las marcas por tarea: se leyó desde `done_item_ids` y NO
+   *  hay autor por tarea. La UI lo dice en vez de inventar un nombre. */
+  legacy: z.boolean(),
 });
-export type ChecklistToday = z.infer<typeof ChecklistTodaySchema>;
+export type ChecklistDay = z.infer<typeof ChecklistDaySchema>;
 
+/** Marcar/desmarcar UNA tarea. Se guarda al toque: si al cocinero lo
+ *  interrumpen, el avance del día no se pierde. */
+export const MarkChecklistItemSchema = z.object({
+  type: ChecklistTypeEnum,
+  itemId: z.string().uuid(),
+  done: z.boolean(),
+});
+export type MarkChecklistItem = z.infer<typeof MarkChecklistItemSchema>;
+
+/** Cerrar la rutina del día. No lleva la lista de tareas: el server ya tiene
+ *  las marcas, y mandarlas de nuevo solo abre la puerta a que no coincidan. */
 export const CompleteChecklistSchema = z.object({
   type: ChecklistTypeEnum,
-  /** Ítems marcados como hechos (deben cubrir todos los activos para completar). */
-  doneItemIds: z.array(z.string().uuid()).min(1),
 });
 export type CompleteChecklist = z.infer<typeof CompleteChecklistSchema>;
+
+// ====================================================================
+// VISTAS DEL DUEÑO — lo que hizo la cocina, por día y por persona
+// Contratos de lectura para el hub /cocina del admin. El resumen agregado
+// (`activity`) se define junto con su consulta, cuando exista el service.
+// ====================================================================
+
+// ── Producción, agrupada por TANDA (no por movimiento) ───────────────
+
+/** Un insumo/subproducto consumido por una tanda. */
+export const KitchenProductionInputSchema = z.object({
+  entityType: StockableTypeEnum,
+  entityId: z.string().uuid(),
+  name: z.string(),
+  /** Cantidad consumida, positiva. */
+  quantity: z.number().nonnegative(),
+  unit: z.string(),
+});
+export type KitchenProductionInput = z.infer<typeof KitchenProductionInputSchema>;
+
+/**
+ * Una tanda de producción. Una tanda escribe 1 movimiento de entrada + N de
+ * consumo encadenados por `source_id`; acá vuelven agrupados, que es como el
+ * dueño la piensa ("Fulano produjo 20 porciones de pollo").
+ */
+export const KitchenProductionRunSchema = z.object({
+  runId: z.string().uuid(),
+  subproductId: z.string().uuid(),
+  subproductName: z.string(),
+  quantityProduced: z.number(),
+  unit: z.string(),
+  userId: z.string().uuid().nullable(),
+  userName: z.string().nullable(),
+  notes: z.string().nullable(),
+  /** Ruta de la foto de evidencia, o null si la tanda se registró sin foto. */
+  evidenceUrl: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  inputs: z.array(KitchenProductionInputSchema),
+});
+export type KitchenProductionRun = z.infer<typeof KitchenProductionRunSchema>;
+
+// ── Merma ────────────────────────────────────────────────────────────
+
+export const KitchenWasteEntrySchema = z.object({
+  movementId: z.string().uuid(),
+  entityType: StockableTypeEnum,
+  entityId: z.string().uuid(),
+  name: z.string(),
+  /** Cantidad descartada, positiva (el movimiento es negativo). */
+  quantity: z.number().nonnegative(),
+  unit: z.string(),
+  /** Motivo que escribió el cocinero (va en las notas del movimiento). */
+  reason: z.string().nullable(),
+  userId: z.string().uuid().nullable(),
+  userName: z.string().nullable(),
+  evidenceUrl: z.string().nullable(),
+  /** Cuánto se devolvió al anular la merma (§7.v18). 0 si sigue vigente. */
+  reversedQty: z.number().nonnegative(),
+  /** Costo de lo perdido según el ledger FIFO. Null si no se pudo valorizar. */
+  costAmount: z.number().nullable(),
+  /** El costo salió de una estimación, no de una compra real (§7.v32). */
+  costEstimated: z.boolean(),
+  createdAt: z.string().datetime(),
+});
+export type KitchenWasteEntry = z.infer<typeof KitchenWasteEntrySchema>;
+
+// ── Resumen por día y por persona ────────────────────────────────────
+
+/** Estado de una rutina dentro del resumen (sin el detalle de tareas). */
+export const KitchenRoutineStatusSchema = z.object({
+  doneCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+  completed: z.boolean(),
+});
+export type KitchenRoutineStatus = z.infer<typeof KitchenRoutineStatusSchema>;
+
+/** Lo que hizo UNA persona ese día. */
+export const KitchenActivityUserSchema = z.object({
+  userId: z.string().uuid(),
+  userName: z.string().nullable(),
+  productionRuns: z.number().int().nonnegative(),
+  producedUnits: z.number().nonnegative(),
+  wasteEntries: z.number().int().nonnegative(),
+  wasteCost: z.number(),
+  incidentsLogged: z.number().int().nonnegative(),
+  checklistMarks: z.number().int().nonnegative(),
+});
+export type KitchenActivityUser = z.infer<typeof KitchenActivityUserSchema>;
+
+/**
+ * Un día de cocina de un vistazo: rutinas, producción, merma e incidencias,
+ * más el desglose por persona. Es la respuesta a "¿qué se hizo ayer?".
+ */
+export const KitchenActivityDaySchema = z.object({
+  day: z.string(),
+  openRoutine: KitchenRoutineStatusSchema,
+  closeRoutine: KitchenRoutineStatusSchema,
+  productionRuns: z.number().int().nonnegative(),
+  wasteEntries: z.number().int().nonnegative(),
+  /** Costo FIFO de lo mermado ese día, ya neteado por anulaciones. */
+  wasteCost: z.number(),
+  /** Parte de `wasteCost` que es estimada, no una compra real (§7.v32). */
+  wasteCostEstimated: z.number(),
+  incidentsLogged: z.number().int().nonnegative(),
+  users: z.array(KitchenActivityUserSchema),
+});
+export type KitchenActivityDay = z.infer<typeof KitchenActivityDaySchema>;

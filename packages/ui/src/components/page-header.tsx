@@ -9,7 +9,14 @@ export interface BreadcrumbItem {
 export interface PageHeaderProps extends React.HTMLAttributes<HTMLElement> {
   title: string;
   description?: React.ReactNode;
-  /** Acciones al extremo derecho (Buttons). */
+  /**
+   * Acciones al extremo derecho (Buttons).
+   *
+   * OJO: esta columna no se encoge, así que su contenido define cuánto espacio
+   * le queda al título. Un texto largo sin ancho máximo acá deja el título
+   * partido letra por letra. Si necesitas mostrar un mensaje, acótalo
+   * (`max-w-xs break-words`).
+   */
   actions?: React.ReactNode;
   /** Breadcrumbs renderizados arriba del título. */
   breadcrumbs?: BreadcrumbItem[];
@@ -100,7 +107,9 @@ export function PageHeader({
         </div>
 
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+          <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
+            {actions}
+          </div>
         ) : null}
       </div>
     </header>

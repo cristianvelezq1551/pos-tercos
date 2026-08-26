@@ -83,4 +83,14 @@ describe('mensajeDeError', () => {
       expect(mensajeDeError('El PIN no coincide.')).toBe('El PIN no coincide.');
     });
   });
+
+  it('no muestra el "API 500" del fallback de ApiError', () => {
+    // ApiError arma `API ${status}` cuando el backend no manda mensaje; sin
+    // esta regla la pantalla decía "No se pudieron cargar las sugerencias.
+    // API 500" — código HTTP a la vista.
+    expect(mensajeDeError(new Error('API 500'), { status: 500 })).not.toContain('API 500');
+    expect(mensajeDeError(new Error('API 404'), { status: 404 })).toBe(
+      'No encontramos lo que buscabas.',
+    );
+  });
 });
