@@ -77,6 +77,11 @@ const ACTION_LABELS: Record<string, string> = {
   PURCHASE_SUGGESTION_CREATED: 'Sugerencia de compra creada',
   PURCHASE_SUGGESTION_EVALUATED: 'Evaluó sugerencia (IA)',
   PURCHASE_SUGGESTION_ACCEPTED: 'Aceptó sugerencia de compra',
+  PURCHASE_LIST_CREATED: 'Creó una lista de faltantes',
+  PURCHASE_LIST_UPDATED: 'Editó una lista de faltantes',
+  PURCHASE_LIST_CLOSED: 'Cerró una lista de faltantes',
+  PURCHASE_LIST_DELETED: 'Borró una lista de faltantes',
+  PURCHASE_LIST_EVALUATED: 'Pidió a la IA revisar una lista de faltantes',
   PURCHASE_SUGGESTION_REJECTED: 'Rechazó sugerencia de compra',
   PURCHASE_SUGGESTION_STALE: 'Sugerencia vencida',
 

@@ -70,6 +70,8 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
     subproducts,
     ingredients,
     purchase_suggestions,
+    purchase_list_items,
+    purchase_lists,
     payable_commitments,
     treasury_movements,
     treasury_config,

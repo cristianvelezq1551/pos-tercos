@@ -74,6 +74,7 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Compras', label: 'Facturas', href: '/invoices', icon: Receipt },
   { section: 'Compras', label: 'Proveedores', href: '/suppliers', icon: Truck },
   { section: 'Compras', label: 'Sugerencias inteligentes', href: '/purchase-suggestions', icon: Sparkles },
+  { section: 'Compras', label: 'Listas de faltantes', href: '/purchase-lists', icon: ClipboardList },
   { section: 'Inventario', label: 'Existencias', href: '/inventory', icon: Box },
   { section: 'Inventario', label: 'Deudas', href: '/inventory/negativos', icon: TrendingDown },
   { section: 'Inventario', label: 'Movimientos', href: '/inventory/movements', icon: PackageOpen },

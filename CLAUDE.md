@@ -2537,6 +2537,78 @@ plata o deja rastro imborrable) y `Dato`.
   `apps/cocina` (mismo contenido, otro shell) — no se hizo porque el alcance
   acordado fue una sola ruta en admin.
 
+## 7.v37 Lista de faltantes: la hoja con la que se sale a comprar (2026-08-26)
+
+> Pedido del dueño: además de las sugerencias automáticas, poder armar A MANO
+> el pedido —viendo existencias y mínimos—, que la IA revise si las cantidades
+> alcanzan, y sacar el PDF. Verificado: typecheck 12/12, lint 0, domain 419,
+> types 168, ui 138, admin 208, api unit 126, **e2e 47 suites / 484**,
+> 8 builds, más verificación en navegador del flujo completo y del PDF.
+> Migración: `20260826040000_purchase_lists`.
+
+### Por qué un módulo aparte y no una variante de las sugerencias
+Una sugerencia es UN ítem que el sistema detectó solo; una lista es un
+DOCUMENTO con varios ítems que arma una persona y se lleva al mercado. Meterlas
+en la misma tabla obligaba a inventar un estado por renglón y a partir el PDF
+en pedazos. Comparten lo que de verdad es común: `computeSuggestedPurchase`
+(cuánto falta) y el renderizador de la orden al proveedor.
+
+### Decisiones del dueño (NO re-discutir)
+- **Se guarda con historial**: quién la armó, cuándo, qué pidió y en qué quedó.
+  Repetir el pedido de la semana pasada es la mitad del valor.
+- **Admin y dueño solamente**: muestra costos y total, que no van a roles
+  operativos. Verificado con un test: el cocinero recibe 403.
+- **Dos papeles**: el general (interno, con costos, existencias y mínimo) y uno
+  por proveedor (solo lo suyo, **sin precios**).
+- **La IA revisa UNA cosa**: si las cantidades alcanzan o se va a quedar corto.
+  De precios y proveedores ya opina la evaluación de las sugerencias.
+
+### Reglas duras
+- **La lista nace llena.** El botón principal la crea con todo lo que está bajo
+  el mínimo y la cantidad que hace falta; quien compra ajusta. Teclear desde
+  cero es donde se olvidan cosas.
+- **Un ítem no se repite en una lista**: índice único en la DB, y agregar dos
+  veces el mismo insumo ACTUALIZA la cantidad en vez de crear otro renglón.
+  Dos renglones del mismo pan hacen comprar el doble sin que nadie lo note.
+- **Los subproductos no entran**: se producen, no se compran (la misma razón
+  por la que reventaban el escaneo de sugerencias, §7.v35).
+- **Snapshot de unidades y existencias** en cada renglón: el papel tiene que
+  seguir diciendo lo mismo dentro de un mes, aunque el insumo cambie de unidad
+  o de umbral.
+- **El total suma SOLO lo que tiene costo conocido** y reporta aparte cuántos
+  quedaron fuera. Rellenar los desconocidos con 0 daría un total que se lee
+  como completo y es menor al que se va a pagar.
+- **El papel del proveedor NO lleva precios** (§7.v19). Y no es solo la regla:
+  `lastUnitCost` sale de la ÚLTIMA factura, sea de quien sea, así que
+  imprimirlo puede entregarle a un proveedor el precio de su competencia.
+- **Cerrada = pedida**: deja de editarse y queda como historial. El cierre es
+  un claim condicionado por estado — dos personas cerrando a la vez no
+  duplican bitácora.
+
+### Qué hace útil la revisión con IA
+El dato que la vuelve algo más que aritmética es el **consumo real de los
+últimos 30 días**, que sale de los movimientos de inventario (solo los deltas
+negativos: una compra no es consumo). Con eso responde cosas como *"Pan va a
+quedar en 1.160 unidades, muy por encima del mínimo de 20 y del consumo mensual
+de 52: estás comprando de más"*. Sin ese dato solo podría repetir la cuenta del
+mínimo, que la pantalla ya muestra.
+
+### La pantalla dice en cuánto queda el inventario
+Cada renglón muestra existencias, mínimo, cuánto comprar y **en cuánto queda si
+compras eso** — recalculado con lo TECLEADO, no con lo guardado, y en rojo si
+no alcanza el mínimo. Elegir una cantidad sin ver el efecto es teclear a ciegas.
+
+### Superficie
+- **API** `purchase-lists` (`@AdminAccess`): CRUD de listas e ítems,
+  `GET /candidates` (catálogo comprable con faltante), `/document` y
+  `/document/supplier`, `/suppliers`, `/review`, `/close`.
+- **Domain**: `renderShortageListHtml` (papel interno, agrupa por proveedor
+  cuando hay más de uno) + `doc-shared.ts` con los estilos y helpers que
+  comparte con la orden al proveedor — dos hojas de estilo se separan al primer
+  retoque.
+- **Admin**: `/purchase-lists` y `/purchase-lists/[id]`, sidebar en Compras.
+
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

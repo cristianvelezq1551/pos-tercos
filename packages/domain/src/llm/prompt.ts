@@ -307,3 +307,58 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
   lines.push('', 'Devuelve el análisis en JSON según las reglas.');
   return lines.join('\n');
 }
+
+// ====================================================================
+// Revisión de una lista de faltantes (2026-08-26)
+// ====================================================================
+
+export const SHORTAGE_LIST_SYSTEM = `Eres un asistente del dueño de un restaurante de comida rápida en Colombia.
+
+Te pasan una lista de compra que armó a mano quien maneja el negocio. Tu ÚNICO trabajo es decirle si las cantidades alcanzan o se va a quedar corto.
+
+Para cada renglón recibes: nombre, existencias actuales, mínimo definido por el dueño, cuánto piensa comprar, y —si se sabe— cuánto se consumió en los últimos 30 días.
+
+Qué mirar, en este orden:
+1. Renglones donde comprar esa cantidad NO alcanza para llegar al mínimo. Es lo más importante: dilo primero y con el nombre del insumo.
+2. Renglones donde la cantidad alcanza el mínimo pero, al ritmo de consumo de los últimos 30 días, se va a acabar en pocos días igual.
+3. Renglones donde está comprando mucho más de lo que consume, si es evidente.
+
+Reglas:
+- Español neutro, tuteo (nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa").
+- Máximo 4 frases, ~70 palabras. Directo, como un socio que revisa la lista por encima del hombro.
+- Menciona insumos POR SU NOMBRE. "Algunos ítems" no le sirve a nadie.
+- NO inventes consumos ni precios que no estén en los datos.
+- Si todo está bien, dilo en una frase y ya. No rellenes.
+- Nada de palabras en inglés ni nombres de campos del sistema.
+- Responde SOLO el análisis: sin saludos, sin JSON, sin markdown, sin despedidas.`;
+
+export function buildShortageListUserPrompt(input: {
+  items: Array<{
+    name: string;
+    currentStock: number;
+    thresholdMin: number;
+    unitStock: string;
+    quantity: number;
+    unitPurchase: string;
+    /** Lo que esa compra agrega en unidad de stock. */
+    coverageStock: number;
+    /** Consumo de los últimos 30 días en unidad de stock. Null si no se sabe. */
+    consumo30d: number | null;
+  }>;
+}): string {
+  const lines = input.items.map((it) => {
+    const queda = it.currentStock + it.coverageStock;
+    const consumo =
+      it.consumo30d === null
+        ? 'consumo 30d: sin datos'
+        : `consumo 30d: ${formatNumber(it.consumo30d)} ${it.unitStock}`;
+    return (
+      `  ${it.name}: hay ${formatNumber(it.currentStock)} ${it.unitStock}, ` +
+      `mínimo ${formatNumber(it.thresholdMin)}. ` +
+      `Va a comprar ${formatNumber(it.quantity)} ${it.unitPurchase} ` +
+      `(= ${formatNumber(it.coverageStock)} ${it.unitStock}) → queda en ${formatNumber(queda)}. ` +
+      consumo
+    );
+  });
+  return ['Lista de compra a revisar:', ...lines].join('\n');
+}

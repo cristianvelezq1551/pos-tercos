@@ -110,6 +110,12 @@ export const AuditActionEnum = z.enum([
   'PURCHASE_SUGGESTION_STALE',
   'PURCHASE_SUGGESTION_SENT_SUPPLIER',
   'PURCHASE_SUGGESTION_SUMMARY_SENT',
+  // Lista de faltantes armada a mano (2026-08-26)
+  'PURCHASE_LIST_CREATED',
+  'PURCHASE_LIST_UPDATED',
+  'PURCHASE_LIST_CLOSED',
+  'PURCHASE_LIST_DELETED',
+  'PURCHASE_LIST_EVALUATED',
 
   // WhatsApp wa.me semi-automático (FASE 9) — legacy, ya no se emite.
   'WHATSAPP_LINK_OPENED',
