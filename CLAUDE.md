@@ -2742,6 +2742,48 @@ proveedor caído—; la calidad de la recuperación se mide en `domain`.
 409 sin relación con el cambio. Antes de dudar del código, `pkill -f "jest
 --config"` y correr UNA vez.
 
+## 7.v40 Auditoría de la guía: 3 bugs que introduje y no daban error (2026-08-28)
+
+> Auditoría adversarial de §7.v38/v39 pedida por el dueño. Ninguno de los tres
+> hallazgos rompía nada: por eso ninguno había salido en typecheck, lint ni en
+> 545 tests. Verificado: 13/13, lint 0, unit 12/12, e2e 51/545, builds 8/8.
+
+### 1. El manual interno viajaba al navegador del CLIENTE (el grave)
+`packages/domain` compila a **CommonJS**, que no se puede podar. Al colgar la
+guía del barril principal (`export * from './guia'`), sus ~250 KB entraban en
+el bundle de CUALQUIER app que importara algo de `domain` — y `apps/web` importa
+`buildWebOrderLink` para el checkout. Resultado: quien abría **tercos.co**
+descargaba el manual de operación, con "PIN de aprobación", anomalías, cómo se
+cierra la caja y cuánto cuesta una cortesía.
+
+Se expone por **subruta** (`@pos-tercos/domain/guia`), fuera del barril. Como el
+API compila con `moduleResolution: node` —que no entiende el mapa `exports`—
+hace falta además el stub `packages/domain/guia/package.json`, que resuelve por
+ruta física. **Bundle del cliente: 522 KB → 325 KB (−38 %)**, y sin rastro de la
+guía ni en cliente ni en servidor. Admin y cocina la conservan, que sí la usan.
+
+> Regla que queda: **`domain` es CJS. Todo lo que se cuelgue de su barril entra
+> al bundle de las cinco apps.** Lo pesado va por subruta.
+
+### 2. Diez de veinticinco íconos no existían
+Caían al genérico en silencio: diez tarjetas con el ícono equivocado. Falla
+invisible para el compilador porque `chapterIcon` tiene fallback a propósito.
+Test nuevo: todo icono declarado en el contenido tiene que estar en el mapa.
+
+### 3. El 404 de cocina salía en inglés
+"This page could not be found" — el default de Next. Se destapó verificando que
+un cocinero no pueda abrir un flujo que no le toca (el 404 es correcto; el texto
+no). §3.5 ya lo había corregido en `apps/web` y quedó pendiente en las otras dos.
+Ahora admin y cocina tienen el suyo, con el mismo tono.
+
+### Lo que se auditó y estaba bien
+Integridad del contenido (30 ids únicos, kebab-case, `seeAlso` sin enlaces
+rotos, todos con pasos y con "dónde se ve"), aislamiento por audiencia (el
+cocinero no recibe flujos ajenos ni en la pantalla ni en el contexto de la IA),
+el reintento anti-voseo no puede entrar en bucle (el segundo intento se devuelve
+tal cual), guards y throttle del endpoint, y 7 rutas en celular sin
+desbordamiento, sin controles <44 px y sin errores de consola.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

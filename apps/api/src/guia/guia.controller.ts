@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Audience } from '@pos-tercos/domain';
+import type { Audience } from '@pos-tercos/domain/guia';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { KitchenOrCashierAccess } from '../auth/decorators/roles.decorator';

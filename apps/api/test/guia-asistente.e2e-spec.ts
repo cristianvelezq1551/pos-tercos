@@ -14,7 +14,7 @@
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import * as bcrypt from 'bcrypt';
-import { palabrasVoseo } from '@pos-tercos/domain';
+import { palabrasVoseo } from '@pos-tercos/domain/guia';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { LLMService } from '../src/adapters/llm/llm.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';

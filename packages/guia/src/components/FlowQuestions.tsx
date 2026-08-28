@@ -1,4 +1,4 @@
-import type { FlowQuestion } from '@pos-tercos/domain';
+import type { FlowQuestion } from '@pos-tercos/domain/guia';
 
 /**
  * Preguntas con nombre propio ("se me quemó una tanda"), no genéricas. Van

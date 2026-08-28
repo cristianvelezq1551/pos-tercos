@@ -3,7 +3,7 @@
 import { SearchInput } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { TOTAL_SECTIONS } from '@pos-tercos/domain';
+import { TOTAL_SECTIONS } from '@pos-tercos/domain/guia';
 import { MIN_QUERY_LENGTH, searchSections } from '../lib/search';
 import { AudienceBadges } from './AudienceBadges';
 

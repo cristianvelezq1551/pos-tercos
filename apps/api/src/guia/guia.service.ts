@@ -4,7 +4,7 @@ import {
   buildGuiaAssistantUserPrompt,
   palabrasVoseo,
   type Audience,
-} from '@pos-tercos/domain';
+} from '@pos-tercos/domain/guia';
 import { LLMService } from '../adapters/llm/llm.service';
 
 /** Techo de salida: la respuesta es para leer de pie, no un ensayo. */

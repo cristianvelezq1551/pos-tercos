@@ -1,4 +1,4 @@
-import { CHAPTERS, chapterNeighbors, type GuideChapter } from '@pos-tercos/domain';
+import { CHAPTERS, chapterNeighbors, type GuideChapter } from '@pos-tercos/domain/guia';
 import { ChapterPager } from './ChapterPager';
 import { HashScroller } from './HashScroller';
 import { ChapterToc } from './ChapterToc';

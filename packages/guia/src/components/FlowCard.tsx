@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { GuideFlow } from '@pos-tercos/domain';
+import type { GuideFlow } from '@pos-tercos/domain/guia';
 import { chapterIcon } from './chapter-icons';
 
 /** Tarjeta de flujo. Enlaza a /guia/flujos/<id> en cualquiera de las dos apps. */

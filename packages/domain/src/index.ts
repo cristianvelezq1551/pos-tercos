@@ -16,4 +16,8 @@ export * from './payroll';
 export * from './finance';
 export * from './sales';
 export * from './purchasing';
-export * from './guia';
+
+// La guía NO se re-exporta acá a propósito: son ~250 KB de texto y este paquete
+// compila a CJS, así que colgarla del barril la metía en el bundle del
+// navegador de la web del cliente solo por importar `buildWebOrderLink`.
+// Se consume por subruta: `@pos-tercos/domain/guia`.

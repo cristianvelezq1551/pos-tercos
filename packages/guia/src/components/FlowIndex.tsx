@@ -1,4 +1,4 @@
-import { FLOW_AREA_LABEL, flowsByArea, type Audience } from '@pos-tercos/domain';
+import { FLOW_AREA_LABEL, flowsByArea, type Audience } from '@pos-tercos/domain/guia';
 import { FlowCard } from './FlowCard';
 
 /**
