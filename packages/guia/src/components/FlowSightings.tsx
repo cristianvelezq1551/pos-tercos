@@ -1,5 +1,5 @@
 import { Clock, Eye } from 'lucide-react';
-import type { FlowSighting } from '@pos-tercos/domain';
+import type { FlowSighting } from '@pos-tercos/domain/guia';
 
 /**
  * "Dónde se ve" — la parte que faltaba en la guía vieja.

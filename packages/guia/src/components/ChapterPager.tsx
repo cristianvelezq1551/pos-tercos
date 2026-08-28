@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import type { GuideChapter } from '@pos-tercos/domain';
+import type { GuideChapter } from '@pos-tercos/domain/guia';
 
 /** Anterior / siguiente, para leer la guía de corrido como un manual. */
 export function ChapterPager({

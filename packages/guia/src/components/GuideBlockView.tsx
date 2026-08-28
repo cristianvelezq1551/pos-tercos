@@ -1,4 +1,4 @@
-import type { GuideBlock } from '@pos-tercos/domain';
+import type { GuideBlock } from '@pos-tercos/domain/guia';
 import { GuideCallout } from './GuideCallout';
 import { GuideSteps } from './GuideSteps';
 import { GuideTable } from './GuideTable';

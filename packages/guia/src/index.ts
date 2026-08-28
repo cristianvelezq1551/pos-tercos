@@ -24,7 +24,7 @@ export {
   flowsFor,
   flowsByArea,
   FLOW_AREA_LABEL,
-} from '@pos-tercos/domain';
+} from '@pos-tercos/domain/guia';
 export type {
   Audience,
   GuideBlock,
@@ -35,7 +35,7 @@ export type {
   FlowArea,
   TableBlock,
   FlatSection,
-} from '@pos-tercos/domain';
+} from '@pos-tercos/domain/guia';
 export { ChapterView } from './components/ChapterView';
 export { FlowView } from './components/FlowView';
 export { FlowCard } from './components/FlowCard';

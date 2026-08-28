@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./guia": {
+      "types": "./dist/guia/index.d.ts",
+      "default": "./dist/guia/index.js"
     }
   },
   "files": [

@@ -1,5 +1,5 @@
 import { CircleCheck } from 'lucide-react';
-import type { GuideFlow } from '@pos-tercos/domain';
+import type { GuideFlow } from '@pos-tercos/domain/guia';
 import { AudienceBadges } from './AudienceBadges';
 import { FlowQuestions } from './FlowQuestions';
 import { FlowSightings } from './FlowSightings';

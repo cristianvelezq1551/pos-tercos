@@ -1,4 +1,4 @@
-import type { TableBlock } from '@pos-tercos/domain';
+import type { TableBlock } from '@pos-tercos/domain/guia';
 
 /**
  * Tabla de la guía. Va dentro de su propio contenedor con scroll horizontal:

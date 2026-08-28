@@ -1,0 +1,7 @@
+{
+  "//": "Stub de subruta. El API compila con moduleResolution 'node', que NO entiende el mapa `exports`; este package.json hace que `@pos-tercos/domain/guia` resuelva igual por ruta física. Los bundlers modernos usan el `exports` del paquete raíz y este archivo les da lo mismo.",
+  "name": "@pos-tercos/domain-guia",
+  "private": true,
+  "main": "../dist/guia/index.js",
+  "types": "../dist/guia/index.d.ts"
+}
