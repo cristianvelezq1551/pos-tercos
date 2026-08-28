@@ -125,8 +125,12 @@ describe('Conteo físico E2E', () => {
     const harina = res.body.rows.find((r: { entityId: string }) => r.entityId === harinaId);
     expect(harina).toBeDefined();
     expect(harina.adjustments).toBe(-10);
-    // lastUnitCost no está seteado (sin factura) → costo desconocido, cuenta en unknownCostCount
-    expect(harina.wasteCost).toBeNull();
+    // El faltante va en su columna. Sin factura no hay lastUnitCost con qué
+    // estimarlo → queda sin valorizar y cuenta en unknownCostCount.
+    expect(harina.shortageQty).toBe(10);
+    expect(harina.shortageCost).toBeNull();
+    // No hubo merma declarada: eso sí es cero, no desconocido.
+    expect(harina.wasteCost).toBe(0);
   });
 
   it('el historial de conteos lista los registros con nombre y usuario', async () => {

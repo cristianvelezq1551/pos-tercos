@@ -1,5 +1,5 @@
 import { Badge } from '@pos-tercos/ui';
-import { AUDIENCE_LABEL, type Audience } from '../content';
+import { AUDIENCE_LABEL, type Audience } from '@pos-tercos/domain';
 
 const TONE: Record<Audience, 'info' | 'warning' | 'primary'> = {
   caja: 'info',

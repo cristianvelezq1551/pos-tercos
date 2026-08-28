@@ -2650,6 +2650,58 @@ no alcanza el mínimo. Elegir una cantidad sin ver el efecto es teclear a ciegas
 - **Admin**: `/purchase-lists` y `/purchase-lists/[id]`, sidebar en Compras.
 
 
+## 7.v38 La guía enseña a HACER, no solo a entender (2026-08-28)
+
+> El dueño probó la guía y fue claro: explica qué es cada cosa, pero no lleva de
+> la mano por un flujo ni dice dónde aterriza cada número. Ejemplos suyos: crear
+> un producto y su merma, registrar producción, registrar una merma, registrar un
+> costo fijo. Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (domain
+> 434, +10), **e2e 49 suites / 509** (+6), 0 controles <44 px en celular.
+
+### Flujos paso a paso (8), con "dónde se ve"
+Sección nueva junto a los 12 capítulos, que se conservan: los capítulos explican
+QUÉ y POR QUÉ; los flujos, CÓMO y DÓNDE. Cada flujo trae **cuándo se hace**
+(el disparador real), **antes de empezar**, el paso a paso, **dónde se ve el
+resultado** —varias pantallas, qué significa cada número y cuánto tarda en
+aparecer—, lo que sale mal, y preguntas con nombre propio.
+
+`FlowSighting` es la pieza que faltaba: una merma aparece en **seis** pantallas
+con números distintos, y nadie sabía por qué. Ahora cada una dice qué muestra y
+qué significa.
+
+### Asistente de IA con base en la propia guía
+`POST /guia/preguntar` (`@KitchenOrCashierAccess`, 20/min por usuario, 200 no
+201). Responde SOLO con el contenido de la guía; si le preguntan cuánto se
+vendió, dice dónde mirarlo en vez de inventar cifras.
+
+- **La base de conocimiento se arma del MISMO contenido que lee la pantalla**
+  (`buildGuiaKnowledgeBase`): si cambia un paso, el asistente responde distinto
+  sin que nadie toque el prompt. Un texto aparte para la IA se habría
+  desincronizado a la primera edición.
+- **Recuperación por relevancia**: mandarla entera son ~23k tokens por pregunta
+  (caro y ruidoso). Se manda el índice completo —barato, y evita el falso "no
+  está en la guía"— más el texto de lo que más se parece: **~5,2k tokens**.
+  El scoring pesa DÓNDE cae cada término (título 12 · resumen 5 · cuerpo 1, con
+  techo) y hace match por raíz de 4 letras. Sin pesos, "cómo cierro la caja"
+  traía el flujo de vender, que menciona "caja" de pasada. 10 tests.
+- **Sin llave configurada responde 503 explicando que la guía escrita tiene la
+  respuesta.** No inventa ni finge. El e2e cubre los dos caminos.
+- El cocinero recibe solo SUS flujos como contexto (`audience`), lo que además
+  abarata su pregunta.
+
+### El contenido se mudó a `packages/domain/src/guia`
+Revierte parte de §7.v37 por una razón nueva: el asistente corre en el API, y
+`packages/guia` es source-only (lo transpilan los Next), así que Nest no puede
+importarlo. `domain` sí compila a `dist`. Es dato puro sin IO. `packages/guia`
+conserva los renderizadores y re-exporta el contenido, así que las apps no
+cambiaron un solo import.
+
+### Gotcha reencontrado
+Un `nest start --watch` **de dos días** tenía el puerto 3001 y servía un `dist`
+viejo: la ruta nueva daba 404 con el módulo correctamente mapeado en el log.
+Ya estaba en la memoria de §7.v18 y volvió a pasar — si el API "responde cosas
+viejas" en dev, buscar zombis ANTES de dudar del código.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

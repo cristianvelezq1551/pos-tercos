@@ -8,6 +8,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { InventoryService } from '../src/inventory/inventory.service';
 import { LocalFilesystemStorageAdapter } from '../src/adapters/storage/local-filesystem.adapter';
 import { RecipesService } from '../src/recipes/recipes.service';
+import { LedgerFreshnessService } from '../src/common/ledger-freshness/ledger-freshness.service';
 import { CogsService } from '../src/reports/cogs.service';
 
 let failures = 0;
@@ -21,8 +22,16 @@ async function main(): Promise<void> {
   await prisma.$connect();
   // El storage no se usa acá (nada de este script sube fotos), pero el
   // service lo pide para servir la evidencia de merma/producción.
-  const inventory = new InventoryService(prisma, new LocalFilesystemStorageAdapter());
-  const cogs = new CogsService(prisma, new RecipesService(prisma));
+  const inventory = new InventoryService(
+    prisma,
+    new LocalFilesystemStorageAdapter(),
+    new LedgerFreshnessService(),
+  );
+  const cogs = new CogsService(
+    prisma,
+    new RecipesService(prisma),
+    new LedgerFreshnessService(),
+  );
 
   const sal = await prisma.ingredient.create({
     data: { name: 'Sal', unitPurchase: 'bulto', unitRecipe: 'g', conversionFactor: 1000, thresholdMin: 0 },

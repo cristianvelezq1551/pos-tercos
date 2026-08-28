@@ -342,6 +342,116 @@ describe('Invoices E2E', () => {
         .expect(400);
     });
 
+    /**
+     * Domicilio / flete de compra (§ campo `freight`).
+     *
+     * La propiedad que estos casos protegen: el flete entra al TOTAL PAGADO
+     * pero NO al costo de ningún producto. Antes de que existiera el campo, una
+     * factura con domicilio simplemente no se podía confirmar — el delta se iba
+     * de la tolerancia — y la única salida era inflar el precio de un insumo,
+     * que lo escondía dentro del COGS de un producto al azar.
+     */
+    describe('domicilio / flete de compra', () => {
+      const ITEM_BASE = {
+        entityType: 'INGREDIENT' as const,
+        descriptionRaw: 'Harina Test',
+        quantity: 5,
+        unit: 'kg',
+        unitPrice: 10000,
+        total: 50000,
+      };
+
+      it('confirma con flete: total = items + flete, y el flete NO toca el costo del insumo', async () => {
+        const FLETE = 8000;
+        const res = await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 58000, // 50.000 de mercancía + 8.000 de domicilio
+            freight: FLETE,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(201);
+
+        expect(res.body.status).toBe('CONFIRMED');
+        expect(res.body.freightAmount).toBe(FLETE);
+        expect(res.body.total).toBe(58000);
+
+        // Lo que de verdad importa: el costo del insumo sale SOLO de la línea.
+        // Si el flete se hubiera prorrateado, esto daría 11.600 y encarecería
+        // en silencio todo lo que se cocine con harina.
+        const ingredient = await prisma.ingredient.findUnique({ where: { id: ingredientId } });
+        expect(Number(ingredient!.lastUnitCost)).toBe(10000);
+
+        // Y no existe ningún movimiento de inventario por el flete: un flete no
+        // se almacena. El único movimiento es el de la harina.
+        const movements = await prisma.inventoryMovement.findMany({
+          where: { sourceType: 'invoice', sourceId: draftInvoiceId },
+        });
+        expect(movements).toHaveLength(1);
+        expect(Number(movements[0].delta)).toBeGreaterThan(0);
+      });
+
+      it('sin flete la factura queda en 0, no en null (ninguna suma necesita null-check)', async () => {
+        const res = await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 50000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(201);
+
+        expect(res.body.freightAmount).toBe(0);
+      });
+
+      it('rechaza si el total no cubre items + flete', async () => {
+        await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 50000, // se declaró flete pero el total sigue siendo solo la mercancía
+            freight: 8000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(400);
+      });
+
+      it('rechaza un flete mayor al total de la factura', async () => {
+        await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 50000,
+            freight: 60000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(400);
+      });
+
+      it('rechaza un flete negativo (restaría del gasto del mes)', async () => {
+        await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 42000,
+            freight: -8000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(400);
+      });
+    });
+
     it('rechaza cuando ingredientId no existe', async () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
       await request

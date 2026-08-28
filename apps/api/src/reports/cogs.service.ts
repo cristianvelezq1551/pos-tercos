@@ -22,6 +22,7 @@ import {
   type ProductMarginReport,
 } from '@pos-tercos/types';
 import { ymdLocal } from '../common/local-dates';
+import { LedgerFreshnessService } from '../common/ledger-freshness/ledger-freshness.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -37,6 +38,7 @@ export class CogsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
+    private readonly freshness: LedgerFreshnessService,
   ) {}
 
   private readonly logger = new Logger(CogsService.name);
@@ -68,11 +70,16 @@ export class CogsService {
   /**
    * Caché del ledger con TTL corto, una entrada por corte usado (`full` o
    * `inc:<corte>`).
-   * Memoizar la PROMESA deduplica llamados concurrentes. Sin invalidación por
-   * escritura a propósito: un reporte de COGS tolera ≤ TTL de staleness.
+   * Memoizar la PROMESA deduplica llamados concurrentes. Las ventas toleran el
+   * TTL a propósito (son continuas: invalidar en cada una anularía la caché),
+   * pero una MERMA lo salta vía `LedgerFreshnessService` — se registra y se
+   * mira enseguida, y ahí un dato de hace un minuto se lee como un error.
    */
   private static readonly LEDGER_TTL_MS = 60_000;
-  private ledgerCache = new Map<string, { promise: Promise<LedgerFifo>; at: number }>();
+  private ledgerCache = new Map<
+    string,
+    { promise: Promise<LedgerFifo>; at: number; stamp: number }
+  >();
 
   /** Limpia la caché (tras crear un snapshot, y para tests). */
   invalidateLedgerCache(): void {
@@ -136,10 +143,13 @@ export class CogsService {
     compute: () => Promise<LedgerFifo>,
   ): Promise<LedgerFifo> {
     const now = Date.now();
+    const stamp = this.freshness.current;
     const hit = this.ledgerCache.get(mode);
-    if (hit && now - hit.at < CogsService.LEDGER_TTL_MS) return hit.promise;
+    if (hit && hit.stamp === stamp && now - hit.at < CogsService.LEDGER_TTL_MS) {
+      return hit.promise;
+    }
     const promise = compute();
-    this.ledgerCache.set(mode, { promise, at: now });
+    this.ledgerCache.set(mode, { promise, at: now, stamp });
     // No cachear un error: si falla, limpiar para reintentar en el próximo call.
     void promise.catch(() => {
       if (this.ledgerCache.get(mode)?.promise === promise) this.ledgerCache.delete(mode);

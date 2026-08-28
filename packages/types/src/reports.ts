@@ -342,10 +342,26 @@ export const InventoryUsageRowSchema = z.object({
   adjustments: z.number(),
   /** waste / (sales + productionOut + waste). Null si no hubo consumo. */
   wastePct: z.number().nullable(),
-  /** Costo estimado por unidad (lastUnitCost/conversionFactor). Null si no se conoce. */
+  /** Costo por unidad según la última compra. Solo se usa para ESTIMAR el
+   *  faltante de conteo; la merma se valoriza con el costo real del lote. */
   unitCost: z.number().nullable(),
-  /** $ estimado perdido = (waste + faltante de ajustes) × unitCost. */
+  /**
+   * $ REAL de las mermas declaradas, al costo del lote que se consumió (FIFO).
+   * Misma fuente que el P&G — los dos números coinciden siempre. Ya viene
+   * neteado por las anulaciones de merma.
+   */
   wasteCost: z.number().nullable(),
+  /** true si parte de `wasteCost` se estimó (se mermó sobre inventario en
+   *  negativo). Baja a false solo cuando la factura salda esa deuda. */
+  wasteCostEstimated: z.boolean(),
+  /** Faltante detectado en conteo físico (parte negativa de `adjustments`). */
+  shortageQty: z.number(),
+  /** $ del faltante. ESTIMADO con el último costo de compra: el ledger no le
+   *  atribuye costo a un ajuste, así que no hay lote del cual sacarlo.
+   *  Null cuando no hay con qué estimar (sin factura, o subproducto). */
+  shortageCost: z.number().nullable(),
+  /** Pérdida total de la fila = wasteCost + (shortageCost ?? 0). Ordena la tabla. */
+  lostCost: z.number(),
 });
 export type InventoryUsageRow = z.infer<typeof InventoryUsageRowSchema>;
 
@@ -353,9 +369,13 @@ export const InventoryUsageReportSchema = z.object({
   from: z.string(),
   to: z.string(),
   rows: z.array(InventoryUsageRowSchema),
-  /** Suma de wasteCost conocidos. */
+  /** Suma de las mermas al costo real (coincide con la línea Mermas del P&G). */
   totalWasteCost: z.number(),
-  /** Filas cuyo costo no se pudo estimar (sin lastUnitCost). */
+  /** Suma de los faltantes de conteo, estimados. NO entra al P&G: un ajuste de
+   *  inventario no se contabiliza como gasto (ver `shortageCost`). */
+  totalShortageCost: z.number(),
+  /** Filas con alguna pérdida que no se pudo valorizar (faltante sin costo de
+   *  referencia, o merma recién registrada que el ledger aún no procesó). */
   unknownCostCount: z.number().int().nonnegative(),
 });
 export type InventoryUsageReport = z.infer<typeof InventoryUsageReportSchema>;

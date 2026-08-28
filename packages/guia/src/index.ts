@@ -7,8 +7,36 @@
  * límite entre apps; ponerlo en `domain` (lógica pura) o en `ui` (componentes)
  * lo escondería donde nadie lo busca.
  */
-export * from './content';
+// El CONTENIDO vive en `@pos-tercos/domain/guia`: el asistente de IA corre en el
+// API (NestJS) y necesita leer los flujos para responder con base en ellos. Este
+// paquete es source-only —lo transpilan los Next— así que el API no puede
+// importarlo; `domain` sí compila a dist. Acá se re-exporta para que las apps
+// sigan pidiéndole todo a la guía.
+export {
+  CHAPTERS,
+  FLOWS,
+  TOTAL_SECTIONS,
+  ALL_SECTIONS,
+  AUDIENCE_LABEL,
+  findChapter,
+  findFlow,
+  chapterNeighbors,
+  flowsFor,
+} from '@pos-tercos/domain';
+export type {
+  Audience,
+  GuideBlock,
+  GuideChapter,
+  GuideSection,
+  GuideStep,
+  GuideFlow,
+  TableBlock,
+  FlatSection,
+} from '@pos-tercos/domain';
 export { ChapterView } from './components/ChapterView';
+export { FlowView } from './components/FlowView';
+export { FlowCard } from './components/FlowCard';
+export { GuiaAsistente } from './components/GuiaAsistente';
 export { ChapterCard } from './components/ChapterCard';
 export { GuiaSearch } from './components/GuiaSearch';
 export { GuideSectionView } from './components/GuideSectionView';

@@ -1,5 +1,5 @@
 import { MapPin } from 'lucide-react';
-import type { GuideSection } from '../content';
+import type { GuideSection } from '@pos-tercos/domain';
 import { AudienceBadges } from './AudienceBadges';
 import { GuideBlockView } from './GuideBlockView';
 

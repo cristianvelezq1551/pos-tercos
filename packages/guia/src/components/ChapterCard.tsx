@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { GuideChapter } from '../content';
+import type { GuideChapter } from '@pos-tercos/domain';
 import { chapterIcon } from './chapter-icons';
 
 /** Tarjeta de capítulo del índice general. */

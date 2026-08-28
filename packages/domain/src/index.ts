@@ -16,3 +16,4 @@ export * from './payroll';
 export * from './finance';
 export * from './sales';
 export * from './purchasing';
+export * from './guia';

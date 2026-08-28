@@ -16,6 +16,7 @@ import { Inject } from '@nestjs/common';
 import type { StorageProvider } from '@pos-tercos/domain';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { runWithSerializationRetry } from '../common/tx';
+import { LedgerFreshnessService } from '../common/ledger-freshness/ledger-freshness.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 type DbInventoryMovement = Prisma.InventoryMovementGetPayload<{
@@ -46,6 +47,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly freshness: LedgerFreshnessService,
   ) {}
 
   /**
@@ -276,6 +278,9 @@ export class InventoryService {
               ),
             )
           : await this.prisma.inventoryMovement.create({ data, include: includeFull() });
+      // Una merma se registra y se mira enseguida: el reporte de "Uso y mermas"
+      // y el P&G tienen que costearla ya, sin esperar el TTL del ledger.
+      if (input.type === 'WASTE') this.freshness.bump();
       return toMovementDto(created);
     } catch (err) {
       if (
@@ -395,6 +400,7 @@ export class InventoryService {
         { isolationLevel: 'Serializable' },
       ),
     );
+    this.freshness.bump();
     return toMovementDto(created);
   }
 

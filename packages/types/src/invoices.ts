@@ -48,6 +48,11 @@ export const ExtractedInvoiceSchema = z.object({
   invoiceNumber: z.string().nullable(),
   total: z.number().nullable(),
   iva: z.number().nullable(),
+  /** Domicilio/flete cobrado por traer la mercancía. La IA lo extrae de la
+   *  línea que dice "envío", "domicilio", "flete", "transporte"… que NO es un
+   *  ítem (no entra al inventario ni al costo de ningún producto). `null` si
+   *  la factura no lo trae o el modelo lo omitió — los adapters lo rellenan. */
+  freight: z.number().nullable(),
   // items y warnings se exigen siempre como array (vacío si no aplica).
   // No usamos .default() aquí porque Zod hace que el input type difiera
   // del output type, lo que rompe la inferencia de DTOs compartidos.
@@ -86,6 +91,9 @@ export const InvoiceSchema = z.object({
   invoiceNumber: z.string().nullable(),
   total: z.number().nullable(),
   iva: z.number().nullable(),
+  /** Domicilio/flete de esta compra. Siempre un número (0 = sin flete): la
+   *  columna es NOT NULL con default 0, así que ninguna suma necesita null-check. */
+  freightAmount: z.number(),
   photoStorageKey: z.string().nullable(),
   aiModelUsed: z.string().nullable(),
   status: InvoiceStatusEnum,
@@ -221,6 +229,11 @@ export const ConfirmInvoiceSchema = z.object({
   invoiceNumber: z.string().max(80).optional(),
   total: z.number().nonnegative(),
   iva: z.number().nonnegative().optional(),
+  /** Domicilio/flete de la compra. Omitido = 0.
+   *  La regla `freight <= total` se valida en el service, NO acá: un
+   *  `superRefine` convertiría este schema en ZodEffects y rompería el
+   *  `.extend()` de CreateFromPhotoSchema. */
+  freight: z.number().nonnegative().optional(),
   items: z.array(ConfirmInvoiceItemSchema).min(1),
   notes: z.string().max(500).optional(),
   /** Presente = la factura nace CONFIRMED + PAGADA (comprobante obligatorio). */

@@ -1,4 +1,4 @@
-import { ALL_SECTIONS, type FlatSection } from '../content';
+import { ALL_SECTIONS, type FlatSection } from '@pos-tercos/domain';
 
 export const MIN_QUERY_LENGTH = 2;
 export const MAX_RESULTS = 12;
