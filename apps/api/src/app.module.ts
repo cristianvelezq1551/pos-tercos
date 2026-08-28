@@ -54,7 +54,6 @@ import { CortesiasModule } from './cortesias/cortesias.module';
 
 @Module({
   imports: [
-    GuiaModule,
     TokenVersionModule,
     ClientLogsModule,
     ScheduleModule.forRoot(),
@@ -105,6 +104,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     TreasuryModule,
     PayablesModule,
     CortesiasModule,
+    GuiaModule,
   ],
   controllers: [HealthController],
   providers: [

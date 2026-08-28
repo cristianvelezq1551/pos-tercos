@@ -3,6 +3,7 @@
 import type { Product, ProductAvailability } from '@pos-tercos/types';
 import { Money, cn, formatCop } from '@pos-tercos/ui';
 import type { ProductPromoBadge } from '../../sales/lib/promo-preview';
+import { displayBasePrice } from '../lib/display-price';
 
 export function ProductTile({
   product,
@@ -115,7 +116,7 @@ export function ProductTile({
           {/* Precio base tachado cuando hay descuento que reduce el precio. */}
           {showPromo && promo.discountedPrice !== null ? (
             <span className="text-[0.6875rem] leading-none text-muted-foreground line-through tabular-nums">
-              {formatCop(product.basePrice)}
+              {formatCop(displayBasePrice(product))}
             </span>
           ) : null}
           <div className="flex items-center gap-2">
@@ -123,7 +124,7 @@ export function ProductTile({
               amount={
                 showPromo && promo.discountedPrice !== null
                   ? promo.discountedPrice
-                  : product.basePrice
+                  : displayBasePrice(product)
               }
               size="lg"
               weight="bold"

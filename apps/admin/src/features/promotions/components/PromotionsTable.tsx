@@ -9,6 +9,7 @@ import {
 } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
 import Link from 'next/link';
+import { PromotionStatusBadge } from './PromotionStatusBadge';
 
 interface PromotionsTableProps {
   promotions: Promotion[];
@@ -101,16 +102,9 @@ export function PromotionsTable({ promotions }: PromotionsTableProps) {
     {
       key: 'status',
       header: 'Estado',
-      cell: (p) =>
-        p.isActive ? (
-          <Badge tone="success" size="sm">
-            Activa
-          </Badge>
-        ) : (
-          <Badge tone="neutral" size="sm">
-            Inactiva
-          </Badge>
-        ),
+      // "Activa" solo decía que el flag estaba encendido: una promo con su día
+      // apagado se veía igual que una descontando. Ahora dice cuál de las dos es.
+      cell: (p) => <PromotionStatusBadge promotion={p} />,
     },
     {
       key: 'actions',

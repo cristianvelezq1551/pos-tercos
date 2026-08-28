@@ -22,6 +22,8 @@ export {
   findFlow,
   chapterNeighbors,
   flowsFor,
+  flowsByArea,
+  FLOW_AREA_LABEL,
 } from '@pos-tercos/domain';
 export type {
   Audience,
@@ -30,12 +32,14 @@ export type {
   GuideSection,
   GuideStep,
   GuideFlow,
+  FlowArea,
   TableBlock,
   FlatSection,
 } from '@pos-tercos/domain';
 export { ChapterView } from './components/ChapterView';
 export { FlowView } from './components/FlowView';
 export { FlowCard } from './components/FlowCard';
+export { FlowIndex } from './components/FlowIndex';
 export { GuiaAsistente } from './components/GuiaAsistente';
 export { ChapterCard } from './components/ChapterCard';
 export { GuiaSearch } from './components/GuiaSearch';

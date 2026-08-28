@@ -1,13 +1,22 @@
 /**
- * Asistente de la guía. Sin llave de IA en el entorno de test, el camino feliz
- * no se puede probar acá — y eso es justamente lo que se verifica: que ante un
- * proveedor no disponible RESPONDA que no está disponible, en vez de inventar
- * una respuesta o devolver un 500 crudo.
+ * Asistente de la guía.
+ *
+ * El proveedor de IA va MOCKEADO a propósito. Con el real, cada test tardaba
+ * entre 2,4 y 3,4 s —peligrosamente cerca del timeout de 5 s de jest— y cuando
+ * se pasaba, la suite abortaba sin correr su `cleanDb`: la base quedaba sucia y
+ * arrastraba a las 30 suites siguientes con errores que no tenían nada que ver.
+ * Además cobraba en cada corrida.
+ *
+ * Lo que se verifica acá es el CONTRATO del endpoint —validación, roles, y que
+ * un proveedor caído responda honestamente— no la calidad de la respuesta del
+ * modelo, que se mide con los tests de recuperación en `domain`.
  */
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import * as bcrypt from 'bcrypt';
+import { palabrasVoseo } from '@pos-tercos/domain';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { LLMService } from '../src/adapters/llm/llm.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 
@@ -17,16 +26,44 @@ describe('Asistente de la guía E2E', () => {
   let request: ReturnType<typeof supertest>;
   let duenoToken: string;
   let cocineroToken: string;
+  /** Se enciende para probar el camino del proveedor caído. */
+  let llmCaido = false;
 
   beforeAll(async () => {
-    ({ app, prisma, request } = await bootstrapApp());
+    ({ app, prisma, request } = await bootstrapApp((b) =>
+      b.overrideProvider(LLMService).useValue({
+        complete: (req: { userPrompt: string }) =>
+          Promise.resolve({
+            // Devuelve algo verificable: que el prompt SÍ llevaba la guía.
+            text: llmCaido
+              ? ''
+              : `Cocina → Inventario → botón Merma. Escribe la cantidad y guarda. ` +
+                `[bloques=${(req.userPrompt.match(/## FLUJO:/g) ?? []).length}]`,
+            modelUsed: 'test:mock',
+          }),
+      }),
+    ));
     await cleanDb(prisma);
     const passwordHash = await bcrypt.hash('dev12345', 10);
     await prisma.user.create({
-      data: { email: 'guia-dueno@test.local', fullName: 'Dueño', passwordHash, role: 'DUENO' },
+      data: {
+        email: 'guia-dueno@test.local',
+        fullName: 'Dueño',
+        passwordHash,
+        role: 'DUENO',
+        mustChangePwd: false,
+        active: true,
+      },
     });
     await prisma.user.create({
-      data: { email: 'guia-coc@test.local', fullName: 'Cocinero', passwordHash, role: 'COCINERO' },
+      data: {
+        email: 'guia-coc@test.local',
+        fullName: 'Cocinero',
+        passwordHash,
+        role: 'COCINERO',
+        mustChangePwd: false,
+        active: true,
+      },
     });
     duenoToken = await loginAs(request, 'guia-dueno@test.local');
     cocineroToken = await loginAs(request, 'guia-coc@test.local');
@@ -74,17 +111,45 @@ describe('Asistente de la guía E2E', () => {
     await request.post('/guia/preguntar').set(auth(duenoToken)).send({}).expect(400);
   });
 
-  it('sin proveedor de IA responde que no está disponible y remite a la guía', async () => {
+  it('el prompt que recibe el modelo LLEVA los flujos de la guía', async () => {
+    // Es la garantía de fondo del asistente: responde con base en la guía y no
+    // con lo que el modelo recuerde del mundo.
     const res = await request
       .post('/guia/preguntar')
       .set(auth(duenoToken))
-      .send({ question: '¿cómo registro una merma de repollo?' });
-    if (res.status === 503) {
-      // Nunca un 500 crudo ni un texto inventado.
+      .send({ question: '¿cómo registro una merma de repollo?' })
+      .expect(200);
+    const bloques = Number(/\[bloques=(\d+)\]/.exec(String(res.body.answer))?.[1] ?? 0);
+    expect(bloques).toBeGreaterThan(0);
+    expect(res.body.model).toBe('test:mock');
+  });
+
+  it('la respuesta no puede venir en voseo', async () => {
+    // Regresión real con el modelo de verdad: preguntando "dónde cargo el
+    // arriendo" respondió "escribís, marcás, elegís, guardás". Acá se verifica
+    // el guardarraíl; el prompt que lo evita se cubre en los tests de domain.
+    const res = await request
+      .post('/guia/preguntar')
+      .set(auth(duenoToken))
+      .send({ question: '¿dónde cargo el arriendo del local?' })
+      .expect(200);
+    expect(palabrasVoseo(String(res.body.answer))).toEqual([]);
+  });
+
+  it('con el proveedor caído responde 503 y remite a la guía, sin inventar', async () => {
+    llmCaido = true;
+    try {
+      const res = await request
+        .post('/guia/preguntar')
+        .set(auth(duenoToken))
+        .send({ question: '¿cómo registro una merma de repollo?' });
+      // Un texto vacío del proveedor NO se devuelve como respuesta buena: se
+      // responde 503 remitiendo a la guía escrita.
+      expect(res.status).toBe(503);
       expect(String(res.body.message)).toMatch(/guía/i);
-    } else {
-      expect(res.status).toBe(200);
-      expect(typeof res.body.answer).toBe('string');
+      expect(res.body.answer).toBeUndefined();
+    } finally {
+      llmCaido = false;
     }
   });
 });

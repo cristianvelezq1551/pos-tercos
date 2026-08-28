@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_FACTURA: GuideFlow = {
   id: 'confirmar-factura',
+  area: 'compras',
   title: 'Subir y confirmar una factura de compra',
   summary: 'Meter al inventario lo que compraste y actualizar el costo real de todos tus platos.',
   audience: ['dueno'],

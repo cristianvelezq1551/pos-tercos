@@ -113,21 +113,58 @@ export class FinancialReportsService {
     // muestra como línea aparte del grossMargin (no se mezcla con el COGS).
     const wasteCost = round(pnl.wasteCost);
 
+    // Compromisos con personas pagados en el mes (H1): un arreglo, un servicio,
+    // una compra suelta. NUNCA llegaban al estado de resultados —el servicio
+    // solo leía COGS, nómina y costos fijos— así que salían de tesorería sin
+    // bajar el neto ni mover el punto de equilibrio.
+    //
+    // Se cuentan por `paidAt` (decisión del dueño 2026-08-28): mientras se
+    // deben son DEUDA, no pérdida; pesan el mes en que se pagan. Los que no son
+    // gasto (devolver un préstamo) quedan fuera — esa plata ya se había
+    // recibido, restarla inventaría un bajón.
+    const payables = await this.prisma.payableCommitment.aggregate({
+      where: {
+        status: 'PAID',
+        isExpense: true,
+        paidAt: { gte: monthStart, lte: monthEnd },
+      },
+      _sum: { amount: true },
+      _count: true,
+    });
+    const payablesPaidCost = round(Number(payables._sum.amount ?? 0));
+
+    // Fletes de compra: lo que cobró el proveedor por traer la mercancía.
+    // Gasto real y pagado que hasta acá no bajaba el neto en ningún lado — el
+    // resultado quedaba inflado exactamente en lo que se pagó de domicilios.
+    // No se mezcla con el COGS a propósito: no encarece ningún producto.
+    const freightCost = round(pnl.freightCost);
+
     const netResult = round(
-      grossMargin - totalFixed - oneTimeCost - cortesiasCost - refundCost - wasteCost,
+      grossMargin -
+        totalFixed -
+        oneTimeCost -
+        cortesiasCost -
+        refundCost -
+        wasteCost -
+        freightCost -
+        payablesPaidCost,
     );
 
     // Punto de equilibrio sobre el margen de CONTRIBUCIÓN (fórmula pura y
     // testeada en domain). El margen BRUTO ignoraba merma, cortesías y
     // reembolsos —que suben con la venta— y por eso daba un equilibrio más
     // bajo que el real: parecía cubierto cuando todavía se perdía plata.
-    // Los gastos puntuales quedan fuera a propósito: no se repiten.
+    // Los gastos puntuales quedan fuera a propósito: no se repiten. Los
+    // compromisos pagados TAMPOCO entran, por la misma razón: un arreglo del
+    // horno no define el piso de operación del mes siguiente. Si un gasto se
+    // repite todos los meses, su lugar es Costos fijos, no Compromisos.
     const be = computeBreakEven({
       revenue,
       cogs,
       wasteCost,
       cortesiaCost: cortesiasCost,
       refundCost,
+      freightCost,
       totalFixed,
     });
 
@@ -154,6 +191,11 @@ export class FinancialReportsService {
       refundCost: round(refundCost),
       wasteCost,
       wasteCostEstimated: pnl.wasteEstimatedCost > 0,
+      freightCost,
+      freightInvoiceCount: pnl.freightInvoiceCount,
+      purchasedTotal: pnl.purchasedTotal,
+      payablesPaidCost,
+      payablesPaidCount: payables._count,
       deliveryCollected: pnl.deliveryCollected,
       deliveryOrderCount: pnl.deliveryOrderCount,
       salesCount: pnl.salesCount,
@@ -227,6 +269,16 @@ export class FinancialReportsService {
         monthlyAmount: l.monthlyAmount,
         isPayroll: l.isPayroll,
       })),
+      // Sin estas líneas el modelo veía `ingresos − COGS − fijos` y un neto que
+      // no cerraba con esos números, así que explicaba el bajón inventando.
+      otherLosses: [
+        { label: 'Merma (insumo tirado, a costo)', amount: statement.wasteCost },
+        { label: 'Cortesías (producto regalado, a costo)', amount: statement.cortesiasCost },
+        { label: 'Reembolsos (comida preparada, a costo)', amount: statement.refundCost },
+        { label: 'Domicilios de compra (fletes de proveedor)', amount: statement.freightCost },
+        { label: 'Compromisos pagados (arreglos, servicios)', amount: statement.payablesPaidCost },
+        { label: 'Gastos únicos del mes', amount: statement.oneTimeCost },
+      ],
       netResult: statement.netResult,
       breakEven: statement.breakEven,
       breakEvenCoverage: statement.breakEvenCoverage,

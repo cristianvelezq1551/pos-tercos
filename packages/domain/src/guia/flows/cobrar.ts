@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_COBRAR: GuideFlow = {
   id: 'vender-y-cobrar',
+  area: 'caja',
   title: 'Vender y cobrar un pedido',
   summary: 'Armar el pedido, cobrarlo de cualquier forma y que salga la comanda y la factura.',
   audience: ['caja'],

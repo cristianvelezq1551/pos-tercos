@@ -1,7 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
-import { CloneInvoiceButton, DeleteDraftButton, InvoicePaymentSection } from '../../../../features/invoices';
+import {
+  CloneInvoiceButton,
+  DeleteDraftButton,
+  EditFreightAction,
+  InvoicePaymentSection,
+} from '../../../../features/invoices';
 import { getCurrentUserServer } from '../../../../features/auth/server';
 import { Button, Container, PageHeader, formatCop } from '@pos-tercos/ui';
 import type { Invoice, InventoryMovement } from '@pos-tercos/types';
@@ -124,6 +129,9 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               : undefined
           }
           mono={invoice.freightAmount > 0}
+          // El flete no genera movimientos de inventario, así que es de lo
+          // único que se puede corregir después de confirmar sin riesgo.
+          action={<EditFreightAction invoice={invoice} />}
         />
         <Card
           label="IVA"
@@ -327,19 +335,22 @@ function Card({
   value,
   hint,
   mono,
+  action,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: string;
   mono?: boolean;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="flex flex-col rounded-lg border border-border bg-card p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className={`mt-1 text-base font-semibold text-foreground ${mono ? 'tabular-nums' : ''}`}>
         {value}
       </p>
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }

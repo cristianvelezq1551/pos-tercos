@@ -121,6 +121,31 @@ export const InvoiceSchema = z.object({
 });
 export type Invoice = z.infer<typeof InvoiceSchema>;
 
+/**
+ * Editar el domicilio de una factura YA CONFIRMADA.
+ *
+ * Existe porque el flete no siempre viene en la factura: a veces se le paga en
+ * efectivo al que trae, y eso se recuerda después (decisión del dueño
+ * 2026-08-28). Es de lo poco de una factura confirmada que se puede corregir
+ * sin riesgo — el flete NO genera movimientos de inventario, así que no toca el
+ * FIFO ni el costo de ningún producto.
+ */
+export const UpdateInvoiceFreightSchema = z.object({
+  /** Nuevo domicilio. 0 = quitarlo. */
+  freight: z.number().nonnegative(),
+  /** Nuevo total de la factura. Tiene que seguir explicándose con los ítems más
+   *  el domicilio; el cliente lo manda explícito para no adivinar si el flete
+   *  se SUMA al total (se pagó aparte) o ya estaba adentro. */
+  total: z.number().nonnegative(),
+  /** De qué bolsillo salió (o a cuál volvió) la diferencia. OBLIGATORIO si la
+   *  factura ya está pagada: sin esto el reparto por bolsillo dejaría de sumar
+   *  el total y Tesorería quedaría descuadrada en silencio. */
+  pocket: z.enum(['EFECTIVO', 'CUENTA']).optional(),
+  /** Por qué se corrige. Va a la bitácora. */
+  note: z.string().max(300).optional(),
+});
+export type UpdateInvoiceFreight = z.infer<typeof UpdateInvoiceFreightSchema>;
+
 /** Body para marcar pagada vía multipart (la imagen va por `proof` field). */
 export const MarkInvoicePaidSchema = z.object({
   /** Opcional: si no se envía, el backend usa NOW(). YYYY-MM-DD. */

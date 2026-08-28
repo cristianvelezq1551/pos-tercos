@@ -49,6 +49,28 @@ export const PnlReportSchema = z.object({
   deliveryCollected: z.number(),
   /** Cuántos pedidos a domicilio cobraron envío en el período. */
   deliveryOrderCount: z.number().int().nonnegative(),
+  /**
+   * Domicilios/fletes que cobraron los PROVEEDORES por traer la mercancía
+   * (facturas confirmadas en el período). Es la otra punta de
+   * `deliveryCollected` y su opuesto contable: esto SÍ es plata del negocio,
+   * pagada y perdida.
+   *
+   * No está dentro de `cogs` a propósito (decisión del dueño 2026-08-28): si se
+   * prorrateara en los lotes encarecería insumos al azar y desviaría el margen
+   * por producto. Se resta aparte, como merma y cortesías. Antes no se restaba
+   * en ningún lado: el neto quedaba inflado exactamente en lo pagado de flete.
+   */
+  freightCost: z.number(),
+  /** Cuántas facturas del período trajeron cobro de domicilio. */
+  freightInvoiceCount: z.number().int().nonnegative(),
+  /**
+   * Mercancía comprada en el período (total de facturas confirmadas − fletes).
+   * NO es un gasto del P&G —una compra es inventario hasta que se consume, y
+   * ahí entra por el COGS— sino el CONTEXTO del flete: "$312.000 de domicilios"
+   * no se puede juzgar sin saber sobre cuánta compra. `freightCost /
+   * purchasedTotal` es el número con el que se negocia con un proveedor.
+   */
+  purchasedTotal: z.number(),
   salesCount: z.number().int().nonnegative(),
   /** Unidades de insumo consumidas sin costo conocido (termómetro de datos). */
   cogsUnknownQty: z.number(),

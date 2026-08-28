@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_COSTO_FIJO: GuideFlow = {
   id: 'registrar-costo-fijo',
+  area: 'finanzas',
   title: 'Registrar y pagar un costo fijo',
   summary: 'Dar de alta un gasto recurrente (arriendo, servicios) o uno único, y marcarlo pagado cuando salga la plata.',
   audience: ['dueno'],

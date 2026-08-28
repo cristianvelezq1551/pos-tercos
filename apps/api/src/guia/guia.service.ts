@@ -27,7 +27,14 @@ export class GuiaService {
         userPrompt: buildGuiaAssistantUserPrompt(question, audience),
         maxTokens: MAX_TOKENS,
       });
-      return { answer: result.text.trim(), model: result.modelUsed };
+      const answer = result.text.trim();
+      // Una respuesta vacía es un fallo, no una respuesta. Devolverla dejaba al
+      // usuario mirando un recuadro en blanco sin saber si falló o si es que no
+      // hay nada que decir.
+      if (answer.length === 0) {
+        throw new Error('el proveedor devolvió una respuesta vacía');
+      }
+      return { answer, model: result.modelUsed };
     } catch (err) {
       // Sin llave configurada o proveedor caído: se dice, no se finge. La guía
       // escrita sigue ahí y es la respuesta honesta.

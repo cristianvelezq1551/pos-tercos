@@ -104,9 +104,33 @@ export interface FlowQuestion {
   a: string;
 }
 
+/** Agrupador de flujos. Con treinta tarjetas sueltas no se encuentra nada. */
+export type FlowArea =
+  | 'caja'
+  | 'cocina'
+  | 'catalogo'
+  | 'compras'
+  | 'inventario'
+  | 'finanzas'
+  | 'personal'
+  | 'control';
+
+export const FLOW_AREA_LABEL: Record<FlowArea, string> = {
+  caja: 'Caja y ventas',
+  cocina: 'Cocina',
+  catalogo: 'Catálogo y recetas',
+  compras: 'Compras y proveedores',
+  inventario: 'Inventario',
+  finanzas: 'Dinero del negocio',
+  personal: 'Personal y configuración',
+  control: 'Control y auditoría',
+};
+
 export interface GuideFlow {
   /** Segmento de la URL: /guia/flujos/<id>. kebab-case, estable. */
   id: string;
+  /** Dónde se agrupa en el índice. */
+  area: FlowArea;
   title: string;
   /** Una frase: qué logra este flujo. */
   summary: string;

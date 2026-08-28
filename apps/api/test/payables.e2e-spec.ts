@@ -158,4 +158,108 @@ describe('Payables E2E', () => {
     expect(after.body.bank.expensesPaid).toBe(bankExpBefore + 40_000);
     expect(after.body.bank.balance).toBe(bankBalBefore - 40_000);
   });
+
+  /**
+   * H1 de la auditoría: los compromisos NUNCA llegaban al estado de resultados.
+   * `FinancialReportsService` solo leía COGS, nómina y costos fijos, así que un
+   * arreglo del horno salía de tesorería sin bajar el neto ni mover el punto de
+   * equilibrio — el dueño decidía con una ganancia inflada.
+   */
+  describe('impacto en el estado financiero', () => {
+    const now = new Date();
+    const estado = async (): Promise<{
+      netResult: number;
+      payablesPaidCost: number;
+      payablesPaidCount: number;
+      breakEven: number | null;
+    }> =>
+      (
+        await request
+          .get(`/reports/financial/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`)
+          .set(auth(duenoToken))
+          .expect(200)
+      ).body;
+
+    it('un compromiso PENDIENTE no baja el resultado: mientras se debe es deuda, no pérdida', async () => {
+      const antes = await estado();
+      await createPayable(120_000, 'Técnico del horno');
+      const despues = await estado();
+      expect(despues.netResult).toBeCloseTo(antes.netResult, 2);
+      expect(despues.payablesPaidCost).toBeCloseTo(antes.payablesPaidCost, 2);
+    });
+
+    it('al PAGARLO baja el neto por su monto y queda contado', async () => {
+      const antes = await estado();
+      const id = await createPayable(120_000, 'Técnico del horno');
+      await request
+        .post(`/payables/${id}/pay`)
+        .set(auth(duenoToken))
+        .field('payload', JSON.stringify({ cashAmount: 120_000, bankAmount: 0 }))
+        .expect(201);
+
+      const despues = await estado();
+      expect(despues.payablesPaidCost - antes.payablesPaidCost).toBeCloseTo(120_000, 2);
+      expect(despues.payablesPaidCount - antes.payablesPaidCount).toBe(1);
+      expect(antes.netResult - despues.netResult).toBeCloseTo(120_000, 2);
+    });
+
+    it('devolver un préstamo NO baja el resultado (esa plata ya se había recibido)', async () => {
+      const antes = await estado();
+      const res = await request
+        .post('/payables')
+        .set(auth(duenoToken))
+        .send({
+          beneficiary: 'Pablo',
+          description: 'Devolución del préstamo de la moto',
+          amount: 500_000,
+          isExpense: false,
+        })
+        .expect(201);
+      expect(res.body.isExpense).toBe(false);
+
+      await request
+        .post(`/payables/${res.body.id}/pay`)
+        .set(auth(duenoToken))
+        .field('payload', JSON.stringify({ cashAmount: 0, bankAmount: 500_000 }))
+        .expect(201);
+
+      const despues = await estado();
+      // Ni un peso: contarlo mostraría un bajón de medio millón que no existe.
+      expect(despues.netResult).toBeCloseTo(antes.netResult, 2);
+      expect(despues.payablesPaidCost).toBeCloseTo(antes.payablesPaidCost, 2);
+      expect(despues.payablesPaidCount).toBe(antes.payablesPaidCount);
+    });
+
+    it('sin decir nada, un compromiso nace como GASTO (el caso común)', async () => {
+      const res = await request
+        .post('/payables')
+        .set(auth(duenoToken))
+        .send({ beneficiary: 'Ferretería', description: 'Arreglo de la campana', amount: 30_000 })
+        .expect(201);
+      expect(res.body.isExpense).toBe(true);
+    });
+
+    it('un compromiso pagado NO mueve el punto de equilibrio (no se repite todos los meses)', async () => {
+      // El equilibrio mide el piso de operación: un arreglo puntual no lo
+      // define. Si un gasto se repite cada mes, su lugar es Costos fijos.
+      await request
+        .post('/fixed-costs')
+        .set(auth(duenoToken))
+        .send({ name: 'Arriendo Pay', category: 'Local', amount: 1_000_000, frequency: 'MONTHLY' })
+        .expect(201);
+      const antes = await estado();
+
+      const id = await createPayable(200_000, 'Plomero');
+      await request
+        .post(`/payables/${id}/pay`)
+        .set(auth(duenoToken))
+        .field('payload', JSON.stringify({ cashAmount: 200_000, bankAmount: 0 }))
+        .expect(201);
+
+      const despues = await estado();
+      expect(despues.breakEven).toBe(antes.breakEven);
+      // Pero el neto SÍ bajó: es plata que salió.
+      expect(antes.netResult - despues.netResult).toBeCloseTo(200_000, 2);
+    });
+  });
 });

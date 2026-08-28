@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, ConfirmDialog } from '@pos-tercos/ui';
 import type { Product, Promotion } from '@pos-tercos/types';
-import { formatCop } from '../../../lib/format';
-import { channelLabel, labelFor } from './PromotionFormHelpers';
-import { deactivatePromotion } from '../api';
+import { getErrorMessage } from '../../../lib/errors';
+import { usePromotionStatus } from './PromotionStatusBadge';
+import { PromotionSummaryCard } from './PromotionSummaryCard';
+import { deactivatePromotion, updatePromotion } from '../api';
 
 interface PromotionDetailProps {
   promotion: Promotion;
@@ -15,9 +16,10 @@ interface PromotionDetailProps {
 
 export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
   const router = useRouter();
-  const [deactivating, setDeactivating] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const status = usePromotionStatus(promotion);
 
   const productMap = new Map(products.map((p) => [p.id, p]));
   const linkedProducts = promotion.productIds
@@ -26,49 +28,48 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
 
   async function handleDeactivate() {
     setConfirmDeactivate(false);
-    setDeactivating(true);
+    setBusy(true);
     setError(null);
     try {
       await deactivatePromotion(promotion.id);
       router.push('/promotions');
       router.refresh();
     } catch (err) {
-      setError((err as Error).message);
-      setDeactivating(false);
+      setError(getErrorMessage(err));
+      setBusy(false);
+    }
+  }
+
+  /** Encenderla otra vez sin tener que crear una promo nueva y repetir todo. */
+  async function handleReactivate() {
+    setBusy(true);
+    setError(null);
+    try {
+      await updatePromotion(promotion.id, { isActive: true });
+      router.refresh();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="rounded-lg border border-border bg-card p-5">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <Row label="Tipo" value={labelFor(promotion.type)} />
-          <Row label="Estado" value={promotion.isActive ? 'Activa' : 'Inactiva'} />
-          <Row label="Dónde aplica" value={channelLabel(promotion.channel)} />
-          <Row label="Descuento" value={describeDiscount(promotion)} mono />
-          <Row label="Días" value={describeDays(promotion.daysOfWeekMask)} mono />
-          <Row
-            label="Horario"
-            value={`${hhmm(promotion.timeStart)} – ${hhmm(promotion.timeEnd)}`}
-            mono
-          />
-          <Row
-            label="Vigencia"
-            value={
-              !promotion.activeFrom && !promotion.activeTo
-                ? 'Sin límite'
-                : `${promotion.activeFrom ?? '—'} → ${promotion.activeTo ?? '—'}`
-            }
-            mono
-          />
-          <Row label="Creada por" value={promotion.createdByName ?? '—'} />
-          <Row
-            label="Creada el"
-            value={new Date(promotion.createdAt).toLocaleString('es-CO')}
-            mono
-          />
-        </dl>
-      </div>
+      {status && status.hint && (
+        <p
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            status.tone === 'success'
+              ? 'border-success/30 bg-success/10 text-foreground'
+              : status.tone === 'danger'
+                ? 'border-destructive/30 bg-destructive/10 text-foreground'
+                : 'border-warning/30 bg-warning/10 text-foreground'
+          }`}
+        >
+          <span className="font-semibold">{status.label}.</span> {status.hint}
+        </p>
+      )}
+      <PromotionSummaryCard promotion={promotion} statusLabel={status?.label ?? null} />
 
       <div className="rounded-lg border border-border bg-card p-5">
         <h2 className="mb-3 text-sm font-semibold text-foreground">
@@ -104,21 +105,25 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
           Volver al listado
         </Button>
         <div className="flex gap-2">
-          {promotion.isActive && (
-            <Button
-              variant="outline"
-              onClick={() => router.push(`/promotions/${promotion.id}/edit`)}
-            >
-              Editar
-            </Button>
-          )}
-          {promotion.isActive && (
+          {/* Editar también estando apagada: si no, corregir sus días u horario
+              obligaba a crear una promo nueva y volver a escribir todo. */}
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/promotions/${promotion.id}/edit`)}
+          >
+            Editar
+          </Button>
+          {promotion.isActive ? (
             <Button
               variant="destructive"
               onClick={() => setConfirmDeactivate(true)}
-              disabled={deactivating}
+              disabled={busy}
             >
-              {deactivating ? 'Desactivando…' : 'Desactivar promoción'}
+              {busy ? 'Apagando…' : 'Apagar promoción'}
+            </Button>
+          ) : (
+            <Button onClick={() => void handleReactivate()} disabled={busy}>
+              {busy ? 'Encendiendo…' : 'Encender promoción'}
             </Button>
           )}
         </div>
@@ -128,64 +133,17 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
         open={confirmDeactivate}
         onCancel={() => setConfirmDeactivate(false)}
         onConfirm={handleDeactivate}
-        title="¿Desactivar promoción?"
-        description="No se puede revertir desde aquí. Para cambiarla, crea una nueva."
-        confirmLabel="Sí, desactivar"
+        title="¿Apagar la promoción?"
+        description="Deja de descontar de inmediato. Puedes volver a encenderla desde esta misma pantalla."
+        confirmLabel="Sí, apagar"
         destructive
-        pending={deactivating}
+        pending={busy}
       />
       <p className="text-xs text-muted-foreground">
-        No se puede cambiar el descuento (ej. el % o el monto fijo) de una promo ya creada: para
-        modificarlo, desactiva esta promo y crea una nueva.
+        Puedes cambiarle los días, el horario, la vigencia, los productos y dónde aplica. El monto
+        del descuento (el % o los pesos) queda fijo desde que se crea: para cambiarlo, apaga esta
+        promoción y crea una nueva.
       </p>
     </div>
-  );
-}
-
-function describeDiscount(p: Promotion): string {
-  switch (p.type) {
-    case 'PERCENT_OFF':
-      return p.discountPct !== null ? `${(p.discountPct * 100).toFixed(0)}%` : '—';
-    case 'FIXED_OFF':
-      return p.discountFixed !== null ? formatCop(p.discountFixed) : '—';
-    case 'BOGO':
-      return `Compra ${p.bogoBuyQty ?? '?'}, lleva ${p.bogoGetQty ?? '?'} gratis`;
-    case 'COMBO_OFF': {
-      if (p.discountPct !== null)
-        return `${(p.discountPct * 100).toFixed(0)}% (solo combos)`;
-      if (p.discountFixed !== null) return `${formatCop(p.discountFixed)} (solo combos)`;
-      return '—';
-    }
-  }
-}
-
-const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-function describeDays(mask: number): string {
-  if (mask === 127) return 'Todos los días';
-  const days: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    if ((mask & (1 << i)) !== 0) days.push(DAY_LABELS[i]);
-  }
-  return days.join(', ');
-}
-
-function hhmm(s: string): string {
-  return s.slice(0, 5);
-}
-
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={`text-foreground ${mono ? 'tabular-nums' : ''}`}>{value}</dd>
-    </>
   );
 }

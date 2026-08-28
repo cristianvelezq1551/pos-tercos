@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_MERMA: GuideFlow = {
   id: 'registrar-merma',
+  area: 'cocina',
   title: 'Registrar una merma',
   summary: 'Sacar del inventario algo que se dañó, se quemó o se cayó, y que quede valorado a costo.',
   audience: ['cocina', 'dueno'],
