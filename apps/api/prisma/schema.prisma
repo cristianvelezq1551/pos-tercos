@@ -1319,6 +1319,13 @@ model PayableCommitment {
   beneficiary   String
   description   String
   amount        Decimal       @db.Decimal(14, 2)
+  /// ¿Es un GASTO del negocio (un arreglo, un servicio, una compra suelta) o
+  /// un movimiento financiero (devolver un préstamo que te hicieron)?
+  ///
+  /// Solo los gastos bajan el resultado del mes. Devolver plata que te
+  /// prestaron NO es una pérdida —ya la habías recibido— y contarlo como tal
+  /// mostraría un bajón que no existe. Default true: el caso común es gasto.
+  isExpense     Boolean       @default(true) @map("is_expense")
   status        PayableStatus @default(PENDING)
   cashAmount    Decimal       @default(0) @map("cash_amount") @db.Decimal(14, 2)
   bankAmount    Decimal       @default(0) @map("bank_amount") @db.Decimal(14, 2)

@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_PRODUCCION: GuideFlow = {
   id: 'registrar-produccion',
+  area: 'cocina',
   title: 'Registrar una producción',
   summary: 'Anotar una tanda de algo que se prepara con anticipación, para que sume al inventario y descuente sus insumos.',
   audience: ['cocina', 'dueno'],

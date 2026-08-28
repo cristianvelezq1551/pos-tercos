@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_CERRAR_CAJA: GuideFlow = {
   id: 'cerrar-caja',
+  area: 'caja',
   title: 'Cerrar la caja del turno',
   summary: 'Contar toda la plata —el cajón y cada medio digital— y dejar explicado cualquier descuadre.',
   audience: ['caja', 'dueno'],

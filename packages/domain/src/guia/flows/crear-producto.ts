@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_CREAR_PRODUCTO: GuideFlow = {
   id: 'crear-producto',
+  area: 'catalogo',
   title: 'Crear un producto',
   summary: 'Dar de alta algo que el cliente compra, con su receta, su costo real y su margen.',
   audience: ['dueno'],

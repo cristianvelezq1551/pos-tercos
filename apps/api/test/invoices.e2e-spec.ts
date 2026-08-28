@@ -565,6 +565,95 @@ describe('Invoices E2E', () => {
 
       expect(Array.isArray(res.body)).toBe(true);
     });
+
+    it('filtra por rango de fechas, y sin fechas sigue mostrando todo', async () => {
+      const hoy = new Date();
+      const ymd = (d: Date): string =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      const todas = (
+        await request.get('/invoices').set('Authorization', `Bearer ${adminToken}`).expect(200)
+      ).body as unknown[];
+      expect(todas.length).toBeGreaterThan(0);
+
+      // Las facturas de esta suite se crearon hoy → el rango de hoy las trae.
+      const deHoy = (
+        await request
+          .get(`/invoices?from=${ymd(hoy)}&to=${ymd(hoy)}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .expect(200)
+      ).body as unknown[];
+      expect(deHoy.length).toBe(todas.length);
+
+      // Un rango viejo no trae ninguna: el filtro filtra de verdad.
+      const viejas = (
+        await request
+          .get('/invoices?from=2020-01-01&to=2020-01-31')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .expect(200)
+      ).body as unknown[];
+      expect(viejas).toHaveLength(0);
+    });
+
+    it('una extracción guardada ANTES del campo de domicilio sigue siendo legible', async () => {
+      // Regresión: el schema crece, pero lo que ya está en la base no. Sin
+      // normalizar antes de parsear, toda factura anterior a `freight` daba 404
+      // acá y perdía los avisos de la IA y el desglose de empaque al reanudar
+      // el borrador.
+      const vieja = await prisma.invoice.create({
+        data: {
+          status: 'PENDING_REVIEW',
+          aiModelUsed: 'test-mock',
+          aiExtractionJson: {
+            supplierName: 'Proveedor Viejo',
+            supplierNit: '900000111-1',
+            invoiceNumber: 'F-VIEJA',
+            total: 50_000,
+            iva: null,
+            // Sin `freight`: así se guardaban antes de este cambio.
+            items: [
+              {
+                descriptionRaw: 'Pan tajado 500 g X 10 U',
+                quantity: 1,
+                unit: 'paquete',
+                unitPrice: 50_000,
+                total: 50_000,
+                packUnits: 10,
+                packSizePerUnit: 500,
+                packSizeMeasure: 'g',
+              },
+            ],
+            warnings: ['El total no se leyó con claridad.'],
+          },
+        },
+      });
+
+      const res = await request
+        .get(`/invoices/${vieja.id}/raw-extraction`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(res.body.supplierName).toBe('Proveedor Viejo');
+      expect(res.body.freight).toBeNull();
+      // Lo que se perdía: el aviso y el empaque que sugiere la conversión.
+      expect(res.body.warnings).toEqual(['El total no se leyó con claridad.']);
+      expect(res.body.items[0].packUnits).toBe(10);
+      expect(res.body.items[0].packSizePerUnit).toBe(500);
+    });
+
+    it('una fecha mal formada es 400 (no se ignora en silencio)', async () => {
+      await request
+        .get('/invoices?from=ayer')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(400);
+    });
+
+    it('rango invertido es 400', async () => {
+      await request
+        .get('/invoices?from=2026-05-10&to=2026-05-01')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(400);
+    });
   });
 
   describe('POST /invoices/:id/payment/paid — idempotencia', () => {

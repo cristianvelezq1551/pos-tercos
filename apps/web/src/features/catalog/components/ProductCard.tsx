@@ -27,7 +27,9 @@ export function ProductCard({
 }) {
   const promotions = usePromotions((s) => s.promotions);
   const price = displayBasePrice(product);
-  const promo = unavailable ? null : getMenuPromoBadge(product.id, price, promotions);
+  const promo = unavailable
+    ? null
+    : getMenuPromoBadge(product.id, price, promotions, undefined, product.isCombo);
   // Se puede mirar el menú, no agregar: quien está cerrado igual quiere que le
   // vean los precios.
   const noSePuedePedir = unavailable || closed;

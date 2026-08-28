@@ -1,5 +1,6 @@
 'use client';
 
+import { totalCuadra } from '@pos-tercos/domain';
 import { Input, Label, MoneyInput, formatCop } from '@pos-tercos/ui';
 
 interface InvoiceMetaSectionProps {
@@ -16,12 +17,6 @@ interface InvoiceMetaSectionProps {
   computedItemsTotal: number;
   disabled?: boolean;
 }
-
-/** Margen con el que la conciliación se da por cuadrada (espeja la tolerancia
- *  del backend en su piso: `max(1% del total, $1.000)`). Mostrar "cuadra" con
- *  un peso de diferencia sería ruido; mostrar error donde el backend acepta,
- *  peor: el operador no podría avanzar sin entender por qué. */
-const TOLERANCIA_COP = 1000;
 
 export function InvoiceMetaSection({
   invoiceNumber,
@@ -41,7 +36,9 @@ export function InvoiceMetaSection({
   const freightNum = Number(freight) || 0;
   const mercancia = totalNum - freightNum;
   const diferencia = mercancia - computedItemsTotal;
-  const cuadra = Math.abs(diferencia) <= Math.max(totalNum * 0.01, TOLERANCIA_COP);
+  // MISMA función que el backend: si la pantalla dijera "cuadra" donde el
+  // server rechaza, el operador no podría avanzar sin entender por qué.
+  const cuadra = totalCuadra({ total: totalNum, itemsSum: computedItemsTotal, freight: freightNum });
   const freightMayorQueTotal = freightNum > totalNum && total !== '';
 
   return (

@@ -2658,7 +2658,7 @@ no alcanza el mínimo. Elegir una cantidad sin ver el efecto es teclear a ciegas
 > costo fijo. Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (domain
 > 434, +10), **e2e 49 suites / 509** (+6), 0 controles <44 px en celular.
 
-### Flujos paso a paso (8), con "dónde se ve"
+### Flujos paso a paso (30), con "dónde se ve"
 Sección nueva junto a los 12 capítulos, que se conservan: los capítulos explican
 QUÉ y POR QUÉ; los flujos, CÓMO y DÓNDE. Cada flujo trae **cuándo se hace**
 (el disparador real), **antes de empezar**, el paso a paso, **dónde se ve el
@@ -2701,6 +2701,46 @@ Un `nest start --watch` **de dos días** tenía el puerto 3001 y servía un `dis
 viejo: la ruta nueva daba 404 con el módulo correctamente mapeado en el log.
 Ya estaba en la memoria de §7.v18 y volvió a pasar — si el API "responde cosas
 viejas" en dev, buscar zombis ANTES de dudar del código.
+
+## 7.v39 La guía cubre TODA la app: 30 flujos por perfil (2026-08-28)
+
+> "8 son muy pocos, solo te di ejemplos": auditoría de las ~140 mutaciones del
+> API para sacar los flujos reales de cada perfil. Verificado: typecheck 13/13,
+> lint 0, unit 12/12 (domain 475), **e2e 51 suites / 544**, 0 controles <44 px.
+
+**30 flujos** agrupados por área (`FlowArea`, porque 30 tarjetas sueltas no se
+navegan): 9 de caja, 4 de cocina, 3 de inventario, 2 de compras, 4 de catálogo,
+5 de dinero, 2 de configuración, 1 de control. Por perfil: **caja 9 · cocina 5 ·
+dueño 25**.
+
+### Tres correcciones de fondo al asistente
+1. **La recuperación se degradó con 30 flujos** (10/17 acertaba el primero, y en
+   un caso el correcto no llegaba). Causa: un término genérico en un título
+   pesaba igual que uno distintivo. Se agregó **IDF** —un término que está en
+   media guía vale casi cero— más raíz de palabra con mínimo de 4 caracteres
+   (sin él, "arriendo" se recortaba a "arr" y no encontraba "arriendos").
+   Resultado: **19/19 llegan**, 15/19 primero.
+2. **El modelo respondía en VOSEO** ("escribís, marcás, guardás"), que viola la
+   regla de copy del repo. El prompt ahora lo prohíbe con ejemplos concretos —un
+   modelo sigue un ejemplo mucho mejor que una regla— y `tieneVoseo()` (puro,
+   6 tests) lo verifica. Detectarlo por terminación NO sirve: "más" y "después"
+   acaban igual, y **el futuro en tuteo también** ("marcarás", "podrás"). Se
+   distingue por la raíz: el futuro conserva el infinitivo, el voseo lo recorta.
+3. **Una respuesta vacía del proveedor se devolvía como respuesta buena**,
+   dejando un recuadro en blanco. Ahora es un fallo honesto (503).
+
+### El e2e del asistente ya NO llama al modelo real
+Cada test tardaba 2,4–3,4 s, peligrosamente cerca del timeout de 5 s de jest.
+Al pasarse, la suite abortaba sin correr su `cleanDb` y **arrastraba a 30 suites
+siguientes** con errores que no tenían nada que ver (404 al crear ventas, 409 de
+caja abierta). Se mockea `LLMService`: 8 tests en 75 ms, sin red y sin cobrar.
+Lo que se verifica es el CONTRATO —validación, roles, prompt con la guía dentro,
+proveedor caído—; la calidad de la recuperación se mide en `domain`.
+
+⚠️ **Correr varias veces el e2e en paralelo corrompe la base de test**: el
+`cleanDb` de una borra los usuarios de otra a mitad de vuelo y aparecen 401 y
+409 sin relación con el cambio. Antes de dudar del código, `pkill -f "jest
+--config"` y correr UNA vez.
 
 ## 8. Estado del proyecto (commits y FASES)
 

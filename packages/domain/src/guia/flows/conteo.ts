@@ -2,6 +2,7 @@ import type { GuideFlow } from '../types';
 
 export const FLOW_CONTEO: GuideFlow = {
   id: 'conteo-fisico',
+  area: 'inventario',
   title: 'Hacer un conteo físico',
   summary: 'Contar lo que hay de verdad y dejar que el sistema ajuste la diferencia.',
   audience: ['cocina', 'dueno'],

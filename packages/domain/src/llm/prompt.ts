@@ -280,6 +280,15 @@ export interface FinancialAnalysisInput {
     monthlyAmount: number;
     isPayroll: boolean;
   }>;
+  /**
+   * Pérdidas que van DEBAJO del margen bruto y explican el salto hasta el neto:
+   * merma, cortesías, reembolsos, fletes de compra y compromisos pagados.
+   *
+   * Sin ellas el modelo recibía `ingresos − COGS − fijos` y un `netResult` que
+   * no se deducía de esos números: cualquier explicación del bajón era una
+   * invención. Se pasan solo las que tienen monto.
+   */
+  otherLosses: ReadonlyArray<{ label: string; amount: number }>;
   netResult: number;
   breakEven: number | null;
   breakEvenCoverage: number | null; // 0..1+
@@ -308,6 +317,13 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
     for (const c of i.fixedCosts) {
       const tag = c.isPayroll ? ' [auto desde Nómina]' : '';
       lines.push(`    · ${c.name} (${c.category}): ${cop(c.monthlyAmount)}${tag}`);
+    }
+  }
+  const perdidas = i.otherLosses.filter((l) => l.amount > 0);
+  if (perdidas.length > 0) {
+    lines.push('- Otras pérdidas del mes (no entran al COGS):');
+    for (const l of perdidas) {
+      lines.push(`    · ${l.label}: ${cop(l.amount)}`);
     }
   }
   lines.push(`- Resultado neto: ${cop(i.netResult)}`);

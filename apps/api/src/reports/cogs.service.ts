@@ -400,7 +400,7 @@ export class CogsService {
   }
 
   async getPnl(from: Date, to: Date): Promise<PnlReport> {
-    const [ledger, sales, refunded] = await Promise.all([
+    const [ledger, sales, refunded, purchases, freightInvoiceCount] = await Promise.all([
       // Costos por venta del rango: si arranca antes del corte del snapshot,
       // runLedger cae a replay completo (regla 2).
       this.runLedger(from),
@@ -419,6 +419,27 @@ export class CogsService {
           voidReason: { startsWith: REFUND_VOID_REASON_PREFIX },
         },
         select: { id: true },
+      }),
+      // Fletes de compra: el domicilio que cobró el PROVEEDOR por traer la
+      // mercancía. Sale del ENCABEZADO de la factura, no de sus ítems — por eso
+      // no está en el ledger FIFO y no encarece ningún producto.
+      //
+      // Se atribuye por `confirmedAt`, el mismo instante en que la mercancía
+      // entró al inventario (ahí se fecha el lote FIFO). Con `paidAt`
+      // aparecerían fletes en meses donde no pasó nada relacionado.
+      this.prisma.invoice.aggregate({
+        where: { status: 'CONFIRMED', confirmedAt: { gte: from, lte: to } },
+        _sum: { total: true, freightAmount: true },
+      }),
+      // Cuántas facturas TRAJERON cobro de domicilio. Aparte del aggregate
+      // porque ese suma sobre TODAS las confirmadas (necesitamos el comprado
+      // total para el % de flete), y contar ahí daría todas las facturas.
+      this.prisma.invoice.count({
+        where: {
+          status: 'CONFIRMED',
+          confirmedAt: { gte: from, lte: to },
+          freightAmount: { gt: 0 },
+        },
       }),
     ]);
 
@@ -487,6 +508,15 @@ export class CogsService {
       wasteCost: round(wasteCost),
       cortesiaCost: round(cortesiaCost),
       refundCost: round(refundCost),
+      freightCost: round(Number(purchases._sum.freightAmount ?? 0)),
+      freightInvoiceCount,
+      // Mercancía comprada (total pagado − flete). NO es un gasto del P&G: una
+      // compra es inventario hasta que se consume, y ahí entra por el COGS. Va
+      // solo como contexto del flete — "$312.000 de domicilios" no dice nada
+      // sin saber sobre cuánto de compra.
+      purchasedTotal: round(
+        Number(purchases._sum.total ?? 0) - Number(purchases._sum.freightAmount ?? 0),
+      ),
       deliveryCollected: round(deliveryCollected),
       deliveryOrderCount,
       salesCount: sales.length,

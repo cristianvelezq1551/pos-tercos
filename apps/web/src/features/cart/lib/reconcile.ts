@@ -61,14 +61,19 @@ export function reconcileCart(
       removed.push(line.productName);
       continue;
     }
+    // El flag de combo se refresca contra el menú: los carritos guardados antes
+    // de que existiera el campo no lo traen, y sin él un COMBO_OFF se cobra pero
+    // no se ve.
+    const withCombo =
+      line.isCombo === product.isCombo ? line : { ...line, isCombo: product.isCombo };
     const fresh = freshUnitPrice(line, product);
     // Compara al peso redondeado: los montos COP son enteros, evita falsos
     // "cambió de precio" por drift de punto flotante en sumas de extras.
     if (Math.round(fresh) !== Math.round(line.unitPrice)) {
       repriced.push({ name: line.productName, from: line.unitPrice, to: fresh });
-      next.push({ ...line, unitPrice: fresh });
+      next.push({ ...withCombo, unitPrice: fresh });
     } else {
-      next.push(line);
+      next.push(withCombo);
     }
   }
   return { items: next, change: { removed, unavailable, repriced } };

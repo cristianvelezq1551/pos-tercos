@@ -80,4 +80,36 @@ describe('computeCartPromoTotals (web) == motor de domain', () => {
     const badge = getMenuPromoBadge(PROD, 10_000, [promo({ discountPct: 0.2 })], AT);
     expect(badge?.discountedPrice).toBe(8_000);
   });
+  /**
+   * El backend cobra COMBO_OFF con `Product.isCombo`; la web lo tenía fijo en
+   * false, así que el combo se mostraba a precio lleno y el total cambiaba
+   * recién al confirmar el pedido.
+   */
+  describe('COMBO_OFF', () => {
+    const comboPromo = promo({ type: 'COMBO_OFF', discountPct: 0.15, discountFixed: null });
+
+    it('descuenta cuando la línea es de un combo', () => {
+      const r = computeCartPromoTotals(
+        [{ productId: PROD, quantity: 1, unitPrice: 30_000, isCombo: true }],
+        [comboPromo],
+        AT,
+      );
+      expect(r.discount).toBe(4_500);
+      expect(r.total).toBe(25_500);
+    });
+
+    it('no descuenta si el producto no es combo', () => {
+      const r = computeCartPromoTotals(
+        [{ productId: PROD, quantity: 1, unitPrice: 30_000, isCombo: false }],
+        [comboPromo],
+        AT,
+      );
+      expect(r.discount).toBe(0);
+    });
+
+    it('la tarjeta del menú muestra el tachado del combo', () => {
+      expect(getMenuPromoBadge(PROD, 30_000, [comboPromo], AT, true)?.discountedPrice).toBe(25_500);
+      expect(getMenuPromoBadge(PROD, 30_000, [comboPromo], AT, false)).toBeNull();
+    });
+  });
 });

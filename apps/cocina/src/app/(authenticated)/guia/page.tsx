@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { chaptersFor, chapterIcon, FlowCard, flowsFor } from '@pos-tercos/guia';
+import { chaptersFor, chapterIcon, FlowIndex, flowsFor } from '@pos-tercos/guia';
 import { GuiaAsistentePanel } from '../../../features/guia';
 
 export const metadata = { title: 'Guía · Cocina Tercos' };
@@ -29,13 +29,9 @@ export default function GuiaCocinaPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         Cómo se hace cada cosa y dónde se ve después.
       </p>
-      <ul className="mt-3 space-y-3">
-        {flujos.map((f) => (
-          <li key={f.id}>
-            <FlowCard flow={f} />
-          </li>
-        ))}
-      </ul>
+      <div className="mt-3">
+        <FlowIndex audience="cocina" dense />
+      </div>
 
       <h2 className="mt-8 font-display text-lg font-bold text-foreground">Entender el sistema</h2>
       <ul className="mt-3 space-y-3">

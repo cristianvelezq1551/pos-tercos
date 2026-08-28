@@ -1,6 +1,6 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { BookOpen } from 'lucide-react';
-import { CHAPTERS, ChapterCard, FLOWS, FlowCard, GuiaSearch } from '@pos-tercos/guia';
+import { CHAPTERS, ChapterCard, FLOWS, FlowIndex, GuiaSearch } from '@pos-tercos/guia';
 import { GuiaAsistentePanel } from '../../../features/guia';
 
 export const metadata = { title: 'Guía de uso · POS Tercos' };
@@ -32,10 +32,8 @@ export default function GuiaIndexPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Cómo se hace cada cosa y —sobre todo— dónde aterriza después cada número.
           </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {FLOWS.map((f) => (
-              <FlowCard key={f.id} flow={f} />
-            ))}
+          <div className="mt-5">
+            <FlowIndex />
           </div>
         </section>
 
