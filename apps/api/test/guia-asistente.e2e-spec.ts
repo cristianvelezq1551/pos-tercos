@@ -28,19 +28,24 @@ describe('Asistente de la guía E2E', () => {
   let cocineroToken: string;
   /** Se enciende para probar el camino del proveedor caído. */
   let llmCaido = false;
+  /** Hace que el primer intento venga en voseo, para probar el reintento. */
+  let llmVosea = false;
+  let llamadas = 0;
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp((b) =>
       b.overrideProvider(LLMService).useValue({
-        complete: (req: { userPrompt: string }) =>
-          Promise.resolve({
-            // Devuelve algo verificable: que el prompt SÍ llevaba la guía.
-            text: llmCaido
-              ? ''
+        complete: (req: { systemPrompt: string; userPrompt: string }) => {
+          llamadas += 1;
+          // El reintento se reconoce porque el system trae la corrección.
+          const esReintento = req.systemPrompt.includes('voseo:');
+          const texto =
+            llmVosea && !esReintento
+              ? 'Abre la semana que querés pagar y marcás los días.'
               : `Cocina → Inventario → botón Merma. Escribe la cantidad y guarda. ` +
-                `[bloques=${(req.userPrompt.match(/## FLUJO:/g) ?? []).length}]`,
-            modelUsed: 'test:mock',
-          }),
+                `[bloques=${(req.userPrompt.match(/## FLUJO:/g) ?? []).length}]`;
+          return Promise.resolve({ text: llmCaido ? '' : texto, modelUsed: 'test:mock' });
+        },
       }),
     ));
     await cleanDb(prisma);
@@ -134,6 +139,25 @@ describe('Asistente de la guía E2E', () => {
       .send({ question: '¿dónde cargo el arriendo del local?' })
       .expect(200);
     expect(palabrasVoseo(String(res.body.answer))).toEqual([]);
+  });
+
+  it('si el modelo responde en voseo, se reintenta y sale en tuteo', async () => {
+    // Regresión real en QA: "abre la semana que QUERÉS pagar". El prompt lo
+    // prohíbe pero el modelo se va igual de vez en cuando; con el detector en
+    // la mano no hay razón para publicarlo.
+    llmVosea = true;
+    llamadas = 0;
+    try {
+      const res = await request
+        .post('/guia/preguntar')
+        .set(auth(duenoToken))
+        .send({ question: '¿cómo le pago a los empleados?' })
+        .expect(200);
+      expect(palabrasVoseo(String(res.body.answer))).toEqual([]);
+      expect(llamadas).toBe(2); // un reintento, no más
+    } finally {
+      llmVosea = false;
+    }
   });
 
   it('con el proveedor caído responde 503 y remite a la guía, sin inventar', async () => {
