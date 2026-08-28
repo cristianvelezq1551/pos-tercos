@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { roundCost, roundMoney } from '@pos-tercos/domain';
 import type { InventoryUsageReport, InventoryUsageRow } from '@pos-tercos/types';
+import { CogsService } from './cogs.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Consumo por cortesía y su anulación: se contabilizan en el estado
@@ -25,11 +26,74 @@ interface UsageAcc {
  * PRODUCCIÓN es el "teórico" (sale de las recetas); lo que se pierde fuera
  * de eso —mermas declaradas (WASTE) y faltantes de conteo físico
  * (MANUAL_ADJUSTMENT negativo)— es plata que se va sin pasar por la caja.
- * Valorizado con el último costo de compra para priorizar dónde mirar.
+ *
+ * Las dos pérdidas se valorizan por caminos distintos, y el DTO las separa:
+ *   - MERMA: costo real del lote consumido (ledger FIFO), la misma fuente que
+ *     el P&G. Los dos números coinciden siempre.
+ *   - FALTANTE de conteo: solo se puede ESTIMAR al último precio de compra —
+ *     un ajuste de inventario no pasa por resultados, así que el ledger no le
+ *     atribuye lote. Va aparte para no dar por exacto lo que es aproximado.
  */
 @Injectable()
 export class InventoryUsageService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cogs: CogsService,
+  ) {}
+
+  /**
+   * Costo REAL de las mermas del rango, agrupado por stockable.
+   *
+   * Sale del ledger FIFO —la MISMA fuente que la línea "Mermas" del P&G— en vez
+   * de multiplicar por el último precio de compra. Con el precio en movimiento
+   * las dos formas divergen (una merma valía $2.564 acá y $1.709 en el P&G), y
+   * dos cifras para la misma pérdida no dejan decidir a nadie. De paso, los
+   * subproductos dejan de quedar sin valorizar: el ledger sí conoce su costo.
+   */
+  private async wasteCostByStockable(
+    from: Date,
+    to: Date,
+  ): Promise<Map<string, { cost: number; estimated: boolean; pending: boolean }>> {
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: { type: 'WASTE', createdAt: { gte: from, lte: to } },
+      select: {
+        id: true,
+        entityType: true,
+        ingredientId: true,
+        productId: true,
+        subproductId: true,
+      },
+    });
+    if (movements.length === 0) return new Map();
+
+    const costById = await this.cogs.getWasteCostByMovement(from);
+    const out = new Map<string, { cost: number; estimated: boolean; pending: boolean }>();
+    for (const m of movements) {
+      const entityId = m.ingredientId ?? m.productId ?? m.subproductId;
+      if (!entityId) continue;
+      const key = `${m.entityType}:${entityId}`;
+      const prev = out.get(key) ?? { cost: 0, estimated: false, pending: false };
+      const c = costById.get(m.id);
+      if (!c) {
+        // Salvaguarda: el ledger no pudo costear esta merma. No debería pasar
+        // —registrarla invalida su caché (`LedgerFreshnessService`) y el replay
+        // siempre cubre el rango pedido—, pero si pasa, "todavía no lo sé" y
+        // "no costó nada" son cosas distintas y este reporte no puede volver a
+        // confundirlas.
+        prev.pending = true;
+        out.set(key, prev);
+        continue;
+      }
+      out.set(key, {
+        cost: roundCost(prev.cost + c.cost),
+        // `unknownQty` (lote sin costo) y `estimatedCost` (faltante estimado al
+        // último precio) significan lo mismo para quien lee: el número no es exacto.
+        estimated: prev.estimated || c.estimatedCost > 0 || c.unknownQty > 0,
+        pending: prev.pending,
+      });
+    }
+    return out;
+  }
 
   async getUsage(from: Date, to: Date): Promise<InventoryUsageReport> {
     const grouped = await this.prisma.inventoryMovement.groupBy({
@@ -130,6 +194,7 @@ export class InventoryUsageService {
         select: { id: true, name: true, unit: true },
       }),
     ]);
+    const wasteCosts = await this.wasteCostByStockable(from, to);
     const ingMap = new Map(ingredients.map((i) => [i.id, i]));
     const prodMap = new Map(products.map((p) => [p.id, p]));
     const subMap = new Map(subproducts.map((s) => [s.id, s]));
@@ -186,10 +251,19 @@ export class InventoryUsageService {
       const wasteForLoss = Math.max(0, acc.waste);
       const wastePct =
         consumed + wasteForLoss > 0 ? wasteForLoss / (consumed + wasteForLoss) : null;
-      // Pérdida = mermas declaradas + faltantes de conteo (ajustes negativos).
-      const lostQty = wasteForLoss + Math.max(0, -acc.adjustments);
-      const wasteCost =
-        unitCost !== null && lostQty > 0 ? roundMoney(lostQty * unitCost) : unitCost !== null ? 0 : null;
+
+      // Merma: costo REAL del lote (FIFO). Cuadra con el P&G al peso.
+      // `null` = el ledger aún no procesó una merma recién registrada (≤60 s).
+      const fifo = wasteCosts.get(`${acc.entityType}:${acc.entityId}`);
+      const wasteCost = fifo?.pending ? null : roundMoney(Math.max(0, fifo?.cost ?? 0));
+
+      // Faltante de conteo: el ledger NO le atribuye costo (un ajuste sale del
+      // libro sin pasar por resultados), así que acá solo se puede ESTIMAR con
+      // el último precio de compra. Va separado para no mezclar un dato exacto
+      // con uno aproximado en la misma cifra.
+      const shortageQty = roundCost(Math.max(0, -acc.adjustments));
+      const shortageCost =
+        shortageQty <= 0 ? 0 : unitCost !== null ? roundMoney(shortageQty * unitCost) : null;
 
       rows.push({
         entityType: acc.entityType,
@@ -205,22 +279,25 @@ export class InventoryUsageService {
         wastePct: wastePct !== null ? roundCost(wastePct) : null,
         unitCost,
         wasteCost,
+        wasteCostEstimated: fifo?.estimated ?? false,
+        shortageQty,
+        shortageCost,
+        lostCost: roundMoney((wasteCost ?? 0) + (shortageCost ?? 0)),
       });
     }
 
     // Priorizar dónde se pierde plata: $ perdido desc, luego % merma desc.
     rows.sort((a, b) => {
-      const costA = a.wasteCost ?? -1;
-      const costB = b.wasteCost ?? -1;
-      if (costB !== costA) return costB - costA;
+      if (b.lostCost !== a.lostCost) return b.lostCost - a.lostCost;
       return (b.wastePct ?? 0) - (a.wastePct ?? 0);
     });
 
-    const totalWasteCost = roundMoney(
-      rows.reduce((acc, r) => acc + (r.wasteCost ?? 0), 0),
+    const totalWasteCost = roundMoney(rows.reduce((acc, r) => acc + (r.wasteCost ?? 0), 0));
+    const totalShortageCost = roundMoney(
+      rows.reduce((acc, r) => acc + (r.shortageCost ?? 0), 0),
     );
     const unknownCostCount = rows.filter(
-      (r) => r.wasteCost === null && (r.waste > 0 || r.adjustments < 0),
+      (r) => r.shortageCost === null || r.wasteCost === null,
     ).length;
 
     return {
@@ -228,6 +305,7 @@ export class InventoryUsageService {
       to: to.toISOString(),
       rows,
       totalWasteCost,
+      totalShortageCost,
       unknownCostCount,
     };
   }

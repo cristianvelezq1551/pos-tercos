@@ -77,6 +77,13 @@ export function InvoiceConfirmModal({
   const [iva, setIva] = useState<string>(
     draft.extraction.iva !== null ? String(draft.extraction.iva) : '',
   );
+  // La IA lo saca de la línea "domicilio/envío/flete" (que ya NO llega como
+  // ítem). Si no lo trae, queda vacío y se escribe a mano.
+  const [freight, setFreight] = useState<string>(
+    draft.extraction.freight !== null && draft.extraction.freight !== undefined
+      ? String(draft.extraction.freight)
+      : '',
+  );
   const [notes, setNotes] = useState('');
 
   // "Nace pagada" — default sí (el 95% de las facturas ya están pagadas).
@@ -89,7 +96,7 @@ export function InvoiceConfirmModal({
 
   const handleConfirm = async (): Promise<void> => {
     setError(null);
-    const v = validateInvoice({ supplierMode, supplierId, newSupplierNit, newSupplierName, suppliers, rows, total, iva, invoiceNumber, notes });
+    const v = validateInvoice({ supplierMode, supplierId, newSupplierNit, newSupplierName, suppliers, rows, total, iva, freight, invoiceNumber, notes });
     if (!v.valid) { setError(v.reason); return; }
     setSubmitting(true);
     let uploadedProofKey: string | undefined;
@@ -198,6 +205,8 @@ export function InvoiceConfirmModal({
           onTotalChange={setTotal}
           iva={iva}
           onIvaChange={setIva}
+          freight={freight}
+          onFreightChange={setFreight}
           notes={notes}
           onNotesChange={setNotes}
           computedItemsTotal={computedItemsTotal}

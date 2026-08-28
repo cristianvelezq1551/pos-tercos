@@ -411,6 +411,7 @@ export class InvoicesService {
         supplierNit: supplier.nit,
         itemsCount: input.items.length,
         total: input.total,
+        freight: input.freight ?? 0,
       },
     });
     if (payment) {
@@ -501,14 +502,30 @@ export class InvoicesService {
   }
 
   /** FASE 4 ajustes 2.3 + 2.4: el total declarado coincide (con tolerancia) con
-   *  la suma de items, y el IVA no excede el total. */
+   *  la suma de items MÁS el flete, y el IVA no excede el total.
+   *
+   *  El flete entra a la ecuación porque `total` es lo que se pagó al proveedor
+   *  (mercancía + domicilio). Antes de que existiera el campo, una factura con
+   *  domicilio no se podía confirmar: el delta se iba de la tolerancia y la
+   *  única salida era inflar el precio de un insumo — que lo escondía dentro
+   *  del costo de un producto al azar. */
   private assertInvoiceTotalsCoherent(input: ConfirmInvoice): void {
+    const freight = input.freight ?? 0;
+    if (freight > input.total) {
+      throw new BadRequestException(
+        `El domicilio ($${freight.toLocaleString('es-CO')}) no puede ser mayor al total de la factura ($${input.total.toLocaleString('es-CO')}).`,
+      );
+    }
     const itemsSum = input.items.reduce((acc, it) => acc + Number(it.total), 0);
-    const totalDelta = Math.abs(input.total - itemsSum);
+    const totalDelta = Math.abs(input.total - (itemsSum + freight));
     const totalTolerance = Math.max(input.total * 0.01, 1000);
     if (totalDelta > totalTolerance) {
+      const detalle =
+        freight > 0
+          ? `la suma de items ($${itemsSum.toLocaleString('es-CO')}) más el domicilio ($${freight.toLocaleString('es-CO')})`
+          : `la suma de items ($${itemsSum.toLocaleString('es-CO')})`;
       throw new BadRequestException(
-        `Total de la factura ($${input.total.toLocaleString('es-CO')}) no coincide con la suma de items ($${itemsSum.toLocaleString('es-CO')}). Diferencia: $${totalDelta.toLocaleString('es-CO')} (tolerancia $${Math.round(totalTolerance).toLocaleString('es-CO')}).`,
+        `Total de la factura ($${input.total.toLocaleString('es-CO')}) no coincide con ${detalle}. Diferencia: $${totalDelta.toLocaleString('es-CO')} (tolerancia $${Math.round(totalTolerance).toLocaleString('es-CO')}).`,
       );
     }
     if (input.iva !== undefined && input.iva !== null && input.iva > input.total) {
@@ -600,6 +617,9 @@ export class InvoicesService {
         invoiceNumber: input.invoiceNumber ?? null,
         total: input.total,
         iva: input.iva ?? null,
+        // El flete NO genera invoice_item ni inventory_movement: vive solo acá.
+        // Por eso no toca el FIFO ni el costo de ningún producto.
+        freightAmount: input.freight ?? 0,
         status: 'CONFIRMED',
         confirmedById: userId,
         confirmedAt: new Date(),
@@ -866,6 +886,9 @@ export class InvoicesService {
       invoiceNumber: null,
       total: null,
       iva: null,
+      // El flete no se clona: cada pedido trae el suyo (o ninguno). Heredarlo
+      // haría confirmar en silencio un domicilio que quizá no se cobró.
+      freight: null,
       items: source.items.map((it) => ({
         descriptionRaw: it.descriptionRaw,
         quantity: Number(it.quantity),
@@ -975,6 +998,7 @@ export class InvoicesService {
       invoiceNumber: null,
       total: null,
       iva: null,
+      freight: null,
       items: [],
       warnings: ['Carga manual — la IA no extrajo datos. Ingresa proveedor, items y totales.'],
     };

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { GuiaModule } from './guia/guia.module';
 import { CashDrawerModule } from './adapters/cash-drawer/cash-drawer.module';
 import { LLMModule } from './adapters/llm/llm.module';
 import { PrinterModule } from './adapters/printer/printer.module';
@@ -11,6 +12,7 @@ import { NotificationModule } from './notifications/notification.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AuditModule } from './audit/audit.module';
+import { LedgerFreshnessModule } from './common/ledger-freshness/ledger-freshness.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -52,6 +54,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
 
 @Module({
   imports: [
+    GuiaModule,
     TokenVersionModule,
     ClientLogsModule,
     ScheduleModule.forRoot(),
@@ -64,6 +67,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     }),
     PrismaModule,
     AuditModule,
+    LedgerFreshnessModule,
     BusinessConfigModule,
     StorageModule,
     LLMModule,

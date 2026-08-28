@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { GuideChapter } from '../content';
+import type { GuideChapter } from '@pos-tercos/domain';
 
 /** Índice del capítulo. En pantallas grandes queda fijo al costado. */
 export function ChapterToc({ chapter }: { chapter: GuideChapter }) {

@@ -2,6 +2,10 @@
  * Modelo de contenido de la guía. El texto vive como DATOS tipados en el repo
  * (no en la base): se versiona con git, se revisa en el PR y no se puede
  * desincronizar en silencio. Nadie lo edita desde la app.
+ *
+ * Está en `domain` y no en `packages/guia` porque el asistente de IA corre en
+ * el API, que necesita leerlo para responder con base en él. Es dato puro, sin
+ * dependencias ni IO.
  */
 
 /** Quién usa lo que se está explicando. */
@@ -68,4 +72,59 @@ export interface GuideChapter {
   /** Párrafo de entrada del capítulo. */
   intro: string;
   sections: GuideSection[];
+}
+
+
+// ====================================================================
+// FLUJOS — el "cómo se hace" y, sobre todo, DÓNDE aterriza cada número
+// ====================================================================
+
+/**
+ * Un lugar de la app donde se ve el resultado de un flujo, y qué significa lo
+ * que se ve ahí.
+ *
+ * Es la parte que faltaba: los capítulos explican qué es una merma y por qué se
+ * registra, pero nadie sabía en qué seis pantallas aparece después ni por qué
+ * el número no es el mismo en todas.
+ */
+export interface FlowSighting {
+  /** Dónde, como lo lee una persona. Ej: "Gestión → Reportes → Uso y mermas". */
+  where: string;
+  /** Qué vas a ver ahí exactamente. */
+  what: string;
+  /** Qué significa, cuando el número engaña o no es obvio. */
+  means?: string;
+  /** Cuánto tarda en aparecer, si no es inmediato. */
+  delay?: string;
+}
+
+/** Una pregunta real, con su respuesta corta. Alimenta también al asistente. */
+export interface FlowQuestion {
+  q: string;
+  a: string;
+}
+
+export interface GuideFlow {
+  /** Segmento de la URL: /guia/flujos/<id>. kebab-case, estable. */
+  id: string;
+  title: string;
+  /** Una frase: qué logra este flujo. */
+  summary: string;
+  audience: Audience[];
+  /** Nombre del ícono en `chapter-icons.ts`. */
+  icon: string;
+  /** El disparador real: cuándo, en la vida del negocio, se hace esto. */
+  when: string;
+  /** Qué tiene que existir antes de empezar. Vacío = nada. */
+  before: string[];
+  /** El paso a paso. */
+  steps: GuideStep[];
+  /** Dónde se ve el resultado. El corazón del flujo. */
+  sightings: FlowSighting[];
+  /** Errores que la gente comete de verdad, y cómo se salen de ellos. */
+  pitfalls: GuideBlock[];
+  /** Preguntas concretas con nombre propio ("el repollo salió defectuoso"). */
+  questions: FlowQuestion[];
+  /** Capítulos relacionados, por id, para leer el porqué. */
+  seeAlso?: string[];
 }

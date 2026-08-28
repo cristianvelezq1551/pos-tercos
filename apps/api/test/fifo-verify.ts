@@ -7,6 +7,7 @@
  */
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RecipesService } from '../src/recipes/recipes.service';
+import { LedgerFreshnessService } from '../src/common/ledger-freshness/ledger-freshness.service';
 import { CogsService } from '../src/reports/cogs.service';
 
 const D = (h: number) => new Date(`2026-03-15T${String(h).padStart(2, '0')}:00:00.000Z`);
@@ -22,7 +23,11 @@ function assertEq(label: string, actual: unknown, expected: unknown): void {
 async function main(): Promise<void> {
   const prisma = new PrismaService();
   await prisma.$connect();
-  const cogs = new CogsService(prisma, new RecipesService(prisma));
+  const cogs = new CogsService(
+    prisma,
+    new RecipesService(prisma),
+    new LedgerFreshnessService(),
+  );
 
   // ── Catálogo ──────────────────────────────────────────────────
   const pollo = await prisma.ingredient.create({

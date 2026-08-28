@@ -1,5 +1,7 @@
 import {
   Box,
+  ClipboardCheck,
+  Coins,
   CookingPot,
   Globe,
   LineChart,
@@ -8,6 +10,7 @@ import {
   ShieldCheck,
   ShoppingBasket,
   ShoppingCart,
+  Trash2,
   TrendingUp,
   Users,
   Wallet,
@@ -31,6 +34,9 @@ const ICONS: Record<string, LucideIcon> = {
   'line-chart': LineChart,
   users: Users,
   'shield-check': ShieldCheck,
+  trash: Trash2,
+  'clipboard-check': ClipboardCheck,
+  coins: Coins,
 };
 
 export function chapterIcon(name: string): LucideIcon {
