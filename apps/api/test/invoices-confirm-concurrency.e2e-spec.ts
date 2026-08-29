@@ -6,7 +6,7 @@
  * doble-aplicado + lotes fantasma en el FIFO). El fix añade un claim atómico
  * (`updateMany WHERE status=PENDING_REVIEW`) dentro de la tx. Este e2e lo ejerce:
  * dos confirms EN PARALELO → exactamente uno gana y el inventario se escribe UNA
- * sola vez. Server en `listen(0)` para concurrencia real.
+ * sola vez. El servidor ya escucha (`bootstrapApp`), que es lo que permite concurrencia real.
  */
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
@@ -32,7 +32,6 @@ describe('Race confirm de factura vs confirm concurrente E2E', () => {
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
-    await app.listen(0);
     request = supertest(app.getHttpServer());
 
     const hash = await bcrypt.hash('dev12345', 10);

@@ -9,7 +9,7 @@
  *
  * Nunca puede quedar plata cobrada (venta PAGADO) fuera del `expectedCash` de la
  * caja cerrada (arqueo ciego a una venta = descuadre real, el evento más sensible
- * del POS). El servidor escucha en `listen(0)` para permitir requests genuinamente
+ * del POS). El servidor ya escucha (lo deja así `bootstrapApp`), que es lo que permite requests genuinamente
  * concurrentes (el server ephemeral por-request de supertest colisiona).
  */
 import * as bcrypt from 'bcrypt';
@@ -35,7 +35,6 @@ describe('Race cierre de caja vs cobro concurrente E2E', () => {
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
-    await app.listen(0);
     request = supertest(app.getHttpServer());
 
     const hash = await bcrypt.hash('dev12345', 10);
