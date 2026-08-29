@@ -45,6 +45,10 @@ function mismoNumero(x: number | null | undefined, y: number | null | undefined)
 function mismoTexto(a: string | null | undefined, b: string | null | undefined): boolean {
   const norm = (s: string | null | undefined): string =>
     (s ?? '')
+      // El número de renglón del papel («1.- KOLA…»): una lectura lo incluye y
+      // la otra no, y eso marcaba las 16 líneas como distintas. Es el mismo
+      // nombre; señalarlo es ruido que tapa los desacuerdos de verdad.
+      .replace(/^\s*\d{1,3}\s*[.\-–)]+\s*/, '')
       .toLowerCase()
       .normalize('NFD')
       .replace(/[̀-ͯ]/g, '')
@@ -85,6 +89,19 @@ function compararEncabezado(a: ExtractedInvoice, b: ExtractedInvoice): string[] 
   return avisos;
 }
 
+/**
+ * A partir de acá, listar renglón por renglón deja de ayudar: si media factura
+ * discrepa en lo mismo, lo que pasó no es un error de una línea sino que una
+ * lectura tomó otra columna. Un muro de treinta avisos se ignora entero —
+ * justo lo contrario de lo que este trabajo busca.
+ */
+const MAX_AVISOS_POR_CAMPO = 3;
+
+/** Agrupa: pocos casos se listan uno a uno; muchos, se resumen en una frase. */
+function resumirSiSonMuchos(avisos: string[], resumen: (n: number) => string): string[] {
+  return avisos.length > MAX_AVISOS_POR_CAMPO ? [resumen(avisos.length)] : avisos;
+}
+
 /** Desacuerdos línea por línea. */
 function compararLineas(a: ExtractedInvoice, b: ExtractedInvoice): string[] {
   const avisos: string[] = [];
@@ -99,34 +116,71 @@ function compararLineas(a: ExtractedInvoice, b: ExtractedInvoice): string[] {
     return avisos;
   }
 
+  const { cantidades, totales, precios, nombres } = recolectarPorCampo(itemsA, itemsB);
+  // Las cantidades NO se resumen: son el error que ninguna suma detecta, y cada
+  // una señala una línea concreta contra la que hay que mirar el papel.
+  avisos.push(...cantidades);
+  avisos.push(
+    ...resumirSiSonMuchos(
+      totales,
+      (n) =>
+        `Los totales de ${n} líneas se leyeron distinto en cada intento. Cuando falla en tantas a la vez suele ser que una lectura tomó otra columna del papel (por ejemplo el precio sin IVA): revisa la factura completa antes de confirmar.`,
+    ),
+  );
+  avisos.push(
+    ...resumirSiSonMuchos(
+      precios,
+      (n) => `Los precios unitarios de ${n} líneas se leyeron distinto. Revisa la factura completa.`,
+    ),
+  );
+  avisos.push(
+    ...resumirSiSonMuchos(
+      nombres,
+      (n) =>
+        `Los nombres de ${n} líneas se leyeron distinto entre los dos intentos. Revisa uno por uno que cada línea quede enganchada al insumo correcto.`,
+    ),
+  );
+
+  return avisos;
+}
+
+type Items = ExtractedInvoice['items'];
+
+/** Recorre las líneas y agrupa los desacuerdos por campo. */
+function recolectarPorCampo(itemsA: Items, itemsB: Items) {
+  const cantidades: string[] = [];
+  const totales: string[] = [];
+  const precios: string[] = [];
+  const nombres: string[] = [];
+
   itemsA.forEach((ia, i) => {
     const ib = itemsB[i];
     if (!ib) return;
     const n = i + 1;
     const nombre = (ia.descriptionRaw ?? '').slice(0, 40);
     if (!mismoNumero(ia.quantity, ib.quantity)) {
-      avisos.push(
+      cantidades.push(
         `Línea ${n} («${nombre}»): la CANTIDAD se leyó distinta (${ia.quantity} y ${ib.quantity}). Este error no lo detectan las sumas: entraría al inventario la cantidad equivocada.`,
       );
     }
     if (!mismoNumero(ia.total, ib.total)) {
-      avisos.push(
+      totales.push(
         `Línea ${n} («${nombre}»): el total se leyó distinto (${pesos(ia.total)} y ${pesos(ib.total)}).`,
       );
     }
     if (!mismoNumero(ia.unitPrice, ib.unitPrice)) {
-      avisos.push(
+      precios.push(
         `Línea ${n} («${nombre}»): el precio unitario se leyó distinto (${pesos(ia.unitPrice)} y ${pesos(ib.unitPrice)}).`,
       );
     }
     if (!mismoTexto(ia.descriptionRaw, ib.descriptionRaw)) {
-      avisos.push(
+      nombres.push(
         `Línea ${n}: el nombre se leyó distinto («${nombre}» y «${(ib.descriptionRaw ?? '').slice(0, 40)}»). Revisa que la enganches al insumo correcto.`,
       );
     }
   });
 
-  return avisos;
+  return { cantidades, totales, precios, nombres };
 }
 
 /**
