@@ -11,12 +11,7 @@ export function detectImageMime(buffer: Buffer): SupportedImageMime | null {
   if (buffer.length < 12) return null;
 
   // PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47
-  ) {
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
     return 'image/png';
   }
 
@@ -26,12 +21,7 @@ export function detectImageMime(buffer: Buffer): SupportedImageMime | null {
   }
 
   // GIF: 47 49 46 38 ('GIF8')
-  if (
-    buffer[0] === 0x47 &&
-    buffer[1] === 0x49 &&
-    buffer[2] === 0x46 &&
-    buffer[3] === 0x38
-  ) {
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
     return 'image/gif';
   }
 
@@ -58,8 +48,20 @@ export type SupportedVideoMime = 'video/mp4' | 'video/webm';
 
 /** Marcas (brand, bytes 8-11) de `ftyp` que son video MP4 (no HEIC/AVIF). */
 const MP4_VIDEO_BRANDS = new Set([
-  'isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'mp4v',
-  'avc1', 'dash', 'M4V ', 'M4VH', 'M4VP', 'qt  ',
+  'isom',
+  'iso2',
+  'iso4',
+  'iso5',
+  'iso6',
+  'mp41',
+  'mp42',
+  'mp4v',
+  'avc1',
+  'dash',
+  'M4V ',
+  'M4VH',
+  'M4VP',
+  'qt  ',
 ]);
 
 /**
@@ -71,22 +73,12 @@ export function detectVideoMime(buffer: Buffer): SupportedVideoMime | null {
   if (buffer.length < 12) return null;
 
   // WebM/Matroska: EBML header 1A 45 DF A3
-  if (
-    buffer[0] === 0x1a &&
-    buffer[1] === 0x45 &&
-    buffer[2] === 0xdf &&
-    buffer[3] === 0xa3
-  ) {
+  if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
     return 'video/webm';
   }
 
   // MP4: '....ftyp' + brand de video (los brands de imagen heic/avif se excluyen).
-  if (
-    buffer[4] === 0x66 &&
-    buffer[5] === 0x74 &&
-    buffer[6] === 0x79 &&
-    buffer[7] === 0x70
-  ) {
+  if (buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) {
     const brand = buffer.slice(8, 12).toString('ascii');
     if (MP4_VIDEO_BRANDS.has(brand) || brand.startsWith('mp4')) {
       return 'video/mp4';
@@ -129,20 +121,15 @@ export function mimeForExtension(ext: string): string {
 }
 
 /**
- * Detector permisivo para uploads de productos. A diferencia de
- * detectImageMime (estricto, lo usa invoices porque el LLM rechaza
- * media types incorrectos), acepta más formatos raster: agrega BMP,
- * TIFF, HEIC/HEIF y AVIF. Rechaza SVG por XSS (puede contener JS).
+ * Detector permisivo para uploads de productos y comprobantes. A diferencia de
+ * detectImageMime (estricto, lo usa invoices porque el LLM rechaza media types
+ * incorrectos), acepta más formatos raster: agrega BMP, TIFF, HEIC/HEIF y AVIF.
  *
- * Si los magic bytes no matchean pero el browser declaró image/* y
- * la extensión está en el whitelist, lo aceptamos confiando en el
- * declared mime (último recurso para formatos exóticos).
+ * "Permisivo" es por la LISTA de formatos, no por el criterio: el tipo se
+ * decide SIEMPRE por los magic bytes del archivo. Lo que declara el navegador
+ * y cómo se llama el archivo no participan — los escribe quien sube.
  */
-export function detectImageMimeLoose(
-  buffer: Buffer,
-  declaredMime: string,
-  filename: string,
-): { mime: string; ext: string } | null {
+export function detectImageMimeLoose(buffer: Buffer): { mime: string; ext: string } | null {
   const strict = detectImageMime(buffer);
   if (strict) {
     return { mime: strict, ext: extensionForMime(strict) };
@@ -176,17 +163,11 @@ export function detectImageMimeLoose(
     }
   }
 
-  const head = buffer.slice(0, 256).toString('utf8').toLowerCase();
-  if (head.includes('<svg') || head.includes('<?xml')) {
-    return null;
-  }
-
-  if (declaredMime.toLowerCase().startsWith('image/')) {
-    const fileExt = filename.includes('.') ? filename.split('.').pop()!.toLowerCase() : '';
-    if (fileExt && /^[a-z0-9]{1,5}$/.test(fileExt) && EXTENSION_MIME_MAP[fileExt]) {
-      return { mime: EXTENSION_MIME_MAP[fileExt], ext: fileExt };
-    }
-  }
-
+  // Ningún formato soportado reconoce estos bytes. Antes había acá un "último
+  // recurso" que aceptaba el archivo si el navegador DECLARABA image/* y la
+  // extensión estaba en la tabla — pero las dos cosas las escribe quien sube,
+  // así que bastaba llamar `x.png` a cualquier cosa para alojarla en el bucket.
+  // Los formatos exóticos que justificaban esa rama (BMP, TIFF, HEIC, AVIF) ya
+  // se detectan arriba por sus bytes, así que no cubría ningún caso legítimo.
   return null;
 }
