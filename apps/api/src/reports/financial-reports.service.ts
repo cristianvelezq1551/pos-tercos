@@ -113,6 +113,13 @@ export class FinancialReportsService {
     // muestra como línea aparte del grossMargin (no se mezcla con el COGS).
     const wasteCost = round(pnl.wasteCost);
 
+    // Faltantes de conteo: lo que apareció de menos al contar físicamente.
+    // Pérdida real —el producto salió del negocio sin venderse— que hasta
+    // 2026-08-28 se iba del inventario sin bajar el neto por ningún lado. Va en
+    // línea propia y no dentro de la merma: la merma alguien la declaró, esto
+    // no lo declaró nadie, y verlas separadas es justamente lo que informa.
+    const shrinkageCost = round(pnl.shrinkageCost);
+
     // Compromisos con personas pagados en el mes (H1): un arreglo, un servicio,
     // una compra suelta. NUNCA llegaban al estado de resultados —el servicio
     // solo leía COGS, nómina y costos fijos— así que salían de tesorería sin
@@ -146,6 +153,7 @@ export class FinancialReportsService {
         cortesiasCost -
         refundCost -
         wasteCost -
+        shrinkageCost -
         freightCost -
         payablesPaidCost,
     );
@@ -162,6 +170,7 @@ export class FinancialReportsService {
       revenue,
       cogs,
       wasteCost,
+      shrinkageCost,
       cortesiaCost: cortesiasCost,
       refundCost,
       freightCost,
@@ -191,6 +200,8 @@ export class FinancialReportsService {
       refundCost: round(refundCost),
       wasteCost,
       wasteCostEstimated: pnl.wasteEstimatedCost > 0,
+      shrinkageCost,
+      shrinkageCostEstimated: pnl.shrinkageEstimatedCost > 0,
       freightCost,
       freightInvoiceCount: pnl.freightInvoiceCount,
       purchasedTotal: pnl.purchasedTotal,
@@ -273,6 +284,7 @@ export class FinancialReportsService {
       // no cerraba con esos números, así que explicaba el bajón inventando.
       otherLosses: [
         { label: 'Merma (insumo tirado, a costo)', amount: statement.wasteCost },
+        { label: 'Faltantes (lo que apareció de menos al contar)', amount: statement.shrinkageCost },
         { label: 'Cortesías (producto regalado, a costo)', amount: statement.cortesiasCost },
         { label: 'Reembolsos (comida preparada, a costo)', amount: statement.refundCost },
         { label: 'Domicilios de compra (fletes de proveedor)', amount: statement.freightCost },

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const CORTESIA_SOURCE_TYPES = ['cortesia', 'cortesia_reversal'];
 /** Anulación de merma: netea la merma original en vez de ser un ajuste. */
 const WASTE_REVERSAL_SOURCE_TYPE = 'waste_reversal';
+const STOCK_COUNT_SOURCE_TYPE = 'stock_count';
 
 interface UsageAcc {
   entityType: 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT';
@@ -19,6 +20,8 @@ interface UsageAcc {
   purchased: number;
   waste: number;
   adjustments: number;
+  /** Neto de los conteos físicos (negativo = faltó). */
+  shortage: number;
 }
 
 /**
@@ -95,6 +98,61 @@ export class InventoryUsageService {
     return out;
   }
 
+  /**
+   * Costo REAL de los faltantes de conteo por stockable. Calcado del helper de
+   * merma: el ledger costea cada conteo (§7.v43) y este reporte lee ESA cifra
+   * en vez de estimarla, para que la pérdida por ítem y la línea del P&G sean
+   * el mismo número.
+   */
+  private async shrinkageCostByEntity(
+    from: Date,
+    to: Date,
+  ): Promise<Map<string, { cost: number; estimated: boolean; pending: boolean }>> {
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: {
+        sourceType: STOCK_COUNT_SOURCE_TYPE,
+        createdAt: { gte: from, lte: to },
+      },
+      select: {
+        sourceId: true,
+        entityType: true,
+        ingredientId: true,
+        productId: true,
+        subproductId: true,
+      },
+    });
+    if (movements.length === 0) return new Map();
+
+    const costBySource = await this.cogs.getShrinkageCostBySource(from);
+    const out = new Map<string, { cost: number; estimated: boolean; pending: boolean }>();
+    const contados = new Set<string>();
+    for (const m of movements) {
+      const entityId = m.ingredientId ?? m.productId ?? m.subproductId;
+      if (!entityId || !m.sourceId) continue;
+      const key = `${m.entityType}:${entityId}`;
+      const prev = out.get(key) ?? { cost: 0, estimated: false, pending: false };
+      // Un conteo puede tener el movimiento del faltante Y el de su corrección:
+      // el ledger ya devuelve el neto por conteo, así que se suma UNA vez.
+      const dedupe = `${key}|${m.sourceId}`;
+      if (contados.has(dedupe)) continue;
+      contados.add(dedupe);
+      const c = costBySource.get(m.sourceId);
+      if (!c) {
+        // Mismo criterio que la merma: "todavía no lo sé" y "no costó nada" no
+        // son lo mismo, y este reporte no puede volver a confundirlas.
+        prev.pending = true;
+        out.set(key, prev);
+        continue;
+      }
+      out.set(key, {
+        cost: roundCost(prev.cost + c.cost),
+        estimated: prev.estimated || c.estimatedCost > 0 || c.unknownQty > 0,
+        pending: prev.pending,
+      });
+    }
+    return out;
+  }
+
   async getUsage(from: Date, to: Date): Promise<InventoryUsageReport> {
     const grouped = await this.prisma.inventoryMovement.groupBy({
       // `sourceType` va en el groupBy —no solo en el where— porque las REVERSAS
@@ -135,6 +193,7 @@ export class InventoryUsageService {
           purchased: 0,
           waste: 0,
           adjustments: 0,
+          shortage: 0,
         };
         accByEntity.set(key, acc);
       }
@@ -165,7 +224,15 @@ export class InventoryUsageService {
           acc.waste += -delta;
           break;
         case 'MANUAL_ADJUSTMENT':
-          acc.adjustments += delta;
+          // Separadas a propósito, porque son cosas distintas:
+          //  - conteo físico  → FALTANTE: pérdida real, con costo del lote.
+          //  - ajuste a mano  → CORRECCIÓN de un dato mal cargado, sin costo.
+          // Mezcladas, una reposición manual positiva tapaba un faltante y la
+          // cantidad quedaba en cero justo donde había algo que mirar. Además
+          // la cantidad y el costo salían de poblaciones distintas: el costo ya
+          // viene solo de los conteos (§7.v43), así que la cantidad también.
+          if (g.sourceType === STOCK_COUNT_SOURCE_TYPE) acc.shortage += delta;
+          else acc.adjustments += delta;
           break;
         // INITIAL no es uso del período, es base.
       }
@@ -195,6 +262,7 @@ export class InventoryUsageService {
       }),
     ]);
     const wasteCosts = await this.wasteCostByStockable(from, to);
+    const shrinkageCosts = await this.shrinkageCostByEntity(from, to);
     const ingMap = new Map(ingredients.map((i) => [i.id, i]));
     const prodMap = new Map(products.map((p) => [p.id, p]));
     const subMap = new Map(subproducts.map((s) => [s.id, s]));
@@ -207,7 +275,10 @@ export class InventoryUsageService {
         acc.productionOut !== 0 ||
         acc.productionIn !== 0 ||
         acc.waste !== 0 ||
-        acc.adjustments !== 0;
+        acc.adjustments !== 0 ||
+        // Un item cuya ÚNICA novedad del período es un faltante de conteo es
+        // justo el que hay que ver: sin esta condición se caía del reporte.
+        acc.shortage !== 0;
       if (!hasActivity) continue;
 
       let name = acc.entityId;
@@ -257,13 +328,24 @@ export class InventoryUsageService {
       const fifo = wasteCosts.get(`${acc.entityType}:${acc.entityId}`);
       const wasteCost = fifo?.pending ? null : roundMoney(Math.max(0, fifo?.cost ?? 0));
 
-      // Faltante de conteo: el ledger NO le atribuye costo (un ajuste sale del
-      // libro sin pasar por resultados), así que acá solo se puede ESTIMAR con
-      // el último precio de compra. Va separado para no mezclar un dato exacto
-      // con uno aproximado en la misma cifra.
-      const shortageQty = roundCost(Math.max(0, -acc.adjustments));
+      // Faltante de conteo: desde §7.v43 el ledger SÍ lo costea, así que acá va
+      // el costo REAL del lote que salió — la misma cifra que la línea del P&G.
+      // Antes se estimaba con el último precio de compra, y eso dejaba dos
+      // números distintos para la misma pérdida según qué pantalla se mirara.
+      // Neto de los conteos: si uno declaró de menos y otro lo corrigió, el
+      // faltante que queda es la diferencia, no el bruto del primero.
+      const shortageQty = roundCost(Math.max(0, -acc.shortage));
+      const faltanteFifo = shrinkageCosts.get(`${acc.entityType}:${acc.entityId}`);
+      // Sin faltante neto no hay nada que valorizar: son $0, no "no lo sé". El
+      // caso existe —un conteo que encuentra DE MÁS deja movimiento en el
+      // período pero su costo se netea en el mes en que se declaró la pérdida,
+      // así que este conteo no tiene entrada propia en el ledger— y marcarlo
+      // como desconocido inflaba el contador de "sin poder valorizar" con
+      // filas que no habían perdido nada.
       const shortageCost =
-        shortageQty <= 0 ? 0 : unitCost !== null ? roundMoney(shortageQty * unitCost) : null;
+        shortageQty <= 0 ? 0
+        : faltanteFifo === undefined || faltanteFifo.pending ? null
+        : roundMoney(Math.max(0, faltanteFifo.cost));
 
       rows.push({
         entityType: acc.entityType,
@@ -282,6 +364,7 @@ export class InventoryUsageService {
         wasteCostEstimated: fifo?.estimated ?? false,
         shortageQty,
         shortageCost,
+        shortageCostEstimated: shortageCost !== null && (faltanteFifo?.estimated ?? false),
         lostCost: roundMoney((wasteCost ?? 0) + (shortageCost ?? 0)),
       });
     }

@@ -37,6 +37,9 @@ export interface BreakEvenInput {
   cortesiaCost: number;
   /** Costo de la comida de los pedidos reembolsados. */
   refundCost: number;
+  /** Faltantes detectados al contar. Variable: escala con el movimiento del
+   *  local, igual que la merma, así que pesa en el margen de contribución. */
+  shrinkageCost?: number;
   /** Domicilios/fletes que cobraron los proveedores por traer la mercancía en
    *  el período. Variable: escala con las compras. */
   freightCost: number;
@@ -45,7 +48,7 @@ export interface BreakEvenInput {
 }
 
 export interface BreakEvenResult {
-  /** Ingresos − COGS − merma − cortesías − reembolsos − fletes de compra. */
+  /** Ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes. */
   contributionMargin: number;
   /** contributionMargin / revenue. null si no hay ingresos. */
   contributionMarginPct: number | null;
@@ -63,7 +66,8 @@ export function computeBreakEven(input: BreakEvenInput): BreakEvenResult {
     input.wasteCost -
     input.cortesiaCost -
     input.refundCost -
-    input.freightCost;
+    input.freightCost -
+    (input.shrinkageCost ?? 0);
   const contributionMarginPct =
     input.revenue > 0 ? contributionMargin / input.revenue : null;
 

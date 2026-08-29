@@ -73,12 +73,32 @@ function ShortageCost({ row }: { row: InventoryUsageRow }) {
   if (row.shortageQty <= 0) return <span className="text-muted-foreground">—</span>;
   if (row.shortageCost === null) {
     return (
-      <span className="text-muted-foreground" title="Sin factura que le dé un costo de referencia">
-        sin costo
+      <span
+        className="text-muted-foreground"
+        title="El costeo todavía no puede valorizarlo: falta cargar la compra de la que salió"
+      >
+        sin valorizar
       </span>
     );
   }
-  return <span className="text-amber-400">~{formatCop(row.shortageCost)}</span>;
+  // Desde §7.v43 esta cifra es el costo REAL del lote que salió, no un
+  // estimado: la misma que la línea "Faltantes" del estado financiero. La
+  // tilde queda SOLO cuando de verdad se estimó (faltó sobre inventario ya en
+  // negativo), igual que en la columna de merma — ponerla siempre hacía leer
+  // como aproximado un número exacto que además sí baja el resultado del mes.
+  return (
+    <span
+      className="text-amber-400"
+      title={
+        row.shortageCostEstimated
+          ? 'Parte de este costo es estimado: faltó sobre existencias en negativo. Se corrige solo al cargar la factura de esa compra.'
+          : undefined
+      }
+    >
+      {row.shortageCostEstimated ? '~' : ''}
+      {formatCop(row.shortageCost)}
+    </span>
+  );
 }
 
 /** Umbrales orientativos para comida rápida: <2% normal, 2-5% mirar, >5% problema. */
