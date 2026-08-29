@@ -28,3 +28,4 @@ export type {
   PurchaseSuggestionEvalRequest,
   PurchaseSuggestionEvalResult,
 } from './types';
+export { compararExtracciones } from './compare-extractions';
