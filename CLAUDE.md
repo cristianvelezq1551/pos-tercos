@@ -2938,9 +2938,10 @@ emiten faltantes Y correcciones sueltas; las correcciones van detrás de
 `includeCorrections` (apagado por defecto) porque rompen la conservación del
 valor **a propósito** y dejarían las leyes midiendo un fenómeno que no es error.
 
-⚠️ El reporte de uso y mermas muestra los ajustes **netos**: una reposición
-manual positiva puede tapar un faltante. Donde queda rastro fiel es en el
-historial de conteos y en esta línea del P&G.
+El reporte de uso y mermas **separa** las dos columnas: el faltante sale solo
+de los conteos (`sourceType='stock_count'`) y el ajuste tecleado a mano va
+aparte, así que una reposición manual positiva ya NO puede tapar un faltante
+dejando el neto en cero. Rastro completo: el historial de conteos.
 
 ### Auditoría del propio cambio: tres huecos que abrió reportar el faltante
 Reportar una pérdida nueva no es solo sumar una línea. Al auditar el cambio
@@ -3043,6 +3044,72 @@ El repo ya tenía `hoyLocal()` en `test/helpers/local-day.ts` con ese comentario
 exacto; esa suite no lo usaba. Corregido. **Ninguna otra suite tiene el patrón**
 (en `cogs` y `payroll-weekly` aparece dentro de comentarios y de un caso que
 prueba justamente el comportamiento local correcto).
+
+## 7.v46 Auditoría de la tanda antes de desplegar: el segundo muerto y la pantalla que negaba la pérdida (2026-08-29)
+
+> Auditoría completa de los ajustes pendientes (§7.v41–v45) antes de llevarlos a
+> QA y producción. Los gates ya estaban verdes: los tres hallazgos salieron de
+> leer el código y de correr la suite nueva en aislamiento, no de un test rojo.
+> Verificado: typecheck 13/13, lint 0, unit 1.303, e2e 56 suites / 681.
+> Sin migración.
+
+### 1. La pantalla de uso le decía al dueño que el faltante no cuesta
+§7.v43 hizo que el faltante de conteo fuera una pérdida real: se valoriza al
+costo del lote que salió y **baja el resultado del mes**. El backend quedó
+correcto y la pantalla de *Uso y mermas* se quedó con el texto viejo, que
+afirmaba dos cosas ahora falsas: que la cifra «es aproximada (se estima al
+último precio de compra)» y que **«no entra al estado financiero»**.
+
+Es exactamente la falla que esta tanda de trabajo existe para cerrar: dos
+pantallas diciendo cosas distintas sobre la misma plata, y la que el dueño abre
+para investigar una pérdida era la que la negaba.
+
+- La leyenda ahora explica las tres columnas por lo que son: **merma** (alguien
+  la declaró), **faltante** (apareció al contar) y **ajustes** (corrección de un
+  dato mal cargado — esos sí no cuestan). Y dice que las dos primeras son costo
+  real y bajan el resultado.
+- La tilde de aproximado (`~`) se muestra **solo cuando de verdad se estimó**.
+  Para eso hizo falta un dato que no existía: `InventoryUsageRow.shortageCostEstimated`,
+  espejo de `wasteCostEstimated`. Sin él la fila daba por exacto un número que
+  el estado financiero ya declaraba provisional.
+- «sin costo» pasó a **«sin valorizar»**: el motivo ya no es que falte una
+  factura de referencia, es que el costeo todavía no puede ponerle precio.
+
+### 2. Un ítem sin faltante figuraba como «sin poder valorizar»
+Cuando un conteo encuentra DE MÁS, el ledger netea la devolución en el mes en
+que se declaró la pérdida, así que ese conteo no tiene costo propio. El reporte
+leía esa ausencia como «no lo sé» y contaba la fila entre las no valorizadas,
+aunque en el período no hubiera faltado nada. Sin faltante neto la respuesta es
+**$0**, que no es lo mismo que desconocido. Regresión en `stock-counts`
+(verificada: falla con la lógica anterior).
+
+### 3. El segundo del día en que las promociones no existen
+La simulación financiera (§7.v41) falla al azar si la corrida cruza el último
+segundo del día local. No es un problema de plata:
+
+Una promo «todo el día» se guarda `00:00:00 → 23:59:59` y el motor evalúa la
+ventana como **[inicio, fin)**, así que a las 23:59:59 no aplica. Y no se puede
+escribir mejor: `parseTimeToSeconds` solo acepta horas `00–23`, o sea que
+**ninguna ventana puede cubrir los 86.400 segundos del día**. En el local es un
+segundo de madrugada sin descuento —inofensivo, y cambiar la comparación
+rompería el ramo de cruce de medianoche—; para la contabilidad sombra, que
+asume esas promos siempre vigentes, era un descuadre de dinero que no era de
+dinero.
+
+- La simulación **espera a que pase la medianoche** si arranca una operación en
+  los últimos dos segundos del día (`evitarElSegundoSinPromos`). El margen es de
+  dos segundos porque la promo se evalúa en el SERVIDOR.
+- Y su rango de reportes dejó de ser `hoy..hoy`: va **desde el día en que
+  arrancó la semilla** hasta el actual. Una corrida que empieza a las 23:59
+  termina al día siguiente, y con el rango pegado a «hoy» las ventas de antes de
+  medianoche se caían del reporte.
+- El agujero queda **fijado con un test** en `apply-promotions.test.ts`: es
+  invisible hasta que algo lo cruza, y el que lo cruzó tardó en confesar por qué.
+
+⚠️ La rama de trabajo se llamaba `test/**`, que **no está en los triggers de
+push del CI** (`main`, `refactor/**`, `chore/**`, `feat/**`, `fix/**`): sus seis
+commits nunca corrieron en CI. El PR sí lo dispara, pero conviene nombrar las
+ramas con un prefijo cubierto.
 
 ## 8. Estado del proyecto (commits y FASES)
 
