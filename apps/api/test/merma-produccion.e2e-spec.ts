@@ -11,6 +11,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { hoyLocal } from './helpers/local-day';
 
 const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -50,7 +51,11 @@ describe('Merma en producción de subproducto (escenario ensalada)', () => {
   let runBody: { consumed: { entityId: string; quantityConsumed: number }[] };
 
   const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
-  const hoy = () => new Date().toISOString().slice(0, 10);
+  // `hoyLocal`, NUNCA `toISOString().slice(0,10)`: eso es UTC y en Bogotá, a
+  // partir de las 19:00, devuelve el día SIGUIENTE. La suite pasaba toda la
+  // tarde y se caía de noche pidiéndole al P&G un día en el que no había
+  // pasado nada — justo la franja en la que este negocio vende.
+  const hoy = hoyLocal;
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
