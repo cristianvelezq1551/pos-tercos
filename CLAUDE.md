@@ -2650,6 +2650,481 @@ no alcanza el mínimo. Elegir una cantidad sin ver el efecto es teclear a ciegas
 - **Admin**: `/purchase-lists` y `/purchase-lists/[id]`, sidebar en Compras.
 
 
+## 7.v38 La guía enseña a HACER, no solo a entender (2026-08-28)
+
+> El dueño probó la guía y fue claro: explica qué es cada cosa, pero no lleva de
+> la mano por un flujo ni dice dónde aterriza cada número. Ejemplos suyos: crear
+> un producto y su merma, registrar producción, registrar una merma, registrar un
+> costo fijo. Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (domain
+> 434, +10), **e2e 49 suites / 509** (+6), 0 controles <44 px en celular.
+
+### Flujos paso a paso (30), con "dónde se ve"
+Sección nueva junto a los 12 capítulos, que se conservan: los capítulos explican
+QUÉ y POR QUÉ; los flujos, CÓMO y DÓNDE. Cada flujo trae **cuándo se hace**
+(el disparador real), **antes de empezar**, el paso a paso, **dónde se ve el
+resultado** —varias pantallas, qué significa cada número y cuánto tarda en
+aparecer—, lo que sale mal, y preguntas con nombre propio.
+
+`FlowSighting` es la pieza que faltaba: una merma aparece en **seis** pantallas
+con números distintos, y nadie sabía por qué. Ahora cada una dice qué muestra y
+qué significa.
+
+### Asistente de IA con base en la propia guía
+`POST /guia/preguntar` (`@KitchenOrCashierAccess`, 20/min por usuario, 200 no
+201). Responde SOLO con el contenido de la guía; si le preguntan cuánto se
+vendió, dice dónde mirarlo en vez de inventar cifras.
+
+- **La base de conocimiento se arma del MISMO contenido que lee la pantalla**
+  (`buildGuiaKnowledgeBase`): si cambia un paso, el asistente responde distinto
+  sin que nadie toque el prompt. Un texto aparte para la IA se habría
+  desincronizado a la primera edición.
+- **Recuperación por relevancia**: mandarla entera son ~23k tokens por pregunta
+  (caro y ruidoso). Se manda el índice completo —barato, y evita el falso "no
+  está en la guía"— más el texto de lo que más se parece: **~5,2k tokens**.
+  El scoring pesa DÓNDE cae cada término (título 12 · resumen 5 · cuerpo 1, con
+  techo) y hace match por raíz de 4 letras. Sin pesos, "cómo cierro la caja"
+  traía el flujo de vender, que menciona "caja" de pasada. 10 tests.
+- **Sin llave configurada responde 503 explicando que la guía escrita tiene la
+  respuesta.** No inventa ni finge. El e2e cubre los dos caminos.
+- El cocinero recibe solo SUS flujos como contexto (`audience`), lo que además
+  abarata su pregunta.
+
+### El contenido se mudó a `packages/domain/src/guia`
+Revierte parte de §7.v37 por una razón nueva: el asistente corre en el API, y
+`packages/guia` es source-only (lo transpilan los Next), así que Nest no puede
+importarlo. `domain` sí compila a `dist`. Es dato puro sin IO. `packages/guia`
+conserva los renderizadores y re-exporta el contenido, así que las apps no
+cambiaron un solo import.
+
+### Gotcha reencontrado
+Un `nest start --watch` **de dos días** tenía el puerto 3001 y servía un `dist`
+viejo: la ruta nueva daba 404 con el módulo correctamente mapeado en el log.
+Ya estaba en la memoria de §7.v18 y volvió a pasar — si el API "responde cosas
+viejas" en dev, buscar zombis ANTES de dudar del código.
+
+## 7.v39 La guía cubre TODA la app: 30 flujos por perfil (2026-08-28)
+
+> "8 son muy pocos, solo te di ejemplos": auditoría de las ~140 mutaciones del
+> API para sacar los flujos reales de cada perfil. Verificado: typecheck 13/13,
+> lint 0, unit 12/12 (domain 475), **e2e 51 suites / 544**, 0 controles <44 px.
+
+**30 flujos** agrupados por área (`FlowArea`, porque 30 tarjetas sueltas no se
+navegan): 9 de caja, 4 de cocina, 3 de inventario, 2 de compras, 4 de catálogo,
+5 de dinero, 2 de configuración, 1 de control. Por perfil: **caja 9 · cocina 5 ·
+dueño 25**.
+
+### Tres correcciones de fondo al asistente
+1. **La recuperación se degradó con 30 flujos** (10/17 acertaba el primero, y en
+   un caso el correcto no llegaba). Causa: un término genérico en un título
+   pesaba igual que uno distintivo. Se agregó **IDF** —un término que está en
+   media guía vale casi cero— más raíz de palabra con mínimo de 4 caracteres
+   (sin él, "arriendo" se recortaba a "arr" y no encontraba "arriendos").
+   Resultado: **19/19 llegan**, 15/19 primero.
+2. **El modelo respondía en VOSEO** ("escribís, marcás, guardás"), que viola la
+   regla de copy del repo. El prompt ahora lo prohíbe con ejemplos concretos —un
+   modelo sigue un ejemplo mucho mejor que una regla— y `tieneVoseo()` (puro,
+   6 tests) lo verifica. Detectarlo por terminación NO sirve: "más" y "después"
+   acaban igual, y **el futuro en tuteo también** ("marcarás", "podrás"). Se
+   distingue por la raíz: el futuro conserva el infinitivo, el voseo lo recorta.
+3. **Una respuesta vacía del proveedor se devolvía como respuesta buena**,
+   dejando un recuadro en blanco. Ahora es un fallo honesto (503).
+
+### El e2e del asistente ya NO llama al modelo real
+Cada test tardaba 2,4–3,4 s, peligrosamente cerca del timeout de 5 s de jest.
+Al pasarse, la suite abortaba sin correr su `cleanDb` y **arrastraba a 30 suites
+siguientes** con errores que no tenían nada que ver (404 al crear ventas, 409 de
+caja abierta). Se mockea `LLMService`: 8 tests en 75 ms, sin red y sin cobrar.
+Lo que se verifica es el CONTRATO —validación, roles, prompt con la guía dentro,
+proveedor caído—; la calidad de la recuperación se mide en `domain`.
+
+⚠️ **Correr varias veces el e2e en paralelo corrompe la base de test**: el
+`cleanDb` de una borra los usuarios de otra a mitad de vuelo y aparecen 401 y
+409 sin relación con el cambio. Antes de dudar del código, `pkill -f "jest
+--config"` y correr UNA vez.
+
+## 7.v40 Auditoría de la guía: 3 bugs que introduje y no daban error (2026-08-28)
+
+> Auditoría adversarial de §7.v38/v39 pedida por el dueño. Ninguno de los tres
+> hallazgos rompía nada: por eso ninguno había salido en typecheck, lint ni en
+> 545 tests. Verificado: 13/13, lint 0, unit 12/12, e2e 51/545, builds 8/8.
+
+### 1. El manual interno viajaba al navegador del CLIENTE (el grave)
+`packages/domain` compila a **CommonJS**, que no se puede podar. Al colgar la
+guía del barril principal (`export * from './guia'`), sus ~250 KB entraban en
+el bundle de CUALQUIER app que importara algo de `domain` — y `apps/web` importa
+`buildWebOrderLink` para el checkout. Resultado: quien abría **tercos.co**
+descargaba el manual de operación, con "PIN de aprobación", anomalías, cómo se
+cierra la caja y cuánto cuesta una cortesía.
+
+Se expone por **subruta** (`@pos-tercos/domain/guia`), fuera del barril. Como el
+API compila con `moduleResolution: node` —que no entiende el mapa `exports`—
+hace falta además el stub `packages/domain/guia/package.json`, que resuelve por
+ruta física. **Bundle del cliente: 522 KB → 325 KB (−38 %)**, y sin rastro de la
+guía ni en cliente ni en servidor. Admin y cocina la conservan, que sí la usan.
+
+> Regla que queda: **`domain` es CJS. Todo lo que se cuelgue de su barril entra
+> al bundle de las cinco apps.** Lo pesado va por subruta.
+
+### 2. Diez de veinticinco íconos no existían
+Caían al genérico en silencio: diez tarjetas con el ícono equivocado. Falla
+invisible para el compilador porque `chapterIcon` tiene fallback a propósito.
+Test nuevo: todo icono declarado en el contenido tiene que estar en el mapa.
+
+### 3. El 404 de cocina salía en inglés
+"This page could not be found" — el default de Next. Se destapó verificando que
+un cocinero no pueda abrir un flujo que no le toca (el 404 es correcto; el texto
+no). §3.5 ya lo había corregido en `apps/web` y quedó pendiente en las otras dos.
+Ahora admin y cocina tienen el suyo, con el mismo tono.
+
+### Lo que se auditó y estaba bien
+Integridad del contenido (30 ids únicos, kebab-case, `seeAlso` sin enlaces
+rotos, todos con pasos y con "dónde se ve"), aislamiento por audiencia (el
+cocinero no recibe flujos ajenos ni en la pantalla ni en el contexto de la IA),
+el reintento anti-voseo no puede entrar en bucle (el segundo intento se devuelve
+tal cual), guards y throttle del endpoint, y 7 rutas en celular sin
+desbordamiento, sin controles <44 px y sin errores de consola.
+
+## 7.v41 Simulación financiera aleatoria: la operación probada contra una contabilidad sombra (2026-08-28)
+
+> Las suites existentes prueban escenarios ESCRITOS A MANO: alguien pensó un
+> caso, lo montó y verificó el número — eso encuentra lo que se sospecha. Esta
+> ataca lo que nadie pensó: genera operaciones al azar y exige que todos los
+> reportes cuadren contra una contabilidad independiente.
+> Verificado: 21.000 operaciones sobre 65 semillas, e2e 53 suites, typecheck
+> 13/13, lint 0.
+
+### Qué es
+`apps/api/test/simulacion-financiera.e2e-spec.ts` + `test/simulation/`. Arma un
+negocio completo por HTTP y dispara operaciones elegidas por peso, como un día
+real:
+
+**Caja:** venta de mostrador · domicilio con envío · descuento manual por línea
+y sobre el total (fijo y %) · promoción automática · cuenta dividida en 2-3
+partes · cuenta abierta (crear ahora, cobrar después) · edición de un pedido ya
+cobrado · anulación · reembolso · movimientos de caja · cierre con arqueo de
+efectivo y de cada medio digital.
+**Web del cliente:** pedido para RECOGER y a DOMICILIO desde `POST /web/orders`
+(sin sesión, con token firmado), cobro del cajero, marcar listo y marcar
+entregado.
+**Catálogo:** productos de reventa, preparados con receta y merma, combos,
+**tamaños** (con receta propia aditiva) y **extras** (con su `recipeDelta`).
+**Inventario:** producción de subproductos · merma y su anulación · cortesía y
+su reversa · conteo físico con faltante · compra por factura con flete.
+
+### La regla que la hace útil
+**El modelo sombra está escrito desde esta especificación, nunca copiado de
+`src/`.** Si reusara `expandRecipeOneLevel`, `runLedgerFifo` o
+`applyPromotion`, un error en esas funciones se reflejaría idéntico en el
+"esperado" y el test pasaría celebrando el bug. La receta se expande a mano, la
+cola FIFO se reimplementa en veinte líneas y el motor de promociones vive
+aparte en `test/simulation/promos.ts`.
+
+### Las 19 leyes
+Ingreso igual en P&G, resumen de ventas y suma de ventas · el envío no es
+ingreso pero sí plata recaudada · lo cobrado por método suma el ingreso · el
+COGS es el costo FIFO real lote por lote · merma, cortesía y reembolso cuestan
+lo que costó el lote que salió · las unidades en stock son las que dejó la
+operación · el inventario vale lo que costó lo que queda · **conservación del
+valor: lo comprado = lo consumido + lo que queda** · el efectivo esperado cuadra
+· ninguna venta tiene líneas que no sumen su total · el flete se resta aparte y
+no encarece ningún lote · lo regalado es exactamente lo que dice el descuento ·
+repetir con la misma clave no duplica · el cierre da descuadre 0 · una cuenta
+abierta no aporta un peso hasta cobrarse · el pedido web recorre su ciclo
+(recoger termina en listo, domicilio cierra en entregado) · el tamaño y los
+extras cobran de más y descuentan de más · los cuatro tipos de promoción se
+aplican y ninguna línea mezcla promoción con descuento manual · **el faltante
+detectado al contar sale del inventario y no aparece en ninguna línea del P&G**.
+
+### Hallazgo abierto: el faltante de conteo no está en el P&G (L19)
+Un conteo físico que encuentra menos de lo que dice el sistema genera un ajuste
+manual negativo, y el ledger lo trata como corrección, no como pérdida ("sale
+del libro y listo", `run-ledger.ts`). El valor se va del inventario y **no entra
+ni al costo de lo vendido, ni a la merma, ni a las cortesías**: el margen bruto
+queda alto por exactamente esa plata. Solo se ve en el historial de conteos, y
+en el reporte de uso y mermas aparece NETO (una reposición manual lo compensa y
+puede esconderlo). L19 lo documenta y lo mide; si se decide que un faltante de
+conteo sí es pérdida a reportar, ese caso es el que hay que cambiar.
+
+### Reproducir un fallo
+El mensaje trae la semilla. La corrida entera se deriva de ella:
+```bash
+SIM_SEED=404 SIM_OPS=400 pnpm -F @pos-tercos/api test:e2e -- --testPathPattern simulacion-financiera
+```
+`SIM_SEED` acepta varias separadas por coma. CI corre 5 semillas × 120
+operaciones; el nightly, 40 × 400.
+
+### Tres tolerancias que son decisiones, no laxitud
+- **Deriva FIFO**: `roundCost` trabaja a 4 decimales. La auditoría de 2026-07-25
+  acotó la deriva en **$0,48 por millón**; el test ahora la EXIGE — si la
+  supera, dejó de ser redondeo.
+- **Efectivo esperado, ±1 peso**: prorratear el envío entre las partes de una
+  cuenta dividida produce totales que caen justo en medio peso, y ahí dos sumas
+  de coma flotante equivalentes redondean a lados distintos.
+- **Unidades de stock**: la tolerancia se deriva de CUÁNTOS movimientos tuvo el
+  item (cada `delta` se guarda con 4 decimales), no de un épsilon inventado.
+
+### La trampa del arnés que costó encontrar (arreglada para las 53 suites)
+Con ~10.000 peticiones por corrida aparecían fallos imposibles: un **404 vacío
+en una ruta que existe** y un **401 cuyo cuerpo era el error de autenticación de
+otra API**. La causa no era la app: `app.init()` deja el servidor sin escuchar,
+y entonces **supertest levanta y cierra un socket POR PETICIÓN**; a esa escala
+el sistema recicla puertos en TIME_WAIT y alguna petición aterriza en otro
+proceso que escuche en la máquina. `bootstrapApp` ahora abre **un** socket para
+toda la suite. Las tres suites de concurrencia que ya hacían su propio
+`app.listen(0)` para esquivar el mismo problema quedaron simplificadas.
+
+⚠️ **Dos corridas de e2e a la vez corrompen la base de test** (el `cleanDb` de
+una borra los usuarios de la otra) y **editar el spec mientras corre** hace que
+jest levante un archivo a medio escribir. Los dos síntomas son 401/404 sin
+relación con el cambio.
+
+## 7.v42 Vender sin stock: el costo se estima y la factura lo corrige (2026-08-28)
+
+> `apps/api/test/venta-forzada-costo.e2e-spec.ts`. `force-available.e2e-spec.ts`
+> ya probaba la MECÁNICA (que se pueda cobrar y que el inventario quede en
+> negativo); faltaba probar por la API lo que le importa al dueño: **cuánto
+> costó** ese plato que se vendió sin tener el insumo cargado.
+
+Los cuatro casos, con las cuentas a la vista:
+1. **Sin ninguna compra previa no se inventa un costo**: queda como
+   `cogsUnknownQty`, y el COGS no suma. Decir $0 sería afirmar que el insumo era
+   gratis; decir "no sé" es distinto.
+2. **Con un precio conocido el faltante se ESTIMA** al último precio y se
+   declara estimado (`cogsEstimatedQty > 0`) — un estimado presentado como
+   exacto es el mismo problema que el $0.
+3. **La factura posterior corrige al costo REAL**, por la diferencia y sin
+   contar doble: 200 g estimados a $30 que costaron $50 suben el COGS $4.000, y
+   `cogsEstimatedQty` vuelve a 0.
+4. **La valuación no cuenta las unidades que todavía se deben**: entran 500 g,
+   200 tapan el descubierto, el inventario vale 300 g — no 500.
+
+⚠️ Al escribir estos casos la primera cuenta salió mal y la app tenía razón: la
+compra intermedia ya había saldado el primer descubierto, así que la deuda viva
+era de 200 g y no de 100. Las deudas se saldan con la PRIMERA entrada que llega.
+
+## 7.v43 El faltante de conteo pasa a ser una pérdida con nombre (2026-08-28)
+
+> Lo encontró la simulación (§7.v41 L19): un conteo físico que halla menos de lo
+> que dicen los libros generaba un ajuste negativo que el ledger trataba como
+> corrección — "sale del libro y listo". El valor se iba del inventario y **no
+> entraba a ninguna línea del P&G**, así que el margen bruto quedaba alto por
+> exactamente esa plata. En las corridas medidas, ese faltante invisible era del
+> **mismo orden que la merma declarada** ($3.413 contra $2.259): una se
+> reportaba y la otra no, y la que no se reportaba es la que nadie declaró.
+> Verificado: domain 489, e2e 55 suites / 674, typecheck 13/13, lint 0.
+
+### La regla
+- **`sourceType='stock_count'` ⇒ es pérdida.** Sale en su propia línea
+  (`shrinkageCost`), baja el neto y entra al margen de contribución (escala con
+  el movimiento del local, igual que la merma).
+- **Ajuste manual suelto (sin `sourceType`) ⇒ NO es pérdida.** Ese lo teclea un
+  admin para corregir un dato mal cargado; contarlo como pérdida cobraría dos
+  veces el mismo insumo. El sistema YA distinguía los dos casos — solo no lo
+  aprovechaba.
+- **Línea propia, no dentro de la merma**: la merma alguien la declaró, el
+  faltante apareció solo al contar. Verlas separadas es el dato; si el faltante
+  pesa como la merma, hay algo que revisar en porciones y bodega (la pantalla lo
+  dice explícitamente cuando pasa).
+- **Se estima como todo lo demás** (§7.v32): faltar sobre inventario ya en
+  negativo no lo hace gratis, y la factura posterior corrige al costo real.
+- **Viaja en el snapshot**: sin eso, un P&G que arranque antes del corte perdía
+  la pérdida y el margen volvía a inflarse.
+
+### Dónde
+`run-ledger.ts` (balde `shrinkage` + `shrinkageCostBySource` + `DebtKind`
+`'faltante'`), `PnlReport.shrinkageCost`, `MonthlyStatement`, `computeBreakEven`
+y la línea en Finanzas → Estado. Las historias aleatorias del nightly ahora
+emiten faltantes Y correcciones sueltas; las correcciones van detrás de
+`includeCorrections` (apagado por defecto) porque rompen la conservación del
+valor **a propósito** y dejarían las leyes midiendo un fenómeno que no es error.
+
+El reporte de uso y mermas **separa** las dos columnas: el faltante sale solo
+de los conteos (`sourceType='stock_count'`) y el ajuste tecleado a mano va
+aparte, así que una reposición manual positiva ya NO puede tapar un faltante
+dejando el neto en cero. Rastro completo: el historial de conteos.
+
+### Auditoría del propio cambio: tres huecos que abrió reportar el faltante
+Reportar una pérdida nueva no es solo sumar una línea. Al auditar el cambio
+aparecieron tres consecuencias, las tres cerradas:
+
+1. **La línea estaba en Finanzas pero NO en la pantalla de Costos**, que muestra
+   la merma. El dueño veía media pérdida según qué pantalla abriera.
+2. **Un conteo mal hecho dejaba la pérdida para siempre.** La merma y la
+   cortesía ya tenían camino de vuelta (§7.v18); el faltante nacía sin él, y
+   además el stock volvía SIN costo (10 unidades valuadas como 4). Ahora un
+   conteo que encuentra de más deshace los faltantes pendientes de ese item a su
+   costo original, y **netea en el mes en que se declaró la pérdida**, no en el
+   de la corrección. Lo que sobre es una sobra de verdad y entra sin costo
+   —inventarle un precio sería peor que declararlo desconocido—.
+   ⚠️ El pool de faltantes pendientes **viaja en el snapshot**, como las deudas:
+   sin eso, una corrección posterior al corte no sabía a qué costo devolver
+   (lo detectó la LEY 6 de las historias aleatorias, no una revisión a ojo).
+3. **El reporte de uso ESTIMABA el faltante** al último precio de compra, porque
+   "el ledger no le atribuye costo a un ajuste". Ese comentario quedó obsoleto:
+   ahora lee el costo REAL del ledger, igual que la merma. Si no, había dos
+   números para la misma pérdida según la pantalla — justo lo que esta tanda de
+   trabajo existe para impedir. Hay una ley que fija que coincidan.
+
+### Una cuarta cosa que salió del mismo hilo: la cota de deriva no miraba los movimientos
+La ley del faltante empezó a fallar por $0,062 sobre $1.983 — deriva de
+redondeo, pero mayor de lo que la cota admitía. La causa: las cantidades se
+guardan con **4 decimales** y una receta con merma da gramos periódicos
+(100 / 0,9 = 111,111…), así que cada movimiento redondea un poco contra un
+oráculo de precisión infinita. Sobre cientos de movimientos eso corre los bordes
+de los lotes y el costo FIFO se separa por milésimas.
+
+La cota (`derivaMaxima`) solo miraba el VOLUMEN, así que en una línea chica el
+piso de $0,05 se quedaba corto. Ahora suma un término por movimiento
+(`DERIVA_POR_MOVIMIENTO = 1e-3`), que es lo que corresponde al origen del error.
+Sigue siendo mucho menos que el error más chico que importa: un conteo entero
+mal atribuido vale decenas de pesos, no centésimas.
+
+## 7.v44 Dos costuras de dinero que no tenían una sola prueba (2026-08-28)
+
+### Conciliación bancaria — `conciliacion-bancaria.e2e-spec.ts` (10 casos)
+El parser del CSV tenía tests; **el emparejamiento no tenía ninguno**, ni unit
+ni e2e — y es el que levanta la bandera de fraude. Empareja de forma golosa por
+monto con ventana de ±24 h, así que un orden equivocado empareja el abono que no
+era y deja limpia una venta que no lo está.
+
+Cubre: emparejado exacto · plata en el banco que el POS no registró
+(`unmatched_csv`) · venta cobrada por transferencia que nunca llegó
+(`unmatched_sale`) · cuenta dividida en dos abonos (la unidad de match es el
+PAGO, no la venta) · un mismo pago no empareja dos abonos (si no, un cobro
+duplicado pasaría desapercibido) · la ventana de ±24 h · el efectivo no
+participa · la venta de la NOCHE del último día del extracto sí se revisa
+(regresión de §1.C) · cada fuente solo empareja SUS métodos · un CSV vacío se
+rechaza en vez de devolver un reporte en ceros, que se leería como "todo cuadra".
+
+### Tesorería — `tesoreria-conservacion.e2e-spec.ts` (10 casos)
+Es la pantalla donde se lee "cuánta plata tengo" y arma el saldo sumando SIETE
+fuentes. Cada una tenía su suite; la identidad completa no la verificaba nadie:
+
+    saldo = inicial + cobrado − pagado + traspasos + ajustes
+
+Cubre: el ancla · cobro en efectivo y transferencia a su bolsillo · cuenta
+dividida repartida · **el domicilio no entra a ningún bolsillo** (§7.v30) ·
+traspaso que no cambia el total · factura pagada mixta (con comprobante, como en
+la app) · ajuste manual · anulación de un movimiento · la ley de reconstrucción
+de cada bolsillo · un compromiso pendiente no baja el saldo pero sí lo proyectado.
+
+## 7.v46 Devengado contra pagado: las dos vistas de la misma plata (2026-08-28)
+
+> `apps/api/test/devengado-vs-pagado.e2e-spec.ts` (5 leyes). El negocio lleva
+> DOS libros sobre los mismos gastos y los dos son correctos: el **estado de
+> resultados** cuenta lo DEVENGADO (la nómina y los costos fijos del mes pesan
+> aunque no se hayan pagado — responde "¿este mes gané o perdí?") y **Finanzas
+> más tesorería** cuentan la CAJA (lo que salió del bolsillo y lo que se debe —
+> responde "¿con cuánta plata cuento?"). Cada módulo tenía su suite; que los dos
+> se muevan de forma coherente no lo verificaba nadie.
+
+Las leyes: trabajar sin cobrar YA pesa en el resultado y aparece como pendiente
+· pagar NO cambia el resultado del mes trabajado pero sí la caja **del mes en
+que se paga** · lo devengado de una semana = lo abonado + lo que falta · un
+costo fijo recurrente pesa UNA vez en el mes, se pague cuando se pague · anular
+un pago devuelve la plata al bolsillo y la deuda a pendiente **sin tocar el
+resultado** (anular el PAGO no borra el trabajo).
+
+La separación temporal es el punto: el trabajo puede ser de mayo y la plata
+salir en agosto. Si el pago volviera a restar del resultado, mayo cargaría dos
+veces el mismo sueldo; si la caja lo pusiera en mayo, agosto se leería con más
+plata de la que tiene.
+
+⚠️ `pending.payroll` es el pendiente de TODAS las semanas sin saldar, no el de
+una: la identidad por semana vive en `netOwed = paidTotal + remaining`.
+
+## 7.v45 Un test que se caía todas las noches después de las 7 (2026-08-28)
+
+`merma-produccion.e2e-spec.ts` calculaba "hoy" con `toISOString().slice(0,10)`,
+que es UTC: en Bogotá, a partir de las 19:00, devuelve el día SIGUIENTE. La
+suite pedía el P&G de mañana, no encontraba nada y fallaba — justo en la franja
+en la que este negocio vende. Pasaba toda la tarde y se caía de noche.
+
+El repo ya tenía `hoyLocal()` en `test/helpers/local-day.ts` con ese comentario
+exacto; esa suite no lo usaba. Corregido. **Ninguna otra suite tiene el patrón**
+(en `cogs` y `payroll-weekly` aparece dentro de comentarios y de un caso que
+prueba justamente el comportamiento local correcto).
+
+## 7.v46 Auditoría de la tanda antes de desplegar: el segundo muerto y la pantalla que negaba la pérdida (2026-08-29)
+
+> Auditoría completa de los ajustes pendientes (§7.v41–v45) antes de llevarlos a
+> QA y producción. Los gates ya estaban verdes: los tres hallazgos salieron de
+> leer el código y de correr la suite nueva en aislamiento, no de un test rojo.
+> Verificado: typecheck 13/13, lint 0, unit 1.303, e2e 56 suites / 681.
+> Sin migración.
+
+### 1. La pantalla de uso le decía al dueño que el faltante no cuesta
+§7.v43 hizo que el faltante de conteo fuera una pérdida real: se valoriza al
+costo del lote que salió y **baja el resultado del mes**. El backend quedó
+correcto y la pantalla de *Uso y mermas* se quedó con el texto viejo, que
+afirmaba dos cosas ahora falsas: que la cifra «es aproximada (se estima al
+último precio de compra)» y que **«no entra al estado financiero»**.
+
+Es exactamente la falla que esta tanda de trabajo existe para cerrar: dos
+pantallas diciendo cosas distintas sobre la misma plata, y la que el dueño abre
+para investigar una pérdida era la que la negaba.
+
+- La leyenda ahora explica las tres columnas por lo que son: **merma** (alguien
+  la declaró), **faltante** (apareció al contar) y **ajustes** (corrección de un
+  dato mal cargado — esos sí no cuestan). Y dice que las dos primeras son costo
+  real y bajan el resultado.
+- La tilde de aproximado (`~`) se muestra **solo cuando de verdad se estimó**.
+  Para eso hizo falta un dato que no existía: `InventoryUsageRow.shortageCostEstimated`,
+  espejo de `wasteCostEstimated`. Sin él la fila daba por exacto un número que
+  el estado financiero ya declaraba provisional.
+- «sin costo» pasó a **«sin valorizar»**: el motivo ya no es que falte una
+  factura de referencia, es que el costeo todavía no puede ponerle precio.
+
+### 2. Un ítem sin faltante figuraba como «sin poder valorizar»
+Cuando un conteo encuentra DE MÁS, el ledger netea la devolución en el mes en
+que se declaró la pérdida, así que ese conteo no tiene costo propio. El reporte
+leía esa ausencia como «no lo sé» y contaba la fila entre las no valorizadas,
+aunque en el período no hubiera faltado nada. Sin faltante neto la respuesta es
+**$0**, que no es lo mismo que desconocido. Regresión en `stock-counts`
+(verificada: falla con la lógica anterior).
+
+### 3. El segundo del día en que las promociones no existen
+La simulación financiera (§7.v41) falla al azar si la corrida cruza el último
+segundo del día local. No es un problema de plata:
+
+Una promo «todo el día» se guarda `00:00:00 → 23:59:59` y el motor evalúa la
+ventana como **[inicio, fin)**, así que a las 23:59:59 no aplica. Y no se puede
+escribir mejor: `parseTimeToSeconds` solo acepta horas `00–23`, o sea que
+**ninguna ventana puede cubrir los 86.400 segundos del día**. En el local es un
+segundo de madrugada sin descuento —inofensivo, y cambiar la comparación
+rompería el ramo de cruce de medianoche—; para la contabilidad sombra, que
+asume esas promos siempre vigentes, era un descuadre de dinero que no era de
+dinero.
+
+- La simulación **espera a que pase la medianoche** si arranca una operación en
+  los últimos dos segundos del día (`evitarElSegundoSinPromos`). El margen es de
+  dos segundos porque la promo se evalúa en el SERVIDOR.
+- Y su rango de reportes dejó de ser `hoy..hoy`: va **desde el día en que
+  arrancó la semilla** hasta el actual. Una corrida que empieza a las 23:59
+  termina al día siguiente, y con el rango pegado a «hoy» las ventas de antes de
+  medianoche se caían del reporte.
+- El agujero queda **fijado con un test** en `apply-promotions.test.ts`: es
+  invisible hasta que algo lo cruza, y el que lo cruzó tardó en confesar por qué.
+
+### 4. El hallazgo que solo apareció probando en QA con datos reales
+Con las tres correcciones arriba desplegadas, un conteo que encuentra DE MÁS
+seguía rompiendo la pantalla: no tiene costo propio —su devolución se atribuye
+al conteo que DECLARÓ la pérdida, o sea al mes en que se perdió— y el reporte
+leía esa ausencia como «no lo sé» **para el ítem entero**, borrando el costo
+correcto de los demás conteos del período. En QA: el P&G cobraba $6.500 y la
+pantalla decía «sin valorizar».
+
+Solo un faltante **declarado** (`delta < 0`) sin costo es de verdad un
+«todavía no lo sé». La regresión compara el total del reporte contra la línea
+del P&G, que es el invariante que importa (los dos números tienen que ser el
+mismo). Ninguna suite lo cubría porque ninguna tenía, en un mismo período, el
+conteo que pierde, el que corrige y uno nuevo que vuelve a perder.
+
+⚠️ La rama de trabajo se llamaba `test/**`, que **no está en los triggers de
+push del CI** (`main`, `refactor/**`, `chore/**`, `feat/**`, `fix/**`): sus seis
+commits nunca corrieron en CI. El PR sí lo dispara, pero conviene nombrar las
+ramas con un prefijo cubierto.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

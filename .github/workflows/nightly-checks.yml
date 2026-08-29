@@ -58,3 +58,68 @@ jobs:
         env:
           LEDGER_PROPERTY_RUNS: '5000'
         run: pnpm -F @pos-tercos/domain exec vitest run --testTimeout 120000
+
+  # La operación completa SIMULADA: miles de ventas, descuentos, cuentas
+  # divididas, domicilios, anulaciones, reembolsos, cortesías, mermas,
+  # producción, compras con flete y cierres de caja, generadas al azar y
+  # contrastadas contra una contabilidad sombra. CI corre 5 semillas × 120
+  # operaciones (rápido); acá se sube a 40 × 400 = 16.000 operaciones, que es
+  # donde aparecen los cruces que una corrida corta nunca toca.
+  #
+  # Si falla: el mensaje trae la SEMILLA. Reproducir local es una línea:
+  #   SIM_SEED=<n> SIM_OPS=400 pnpm -F @pos-tercos/api test:e2e -- --testPathPattern simulacion-financiera
+  simulacion-financiera:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      JWT_ACCESS_SECRET: ci-jwt-access-secret-not-for-production-0001
+      JWT_REFRESH_SECRET: ci-jwt-refresh-secret-not-for-production-001
+      WEB_ORDER_TOKEN_SECRET: ci-web-order-token-secret-not-for-prod-0001
+      TZ: America/Bogota
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Generar Prisma Client
+        run: pnpm -F @pos-tercos/api prisma:generate
+
+      - name: Build packages compartidos
+        run: pnpm --filter @pos-tercos/types --filter @pos-tercos/domain build
+
+      # Semillas distintas a las de CI a propósito: repetir las mismas de noche
+      # no exploraría nada nuevo. Una sola invocación de jest para las 40 — la
+      # base de test no admite dos corridas a la vez.
+      - name: Simulación financiera × 40 semillas
+        env:
+          SIM_SEED: '2003,2011,2017,2027,2029,2039,2053,2063,2069,2081,2083,2087,2089,2099,2111,2113,2129,2131,2137,2141,2143,2153,2161,2179,2203,2207,2213,2221,2237,2239,2243,2251,2267,2269,2273,2281,2287,2293,2297,2309'
+          SIM_OPS: '400'
+        run: pnpm -F @pos-tercos/api exec jest --config ./test/jest-e2e.json --runInBand --forceExit --testPathPattern simulacion-financiera

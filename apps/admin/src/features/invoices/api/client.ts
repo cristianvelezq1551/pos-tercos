@@ -4,11 +4,13 @@ import {
   ExtractInvoiceResponseSchema,
   InvoiceDraftResponseSchema,
   InvoiceSchema,
+  UpdateInvoiceFreightSchema,
   TreasuryAnchorDateSchema,
   UploadPaymentProofResponseSchema,
   type ConfirmInvoice,
   type ExtractInvoiceResponse,
   type Invoice,
+  type UpdateInvoiceFreight,
   type InvoiceDraftResponse,
   type UploadPaymentProofResponse,
 } from '@pos-tercos/types';
@@ -142,6 +144,18 @@ export function confirmInvoice(id: string, payload: ConfirmInvoice): Promise<Inv
   return request(
     `/invoices/${id}/confirm`,
     { method: 'POST', body: JSON.stringify(payload) },
+    InvoiceSchema,
+  );
+}
+
+export function updateInvoiceFreight(
+  id: string,
+  payload: UpdateInvoiceFreight,
+): Promise<Invoice> {
+  UpdateInvoiceFreightSchema.parse(payload);
+  return request(
+    `/invoices/${id}/freight`,
+    { method: 'PATCH', body: JSON.stringify(payload) },
     InvoiceSchema,
   );
 }

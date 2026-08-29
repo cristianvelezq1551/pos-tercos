@@ -1,7 +1,8 @@
 'use client';
 
 import type { PayableCommitment } from '@pos-tercos/types';
-import { Button, Card, EmptyState, Input, Money, MoneyInput, Section, cn, formatDate } from '@pos-tercos/ui';
+import {
+  Badge, Button, Card, EmptyState, Input, Money, MoneyInput, Section, cn, formatDate } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { cancelPayable, createPayable, payableProofUrl } from '../api/client';
@@ -44,6 +45,14 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
                   <span className="font-semibold text-foreground">{p.beneficiary}</span>
                   <span className="text-muted-foreground">{p.description}</span>
                   <Money amount={p.amount} size="sm" weight="bold" />
+                  {/* Solo se rotula la excepción: marcar "gasto" en casi todos
+                      sería ruido, y lo que hay que poder ver de un vistazo es
+                      cuál NO va a bajar el resultado del mes. */}
+                  {!p.isExpense ? (
+                    <Badge tone="neutral" size="sm">
+                      Devolución
+                    </Badge>
+                  ) : null}
                   <span className="flex-1" />
                   <Button size="sm" onClick={() => setPaying(p)}>Pagar</Button>
                   <button
@@ -71,6 +80,14 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
                   <span className="font-semibold text-foreground">{p.beneficiary}</span>
                   <span className="text-muted-foreground">{p.description}</span>
                   <Money amount={p.amount} size="sm" weight="bold" />
+                  {/* Solo se rotula la excepción: marcar "gasto" en casi todos
+                      sería ruido, y lo que hay que poder ver de un vistazo es
+                      cuál NO va a bajar el resultado del mes. */}
+                  {!p.isExpense ? (
+                    <Badge tone="neutral" size="sm">
+                      Devolución
+                    </Badge>
+                  ) : null}
                   {p.status === 'PAID' ? (
                     <span className="text-xs text-muted-foreground">
                       {p.cashAmount > 0 && p.bankAmount > 0
@@ -108,6 +125,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
   const [beneficiary, setBeneficiary] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [isExpense, setIsExpense] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,10 +135,16 @@ function CreateForm({ onDone }: { onDone: () => void }) {
     setError(null);
     setPending(true);
     try {
-      await createPayable({ beneficiary: beneficiary.trim(), description: description.trim(), amount: Number(amount) });
+      await createPayable({
+        beneficiary: beneficiary.trim(),
+        description: description.trim(),
+        amount: Number(amount),
+        isExpense,
+      });
       setBeneficiary('');
       setDescription('');
       setAmount('');
+      setIsExpense(true);
       onDone();
     } catch (e) {
       setError(getErrorMessage(e, 'No se pudo crear.'));
@@ -147,6 +171,26 @@ function CreateForm({ onDone }: { onDone: () => void }) {
         </label>
         <Button onClick={submit} disabled={pending || !valid}>{pending ? 'Guardando…' : 'Agregar'}</Button>
       </div>
+
+      {/* Sin esta distinción, devolver un préstamo se leería como una pérdida
+          del mes: esa plata ya se había recibido. */}
+      <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={isExpense}
+          onChange={(e) => setIsExpense(e.target.checked)}
+          disabled={pending}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]"
+        />
+        <span>
+          <span className="font-medium text-foreground">Es un gasto del negocio</span>
+          <span className="block text-muted-foreground">
+            Desmarca solo si estás devolviendo plata que te prestaron. Los gastos bajan el
+            resultado del mes en que los pagas; las devoluciones no.
+          </span>
+        </span>
+      </label>
+
       {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
     </Card>
   );

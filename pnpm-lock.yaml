@@ -538,6 +538,9 @@ importers:
 
   packages/guia:
     dependencies:
+      '@pos-tercos/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@pos-tercos/ui':
         specifier: workspace:*
         version: link:../ui

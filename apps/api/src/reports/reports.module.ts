@@ -4,6 +4,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { RecipesModule } from '../recipes/recipes.module';
 import { WorkersModule } from '../workers/workers.module';
 import { CogsService } from './cogs.service';
+import { PurchasesReportService } from './purchases-report.service';
 import { FinanceSummaryService } from './finance-summary.service';
 import { FinancialReportsService } from './financial-reports.service';
 import { InventoryUsageService } from './inventory-usage.service';
@@ -17,6 +18,7 @@ import { SalesReportsService } from './sales-reports.service';
   imports: [RecipesModule, FixedCostsModule, WorkersModule, InventoryModule],
   controllers: [ReportsController],
   providers: [
+    PurchasesReportService,
     ReportsService,
     ReconciliationService,
     SalesReportsService,

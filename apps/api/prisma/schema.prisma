@@ -396,6 +396,17 @@ model Invoice {
   invoiceNumber     String?       @map("invoice_number")
   total             Decimal?      @db.Decimal(14, 2)
   iva               Decimal?      @db.Decimal(14, 2)
+  /// Domicilio / flete que cobró el proveedor por traer la mercancía.
+  ///
+  /// NO entra al costeo de productos: el COGS sale de `invoice_items` (costo
+  /// del lote FIFO = lineTotal / unidades), y el flete nunca genera un
+  /// inventory_movement. Es un gasto del período que el P&G muestra en su
+  /// propia línea — si se prorrateara en los ítems encarecería insumos al azar
+  /// y desviaría `last_unit_cost` (que alimenta sugerencias, listas y márgenes).
+  ///
+  /// `total` SÍ lo incluye: es lo que se pagó. Por eso la coherencia al
+  /// confirmar es `total ≈ suma(items) + freight_amount`.
+  freightAmount     Decimal       @default(0) @map("freight_amount") @db.Decimal(14, 2)
   photoStorageKey   String?       @map("photo_storage_key")
   aiExtractionJson  Json?         @map("ai_extraction_json")
   aiModelUsed       String?       @map("ai_model_used")
@@ -1308,6 +1319,13 @@ model PayableCommitment {
   beneficiary   String
   description   String
   amount        Decimal       @db.Decimal(14, 2)
+  /// ¿Es un GASTO del negocio (un arreglo, un servicio, una compra suelta) o
+  /// un movimiento financiero (devolver un préstamo que te hicieron)?
+  ///
+  /// Solo los gastos bajan el resultado del mes. Devolver plata que te
+  /// prestaron NO es una pérdida —ya la habías recibido— y contarlo como tal
+  /// mostraría un bajón que no existe. Default true: el caso común es gasto.
+  isExpense     Boolean       @default(true) @map("is_expense")
   status        PayableStatus @default(PENDING)
   cashAmount    Decimal       @default(0) @map("cash_amount") @db.Decimal(14, 2)
   bankAmount    Decimal       @default(0) @map("bank_amount") @db.Decimal(14, 2)

@@ -16,6 +16,7 @@ import {
 import { PromotionGeneralSection, PromotionDiscountSection } from './PromotionDiscountSection';
 import { PromotionWhenSection } from './PromotionWhenSection';
 import { PromotionProductsSection } from './PromotionProductsSection';
+import { PromotionWhenPreview } from './PromotionWhenPreview';
 
 const INITIAL_STATE: FormState = {
   name: '',
@@ -100,6 +101,8 @@ export function PromotionForm({ initial }: PromotionFormProps = {}) {
       <PromotionDiscountSection state={state} onUpdate={update} locked={isEdit} />
 
       <PromotionWhenSection state={state} onUpdate={update} onToggleDay={toggleDay} />
+
+      <PromotionWhenPreview state={state} />
 
       <PromotionProductsSection
         products={products}

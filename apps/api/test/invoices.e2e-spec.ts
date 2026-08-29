@@ -342,6 +342,116 @@ describe('Invoices E2E', () => {
         .expect(400);
     });
 
+    /**
+     * Domicilio / flete de compra (§ campo `freight`).
+     *
+     * La propiedad que estos casos protegen: el flete entra al TOTAL PAGADO
+     * pero NO al costo de ningún producto. Antes de que existiera el campo, una
+     * factura con domicilio simplemente no se podía confirmar — el delta se iba
+     * de la tolerancia — y la única salida era inflar el precio de un insumo,
+     * que lo escondía dentro del COGS de un producto al azar.
+     */
+    describe('domicilio / flete de compra', () => {
+      const ITEM_BASE = {
+        entityType: 'INGREDIENT' as const,
+        descriptionRaw: 'Harina Test',
+        quantity: 5,
+        unit: 'kg',
+        unitPrice: 10000,
+        total: 50000,
+      };
+
+      it('confirma con flete: total = items + flete, y el flete NO toca el costo del insumo', async () => {
+        const FLETE = 8000;
+        const res = await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 58000, // 50.000 de mercancía + 8.000 de domicilio
+            freight: FLETE,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(201);
+
+        expect(res.body.status).toBe('CONFIRMED');
+        expect(res.body.freightAmount).toBe(FLETE);
+        expect(res.body.total).toBe(58000);
+
+        // Lo que de verdad importa: el costo del insumo sale SOLO de la línea.
+        // Si el flete se hubiera prorrateado, esto daría 11.600 y encarecería
+        // en silencio todo lo que se cocine con harina.
+        const ingredient = await prisma.ingredient.findUnique({ where: { id: ingredientId } });
+        expect(Number(ingredient!.lastUnitCost)).toBe(10000);
+
+        // Y no existe ningún movimiento de inventario por el flete: un flete no
+        // se almacena. El único movimiento es el de la harina.
+        const movements = await prisma.inventoryMovement.findMany({
+          where: { sourceType: 'invoice', sourceId: draftInvoiceId },
+        });
+        expect(movements).toHaveLength(1);
+        expect(Number(movements[0].delta)).toBeGreaterThan(0);
+      });
+
+      it('sin flete la factura queda en 0, no en null (ninguna suma necesita null-check)', async () => {
+        const res = await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 50000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(201);
+
+        expect(res.body.freightAmount).toBe(0);
+      });
+
+      it('rechaza si el total no cubre items + flete', async () => {
+        await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 50000, // se declaró flete pero el total sigue siendo solo la mercancía
+            freight: 8000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(400);
+      });
+
+      it('rechaza un flete mayor al total de la factura', async () => {
+        await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 50000,
+            freight: 60000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(400);
+      });
+
+      it('rechaza un flete negativo (restaría del gasto del mes)', async () => {
+        await request
+          .post(`/invoices/${draftInvoiceId}/confirm`)
+          .set('Authorization', `Bearer ${duenoToken}`)
+          .send({
+            supplierNit: '900123456-1',
+            supplierName: 'Proveedor Test Invoice',
+            total: 42000,
+            freight: -8000,
+            items: [{ ...ITEM_BASE, ingredientId }],
+          })
+          .expect(400);
+      });
+    });
+
     it('rechaza cuando ingredientId no existe', async () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
       await request
@@ -454,6 +564,95 @@ describe('Invoices E2E', () => {
         .expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
+    });
+
+    it('filtra por rango de fechas, y sin fechas sigue mostrando todo', async () => {
+      const hoy = new Date();
+      const ymd = (d: Date): string =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      const todas = (
+        await request.get('/invoices').set('Authorization', `Bearer ${adminToken}`).expect(200)
+      ).body as unknown[];
+      expect(todas.length).toBeGreaterThan(0);
+
+      // Las facturas de esta suite se crearon hoy → el rango de hoy las trae.
+      const deHoy = (
+        await request
+          .get(`/invoices?from=${ymd(hoy)}&to=${ymd(hoy)}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .expect(200)
+      ).body as unknown[];
+      expect(deHoy.length).toBe(todas.length);
+
+      // Un rango viejo no trae ninguna: el filtro filtra de verdad.
+      const viejas = (
+        await request
+          .get('/invoices?from=2020-01-01&to=2020-01-31')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .expect(200)
+      ).body as unknown[];
+      expect(viejas).toHaveLength(0);
+    });
+
+    it('una extracción guardada ANTES del campo de domicilio sigue siendo legible', async () => {
+      // Regresión: el schema crece, pero lo que ya está en la base no. Sin
+      // normalizar antes de parsear, toda factura anterior a `freight` daba 404
+      // acá y perdía los avisos de la IA y el desglose de empaque al reanudar
+      // el borrador.
+      const vieja = await prisma.invoice.create({
+        data: {
+          status: 'PENDING_REVIEW',
+          aiModelUsed: 'test-mock',
+          aiExtractionJson: {
+            supplierName: 'Proveedor Viejo',
+            supplierNit: '900000111-1',
+            invoiceNumber: 'F-VIEJA',
+            total: 50_000,
+            iva: null,
+            // Sin `freight`: así se guardaban antes de este cambio.
+            items: [
+              {
+                descriptionRaw: 'Pan tajado 500 g X 10 U',
+                quantity: 1,
+                unit: 'paquete',
+                unitPrice: 50_000,
+                total: 50_000,
+                packUnits: 10,
+                packSizePerUnit: 500,
+                packSizeMeasure: 'g',
+              },
+            ],
+            warnings: ['El total no se leyó con claridad.'],
+          },
+        },
+      });
+
+      const res = await request
+        .get(`/invoices/${vieja.id}/raw-extraction`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(res.body.supplierName).toBe('Proveedor Viejo');
+      expect(res.body.freight).toBeNull();
+      // Lo que se perdía: el aviso y el empaque que sugiere la conversión.
+      expect(res.body.warnings).toEqual(['El total no se leyó con claridad.']);
+      expect(res.body.items[0].packUnits).toBe(10);
+      expect(res.body.items[0].packSizePerUnit).toBe(500);
+    });
+
+    it('una fecha mal formada es 400 (no se ignora en silencio)', async () => {
+      await request
+        .get('/invoices?from=ayer')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(400);
+    });
+
+    it('rango invertido es 400', async () => {
+      await request
+        .get('/invoices?from=2026-05-10&to=2026-05-01')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(400);
     });
   });
 

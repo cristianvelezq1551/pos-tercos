@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_SECTIONS } from '../content';
+import { ALL_SECTIONS } from '@pos-tercos/domain/guia';
 import { MAX_RESULTS, searchSections } from './search';
 
 describe('searchSections', () => {

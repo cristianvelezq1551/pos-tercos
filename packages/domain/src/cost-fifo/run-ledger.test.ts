@@ -1202,3 +1202,168 @@ describe('runLedgerFifo · anulación cross-mes (decisión 2026-08-25)', () => {
     expect(agostoCost).toBe(0);
   });
 });
+
+describe('runLedgerFifo · faltante de conteo vs corrección manual', () => {
+  it('un faltante de conteo es PÉRDIDA y sale en su propia línea', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({
+        delta: -3,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'conteo1',
+      }),
+    ]);
+
+    // 3 unidades a $100 que salieron del negocio sin venderse.
+    expect(r.shrinkage.reduce((a, f) => a + f.cost, 0)).toBe(300);
+    expect(r.shrinkageCostBySource.get('conteo1')?.cost).toBe(300);
+    // No se confunde con la merma declarada ni con una cortesía.
+    expect(r.waste).toHaveLength(0);
+    expect(r.cortesia).toHaveLength(0);
+    // Y el inventario baja igual.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 7, value: 700, unknownQty: 0 });
+  });
+
+  it('un ajuste manual SUELTO no es pérdida: corrige un dato, no declara nada', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({ delta: -3, type: 'MANUAL_ADJUSTMENT', sourceType: null, sourceId: null }),
+    ]);
+
+    // El stock baja, pero no hay pérdida que reportar: ese ajuste corrige una
+    // entrada mal cargada. Contarlo como pérdida cobraría dos veces el insumo.
+    expect(r.shrinkage).toHaveLength(0);
+    expect(r.waste).toHaveLength(0);
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 7, value: 700, unknownQty: 0 });
+  });
+
+  it('un faltante sobre inventario en negativo se ESTIMA y la compra lo corrige a real', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 4, unitCost: 100 }),
+      // Se cuenta y faltan 6 de 4: 4 salen del lote, 2 quedan en descubierto.
+      mov({
+        delta: -6,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'conteo1',
+      }),
+    ]);
+    // 4×100 reales + 2×100 estimados al último precio conocido. Nunca $0.
+    expect(r.shrinkageCostBySource.get('conteo1')?.cost).toBe(600);
+    expect(r.shrinkageCostBySource.get('conteo1')?.estimatedCost).toBe(200);
+
+    const conCompra = runLedgerFifo([
+      mov({ delta: 4, unitCost: 100 }),
+      mov({
+        delta: -6,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'conteo1',
+      }),
+      // Llega la factura: esas unidades costaban $150, no $100.
+      mov({ delta: 10, unitCost: 150 }),
+    ]);
+    // 4×100 + 2×150 = 700. La diferencia se imputa al faltante, no a la compra.
+    expect(conCompra.shrinkageCostBySource.get('conteo1')?.cost).toBe(700);
+    expect(conCompra.shrinkageCostBySource.get('conteo1')?.estimatedCost).toBe(0);
+    // Y las 2 unidades fantasma salieron del inventario: 10 − 2 = 8.
+    expect(conCompra.remaining.get('INGREDIENT:ing1')?.qty).toBe(8);
+  });
+
+  it('el snapshot conserva los faltantes históricos', () => {
+    const historia: LedgerMovement[] = [
+      mov({ delta: 10, unitCost: 100, createdAt: new Date(2026, 0, 1) }),
+      mov({
+        delta: -3,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'conteo1',
+        createdAt: new Date(2026, 0, 2),
+      }),
+    ];
+    const completo = runLedgerFifo(historia);
+    const corte = new Date(2026, 0, 3).toISOString();
+    const seed = buildLedgerSeed(completo, corte);
+
+    // Sin llevar el faltante en el seed, un P&G que arranque antes del corte
+    // perdería esa pérdida y el margen volvería a quedar alto.
+    const incremental = runLedgerFifo([], seed);
+    expect(incremental.shrinkage.reduce((a, f) => a + f.cost, 0)).toBe(300);
+  });
+});
+
+describe('runLedgerFifo · el faltante de conteo se puede deshacer', () => {
+  it('un conteo posterior que encuentra las unidades borra la pérdida y devuelve su COSTO', () => {
+    // Un conteo mal hecho no puede dejar una pérdida para siempre: la merma y
+    // la cortesía ya tenían camino de vuelta (§7.v18), esta es la tercera.
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({
+        delta: -6,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'conteo-malo',
+      }),
+      mov({
+        delta: 6,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'conteo-bueno',
+      }),
+    ]);
+
+    expect(r.shrinkage.reduce((a, f) => a + f.cost, 0)).toBe(0);
+    // Y vuelven CON su costo: sin esto el inventario quedaba en 10 unidades
+    // valuadas como 4 (las 6 devueltas entraban sin precio).
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 10, value: 1000, unknownQty: 0 });
+  });
+
+  it('una devolución parcial deja viva solo la parte que de verdad faltó', () => {
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({ delta: -6, type: 'MANUAL_ADJUSTMENT', sourceType: 'stock_count', sourceId: 'c1' }),
+      mov({ delta: 2, type: 'MANUAL_ADJUSTMENT', sourceType: 'stock_count', sourceId: 'c2' }),
+    ]);
+    // Faltaban 6, aparecieron 2 → la pérdida real es de 4.
+    expect(r.shrinkage.reduce((a, f) => a + f.cost, 0)).toBe(400);
+    expect(r.remaining.get('INGREDIENT:ing1')?.qty).toBe(6);
+  });
+
+  it('una SOBRA de verdad entra sin costo: nadie sabe qué se pagó por ella', () => {
+    // Sin faltante previo que deshacer, lo que aparece es inventario que nunca
+    // se cargó. Inventarle un precio sería peor que declararlo desconocido.
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100 }),
+      mov({ delta: 3, type: 'MANUAL_ADJUSTMENT', sourceType: 'stock_count', sourceId: 'c1' }),
+    ]);
+    expect(r.shrinkage).toHaveLength(0);
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 13, value: 1000, unknownQty: 3 });
+  });
+
+  it('la pérdida se netea en el mes en que se DECLARÓ, no en el de la corrección', () => {
+    // Si la corrección cayera en su propio mes, el mes que perdió el insumo
+    // quedaría barato para siempre y el siguiente mostraría una ganancia que
+    // no existió.
+    const r = runLedgerFifo([
+      mov({ delta: 10, unitCost: 100, createdAt: new Date(2026, 0, 5) }),
+      mov({
+        delta: -6,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'c1',
+        createdAt: new Date(2026, 0, 20),
+      }),
+      mov({
+        delta: 6,
+        type: 'MANUAL_ADJUSTMENT',
+        sourceType: 'stock_count',
+        sourceId: 'c2',
+        createdAt: new Date(2026, 1, 10),
+      }),
+    ]);
+    const enero = r.shrinkage.filter((f) => f.createdAt.startsWith('2026-01'));
+    expect(enero.reduce((a, f) => a + f.cost, 0)).toBe(0);
+    expect(r.shrinkage.every((f) => f.createdAt.startsWith('2026-01'))).toBe(true);
+  });
+});

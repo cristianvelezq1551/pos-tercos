@@ -26,6 +26,9 @@ function buildSyntheticDraft(
       invoiceNumber: extraction.invoiceNumber,
       total: extraction.total,
       iva: extraction.iva,
+      // El draft sintético nunca se persiste; el flete real viaja en
+      // `extraction.freight`, que es lo que el modal usa para prellenar.
+      freightAmount: 0,
       photoStorageKey: null,
       aiModelUsed,
       status: 'PENDING_REVIEW',
@@ -59,6 +62,7 @@ const EMPTY_EXTRACTION: ExtractedInvoice = {
   invoiceNumber: null,
   total: null,
   iva: null,
+  freight: null,
   items: [],
   warnings: [],
 };

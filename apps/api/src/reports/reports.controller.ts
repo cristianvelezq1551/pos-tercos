@@ -20,6 +20,8 @@ import {
   type FinancialAnalysis,
   type HourHeatmapReport,
   type InventoryUsageReport,
+  type PurchasesReport,
+  PurchaseGranularityEnum,
   type FifoLotsResponse,
   type InventoryValuationReport,
   type JwtAccessPayload,
@@ -43,6 +45,7 @@ import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { CogsService } from './cogs.service';
 import { FinanceSummaryService } from './finance-summary.service';
 import { InventoryUsageService } from './inventory-usage.service';
+import { PurchasesReportService } from './purchases-report.service';
 import { OwnerDigestService } from './owner-digest.service';
 import { FinancialReportsService } from './financial-reports.service';
 import { ReconciliationService } from './reconciliation.service';
@@ -62,6 +65,7 @@ export class ReportsController {
     private readonly financial: FinancialReportsService,
     private readonly financeSummary: FinanceSummaryService,
     private readonly inventoryUsage: InventoryUsageService,
+    private readonly purchases: PurchasesReportService,
     private readonly ownerDigest: OwnerDigestService,
   ) {}
 
@@ -284,6 +288,31 @@ export class ReportsController {
   ): Promise<InventoryUsageReport> {
     const range = parseDateRange(from, to, 30);
     return this.inventoryUsage.getUsage(range.from, range.to);
+  }
+
+  /**
+   * Compras y fletes del período, por semana/mes y por proveedor. Dueño.
+   *
+   * Es el único lugar donde el flete se compara contra lo comprado: ese
+   * porcentaje —y no el monto— es lo que dice si vale la pena negociar.
+   */
+  @OnlyDueno()
+  @Get('purchases')
+  getPurchases(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('granularity') granularity?: string,
+  ): Promise<PurchasesReport> {
+    // Default 30 días: una sola semana no deja comparar contra nada.
+    const range = parseDateRange(from, to, 30);
+    // Un valor inválido no cae al default en silencio — el reporte saldría con
+    // otro agrupamiento del pedido y nadie lo notaría (§B9). El error se lanza a
+    // mano y en español: el ZodError crudo llega a la pantalla en inglés (§3).
+    const parsed = PurchaseGranularityEnum.safeParse(granularity ?? 'weekly');
+    if (!parsed.success) {
+      throw new BadRequestException('El agrupamiento debe ser por semana o por mes.');
+    }
+    return this.purchases.getPurchases(range.from, range.to, parsed.data);
   }
 
   /** Heatmap día de semana × hora. Dueño. */
