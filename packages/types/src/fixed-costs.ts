@@ -122,6 +122,15 @@ export const MonthlyFinancialStatementSchema = z.object({
   totalFixed: z.number(),
   /** Total de gastos PUNTUALES/excepcionales del mes (reparaciones, etc.). */
   oneTimeCost: z.number(),
+  /** Compromisos con personas PAGADOS en el mes y marcados como gasto (un
+   *  arreglo, un servicio, una compra suelta). Se cuentan cuando se PAGAN, no
+   *  cuando se registran: mientras se deben, son deuda, no pérdida.
+   *
+   *  Los que NO son gasto —devolver un préstamo— quedan fuera: esa plata ya se
+   *  había recibido y restarla mostraría un bajón que no existe. */
+  payablesPaidCost: z.number(),
+  /** Cuántos compromisos se pagaron en el mes (solo los que son gasto). */
+  payablesPaidCount: z.number().int().nonnegative(),
   /** Costo (a COGS FIFO) de las cortesías autorizadas dadas en el período. */
   cortesiasCost: z.number(),
   /** true si alguna cortesía se valuó sin lote FIFO disponible → la pérdida real
@@ -140,6 +149,27 @@ export const MonthlyFinancialStatementSchema = z.object({
   /** true si parte de la merma se valuó con el último precio conocido (se tiró
    *  insumo que no estaba cargado). Provisional hasta la factura. */
   wasteCostEstimated: z.boolean(),
+  /** Costo (a COGS FIFO) de los FALTANTES del período: lo que un conteo físico
+   *  encontró de menos. Pérdida real que baja el neto, igual que la merma.
+   *
+   *  Va aparte de `wasteCost` a propósito: la merma la declaró alguien, el
+   *  faltante apareció solo al contar. Ver la línea junto a la otra es el punto
+   *  — si lo que nadie declaró pesa como lo declarado, hay algo que mirar. */
+  shrinkageCost: z.number(),
+  /** true si parte del faltante se valuó al último precio conocido (faltó sobre
+   *  inventario que ya estaba en negativo). Provisional hasta la factura. */
+  shrinkageCostEstimated: z.boolean(),
+  /** Lo que cobraron los PROVEEDORES por traer la mercancía (facturas
+   *  confirmadas en el período). Gasto real del negocio: baja el neto y entra
+   *  al margen de contribución. NO está dentro del COGS — no encarece ningún
+   *  producto (decisión del dueño 2026-08-28). */
+  freightCost: z.number(),
+  /** Cuántas facturas del período trajeron cobro de domicilio. */
+  freightInvoiceCount: z.number().int().nonnegative(),
+  /** Mercancía comprada en el mes (contexto del flete, NO una línea de gasto:
+   *  una compra es inventario hasta que se consume). `freightCost /
+   *  purchasedTotal` es el % con el que se negocia con un proveedor. */
+  purchasedTotal: z.number(),
   /** Domicilios cobrados al cliente. NO entra en `revenue`: es plata del
    *  repartidor que solo pasa por la caja (decisión del dueño 2026-07-27). */
   deliveryCollected: z.number(),
@@ -149,8 +179,8 @@ export const MonthlyFinancialStatementSchema = z.object({
    *  un margen "negativo" que en realidad son cuatro tickets y una merma. */
   salesCount: z.number().int().nonnegative(),
   netResult: z.number(),
-  /** Ingresos − COGS − merma − cortesías − reembolsos: lo que queda de cada
-   *  venta para pagar los fijos. Es la base del punto de equilibrio. */
+  /** Ingresos − COGS − merma − cortesías − reembolsos − fletes de compra: lo
+   *  que queda de cada venta para pagar los fijos. Base del punto de equilibrio. */
   contributionMargin: z.number(),
   /** contributionMargin / revenue. null si no hay ingresos. */
   contributionMarginPct: z.number().nullable(),

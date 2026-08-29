@@ -12,6 +12,7 @@
 
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
+import type { InventoryUsageRow } from '@pos-tercos/types';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { CogsService } from '../src/reports/cogs.service';
@@ -319,31 +320,35 @@ describe('Anulación de merma E2E', () => {
     return id;
   };
 
-  const usageRowOf = async (
-    entityId: string,
-  ): Promise<{ waste: number; adjustments: number; wastePct: number | null; wasteCost: number | null }> => {
+  // El shape sale de `InventoryUsageRow`, no de una copia local: un tipo
+  // duplicado deja de avisar en cuanto el reporte gana un campo.
+  const usageRowOf = async (entityId: string): Promise<InventoryUsageRow> => {
     const today = hoyLocal();
     const res = await request
       .get(`/reports/inventory-usage?from=${today}&to=${today}`)
       .set(auth(duenoToken))
       .expect(200);
-    const rows = (
-      res.body as {
-        rows: Array<{
-          entityId: string;
-          waste: number;
-          adjustments: number;
-          wastePct: number | null;
-          wasteCost: number | null;
-        }>;
-      }
-    ).rows;
+    const rows = (res.body as { rows: InventoryUsageRow[] }).rows;
     return (
       rows.find((r) => r.entityId === entityId) ?? {
+        entityType: 'INGREDIENT',
+        entityId,
+        name: '',
+        unit: '',
+        sales: 0,
+        productionOut: 0,
+        productionIn: 0,
+        purchased: 0,
         waste: 0,
         adjustments: 0,
         wastePct: null,
+        unitCost: null,
         wasteCost: 0,
+        wasteCostEstimated: false,
+        shortageQty: 0,
+        shortageCost: 0,
+        shortageCostEstimated: false,
+        lostCost: 0,
       }
     );
   };
@@ -410,10 +415,15 @@ describe('Anulación de merma E2E', () => {
 
     const row = await usageRowOf(id);
     expect(row.waste).toBe(0);
-    // El faltante sobrevive: −500 (antes el +1.000 de la reversa lo dejaba en +500).
+    // El ajuste sobrevive: −500 (antes el +1.000 de la reversa lo dejaba en +500).
     expect(row.adjustments).toBe(-500);
-    // Y su plata se reporta: 500 g × $20 = $10.000.
-    expect(row.wasteCost).toBe(10_000);
+    expect(row.wasteCost).toBe(0);
+    // Este movimiento es un AJUSTE MANUAL, no un conteo: desde §7.v43 la
+    // columna de faltantes cuenta solo lo detectado al CONTAR, que es lo que
+    // el ledger costea. Un ajuste tecleado a mano corrige un dato y no declara
+    // una pérdida — por eso queda en `adjustments` y no en el faltante.
+    expect(row.shortageQty).toBe(0);
+    expect(row.shortageCost).toBe(0);
   });
 
   it('la anulación de una CORTESÍA no cuenta como ajuste de inventario', async () => {

@@ -25,8 +25,19 @@ export function CogsPnlSummary({ pnl }: { pnl: PnlReport }) {
       <StatCard
         label="Merma valorizada"
         value={<Money amount={pnl.wasteCost} size="2xl" weight="bold" />}
-        hint="Pérdida por mermas (a costo real)"
+        hint="Lo que se declaró como tirado (a costo real)"
         tone={pnl.wasteCost > 0 ? 'warning' : 'neutral'}
+      />
+      {/* Va al lado de la merma a propósito: la merma alguien la declaró, el
+          faltante apareció solo al contar. Si el segundo pesa como el primero,
+          el problema no es lo que se tira sino lo que se está yendo sin que
+          nadie lo vea. Mostrar una y no la otra dejaba media pérdida invisible
+          en esta pantalla mientras Finanzas sí la traía. */}
+      <StatCard
+        label="Faltantes al contar"
+        value={<Money amount={pnl.shrinkageCost} size="2xl" weight="bold" />}
+        hint="Apareció de menos al contar: nadie lo declaró"
+        tone={pnl.shrinkageCost > 0 ? 'warning' : 'neutral'}
       />
     </div>
   );

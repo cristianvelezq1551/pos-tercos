@@ -132,7 +132,10 @@ function promoMatches(p: PromotionDef, input: ApplyPromotionInput): boolean {
   return true;
 }
 
-function withinActiveDates(p: PromotionDef, at: Date): boolean {
+export function withinActiveDates(
+  p: Pick<PromotionDef, 'activeFrom' | 'activeTo'>,
+  at: Date,
+): boolean {
   // Día calendario LOCAL de la venta (mismo criterio local que day-of-week y
   // time-window). activeFrom/activeTo son `YYYY-MM-DD` → comparación de strings
   // ISO, lexicográfica = cronológica. Sin ambigüedad de zona horaria.
@@ -162,7 +165,7 @@ export function getDayOfWeekBit(at: Date): number {
   }
 }
 
-function matchesDayOfWeek(mask: number, at: Date): boolean {
+export function matchesDayOfWeek(mask: number, at: Date): boolean {
   const bit = getDayOfWeekBit(at);
   return (mask & bit) !== 0;
 }
@@ -194,7 +197,8 @@ export function withinTimeWindow(
   return now >= start || now < end;
 }
 
-function parseTimeToSeconds(t: string): number {
+/** `HH:MM:SS` → segundos desde medianoche. Lanza si el formato no es válido. */
+export function parseTimeToSeconds(t: string): number {
   const m = /^([01][0-9]|2[0-3]):([0-5][0-9]):([0-5][0-9])$/.exec(t);
   if (!m) {
     throw new Error(`Invalid HH:MM:SS time: "${t}"`);
@@ -207,7 +211,7 @@ function timeAsSeconds(h: number, m: number, s: number): number {
 }
 
 /** Día calendario LOCAL de `d` en formato `YYYY-MM-DD` (getters locales). */
-function ymdLocal(d: Date): string {
+export function ymdLocal(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

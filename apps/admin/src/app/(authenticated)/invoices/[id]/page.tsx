@@ -4,6 +4,7 @@ import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import {
   CloneInvoiceButton,
   DeleteDraftButton,
+  EditFreightAction,
   InvoicePaymentSection,
 } from '../../../../features/invoices';
 import { getCurrentUserServer } from '../../../../features/auth/server';
@@ -108,10 +109,29 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
             <Card
               label="Total"
               value={invoice.total !== null ? formatCop(invoice.total) : '—'}
+              // Con domicilio, el total solo no explica de dónde sale: se muestra
+              // el desglose para que se vea qué parte fue mercancía.
+              hint={
+                invoice.freightAmount > 0 && invoice.total !== null
+                  ? `${formatCop(invoice.total - invoice.freightAmount)} de mercancía + ${formatCop(invoice.freightAmount)} de domicilio`
+                  : undefined
+              }
               mono
             />
+            <Card
+              label="Domicilio"
+              value={invoice.freightAmount > 0 ? formatCop(invoice.freightAmount) : 'Sin domicilio'}
+              hint={
+                invoice.freightAmount > 0
+                  ? 'Gasto del mes. No encarece ningún producto.'
+                  : undefined
+              }
+              mono={invoice.freightAmount > 0}
+              // El flete no genera movimientos de inventario, así que es de lo
+              // único que se puede corregir después de confirmar sin riesgo.
+              action={<EditFreightAction invoice={invoice} />}
+            />
             <Card label="IVA" value={invoice.iva !== null ? formatCop(invoice.iva) : '—'} mono />
-            <Card label="Modelo IA" value={invoice.aiModelUsed ?? '—'} mono />
           </section>
 
           <section className="rounded-lg border border-border bg-card p-4">
@@ -127,6 +147,9 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                   <Row k="Confirmado en" v={formatDate(invoice.confirmedAt)} />
                 </>
               )}
+              {/* Movido desde las tarjetas de arriba al entrar "Domicilio": el modelo
+              que leyó la foto es procedencia del dato, no una cifra a destacar. */}
+              <Row k="Leída por" v={invoice.aiModelUsed ?? '—'} />
               {invoice.notes && <Row k="Notas" v={invoice.notes} />}
             </dl>
           </section>
@@ -310,15 +333,29 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
   );
 }
 
-function Card({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+function Card({
+  label,
+  value,
+  hint,
+  mono,
+  action,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  mono?: boolean;
+  action?: React.ReactNode;
+}) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="flex flex-col rounded-lg border border-border bg-card p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
       <p className={`mt-1 text-base font-semibold text-foreground ${mono ? 'tabular-nums' : ''}`}>
         {value}
       </p>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }

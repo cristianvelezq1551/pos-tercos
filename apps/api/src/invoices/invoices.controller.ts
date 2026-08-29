@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Res,
@@ -33,11 +34,14 @@ import {
   type Invoice,
   type InvoiceDraftResponse,
   type UploadPaymentProofResponse,
+  UpdateInvoiceFreightSchema,
+  type UpdateInvoiceFreight,
 } from '@pos-tercos/types';
 import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMime, detectImageMimeLoose } from '../common/image-mime';
+import { parseOptionalDateRange } from '../common/local-dates';
 import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
@@ -71,11 +75,17 @@ export class InvoicesController {
   list(
     @Query('status') status?: string,
     @Query('supplier_id') supplierId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
     @Query('limit') limit?: string,
   ): Promise<Invoice[]> {
+    // `from`/`to` filtran por la fecha en que se REGISTRÓ la factura (decisión
+    // del dueño 2026-08-28: se sube el día que llega la mercancía). Sin ellos,
+    // no se acota por fecha — el comportamiento de siempre.
     return this.invoices.list({
       status,
       supplierId,
+      ...parseOptionalDateRange(from, to),
       limit: limit ? Math.min(Number(limit), 200) : undefined,
     });
   }
@@ -97,7 +107,7 @@ export class InvoicesController {
   ): Promise<ExtractedInvoice> {
     const extraction = await this.invoices.getRawExtraction(id);
     if (!extraction) {
-      throw new NotFoundException('No raw extraction stored for this invoice');
+      throw new NotFoundException('Esta factura no tiene datos leídos por la IA.');
     }
     return extraction;
   }
@@ -218,6 +228,21 @@ export class InvoicesController {
     @Body(new ZodValidationPipe(ConfirmInvoiceSchema)) body: ConfirmInvoice,
   ): Promise<Invoice> {
     return this.invoices.confirm(id, body, user.sub);
+  }
+
+  /**
+   * Corrige el domicilio de una factura ya confirmada. No toca inventario ni
+   * costos (el flete nunca genera movimientos), pero sí el total pagado: si la
+   * factura está pagada hay que decir de qué bolsillo salió la diferencia.
+   */
+  @AdminAccess()
+  @Patch(':id/freight')
+  updateFreight(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(UpdateInvoiceFreightSchema)) body: UpdateInvoiceFreight,
+  ): Promise<Invoice> {
+    return this.invoices.updateFreight(id, body, user.sub, user.role);
   }
 
   @AdminAccess()

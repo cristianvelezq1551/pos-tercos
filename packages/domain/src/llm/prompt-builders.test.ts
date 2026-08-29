@@ -156,6 +156,7 @@ describe('buildFinancialAnalysisUserPrompt', () => {
     grossMarginPct: 0.625,
     totalFixed: 18_000_000,
     fixedCosts: [],
+    otherLosses: [],
     netResult: 2_000_000,
     breakEven: 28_800_000,
     breakEvenCoverage: 1.11,

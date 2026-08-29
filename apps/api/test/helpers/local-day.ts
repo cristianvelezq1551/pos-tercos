@@ -19,3 +19,29 @@ export const diaLocal = (n: number): string => {
   d.setDate(d.getDate() + n);
   return ymdLocal(d);
 };
+
+/**
+ * Espera a que pase la medianoche si el reloj está en los últimos segundos del
+ * día local.
+ *
+ * Una promoción «todo el día» se define `00:00:00 → 23:59:59`, pero el motor
+ * evalúa la ventana como **[inicio, fin)** y `HH:MM:SS` no admite `24:00:00`
+ * (`parseTimeToSeconds` solo acepta horas 00–23). O sea: ninguna ventana puede
+ * cubrir los 86.400 segundos del día, y a las 23:59:59 una promo «siempre
+ * vigente» NO aplica. En producción eso es un segundo al día sin descuento —
+ * inofensivo, y cambiar la semántica del motor por eso sería peor.
+ *
+ * Para la simulación sí importa: su contabilidad sombra asume que esas promos
+ * están vigentes, así que una corrida que cruce ese segundo falla por el reloj
+ * y no por la plata, dejando el CI rojo al azar. Se espera con margen porque
+ * la promo se evalúa en el SERVIDOR: una operación que arranca en 23:59:58 aún
+ * puede aterrizar del otro lado.
+ */
+export const evitarElSegundoSinPromos = async (): Promise<void> => {
+  const ahora = new Date();
+  const enElBorde = ahora.getHours() === 23 && ahora.getMinutes() === 59 && ahora.getSeconds() >= 58;
+  if (!enElBorde) return;
+  const despuesDeMedianoche = new Date(ahora);
+  despuesDeMedianoche.setHours(24, 0, 0, 100);
+  await new Promise((resolver) => setTimeout(resolver, despuesDeMedianoche.getTime() - ahora.getTime()));
+};

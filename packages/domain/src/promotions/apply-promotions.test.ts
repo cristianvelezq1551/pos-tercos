@@ -286,6 +286,26 @@ describe('withinTimeWindow', () => {
   it('start === end = ventana vacía (defensivo)', () => {
     expect(withinTimeWindow('12:00:00', '12:00:00', at(12))).toBe(false);
   });
+
+  /**
+   * Una promo «todo el día» se guarda como 00:00:00 → 23:59:59, y con la
+   * ventana [inicio, fin) el último segundo del día queda AFUERA. No es un
+   * descuido que se pueda tapar: `HH:MM:SS` no admite `24:00:00`, así que
+   * ninguna ventana llega a cubrir los 86.400 segundos.
+   *
+   * Queda fijado acá porque el agujero es invisible —un segundo al día— hasta
+   * que algo lo cruza: la simulación financiera fallaba al azar, de noche, con
+   * un descuadre de plata que no era de plata. En el local, ese segundo cae en
+   * la madrugada y no cambia una venta real; si algún día importara, la salida
+   * NO es tocar esta comparación (el ramo de cruce de medianoche depende de
+   * ella) sino admitir un fin de ventana abierto.
+   */
+  it('una ventana de «todo el día» deja fuera el último segundo (00:00:00→23:59:59)', () => {
+    const alSegundo = (h: number, m: number, sec: number) => new Date(2026, 4, 4, h, m, sec);
+    expect(withinTimeWindow('00:00:00', '23:59:59', alSegundo(23, 59, 58))).toBe(true);
+    expect(withinTimeWindow('00:00:00', '23:59:59', alSegundo(23, 59, 59))).toBe(false);
+    expect(withinTimeWindow('00:00:00', '23:59:59', alSegundo(0, 0, 0))).toBe(true);
+  });
 });
 
 describe('getDayOfWeekBit + máscara de días', () => {

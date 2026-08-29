@@ -14,6 +14,9 @@ export const PayableCommitmentSchema = z.object({
   beneficiary: z.string(),
   description: z.string(),
   amount: z.number(),
+  /** true = gasto del negocio (baja el resultado del mes cuando se paga).
+   *  false = movimiento financiero, ej. devolver un préstamo. */
+  isExpense: z.boolean(),
   status: PayableStatusEnum,
   cashAmount: z.number(),
   bankAmount: z.number(),
@@ -28,6 +31,9 @@ export const CreatePayableSchema = z.object({
   beneficiary: z.string().min(1, 'Indica a quién se le debe').max(120),
   description: z.string().min(1, 'Describe el compromiso').max(300),
   amount: z.number().positive('El monto debe ser mayor a 0'),
+  /** Omitido = gasto (el caso común). Se desmarca solo al devolver un préstamo:
+   *  esa plata ya se había recibido, así que devolverla no es una pérdida. */
+  isExpense: z.boolean().optional(),
 });
 export type CreatePayable = z.infer<typeof CreatePayableSchema>;
 

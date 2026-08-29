@@ -25,6 +25,14 @@ export interface HistoryOptions {
   allowUnknownCost: boolean;
   /** Incluir tandas de producción (insumos → subproducto). */
   includeProduction: boolean;
+  /**
+   * Emitir ajustes manuales SUELTOS (sin `sourceType`), que el ledger no
+   * atribuye a ninguna línea. Apagado por defecto: un ajuste así rompe la
+   * conservación del valor A PROPÓSITO —corrige una entrada mal cargada, no
+   * declara una pérdida— y dejaría las leyes de conservación midiendo un
+   * fenómeno que no es un error. Se prende solo en el test de esa distinción.
+   */
+  includeCorrections?: boolean;
 }
 
 export interface GeneratedHistory {
@@ -182,6 +190,65 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
     past.push({ kind: 'cortesia', sourceId: cortesiaId, movementId: mov.id, entity: e, qty, reversedQty: 0 });
   };
 
+  /**
+   * Faltante de conteo: al contar físicamente hay menos de lo que dicen los
+   * libros. Es un ajuste negativo con `sourceType='stock_count'`, y a
+   * diferencia de un ajuste manual suelto SÍ es una pérdida a reportar.
+   * También puede caer sobre inventario ya en negativo.
+   */
+  const emitFaltante = (e: Entity): void => {
+    const max = opts.allowShortfall ? e.stock + rng.int(0, 10) : e.stock;
+    if (max <= 0) return;
+    const qty = rng.int(1, Math.max(1, Math.floor(max)));
+    e.stock -= qty;
+    push({
+      delta: -qty,
+      type: 'MANUAL_ADJUSTMENT',
+      unitCost: null,
+      sourceType: 'stock_count',
+      sourceId: `conteo-${rng.int(1, 20)}`,
+      ...refs(e),
+    });
+  };
+
+  /**
+   * Conteo que encuentra DE MÁS. Deshace faltantes previos de ese item (les
+   * devuelve su costo) y, si sobra, entra como inventario sin costo conocido.
+   * Sin esto, el camino de vuelta del faltante no se ejercitaría en ninguna ley.
+   */
+  const emitSobra = (e: Entity): void => {
+    const qty = rng.int(1, 12);
+    e.stock += qty;
+    push({
+      delta: qty,
+      type: 'MANUAL_ADJUSTMENT',
+      unitCost: null,
+      sourceType: 'stock_count',
+      sourceId: `conteo-${rng.int(1, 20)}`,
+      ...refs(e),
+    });
+  };
+
+  /**
+   * Ajuste manual suelto (sin `sourceType`): el admin corrige un dato mal
+   * cargado. NO es pérdida — sale del libro sin atribuirse. Está acá para que
+   * las leyes distingan los dos casos en vez de asumir que todo ajuste
+   * negativo es lo mismo.
+   */
+  const emitCorreccion = (e: Entity): void => {
+    if (e.stock <= 0) return;
+    const qty = rng.int(1, Math.max(1, Math.floor(e.stock)));
+    e.stock -= qty;
+    push({
+      delta: -qty,
+      type: 'MANUAL_ADJUSTMENT',
+      unitCost: null,
+      sourceType: null,
+      sourceId: null,
+      ...refs(e),
+    });
+  };
+
   /** Reversa acotada a lo que su origen consumió y aún no devolvió. */
   const emitReversal = (): void => {
     const candidates = past.filter((p) => p.qty - p.reversedQty > 0);
@@ -245,11 +312,14 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
   for (let i = 0; i < opts.steps; i++) {
     const roll = rng.float(0, 1);
     const target = rng.pick(entities);
-    if (roll < 0.3) emitEntry(target);
-    else if (roll < 0.6) emitSale(target);
-    else if (roll < 0.7) emitWaste(target);
-    else if (roll < 0.8) emitCortesia(target);
-    else if (roll < 0.92) emitReversal();
+    if (roll < 0.28) emitEntry(target);
+    else if (roll < 0.56) emitSale(target);
+    else if (roll < 0.66) emitWaste(target);
+    else if (roll < 0.74) emitCortesia(target);
+    else if (roll < 0.78) emitFaltante(target);
+    else if (roll < 0.8) emitSobra(target);
+    else if (roll < 0.84 && opts.includeCorrections) emitCorreccion(target);
+    else if (roll < 0.94) emitReversal();
     else if (opts.includeProduction) emitProduction();
     else emitEntry(target);
   }

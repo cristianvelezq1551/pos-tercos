@@ -1,4 +1,4 @@
-import { BibliaView } from '../../../features/biblia/BibliaView';
+import { BibliaView } from '../../../features/biblia';
 
 export default function BibliaPage() {
   return <BibliaView />;

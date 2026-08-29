@@ -1,6 +1,7 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { BookOpen } from 'lucide-react';
-import { CHAPTERS, ChapterCard, GuiaSearch, TOTAL_SECTIONS } from '@pos-tercos/guia';
+import { CHAPTERS, ChapterCard, FLOWS, FlowIndex, GuiaSearch } from '@pos-tercos/guia';
+import { GuiaAsistentePanel } from '../../../features/guia';
 
 export const metadata = { title: 'Guía de uso · POS Tercos' };
 
@@ -15,15 +16,35 @@ export default function GuiaIndexPage() {
       <PageHeader
         eyebrow="Capacitación"
         title="Guía de uso"
-        description={`Cómo funciona cada parte del sistema y cómo se hace cada cosa, paso a paso. ${CHAPTERS.length} capítulos, ${TOTAL_SECTIONS} temas.`}
+        description={`${FLOWS.length} flujos paso a paso —con dónde se ve cada resultado— y ${CHAPTERS.length} capítulos para entender por qué el sistema funciona así.`}
         icon={<BookOpen className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">
-        <div className="max-w-2xl">
+        <div className="max-w-2xl space-y-5">
+          <GuiaAsistentePanel />
           <GuiaSearch />
         </div>
 
-        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <section className="mt-10">
+          <h2 className="font-display text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            Paso a paso
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Cómo se hace cada cosa y —sobre todo— dónde aterriza después cada número.
+          </p>
+          <div className="mt-5">
+            <FlowIndex />
+          </div>
+        </section>
+
+        <h2 className="mt-10 font-display text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+          Entender el sistema
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Qué es cada módulo y por qué funciona así.
+        </p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {CHAPTERS.map((chapter, i) => (
             <ChapterCard key={chapter.id} chapter={chapter} index={i} />
           ))}

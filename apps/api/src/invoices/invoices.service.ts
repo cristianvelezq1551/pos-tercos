@@ -1,7 +1,13 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { LLMInvoiceExtractionResult, StorageProvider } from '@pos-tercos/domain';
-import { buildCostIncreaseAlertMessage, roundCost, type CostIncreaseItem } from '@pos-tercos/domain';
+import {
+  buildCostIncreaseAlertMessage,
+  normalizeExtractedInvoice,
+  roundCost,
+  roundMoney,
+  type CostIncreaseItem,
+} from '@pos-tercos/domain';
 import {
   INVOICE_STATUS_LABELS,
   ExtractedInvoiceSchema,
@@ -9,8 +15,9 @@ import {
   type ExtractedInvoice,
   type ExtractInvoiceResponse,
   type Invoice,
+  type UpdateInvoiceFreight,
 } from '@pos-tercos/types';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, UserRole } from '@prisma/client';
 import { describeLlmFailure } from '../adapters/llm/llm-failure';
 import { LLMService } from '../adapters/llm/llm.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
@@ -24,6 +31,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SuppliersService } from '../suppliers/suppliers.service';
+import { assertPuedeGestionarPago, assertTotalCoherente } from './invoice-rules';
 import { includeFull, toInvoiceDto } from './invoices.mappers';
 
 /** Suba de costo (vs último conocido) que dispara alerta WhatsApp al dueño. */
@@ -318,10 +326,18 @@ export class InvoicesService {
     await this.storage.delete(proofStorageKey).catch(() => {});
   }
 
-  async list(opts: { status?: string; supplierId?: string; limit?: number } = {}): Promise<Invoice[]> {
+  async list(
+    opts: { status?: string; supplierId?: string; from?: Date; to?: Date; limit?: number } = {},
+  ): Promise<Invoice[]> {
     const where: Prisma.InvoiceWhereInput = {};
     if (opts.status) where.status = opts.status as Prisma.InvoiceWhereInput['status'];
     if (opts.supplierId) where.supplierId = opts.supplierId;
+    // Por fecha de REGISTRO (`createdAt`), que es el orden en que se lista.
+    // Con `confirmedAt` los borradores pendientes desaparecerían del filtro
+    // justo cuando se los busca para terminarlos.
+    if (opts.from || opts.to) {
+      where.createdAt = { ...(opts.from && { gte: opts.from }), ...(opts.to && { lte: opts.to }) };
+    }
     const rows = await this.prisma.invoice.findMany({
       where,
       include: includeFull(),
@@ -343,7 +359,14 @@ export class InvoicesService {
       select: { aiExtractionJson: true },
     });
     if (!row?.aiExtractionJson) return null;
-    const parsed = ExtractedInvoiceSchema.safeParse(row.aiExtractionJson);
+    // Se normaliza ANTES de parsear porque el schema crece con el tiempo: las
+    // extracciones guardadas antes de que existiera `freight` no traen esa
+    // clave y el parse estricto las descartaba enteras — reanudar un borrador
+    // viejo perdía los avisos de la IA y el desglose de empaque (que es lo que
+    // sugiere el factor de conversión al crear un insumo).
+    const parsed = ExtractedInvoiceSchema.safeParse(
+      normalizeExtractedInvoice(row.aiExtractionJson as Record<string, unknown>),
+    );
     return parsed.success ? parsed.data : null;
   }
 
@@ -411,6 +434,7 @@ export class InvoicesService {
         supplierNit: supplier.nit,
         itemsCount: input.items.length,
         total: input.total,
+        freight: input.freight ?? 0,
       },
     });
     if (payment) {
@@ -500,17 +524,15 @@ export class InvoicesService {
     return { ingredients, products };
   }
 
-  /** FASE 4 ajustes 2.3 + 2.4: el total declarado coincide (con tolerancia) con
-   *  la suma de items, y el IVA no excede el total. */
+  /** FASE 4 ajustes 2.3 + 2.4: el total declarado se explica con los ítems más
+   *  el flete (regla compartida con la edición del domicilio), y el IVA no
+   *  excede el total. */
   private assertInvoiceTotalsCoherent(input: ConfirmInvoice): void {
-    const itemsSum = input.items.reduce((acc, it) => acc + Number(it.total), 0);
-    const totalDelta = Math.abs(input.total - itemsSum);
-    const totalTolerance = Math.max(input.total * 0.01, 1000);
-    if (totalDelta > totalTolerance) {
-      throw new BadRequestException(
-        `Total de la factura ($${input.total.toLocaleString('es-CO')}) no coincide con la suma de items ($${itemsSum.toLocaleString('es-CO')}). Diferencia: $${totalDelta.toLocaleString('es-CO')} (tolerancia $${Math.round(totalTolerance).toLocaleString('es-CO')}).`,
-      );
-    }
+    assertTotalCoherente({
+      total: input.total,
+      itemsSum: input.items.reduce((acc, it) => acc + Number(it.total), 0),
+      freight: input.freight ?? 0,
+    });
     if (input.iva !== undefined && input.iva !== null && input.iva > input.total) {
       throw new BadRequestException(
         `IVA ($${input.iva.toLocaleString('es-CO')}) no puede ser mayor al total ($${input.total.toLocaleString('es-CO')}).`,
@@ -600,6 +622,9 @@ export class InvoicesService {
         invoiceNumber: input.invoiceNumber ?? null,
         total: input.total,
         iva: input.iva ?? null,
+        // El flete NO genera invoice_item ni inventory_movement: vive solo acá.
+        // Por eso no toca el FIFO ni el costo de ningún producto.
+        freightAmount: input.freight ?? 0,
         status: 'CONFIRMED',
         confirmedById: userId,
         confirmedAt: new Date(),
@@ -866,6 +891,9 @@ export class InvoicesService {
       invoiceNumber: null,
       total: null,
       iva: null,
+      // El flete no se clona: cada pedido trae el suyo (o ninguno). Heredarlo
+      // haría confirmar en silencio un domicilio que quizá no se cobró.
+      freight: null,
       items: source.items.map((it) => ({
         descriptionRaw: it.descriptionRaw,
         quantity: Number(it.quantity),
@@ -962,6 +990,134 @@ export class InvoicesService {
   }
 
   /**
+   * Corrige el domicilio de una factura YA CONFIRMADA.
+   *
+   * El flete no siempre viene en el papel: a veces se le paga en efectivo al
+   * que trae y el dueño lo recuerda al rato. Es de lo único que se puede
+   * corregir post-confirmación sin riesgo, porque el flete **no genera
+   * inventory_movements**: no toca el FIFO, ni los lotes, ni el costo de
+   * ningún producto. Lo único que hay que cuidar es la plata del encabezado.
+   *
+   * Si la factura ya está PAGADA hay que decir de qué bolsillo salió la
+   * diferencia: `paymentCashAmount + paymentBankAmount` debe seguir sumando el
+   * total (lo exige `resolvePocketSplit`) o Tesorería queda descuadrada sin que
+   * nadie lo note — no hay CHECK en la base que lo frene.
+   */
+  async updateFreight(
+    id: string,
+    input: UpdateInvoiceFreight,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<Invoice> {
+    const existing = await this.prisma.invoice.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        total: true,
+        freightAmount: true,
+        paymentStatus: true,
+        paymentCashAmount: true,
+        paymentBankAmount: true,
+        uploadedById: true,
+        items: { select: { total: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Esa factura no existe.');
+    assertPuedeGestionarPago(actorRole, actorId, existing.uploadedById);
+
+    if (existing.status !== 'CONFIRMED') {
+      throw new BadRequestException(
+        existing.status === 'PENDING_REVIEW'
+          ? 'Esta factura todavía no está confirmada: el domicilio se escribe al confirmarla.'
+          : 'Esta factura fue rechazada: no se puede editar.',
+      );
+    }
+
+    const itemsSum = existing.items.reduce((acc, it) => acc + Number(it.total), 0);
+    assertTotalCoherente({ total: input.total, itemsSum, freight: input.freight });
+
+    const totalAnterior = Number(existing.total ?? 0);
+    const fleteAnterior = Number(existing.freightAmount);
+    const pago = this.resolveFreightPocket(input, {
+      pagada: existing.paymentStatus === 'PAID',
+      cash: Number(existing.paymentCashAmount),
+      bank: Number(existing.paymentBankAmount),
+      totalAnterior,
+    });
+
+    // Claim condicionado al estado que se leyó: dos ediciones concurrentes (o
+    // un doble-click) no pueden aplicar las dos su diferencia sobre el mismo
+    // punto de partida y dejar un reparto que no suma el total.
+    const claim = await this.prisma.invoice.updateMany({
+      where: {
+        id,
+        status: 'CONFIRMED',
+        freightAmount: existing.freightAmount,
+        total: existing.total,
+      },
+      data: { freightAmount: input.freight, total: input.total, ...pago },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'Alguien más cambió esta factura mientras la editabas. Vuelve a abrirla y revisa los montos.',
+      );
+    }
+
+    await this.audit.log({
+      userId: actorId,
+      action: 'INVOICE_FREIGHT_UPDATED',
+      entityType: 'invoice',
+      entityId: id,
+      before: { freight: fleteAnterior, total: totalAnterior },
+      after: { freight: input.freight, total: input.total },
+      metadata: {
+        pocket: input.pocket ?? null,
+        wasPaid: existing.paymentStatus === 'PAID',
+        note: input.note ?? null,
+      },
+    });
+
+    return this.getById(id);
+  }
+
+  /**
+   * Reparto por bolsillo tras cambiar el domicilio.
+   *
+   * Sin pagar no hay nada que repartir (los montos se escriben al pagar). Ya
+   * pagada, la diferencia entra o sale del bolsillo que indique el usuario y el
+   * reparto se re-valida contra el nuevo total.
+   */
+  private resolveFreightPocket(
+    input: UpdateInvoiceFreight,
+    actual: { pagada: boolean; cash: number; bank: number; totalAnterior: number },
+  ): { paymentCashAmount: number; paymentBankAmount: number; paymentPocket: string } | object {
+    if (!actual.pagada) return {};
+
+    const diferencia = roundMoney(input.total - actual.totalAnterior);
+    if (diferencia !== 0 && !input.pocket) {
+      throw new BadRequestException(
+        'Esta factura ya está pagada: indica de qué bolsillo salió la diferencia (efectivo o cuenta).',
+      );
+    }
+    const cash = input.pocket === 'EFECTIVO' ? roundMoney(actual.cash + diferencia) : actual.cash;
+    const bank = input.pocket === 'CUENTA' ? roundMoney(actual.bank + diferencia) : actual.bank;
+    if (cash < 0 || bank < 0) {
+      throw new BadRequestException(
+        'Ese bolsillo no cubre la diferencia. Elige el otro o revisa el monto.',
+      );
+    }
+    // Fuente única del reparto: la misma que usan pagar factura, nómina y
+    // compromisos. Si no suma el total exacto, revienta acá y no en Tesorería.
+    const split = resolvePocketSplit(cash, bank, input.total);
+    return {
+      paymentCashAmount: split.cash,
+      paymentBankAmount: split.bank,
+      paymentPocket: pocketOf(split),
+    };
+  }
+
+  /**
    * Crea una factura en blanco (sin foto, sin IA). Se usa internamente desde
    * `createManualConfirmed`; no se expone como endpoint suelto (no queremos
    * borradores creados sin que el usuario confirme nada).
@@ -975,6 +1131,7 @@ export class InvoicesService {
       invoiceNumber: null,
       total: null,
       iva: null,
+      freight: null,
       items: [],
       warnings: ['Carga manual — la IA no extrajo datos. Ingresa proveedor, items y totales.'],
     };

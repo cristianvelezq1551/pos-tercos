@@ -12,6 +12,7 @@ interface AddInput {
   modifiers: CartLine['modifiers'];
   quantity: number;
   unitPrice: number;
+  isCombo?: boolean;
   notes?: string;
 }
 
@@ -62,6 +63,7 @@ export const useCartStore = create<CartState>()(
                 modifiers: input.modifiers,
                 quantity: input.quantity,
                 unitPrice: input.unitPrice,
+                isCombo: input.isCombo ?? false,
                 notes: input.notes?.trim() || undefined,
               },
             ],

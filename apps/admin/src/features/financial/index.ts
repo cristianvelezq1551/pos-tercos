@@ -1,4 +1,5 @@
 export { DeliverySpendCard } from './components/DeliverySpendCard';
+export { PurchaseFreightCard } from './components/PurchaseFreightCard';
 export { PnlCard } from './components/PnlCard';
 export { BreakEvenCard } from './components/BreakEvenCard';
 export { TrendCard } from './components/TrendCard';

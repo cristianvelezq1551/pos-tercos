@@ -22,6 +22,7 @@ import {
   type ProductMarginReport,
 } from '@pos-tercos/types';
 import { ymdLocal } from '../common/local-dates';
+import { LedgerFreshnessService } from '../common/ledger-freshness/ledger-freshness.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -37,6 +38,7 @@ export class CogsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
+    private readonly freshness: LedgerFreshnessService,
   ) {}
 
   private readonly logger = new Logger(CogsService.name);
@@ -68,11 +70,16 @@ export class CogsService {
   /**
    * Caché del ledger con TTL corto, una entrada por corte usado (`full` o
    * `inc:<corte>`).
-   * Memoizar la PROMESA deduplica llamados concurrentes. Sin invalidación por
-   * escritura a propósito: un reporte de COGS tolera ≤ TTL de staleness.
+   * Memoizar la PROMESA deduplica llamados concurrentes. Las ventas toleran el
+   * TTL a propósito (son continuas: invalidar en cada una anularía la caché),
+   * pero una MERMA lo salta vía `LedgerFreshnessService` — se registra y se
+   * mira enseguida, y ahí un dato de hace un minuto se lee como un error.
    */
   private static readonly LEDGER_TTL_MS = 60_000;
-  private ledgerCache = new Map<string, { promise: Promise<LedgerFifo>; at: number }>();
+  private ledgerCache = new Map<
+    string,
+    { promise: Promise<LedgerFifo>; at: number; stamp: number }
+  >();
 
   /** Limpia la caché (tras crear un snapshot, y para tests). */
   invalidateLedgerCache(): void {
@@ -125,6 +132,20 @@ export class CogsService {
     return ledger.wasteCostByMovement;
   }
 
+  /**
+   * Costo FIFO de cada FALTANTE de conteo, indexado por id del conteo. Espeja
+   * `getWasteCostByMovement`: desde 2026-08-28 el faltante SÍ tiene costo real
+   * (§7.v43), así que el reporte de uso puede mostrar la misma cifra que el
+   * P&G en vez de estimarla por su cuenta — dos números para la misma pérdida
+   * es justo lo que hay que evitar.
+   */
+  async getShrinkageCostBySource(
+    from: Date,
+  ): Promise<Map<string, { cost: number; unknownQty: number; estimatedCost: number }>> {
+    const ledger = await this.runLedger(from);
+    return ledger.shrinkageCostBySource;
+  }
+
   /** Replay completo (sin seed), con su propia entrada de caché. */
   private fullLedger(): Promise<LedgerFifo> {
     return this.cachedLedger('full', () => this.computeLedger(null));
@@ -136,10 +157,13 @@ export class CogsService {
     compute: () => Promise<LedgerFifo>,
   ): Promise<LedgerFifo> {
     const now = Date.now();
+    const stamp = this.freshness.current;
     const hit = this.ledgerCache.get(mode);
-    if (hit && now - hit.at < CogsService.LEDGER_TTL_MS) return hit.promise;
+    if (hit && hit.stamp === stamp && now - hit.at < CogsService.LEDGER_TTL_MS) {
+      return hit.promise;
+    }
     const promise = compute();
-    this.ledgerCache.set(mode, { promise, at: now });
+    this.ledgerCache.set(mode, { promise, at: now, stamp });
     // No cachear un error: si falla, limpiar para reintentar en el próximo call.
     void promise.catch(() => {
       if (this.ledgerCache.get(mode)?.promise === promise) this.ledgerCache.delete(mode);
@@ -390,7 +414,7 @@ export class CogsService {
   }
 
   async getPnl(from: Date, to: Date): Promise<PnlReport> {
-    const [ledger, sales, refunded] = await Promise.all([
+    const [ledger, sales, refunded, purchases, freightInvoiceCount] = await Promise.all([
       // Costos por venta del rango: si arranca antes del corte del snapshot,
       // runLedger cae a replay completo (regla 2).
       this.runLedger(from),
@@ -409,6 +433,27 @@ export class CogsService {
           voidReason: { startsWith: REFUND_VOID_REASON_PREFIX },
         },
         select: { id: true },
+      }),
+      // Fletes de compra: el domicilio que cobró el PROVEEDOR por traer la
+      // mercancía. Sale del ENCABEZADO de la factura, no de sus ítems — por eso
+      // no está en el ledger FIFO y no encarece ningún producto.
+      //
+      // Se atribuye por `confirmedAt`, el mismo instante en que la mercancía
+      // entró al inventario (ahí se fecha el lote FIFO). Con `paidAt`
+      // aparecerían fletes en meses donde no pasó nada relacionado.
+      this.prisma.invoice.aggregate({
+        where: { status: 'CONFIRMED', confirmedAt: { gte: from, lte: to } },
+        _sum: { total: true, freightAmount: true },
+      }),
+      // Cuántas facturas TRAJERON cobro de domicilio. Aparte del aggregate
+      // porque ese suma sobre TODAS las confirmadas (necesitamos el comprado
+      // total para el % de flete), y contar ahí daría todas las facturas.
+      this.prisma.invoice.count({
+        where: {
+          status: 'CONFIRMED',
+          confirmedAt: { gte: from, lte: to },
+          freightAmount: { gt: 0 },
+        },
       }),
     ]);
 
@@ -456,10 +501,15 @@ export class CogsService {
     const cortesiaInRange = ledger.cortesia.filter(
       (c) => c.createdAt >= fromIso && c.createdAt <= toIso,
     );
+    const shrinkageInRange = ledger.shrinkage.filter(
+      (f) => f.createdAt >= fromIso && f.createdAt <= toIso,
+    );
     const wasteCost = wasteInRange.reduce((s, w) => s + w.cost, 0);
     const cortesiaCost = cortesiaInRange.reduce((s, c) => s + c.cost, 0);
+    const shrinkageCost = shrinkageInRange.reduce((s, f) => s + f.cost, 0);
     const wasteEstimatedCost = wasteInRange.reduce((s, w) => s + w.estimatedCost, 0);
     const cortesiaEstimatedCost = cortesiaInRange.reduce((s, c) => s + c.estimatedCost, 0);
+    const shrinkageEstimatedCost = shrinkageInRange.reduce((s, f) => s + f.estimatedCost, 0);
 
     const grossMargin = revenue - cogs;
     return {
@@ -476,7 +526,17 @@ export class CogsService {
       grossMarginPct: revenue > 0 ? Math.round((grossMargin / revenue) * 10000) / 10000 : null,
       wasteCost: round(wasteCost),
       cortesiaCost: round(cortesiaCost),
+      shrinkageCost: round(shrinkageCost),
       refundCost: round(refundCost),
+      freightCost: round(Number(purchases._sum.freightAmount ?? 0)),
+      freightInvoiceCount,
+      // Mercancía comprada (total pagado − flete). NO es un gasto del P&G: una
+      // compra es inventario hasta que se consume, y ahí entra por el COGS. Va
+      // solo como contexto del flete — "$312.000 de domicilios" no dice nada
+      // sin saber sobre cuánto de compra.
+      purchasedTotal: round(
+        Number(purchases._sum.total ?? 0) - Number(purchases._sum.freightAmount ?? 0),
+      ),
       deliveryCollected: round(deliveryCollected),
       deliveryOrderCount,
       salesCount: sales.length,
@@ -487,6 +547,7 @@ export class CogsService {
       cogsEstimatedQty: Math.round(estimatedQty * 10000) / 10000,
       wasteEstimatedCost: round(wasteEstimatedCost),
       cortesiaEstimatedCost: round(cortesiaEstimatedCost),
+      shrinkageEstimatedCost: round(shrinkageEstimatedCost),
     };
   }
 

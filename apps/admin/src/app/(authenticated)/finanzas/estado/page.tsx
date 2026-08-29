@@ -5,6 +5,7 @@ import {
   AiAnalysisCard,
   BreakEvenCard,
   DeliverySpendCard,
+  PurchaseFreightCard,
   MonthPicker,
   PnlCard,
   TrendCard,
@@ -77,6 +78,7 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
             />
             <WebOrdersToggleCard enabled={businessConfig.webOrdersEnabled} />
             <BreakEvenCard s={statement} />
+            <PurchaseFreightCard s={statement} />
             <DeliverySpendCard s={statement} />
             <TrendCard trend={trend} />
           </div>

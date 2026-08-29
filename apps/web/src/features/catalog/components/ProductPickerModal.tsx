@@ -23,6 +23,8 @@ export interface PickerSelection {
   modifiers: PublicMenuModifier[];
   quantity: number;
   unitPrice: number;
+  /** Product.isCombo — la línea lo guarda para poder aplicar COMBO_OFF. */
+  isCombo: boolean;
   notes?: string;
 }
 
@@ -96,9 +98,15 @@ export function ProductPickerModal({
   // badge da el precio por unidad con descuento y el total de la línea el ahorro.
   const promoPreview = useMemo(() => {
     if (!product) return { badge: null, lineDiscount: 0 };
-    const badge = getMenuPromoBadge(product.id, unitPrice, promotions);
+    const badge = getMenuPromoBadge(
+      product.id,
+      unitPrice,
+      promotions,
+      undefined,
+      product.isCombo,
+    );
     const { discount } = computeCartPromoTotals(
-      [{ productId: product.id, quantity, unitPrice }],
+      [{ productId: product.id, quantity, unitPrice, isCombo: product.isCombo }],
       promotions,
     );
     return { badge, lineDiscount: discount };
@@ -130,6 +138,7 @@ export function ProductPickerModal({
       modifiers: selectedModifiers,
       quantity,
       unitPrice,
+      isCombo: product.isCombo,
       notes: notes.trim() || undefined,
     });
     onClose();

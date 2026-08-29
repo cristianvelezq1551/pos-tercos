@@ -668,13 +668,13 @@ describe('Invariantes matemáticas entre reportes E2E', () => {
       revenue: number; cogs: number; wasteCost: number; cortesiasCost: number; refundCost: number;
       totalFixed: number; contributionMargin: number; contributionMarginPct: number | null;
       breakEven: number | null; breakEvenCoverage: number | null;
-      deliveryCollected: number;
+      deliveryCollected: number; freightCost: number;
     };
 
     expect(st.totalFixed).toBe(1_000_000);
     // El margen de contribución descuenta TODO lo que se mueve con la venta.
     expect(st.contributionMargin).toBeCloseTo(
-      st.revenue - st.cogs - st.wasteCost - st.cortesiasCost - st.refundCost,
+      st.revenue - st.cogs - st.wasteCost - st.cortesiasCost - st.refundCost - st.freightCost,
       2,
     );
     // El DTO redondea el porcentaje a 4 decimales (round4), así que se compara
@@ -696,5 +696,142 @@ describe('Invariantes matemáticas entre reportes E2E', () => {
     // Y el domicilio NO contamina el estado financiero: se reporta aparte y el
     // punto de equilibrio se calcula sobre ingresos que sí son del negocio.
     expect(st.deliveryCollected).toBeGreaterThanOrEqual(0);
+  });
+
+  /**
+   * El flete de compra baja el resultado, pero NO encarece ningún producto.
+   *
+   * Es la ley que justifica todo el diseño del campo (decisión del dueño
+   * 2026-08-28). Si el flete se prorrateara en los lotes —la otra forma de
+   * contabilizarlo, el "costo puesto en bodega"— el margen de la Coca bajaría
+   * sin que nadie lo pidiera y `lastUnitCost` dejaría de ser el precio que
+   * cobra el proveedor, que es lo que alimenta sugerencias y listas de compra.
+   */
+  it('el flete de compra baja el neto sin encarecer ningún producto', async () => {
+    const now = new Date();
+    const estado = async () => {
+      fresh();
+      return (
+        await request
+          .get(`/reports/financial/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`)
+          .set(auth())
+          .expect(200)
+      ).body as { netResult: number; cogs: number; freightCost: number; purchasedTotal: number };
+    };
+    const margenCoca = async (): Promise<number | undefined> => {
+      fresh();
+      const r = (
+        await request.get(`/reports/cogs/product-margins?${rango()}`).set(auth()).expect(200)
+      ).body as { products: Array<{ productId: string; cogs: number; unitsSold: number }> };
+      const p = r.products.find((x) => x.productId === cocaId);
+      return p && p.unitsSold > 0 ? p.cogs / p.unitsSold : undefined;
+    };
+
+    const costoUnitarioAntes = await margenCoca();
+    const antes = await estado();
+    const FLETE = 12_000;
+    const MERCANCIA = 36_000; // 1 caja de 24 → $1.500 por unidad, igual que el lote inicial
+    const draft = await prisma.invoice.create({
+      data: { status: 'PENDING_REVIEW', aiModelUsed: 'test-mock', aiExtractionJson: {} },
+    });
+    await request
+      .post(`/invoices/${draft.id}/confirm`)
+      .set(auth())
+      .send({
+        supplierNit: '900777666-1',
+        supplierName: 'Proveedor Flete Math',
+        total: MERCANCIA + FLETE,
+        freight: FLETE,
+        items: [
+          {
+            entityType: 'PRODUCT',
+            productId: cocaId,
+            descriptionRaw: 'Coca caja x24',
+            quantity: 1,
+            unit: 'caja',
+            unitPrice: MERCANCIA,
+            total: MERCANCIA,
+          },
+        ],
+      })
+      .expect(201);
+
+    const despues = await estado();
+
+    // 1. El flete se registra y baja el neto peso por peso.
+    expect(despues.freightCost - antes.freightCost).toBeCloseTo(FLETE, 2);
+    expect(antes.netResult - despues.netResult).toBeCloseTo(FLETE, 2);
+
+    // 2. La mercancía queda como contexto, SIN el flete (es el denominador del
+    //    "% de flete" con el que se negocia con el proveedor).
+    expect(despues.purchasedTotal - antes.purchasedTotal).toBeCloseTo(MERCANCIA, 2);
+
+    // 3. LA LEY: el costo del producto no se movió. Si el flete se prorrateara,
+    //    lastUnitCost sería $48.000/caja en vez de los $36.000 que cobró el
+    //    proveedor, y el costo por unidad de lo ya vendido cambiaría.
+    const costoNuevo = (
+      await prisma.product.findUniqueOrThrow({ where: { id: cocaId }, select: { lastUnitCost: true } })
+    ).lastUnitCost;
+    expect(Number(costoNuevo)).toBeCloseTo(MERCANCIA, 2);
+    expect(Number(costoNuevo)).not.toBeCloseTo(MERCANCIA + FLETE, 2);
+    // Y el costo por unidad de lo YA VENDIDO tampoco se movió.
+    expect(await margenCoca()).toBeCloseTo(costoUnitarioAntes!, 6);
+
+    // 4. Y comprar no consume: el COGS del período no se mueve por comprar.
+    expect(despues.cogs).toBeCloseTo(antes.cogs, 2);
+  });
+
+  /**
+   * El flete es el MISMO número en el P&G y en el reporte de compras.
+   *
+   * Son dos consultas distintas (`CogsService.getPnl` y
+   * `PurchasesReportService`) sobre las mismas facturas. Es exactamente la
+   * forma en que este repo ya se lastimó antes —dos cálculos de la misma plata
+   * que se separan— así que la igualdad se fija con un test en vez de
+   * confiar en que nadie toque uno solo de los dos.
+   */
+  it('el domicilio de compra vale lo mismo en el P&G que en el reporte de compras', async () => {
+    const draft = await prisma.invoice.create({
+      data: { status: 'PENDING_REVIEW', aiModelUsed: 'test-mock', aiExtractionJson: {} },
+    });
+    await request
+      .post(`/invoices/${draft.id}/confirm`)
+      .set(auth())
+      .send({
+        supplierNit: '900444333-1',
+        supplierName: 'Proveedor Invariante',
+        total: 84_000,
+        freight: 9_000,
+        items: [
+          {
+            entityType: 'PRODUCT',
+            productId: cocaId,
+            descriptionRaw: 'Coca caja',
+            quantity: 1,
+            unit: 'caja',
+            unitPrice: 75_000,
+            total: 75_000,
+          },
+        ],
+      })
+      .expect(201);
+
+    fresh();
+    const pnl = (
+      await request.get(`/reports/cogs/pnl?${rango()}`).set(auth()).expect(200)
+    ).body as { freightCost: number; purchasedTotal: number };
+    const compras = (
+      await request.get(`/reports/purchases?${rango()}`).set(auth()).expect(200)
+    ).body as {
+      totals: { freight: number; purchased: number };
+      periods: Array<{ freight: number }>;
+      bySupplier: Array<{ freight: number }>;
+    };
+
+    expect(compras.totals.freight).toBeCloseTo(pnl.freightCost, 2);
+    expect(compras.totals.purchased).toBeCloseTo(pnl.purchasedTotal, 2);
+    // Y los tres cortes del reporte miran las MISMAS facturas.
+    expect(compras.periods.reduce((a, p) => a + p.freight, 0)).toBeCloseTo(pnl.freightCost, 2);
+    expect(compras.bySupplier.reduce((a, x) => a + x.freight, 0)).toBeCloseTo(pnl.freightCost, 2);
   });
 });

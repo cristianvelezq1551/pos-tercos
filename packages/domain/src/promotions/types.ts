@@ -71,6 +71,16 @@ export interface PromotionDef {
   productIds: Set<string>;
 }
 
+/**
+ * Subconjunto de la promoción que define CUÁNDO aplica. Lo comparten el motor
+ * de cobro y las pantallas que anuncian el estado de una promo, para que no
+ * puedan responder distinto a la misma pregunta.
+ */
+export type PromotionSchedule = Pick<
+  PromotionDef,
+  'daysOfWeekMask' | 'timeStart' | 'timeEnd' | 'activeFrom' | 'activeTo'
+>;
+
 export interface ApplyPromotionInput {
   productId: string;
   /** Subtotal de la línea (con tamaño + modifiers ya sumados, sin discount). */

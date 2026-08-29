@@ -22,10 +22,9 @@ describe('Cobro concurrente — unicidad de recibo E2E', () => {
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
-    // Servidor escuchando real: supertest contra un server ya en `listen`
-    // permite requests CONCURRENTES (el ephemeral per-request colisiona).
-    await app.listen(0);
-    request = supertest(app.getHttpServer());
+    // El servidor ya está escuchando (lo deja así `bootstrapApp`), que es lo
+    // que permite peticiones genuinamente CONCURRENTES: con el socket efímero
+    // por petición, las de esta suite colisionaban entre sí.
     const hash = await bcrypt.hash('dev12345', 10);
     await prisma.user.create({
       data: {

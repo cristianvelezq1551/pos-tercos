@@ -48,6 +48,11 @@ export const ExtractedInvoiceSchema = z.object({
   invoiceNumber: z.string().nullable(),
   total: z.number().nullable(),
   iva: z.number().nullable(),
+  /** Domicilio/flete cobrado por traer la mercancía. La IA lo extrae de la
+   *  línea que dice "envío", "domicilio", "flete", "transporte"… que NO es un
+   *  ítem (no entra al inventario ni al costo de ningún producto). `null` si
+   *  la factura no lo trae o el modelo lo omitió — los adapters lo rellenan. */
+  freight: z.number().nullable(),
   // items y warnings se exigen siempre como array (vacío si no aplica).
   // No usamos .default() aquí porque Zod hace que el input type difiera
   // del output type, lo que rompe la inferencia de DTOs compartidos.
@@ -86,6 +91,9 @@ export const InvoiceSchema = z.object({
   invoiceNumber: z.string().nullable(),
   total: z.number().nullable(),
   iva: z.number().nullable(),
+  /** Domicilio/flete de esta compra. Siempre un número (0 = sin flete): la
+   *  columna es NOT NULL con default 0, así que ninguna suma necesita null-check. */
+  freightAmount: z.number(),
   photoStorageKey: z.string().nullable(),
   aiModelUsed: z.string().nullable(),
   status: InvoiceStatusEnum,
@@ -112,6 +120,31 @@ export const InvoiceSchema = z.object({
   items: z.array(InvoiceItemSchema).optional(),
 });
 export type Invoice = z.infer<typeof InvoiceSchema>;
+
+/**
+ * Editar el domicilio de una factura YA CONFIRMADA.
+ *
+ * Existe porque el flete no siempre viene en la factura: a veces se le paga en
+ * efectivo al que trae, y eso se recuerda después (decisión del dueño
+ * 2026-08-28). Es de lo poco de una factura confirmada que se puede corregir
+ * sin riesgo — el flete NO genera movimientos de inventario, así que no toca el
+ * FIFO ni el costo de ningún producto.
+ */
+export const UpdateInvoiceFreightSchema = z.object({
+  /** Nuevo domicilio. 0 = quitarlo. */
+  freight: z.number().nonnegative(),
+  /** Nuevo total de la factura. Tiene que seguir explicándose con los ítems más
+   *  el domicilio; el cliente lo manda explícito para no adivinar si el flete
+   *  se SUMA al total (se pagó aparte) o ya estaba adentro. */
+  total: z.number().nonnegative(),
+  /** De qué bolsillo salió (o a cuál volvió) la diferencia. OBLIGATORIO si la
+   *  factura ya está pagada: sin esto el reparto por bolsillo dejaría de sumar
+   *  el total y Tesorería quedaría descuadrada en silencio. */
+  pocket: z.enum(['EFECTIVO', 'CUENTA']).optional(),
+  /** Por qué se corrige. Va a la bitácora. */
+  note: z.string().max(300).optional(),
+});
+export type UpdateInvoiceFreight = z.infer<typeof UpdateInvoiceFreightSchema>;
 
 /** Body para marcar pagada vía multipart (la imagen va por `proof` field). */
 export const MarkInvoicePaidSchema = z.object({
@@ -221,6 +254,11 @@ export const ConfirmInvoiceSchema = z.object({
   invoiceNumber: z.string().max(80).optional(),
   total: z.number().nonnegative(),
   iva: z.number().nonnegative().optional(),
+  /** Domicilio/flete de la compra. Omitido = 0.
+   *  La regla `freight <= total` se valida en el service, NO acá: un
+   *  `superRefine` convertiría este schema en ZodEffects y rompería el
+   *  `.extend()` de CreateFromPhotoSchema. */
+  freight: z.number().nonnegative().optional(),
   items: z.array(ConfirmInvoiceItemSchema).min(1),
   notes: z.string().max(500).optional(),
   /** Presente = la factura nace CONFIRMED + PAGADA (comprobante obligatorio). */

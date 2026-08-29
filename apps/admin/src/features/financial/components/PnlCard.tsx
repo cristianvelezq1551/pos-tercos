@@ -1,5 +1,7 @@
 import type { MonthlyFinancialStatement } from '@pos-tercos/types';
 import { formatCop } from '@pos-tercos/ui';
+import { PnlLossLines } from './PnlLossLines';
+import { Row } from './PnlRow';
 
 export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
   const netPositive = s.netResult >= 0;
@@ -82,55 +84,7 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         </div>
       ) : null}
 
-      {/* Cortesías: producto regalado (autorizado), valuado a costo FIFO. */}
-      {s.cortesiasCost > 0 || s.cortesiasCostPartial ? (
-        <div className="space-y-1.5 text-sm">
-          <Row
-            label="− Cortesías (producto regalado, a costo)"
-            value={`−${formatCop(s.cortesiasCost)}`}
-            muted
-          />
-          {s.cortesiasCostPartial ? (
-            <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-              Algunas cortesías tienen insumos sin ningún precio de compra en el sistema, así que
-              esta pérdida está subestimada.
-            </p>
-          ) : s.cortesiasCostEstimated ? (
-            <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-              Parte de estas cortesías se valuó con un <strong>estimado</strong> (se regaló producto
-              con insumos que no estaban cargados). Se corrige al subir la factura de compra.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* Reembolsos: comida preparada cuya plata se devolvió, valuada a costo FIFO. */}
-      {s.refundCost > 0 ? (
-        <div className="space-y-1.5 text-sm">
-          <Row
-            label="− Reembolsos (comida preparada, a costo)"
-            value={`−${formatCop(s.refundCost)}`}
-            muted
-          />
-        </div>
-      ) : null}
-
-      {/* Merma: insumo/producto tirado, valuado a costo FIFO (§1.2). */}
-      {s.wasteCost > 0 ? (
-        <div className="space-y-1.5 text-sm">
-          <Row
-            label="− Merma (insumo/producto tirado, a costo)"
-            value={`−${formatCop(s.wasteCost)}`}
-            muted
-          />
-          {s.wasteCostEstimated ? (
-            <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-              Parte de la merma se valuó con un <strong>estimado</strong> (se tiró insumo que no
-              estaba cargado en inventario). Se corrige al subir la factura de compra.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+      <PnlLossLines s={s} />
 
       {/* Resultado neto: el banner grande verde/rojo */}
       <div
@@ -168,27 +122,3 @@ function CostLi({ name, category, amount }: { name: string; category: string; am
   );
 }
 
-function Row({
-  label,
-  value,
-  strong,
-  muted,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex justify-between gap-2">
-      <span className={muted ? 'text-muted-foreground' : 'text-foreground'}>{label}</span>
-      <span
-        className={`tabular-nums ${
-          strong ? 'font-bold text-foreground' : muted ? 'text-muted-foreground' : 'text-foreground'
-        }`}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}

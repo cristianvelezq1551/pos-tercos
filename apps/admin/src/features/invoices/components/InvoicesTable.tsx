@@ -63,6 +63,21 @@ export function InvoicesTable({ rows }: InvoicesTableProps) {
         ),
     },
     {
+      key: 'freight',
+      header: 'Domicilio',
+      align: 'right',
+      numeric: true,
+      hideOnMobile: true,
+      // "—" y no "$0": la mayoría de las facturas no cobra domicilio, y una
+      // columna llena de ceros esconde justo las que sí.
+      cell: (inv) =>
+        inv.freightAmount > 0 ? (
+          <Money amount={inv.freightAmount} weight="semibold" />
+        ) : (
+          <span className="text-ink-400">—</span>
+        ),
+    },
+    {
       key: 'status',
       header: 'Estado',
       cell: (inv) => <StatusBadge status={inv.status} mapping={STATUS_MAPPING} size="sm" />,
