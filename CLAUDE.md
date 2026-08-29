@@ -3007,6 +3007,31 @@ traspaso que no cambia el total · factura pagada mixta (con comprobante, como e
 la app) · ajuste manual · anulación de un movimiento · la ley de reconstrucción
 de cada bolsillo · un compromiso pendiente no baja el saldo pero sí lo proyectado.
 
+## 7.v46 Devengado contra pagado: las dos vistas de la misma plata (2026-08-28)
+
+> `apps/api/test/devengado-vs-pagado.e2e-spec.ts` (5 leyes). El negocio lleva
+> DOS libros sobre los mismos gastos y los dos son correctos: el **estado de
+> resultados** cuenta lo DEVENGADO (la nómina y los costos fijos del mes pesan
+> aunque no se hayan pagado — responde "¿este mes gané o perdí?") y **Finanzas
+> más tesorería** cuentan la CAJA (lo que salió del bolsillo y lo que se debe —
+> responde "¿con cuánta plata cuento?"). Cada módulo tenía su suite; que los dos
+> se muevan de forma coherente no lo verificaba nadie.
+
+Las leyes: trabajar sin cobrar YA pesa en el resultado y aparece como pendiente
+· pagar NO cambia el resultado del mes trabajado pero sí la caja **del mes en
+que se paga** · lo devengado de una semana = lo abonado + lo que falta · un
+costo fijo recurrente pesa UNA vez en el mes, se pague cuando se pague · anular
+un pago devuelve la plata al bolsillo y la deuda a pendiente **sin tocar el
+resultado** (anular el PAGO no borra el trabajo).
+
+La separación temporal es el punto: el trabajo puede ser de mayo y la plata
+salir en agosto. Si el pago volviera a restar del resultado, mayo cargaría dos
+veces el mismo sueldo; si la caja lo pusiera en mayo, agosto se leería con más
+plata de la que tiene.
+
+⚠️ `pending.payroll` es el pendiente de TODAS las semanas sin saldar, no el de
+una: la identidad por semana vive en `netOwed = paidTotal + remaining`.
+
 ## 7.v45 Un test que se caía todas las noches después de las 7 (2026-08-28)
 
 `merma-produccion.e2e-spec.ts` calculaba "hoy" con `toISOString().slice(0,10)`,
