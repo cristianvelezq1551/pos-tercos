@@ -170,7 +170,10 @@ export function InvoiceConfirmModal({
     <>
     <Dialog
       open
-      onClose={submitting ? () => {} : onClose}
+      // También bloqueado mientras se guarda el borrador: cerrar dispara el
+      // descarte de la foto subida, y la factura que se está guardando la
+      // referencia.
+      onClose={submitting || draftSaver.saving ? () => {} : onClose}
       title="Revisar y confirmar factura"
       description={
         manualMode

@@ -133,7 +133,8 @@ describe('anulación de factura · lo que ya se había vendido', () => {
 describe('anulación de factura · casos de borde', () => {
   it('una compra sin costo conocido se anula igual', () => {
     const r = runLedgerFifo(compraAnulada({ id: 'c', qty: 7, unitCost: null, at: T(1) }));
-    expect(r.remaining.get('INGREDIENT:ing1')).toBeUndefined();
+    // En cero, no ausente: la cola vacía es la misma forma que deja consumir.
+    expect(r.remaining.get('INGREDIENT:ing1')).toEqual({ qty: 0, value: 0, unknownQty: 0 });
   });
 
   it('anular una compra de producto de reventa quita su lote', () => {
@@ -141,7 +142,7 @@ describe('anulación de factura · casos de borde', () => {
       mov({ id: 'p1', delta: 24, unitCost: 2000, type: 'PURCHASE', sourceType: 'invoice', entityType: 'PRODUCT', createdAt: T(1) }),
       mov({ id: 'p1-rev', delta: -24, type: 'PURCHASE', sourceType: 'invoice_reversal', sourceId: 'p1', entityType: 'PRODUCT', createdAt: T(1) }),
     ]);
-    expect(r.remaining.get('PRODUCT:prod1')).toBeUndefined();
+    expect(r.remaining.get('PRODUCT:prod1')).toEqual({ qty: 0, value: 0, unknownQty: 0 });
   });
 
   it('no toca la merma ni las cortesías del período', () => {

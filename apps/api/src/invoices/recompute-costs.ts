@@ -89,33 +89,37 @@ async function ultimaCompraViva(
   prisma: PrismaService,
   filtro: { entityType: 'INGREDIENT' | 'PRODUCT'; ingredientId?: string; productId?: string },
 ): Promise<{ unitCost: number; createdAt: Date } | null> {
-  const candidatos = await prisma.inventoryMovement.findMany({
+  // Primero las facturas VIVAS de ese ítem, y recién después su movimiento.
+  //
+  // Al revés —traer los últimos movimientos y filtrarlos— hacía falta un tope
+  // arbitrario, y si ese tope se llenaba de facturas anuladas el ítem quedaba
+  // sin último costo teniendo compras buenas más atrás. `sourceId` es un texto
+  // suelto (no hay relación entre movimiento y factura), así que la unión se
+  // hace en dos consultas a propósito.
+  const facturasVivas = await prisma.invoiceItem.findMany({
+    where: {
+      ingredientId: filtro.ingredientId,
+      productId: filtro.productId,
+      invoice: { status: 'CONFIRMED' },
+    },
+    select: { invoiceId: true },
+    distinct: ['invoiceId'],
+  });
+  if (facturasVivas.length === 0) return null;
+
+  const viva = await prisma.inventoryMovement.findFirst({
     where: {
       entityType: filtro.entityType,
       ingredientId: filtro.ingredientId ?? undefined,
       productId: filtro.productId ?? undefined,
       sourceType: 'invoice',
+      sourceId: { in: facturasVivas.map((f) => f.invoiceId) },
       type: 'PURCHASE',
       unitCost: { not: null },
     },
-    select: { unitCost: true, createdAt: true, sourceId: true },
+    select: { unitCost: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
-    take: 30,
   });
-  if (candidatos.length === 0) return null;
-
-  const facturasVivas = new Set(
-    (
-      await prisma.invoice.findMany({
-        where: {
-          id: { in: candidatos.map((c) => c.sourceId).filter((s): s is string => s !== null) },
-          status: 'CONFIRMED',
-        },
-        select: { id: true },
-      })
-    ).map((i) => i.id),
-  );
-  const viva = candidatos.find((c) => c.sourceId !== null && facturasVivas.has(c.sourceId));
   return viva ? { unitCost: Number(viva.unitCost), createdAt: viva.createdAt } : null;
 }
 

@@ -17,6 +17,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 import { hoyLocal } from './helpers/local-day';
+import { CogsService } from '../src/reports/cogs.service';
 
 const PIN = '246810';
 
@@ -339,6 +340,116 @@ describe('Facturas — anular una confirmada', () => {
     // Si sobreviviera, ese corte seguiría resumiendo un inventario que incluye
     // la compra anulada y el error sería permanente y silencioso.
     expect(await prisma.ledgerSnapshot.count({ where: { cutoffAt: corte } })).toBe(0);
+  });
+
+  it('si la mercancía ya se consumió, la pérdida queda estimada y con deuda', async () => {
+    // El caso que importa de verdad: se compró, se usó, y recién ahí se anula.
+    // Esas unidades ya no tienen respaldo, así que el motor las trata como
+    // cualquier consumo sin stock — estimadas, con deuda, nunca en cero.
+    const otro = await request
+      .post('/ingredients')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        name: 'Insumo consumido antes de anular',
+        unitPurchase: 'kg',
+        unitRecipe: 'kg',
+        conversionFactor: 1,
+        thresholdMin: 0,
+        isActive: true,
+      })
+      .expect(201);
+    const otroId = otro.body.id as string;
+    const hoy = hoyLocal();
+
+    const id = await confirmar({
+      invoiceNumber: 'A-CONSUMIDA',
+      total: 100000,
+      items: [linea(otroId, 10, 10000, 100000)],
+    });
+    // Se merma la mitad: esa pérdida se costeó contra el lote de esta factura.
+    await request
+      .post('/inventory/movements')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ entityType: 'INGREDIENT', ingredientId: otroId, delta: -5, type: 'WASTE', notes: 'Se dañó' })
+      .expect(201);
+
+    await anular(id).expect(201);
+
+    app.get(CogsService).invalidateLedgerCache();
+    const pnl = await request
+      .get(`/reports/cogs/pnl?from=${hoy}&to=${hoy}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    // La merma sigue costando lo mismo —el precio no cambió, la factura sí
+    // dejó de existir— pero ahora está declarada como ESTIMADA, no exacta.
+    expect(pnl.body.wasteCost).toBeGreaterThan(0);
+    // El P&G lo declara como provisional: es un estimado al último precio
+    // conocido, no un costo exacto. Un estimado presentado como exacto es el
+    // mismo problema que valuarlo en cero.
+    expect(pnl.body.wasteEstimatedCost).toBeGreaterThan(0);
+
+    // Y las existencias quedan en negativo: se consumió algo que no se compró.
+    expect(await stockDe(otroId)).toBe(-5);
+  });
+
+  it('volver a cargar la factura corregida salda esa deuda al costo real', async () => {
+    const otro = await request
+      .post('/ingredients')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        name: 'Insumo recargado',
+        unitPurchase: 'kg',
+        unitRecipe: 'kg',
+        conversionFactor: 1,
+        thresholdMin: 0,
+        isActive: true,
+      })
+      .expect(201);
+    const otroId = otro.body.id as string;
+    const hoy = hoyLocal();
+
+    const mala = await confirmar({
+      invoiceNumber: 'A-MALA',
+      total: 100000,
+      items: [linea(otroId, 10, 10000, 100000)],
+    });
+    await request
+      .post('/inventory/movements')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ entityType: 'INGREDIENT', ingredientId: otroId, delta: -4, type: 'WASTE', notes: 'Se dañó' })
+      .expect(201);
+    await anular(mala).expect(201);
+
+    const pnlDe = async (): Promise<{ wasteCost: number; wasteEstimatedCost: number }> => {
+      // El motor cachea 60 s a propósito (§7.v18): acá se mide la lógica, no la
+      // caché. En la app real el P&G refleja la anulación cuando vence el TTL.
+      app.get(CogsService).invalidateLedgerCache();
+      const res = await request
+        .get(`/reports/cogs/pnl?from=${hoy}&to=${hoy}`)
+        .set('Authorization', `Bearer ${duenoToken}`)
+        .expect(200);
+      return res.body as { wasteCost: number; wasteEstimatedCost: number };
+    };
+    // El P&G es de TODO el día, así que se mide la DIFERENCIA: el absoluto
+    // arrastra lo que dejaron los otros casos de esta misma suite.
+    const antes = await pnlDe();
+
+    // La buena costaba $15.000/kg, no $10.000.
+    await confirmar({
+      invoiceNumber: 'A-BUENA',
+      total: 150000,
+      items: [linea(otroId, 10, 15000, 150000)],
+    });
+
+    const despues = await pnlDe();
+    // Los 4 kg mermados dejan de estar estimados: la compra buena los saldó.
+    expect(antes.wasteEstimatedCost - despues.wasteEstimatedCost).toBe(40000);
+    // Y su costo pasa del estimado ($10.000/kg) al real ($15.000/kg).
+    expect(despues.wasteCost - antes.wasteCost).toBe(20000);
+    // Y el último costo del insumo es el de la factura que sí existe.
+    const ing = await prisma.ingredient.findUniqueOrThrow({ where: { id: otroId } });
+    expect(Number(ing.lastUnitCost)).toBe(15000);
+    expect(await stockDe(otroId)).toBe(6);
   });
 
   // =====================================================================

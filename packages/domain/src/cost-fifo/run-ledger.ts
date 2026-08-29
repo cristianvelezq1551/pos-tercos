@@ -821,9 +821,11 @@ export function runLedgerFifo(
       lote.qty = roundCost(lote.qty - quita);
       pendiente = roundCost(pendiente - quita);
     }
-    const vivos = cola.filter((l) => l.qty > 1e-9);
-    if (vivos.length > 0) queues.set(key, vivos);
-    else queues.delete(key);
+    // La cola queda VACÍA, no borrada: es como la deja el consumo normal
+    // (`consumeFifo`). Borrar la clave haría que este stockable desapareciera
+    // de `remaining` en vez de figurar en cero, y esa diferencia de forma según
+    // CÓMO se vació la cola es justo lo que después confunde a un reporte.
+    queues.set(key, cola.filter((l) => l.qty > 1e-9));
     return pendiente;
   };
 

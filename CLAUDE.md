@@ -3244,10 +3244,49 @@ registra nada**, que ES la ley— y `includeVoidedPurchases` en las historias
 aleatorias del motor, así que las 11 leyes matemáticas ahora también cubren el
 camino nuevo.
 
+### Auditoría del propio cambio: 6 correcciones
+Pasada adversarial después de implementarlo. Ninguna de las seis daba error ni
+salía en los tests — todas salieron de releer el código contra el resto del repo:
+1. **La foto se podía borrar mientras se guardaba el borrador**: el diálogo era
+   cerrable durante el guardado y cerrar dispara `discardPhoto`. Ventana chica,
+   pero el borrador quedaba apuntando a una foto que ya no existe.
+2. **La cola vacía se borraba en vez de quedar en cero.** El consumo normal
+   (`consumeFifo`) deja el arreglo vacío; mi remoción borraba la clave, así que
+   el stockable desaparecía de `remaining` en vez de figurar en cero. Una
+   diferencia de forma según CÓMO se vació la cola es lo que después confunde a
+   un reporte.
+3. **El recálculo del último costo miraba solo los 30 movimientos más
+   recientes**: si esos 30 eran todos de facturas anuladas, el ítem quedaba sin
+   último costo teniendo compras buenas más atrás. Ahora se parte de las
+   facturas VIVAS (`sourceId` es texto suelto, así que la unión va en dos
+   consultas a propósito).
+4. **Las 3 acciones nuevas no tenían etiqueta en la bitácora** y se habrían
+   mostrado con el código crudo (`INVOICE_VOIDED`), contra §3.
+5. **El borrador con foto no verificaba que la foto existiera**, a diferencia de
+   confirmar.
+6. Faltaba el caso e2e que más importa: **anular una factura cuya mercancía ya
+   se consumió** — la pérdida queda estimada con deuda, y la factura corregida
+   la salda al costo real (verificado punta a punta contra el P&G).
+
+Verificado además: sin deriva de schema en `invoices` (las dos que reporta
+`migrate diff` son preexistentes y están documentadas), `test-support` no sale
+del barril de `domain` (no viaja al bundle del cliente), la web y la cocina no
+leen facturas, y la ficha de una anulada no ofrece acciones de pago
+(`InvoicePaymentSection`/`InvoicePaymentActions` ya filtran por CONFIRMED).
+
 ### Deuda conocida
-El generador de historias emite la anulación pegada a su compra, que es como la
-escribe la app. El camino defensivo para una reversa suelta existe (consume por
-FIFO normal) pero solo está cubierto por un test de escenario.
+- El generador de historias emite la anulación pegada a su compra, que es como
+  la escribe la app. El camino defensivo para una reversa suelta existe (consume
+  por FIFO normal) pero solo está cubierto por un test de escenario.
+- **La caché del ledger es de 60 s**: tras anular, el P&G refleja el cambio
+  cuando vence. Es la misma staleness deliberada de la reversa de merma
+  (§7.v18); invalidarla exigiría que `InvoicesModule` importara `ReportsModule`.
+- En `/inventory/movements` la reversa se ve como "Compra" con delta negativo.
+  El tipo `PURCHASE` es deliberado —así el reporte de uso la NETEA contra lo
+  comprado en vez de contarla como ajuste— pero la etiqueta se lee rara; lo
+  explica la nota del movimiento.
+- Los 3 días se cuentan como **72 horas** desde `confirmedAt`, no como días
+  calendario.
 
 ## 8. Estado del proyecto (commits y FASES)
 

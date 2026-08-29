@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type { StorageProvider } from '@pos-tercos/domain';
 import { INVOICE_STATUS_LABELS, type ExtractedInvoice, type Invoice, type SaveInvoiceDraft } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { includeFull, toInvoiceDto } from './invoices.mappers';
@@ -25,11 +27,20 @@ export class InvoiceDraftsService {
     private readonly prisma: PrismaService,
     private readonly invoices: InvoicesService,
     private readonly audit: AuditService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   /** Crea el borrador. Flujo IA (con foto) o carga manual (sin ella). */
   async save(input: SaveInvoiceDraft, userId: string): Promise<Invoice> {
     this.assertPhotoPairing(input);
+    // Misma verificación que al confirmar: sin esto, un borrador podría quedar
+    // apuntando a una foto que ya no existe y su ficha mostraría un hueco.
+    if (input.photoStorageKey) {
+      const existe = await this.storage.url(input.photoStorageKey).catch(() => null);
+      if (!existe) {
+        throw new BadRequestException('La foto ya no está disponible. Vuelve a subirla.');
+      }
+    }
     await this.invoices.assertPayloadConfirmable(input);
 
     const created = await this.prisma.$transaction(async (tx) => {
