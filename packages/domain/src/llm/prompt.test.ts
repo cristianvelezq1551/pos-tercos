@@ -92,6 +92,18 @@ describe('INVOICE_EXTRACTION_SYSTEM', () => {
     expect(INVOICE_EXTRACTION_SYSTEM).toContain('"freight": number | null');
     expect(INVOICE_EXTRACTION_SYSTEM).toMatch(/NO se incluye en .?items/);
   });
+
+  /**
+   * Los warnings de la extracción van DERECHO a la pantalla del dueño. Sin esta
+   * instrucción el modelo los escribía en inglés («Line 11: calculated total
+   * differs from stated total»), que es exactamente lo que §3 prohíbe. Visto en
+   * producción con una factura real.
+   */
+  it('exige que los avisos vayan en español y sin jerga', () => {
+    expect(INVOICE_EXTRACTION_SYSTEM).toMatch(/warnings los lee el DUEÑO/);
+    expect(INVOICE_EXTRACTION_SYSTEM).toMatch(/español/);
+    expect(INVOICE_EXTRACTION_SYSTEM).toMatch(/Nada de inglés/);
+  });
 });
 
 /**
