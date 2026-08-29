@@ -580,7 +580,13 @@ export const ChangeSalePaymentSchema = z
     /** Modo SIMPLE: todo el total a un único método. */
     method: PaymentMethodEnum.optional(),
     /** Modo DIVIDIDO: partes que suman exactamente el total. */
-    payments: z.array(ChangeSalePaymentPartSchema).min(2).max(MAX_SPLIT_PARTS).optional(),
+    payments: z
+      .array(ChangeSalePaymentPartSchema)
+      // Mensajes propios: el automático de Zod salía como «Los pagos es menor
+      // que el mínimo permitido», que además de roto no dice qué hacer.
+      .min(2, { message: 'Una cuenta dividida necesita al menos 2 partes.' })
+      .max(MAX_SPLIT_PARTS, { message: `Una cuenta se puede dividir en máximo ${MAX_SPLIT_PARTS} partes.` })
+      .optional(),
   })
   .superRefine((data, ctx) => {
     const simple = data.method !== undefined;
@@ -605,7 +611,11 @@ export const ConfirmPaymentSchema = z
      *  (verificar app del negocio + comprobante cliente). UI obliga true. */
     digitalDoubleVerified: z.boolean().optional(),
     /** Modo DIVIDIDO: 2..N partes que suman exactamente el total de la venta. */
-    payments: z.array(SalePaymentInputSchema).min(2).max(MAX_SPLIT_PARTS).optional(),
+    payments: z
+      .array(SalePaymentInputSchema)
+      .min(2, { message: 'Una cuenta dividida necesita al menos 2 partes.' })
+      .max(MAX_SPLIT_PARTS, { message: `Una cuenta se puede dividir en máximo ${MAX_SPLIT_PARTS} partes.` })
+      .optional(),
     notes: z.string().max(200).optional(),
     /** true = actualización retroactiva (offline) → NO avisar al cliente por WhatsApp. */
     silent: z.boolean().optional(),

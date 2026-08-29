@@ -14,7 +14,12 @@ import {
   roundsToZeroAt4,
   type PromotionDef,
 } from '@pos-tercos/domain';
-import { isWebSaleType, REFUND_VOID_REASON_PREFIX, saleStatusLabel } from '@pos-tercos/types';
+import {
+  isWebSaleType,
+  paymentMethodLabel,
+  REFUND_VOID_REASON_PREFIX,
+  saleStatusLabel,
+} from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ConfirmPayment,
@@ -948,8 +953,10 @@ export class SalesService {
       const isDigital = requiresVerification.has(p.method);
       if (isDigital) {
         if (!p.digitalVerified) {
+          // Sin `paymentMethodLabel` acá salía el CODE («TRANSFER») y el nombre
+          // del campo interno, que no le dicen nada a quien está cobrando.
           throw new BadRequestException(
-            `La parte en ${p.method} requiere verificar su comprobante (digitalVerified).`,
+            `Marca que verificaste el comprobante de la parte en ${paymentMethodLabel(p.method)}.`,
           );
         }
         if (p.amountReceived !== undefined && Math.abs(p.amountReceived - p.amount) > 0.005) {
