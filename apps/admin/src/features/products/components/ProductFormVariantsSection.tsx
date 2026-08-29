@@ -2,6 +2,7 @@
 
 import { Button, Input, MoneyInput } from '@pos-tercos/ui';
 import type { FormState } from './ProductFormTypes';
+import { newRowKey } from './ProductFormTypes';
 
 export function ProductFormVariantsSection({
   form,
@@ -18,7 +19,7 @@ export function ProductFormVariantsSection({
       sizes: f.sizes.map((s, idx) => (idx === i ? { ...s, ...patch } : s)),
     }));
   const add = () =>
-    setForm((f) => ({ ...f, sizes: [...f.sizes, { name: '', price: '' }] }));
+    setForm((f) => ({ ...f, sizes: [...f.sizes, { rowKey: newRowKey(), name: '', price: '' }] }));
   const remove = (i: number) =>
     setForm((f) => ({ ...f, sizes: f.sizes.filter((_, idx) => idx !== i) }));
 
@@ -39,7 +40,7 @@ export function ProductFormVariantsSection({
       ) : (
         <ul className="space-y-2">
           {form.sizes.map((s, i) => (
-            <li key={i} className="flex items-center gap-2">
+            <li key={s.rowKey} className="flex items-center gap-2">
               <Input
                 placeholder="Nombre (ej. Carne smash doble)"
                 value={s.name}

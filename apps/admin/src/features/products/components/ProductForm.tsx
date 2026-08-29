@@ -11,7 +11,12 @@ import {
   setProductOptions,
   updateProduct,
 } from '../api/client';
-import { kindFromFlags, type FormState, type ProductKind } from './ProductFormTypes';
+import {
+  kindFromFlags,
+  newRowKey,
+  type FormState,
+  type ProductKind,
+} from './ProductFormTypes';
 import {
   parseFormValues,
   buildCreatePayload,
@@ -64,6 +69,7 @@ function initFormState(initial?: Product): FormState {
         : '',
     thresholdMin: initial ? String(initial.thresholdMin) : '0',
     sizes: (initial?.sizes ?? []).map((s) => ({
+      rowKey: newRowKey(),
       id: s.id,
       name: s.name,
       price: String(base + s.priceModifier),
@@ -71,6 +77,7 @@ function initFormState(initial?: Product): FormState {
     modifiers: (initial?.modifiers ?? []).map((m) => {
       const consumption = m.recipeDelta?.[0];
       return {
+        rowKey: newRowKey(),
         name: m.name,
         priceDelta: String(m.priceDelta),
         consumeChildType: consumption?.childType ?? ('' as const),
@@ -79,6 +86,7 @@ function initFormState(initial?: Product): FormState {
       };
     }),
     comboComponents: (initial?.comboComponents ?? []).map((c) => ({
+      rowKey: newRowKey(),
       productId: c.productId,
       quantity: String(c.quantity),
     })),
@@ -103,10 +111,13 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
       kind,
       directResale: kind === 'drink',
       isCombo: kind === 'combo',
-      sizes: kind === 'variants' && f.sizes.length === 0 ? [{ name: '', price: '' }] : f.sizes,
+      sizes:
+        kind === 'variants' && f.sizes.length === 0
+          ? [{ rowKey: newRowKey(), name: '', price: '' }]
+          : f.sizes,
       comboComponents:
         kind === 'combo' && f.comboComponents.length === 0
-          ? [{ productId: '', quantity: '1' }]
+          ? [{ rowKey: newRowKey(), productId: '', quantity: '1' }]
           : f.comboComponents,
     }));
 
