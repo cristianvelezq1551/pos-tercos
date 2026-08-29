@@ -63,6 +63,9 @@ export function buildInitialRows(draft: InvoiceDraftResponse, stockables: Stocka
       packUnits: item.packUnits,
       packSizePerUnit: item.packSizePerUnit,
       packSizeMeasure: item.packSizeMeasure,
+      // Conversión elegida a mano al guardar el borrador. Sin restaurarla, al
+      // reanudar volvería la sugerida y entraría otra cantidad de mercancía.
+      baseFactor: item.baseFactor,
     };
   });
 }

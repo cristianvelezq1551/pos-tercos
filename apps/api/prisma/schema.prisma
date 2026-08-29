@@ -51,6 +51,7 @@ model User {
   invoicesConfirmed           Invoice[]               @relation("InvoiceConfirmedBy")
   invoicesPaid                Invoice[]               @relation("InvoicePaymentActor")
   invoicesUploaded            Invoice[]               @relation("InvoiceUploadedBy")
+  invoicesVoided              Invoice[]               @relation("InvoiceVoidedBy")
   promotionsCreated           Promotion[]
   purchaseSuggestionsResolved PurchaseSuggestion[]
   refreshTokens               RefreshToken[]
@@ -435,11 +436,19 @@ model Invoice {
   /// Responsable que asume este gasto (ej. Cristian / Pablo) — para el
   /// desglose de compromisos en Tesorería. NULL = sin asignar.
   responsible       String?
+  /// Anulación de una factura confirmada (ventana corta, solo Dueño con PIN).
+  /// El estado pasa a VOIDED y se escriben movimientos compensatorios que
+  /// deshacen la entrada de mercancía; la fila se conserva porque el documento
+  /// existió y movió plata.
+  voidedAt          DateTime?     @map("voided_at")
+  voidedById        String?       @map("voided_by_id")
+  voidReason        String?       @map("void_reason")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
   items             InvoiceItem[]
   confirmedBy       User?         @relation("InvoiceConfirmedBy", fields: [confirmedById], references: [id])
   paymentActor      User?         @relation("InvoicePaymentActor", fields: [paymentActorId], references: [id])
+  voidedBy          User?         @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
   supplier          Supplier?     @relation(fields: [supplierId], references: [id])
   uploadedBy        User?         @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
 
@@ -958,6 +967,7 @@ enum InvoiceStatus {
   PENDING_REVIEW
   CONFIRMED
   REJECTED
+  VOIDED
 }
 
 enum SaleType {

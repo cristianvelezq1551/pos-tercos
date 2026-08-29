@@ -11,6 +11,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -24,6 +25,8 @@ import {
   CreateFromPhotoSchema,
   DiscardPaymentProofSchema,
   DiscardPhotoSchema,
+  SaveInvoiceDraftSchema,
+  VoidInvoiceSchema,
   type CloneInvoiceRequest,
   type ConfirmInvoice,
   type CreateFromPhoto,
@@ -33,7 +36,10 @@ import {
   type ExtractInvoiceResponse,
   type Invoice,
   type InvoiceDraftResponse,
+  type SaveInvoiceDraft,
   type UploadPaymentProofResponse,
+  type VoidInvoice,
+  type VoidInvoicePreview,
   UpdateInvoiceFreightSchema,
   type UpdateInvoiceFreight,
 } from '@pos-tercos/types';
@@ -45,7 +51,9 @@ import { parseOptionalDateRange } from '../common/local-dates';
 import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
+import { InvoiceDraftsService } from './invoice-drafts.service';
 import { InvoicePaymentsService } from './invoice-payments.service';
+import { InvoiceVoidService } from './invoice-void.service';
 import { InvoicesService } from './invoices.service';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -55,6 +63,8 @@ export class InvoicesController {
   constructor(
     private readonly invoices: InvoicesService,
     private readonly invoicePayments: InvoicePaymentsService,
+    private readonly invoiceDrafts: InvoiceDraftsService,
+    private readonly invoiceVoid: InvoiceVoidService,
   ) {}
 
   /** FASE 15.A — sweep manual de huérfanos. El cron corre semanal. */
@@ -180,6 +190,31 @@ export class InvoicesController {
     return this.invoices.createFromPhoto(confirm, photoStorageKey, aiModelUsed, user.sub);
   }
 
+  /**
+   * Guarda la factura como BORRADOR, sin tocar inventario, costos ni tesorería.
+   * Sirve tanto para el flujo con foto (manda `photoStorageKey`) como para la
+   * carga manual. Se confirma después con `POST /invoices/:id/confirm`.
+   */
+  @AdminAccess()
+  @Post('draft')
+  saveDraft(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(SaveInvoiceDraftSchema)) body: SaveInvoiceDraft,
+  ): Promise<Invoice> {
+    return this.invoiceDrafts.save(body, user.sub);
+  }
+
+  /** Reemplaza el contenido de un borrador ya guardado. */
+  @AdminAccess()
+  @Put(':id/draft')
+  updateDraft(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SaveInvoiceDraftSchema)) body: SaveInvoiceDraft,
+  ): Promise<Invoice> {
+    return this.invoiceDrafts.update(id, body, user.sub);
+  }
+
   /** El usuario cerró el modal IA sin confirmar → limpiar la foto subida. */
   @AdminAccess()
   @Post('discard-photo')
@@ -253,6 +288,32 @@ export class InvoicesController {
     @Body() body: { reason?: string },
   ): Promise<Invoice> {
     return this.invoices.reject(id, user.sub, body?.reason);
+  }
+
+  /**
+   * Qué le pasaría al inventario si se anula esta factura. Read-only: se
+   * consulta para mostrar el impacto ANTES de decidir.
+   */
+  @OnlyDueno()
+  @Get(':id/void-preview')
+  voidPreview(@Param('id', ParseUUIDPipe) id: string): Promise<VoidInvoicePreview> {
+    return this.invoiceVoid.preview(id);
+  }
+
+  /**
+   * Anula una factura confirmada: deshace la entrada de mercancía y la saca de
+   * todos los reportes. Solo el Dueño, con PIN, y dentro de la ventana corta.
+   */
+  @OnlyDueno()
+  @Post(':id/void')
+  voidInvoice(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @Body(new ZodValidationPipe(VoidInvoiceSchema)) body: VoidInvoice,
+  ): Promise<Invoice> {
+    if (!pin) throw new BadRequestException('Falta el PIN de aprobación.');
+    return this.invoiceVoid.void(id, body, pin, user.sub, user.role);
   }
 
   /**

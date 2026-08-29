@@ -14,6 +14,7 @@ export type DbInvoiceWithDetail = Prisma.InvoiceGetPayload<{
     uploadedBy: { select: { fullName: true } };
     confirmedBy: { select: { fullName: true } };
     paymentActor: { select: { fullName: true } };
+    voidedBy: { select: { fullName: true } };
     items: {
       include: {
         ingredient: { select: { name: true } };
@@ -29,6 +30,7 @@ export function includeFull() {
     uploadedBy: { select: { fullName: true } },
     confirmedBy: { select: { fullName: true } },
     paymentActor: { select: { fullName: true } },
+    voidedBy: { select: { fullName: true } },
     items: {
       include: {
         ingredient: { select: { name: true } },
@@ -95,6 +97,9 @@ export function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
         : null,
     paymentCashAmount: paymentStatus === 'PAID' ? Number(row.paymentCashAmount) : null,
     paymentBankAmount: paymentStatus === 'PAID' ? Number(row.paymentBankAmount) : null,
+    voidedAt: row.voidedAt?.toISOString() ?? null,
+    voidedByName: row.voidedBy?.fullName ?? null,
+    voidReason: row.voidReason,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     items,

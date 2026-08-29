@@ -6,6 +6,7 @@ import {
   DeleteDraftButton,
   EditFreightAction,
   InvoicePaymentSection,
+  VoidInvoiceAction,
 } from '../../../../features/invoices';
 import { getCurrentUserServer } from '../../../../features/auth/server';
 import { Button, Container, PageHeader, formatCop } from '@pos-tercos/ui';
@@ -20,12 +21,14 @@ const STATUS_LABEL: Record<Invoice['status'], string> = {
   PENDING_REVIEW: 'Pendiente revisión',
   CONFIRMED: 'Confirmada',
   REJECTED: 'Rechazada',
+  VOIDED: 'Anulada',
 };
 
 const STATUS_TONE: Record<Invoice['status'], string> = {
   PENDING_REVIEW: 'bg-warning-bg/30 text-warning ring-warning-border',
   CONFIRMED: 'bg-success-bg/30 text-success ring-success-border',
   REJECTED: 'bg-destructive/10 text-destructive ring-destructive/30',
+  VOIDED: 'bg-destructive/10 text-destructive ring-destructive/30',
 };
 
 export default async function InvoiceDetailPage({ params }: PageProps) {
@@ -83,7 +86,10 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               </>
             ) : null}
             {invoice.status === 'CONFIRMED' ? (
-              <CloneInvoiceButton sourceInvoiceId={invoice.id} />
+              <>
+                <CloneInvoiceButton sourceInvoiceId={invoice.id} />
+                <VoidInvoiceAction invoice={invoice} isDueno={isDueno} />
+              </>
             ) : null}
           </>
         }
@@ -97,6 +103,21 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               {STATUS_LABEL[invoice.status]}
             </span>
           </div>
+
+          {invoice.status === 'VOIDED' && (
+            <section className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              <p className="font-semibold">Esta factura fue anulada.</p>
+              <p className="mt-1">
+                No cuenta en el inventario, ni en las compras, ni en el resultado del mes. Se
+                conserva porque el documento existió.
+              </p>
+              {invoice.voidReason && <p className="mt-2">Motivo: {invoice.voidReason}</p>}
+              <p className="mt-1 text-xs">
+                {invoice.voidedByName ?? 'Alguien'} la anuló el{' '}
+                {invoice.voidedAt ? formatDate(invoice.voidedAt) : '—'}.
+              </p>
+            </section>
+          )}
 
           <InvoicePaymentSection
             invoice={invoice}

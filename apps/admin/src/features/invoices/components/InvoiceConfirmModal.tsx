@@ -24,6 +24,7 @@ import {
 import { buildPaymentBlock } from './build-payment-block';
 import { validateInvoice } from './validate-invoice';
 import { useInvoiceRows } from '../hooks/useInvoiceRows';
+import { useSaveDraft } from '../hooks/useSaveDraft';
 import { getErrorMessage } from '../../../lib/errors';
 
 interface InvoiceConfirmModalProps {
@@ -125,6 +126,22 @@ export function InvoiceConfirmModal({
     }
   };
 
+  // Guardar sin confirmar: mismo contenido validado, pero la factura queda como
+  // borrador y no toca inventario, costos ni tesorería.
+  const draftSaver = useSaveDraft({
+    rows,
+    warnings: draft.extraction.warnings,
+    iaContext,
+    draftId: iaContext || manualMode ? undefined : draft.invoice.id,
+    onSaved: onConfirmed,
+  });
+  const handleSaveDraft = (): void => {
+    setError(null);
+    const v = validateInvoice({ supplierMode, supplierId, newSupplierNit, newSupplierName, suppliers, rows, total, iva, freight, invoiceNumber, notes });
+    if (!v.valid) { setError(v.reason); return; }
+    void draftSaver.save(v.payload);
+  };
+
   const handleReject = async (): Promise<void> => {
     setConfirmReject(false);
     setError(null);
@@ -153,7 +170,10 @@ export function InvoiceConfirmModal({
     <>
     <Dialog
       open
-      onClose={submitting ? () => {} : onClose}
+      // También bloqueado mientras se guarda el borrador: cerrar dispara el
+      // descarte de la foto subida, y la factura que se está guardando la
+      // referencia.
+      onClose={submitting || draftSaver.saving ? () => {} : onClose}
       title="Revisar y confirmar factura"
       description={
         manualMode
@@ -167,6 +187,14 @@ export function InvoiceConfirmModal({
         <>
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>Cancelar</Button>
           <Button variant="destructive" size="sm" onClick={() => setConfirmReject(true)} disabled={submitting}>Rechazar</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSaveDraft}
+            disabled={submitting || draftSaver.saving || pending}
+          >
+            {draftSaver.saving ? 'Guardando…' : 'Guardar para revisar'}
+          </Button>
           <Button size="sm" onClick={handleConfirm} disabled={submitting || pending}>
             {submitting ? 'Confirmando…' : 'Confirmar y sumar al inventario'}
           </Button>
@@ -231,8 +259,14 @@ export function InvoiceConfirmModal({
           disabled={submitting}
         />
 
-        {error && (
-          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+        <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Guardar para revisar</span> deja la factura
+          como borrador: no suma al inventario, no toca los costos ni la plata, y la puedes editar o
+          borrar cuando quieras. Los datos de pago se piden al confirmar.
+        </p>
+
+        {(error ?? draftSaver.error) && (
+          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error ?? draftSaver.error}</p>
         )}
       </div>
     </Dialog>

@@ -50,13 +50,22 @@ export const INVOICE_EXTRACTION_USER = `Esta es la foto de una factura. Devuelve
 /**
  * Normaliza los items crudos del LLM antes del Zod parse: garantiza que cada
  * item tenga las claves de empaque (packUnits/packSizePerUnit/packSizeMeasure)
- * en null si el modelo las omitió. Los valores presentes ganan sobre el default.
+ * y la conversión elegida (baseFactor) en null si no venían. Los valores
+ * presentes ganan sobre el default.
  */
 export function normalizeExtractedItems(items: unknown): unknown {
   if (!Array.isArray(items)) return items;
   return items.map((it) =>
     it && typeof it === 'object'
-      ? { packUnits: null, packSizePerUnit: null, packSizeMeasure: null, ...(it as object) }
+      ? {
+          packUnits: null,
+          packSizePerUnit: null,
+          packSizeMeasure: null,
+          // `baseFactor` no lo devuelve el LLM: lo elige la persona al revisar
+          // y se guarda al dejar la factura en borrador.
+          baseFactor: null,
+          ...(it as object),
+        }
       : it,
   );
 }

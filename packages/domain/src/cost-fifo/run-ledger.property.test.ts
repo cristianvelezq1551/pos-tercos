@@ -59,6 +59,9 @@ const run = (opts: Partial<HistoryOptions> = {}) => {
     allowShortfall: true,
     allowUnknownCost: true,
     includeProduction: true,
+    // Compras anuladas: las leyes tienen que valer igual cuando una entrada se
+    // deshace, incluida la que había saldado deudas de inventario negativo.
+    includeVoidedPurchases: true,
     ...opts,
   };
   return (seed: number) => {

@@ -32,6 +32,8 @@ function buildSyntheticDraft(
       photoStorageKey: null,
       aiModelUsed,
       status: 'PENDING_REVIEW',
+      voidedAt: null,
+      voidReason: null,
       uploadedById: null,
       uploadedByName: null,
       confirmedById: null,

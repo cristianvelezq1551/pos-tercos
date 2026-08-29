@@ -261,6 +261,17 @@ type Event =
   | { kind: 'single'; ts: Date; m: LedgerMovement }
   | { kind: 'production'; ts: Date; consumes: LedgerMovement[]; produces: LedgerMovement };
 
+/** Lo que una entrada le saldó a una deuda, guardado para poder deshacerlo. */
+interface Settlement {
+  key: string;
+  fill: number;
+  debt: Debt;
+  attributedCost: number;
+  unknownDelta: number;
+  estimatedDelta: number;
+  stockableId: string;
+}
+
 export function runLedgerFifo(
   movements: readonly LedgerMovement[],
   seed?: LedgerSeed,
@@ -361,6 +372,14 @@ export function runLedgerFifo(
   // merma original (una merma no tiene entidad padre, a diferencia de una
   // cortesía), así que la clave de sus draws es el id del propio movimiento.
   const reversedSources = new Set<string>();
+  /**
+   * Compras que después se anulan (id del movimiento de entrada).
+   *
+   * Mismo pre-scan acotado que los draws: solo se lleva el detalle de lo que
+   * una entrada saldó cuando esa entrada va a deshacerse. Guardarlo de todas
+   * inflaría la memoria del replay sin que nadie lo use.
+   */
+  const revertedPurchases = new Set<string>();
   for (const m of movements) {
     if (!m.sourceId) continue;
     if (
@@ -370,7 +389,19 @@ export function runLedgerFifo(
     ) {
       reversedSources.add(m.sourceId);
     }
+    if (m.sourceType === 'invoice_reversal') revertedPurchases.add(m.sourceId);
   }
+
+  /**
+   * Deudas que saldó cada compra que después se anula, para poder deshacerlas.
+   *
+   * Cuando una entrada llega y el stockable tiene inventario NEGATIVO, el lote
+   * no queda en la cola: salda la deuda y su costo se atribuye retroactivamente
+   * al consumo que la debía. Si esa compra se anula, quitar unidades de la cola
+   * no alcanza —ahí no quedó nada— y hay que devolver la deuda y desatribuir el
+   * costo. Sin esto, la anulación se comía lotes ajenos y el COGS quedaba mal.
+   */
+  const settlementsByLot = new Map<string, Settlement[]>();
   const drawsBySource = new Map<string, Draw[]>();
   /**
    * Fecha del CONSUMO original de cada merma/cortesía que luego se anula
@@ -610,6 +641,13 @@ export function runLedgerFifo(
    * remanente queda disponible como stock. Así el replay corrige solo el costo
    * de la venta forzada en cuanto se registra el inventario (compra/producción).
    */
+  /** Anota que esta entrada saldó parte de una deuda, para poder deshacerlo. */
+  const registrarSaldo = (movementId: string, s: Settlement): void => {
+    const previas = settlementsByLot.get(movementId) ?? [];
+    previas.push(s);
+    settlementsByLot.set(movementId, previas);
+  };
+
   const addLot = (key: string, lot: Lot): void => {
     // Base del estimado para futuros faltantes de este stockable.
     if (lot.unitCost !== null) lastKnownUnitCost.set(key, lot.unitCost);
@@ -649,6 +687,21 @@ export function runLedgerFifo(
               d.estimatedUnitCost !== null ? -fill : 0,
             );
           }
+          if (revertedPurchases.has(lot.movementId)) {
+            registrarSaldo(lot.movementId, {
+              key,
+              fill,
+              debt: { ...d, qty: fill },
+              attributedCost: d.kind === 'production' ? 0 : delta,
+              unknownDelta: d.kind === 'production' ? 0 : unknownDelta,
+              estimatedDelta:
+                d.kind === 'production' ? 0
+                : d.kind && d.kind !== 'sale' ? -fill * already
+                : d.estimatedUnitCost !== null ? -fill
+                : 0,
+              stockableId,
+            });
+          }
           // Registrar un draw en el consumo para que una ANULACIÓN posterior
           // (void de venta, cortesía o merma) lo revierta.
           if (reversedSources.has(d.consumerId)) {
@@ -670,6 +723,22 @@ export function runLedgerFifo(
           const acc = drawsBySource.get(drawKey) ?? [];
           acc.push({ qty: fill, unitCost: d.estimatedUnitCost, movementId: lot.movementId, createdAt: lot.createdAt });
           drawsBySource.set(drawKey, acc);
+        }
+        // Un lote SIN costo también salda la deuda físicamente, así que su
+        // anulación también tiene que devolverla. No cambió ningún costo (la
+        // venta siguió con su estimado), por eso las atribuciones van en cero:
+        // sin este registro, anular esa compra perdía las unidades y el
+        // inventario del reporte se separaba del de la base (LEY 1).
+        if (lot.unitCost === null && revertedPurchases.has(lot.movementId)) {
+          registrarSaldo(lot.movementId, {
+            key,
+            fill,
+            debt: { ...d, qty: fill },
+            attributedCost: 0,
+            unknownDelta: 0,
+            estimatedDelta: 0,
+            stockableId,
+          });
         }
         // Lote de costo desconocido: salda físicamente la deuda pero el costo de
         // la venta sigue como estaba (estimado o desconocido — honesto).
@@ -732,6 +801,99 @@ export function runLedgerFifo(
     for (const lot of returnedLots) q.unshift(lot);
     queues.set(key, q);
     return { returnedCost, returnedUnknown, returnedQty };
+  };
+
+  /**
+   * Quita hasta `qty` unidades del lote que creó un movimiento concreto y
+   * devuelve lo que no se pudo quitar.
+   *
+   * Es lo contrario de consumir por FIFO: acá interesa UN lote en particular
+   * (el de la factura que se está anulando), no el más viejo de la cola.
+   */
+  const quitarLoteDeCompra = (key: string, movementId: string, qty: number): number => {
+    const cola = queues.get(key);
+    if (!cola || cola.length === 0) return qty;
+    let pendiente = qty;
+    for (let i = 0; i < cola.length && pendiente > 1e-9; i += 1) {
+      const lote = cola[i]!;
+      if (lote.movementId !== movementId) continue;
+      const quita = Math.min(lote.qty, pendiente);
+      lote.qty = roundCost(lote.qty - quita);
+      pendiente = roundCost(pendiente - quita);
+    }
+    // La cola queda VACÍA, no borrada: es como la deja el consumo normal
+    // (`consumeFifo`). Borrar la clave haría que este stockable desapareciera
+    // de `remaining` en vez de figurar en cero, y esa diferencia de forma según
+    // CÓMO se vació la cola es justo lo que después confunde a un reporte.
+    queues.set(key, cola.filter((l) => l.qty > 1e-9));
+    return pendiente;
+  };
+
+  /**
+   * Deshace lo que una compra anulada le había saldado a las deudas: devuelve
+   * la deuda a la cola y le quita al consumo el costo que se le había
+   * atribuido. Se procesa en orden inverso, del último saldo al primero.
+   */
+  const deshacerSaldos = (movementId: string, qty: number): number => {
+    const registros = settlementsByLot.get(movementId);
+    if (!registros || registros.length === 0) return qty;
+    let pendiente = qty;
+    while (pendiente > 1e-9 && registros.length > 0) {
+      const s = registros[registros.length - 1]!;
+      if (s.fill > pendiente + 1e-9) {
+        // Deshacer solo una parte: se prorratea lo atribuido.
+        const proporcion = pendiente / s.fill;
+        desatribuir(s, proporcion);
+        devolverDeuda(s, pendiente);
+        s.fill = roundCost(s.fill - pendiente);
+        s.attributedCost = roundCost(s.attributedCost * (1 - proporcion));
+        s.unknownDelta = roundCost(s.unknownDelta * (1 - proporcion));
+        s.estimatedDelta = roundCost(s.estimatedDelta * (1 - proporcion));
+        pendiente = 0;
+        break;
+      }
+      desatribuir(s, 1);
+      devolverDeuda(s, s.fill);
+      pendiente = roundCost(pendiente - s.fill);
+      registros.pop();
+    }
+    if (registros.length === 0) settlementsByLot.delete(movementId);
+    return pendiente;
+  };
+
+  /** Le quita al consumo el costo que le había dado la compra ahora anulada. */
+  const desatribuir = (s: Settlement, proporcion: number): void => {
+    const costo = -roundCost(s.attributedCost * proporcion);
+    const desconocido = -roundCost(s.unknownDelta * proporcion);
+    const estimado = -roundCost(s.estimatedDelta * proporcion);
+    if (costo === 0 && desconocido === 0 && estimado === 0) return;
+    if (s.debt.kind && s.debt.kind !== 'sale' && s.debt.kind !== 'production') {
+      attributeToLoss(s.debt.kind, s.debt.consumerId, s.debt.createdAt, costo, desconocido, estimado);
+    } else if (!s.debt.kind || s.debt.kind === 'sale') {
+      attributeToSale(s.debt.entityType, s.stockableId, s.debt.consumerId, costo, 0, desconocido, estimado);
+    }
+  };
+
+  /** Vuelve a poner la deuda al frente: el negocio otra vez debe esas unidades. */
+  const devolverDeuda = (s: Settlement, qty: number): void => {
+    const ds = debts.get(s.key) ?? [];
+    ds.unshift({ ...s.debt, qty: roundCost(qty) });
+    debts.set(s.key, ds);
+    // El draw que dejó ese saldo tampoco existe: quitarlo de la cola sin
+    // re-inyectar unidades (el lote que las respaldaba se está anulando).
+    const drawKey = `${s.debt.consumerId}:${s.key}`;
+    const draws = drawsBySource.get(drawKey);
+    if (draws) {
+      let porQuitar = qty;
+      while (porQuitar > 1e-9 && draws.length > 0) {
+        const ultimo = draws[draws.length - 1]!;
+        const quita = Math.min(ultimo.qty, porQuitar);
+        ultimo.qty = roundCost(ultimo.qty - quita);
+        porQuitar = roundCost(porQuitar - quita);
+        if (ultimo.qty <= 1e-9) draws.pop();
+      }
+      if (draws.length === 0) drawsBySource.delete(drawKey);
+    }
   };
 
   /**
@@ -873,6 +1035,42 @@ export function runLedgerFifo(
     if (!key) continue;
     const delta = m.delta;
     const iso = m.createdAt.toISOString();
+
+    // ANULACIÓN DE UNA COMPRA (factura anulada).
+    //
+    // Quita del inventario EXACTAMENTE el lote que creó esa factura, no las
+    // unidades más viejas de la cola. La diferencia no es cosmética: un consumo
+    // FIFO normal se comería el lote anterior y descontaría un costo que no es
+    // el de la compra que se está deshaciendo — el inventario quedaría valuado
+    // con lotes que ya no existen.
+    //
+    // Se apoya en que el movimiento compensatorio se escribe CON LA FECHA del
+    // movimiento original (`sourceId` apunta a él), así que en el replay llega
+    // pegado a su lote, antes de que nadie lo consumiera: la remoción siempre
+    // es total y limpia. Todo lo que venga después se recalcula como si la
+    // factura nunca hubiera existido — las ventas que se habían comido esa
+    // mercancía pasan a ser faltantes estimados, con su deuda, igual que
+    // cualquier venta sin stock.
+    //
+    // El costo "último conocido" NO se revierte: sigue siendo lo último que se
+    // vio en el replay. Si la factura se anuló por un precio mal tecleado, un
+    // faltante posterior se estimaría con ese precio hasta que entre la factura
+    // corregida, que salda la deuda al costo real. Es transitorio y acotado.
+    if (m.sourceType === 'invoice_reversal' && delta < 0 && m.sourceId) {
+      let restante = quitarLoteDeCompra(key, m.sourceId, -delta);
+      // Lo que no estaba en la cola es lo que esa compra usó para saldar deudas
+      // (el negocio estaba en negativo cuando llegó la mercancía): se devuelve
+      // la deuda y se le quita al consumo el costo que había recibido.
+      if (restante > 1e-9) restante = deshacerSaldos(m.sourceId, restante);
+      if (restante > 1e-9) {
+        // Inalcanzable mientras la reversa llegue pegada a su lote (la API lo
+        // garantiza). Si aun así quedara algo, se descuenta por FIFO normal:
+        // las unidades quedan cuadradas con la base de datos y solo la base de
+        // costo sería aproximada — mucho mejor que un inventario que no cuadra.
+        consumeFifo(key, restante);
+      }
+      continue;
+    }
 
     // Reverso de consumo de venta (anulación o ajuste de edición): SALE con
     // delta > 0. Devuelve EXACTAMENTE `delta` unidades de los draws pendientes

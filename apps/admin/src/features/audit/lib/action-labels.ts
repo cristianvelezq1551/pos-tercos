@@ -72,6 +72,9 @@ const ACTION_LABELS: Record<string, string> = {
   INVOICE_REJECTED: 'Rechazó factura',
   INVOICE_CLONED: 'Clonó factura',
   INVOICE_DELETED: 'Eliminó borrador de factura',
+  INVOICE_DRAFT_SAVED: 'Guardó factura como borrador',
+  INVOICE_DRAFT_UPDATED: 'Editó un borrador de factura',
+  INVOICE_VOIDED: 'Anuló una factura confirmada',
 
   // Sugerencias de compra
   PURCHASE_SUGGESTION_CREATED: 'Sugerencia de compra creada',

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const InvoiceStatusEnum = z.enum(['PENDING_REVIEW', 'CONFIRMED', 'REJECTED']);
+export const InvoiceStatusEnum = z.enum(['PENDING_REVIEW', 'CONFIRMED', 'REJECTED', 'VOIDED']);
 export type InvoiceStatus = z.infer<typeof InvoiceStatusEnum>;
 
 /** Estado de la factura en palabras. Fuente única (backend + admin). */
@@ -8,6 +8,7 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   PENDING_REVIEW: 'pendiente de revisión',
   CONFIRMED: 'confirmada',
   REJECTED: 'rechazada',
+  VOIDED: 'anulada',
 };
 
 /** Estado de pago al proveedor (independiente de InvoiceStatus que es
@@ -39,6 +40,17 @@ export const ExtractedInvoiceItemSchema = z.object({
   packSizePerUnit: z.number().positive().nullable(),
   // Medida de la sub-unidad ("g", "ml", "kg"…).
   packSizeMeasure: z.string().min(1).max(20).nullable(),
+  /**
+   * Conversión a la unidad BASE elegida POR LA PERSONA para esta línea.
+   *
+   * La IA nunca lo devuelve (por eso el normalizador lo rellena en null): nace
+   * al guardar un borrador, porque el modal inicializa sus campos desde la
+   * extracción y sin esto una conversión corregida a mano se perdía al
+   * reanudar. Perderla es silencioso y caro: al confirmar entraría otra
+   * cantidad de mercancía y el costo del insumo saldría disparado
+   * (ver `conversionSospechosa` en el admin).
+   */
+  baseFactor: z.number().positive().nullable(),
 });
 export type ExtractedInvoiceItem = z.infer<typeof ExtractedInvoiceItemSchema>;
 
@@ -115,6 +127,10 @@ export const InvoiceSchema = z.object({
   paymentPocket: PaymentPocketEnum.nullable(),
   paymentCashAmount: z.number().nullable(),
   paymentBankAmount: z.number().nullable(),
+  /** Anulación: cuándo, quién y por qué. NULL mientras la factura viva. */
+  voidedAt: z.string().datetime().nullable(),
+  voidedByName: z.string().nullable().optional(),
+  voidReason: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   items: z.array(InvoiceItemSchema).optional(),
@@ -145,6 +161,47 @@ export const UpdateInvoiceFreightSchema = z.object({
   note: z.string().max(300).optional(),
 });
 export type UpdateInvoiceFreight = z.infer<typeof UpdateInvoiceFreightSchema>;
+
+/**
+ * Anular una factura CONFIRMADA: deshace la entrada de mercancía y la saca de
+ * todos los reportes, dejando los libros como si nunca se hubiera cargado.
+ *
+ * Ventana corta y a propósito: pasados unos días, la mercancía ya se consumió,
+ * el mes puede estar cerrado y corregir a ciegas hace más daño que el error.
+ * Después de eso el camino sigue siendo el ajuste manual de inventario.
+ */
+export const VoidInvoiceSchema = z.object({
+  /** Por qué se anula. Va a la bitácora y a la ficha de la factura. */
+  reason: z.string().min(5, 'Escribe por qué se anula (mínimo 5 caracteres).').max(300),
+});
+export type VoidInvoice = z.infer<typeof VoidInvoiceSchema>;
+
+/** Qué le va a pasar al inventario si se anula. Se consulta ANTES de anular. */
+export const VoidInvoicePreviewLineSchema = z.object({
+  entityType: z.enum(['INGREDIENT', 'PRODUCT']),
+  entityId: z.string().uuid(),
+  name: z.string(),
+  /** Unidad en la que se lleva el inventario de ese ítem. */
+  unit: z.string(),
+  /** Existencias de ahora. */
+  currentStock: z.number(),
+  /** Lo que se va a devolver (negativo: sale del inventario). */
+  delta: z.number(),
+  /** En cuánto queda. Puede ser negativo si ya se consumió. */
+  resultingStock: z.number(),
+});
+export type VoidInvoicePreviewLine = z.infer<typeof VoidInvoicePreviewLineSchema>;
+
+export const VoidInvoicePreviewSchema = z.object({
+  /** Si no se puede anular, el motivo en palabras (y `lines` va vacío). */
+  blockedReason: z.string().nullable(),
+  /** Días que quedan de la ventana de anulación. */
+  daysLeft: z.number(),
+  lines: z.array(VoidInvoicePreviewLineSchema),
+  /** Ítems que quedarían en negativo: la caja va a frenar su venta. */
+  goesNegative: z.array(z.string()),
+});
+export type VoidInvoicePreview = z.infer<typeof VoidInvoicePreviewSchema>;
 
 /** Body para marcar pagada vía multipart (la imagen va por `proof` field). */
 export const MarkInvoicePaidSchema = z.object({
@@ -294,6 +351,31 @@ export const CreateFromPhotoSchema = ConfirmInvoiceSchema.extend({
   aiModelUsed: z.string().min(1),
 });
 export type CreateFromPhoto = z.infer<typeof CreateFromPhotoSchema>;
+
+/**
+ * Guardar la factura como BORRADOR, sin tocar nada.
+ *
+ * Un borrador no mueve inventario, ni costos, ni tesorería, ni aparece en
+ * ningún reporte (todos filtran por CONFIRMED). Existe para poder releer la
+ * factura con calma —o contra el papel— antes de que entre a los libros.
+ *
+ * Pide LO MISMO que confirmar (proveedor, ítems asociados, totales coherentes)
+ * a propósito: un borrador siempre tiene que poder confirmarse tal como está.
+ * Un estado a medio llenar sería una segunda forma de validar, y las dos se
+ * separan con el tiempo.
+ *
+ * El PAGO no viaja: se declara al confirmar. Guardar un comprobante contra una
+ * factura que todavía no existe en los libros dejaría plata registrada por algo
+ * que puede terminar borrado.
+ */
+export const SaveInvoiceDraftSchema = ConfirmInvoiceSchema.omit({ payment: true }).extend({
+  /** Flujo IA: foto ya subida. Los dos campos van juntos o ninguno. */
+  photoStorageKey: PhotoStorageKeySchema.optional(),
+  aiModelUsed: z.string().min(1).max(120).optional(),
+  /** Avisos de la IA, para no perderlos al reanudar el borrador. */
+  warnings: z.array(z.string().max(500)).max(50).optional(),
+});
+export type SaveInvoiceDraft = z.infer<typeof SaveInvoiceDraftSchema>;
 
 /** Descartar una foto subida que nunca se confirmó (limpia storage). */
 export const DiscardPhotoSchema = z.object({

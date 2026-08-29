@@ -772,6 +772,7 @@ async function correr(sim: Simulacion, rng: Rng, n: number): Promise<void> {
       produccion: 6,
       compra: 6,
       factura: 8,
+      facturaAnulada: 5,
       conteo: 5,
       edicion: 8,
       abrirCuenta: 6,
@@ -847,6 +848,11 @@ async function correr(sim: Simulacion, rng: Rng, n: number): Promise<void> {
         break;
       case 'factura':
         await sim.comprarConFactura();
+        break;
+      // Cargar una factura y deshacerla: la contabilidad sombra no registra
+      // nada, así que todas las leyes exigen que la app tampoco deje rastro.
+      case 'facturaAnulada':
+        await sim.comprarConFacturaYAnular();
         break;
       case 'revertirCortesia': {
         const pendientes = sim.cortesias.filter((c) => !c.revertida);

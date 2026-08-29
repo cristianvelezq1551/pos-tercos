@@ -22,6 +22,7 @@ const STATUS_MAPPING: StatusMapping<InvoiceStatus> = {
   PENDING_REVIEW: { label: 'Pendiente revisión', tone: 'warning', pulse: true },
   CONFIRMED: { label: 'Confirmada', tone: 'success' },
   REJECTED: { label: 'Rechazada', tone: 'danger' },
+  VOIDED: { label: 'Anulada', tone: 'danger' },
 };
 
 export function InvoicesTable({ rows }: InvoicesTableProps) {
