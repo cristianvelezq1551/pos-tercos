@@ -137,3 +137,40 @@ describe('compararExtracciones — resiste datos incompletos', () => {
     expect(() => compararExtracciones(a, factura())).not.toThrow();
   });
 });
+
+/**
+ * Probado con la factura real: la primera versión escupía 31 avisos, la mayoría
+ * ruido. Un muro de treinta se ignora entero — justo lo contrario de lo que
+ * este trabajo busca. Estos dos casos vienen de esa corrida.
+ */
+describe('compararExtracciones — la señal tiene que ser usable', () => {
+  it('el número de renglón del papel no cuenta como nombre distinto', () => {
+    // Una lectura trae «1.- KOLA POSTOBON» y la otra «KOLA POSTOBON»: es el
+    // mismo nombre. Esto solo marcaba las 16 líneas y tapaba lo importante.
+    const avisos = compararExtracciones(
+      factura({ items: [item({ descriptionRaw: '1.- KOLA POSTOBON COSTA 250 ML' })] }),
+      factura({ items: [item({ descriptionRaw: 'KOLA POSTOBON COSTA 250 ML' })] }),
+    );
+    expect(avisos).toEqual([]);
+  });
+
+  it('cuando media factura discrepa en lo mismo, lo resume en UNA frase', () => {
+    const lineas = (t: number) => Array.from({ length: 16 }, () => item({ total: t }));
+    const avisos = compararExtracciones(
+      factura({ items: lineas(18799.98) }),
+      factura({ items: lineas(15798.3) }),
+    );
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]).toContain('16 líneas');
+    // Y nombra la causa probable, que es lo accionable.
+    expect(avisos[0]).toContain('otra columna');
+  });
+
+  it('pero las CANTIDADES se listan siempre, aunque sean muchas', () => {
+    // Son el error que ninguna suma detecta: cada una necesita su línea.
+    const a = Array.from({ length: 5 }, () => item({ quantity: 15 }));
+    const b = Array.from({ length: 5 }, () => item({ quantity: 16 }));
+    const avisos = compararExtracciones(factura({ items: a }), factura({ items: b }));
+    expect(avisos).toHaveLength(5);
+  });
+});
