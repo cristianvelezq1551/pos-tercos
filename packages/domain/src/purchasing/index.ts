@@ -17,6 +17,7 @@ export {
 export { bucketOf, bucketsBetween } from './period-buckets';
 export type { BucketGranularity, PeriodBucket } from './period-buckets';
 export {
+  DIFERENCIA_VISIBLE_COP,
   PCT_FLETE_ALTO,
   TOLERANCIA_TOTAL_PISO_COP,
   fleteEsAlto,
