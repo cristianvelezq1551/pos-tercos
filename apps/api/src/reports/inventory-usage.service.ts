@@ -336,9 +336,15 @@ export class InventoryUsageService {
       // faltante que queda es la diferencia, no el bruto del primero.
       const shortageQty = roundCost(Math.max(0, -acc.shortage));
       const faltanteFifo = shrinkageCosts.get(`${acc.entityType}:${acc.entityId}`);
+      // Sin faltante neto no hay nada que valorizar: son $0, no "no lo sé". El
+      // caso existe —un conteo que encuentra DE MÁS deja movimiento en el
+      // período pero su costo se netea en el mes en que se declaró la pérdida,
+      // así que este conteo no tiene entrada propia en el ledger— y marcarlo
+      // como desconocido inflaba el contador de "sin poder valorizar" con
+      // filas que no habían perdido nada.
       const shortageCost =
-        faltanteFifo === undefined ? (shortageQty <= 0 ? 0 : null)
-        : faltanteFifo.pending ? null
+        shortageQty <= 0 ? 0
+        : faltanteFifo === undefined || faltanteFifo.pending ? null
         : roundMoney(Math.max(0, faltanteFifo.cost));
 
       rows.push({
@@ -358,6 +364,7 @@ export class InventoryUsageService {
         wasteCostEstimated: fifo?.estimated ?? false,
         shortageQty,
         shortageCost,
+        shortageCostEstimated: shortageCost !== null && (faltanteFifo?.estimated ?? false),
         lostCost: roundMoney((wasteCost ?? 0) + (shortageCost ?? 0)),
       });
     }

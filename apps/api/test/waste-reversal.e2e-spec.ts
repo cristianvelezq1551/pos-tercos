@@ -347,6 +347,7 @@ describe('Anulación de merma E2E', () => {
         wasteCostEstimated: false,
         shortageQty: 0,
         shortageCost: 0,
+        shortageCostEstimated: false,
         lostCost: 0,
       }
     );

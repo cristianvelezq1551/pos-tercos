@@ -50,13 +50,20 @@ export function UsageTable({ report }: UsageTableProps) {
 function UsageLegend() {
   return (
     <p className="text-xs text-muted-foreground">
-      El consumo por ventas y producción sale de las recetas (teórico). La merma son
-      pérdidas declaradas; los ajustes negativos son faltantes detectados en conteo físico.{' '}
-      <strong className="text-foreground">$ merma</strong> es el costo real de lo que se
-      tiró, al precio del lote que se consumió: es la misma cifra que la línea Mermas del
-      estado financiero. <strong className="text-foreground">$ faltante</strong> es
-      aproximado (se estima al último precio de compra) y no entra al estado financiero: un
-      ajuste de inventario corrige las existencias, no se contabiliza como gasto.
+      El consumo por ventas y producción sale de las recetas (teórico).{' '}
+      <strong className="text-foreground">Merma</strong> es lo que alguien declaró como
+      tirado; <strong className="text-foreground">faltante</strong> es lo que apareció de
+      menos al contar físicamente, que no lo declaró nadie. Los{' '}
+      <strong className="text-foreground">ajustes</strong> son correcciones tecleadas a
+      mano: arreglan un dato mal cargado y no son una pérdida, por eso van aparte y no
+      cuestan.{' '}
+      <strong className="text-foreground">$ merma</strong> y{' '}
+      <strong className="text-foreground">$ faltante</strong> son los dos el costo real del
+      lote que salió, y los dos bajan el resultado del mes: son las mismas cifras que las
+      líneas Mermas y Faltantes del estado financiero. Un{' '}
+      <strong className="text-foreground">~</strong> delante significa que esa parte se
+      estimó porque se consumió sobre existencias en negativo; se corrige sola al cargar la
+      factura de esa compra.
     </p>
   );
 }

@@ -133,6 +133,9 @@ describe('Conteo físico E2E', () => {
     // línea "Faltantes" del P&G. Antes se estimaba, y sin factura quedaba en
     // blanco: la pérdida existía y la pantalla no la mostraba.
     expect(harina.shortageCost).toBeGreaterThan(0);
+    // Hay lote del cual sacar el costo, así que NO es un estimado: la pantalla
+    // no debe pintarle la tilde de aproximado a un número exacto.
+    expect(harina.shortageCostEstimated).toBe(false);
     // No hubo merma declarada: eso sí es cero, no desconocido.
     expect(harina.wasteCost).toBe(0);
   });
@@ -221,5 +224,46 @@ describe('Conteo físico E2E', () => {
       .set('Authorization', `Bearer ${duenoToken}`)
       .expect(200);
     expect(stock.body.currentStock).toBe(45);
+  });
+
+  it('un conteo que después encuentra lo faltante deja el período en cero, no en desconocido', async () => {
+    // El ledger netea la devolución en el mes en que se DECLARÓ la pérdida, así
+    // que este segundo conteo no tiene costo propio. Reportarlo como "no lo sé"
+    // marcaba como sin valorizar a un ítem que en el período no perdió nada.
+    const antes = await request
+      .get('/reports/inventory-usage')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    const desconocidosAntes = antes.body.unknownCostCount as number;
+
+    const stock = await request
+      .get(`/inventory/stock/ingredient/${harinaId}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    await request
+      .post('/inventory/counts')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        entityType: 'INGREDIENT',
+        ingredientId: harinaId,
+        // Encuentra MÁS de lo que faltaba: devuelve las 10 unidades perdidas y
+        // deja 5 de sobra, así el ítem sigue teniendo novedad en el período.
+        countedQty: Number(stock.body.currentStock) + 15,
+      })
+      .expect(201);
+
+    const res = await request
+      .get('/reports/inventory-usage')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    const harina = res.body.rows.find((r: { entityId: string }) => r.entityId === harinaId);
+    expect(harina).toBeDefined();
+    // Ya no falta nada: son $0, no "no lo sé". Este conteo no tiene costo
+    // propio en el ledger —la devolución se netea en el mes en que se declaró
+    // la pérdida— y antes eso lo dejaba como sin valorizar.
+    expect(harina.shortageQty).toBe(0);
+    expect(harina.shortageCost).toBe(0);
+    expect(harina.shortageCostEstimated).toBe(false);
+    expect(res.body.unknownCostCount).toBe(desconocidosAntes);
   });
 });
