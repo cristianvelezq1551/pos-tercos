@@ -203,12 +203,23 @@ export function InvoiceConfirmModal({
     >
       <div className="space-y-6">
         {manualMode && <ManualEntryGuide />}
+        {/* La IA avisa sola cuando algo no le cuadró — en una factura real de 16
+            líneas marcó la única cantidad que había leído mal. Ese aviso vale
+            más que la lista genérica que era antes: dice CUÁNTAS cosas revisar
+            y que la responsabilidad de confirmar es de quien mira. */}
         {warnings.length > 0 && (
           <div className="rounded-md border border-warning-border bg-warning-bg/30 p-3 text-sm text-warning">
-            <p className="font-semibold">⚠️ La IA marcó estas observaciones:</p>
+            <p className="font-semibold">
+              {warnings.length === 1
+                ? 'La IA no está segura de una cosa. Revísala antes de confirmar:'
+                : `La IA no está segura de ${warnings.length} cosas. Revísalas antes de confirmar:`}
+            </p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
               {warnings.map((w, i) => (<li key={i}>{w}</li>))}
             </ul>
+            <p className="mt-2 text-xs">
+              Cuando la IA duda suele tener razón: compara esas líneas con el papel.
+            </p>
           </div>
         )}
 

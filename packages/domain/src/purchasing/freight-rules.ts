@@ -10,20 +10,34 @@
  */
 
 /**
- * Piso de la tolerancia en COP. Por debajo de esto el 1% no alcanza a cubrir el
- * redondeo de una factura chica.
+ * Piso de la tolerancia en COP: cubre el redondeo de una factura chica sin
+ * dejar pasar un error de digitación.
  */
-export const TOLERANCIA_TOTAL_PISO_COP = 1000;
+export const TOLERANCIA_TOTAL_PISO_COP = 500;
 
 /**
- * Cuánto puede diferir el total declarado de `items + flete`.
+ * Diferencia a partir de la cual la pantalla DEJA de decir "cuadra". No
+ * bloquea —eso lo hace `toleranciaDelTotal`— pero evita que un descuadre
+ * visible se muestre en verde: si faltan pesos, que se vean los pesos.
+ */
+export const DIFERENCIA_VISIBLE_COP = 1;
+
+/**
+ * Cuánto puede diferir el total declarado de `items + flete` antes de que el
+ * sistema se niegue a guardar la factura.
+ *
+ * Bajó de 1% a 0,3% (piso $1.000 → $500) el 2026-08-29, después de que una
+ * factura real de 16 líneas leída por la IA quedara $1.200 por debajo de su
+ * total y el control la aceptara: con el 1%, una factura de $400.000 admitía
+ * casi $4.000 de error. El flete tiene campo propio desde §7.v31, así que la
+ * tolerancia ya no tiene que absorberlo — solo el redondeo.
  *
  * La UI usa la MISMA función que el backend: si mostrara "cuadra" donde el
  * server rechaza, el operador no podría avanzar sin entender por qué; y al
  * revés, marcaría error donde el server acepta.
  */
 export function toleranciaDelTotal(total: number): number {
-  return Math.max(total * 0.01, TOLERANCIA_TOTAL_PISO_COP);
+  return Math.max(total * 0.003, TOLERANCIA_TOTAL_PISO_COP);
 }
 
 /** ¿El total declarado se explica con los ítems más el flete? */

@@ -1,6 +1,6 @@
 'use client';
 
-import { totalCuadra } from '@pos-tercos/domain';
+import { DIFERENCIA_VISIBLE_COP, totalCuadra } from '@pos-tercos/domain';
 import { Input, Label, MoneyInput, formatCop } from '@pos-tercos/ui';
 
 interface InvoiceMetaSectionProps {
@@ -39,6 +39,12 @@ export function InvoiceMetaSection({
   // MISMA función que el backend: si la pantalla dijera "cuadra" donde el
   // server rechaza, el operador no podría avanzar sin entender por qué.
   const cuadra = totalCuadra({ total: totalNum, itemsSum: computedItemsTotal, freight: freightNum });
+  // «Cuadra» solo cuando de verdad no falta plata. Antes bastaba con estar
+  // DENTRO de la tolerancia, así que una factura real leída por la IA a la que
+  // le faltaban $1.200 se mostraba en verde diciendo que estaba bien. La
+  // tolerancia decide si se puede GUARDAR; no si se le puede decir al dueño
+  // que las cuentas dan.
+  const exacto = Math.abs(diferencia) < DIFERENCIA_VISIBLE_COP;
   const freightMayorQueTotal = freightNum > totalNum && total !== '';
 
   return (
@@ -92,12 +98,12 @@ export function InvoiceMetaSection({
                   </dd>
                 </div>
               </dl>
-              <p className={`mt-2 text-xs ${cuadra ? 'text-success' : 'text-warning'}`}>
-                {cuadra
+              <p className={`mt-2 text-xs ${exacto ? 'text-success' : 'text-warning'}`}>
+                {exacto
                   ? 'Cuadra.'
                   : diferencia > 0
-                    ? `Faltan ${formatCop(diferencia)} en los ítems. Si es el domicilio, escríbelo arriba.`
-                    : `Los ítems suman ${formatCop(Math.abs(diferencia))} de más. Revisa si el domicilio quedó cargado como ítem.`}
+                    ? `Faltan ${formatCop(diferencia)} en los ítems. Si es el domicilio, escríbelo arriba; si no, revisa línea por línea.${cuadra ? ' Se puede guardar, pero revísalo.' : ''}`
+                    : `Los ítems suman ${formatCop(Math.abs(diferencia))} de más. Revisa si el domicilio quedó cargado como ítem.${cuadra ? ' Se puede guardar, pero revísalo.' : ''}`}
               </p>
             </>
           )}
