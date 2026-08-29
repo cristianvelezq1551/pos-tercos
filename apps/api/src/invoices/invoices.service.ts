@@ -37,6 +37,10 @@ import { includeFull, toInvoiceDto } from './invoices.mappers';
 /** Suba de costo (vs último conocido) que dispara alerta WhatsApp al dueño. */
 const COST_INCREASE_ALERT_PCT = 0.15;
 
+/** Lo mínimo que hace falta para saber si una factura se puede confirmar.
+ *  Lo cumplen tanto `ConfirmInvoice` como el payload de un borrador. */
+type ConfirmablePayload = Pick<ConfirmInvoice, 'items' | 'total' | 'iva' | 'freight'>;
+
 /** Shape mínimo del insumo/producto cargado para confirmar una factura. */
 interface ConfirmIngredient {
   id: string;
@@ -464,8 +468,23 @@ export class InvoicesService {
 
   /** Carga insumos/productos referenciados y valida que existan, estén activos
    *  y (productos) sean direct-resale. Lanza BadRequest con el detalle. */
+  /**
+   * ¿Este contenido se puede confirmar? Valida que cada línea apunte a un
+   * insumo/producto que existe, está activo y puede tener stock, y que el
+   * total declarado se explique con los ítems más el domicilio.
+   *
+   * Público a propósito: guardar un BORRADOR exige exactamente lo mismo que
+   * confirmar, y tiene que ser LA MISMA validación. Dos validaciones para el
+   * mismo contenido se separan con el tiempo, y ahí nace un borrador que no se
+   * puede confirmar.
+   */
+  async assertPayloadConfirmable(input: ConfirmablePayload): Promise<void> {
+    await this.loadAndValidateEntities(input);
+    this.assertInvoiceTotalsCoherent(input);
+  }
+
   private async loadAndValidateEntities(
-    input: ConfirmInvoice,
+    input: ConfirmablePayload,
   ): Promise<{ ingredients: ConfirmIngredient[]; products: ConfirmProduct[] }> {
     const ingredientIds = Array.from(
       new Set(
@@ -527,7 +546,7 @@ export class InvoicesService {
   /** FASE 4 ajustes 2.3 + 2.4: el total declarado se explica con los ítems más
    *  el flete (regla compartida con la edición del domicilio), y el IVA no
    *  excede el total. */
-  private assertInvoiceTotalsCoherent(input: ConfirmInvoice): void {
+  private assertInvoiceTotalsCoherent(input: ConfirmablePayload): void {
     assertTotalCoherente({
       total: input.total,
       itemsSum: input.items.reduce((acc, it) => acc + Number(it.total), 0),
@@ -905,6 +924,9 @@ export class InvoicesService {
         packUnits: null,
         packSizePerUnit: null,
         packSizeMeasure: null,
+        // La conversión se vuelve a proponer contra el insumo actual: la de la
+        // factura original pudo hacerse con otra configuración.
+        baseFactor: null,
       })),
       warnings: [`Clonado de factura ${sourceShort}. Revisa cantidades y precios antes de confirmar.`],
     };

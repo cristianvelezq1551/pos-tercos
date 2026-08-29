@@ -4,12 +4,14 @@ import {
   ExtractInvoiceResponseSchema,
   InvoiceDraftResponseSchema,
   InvoiceSchema,
+  SaveInvoiceDraftSchema,
   UpdateInvoiceFreightSchema,
   TreasuryAnchorDateSchema,
   UploadPaymentProofResponseSchema,
   type ConfirmInvoice,
   type ExtractInvoiceResponse,
   type Invoice,
+  type SaveInvoiceDraft,
   type UpdateInvoiceFreight,
   type InvoiceDraftResponse,
   type UploadPaymentProofResponse,
@@ -144,6 +146,19 @@ export function confirmInvoice(id: string, payload: ConfirmInvoice): Promise<Inv
   return request(
     `/invoices/${id}/confirm`,
     { method: 'POST', body: JSON.stringify(payload) },
+    InvoiceSchema,
+  );
+}
+
+/**
+ * Guarda la factura como borrador, sin tocar inventario ni tesorería.
+ * `id` presente = se reemplaza un borrador ya guardado.
+ */
+export function saveInvoiceDraft(payload: SaveInvoiceDraft, id?: string): Promise<Invoice> {
+  SaveInvoiceDraftSchema.parse(payload);
+  return request(
+    id ? `/invoices/${id}/draft` : '/invoices/draft',
+    { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) },
     InvoiceSchema,
   );
 }

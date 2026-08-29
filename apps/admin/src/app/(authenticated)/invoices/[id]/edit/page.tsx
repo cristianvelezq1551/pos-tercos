@@ -87,6 +87,9 @@ function synthesizeExtraction(invoice: Invoice): ExtractedInvoice {
       packUnits: null,
       packSizePerUnit: null,
       packSizeMeasure: null,
+      // Este camino es el respaldo para un borrador sin extracción guardada:
+      // no hay conversión que recuperar, se vuelve a proponer contra el insumo.
+      baseFactor: null,
     })),
     warnings:
       (invoice.items?.length ?? 0) === 0

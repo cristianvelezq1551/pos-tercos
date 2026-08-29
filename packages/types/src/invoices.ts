@@ -39,6 +39,17 @@ export const ExtractedInvoiceItemSchema = z.object({
   packSizePerUnit: z.number().positive().nullable(),
   // Medida de la sub-unidad ("g", "ml", "kg"…).
   packSizeMeasure: z.string().min(1).max(20).nullable(),
+  /**
+   * Conversión a la unidad BASE elegida POR LA PERSONA para esta línea.
+   *
+   * La IA nunca lo devuelve (por eso el normalizador lo rellena en null): nace
+   * al guardar un borrador, porque el modal inicializa sus campos desde la
+   * extracción y sin esto una conversión corregida a mano se perdía al
+   * reanudar. Perderla es silencioso y caro: al confirmar entraría otra
+   * cantidad de mercancía y el costo del insumo saldría disparado
+   * (ver `conversionSospechosa` en el admin).
+   */
+  baseFactor: z.number().positive().nullable(),
 });
 export type ExtractedInvoiceItem = z.infer<typeof ExtractedInvoiceItemSchema>;
 
@@ -294,6 +305,31 @@ export const CreateFromPhotoSchema = ConfirmInvoiceSchema.extend({
   aiModelUsed: z.string().min(1),
 });
 export type CreateFromPhoto = z.infer<typeof CreateFromPhotoSchema>;
+
+/**
+ * Guardar la factura como BORRADOR, sin tocar nada.
+ *
+ * Un borrador no mueve inventario, ni costos, ni tesorería, ni aparece en
+ * ningún reporte (todos filtran por CONFIRMED). Existe para poder releer la
+ * factura con calma —o contra el papel— antes de que entre a los libros.
+ *
+ * Pide LO MISMO que confirmar (proveedor, ítems asociados, totales coherentes)
+ * a propósito: un borrador siempre tiene que poder confirmarse tal como está.
+ * Un estado a medio llenar sería una segunda forma de validar, y las dos se
+ * separan con el tiempo.
+ *
+ * El PAGO no viaja: se declara al confirmar. Guardar un comprobante contra una
+ * factura que todavía no existe en los libros dejaría plata registrada por algo
+ * que puede terminar borrado.
+ */
+export const SaveInvoiceDraftSchema = ConfirmInvoiceSchema.omit({ payment: true }).extend({
+  /** Flujo IA: foto ya subida. Los dos campos van juntos o ninguno. */
+  photoStorageKey: PhotoStorageKeySchema.optional(),
+  aiModelUsed: z.string().min(1).max(120).optional(),
+  /** Avisos de la IA, para no perderlos al reanudar el borrador. */
+  warnings: z.array(z.string().max(500)).max(50).optional(),
+});
+export type SaveInvoiceDraft = z.infer<typeof SaveInvoiceDraftSchema>;
 
 /** Descartar una foto subida que nunca se confirmó (limpia storage). */
 export const DiscardPhotoSchema = z.object({

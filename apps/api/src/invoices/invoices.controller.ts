@@ -11,6 +11,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -24,6 +25,7 @@ import {
   CreateFromPhotoSchema,
   DiscardPaymentProofSchema,
   DiscardPhotoSchema,
+  SaveInvoiceDraftSchema,
   type CloneInvoiceRequest,
   type ConfirmInvoice,
   type CreateFromPhoto,
@@ -33,6 +35,7 @@ import {
   type ExtractInvoiceResponse,
   type Invoice,
   type InvoiceDraftResponse,
+  type SaveInvoiceDraft,
   type UploadPaymentProofResponse,
   UpdateInvoiceFreightSchema,
   type UpdateInvoiceFreight,
@@ -45,6 +48,7 @@ import { parseOptionalDateRange } from '../common/local-dates';
 import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
+import { InvoiceDraftsService } from './invoice-drafts.service';
 import { InvoicePaymentsService } from './invoice-payments.service';
 import { InvoicesService } from './invoices.service';
 
@@ -55,6 +59,7 @@ export class InvoicesController {
   constructor(
     private readonly invoices: InvoicesService,
     private readonly invoicePayments: InvoicePaymentsService,
+    private readonly invoiceDrafts: InvoiceDraftsService,
   ) {}
 
   /** FASE 15.A — sweep manual de huérfanos. El cron corre semanal. */
@@ -178,6 +183,31 @@ export class InvoicesController {
   ): Promise<Invoice> {
     const { photoStorageKey, aiModelUsed, ...confirm } = body;
     return this.invoices.createFromPhoto(confirm, photoStorageKey, aiModelUsed, user.sub);
+  }
+
+  /**
+   * Guarda la factura como BORRADOR, sin tocar inventario, costos ni tesorería.
+   * Sirve tanto para el flujo con foto (manda `photoStorageKey`) como para la
+   * carga manual. Se confirma después con `POST /invoices/:id/confirm`.
+   */
+  @AdminAccess()
+  @Post('draft')
+  saveDraft(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(SaveInvoiceDraftSchema)) body: SaveInvoiceDraft,
+  ): Promise<Invoice> {
+    return this.invoiceDrafts.save(body, user.sub);
+  }
+
+  /** Reemplaza el contenido de un borrador ya guardado. */
+  @AdminAccess()
+  @Put(':id/draft')
+  updateDraft(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SaveInvoiceDraftSchema)) body: SaveInvoiceDraft,
+  ): Promise<Invoice> {
+    return this.invoiceDrafts.update(id, body, user.sub);
   }
 
   /** El usuario cerró el modal IA sin confirmar → limpiar la foto subida. */

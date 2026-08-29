@@ -6,4 +6,5 @@ export {
   rejectInvoice,
   cloneInvoice,
   deleteInvoiceDraft,
+  saveInvoiceDraft,
 } from './client';

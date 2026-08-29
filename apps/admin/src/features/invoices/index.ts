@@ -5,6 +5,7 @@ export { EditFreightAction } from './components/EditFreightAction';
 export { EditDraftScreen } from './components/EditDraftScreen';
 export { CloneInvoiceButton } from './components/CloneInvoiceButton';
 export { DeleteDraftButton } from './components/DeleteDraftButton';
+export { PendingDraftsBanner } from './components/PendingDraftsBanner';
 export { InvoicePaymentActions } from './components/InvoicePaymentActions';
 export { InvoicePaymentSection } from './components/InvoicePaymentSection';
 export * from './api';

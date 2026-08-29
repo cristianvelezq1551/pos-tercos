@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button, Chip, Container, PageHeader } from '@pos-tercos/ui';
 import { Receipt } from 'lucide-react';
-import { InvoiceDateFilter, InvoicesTable } from '../../../features/invoices';
+import { InvoiceDateFilter, InvoicesTable, PendingDraftsBanner } from '../../../features/invoices';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import type { Invoice } from '@pos-tercos/types';
@@ -36,7 +36,13 @@ const STATUS_FILTERS = [
 
 export default async function InvoicesPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const result = await loadInvoices(sp.status, sp.from, sp.to);
+  // Los borradores se cuentan SIN filtro de fecha: uno de la semana pasada
+  // sigue siendo mercancía que falta cargar, y el rango elegido lo escondería.
+  const [result, drafts] = await Promise.all([
+    loadInvoices(sp.status, sp.from, sp.to),
+    loadInvoices('PENDING_REVIEW'),
+  ]);
+  const pendingDrafts = Array.isArray(drafts) ? drafts.length : 0;
 
   return (
     <>
@@ -76,6 +82,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         <div className="mb-5">
           <InvoiceDateFilter />
         </div>
+
+        <PendingDraftsBanner count={pendingDrafts} />
 
         {Array.isArray(result) ? (
           <InvoicesTable rows={result} />
