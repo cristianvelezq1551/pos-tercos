@@ -33,6 +33,16 @@ export interface HistoryOptions {
    * fenómeno que no es un error. Se prende solo en el test de esa distinción.
    */
   includeCorrections?: boolean;
+  /**
+   * Emitir COMPRAS ANULADAS: una entrada y, pegado a ella, el movimiento que la
+   * deshace. Es como las escribe la app (la reversa lleva la fecha del
+   * original), así que el replay la ve antes de que nadie consumiera el lote.
+   *
+   * Interesa sobre todo cuando el stockable está en NEGATIVO: ahí la entrada no
+   * queda en la cola —salda deudas— y anularla obliga a devolver la deuda y a
+   * desatribuirle el costo al consumo que la debía.
+   */
+  includeVoidedPurchases?: boolean;
 }
 
 export interface GeneratedHistory {
@@ -249,6 +259,34 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
     });
   };
 
+  /**
+   * Compra que se anula: entrada + su reversa, ambas con la misma fecha. El
+   * stock de la sombra no cambia — que es justamente la ley.
+   */
+  const emitVoidedPurchase = (e: Entity): void => {
+    const qty = rng.int(10, 200);
+    const unitCost = opts.allowUnknownCost && rng.chance(0.15) ? null : rng.int(1, 50);
+    const at = nextAt();
+    const entrada = push({
+      createdAt: at,
+      delta: qty,
+      type: 'PURCHASE',
+      unitCost,
+      sourceType: 'invoice',
+      sourceId: `inv-${nextId()}`,
+      ...refs(e),
+    });
+    push({
+      createdAt: at,
+      delta: -qty,
+      type: 'PURCHASE',
+      unitCost: null,
+      sourceType: 'invoice_reversal',
+      sourceId: entrada.id,
+      ...refs(e),
+    });
+  };
+
   /** Reversa acotada a lo que su origen consumió y aún no devolvió. */
   const emitReversal = (): void => {
     const candidates = past.filter((p) => p.qty - p.reversedQty > 0);
@@ -319,6 +357,7 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
     else if (roll < 0.78) emitFaltante(target);
     else if (roll < 0.8) emitSobra(target);
     else if (roll < 0.84 && opts.includeCorrections) emitCorreccion(target);
+    else if (roll < 0.88 && opts.includeVoidedPurchases) emitVoidedPurchase(target);
     else if (roll < 0.94) emitReversal();
     else if (opts.includeProduction) emitProduction();
     else emitEntry(target);

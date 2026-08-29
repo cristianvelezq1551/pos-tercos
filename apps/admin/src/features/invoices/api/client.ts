@@ -8,6 +8,7 @@ import {
   UpdateInvoiceFreightSchema,
   TreasuryAnchorDateSchema,
   UploadPaymentProofResponseSchema,
+  VoidInvoicePreviewSchema,
   type ConfirmInvoice,
   type ExtractInvoiceResponse,
   type Invoice,
@@ -15,6 +16,7 @@ import {
   type UpdateInvoiceFreight,
   type InvoiceDraftResponse,
   type UploadPaymentProofResponse,
+  type VoidInvoicePreview,
 } from '@pos-tercos/types';
 import { z } from 'zod';
 
@@ -209,6 +211,20 @@ export async function deleteInvoiceDraft(id: string): Promise<void> {
 
 function pinHeader(pin: string): Record<string, string> {
   return { 'X-Approval-Pin': pin };
+}
+
+/** Qué le pasaría al inventario si se anula. Read-only. */
+export function getVoidPreview(id: string): Promise<VoidInvoicePreview> {
+  return request(`/invoices/${id}/void-preview`, { method: 'GET' }, VoidInvoicePreviewSchema);
+}
+
+/** Anula una factura confirmada. Dueño + PIN. */
+export function voidInvoice(id: string, reason: string, pin: string): Promise<Invoice> {
+  return request(
+    `/invoices/${id}/void`,
+    { method: 'POST', headers: pinHeader(pin), body: JSON.stringify({ reason }) },
+    InvoiceSchema,
+  );
 }
 
 /** Marca pagada con comprobante (multipart). */

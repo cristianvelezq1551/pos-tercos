@@ -26,6 +26,7 @@ import {
   DiscardPaymentProofSchema,
   DiscardPhotoSchema,
   SaveInvoiceDraftSchema,
+  VoidInvoiceSchema,
   type CloneInvoiceRequest,
   type ConfirmInvoice,
   type CreateFromPhoto,
@@ -37,6 +38,8 @@ import {
   type InvoiceDraftResponse,
   type SaveInvoiceDraft,
   type UploadPaymentProofResponse,
+  type VoidInvoice,
+  type VoidInvoicePreview,
   UpdateInvoiceFreightSchema,
   type UpdateInvoiceFreight,
 } from '@pos-tercos/types';
@@ -50,6 +53,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { JwtAccessPayload } from '@pos-tercos/types';
 import { InvoiceDraftsService } from './invoice-drafts.service';
 import { InvoicePaymentsService } from './invoice-payments.service';
+import { InvoiceVoidService } from './invoice-void.service';
 import { InvoicesService } from './invoices.service';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -60,6 +64,7 @@ export class InvoicesController {
     private readonly invoices: InvoicesService,
     private readonly invoicePayments: InvoicePaymentsService,
     private readonly invoiceDrafts: InvoiceDraftsService,
+    private readonly invoiceVoid: InvoiceVoidService,
   ) {}
 
   /** FASE 15.A — sweep manual de huérfanos. El cron corre semanal. */
@@ -283,6 +288,32 @@ export class InvoicesController {
     @Body() body: { reason?: string },
   ): Promise<Invoice> {
     return this.invoices.reject(id, user.sub, body?.reason);
+  }
+
+  /**
+   * Qué le pasaría al inventario si se anula esta factura. Read-only: se
+   * consulta para mostrar el impacto ANTES de decidir.
+   */
+  @OnlyDueno()
+  @Get(':id/void-preview')
+  voidPreview(@Param('id', ParseUUIDPipe) id: string): Promise<VoidInvoicePreview> {
+    return this.invoiceVoid.preview(id);
+  }
+
+  /**
+   * Anula una factura confirmada: deshace la entrada de mercancía y la saca de
+   * todos los reportes. Solo el Dueño, con PIN, y dentro de la ventana corta.
+   */
+  @OnlyDueno()
+  @Post(':id/void')
+  voidInvoice(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-approval-pin') pin: string | undefined,
+    @Body(new ZodValidationPipe(VoidInvoiceSchema)) body: VoidInvoice,
+  ): Promise<Invoice> {
+    if (!pin) throw new BadRequestException('Falta el PIN de aprobación.');
+    return this.invoiceVoid.void(id, body, pin, user.sub, user.role);
   }
 
   /**

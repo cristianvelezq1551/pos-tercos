@@ -7,4 +7,6 @@ export {
   cloneInvoice,
   deleteInvoiceDraft,
   saveInvoiceDraft,
+  getVoidPreview,
+  voidInvoice,
 } from './client';

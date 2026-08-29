@@ -1269,6 +1269,64 @@ export class Simulacion {
   }
 
   // ==================================================================
+  // Factura ANULADA (se cargó mal y el dueño la deshace)
+  // ==================================================================
+
+  /**
+   * Carga una factura y la anula enseguida.
+   *
+   * La contabilidad sombra NO registra NADA: ni el lote, ni la compra, ni el
+   * flete. Esa ausencia ES la ley que se está probando — anular tiene que dejar
+   * los libros como si la factura nunca se hubiera cargado. Si la app dejara
+   * cualquier residuo (mercancía en el inventario, un peso en las compras, un
+   * flete en el P&G), las leyes de la simulación lo delatan sin que haya que
+   * escribir una aserción específica.
+   */
+  async comprarConFacturaYAnular(): Promise<void> {
+    const insumo = this.rng.pick(this.m.insumos);
+    const cantidadCompra = this.rng.int(1, 20);
+    const precioUnidad = this.rng.int(3000, 60_000);
+    const total = cantidadCompra * precioUnidad;
+    const flete = this.rng.chance(0.4) ? this.rng.money(3000, 25_000) : 0;
+
+    const creada = await esperar(
+      this.m.request
+        .post('/invoices/manual')
+        .set(this.m.auth())
+        .send({
+          supplierNit: this.m.supplierNit,
+          supplierName: 'Proveedor Simulación',
+          invoiceNumber: `SIM-ANUL-${this.rng.int(1000, 9999)}`,
+          total: total + flete,
+          freight: flete,
+          items: [
+            {
+              entityType: 'INGREDIENT' as const,
+              ingredientId: insumo.id,
+              descriptionRaw: `${insumo.nombre} x${cantidadCompra} kg`,
+              quantity: cantidadCompra,
+              unit: 'kg',
+              unitPrice: precioUnidad,
+              total,
+            },
+          ],
+        }),
+      201,
+    );
+
+    await esperar(
+      this.m.request
+        .post(`/invoices/${creada.body.id as string}/void`)
+        .set(this.m.auth())
+        .set('X-Approval-Pin', PIN)
+        .send({ reason: 'Simulación: factura cargada por error' }),
+      201,
+    );
+
+    this.cuenta('facturaAnulada');
+  }
+
+  // ==================================================================
   // Cortesía revertida (el admin la anuló por error)
   // ==================================================================
 

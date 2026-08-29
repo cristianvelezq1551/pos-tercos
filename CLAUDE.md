@@ -3125,6 +3125,130 @@ push del CI** (`main`, `refactor/**`, `chore/**`, `feat/**`, `fix/**`): sus seis
 commits nunca corrieron en CI. El PR sí lo dispara, pero conviene nombrar las
 ramas con un prefijo cubierto.
 
+## 7.v47 La factura se puede guardar antes de confirmar, y anular después (2026-08-29)
+
+> Pedido del dueño: poder editar o eliminar una factura, pero de verdad — que
+> se ajuste lo pagado, las existencias, el gramaje y todo lo que implica, sin
+> dejar ruido ni descuadres. Y con una condición dura: **no comprometer lo que
+> hoy funciona**. Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes
+> (domain 506, admin 213, api 133), **e2e 59 suites / 732**, builds 8/8,
+> simulación 20 semillas × 400 operaciones (420 leyes) y 20.000 historias
+> aleatorias del motor. Migración: `20260829120000_invoice_void`.
+
+### Lo que había antes (y por qué el pedido no era trivial)
+Una factura nace CONFIRMADA: `POST /invoices/manual` y `from-photo` crean y
+confirman en el mismo request (*"único endpoint que persiste. Sin draft
+intermedio"*). Confirmar escribe en **seis** lugares, y solo dos se deshacen
+solos releyendo la fila: los `inventory_movements` (insert-only, §4.4) y los
+lotes FIFO derivados de ellos no se pueden editar.
+
+Auditoría previa de la superficie: **siete** consultas leen facturas desde
+fuera del módulo y **seis filtran positivamente por `CONFIRMED`** (tesorería,
+P&G, estado financiero ×2, reporte de compras, sugerencias). La única que no
+miraba el estado era la suma de pagos de Tesorería — cerrada abajo.
+
+### 1) Guardar como borrador (riesgo casi nulo)
+Botón **"Guardar para revisar"** en el modal: la factura queda
+`PENDING_REVIEW`, editable y borrable **sin límite de tiempo**, y no toca
+inventario, costos, proveedores ni ningún reporte. Se confirma después con el
+mismo `POST /invoices/:id/confirm` de siempre — **ese camino no cambió**.
+
+- **Valida LO MISMO que confirmar**, reusando `InvoicesService.assertPayloadConfirmable`
+  y no una copia: un borrador siempre tiene que poder confirmarse tal como
+  quedó. Dos validaciones para el mismo contenido se separan con el tiempo.
+- **No crea el proveedor**: un borrador que se borra no debe dejar un proveedor
+  suelto en el catálogo. El NIT viaja en la extracción y el confirm lo upserta.
+- **El pago no viaja**: se declara al confirmar. Registrar plata contra algo que
+  todavía puede borrarse dejaría un pago sin factura.
+- **`baseFactor` se persiste** en la extracción guardada (`ExtractedInvoiceItem`
+  + el normalizador único). Sin eso, al reanudar volvía la conversión sugerida
+  y al confirmar entraba **otra cantidad de mercancía** — el daño silencioso
+  que describe `conversionSospechosa`.
+- La extracción guardada pasa a ser **lo revisado**, no lo que leyó la IA (el
+  modal inicializa sus campos desde ahí); los avisos de la IA se conservan.
+- Aviso en `/invoices` cuando hay borradores sin confirmar: uno olvidado es
+  mercancía que llegó y que el sistema no tiene.
+- Endpoints: `POST /invoices/draft` · `PUT /invoices/:id/draft` (AdminAccess).
+
+### 2) Anular una factura confirmada
+`POST /invoices/:id/void` — **solo Dueño, con PIN, dentro de 3 días** desde que
+se confirmó. Estado nuevo `VOIDED` (las seis consultas la excluyen solas).
+
+**Cómo queda exacto**: por cada movimiento que creó la factura se escribe uno
+compensatorio **con la fecha del original** y `sourceId` apuntando a él. En el
+replay llega pegado a su lote, antes de que nadie lo consumiera, así que todo
+lo posterior se recalcula como si la compra nunca hubiera existido: las ventas
+que ya se habían comido esa mercancía pasan a ser **faltantes estimados con su
+deuda**, que la factura corregida salda al costo real (§7.v32). Nada se borra
+ni se edita — la factura queda con sello, motivo y autor.
+
+**Reglas duras (NO invertir sin leer esto)**
+- **Una factura pagada no se anula directo**: primero se deshace el pago (Dueño
+  + PIN, camino que ya existía), y así nadie tiene que adivinar a qué bolsillo
+  vuelve la plata. Además, al anular se limpia `payment_status` a NULL: lo
+  exige el CHECK `chk_invoice_payment_only_when_confirmed` y **hace imposible
+  por construcción** que una anulada se cuele en la suma de pagos de Tesorería,
+  que era la única consulta que no miraba el estado.
+- **La anulación borra los cortes del motor posteriores a esa fecha.** Como la
+  reversa nace con fecha vieja, un corte posterior quedó calculado sin ella y
+  el error sería permanente y silencioso (el replay incremental solo carga
+  movimientos ≥ corte). Borrarlos hace que los reportes caigan a replay
+  completo —correcto siempre, ~180 ms— hasta que el cron del día 2 los
+  reconstruya. **Es a prueba de fallos: el peor caso es más lento, nunca mal.**
+- **Idempotencia por movimiento** (`idempotencyKey = invoice-void:<id>`) + claim
+  condicionado por estado + tx `Serializable`: tres anulaciones simultáneas
+  devuelven la mercancía UNA vez.
+- **`lastUnitCost` y `supplier_products` se recalculan** contra las facturas que
+  siguen vivas. Si era la única compra quedan **sin dato**, no en cero: cero
+  significaría "es gratis". El último costo se deriva del movimiento (que ya
+  tiene el costo por unidad de inventario) × el factor del insumo, para no
+  re-adivinar la conversión de esa compra.
+- **La caché del ledger es de 60 s**: tras anular, el P&G refleja el cambio
+  cuando vence (misma staleness deliberada que la reversa de merma, §7.v18).
+- Pasados los 3 días el camino sigue siendo el **ajuste manual de inventario**.
+
+**La UI muestra el impacto ANTES de decidir** (`GET /invoices/:id/void-preview`):
+qué insumo baja, en cuánto queda y —en rojo— **cuáles quedan en negativo**,
+porque esos son los que la caja va a dejar de vender (`assertStockSufficient`
+rechaza el cobro). Es la consecuencia que más se siente el mismo día y sin ese
+aviso anular se siente inofensivo.
+
+### El motor de costos: una rama nueva y dos bugs que encontró el azar
+`runLedgerFifo` entiende `sourceType='invoice_reversal'`: **quita del inventario
+EL lote de esa compra**, no las unidades más viejas de la cola. La diferencia no
+es cosmética — un consumo FIFO normal se comería el lote anterior y descontaría
+un costo que no es el de la compra que se deshace.
+
+Dos cosas aparecieron corriendo historias aleatorias, no leyendo el código:
+1. **Si la compra había saldado deudas** (llegó mercancía a un inventario en
+   negativo), el lote no quedó en la cola: anularla obliga a **devolver la deuda
+   y desatribuirle el costo** al consumo que la debía. Sin eso la anulación se
+   comía lotes ajenos y el COGS quedaba mal — lo delató la simulación
+   financiera, con 121k de diferencia.
+2. **Un lote SIN costo conocido también salda deudas**, y ese saldo no se estaba
+   registrando: anularlo perdía las unidades y el inventario del reporte se
+   separaba del de la base. Lo delató la LEY 1 sobre 20.000 historias.
+
+### Cómo se demostró que no se rompió nada
+**Prueba de oro** (`ledger-golden`): congela el resultado exacto del replay
+sobre **300 historias aleatorias**, generada con el código ANTERIOR al cambio y
+commiteada primero. La rama nueva reacciona a un `sourceType` que no existe en
+ninguna fila previa, así que para toda la historia ya existente el motor tiene
+que dar lo mismo hasta el último decimal — y lo da. Para regenerarla a
+propósito: `LEDGER_GOLDEN_UPDATE=1`.
+
+Además: 12 casos de escenario de la reversa (varios comparan contra una historia
+gemela **sin** la compra), 23 e2e de anulación, 19 del borrador, la operación
+`facturaAnulada` en la simulación financiera —cuya contabilidad sombra **no
+registra nada**, que ES la ley— y `includeVoidedPurchases` en las historias
+aleatorias del motor, así que las 11 leyes matemáticas ahora también cubren el
+camino nuevo.
+
+### Deuda conocida
+El generador de historias emite la anulación pegada a su compra, que es como la
+escribe la app. El camino defensivo para una reversa suelta existe (consume por
+FIFO normal) pero solo está cubierto por un test de escenario.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

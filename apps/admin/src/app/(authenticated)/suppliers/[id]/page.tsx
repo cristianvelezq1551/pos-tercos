@@ -13,6 +13,7 @@ const STATUS_LABEL = {
   PENDING_REVIEW: 'Pendiente',
   CONFIRMED: 'Confirmada',
   REJECTED: 'Rechazada',
+  VOIDED: 'Anulada',
 } as const;
 
 export default async function EditSupplierPage({ params }: PageProps) {

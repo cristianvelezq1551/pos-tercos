@@ -6,6 +6,7 @@ export { EditDraftScreen } from './components/EditDraftScreen';
 export { CloneInvoiceButton } from './components/CloneInvoiceButton';
 export { DeleteDraftButton } from './components/DeleteDraftButton';
 export { PendingDraftsBanner } from './components/PendingDraftsBanner';
+export { VoidInvoiceAction } from './components/VoidInvoiceAction';
 export { InvoicePaymentActions } from './components/InvoicePaymentActions';
 export { InvoicePaymentSection } from './components/InvoicePaymentSection';
 export * from './api';

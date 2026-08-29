@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const InvoiceStatusEnum = z.enum(['PENDING_REVIEW', 'CONFIRMED', 'REJECTED']);
+export const InvoiceStatusEnum = z.enum(['PENDING_REVIEW', 'CONFIRMED', 'REJECTED', 'VOIDED']);
 export type InvoiceStatus = z.infer<typeof InvoiceStatusEnum>;
 
 /** Estado de la factura en palabras. Fuente única (backend + admin). */
@@ -8,6 +8,7 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   PENDING_REVIEW: 'pendiente de revisión',
   CONFIRMED: 'confirmada',
   REJECTED: 'rechazada',
+  VOIDED: 'anulada',
 };
 
 /** Estado de pago al proveedor (independiente de InvoiceStatus que es
@@ -126,6 +127,10 @@ export const InvoiceSchema = z.object({
   paymentPocket: PaymentPocketEnum.nullable(),
   paymentCashAmount: z.number().nullable(),
   paymentBankAmount: z.number().nullable(),
+  /** Anulación: cuándo, quién y por qué. NULL mientras la factura viva. */
+  voidedAt: z.string().datetime().nullable(),
+  voidedByName: z.string().nullable().optional(),
+  voidReason: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   items: z.array(InvoiceItemSchema).optional(),
@@ -156,6 +161,47 @@ export const UpdateInvoiceFreightSchema = z.object({
   note: z.string().max(300).optional(),
 });
 export type UpdateInvoiceFreight = z.infer<typeof UpdateInvoiceFreightSchema>;
+
+/**
+ * Anular una factura CONFIRMADA: deshace la entrada de mercancía y la saca de
+ * todos los reportes, dejando los libros como si nunca se hubiera cargado.
+ *
+ * Ventana corta y a propósito: pasados unos días, la mercancía ya se consumió,
+ * el mes puede estar cerrado y corregir a ciegas hace más daño que el error.
+ * Después de eso el camino sigue siendo el ajuste manual de inventario.
+ */
+export const VoidInvoiceSchema = z.object({
+  /** Por qué se anula. Va a la bitácora y a la ficha de la factura. */
+  reason: z.string().min(5, 'Escribe por qué se anula (mínimo 5 caracteres).').max(300),
+});
+export type VoidInvoice = z.infer<typeof VoidInvoiceSchema>;
+
+/** Qué le va a pasar al inventario si se anula. Se consulta ANTES de anular. */
+export const VoidInvoicePreviewLineSchema = z.object({
+  entityType: z.enum(['INGREDIENT', 'PRODUCT']),
+  entityId: z.string().uuid(),
+  name: z.string(),
+  /** Unidad en la que se lleva el inventario de ese ítem. */
+  unit: z.string(),
+  /** Existencias de ahora. */
+  currentStock: z.number(),
+  /** Lo que se va a devolver (negativo: sale del inventario). */
+  delta: z.number(),
+  /** En cuánto queda. Puede ser negativo si ya se consumió. */
+  resultingStock: z.number(),
+});
+export type VoidInvoicePreviewLine = z.infer<typeof VoidInvoicePreviewLineSchema>;
+
+export const VoidInvoicePreviewSchema = z.object({
+  /** Si no se puede anular, el motivo en palabras (y `lines` va vacío). */
+  blockedReason: z.string().nullable(),
+  /** Días que quedan de la ventana de anulación. */
+  daysLeft: z.number(),
+  lines: z.array(VoidInvoicePreviewLineSchema),
+  /** Ítems que quedarían en negativo: la caja va a frenar su venta. */
+  goesNegative: z.array(z.string()),
+});
+export type VoidInvoicePreview = z.infer<typeof VoidInvoicePreviewSchema>;
 
 /** Body para marcar pagada vía multipart (la imagen va por `proof` field). */
 export const MarkInvoicePaidSchema = z.object({
