@@ -1,7 +1,4 @@
-import type {
-  CashierAnomalies,
-  ShiftAnomalyFlag,
-} from '@pos-tercos/types';
+import type { CashierAnomalies, ShiftAnomalyFlag } from '@pos-tercos/types';
 import { formatCop, formatDate } from '../../../lib/format';
 
 const FLAG_LABEL: Record<ShiftAnomalyFlag, string> = {
@@ -35,9 +32,7 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
     <section className="rounded-lg border border-border bg-card p-4">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold tracking-tight">
-            {c.cashierName ?? '—'}
-          </h2>
+          <h2 className="text-base font-semibold tracking-tight">{c.cashierName ?? '—'}</h2>
           <p className="text-xs text-muted-foreground">
             {c.totalShifts} turno{c.totalShifts === 1 ? '' : 's'} cerrados
           </p>
@@ -85,78 +80,72 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
       ) : null}
 
       <div className="mt-4 overflow-hidden rounded-md border border-border">
-        <table className="min-w-full divide-y divide-border text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <Th>Turno (apertura)</Th>
-              <Th align="right">Descuadre</Th>
-              <Th align="right">Anulaciones</Th>
-              <Th align="right">Cajón sin venta</Th>
-              <Th>Alertas</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {c.shifts.map((s, idx) => (
-              <tr
-                key={s.shiftId}
-                className={idx === 0 && s.flags.length > 0 ? 'bg-destructive/10' : ''}
-              >
-                <Td>{formatDate(s.openedAt, 'datetime')}</Td>
-                <Td align="right" mono>
-                  {s.difference !== null ? (
-                    <span
-                      className={
-                        Math.abs(s.difference) >= 5000 ? 'font-bold text-destructive' : ''
-                      }
-                    >
-                      {s.difference > 0 ? '+' : ''}
-                      {formatCop(s.difference)}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </Td>
-                <Td align="right" mono>
-                  {s.voidCount > 0 ? (
-                    <span className="font-medium text-warning">{s.voidCount}</span>
-                  ) : (
-                    s.voidCount
-                  )}
-                </Td>
-                <Td align="right" mono>
-                  {s.noSaleCount > 0 ? (
-                    <span className="font-medium text-warning">{s.noSaleCount}</span>
-                  ) : (
-                    s.noSaleCount
-                  )}
-                </Td>
-                <Td>
-                  {s.flags.length > 0 ? (
-                    <span className="text-xs text-destructive">
-                      {s.flags.map((f) => FLAG_LABEL[f]).join(' · ')}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </Td>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <Th>Turno (apertura)</Th>
+                <Th align="right">Descuadre</Th>
+                <Th align="right">Anulaciones</Th>
+                <Th align="right">Cajón sin venta</Th>
+                <Th>Alertas</Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {c.shifts.map((s, idx) => (
+                <tr
+                  key={s.shiftId}
+                  className={idx === 0 && s.flags.length > 0 ? 'bg-destructive/10' : ''}
+                >
+                  <Td>{formatDate(s.openedAt, 'datetime')}</Td>
+                  <Td align="right" mono>
+                    {s.difference !== null ? (
+                      <span
+                        className={
+                          Math.abs(s.difference) >= 5000 ? 'font-bold text-destructive' : ''
+                        }
+                      >
+                        {s.difference > 0 ? '+' : ''}
+                        {formatCop(s.difference)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </Td>
+                  <Td align="right" mono>
+                    {s.voidCount > 0 ? (
+                      <span className="font-medium text-warning">{s.voidCount}</span>
+                    ) : (
+                      s.voidCount
+                    )}
+                  </Td>
+                  <Td align="right" mono>
+                    {s.noSaleCount > 0 ? (
+                      <span className="font-medium text-warning">{s.noSaleCount}</span>
+                    ) : (
+                      s.noSaleCount
+                    )}
+                  </Td>
+                  <Td>
+                    {s.flags.length > 0 ? (
+                      <span className="text-xs text-destructive">
+                        {s.flags.map((f) => FLAG_LABEL[f]).join(' · ')}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   );
 }
 
-function BaselineCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
+function BaselineCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
     <div className="rounded-md bg-muted/40 px-3 py-2">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -168,13 +157,7 @@ function BaselineCard({
   );
 }
 
-function Th({
-  children,
-  align,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-}) {
+function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
   return (
     <th
       scope="col"

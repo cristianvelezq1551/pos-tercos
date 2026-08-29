@@ -14,68 +14,82 @@ export function ProductMarginsTable({ report }: { report: ProductMarginReport })
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <table className="min-w-full divide-y divide-border text-sm">
-        <thead className="bg-muted/40">
-          <tr>
-            <Th>Producto</Th>
-            <Th align="right">Unidades</Th>
-            <Th align="right">Ventas</Th>
-            <Th align="right">Costo real</Th>
-            <Th align="right">Ganancia</Th>
-            <Th align="right">% margen</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {report.products.map((p) => {
-            const pct = p.marginPct === null ? null : p.marginPct * 100;
-            const cls = pct === null ? 'text-foreground' : MARGIN_TONE_CLASS[marginTone(pct)];
-            return (
-              <tr key={p.productId} className="hover:bg-muted/40">
-                <Td>
-                  <span className="flex items-center gap-1.5 font-medium text-foreground">
-                    {p.productName}
-                    {p.cogsPartial ? (
-                      <AlertTriangle
-                        className="h-3.5 w-3.5 text-warning"
-                        aria-label="Costo parcialmente desconocido (insumos sin costo registrado)"
-                      />
-                    ) : null}
-                  </span>
-                </Td>
-                <Td align="right" mono>{formatNumber(p.unitsSold, { decimals: 0 })}</Td>
-                <Td align="right" mono>{formatCop(p.revenue)}</Td>
-                <Td align="right" mono>{formatCop(p.cogs)}</Td>
-                <Td align="right" mono>
-                  <span className={cls}>{formatCop(p.margin)}</span>
-                </Td>
-                <Td align="right" mono>
-                  {pct === null ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <span className={`font-medium ${cls}`}>
-                      {formatNumber(pct, { decimals: 1 })}%
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
+            <tr>
+              <Th>Producto</Th>
+              <Th align="right">Unidades</Th>
+              <Th align="right">Ventas</Th>
+              <Th align="right">Costo real</Th>
+              <Th align="right">Ganancia</Th>
+              <Th align="right">% margen</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {report.products.map((p) => {
+              const pct = p.marginPct === null ? null : p.marginPct * 100;
+              const cls = pct === null ? 'text-foreground' : MARGIN_TONE_CLASS[marginTone(pct)];
+              return (
+                <tr key={p.productId} className="hover:bg-muted/40">
+                  <Td>
+                    <span className="flex items-center gap-1.5 font-medium text-foreground">
+                      {p.productName}
+                      {p.cogsPartial ? (
+                        <AlertTriangle
+                          className="h-3.5 w-3.5 text-warning"
+                          aria-label="Costo parcialmente desconocido (insumos sin costo registrado)"
+                        />
+                      ) : null}
                     </span>
-                  )}
-                </Td>
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot className="border-t-2 border-border bg-muted/40 font-semibold">
-          <tr>
-            <Td>Total</Td>
-            <Td align="right"> </Td>
-            <Td align="right" mono>{formatCop(report.totals.revenue)}</Td>
-            <Td align="right" mono>{formatCop(report.totals.cogs)}</Td>
-            <Td align="right" mono>{formatCop(report.totals.margin)}</Td>
-            <Td align="right" mono>
-              {report.totals.marginPct === null
-                ? '—'
-                : `${formatNumber(report.totals.marginPct * 100, { decimals: 1 })}%`}
-            </Td>
-          </tr>
-        </tfoot>
-      </table>
+                  </Td>
+                  <Td align="right" mono>
+                    {formatNumber(p.unitsSold, { decimals: 0 })}
+                  </Td>
+                  <Td align="right" mono>
+                    {formatCop(p.revenue)}
+                  </Td>
+                  <Td align="right" mono>
+                    {formatCop(p.cogs)}
+                  </Td>
+                  <Td align="right" mono>
+                    <span className={cls}>{formatCop(p.margin)}</span>
+                  </Td>
+                  <Td align="right" mono>
+                    {pct === null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <span className={`font-medium ${cls}`}>
+                        {formatNumber(pct, { decimals: 1 })}%
+                      </span>
+                    )}
+                  </Td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot className="border-t-2 border-border bg-muted/40 font-semibold">
+            <tr>
+              <Td>Total</Td>
+              <Td align="right"> </Td>
+              <Td align="right" mono>
+                {formatCop(report.totals.revenue)}
+              </Td>
+              <Td align="right" mono>
+                {formatCop(report.totals.cogs)}
+              </Td>
+              <Td align="right" mono>
+                {formatCop(report.totals.margin)}
+              </Td>
+              <Td align="right" mono>
+                {report.totals.marginPct === null
+                  ? '—'
+                  : `${formatNumber(report.totals.marginPct * 100, { decimals: 1 })}%`}
+              </Td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
       <div className="border-t border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
         Costo real por método FIFO (lote más viejo primero). ⚠ = parte del costo no se pudo
         determinar (insumos sin costo en facturas confirmadas).

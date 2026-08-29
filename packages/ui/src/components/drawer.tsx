@@ -109,7 +109,8 @@ function DrawerHeader({ title, subtitle, onClose, trailing }: DrawerHeaderProps)
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            // Ver dialog.tsx: 44px en dedo, compacto en puntero fino.
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-11 pointer-coarse:w-11"
           >
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
