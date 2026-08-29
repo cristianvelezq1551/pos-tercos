@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   INVOICE_EXTRACTION_SYSTEM,
   INVOICE_EXTRACTION_USER,
-  normalizeExtractedItems,
+  normalizeExtractedInvoice,
   PURCHASE_SUGGESTION_SYSTEM,
   type LLMCompletionRequest,
   type LLMCompletionResult,
@@ -84,12 +84,7 @@ export class AnthropicLLMAdapter implements LLMProvider {
       throw new Error('LLM did not return valid JSON');
     }
 
-    // Defaults para arrays que el LLM a veces omite del JSON
-    if (parsed.items === undefined || parsed.items === null) parsed.items = [];
-    if (parsed.warnings === undefined || parsed.warnings === null) parsed.warnings = [];
-    parsed.items = normalizeExtractedItems(parsed.items);
-
-    const extraction = ExtractedInvoiceSchema.parse(parsed);
+    const extraction = ExtractedInvoiceSchema.parse(normalizeExtractedInvoice(parsed));
     return {
       extraction,
       modelUsed: `anthropic:${this.model}`,

@@ -31,8 +31,9 @@ export function getMenuPromoBadge(
   displayPrice: number,
   promos: readonly PublicMenuPromotion[],
   at: Date = new Date(),
+  isCombo = false,
 ): PromoBadge | null {
-  return getPromoBadge(productId, displayPrice, promos.map(toPromotionDef), at);
+  return getPromoBadge(productId, displayPrice, promos.map(toPromotionDef), at, isCombo);
 }
 
 /** Shape mínimo de línea para calcular promos (CartLine lo cumple). */
@@ -40,6 +41,8 @@ export interface PromoLine {
   productId: string;
   quantity: number;
   unitPrice: number;
+  /** Product.isCombo — sin esto COMBO_OFF nunca se previsualiza. */
+  isCombo?: boolean;
 }
 
 export interface CartPromoTotals {
@@ -54,7 +57,10 @@ export interface CartPromoTotals {
  * Preview client-side de los totales con promos del canal web. El monto
  * AUTORITATIVO lo calcula el backend al crear el pedido con el mismo motor;
  * esto solo evita que el cliente vea un precio distinto al que pagará.
- * (COMBO_OFF no se previsualiza — igual que el POS — pero sí se cobra.)
+ *
+ * `isCombo` viaja por línea a propósito: con el flag fijo en false, una promo
+ * COMBO_OFF salía cobrada por el backend pero invisible en el menú, el carrito
+ * y el checkout — el cliente veía el precio lleno hasta después de pedir.
  */
 export function computeCartPromoTotals(
   lines: readonly PromoLine[],
@@ -69,7 +75,13 @@ export function computeCartPromoTotals(
     subtotal += lineSubtotal;
     if (defs.length === 0) return 0;
     const r = applyPromotion(
-      { productId: l.productId, lineSubtotal, quantity: l.quantity, isCombo: false, at },
+      {
+        productId: l.productId,
+        lineSubtotal,
+        quantity: l.quantity,
+        isCombo: l.isCombo ?? false,
+        at,
+      },
       defs,
     );
     discountSum += r.lineDiscount;

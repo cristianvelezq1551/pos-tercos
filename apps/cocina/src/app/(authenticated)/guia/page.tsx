@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { chaptersFor, chapterIcon } from '@pos-tercos/guia';
+import { chaptersFor, chapterIcon, FlowIndex, flowsFor } from '@pos-tercos/guia';
+import { GuiaAsistentePanel } from '../../../features/guia';
 
 export const metadata = { title: 'Guía · Cocina Tercos' };
 
@@ -10,7 +11,8 @@ export const metadata = { title: 'Guía · Cocina Tercos' };
  */
 export default function GuiaCocinaPage() {
   const chapters = chaptersFor('cocina');
-  const total = chapters.reduce((n, c) => n + c.sections.length, 0);
+  const flujos = flowsFor('cocina');
+  const total = chapters.reduce((n, c) => n + c.sections.length, 0) + flujos.length;
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
@@ -19,7 +21,20 @@ export default function GuiaCocinaPage() {
         Cómo se hace cada cosa, paso a paso. {total} temas.
       </p>
 
-      <ul className="mt-5 space-y-3">
+      <div className="mt-5">
+        <GuiaAsistentePanel />
+      </div>
+
+      <h2 className="mt-8 font-display text-lg font-bold text-foreground">Paso a paso</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Cómo se hace cada cosa y dónde se ve después.
+      </p>
+      <div className="mt-3">
+        <FlowIndex audience="cocina" dense />
+      </div>
+
+      <h2 className="mt-8 font-display text-lg font-bold text-foreground">Entender el sistema</h2>
+      <ul className="mt-3 space-y-3">
         {chapters.map((c) => {
           const Icon = chapterIcon(c.icon);
           return (

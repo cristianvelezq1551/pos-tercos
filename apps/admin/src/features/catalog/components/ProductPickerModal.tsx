@@ -11,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { getLinePromoDiscount } from '../../sales/lib/promo-preview';
 import { SelectableRow } from './SelectableRow';
+import { displayBasePrice } from '../lib/display-price';
 
 export type PickerSelection = {
   productId: string;
@@ -69,7 +70,7 @@ export function ProductPickerModal({
     if (!product) return 0;
     const sizeMod = selectedSize?.priceModifier ?? 0;
     const modSum = selectedModifiers.reduce((acc, m) => acc + m.priceDelta, 0);
-    return product.basePrice + sizeMod + modSum;
+    return displayBasePrice(product) + sizeMod + modSum;
   }, [product, selectedSize, selectedModifiers]);
 
   const qty = quantity ?? 0;

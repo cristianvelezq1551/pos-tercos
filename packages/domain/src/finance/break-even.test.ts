@@ -29,6 +29,7 @@ describe('computeBreakEven', () => {
       wasteCost: revenue * ratios.waste,
       cortesiaCost: revenue * ratios.cortesia,
       refundCost: revenue * ratios.refund,
+      freightCost: 0,
       totalFixed,
     });
     expect(r.breakEven).not.toBeNull();
@@ -39,7 +40,7 @@ describe('computeBreakEven', () => {
     const revenue = 20_000_000;
     const cogs = 7_000_000;
     const totalFixed = 6_000_000;
-    const perdidas = { wasteCost: 600_000, cortesiaCost: 200_000, refundCost: 200_000 };
+    const perdidas = { wasteCost: 600_000, cortesiaCost: 200_000, refundCost: 200_000, freightCost: 0 };
 
     const honesto = computeBreakEven({ revenue, cogs, ...perdidas, totalFixed });
     // El cálculo viejo: solo margen bruto, sin merma/cortesías/reembolsos.
@@ -58,12 +59,14 @@ describe('computeBreakEven', () => {
       wasteCost: 0,
       cortesiaCost: 0,
       refundCost: 0,
+      freightCost: 0,
     });
     const conPerdidas = computeBreakEven({
       ...base,
       wasteCost: 50_000,
       cortesiaCost: 30_000,
       refundCost: 20_000,
+      freightCost: 0,
     });
     expect(sinPerdidas.contributionMargin).toBe(600_000);
     expect(sinPerdidas.contributionMarginPct).toBeCloseTo(0.6, 10);
@@ -80,6 +83,7 @@ describe('computeBreakEven', () => {
         wasteCost: 0,
         cortesiaCost: 0,
         refundCost: 0,
+        freightCost: 0,
         totalFixed: 1_000_000,
       });
     expect(mk(2_000_000).breakEvenCoverage).toBeCloseTo(1, 10);
@@ -94,6 +98,7 @@ describe('computeBreakEven', () => {
       wasteCost: 0,
       cortesiaCost: 0,
       refundCost: 0,
+      freightCost: 0,
       totalFixed: 5_000_000,
     });
     expect(r.contributionMarginPct).toBeNull();
@@ -109,6 +114,7 @@ describe('computeBreakEven', () => {
       wasteCost: 50_000,
       cortesiaCost: 0,
       refundCost: 0,
+      freightCost: 0,
       totalFixed: 300_000,
     });
     expect(r.contributionMargin).toBe(-150_000);
@@ -124,9 +130,54 @@ describe('computeBreakEven', () => {
       wasteCost: 0,
       cortesiaCost: 0,
       refundCost: 0,
+      freightCost: 0,
       totalFixed: 0,
     });
     expect(r.breakEven).toBe(0);
     expect(r.breakEvenCoverage).toBeNull();
+  });
+
+  /**
+   * El flete de compra es variable: todos los proveedores lo cobran por pedido
+   * (ninguno con tarifa fija mensual), así que escala con las compras, que
+   * escalan con la venta. Dejarlo fuera del margen de contribución repetiría el
+   * error que ya se corrigió con la merma: un equilibrio más bajo que el real.
+   */
+  it('el flete de compra baja el margen de contribución igual que la merma', () => {
+    const base = {
+      revenue: 1_000_000,
+      cogs: 400_000,
+      wasteCost: 0,
+      cortesiaCost: 0,
+      refundCost: 0,
+      totalFixed: 300_000,
+    };
+    const sinFlete = computeBreakEven({ ...base, freightCost: 0 });
+    const conFlete = computeBreakEven({ ...base, freightCost: 50_000 });
+    const conMerma = computeBreakEven({ ...base, freightCost: 0, wasteCost: 50_000 });
+
+    expect(sinFlete.contributionMargin).toBe(600_000);
+    expect(conFlete.contributionMargin).toBe(550_000);
+    // Un peso de flete pesa exactamente lo mismo que un peso de merma.
+    expect(conFlete.contributionMargin).toBe(conMerma.contributionMargin);
+    expect(conFlete.breakEven!).toBe(conMerma.breakEven!);
+  });
+
+  it('con flete el equilibrio sube: hay que vender más para cubrir los fijos', () => {
+    const base = {
+      revenue: 10_000_000,
+      cogs: 4_000_000,
+      wasteCost: 0,
+      cortesiaCost: 0,
+      refundCost: 0,
+      totalFixed: 3_000_000,
+    };
+    const sinFlete = computeBreakEven({ ...base, freightCost: 0 });
+    const conFlete = computeBreakEven({ ...base, freightCost: 300_000 });
+
+    expect(conFlete.breakEven!).toBeGreaterThan(sinFlete.breakEven!);
+    // 3M / 0,60 = 5.000.000  vs  3M / 0,57 = 5.263.157
+    expect(Math.round(sinFlete.breakEven!)).toBe(5_000_000);
+    expect(Math.round(conFlete.breakEven!)).toBe(5_263_158);
   });
 });

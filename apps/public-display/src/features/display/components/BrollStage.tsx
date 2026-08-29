@@ -17,6 +17,35 @@ import { BROLL_SOCIAL, type BrollItem } from '../lib/broll-menu';
 const VIEW_DURATION_MS = 8_000;
 const TICK_MS = 500;
 
+// Ancho del bleed: la foto se pinta unos píxeles DEBAJO del panel negro para
+// que el borde de recorte del layer (que cae en pixel fraccionario, 44vw casi
+// nunca da entero) no coincida con la costura visible.
+const PHOTO_BLEED_PX = 4;
+
+/**
+ * Difuminado del borde izquierdo de la foto.
+ *
+ * Los stops siguen una curva smoothstep (`1 - (3u² - 2u³)`), que arranca y
+ * termina con pendiente CERO. Es la razón de tantas paradas: el degradado
+ * anterior iba de negro plano a rampa empinada en el 6%, y ese quiebre de
+ * pendiente crea una banda de Mach — una línea que el ojo ve aunque no exista
+ * en los píxeles. En un monitor apenas se nota; un TV la vuelve evidente
+ * porque encima le aplica realce de bordes y contraste dinámico.
+ */
+const PHOTO_SCRIM = [
+  'rgba(0,0,0,1) 0%',
+  'rgba(0,0,0,0.972) 4%',
+  'rgba(0,0,0,0.896) 8%',
+  'rgba(0,0,0,0.784) 11%',
+  'rgba(0,0,0,0.648) 15%',
+  'rgba(0,0,0,0.5) 19%',
+  'rgba(0,0,0,0.352) 23%',
+  'rgba(0,0,0,0.216) 27%',
+  'rgba(0,0,0,0.104) 30%',
+  'rgba(0,0,0,0.028) 34%',
+  'rgba(0,0,0,0) 38%',
+].join(', ');
+
 // Estado del ciclo a nivel MÓDULO — sobrevive a re-mounts (Strict Mode, HMR,
 // re-render del padre). Mismo patrón que el Carousel viejo.
 let moduleIndex = 0;
@@ -204,7 +233,10 @@ export function BrollStage({ items }: { items: BrollItem[] }) {
       <div className="flex items-stretch justify-end">
         <div
           className="relative h-dvh overflow-hidden bg-black"
-          style={{ width: '44vw' }}
+          style={{
+            width: `calc(44vw + ${PHOTO_BLEED_PX}px)`,
+            marginLeft: `-${PHOTO_BLEED_PX}px`,
+          }}
         >
           <AnimatePresence>
             <motion.div
@@ -227,9 +259,11 @@ export function BrollStage({ items }: { items: BrollItem[] }) {
           <div
             className="pointer-events-none absolute inset-0 z-[3]"
             style={{
-              background:
-                'linear-gradient(90deg,#000 0%, #000 6%, rgba(0,0,0,.5) 14%, rgba(0,0,0,0) 30%)',
-              boxShadow: 'inset 0 0 60px 14px rgba(0,0,0,.5)',
+              background: `linear-gradient(90deg, ${PHOTO_SCRIM})`,
+              // Viñeta solo arriba/abajo/derecha: sobre la costura izquierda
+              // sumaría una segunda rampa con su propio quiebre.
+              boxShadow:
+                'inset 0 60px 60px -40px rgba(0,0,0,.55), inset 0 -60px 60px -40px rgba(0,0,0,.55), inset -60px 0 60px -40px rgba(0,0,0,.55)',
             }}
           />
         </div>

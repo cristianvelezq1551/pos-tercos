@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -8,6 +7,7 @@ import {
 import type { StorageProvider } from '@pos-tercos/domain';
 import type { Invoice, UserRole } from '@pos-tercos/types';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
+import { assertPuedeGestionarPago } from './invoice-rules';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
@@ -53,7 +53,7 @@ export class InvoicePaymentsService {
     if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
     // Autoriza ANTES de consumir el PIN: un no-dueño ajeno a la factura no debe
     // ni siquiera gastar la aprobación.
-    this.assertCanManagePayment(actorRole, actorId, existing.uploadedById);
+    assertPuedeGestionarPago(actorRole, actorId, existing.uploadedById);
     const approverId = await this.approvals.verify(pin);
     if (existing.status !== 'CONFIRMED') {
       throw new BadRequestException(
@@ -142,7 +142,7 @@ export class InvoicePaymentsService {
     });
     if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
     // Autoriza ANTES de consumir el PIN (ver markPaymentPaid).
-    this.assertCanManagePayment(actorRole, actorId, existing.uploadedById);
+    assertPuedeGestionarPago(actorRole, actorId, existing.uploadedById);
     const approverId = await this.approvals.verify(pin);
     if (existing.status !== 'CONFIRMED') {
       throw new BadRequestException('Solo aplica a facturas confirmadas.');
@@ -181,19 +181,6 @@ export class InvoicePaymentsService {
    * de las que él mismo creó (evita que otro usuario toque su compra). La
    * lectura del comprobante NO pasa por acá — cualquier admin puede verlo.
    */
-  private assertCanManagePayment(
-    actorRole: UserRole,
-    actorId: string,
-    uploadedById: string | null,
-  ): void {
-    if (actorRole === 'DUENO') return;
-    if (uploadedById !== actorId) {
-      throw new ForbiddenException(
-        'Solo el Dueño o quien creó la factura puede gestionar su pago.',
-      );
-    }
-  }
-
   /** Lee el comprobante de pago al proveedor. */
   async getPaymentProof(invoiceId: string): Promise<{ buffer: Buffer; mime: string }> {
     const row = await this.prisma.invoice.findUnique({

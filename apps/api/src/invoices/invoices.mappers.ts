@@ -70,6 +70,7 @@ export function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
     invoiceNumber: row.invoiceNumber,
     total: row.total !== null ? Number(row.total) : null,
     iva: row.iva !== null ? Number(row.iva) : null,
+    freightAmount: Number(row.freightAmount),
     photoStorageKey: row.photoStorageKey,
     aiModelUsed: row.aiModelUsed,
     status: row.status,

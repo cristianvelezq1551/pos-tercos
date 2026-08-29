@@ -58,6 +58,15 @@ export const FINANZAS: GuideChapter = {
           text: 'Acá se registra cualquier deuda que no venga de una factura de compra: un préstamo, un arreglo, un anticipo. Cada compromiso tiene monto, a quién y para cuándo, y se marca la antigüedad para que lo vencido salte a la vista.',
         },
         {
+          kind: 'rule',
+          title: 'Marca si es un gasto o una devolución',
+          text: 'Un arreglo o un servicio es un GASTO: baja el resultado del mes en que lo pagas. Devolver plata que te prestaron NO lo es —esa plata ya la habías recibido— y contarla como pérdida mostraría un bajón que no existe. La casilla viene marcada como gasto, que es el caso común; se desmarca solo al devolver un préstamo.',
+        },
+        {
+          kind: 'note',
+          text: 'Un compromiso pesa cuando lo PAGAS, no cuando lo registras: mientras se debe es deuda, no pérdida. Y no mueve el punto de equilibrio, porque un arreglo puntual no define el piso de operación del mes siguiente. Si un gasto se repite todos los meses, su lugar es Costos fijos.',
+        },
+        {
           kind: 'steps',
           steps: [
             { do: 'Registra el compromiso con monto, responsable y fecha.' },
@@ -148,8 +157,15 @@ export const FINANZAS: GuideChapter = {
             ['− Cortesías', 'Lo regalado, a costo.'],
             ['− Reembolsos', 'Comida preparada y devuelta, a costo.'],
             ['− Merma', 'Lo que se tiró, a costo.'],
+            ['− Domicilios de compra', 'Lo que cobraron los proveedores por traerte la mercancía.'],
+            ['− Compromisos pagados', 'Arreglos y servicios que pagaste este mes.'],
             ['Resultado neto', 'Lo que quedó.'],
           ],
+        },
+        {
+          kind: 'rule',
+          title: 'Los dos domicilios son cosas opuestas',
+          text: 'El que cobra el proveedor por traerte la mercancía SÍ es plata tuya: la pagaste y baja el resultado. El que cobra el cliente por llevarle la comida NO: esa plata es del repartidor y solo pasa por la caja, así que no suma a los ingresos ni entra al arqueo. Por eso cada uno tiene su tarjeta y solo uno aparece en el estado de resultados.',
         },
         {
           kind: 'rule',
@@ -162,7 +178,7 @@ export const FINANZAS: GuideChapter = {
         },
         {
           kind: 'prose',
-          text: 'En la misma pantalla están el punto de equilibrio (cuánto hay que vender para no perder), la tendencia de los últimos seis meses, la tarjeta de domicilios del mes y un análisis escrito por la inteligencia artificial sobre lo que muestran los números.',
+          text: 'En la misma pantalla están el punto de equilibrio (cuánto hay que vender para no perder), la tendencia de los últimos seis meses, dos tarjetas de domicilios —lo que pagaste porque te traigan la mercancía y lo que se llevaron los repartidores— y un análisis escrito por la inteligencia artificial sobre lo que muestran los números.',
         },
       ],
     },

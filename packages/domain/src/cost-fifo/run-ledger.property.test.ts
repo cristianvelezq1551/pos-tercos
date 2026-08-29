@@ -85,7 +85,10 @@ describe('runLedgerFifo — propiedades sobre historias aleatorias', () => {
 
   it('LEY 2: con costos completos, el valor se conserva (entra == sale + queda)', () => {
     // Sin faltantes ni costos desconocidos, cada peso que entró tiene que estar
-    // en un lote restante o haberse atribuido a una venta, merma o cortesía.
+    // en un lote restante o haberse atribuido a una venta, una merma, una
+    // cortesía o un faltante de conteo. Que el faltante entre en esta suma es
+    // justo lo que se ganó al reportarlo: antes salía del libro sin dejar
+    // rastro y la igualdad cerraba ignorándolo.
     const gen = run({ allowShortfall: false, allowUnknownCost: false });
     for (const seed of seeds(RUNS)) {
       const { history, fifo } = gen(seed);
@@ -94,7 +97,8 @@ describe('runLedgerFifo — propiedades sobre historias aleatorias', () => {
       const salidas =
         attributedSaleCost(fifo) +
         fifo.waste.reduce((a, w) => a + w.cost, 0) +
-        fifo.cortesia.reduce((a, c) => a + c.cost, 0);
+        fifo.cortesia.reduce((a, c) => a + c.cost, 0) +
+        fifo.shrinkage.reduce((a, f) => a + f.cost, 0);
 
       expect(
         Math.abs(history.valueIn - (enLotes + salidas)),
@@ -168,6 +172,7 @@ describe('runLedgerFifo — propiedades sobre historias aleatorias', () => {
       }
       consumidas += fifo.waste.reduce((a, w) => a + w.unknownQty, 0);
       consumidas += fifo.cortesia.reduce((a, c) => a + c.unknownQty, 0);
+      consumidas += fifo.shrinkage.reduce((a, f) => a + f.unknownQty, 0);
 
       // La producción TRANSFORMA lo desconocido: consume insumos sin costo y
       // emite un lote sin costo. Esas unidades cambian de forma (gramos de

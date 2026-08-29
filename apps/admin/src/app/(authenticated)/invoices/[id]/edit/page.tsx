@@ -75,6 +75,9 @@ function synthesizeExtraction(invoice: Invoice): ExtractedInvoice {
     invoiceNumber: invoice.invoiceNumber,
     total: invoice.total,
     iva: invoice.iva,
+    // Sin esto, reanudar un borrador perdía el domicilio y había que
+    // reescribirlo (o confirmar sin él, escondiendo el gasto).
+    freight: invoice.freightAmount > 0 ? invoice.freightAmount : null,
     items: (invoice.items ?? []).map((it) => ({
       descriptionRaw: it.descriptionRaw,
       quantity: it.quantity,

@@ -13,6 +13,12 @@
  * contribución la cuenta cierra sola: vendiendo exactamente `breakEven`, el
  * resultado neto recurrente da 0.
  *
+ * El FLETE de compra entra por la misma razón: es variable (todos los
+ * proveedores lo cobran por pedido, ninguno con tarifa fija mensual — decisión
+ * del dueño 2026-08-28), así que sube con lo que se compra, que sube con lo que
+ * se vende. Dejarlo afuera repetiría el error del margen bruto en otra línea.
+ * Si algún día apareciera un flete contratado mensual, ESE va en `totalFixed`.
+ *
  * Los gastos PUNTUALES (una reparación, un horno nuevo) quedan fuera a
  * propósito: no se repiten, así que no definen el piso de operación del mes
  * siguiente. Se restan del neto, no del equilibrio.
@@ -31,12 +37,18 @@ export interface BreakEvenInput {
   cortesiaCost: number;
   /** Costo de la comida de los pedidos reembolsados. */
   refundCost: number;
+  /** Faltantes detectados al contar. Variable: escala con el movimiento del
+   *  local, igual que la merma, así que pesa en el margen de contribución. */
+  shrinkageCost?: number;
+  /** Domicilios/fletes que cobraron los proveedores por traer la mercancía en
+   *  el período. Variable: escala con las compras. */
+  freightCost: number;
   /** Costos fijos RECURRENTES (nómina + mensuales/anuales). Sin puntuales. */
   totalFixed: number;
 }
 
 export interface BreakEvenResult {
-  /** Ingresos − COGS − merma − cortesías − reembolsos. */
+  /** Ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes. */
   contributionMargin: number;
   /** contributionMargin / revenue. null si no hay ingresos. */
   contributionMarginPct: number | null;
@@ -49,7 +61,13 @@ export interface BreakEvenResult {
 
 export function computeBreakEven(input: BreakEvenInput): BreakEvenResult {
   const contributionMargin =
-    input.revenue - input.cogs - input.wasteCost - input.cortesiaCost - input.refundCost;
+    input.revenue -
+    input.cogs -
+    input.wasteCost -
+    input.cortesiaCost -
+    input.refundCost -
+    input.freightCost -
+    (input.shrinkageCost ?? 0);
   const contributionMarginPct =
     input.revenue > 0 ? contributionMargin / input.revenue : null;
 

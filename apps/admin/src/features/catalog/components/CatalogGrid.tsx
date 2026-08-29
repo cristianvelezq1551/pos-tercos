@@ -11,6 +11,7 @@ import {
   type ProductPromoBadge,
 } from '../../sales/lib/promo-preview';
 import { useAvailability } from '../hooks/useAvailability';
+import { displayBasePrice } from '../lib/display-price';
 import { useSoldOutToggle } from '../hooks/useSoldOutToggle';
 import { filterProductsByQuery } from '../lib/product-search';
 import { ALL_CATEGORIES, CatalogToolbar } from './CatalogToolbar';
@@ -66,7 +67,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
     const at = new Date();
     const map = new Map<string, ProductPromoBadge | null>();
     for (const p of products) {
-      map.set(p.id, getActivePromoBadge(p.id, p.basePrice, promos, at, p.isCombo));
+      map.set(p.id, getActivePromoBadge(p.id, displayBasePrice(p), promos, at, p.isCombo));
     }
     return map;
   }, [products, promos]);

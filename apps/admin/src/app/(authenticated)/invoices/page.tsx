@@ -1,19 +1,27 @@
 import Link from 'next/link';
 import { Button, Chip, Container, PageHeader } from '@pos-tercos/ui';
 import { Receipt } from 'lucide-react';
-import { InvoicesTable } from '../../../features/invoices';
+import { InvoiceDateFilter, InvoicesTable } from '../../../features/invoices';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import type { Invoice } from '@pos-tercos/types';
 
 interface PageProps {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; from?: string; to?: string }>;
 }
 
-async function loadInvoices(status?: string): Promise<Invoice[] | { error: string }> {
+async function loadInvoices(
+  status?: string,
+  from?: string,
+  to?: string,
+): Promise<Invoice[] | { error: string }> {
   try {
-    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-    return await serverFetchJson<Invoice[]>(`/invoices${qs}`);
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return await serverFetchJson<Invoice[]>(`/invoices${qs ? `?${qs}` : ''}`);
   } catch (err) {
     return { error: friendlyApiError(err) };
   }
@@ -28,7 +36,7 @@ const STATUS_FILTERS = [
 
 export default async function InvoicesPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const result = await loadInvoices(sp.status);
+  const result = await loadInvoices(sp.status, sp.from, sp.to);
 
   return (
     <>
@@ -45,11 +53,18 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
       />
 
       <Container size="7xl" padY="md">
-        <nav className="mb-5 flex flex-wrap gap-2">
+        <nav className="mb-3 flex flex-wrap gap-2">
           {STATUS_FILTERS.map((f) => {
             const active = (sp.status ?? '') === f.value;
+            // El rango de fechas se conserva al cambiar de pestaña: perderlo
+            // obligaría a re-elegirlo cada vez que se pasa a "Confirmadas".
+            const params = new URLSearchParams();
+            if (f.value) params.set('status', f.value);
+            if (sp.from) params.set('from', sp.from);
+            if (sp.to) params.set('to', sp.to);
+            const qs = params.toString();
             return (
-              <Link key={f.value} href={f.value ? `/invoices?status=${f.value}` : '/invoices'}>
+              <Link key={f.value} href={qs ? `/invoices?${qs}` : '/invoices'}>
                 <Chip selected={active} type="button">
                   {f.label}
                 </Chip>
@@ -57,6 +72,10 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
             );
           })}
         </nav>
+
+        <div className="mb-5">
+          <InvoiceDateFilter />
+        </div>
 
         {Array.isArray(result) ? (
           <InvoicesTable rows={result} />

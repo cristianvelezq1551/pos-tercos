@@ -2,6 +2,7 @@ export {
   INVOICE_EXTRACTION_SYSTEM,
   INVOICE_EXTRACTION_USER,
   normalizeExtractedItems,
+  normalizeExtractedInvoice,
   PURCHASE_SUGGESTION_SYSTEM,
   buildPurchaseSuggestionUserPrompt,
   SHIFT_CLOSE_SYSTEM,

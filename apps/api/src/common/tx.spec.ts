@@ -81,4 +81,29 @@ describe('runWithSerializationRetry', () => {
     await expect(runWithSerializationRetry(work, 1)).rejects.toMatchObject({ code: 'P2034' });
     expect(work).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * Sin espera, N transacciones que chocaron vuelven a entrar todas juntas y
+   * vuelven a chocar: los 16 intentos se consumen sin que ninguna avance y el
+   * cajero recibe un 500 cobrando. Es lo que destapó `sales-concurrency` con
+   * ocho cobros del mismo producto.
+   */
+  it('espera entre reintentos en vez de volver a chocar de inmediato', async () => {
+    const work = jest
+      .fn()
+      .mockRejectedValueOnce(prismaError('P2034'))
+      .mockResolvedValue('cobrado');
+    const t0 = Date.now();
+    await expect(runWithSerializationRetry(work)).resolves.toBe('cobrado');
+    expect(Date.now() - t0).toBeGreaterThan(0);
+  });
+
+  it('la espera es acotada: no crece sin techo con muchos intentos', async () => {
+    const work = jest.fn().mockRejectedValue(prismaError('P2034'));
+    const t0 = Date.now();
+    await expect(runWithSerializationRetry(work, 8)).rejects.toMatchObject({ code: 'P2034' });
+    // 7 esperas con tope de 60 ms + jitter ⇒ bien por debajo de un segundo.
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(work).toHaveBeenCalledTimes(8);
+  });
 });

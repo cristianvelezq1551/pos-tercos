@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PaymentAccountInputSchema } from './business-config';
 import { CreateWebOrderSchema } from './web-orders';
 
 const UUID = '55555555-5555-4555-8555-555555555555';
@@ -122,5 +123,40 @@ describe('CreateWebOrderSchema — tope de líneas', () => {
     expect(
       CreateWebOrderSchema.safeParse({ ...base, items: [], type: 'WEB_PICKUP' }).success,
     ).toBe(false);
+  });
+});
+
+/**
+ * El número va en su PROPIO campo, separado del rótulo, porque en el mensaje
+ * se imprime solo en su línea para que el cliente lo copie de un toque. Si el
+ * schema dejara pasar una cuenta sin número, el mensaje diría "paga a Nequi"
+ * sin decir a cuál.
+ */
+describe('PaymentAccountInputSchema', () => {
+  it('exige rótulo y número', () => {
+    expect(PaymentAccountInputSchema.safeParse({ label: 'Nequi', value: '' }).success).toBe(false);
+    expect(PaymentAccountInputSchema.safeParse({ label: '', value: '3046706847' }).success).toBe(
+      false,
+    );
+  });
+
+  it('la nota es opcional y cae a cadena vacía', () => {
+    const parsed = PaymentAccountInputSchema.parse({ label: 'Nequi', value: '3046706847' });
+    expect(parsed.note).toBe('');
+  });
+
+  it('recorta los espacios que el dueño pega sin querer', () => {
+    const parsed = PaymentAccountInputSchema.parse({
+      label: '  Nequi ',
+      value: ' 3046706847 ',
+      note: ' Tercos ',
+    });
+    expect(parsed).toEqual({ label: 'Nequi', value: '3046706847', note: 'Tercos' });
+  });
+
+  it('un rótulo o número de solo espacios no pasa', () => {
+    expect(PaymentAccountInputSchema.safeParse({ label: 'Nequi', value: '   ' }).success).toBe(
+      false,
+    );
   });
 });

@@ -16,6 +16,8 @@ export interface ValidateInvoiceInput {
   rows: DraftRow[];
   total: string;
   iva: string;
+  /** Domicilio/flete cobrado por traer la mercancía. Vacío = sin flete. */
+  freight: string;
   invoiceNumber: string;
   notes: string;
 }
@@ -30,6 +32,7 @@ export function validateInvoice(input: ValidateInvoiceInput): Validation {
     rows,
     total,
     iva,
+    freight,
     invoiceNumber,
     notes,
   } = input;
@@ -80,6 +83,19 @@ export function validateInvoice(input: ValidateInvoiceInput): Validation {
     return { valid: false, reason: 'IVA inválido.' };
   }
 
+  // El flete viaja en el encabezado, no como ítem: no entra al inventario ni
+  // encarece ningún producto. `total` sí lo incluye (es lo que se paga).
+  const freightNum = freight.trim() === '' ? 0 : Number(freight);
+  if (!Number.isFinite(freightNum) || freightNum < 0) {
+    return { valid: false, reason: 'Domicilio inválido.' };
+  }
+  if (freightNum > totalNum) {
+    return {
+      valid: false,
+      reason: 'El domicilio no puede ser mayor al total de la factura.',
+    };
+  }
+
   const items: ConfirmInvoiceItem[] = rows.map((r) => {
     const sel = r.selection!;
     const baseFactor = r.baseFactor != null && r.baseFactor > 0 ? r.baseFactor : undefined;
@@ -112,6 +128,7 @@ export function validateInvoice(input: ValidateInvoiceInput): Validation {
     invoiceNumber: invoiceNumber.trim() || undefined,
     total: totalNum,
     iva: ivaNum,
+    freight: freightNum > 0 ? freightNum : undefined,
     items,
     notes: notes.trim() || undefined,
   };

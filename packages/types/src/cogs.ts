@@ -32,6 +32,20 @@ export const PnlReportSchema = z.object({
   /** Cortesías valorizadas a FIFO (producto regalado) en el período. */
   cortesiaCost: z.number(),
   /**
+   * FALTANTES: lo que un conteo físico encontró de menos, al costo real del
+   * lote. Es la pérdida que NADIE declaró — se detectó contando.
+   *
+   * Va en su propia línea y no dentro de `wasteCost` a propósito: la merma la
+   * declaró alguien ("se me cayó"), el faltante apareció solo. Que la pérdida
+   * no declarada sea del mismo orden que la declarada es exactamente la señal
+   * que hay que poder ver. Hasta 2026-08-28 esta plata se iba del inventario
+   * sin aparecer en ninguna línea y el margen bruto quedaba alto por su monto.
+   *
+   * Un ajuste manual tecleado a mano NO entra acá: ese corrige un dato mal
+   * cargado, y contarlo como pérdida cobraría dos veces el mismo insumo.
+   */
+  shrinkageCost: z.number(),
+  /**
    * Costo FIFO de los pedidos REEMBOLSADOS en el período (VOID con stock NO
    * revertido: la comida ya se preparó). Pérdida real que el void normal no
    * tiene. Se reporta aparte para que el neto la reste explícitamente.
@@ -49,6 +63,28 @@ export const PnlReportSchema = z.object({
   deliveryCollected: z.number(),
   /** Cuántos pedidos a domicilio cobraron envío en el período. */
   deliveryOrderCount: z.number().int().nonnegative(),
+  /**
+   * Domicilios/fletes que cobraron los PROVEEDORES por traer la mercancía
+   * (facturas confirmadas en el período). Es la otra punta de
+   * `deliveryCollected` y su opuesto contable: esto SÍ es plata del negocio,
+   * pagada y perdida.
+   *
+   * No está dentro de `cogs` a propósito (decisión del dueño 2026-08-28): si se
+   * prorrateara en los lotes encarecería insumos al azar y desviaría el margen
+   * por producto. Se resta aparte, como merma y cortesías. Antes no se restaba
+   * en ningún lado: el neto quedaba inflado exactamente en lo pagado de flete.
+   */
+  freightCost: z.number(),
+  /** Cuántas facturas del período trajeron cobro de domicilio. */
+  freightInvoiceCount: z.number().int().nonnegative(),
+  /**
+   * Mercancía comprada en el período (total de facturas confirmadas − fletes).
+   * NO es un gasto del P&G —una compra es inventario hasta que se consume, y
+   * ahí entra por el COGS— sino el CONTEXTO del flete: "$312.000 de domicilios"
+   * no se puede juzgar sin saber sobre cuánta compra. `freightCost /
+   * purchasedTotal` es el número con el que se negocia con un proveedor.
+   */
+  purchasedTotal: z.number(),
   salesCount: z.number().int().nonnegative(),
   /** Unidades de insumo consumidas sin costo conocido (termómetro de datos). */
   cogsUnknownQty: z.number(),
@@ -61,6 +97,8 @@ export const PnlReportSchema = z.object({
   wasteEstimatedCost: z.number(),
   /** Ídem para `cortesiaCost`. */
   cortesiaEstimatedCost: z.number(),
+  /** Ídem para `shrinkageCost`. */
+  shrinkageEstimatedCost: z.number(),
 });
 export type PnlReport = z.infer<typeof PnlReportSchema>;
 

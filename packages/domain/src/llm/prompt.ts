@@ -14,6 +14,7 @@ Schema de salida (estricto):
   "invoiceNumber": string | null,
   "total": number | null,
   "iva": number | null,
+  "freight": number | null,
   "items": [
     {
       "descriptionRaw": string,
@@ -38,6 +39,8 @@ Reglas:
     · packSizePerUnit = tamaño de cada sub-unidad (150 en "150 g", 25 en "25 KG"). Si no aplica, null.
     · packSizeMeasure = la medida de esa sub-unidad ("g","ml","kg","und"). Si no aplica, null.
   IMPORTANTE: \`quantity\` SIGUE siendo el número de unidades de COMPRA de la línea (los paquetes/cajas), NO las sub-unidades. El empaque va aparte en estos 3 campos. Si la línea no tiene info de empaque, deja los 3 en null.
+- DOMICILIO / FLETE: si la factura cobra por traer la mercancía (una línea que diga "domicilio", "envío", "flete", "transporte", "acarreo", "despacho" o similar), su valor va en el campo \`freight\` del nivel raíz y esa línea NO se incluye en \`items\`. Un flete no es un insumo: no se almacena ni se cocina. Si la factura no cobra flete, \`freight\` es null (no 0 — null significa "no lo trae").
+- \`total\` es el total de la factura e INCLUYE el flete si lo hay. O sea: total ≈ suma de los totales de items + freight.
 - Si la factura tiene productos repetidos en distintas líneas, mantén las líneas separadas (no combines).
 - Si NO puedes leer un valor numérico crítico, deja el campo como null y agrega una entrada en warnings.
 - NO inventes datos. Es preferible warnings y nulls que data falsa.`;
@@ -56,6 +59,24 @@ export function normalizeExtractedItems(items: unknown): unknown {
       ? { packUnits: null, packSizePerUnit: null, packSizeMeasure: null, ...(it as object) }
       : it,
   );
+}
+
+/**
+ * Rellena los campos que el LLM omite del JSON antes del Zod parse: `items` y
+ * `warnings` como arrays vacíos, `freight` en null, y las claves de empaque de
+ * cada ítem. Los valores presentes SIEMPRE ganan sobre el default.
+ *
+ * Vive acá (y no en cada adapter) porque Anthropic y OpenAI tenían la misma
+ * lista de defaults copiada: agregar un campo obligaba a acordarse de los dos,
+ * y el que se olvidara fallaba recién en el Zod parse, en producción.
+ */
+export function normalizeExtractedInvoice(parsed: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...parsed };
+  if (out.items === undefined || out.items === null) out.items = [];
+  if (out.warnings === undefined || out.warnings === null) out.warnings = [];
+  if (out.freight === undefined) out.freight = null;
+  out.items = normalizeExtractedItems(out.items);
+  return out;
 }
 
 // ====================================================================
@@ -259,6 +280,15 @@ export interface FinancialAnalysisInput {
     monthlyAmount: number;
     isPayroll: boolean;
   }>;
+  /**
+   * Pérdidas que van DEBAJO del margen bruto y explican el salto hasta el neto:
+   * merma, cortesías, reembolsos, fletes de compra y compromisos pagados.
+   *
+   * Sin ellas el modelo recibía `ingresos − COGS − fijos` y un `netResult` que
+   * no se deducía de esos números: cualquier explicación del bajón era una
+   * invención. Se pasan solo las que tienen monto.
+   */
+  otherLosses: ReadonlyArray<{ label: string; amount: number }>;
   netResult: number;
   breakEven: number | null;
   breakEvenCoverage: number | null; // 0..1+
@@ -287,6 +317,13 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
     for (const c of i.fixedCosts) {
       const tag = c.isPayroll ? ' [auto desde Nómina]' : '';
       lines.push(`    · ${c.name} (${c.category}): ${cop(c.monthlyAmount)}${tag}`);
+    }
+  }
+  const perdidas = i.otherLosses.filter((l) => l.amount > 0);
+  if (perdidas.length > 0) {
+    lines.push('- Otras pérdidas del mes (no entran al COGS):');
+    for (const l of perdidas) {
+      lines.push(`    · ${l.label}: ${cop(l.amount)}`);
     }
   }
   lines.push(`- Resultado neto: ${cop(i.netResult)}`);
