@@ -119,6 +119,7 @@ export class InventoryUsageService {
         ingredientId: true,
         productId: true,
         subproductId: true,
+        delta: true,
       },
     });
     if (movements.length === 0) return new Map();
@@ -138,10 +139,19 @@ export class InventoryUsageService {
       contados.add(dedupe);
       const c = costBySource.get(m.sourceId);
       if (!c) {
-        // Mismo criterio que la merma: "todavía no lo sé" y "no costó nada" no
-        // son lo mismo, y este reporte no puede volver a confundirlas.
-        prev.pending = true;
-        out.set(key, prev);
+        // Un conteo que encontró DE MÁS no tiene costo propio y eso es normal:
+        // el ledger devuelve esas unidades atribuyéndolas al conteo que declaró
+        // la pérdida, o sea al mes en que se perdió. Marcarlo como desconocido
+        // contagiaba al ítem entero y borraba el costo —correcto— de los otros
+        // conteos del período: la pantalla decía "sin valorizar" mientras el
+        // P&G sí cobraba la pérdida. Solo un faltante DECLARADO (delta < 0) sin
+        // costo es de verdad un "todavía no lo sé".
+        if (Number(m.delta) < 0) {
+          prev.pending = true;
+          out.set(key, prev);
+        } else if (!out.has(key)) {
+          out.set(key, prev);
+        }
         continue;
       }
       out.set(key, {
