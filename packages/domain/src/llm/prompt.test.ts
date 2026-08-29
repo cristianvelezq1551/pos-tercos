@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { INVOICE_EXTRACTION_SYSTEM, normalizeExtractedInvoice, normalizeExtractedItems } from './prompt';
+import {
+  INVOICE_EXTRACTION_SYSTEM,
+  SHORTAGE_LIST_SYSTEM,
+  normalizeExtractedInvoice,
+  normalizeExtractedItems,
+} from './prompt';
 
 /**
  * §4.4: `normalizeExtractedItems` rellena las claves de empaque en null cuando el
@@ -86,5 +91,31 @@ describe('INVOICE_EXTRACTION_SYSTEM', () => {
     // que no matchea ningún insumo y hay que borrar a mano en cada factura.
     expect(INVOICE_EXTRACTION_SYSTEM).toContain('"freight": number | null');
     expect(INVOICE_EXTRACTION_SYSTEM).toMatch(/NO se incluye en .?items/);
+  });
+});
+
+/**
+ * Dos cosas se vieron en producción con el prompt anterior y por eso quedan
+ * fijadas acá: la IA le CAMBIÓ el nombre a un insumo («PruebaBajoMinimo v46» →
+ * «Pan de arepa», con todos los números correctos), y devolvió **markdown** que
+ * la pantalla pinta como texto plano, así que los asteriscos se ven.
+ *
+ * Son instrucciones, no lógica: el test no puede probar que el modelo obedezca,
+ * pero sí que la instrucción no se caiga del prompt en un refactor.
+ */
+describe('SHORTAGE_LIST_SYSTEM', () => {
+  it('exige copiar el nombre EXACTO del insumo', () => {
+    expect(SHORTAGE_LIST_SYSTEM).toMatch(/nombre EXACTO/);
+    expect(SHORTAGE_LIST_SYSTEM).toMatch(/NUNCA lo reemplaces/);
+  });
+
+  it('prohíbe el markdown nombrando los símbolos que se colaban', () => {
+    expect(SHORTAGE_LIST_SYSTEM).toMatch(/SIN MARKDOWN/);
+    expect(SHORTAGE_LIST_SYSTEM).toMatch(/asteriscos/);
+  });
+
+  it('sigue exigiendo tuteo y nada de inglés (§3)', () => {
+    expect(SHORTAGE_LIST_SYSTEM).toMatch(/tuteo/);
+    expect(SHORTAGE_LIST_SYSTEM).toMatch(/Nada de palabras en inglés/);
   });
 });

@@ -364,10 +364,16 @@ Reglas:
 - Español neutro, tuteo (nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa").
 - Máximo 4 frases, ~70 palabras. Directo, como un socio que revisa la lista por encima del hombro.
 - Menciona insumos POR SU NOMBRE. "Algunos ítems" no le sirve a nadie.
+- Usa el nombre EXACTO que aparece en la lista, copiado tal cual. No lo traduzcas,
+  no lo corrijas, no lo acortes y NUNCA lo reemplaces por otro que te parezca más
+  natural: quien lee la pantalla busca ese nombre en su inventario, y uno cambiado
+  hace dudar del resto del análisis.
 - NO inventes consumos ni precios que no estén en los datos.
 - Si todo está bien, dilo en una frase y ya. No rellenes.
 - Nada de palabras en inglés ni nombres de campos del sistema.
-- Responde SOLO el análisis: sin saludos, sin JSON, sin markdown, sin despedidas.`;
+- Responde SOLO el análisis, en texto plano: sin saludos, sin JSON, sin
+  despedidas y SIN MARKDOWN. Nada de asteriscos, guiones de viñeta, almohadillas
+  ni comillas de código: la pantalla lo muestra tal cual y los símbolos se ven.`;
 
 export function buildShortageListUserPrompt(input: {
   items: Array<{
