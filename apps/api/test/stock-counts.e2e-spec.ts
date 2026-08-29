@@ -8,7 +8,9 @@ import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
+import { CogsService } from '../src/reports/cogs.service';
 import { cleanDb } from './helpers/db-cleaner';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Conteo físico E2E', () => {
   let app: INestApplication;
@@ -265,5 +267,50 @@ describe('Conteo físico E2E', () => {
     expect(harina.shortageCost).toBe(0);
     expect(harina.shortageCostEstimated).toBe(false);
     expect(res.body.unknownCostCount).toBe(desconocidosAntes);
+  });
+
+  it('un faltante nuevo tras una corrección se valoriza igual que en el P&G', async () => {
+    // El caso que apareció probando en QA con datos reales: en el mismo período
+    // conviven el conteo que declaró la pérdida, el que la corrigió y uno nuevo
+    // que vuelve a encontrar de menos. El del medio no tiene costo propio —su
+    // devolución se atribuye al conteo que declaró la pérdida—, y eso hacía que
+    // el ítem entero saliera «sin valorizar» mientras el P&G sí cobraba la
+    // pérdida. Dos números para la misma plata según la pantalla.
+    const stock = await request
+      .get(`/inventory/stock/ingredient/${harinaId}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    await request
+      .post('/inventory/counts')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        entityType: 'INGREDIENT',
+        ingredientId: harinaId,
+        countedQty: Number(stock.body.currentStock) - 7,
+      })
+      .expect(201);
+
+    // El ledger cachea 60 s a propósito; acá se mide la lógica, no la caché.
+    app.get(CogsService).invalidateLedgerCache();
+    const hoy = hoyLocal();
+    const uso = await request
+      .get(`/reports/inventory-usage?from=${hoy}&to=${hoy}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    const harina = uso.body.rows.find((r: { entityId: string }) => r.entityId === harinaId);
+    expect(harina.shortageQty).toBeGreaterThan(0);
+    // Sin el arreglo esto es null: el conteo que corrigió contagiaba de
+    // "desconocido" al ítem entero y borraba el costo de los otros conteos.
+    expect(harina.shortageCost).not.toBeNull();
+    expect(uso.body.unknownCostCount).toBe(0);
+
+    const pnl = await request
+      .get(`/reports/cogs/pnl?from=${hoy}&to=${hoy}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    // La misma plata, el mismo número: es toda la razón de ser de la línea.
+    // Se compara el TOTAL del reporte contra la línea del P&G porque el P&G
+    // suma todos los ítems, no solo este.
+    expect(uso.body.totalShortageCost).toBeCloseTo(pnl.body.shrinkageCost, 2);
   });
 });

@@ -3106,6 +3106,20 @@ dinero.
 - El agujero queda **fijado con un test** en `apply-promotions.test.ts`: es
   invisible hasta que algo lo cruza, y el que lo cruzó tardó en confesar por qué.
 
+### 4. El hallazgo que solo apareció probando en QA con datos reales
+Con las tres correcciones arriba desplegadas, un conteo que encuentra DE MÁS
+seguía rompiendo la pantalla: no tiene costo propio —su devolución se atribuye
+al conteo que DECLARÓ la pérdida, o sea al mes en que se perdió— y el reporte
+leía esa ausencia como «no lo sé» **para el ítem entero**, borrando el costo
+correcto de los demás conteos del período. En QA: el P&G cobraba $6.500 y la
+pantalla decía «sin valorizar».
+
+Solo un faltante **declarado** (`delta < 0`) sin costo es de verdad un
+«todavía no lo sé». La regresión compara el total del reporte contra la línea
+del P&G, que es el invariante que importa (los dos números tienen que ser el
+mismo). Ninguna suite lo cubría porque ninguna tenía, en un mismo período, el
+conteo que pierde, el que corrige y uno nuevo que vuelve a perder.
+
 ⚠️ La rama de trabajo se llamaba `test/**`, que **no está en los triggers de
 push del CI** (`main`, `refactor/**`, `chore/**`, `feat/**`, `fix/**`): sus seis
 commits nunca corrieron en CI. El PR sí lo dispara, pero conviene nombrar las
