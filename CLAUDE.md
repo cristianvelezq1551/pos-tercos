@@ -3371,6 +3371,79 @@ desconocidas (sin asignación masiva); el open-redirect del login ya estaba
 tapado; y los 5xx nunca devuelven la traza.
 
 
+## 7.v49 Un error 500 ahora le avisa a alguien (2026-08-29)
+
+> El filtro global lleva desde 2026-06-12 detectando cada 5xx inesperado y
+> armando una alerta al dueño… que **nunca salió**: el envío pasa por
+> `OwnerNotificationService` → `WHATSAPP_PROVIDER`, y sin Kapso ni OpenWA el
+> adapter es el mock, que declara `delivers:false` y no manda nada (§7.v22).
+> Como el dueño decidió no usar WhatsApp automático, la alerta no tenía a dónde
+> ir. Resultado: **un bug que revienta un endpoint pero no tumba el proceso era
+> invisible** — `healthz` en verde, UptimeRobot en verde, y el error muriendo en
+> el log de Railway.
+> Verificado: typecheck 13/13, lint 0, api unit 143 (+6), e2e alertas 3/3 +
+> `whatsapp-manual` 10/10. Sin migración.
+
+### La decisión: Issue de GitHub, no un servicio de observabilidad
+Sentry gratis existía, pero pedía una cuenta externa y su SDK suma peso al
+bundle del navegador — el mismo que en §7.v40 bajó de 522 a 325 KB. El backup
+nocturno **ya avisa abriendo un Issue** y ese correo el dueño lo reconoce. Se
+reusa ese camino: cero servicios, cero dependencias, cero bundle.
+
+### Reglas
+- **Solo los avisos TÉCNICOS cambian de canal.** `TECHNICAL_KINDS` =
+  `server_error` + `multi_instance`. Las alertas de NEGOCIO (descuadre,
+  cortesía, anulación, descuento manual) siguen su camino de siempre: a un
+  repositorio no van, y a quien le importan es al dueño, no a quien programa.
+- **Dedupe por firma**, que es la que el filtro ya normalizaba (`POST
+  /sales/:id/confirm-payment :: <mensaje>`): el mismo error comenta el Issue
+  abierto en vez de abrir otro. Sin eso un bug en un endpoint caliente inunda el
+  repo y el aviso deja de significar algo. **Hay que cerrar el Issue al
+  arreglarlo** o el próximo caso se cuelga del hilo viejo.
+- **El dedupe NO puede depender de la lista de GitHub, y se probó contra la API
+  real**: dos envíos en el mismo segundo abrieron DOS Issues — la lista tarda un
+  par de segundos en reflejar uno recién creado. En prod el filtro espacia 10
+  min la misma firma, pero su contador vive en memoria y un redeploy lo borra.
+  El adapter recuerda 30 min lo que él mismo abrió (`recent`), así que la
+  ventana queda cerrada sin pedirle nada más a la API.
+- **Tampoco puede depender de la ETIQUETA**: GitHub la descarta en silencio si
+  al token le falta permiso. Si no aparece nada entre los etiquetados, se
+  repasan todos los Issues abiertos por título antes de crear uno nuevo; y si el
+  Issue nace sin etiqueta, queda un warning con la causa.
+- **El motivo real de GitHub viaja al log** (`Resource not accessible by
+  personal access token`, `Not Found`): con solo el código HTTP, un token sin
+  permiso y un repo mal escrito se ven igual.
+- **El stack NO viaja al Issue** (un repositorio no es un log): va la ruta y el
+  mensaje. Y las credenciales embebidas en URLs se tapan antes de publicar
+  (`redactSecrets`) — un `P1001` de Prisma puede traer el DSN entero, y este es
+  el único punto del camino donde un secreto sale del servidor.
+- **Todo-o-nada en la config**, igual que `KAPSO_*`: con una sola de
+  `ALERT_GITHUB_REPO`/`ALERT_GITHUB_TOKEN` el boot falla. Con ninguna arranca y
+  lo grita en el log. Nunca se finge el envío (`NoopAlertAdapter` declara
+  `delivers:false`).
+- **`POST /healthz/alert-drill` (Dueño)**: dispara un aviso REAL y devuelve a
+  dónde fue. Una alarma que nadie probó es una alarma que no se sabe si suena —
+  es exactamente cómo el WhatsApp estuvo mudo meses. El simulacro semestral de
+  `BIBLIA-OPERACION-INFRA.md` §5.2 ahora tiene un tercer paso.
+
+### Dónde
+`packages/domain/src/alerts/alert-channel.ts` (interfaz, exportada del barril
+como **`export type`** — un `export *` metería un require en el bundle de las
+cinco apps, §7.v40) · `apps/api/src/adapters/alerts/` (adapter de GitHub +
+noop + módulo `@Global` con factory lazy) · el ruteo en
+`OwnerNotificationService.reportTechnical`. El filtro global **no se tocó**:
+sigue llamando `ownerNotifications.alert('server_error', …)`.
+
+### Lo que este canal NO cubre (y con qué se tapa)
+| Falla | Quién avisa |
+|---|---|
+| API caído entero | UptimeRobot |
+| 500 en un endpoint | **esto** |
+| Backup que dejó de correr | healthchecks.io |
+| Números que dejan de cuadrar | nightly de leyes matemáticas (datos sintéticos) |
+| Error en el navegador del cliente o la cocina | **nadie** — deuda abierta |
+| Frontends de Vercel caídos / certificado vencido | **nadie** — faltan monitores en UptimeRobot |
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

@@ -7,6 +7,7 @@ import { CashDrawerModule } from './adapters/cash-drawer/cash-drawer.module';
 import { LLMModule } from './adapters/llm/llm.module';
 import { PrinterModule } from './adapters/printer/printer.module';
 import { StorageModule } from './adapters/storage/storage.module';
+import { AlertsModule } from './adapters/alerts/alerts.module';
 import { WhatsAppModule } from './adapters/whatsapp/whatsapp.module';
 import { NotificationModule } from './notifications/notification.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
@@ -73,6 +74,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     PrinterModule,
     CashDrawerModule,
     WhatsAppModule,
+    AlertsModule,
     NotificationModule,
     PaymentMethodsModule,
     IdempotencyModule,
@@ -113,7 +115,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    // 5xx inesperados → log con stack + alerta WhatsApp al dueño (throttled).
+    // 5xx inesperados → log con stack + aviso técnico por Issue de GitHub (throttled).
     { provide: APP_FILTER, useClass: ServerErrorAlertFilter },
   ],
 })
