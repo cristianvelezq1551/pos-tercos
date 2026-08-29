@@ -188,7 +188,7 @@ intentos "obvios" fallan y quedaron documentados para no repetirlos:
 > además `WEB_ORDER_TOKEN_SECRET`, `CORS_ORIGINS` y `STORAGE_PROVIDER`.
 > Si falta alguna, el proceso muere al boot con mensaje claro. Además
 > WARNea al boot si faltan `OWNER_WHATSAPP_PHONE`, `PRINTER_PROVIDER`,
-> `TZ` o `KAPSO_*` (features que morirían en silencio).
+> `TZ`, `KAPSO_*` o `ALERT_GITHUB_*` (features que morirían en silencio).
 > (`JWT_REFRESH_SECRET` NO se valida: los refresh tokens son opacos
 > SHA-256, no JWT — igual conviene setearla si algún módulo la usa a futuro.)
 
@@ -266,6 +266,13 @@ encender el envío automático. Implicaciones para el deploy:
 - `WHATSAPP_TEMPLATE_LANG=es` — o `es_CO` según el language code aprobado
 - `OWNER_WHATSAPP_PHONE=+57XXXXXXXXXX` — E.164; recibe el **digest
   diario 21:30** y las **alertas antifraude** (descuadre de caja, etc.)
+
+**Avisos técnicos (Issue de GitHub) — gratis, sin servicios externos:**
+- `ALERT_GITHUB_REPO=cristianvelezq1551/pos-tercos`
+- `ALERT_GITHUB_TOKEN=github_pat_…` — fine-grained, SOLO ese repo, permiso
+  `Issues: Read and write`. Sin las dos, un 500 no le avisa a nadie (queda solo
+  en el log de Railway); con UNA sola, el boot falla a propósito. Cómo se
+  configura y cómo se prueba: `BIBLIA-OPERACION-INFRA.md` §5.3.
 
 > El factory elige por prioridad `KAPSO_*` → `OPENWA_*` → Mock, y CRASHEA al
 > boot si una config queda PARCIAL. Sin ninguna, instancia

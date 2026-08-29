@@ -2,8 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   buildOwnerAlertTemplate,
   WHATSAPP_TEMPLATE_LANG_DEFAULT,
+  type AlertChannel,
   type WhatsAppProvider,
 } from '@pos-tercos/domain';
+import { ALERT_CHANNEL } from '../adapters/alerts/alerts.module';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
 import { templatesEnabled } from './notification.service';
@@ -22,6 +24,13 @@ export type OwnerAlertKind =
   | 'negative_contribution_margin';
 
 /**
+ * Avisos que NO son de negocio: fallas del sistema. Van al canal técnico
+ * (Issue de GitHub), no al WhatsApp del dueño — a quien un stack trace no le
+ * sirve de nada.
+ */
+const TECHNICAL_KINDS = new Set<OwnerAlertKind>(['server_error', 'multi_instance']);
+
+/**
  * Alertas puntuales al WhatsApp del DUEÑO (antifraude + costos). Igual que
  * las notificaciones al cliente: FIRE-AND-FORGET — un fallo de WhatsApp
  * jamás revierte la transición de negocio. Los callers usan
@@ -36,6 +45,7 @@ export class OwnerNotificationService {
 
   constructor(
     @Inject(WHATSAPP_PROVIDER) private readonly wa: WhatsAppProvider,
+    @Inject(ALERT_CHANNEL) private readonly alertChannel: AlertChannel,
     private readonly audit: AuditService,
   ) {}
 
@@ -45,6 +55,14 @@ export class OwnerNotificationService {
     text: string,
     metadata?: Record<string, unknown>,
   ): Promise<boolean> {
+    // Las técnicas no son para el dueño: son para quien mantiene el código, y
+    // van por un canal que NO depende de que exista un WhatsApp conectado
+    // (hoy no lo hay). Si ese canal tampoco entrega, sigue el camino de
+    // siempre y queda el registro honesto de que no salió.
+    if (TECHNICAL_KINDS.has(kind) && this.alertChannel.delivers) {
+      return this.reportTechnical(kind, text, metadata);
+    }
+
     const phone = process.env.OWNER_WHATSAPP_PHONE?.trim();
     if (!phone) return false;
     // Sin proveedor real (mock) no se finge el envío: se loguea y se registra
@@ -101,5 +119,43 @@ export class OwnerNotificationService {
       );
       return false;
     }
+  }
+
+  /** Publica el aviso en el canal técnico y lo deja en la bitácora. */
+  private async reportTechnical(
+    kind: OwnerAlertKind,
+    text: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<boolean> {
+    const signature = typeof metadata?.signature === 'string' ? metadata.signature : kind;
+    // Los asteriscos son negrita de WhatsApp; fuera de ahí son ruido.
+    const body = text.replace(/\*/g, '');
+    const result = await this.alertChannel.send({
+      signature,
+      title: signature,
+      body: `${body}\n\nDetalle: ${JSON.stringify(metadata ?? {})}\nLogs: railway logs --service api-prod`,
+    });
+    if (!result.ok) {
+      this.logger.warn(`Aviso técnico '${kind}' no salió: ${result.error ?? 'sin detalle'}`);
+    }
+    try {
+      await this.audit.log({
+        userId: null,
+        action: 'OWNER_ALERT_SENT',
+        entityType: 'owner_alert',
+        metadata: {
+          kind,
+          channel: this.alertChannel.name,
+          ok: result.ok,
+          delivered: result.delivered,
+          error: result.error ?? null,
+          ref: result.ref ?? null,
+          ...metadata,
+        },
+      });
+    } catch {
+      // la bitácora es best-effort
+    }
+    return result.ok;
   }
 }

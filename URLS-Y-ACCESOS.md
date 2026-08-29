@@ -75,6 +75,7 @@ Datos de mentira. Rompe lo que quieras.
 | Cloudflare | https://dash.cloudflare.com | email | Dominio, DNS y las fotos (R2) |
 | Repositorio | https://github.com/cristianvelezq1551/pos-tercos | GitHub | El código |
 | CI y backups | https://github.com/cristianvelezq1551/pos-tercos/actions | GitHub | Pruebas y respaldos |
+| Avisos de errores | https://github.com/cristianvelezq1551/pos-tercos/issues?q=is%3Aopen+label%3Aalerta-produccion | GitHub | Los 500 del backend, agrupados |
 | UptimeRobot | https://uptimerobot.com | tu cuenta | Vigila el API cada 5 min |
 | healthchecks.io | https://healthchecks.io | tu cuenta | Avisa si el backup deja de correr |
 | Llaves SSH de Railway | https://railway.com/account/ssh-keys | Google | Acceso a las bases sin exponerlas |
@@ -146,6 +147,7 @@ migración corrió limpia en QA. Las migraciones no se deshacen solas.
 | "Agotado" en productos que sí hay | Falta registrar producción de subproductos, o falta cargar una compra. Mira `admin.tercos.co/inventory/negativos` |
 | El arqueo no cuadra | La guía lo explica: https://admin.tercos.co/guia/caja-cierre |
 | Un número no coincide con otro | Casi siempre es una regla de negocio, no un error. Está en https://admin.tercos.co/guia/reglas |
+| Llegó un Issue de GitHub `alerta-produccion` | Un error 500 en el backend. El Issue trae la ruta y el mensaje; el detalle con stack está en `railway logs --service api-prod` |
 | Llegó un correo de UptimeRobot "DOWN" | El API no responde. Railway → `api-prod` |
 | Llegó un correo de healthchecks.io | El backup dejó de correr. GitHub → Actions |
 
@@ -209,6 +211,7 @@ script `apps/api/prisma/bootstrap-prod.ts`.
 
 | Documento | Para qué |
 |---|---|
+| `MONITOREO.md` | **Cómo sé si el sistema está bien**: las 4 alarmas, qué hacer cuando suenan y la rutina por frecuencia |
 | `BIBLIA-OPERACION-INFRA.md` | Infraestructura a fondo: despliegue, backups, monitoreo, costos, qué hacer si algo falla |
 | `MANUAL-OPERACION.md` | Operar el negocio día a día |
 | `CLAUDE.md` | Estado y decisiones de arquitectura del sistema |

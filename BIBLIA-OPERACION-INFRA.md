@@ -106,8 +106,13 @@ correr un backup manual (§6). Las migraciones no se deshacen solas.
 
 ## 5. Monitoreo: qué te avisa y dónde mirar
 
+> La versión operativa de esta sección —qué hacer cuando suena cada alarma y con
+> qué frecuencia revisar qué— vive en `MONITOREO.md`. Acá queda el detalle de
+> infraestructura.
+
 | Alerta | Canal | Qué significa |
 |---|---|---|
+| **Issue `alerta-produccion`** | email de GitHub | Un 500 inesperado en el backend. El sistema sigue en pie, pero algo se rompió: ver §5.3. |
 | **UptimeRobot "DOWN"** | email | El API no responde. Ir a §7 ya. |
 | **healthchecks.io "DOWN"** | email | El backup lleva >7h sin correr. Revisar Actions. |
 | **GitHub Issue `backup-failure`** | email de GitHub | Un backup falló (el Issue se cierra solo cuando se recupera). |
@@ -169,8 +174,59 @@ Probar que los emails DE VERDAD llegan, sin tocar producción:
    (`https://hc-ping.com/<uuid>/fail`) → el check cae al instante y llega el email → para
    revivirlo, correr el backup manual (Actions → Run workflow): su ping de éxito lo pone
    verde y llega el email de recuperación.
-3. Si un email no llega: revisar spam; UptimeRobot → Monitor → Notifications; healthchecks →
-   Integrations → email verificado.
+3. **Avisos de error** (`alert-drill`): con la sesión del dueño en el admin, abrir la consola
+   del navegador (F12) y correr:
+   ```js
+   await fetch('/api/healthz/alert-drill', { method: 'POST', credentials: 'include' }).then(r => r.json())
+   ```
+   Debe responder `{ channel: 'github_issue', delivered: true, ref: '#N' }` y aparecer un Issue
+   titulado `[prod] SIMULACRO…` — ciérralo. Si responde `channel: 'noop'`, las variables
+   `ALERT_GITHUB_*` no están puestas (§5.3) y **ningún error 500 te está avisando**.
+4. Si un email no llega: revisar spam; UptimeRobot → Monitor → Notifications; healthchecks →
+   Integrations → email verificado; GitHub → Settings → Notifications (los Issues del repo
+   llegan por "Participating and @mentions" solo si estás watcheando el repo).
+
+### 5.3 Avisos de error: el hueco que UptimeRobot no cubre
+
+UptimeRobot solo ve el sistema **caído entero**. Un bug que revienta un solo
+endpoint —el cobro, la confirmación de un pedido web— deja `healthz` en verde y
+nadie se entera: el cajero ve "el sistema tuvo un problema" y sigue.
+
+Desde 2026-08-29 cada 5xx **inesperado** abre (o comenta) un Issue en el repo
+con la etiqueta `alerta-produccion`, y GitHub te manda el correo. Es el mismo
+camino del backup, que ya conoces.
+
+- **Qué SÍ detecta:** excepciones no controladas, la DB caída a mitad de una
+  operación, un adapter roto (R2, impresora, LLM), más de una instancia viva.
+- **Qué NO detecta:** errores del navegador, lentitud, y los bugs de lógica que
+  no lanzan excepción (para esos está el nightly de leyes matemáticas).
+- **No inunda:** máximo un aviso cada 10 minutos por firma de error, y el mismo
+  error repetido comenta el Issue abierto en vez de abrir otro. **Cierra el
+  Issue cuando lo arregles** — si sigue abierto, el siguiente caso se cuelga ahí
+  y parece que nunca terminó.
+- **Qué trae:** ruta, método y mensaje. El stack completo NO va en el Issue (el
+  repo no es un log): está en `railway logs --service api-prod`. Las
+  credenciales embebidas en URLs se tapan antes de publicar.
+
+**Configuración** (una sola vez, gratis):
+1. GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate.
+   Repository access: solo `pos-tercos`. Permisos: **Issues → Read and write**.
+   Nada más.
+2. Railway → `api-prod` → Variables:
+   - `ALERT_GITHUB_REPO=cristianvelezq1551/pos-tercos`
+   - `ALERT_GITHUB_TOKEN=<el token>`
+3. Redeploy. En el log de arranque debe decir
+   `Avisos técnicos por Issue de GitHub`. Si dice `ALERT_GITHUB_* ausentes`,
+   la variable no llegó.
+4. Probar con el simulacro (abajo).
+
+> Sin las dos variables el API arranca igual y lo avisa en el log: los errores
+> quedan solo en Railway. Con **una sola** de las dos, el arranque falla a
+> propósito — una config a medias es cero avisos sin que nadie lo note.
+>
+> ⚠️ El token vence según lo que elijas al crearlo. Cuando venza, los avisos
+> dejan de salir en silencio: el `alert-drill` de abajo es la única forma de
+> darse cuenta. Anótalo en el calendario junto al simulacro semestral.
 
 ## 6. Backup: tu red de seguridad
 

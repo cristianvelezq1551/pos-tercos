@@ -82,6 +82,10 @@ const PROD_FEATURE_WARNINGS: ReadonlyArray<[string, string]> = [
   ['PRINTER_PROVIDER', 'sin `escpos` los recibos se "imprimen" a archivos locales efímeros'],
   ['TZ', 'los crons y cortes de día asumen TZ=America/Bogota; sin ella corren en UTC'],
   ['KAPSO_API_KEY', 'sin KAPSO_* el WhatsApp queda en MOCK: cero notificaciones reales'],
+  [
+    'ALERT_GITHUB_TOKEN',
+    'sin ALERT_GITHUB_* un error 500 no le avisa a nadie: queda solo en el log de Railway',
+  ],
 ];
 
 /** Secretos que en prod deben tener entropía mínima (no un placeholder débil). */
