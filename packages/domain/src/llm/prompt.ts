@@ -43,7 +43,11 @@ Reglas:
 - \`total\` es el total de la factura e INCLUYE el flete si lo hay. O sea: total ≈ suma de los totales de items + freight.
 - Si la factura tiene productos repetidos en distintas líneas, mantén las líneas separadas (no combines).
 - Si NO puedes leer un valor numérico crítico, deja el campo como null y agrega una entrada en warnings.
-- NO inventes datos. Es preferible warnings y nulls que data falsa.`;
+- NO inventes datos. Es preferible warnings y nulls que data falsa.
+- Los warnings los lee el DUEÑO del negocio en su pantalla: escríbelos en español
+  neutro con tuteo, en una frase, diciendo qué revisar. Nada de inglés ni de
+  nombres de campos del sistema («Line 11: calculated total differs» está MAL;
+  «Revisa el total de la línea 11: la cuenta no da» está bien).`;
 
 export const INVOICE_EXTRACTION_USER = `Esta es la foto de una factura. Devuelve el JSON estructurado según el schema indicado.`;
 
