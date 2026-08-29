@@ -27,7 +27,7 @@
  */
 import type { INestApplication } from '@nestjs/common';
 import { cleanDb } from './helpers/db-cleaner';
-import { hoyLocal } from './helpers/local-day';
+import { evitarElSegundoSinPromos, hoyLocal } from './helpers/local-day';
 import { descuentoDeLinea } from './simulation/promos';
 import { Rng } from './simulation/rng';
 import { Simulacion } from './simulation/simulador';
@@ -83,7 +83,16 @@ describe('Simulación financiera aleatoria', () => {
       let mundo: Mundo;
       let sim: Simulacion;
       let app: INestApplication;
-      const rango = (): string => `from=${hoyLocal()}&to=${hoyLocal()}`;
+      /**
+       * Día local en que ARRANCÓ esta semilla. El rango va desde ahí hasta el
+       * día actual —no `hoy..hoy`— porque una corrida que empieza a las 23:59
+       * termina en el día siguiente: con el rango pegado a `hoy`, las ventas
+       * hechas antes de medianoche quedaban fuera del reporte y las leyes
+       * fallaban por un fenómeno horario, no por un error de plata. La base
+       * está limpia (`cleanDb`), así que abarcar dos días no mete nada ajeno.
+       */
+      let diaInicial = '';
+      const rango = (): string => `from=${diaInicial}&to=${hoyLocal()}`;
 
       const get = async <T>(url: string): Promise<T> => {
         const res = await mundo.request.get(url).set(mundo.auth()).expect(200);
@@ -97,6 +106,7 @@ describe('Simulación financiera aleatoria', () => {
       const movimientos = (): Promise<number> => mundo.prisma.inventoryMovement.count();
 
       beforeAll(async () => {
+        diaInicial = hoyLocal();
         const rng = new Rng(semilla);
         mundo = await construirMundo(rng);
         app = mundo.app;
@@ -745,6 +755,10 @@ describe('Simulación financiera aleatoria', () => {
  */
 async function correr(sim: Simulacion, rng: Rng, n: number): Promise<void> {
   for (let i = 0; i < n; i += 1) {
+    // El único momento del día en que las promos «siempre vigentes» de este
+    // mundo no aplican (ver el helper). Sin esto la corrida que cruza
+    // medianoche falla por el reloj, no por un error de plata.
+    await evitarElSegundoSinPromos();
     const op = rng.weighted({
       venta: 40,
       ventaDomicilio: 8,
