@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isDangerouslyExposed, resolveHost, secretOk } from './auth';
+import { allowedOrigins, isDangerouslyExposed, originOk, resolveHost, secretOk } from './auth';
 
 /**
  * Este archivo decide quién puede abrir el CAJÓN MONEDERO. Mutantes que estos
@@ -98,5 +98,101 @@ describe('isDangerouslyExposed — el aviso de arranque', () => {
     for (const secret of [null, SECRET]) {
       expect(isDangerouslyExposed(secret, resolveHost(secret))).toBe(false);
     }
+  });
+});
+
+/**
+ * La barrera de ORIGEN es lo único que separa la página de la caja de una
+ * página cualquiera: el navegador del mostrador llama al agent SIN credencial
+ * (el secreto no puede viajar en el bundle), así que sin esto cualquier web que
+ * abra el cajero abría el cajón monedero.
+ *
+ * La mitad de estos casos son de SEGURIDAD y la otra mitad de NO ROMPER lo que
+ * ya funciona — las dos importan igual: si el mostrador deja de imprimir, el
+ * arreglo se revierte y el agujero vuelve.
+ */
+describe('originOk — quién puede imprimir y abrir el cajón', () => {
+  const permitidos = allowedOrigins({} as NodeJS.ProcessEnv);
+
+  // ── Lo que HOY funciona y tiene que seguir funcionando ──────────────
+  it('la caja en producción imprime', () => {
+    expect(originOk('https://admin.tercos.co', permitidos)).toBe(true);
+  });
+
+  it('el despliegue de QA en Vercel imprime', () => {
+    expect(
+      originOk(
+        'https://pos-tercos-admin-git-main-cristianvelezq1551s-projects.vercel.app',
+        permitidos,
+      ),
+    ).toBe(true);
+  });
+
+  it('desarrollo en localhost imprime, en cualquier puerto', () => {
+    for (const o of [
+      'http://localhost:3004',
+      'http://localhost:3104',
+      'http://127.0.0.1:3004',
+      'https://localhost:3004',
+    ]) {
+      expect(originOk(o, permitidos)).toBe(true);
+    }
+  });
+
+  it('SIN cabecera Origin pasa: es la API (adapter escpos), no un navegador', () => {
+    // Una página web NO puede omitir Origin en un POST, así que permitir la
+    // ausencia no abre nada — y romperlo dejaría al backend sin abrir el cajón.
+    expect(originOk(undefined, permitidos)).toBe(true);
+    expect(originOk('', permitidos)).toBe(true);
+  });
+
+  it('una barra final o mayúsculas en la config no dejan sin imprimir', () => {
+    const conRuido = allowedOrigins({
+      PRINT_AGENT_ALLOWED_ORIGINS: ' https://Caja.Tercos.CO/ ,, ',
+    } as NodeJS.ProcessEnv);
+    expect(originOk('https://caja.tercos.co', conRuido)).toBe(true);
+  });
+
+  it('PRINT_AGENT_ALLOWED_ORIGINS SUMA, nunca reemplaza a los del negocio', () => {
+    // Si reemplazara, una variable mal escrita dejaría al mostrador sin imprimir.
+    const extra = allowedOrigins({
+      PRINT_AGENT_ALLOWED_ORIGINS: 'https://otra.tercos.co',
+    } as NodeJS.ProcessEnv);
+    expect(originOk('https://admin.tercos.co', extra)).toBe(true);
+    expect(originOk('https://otra.tercos.co', extra)).toBe(true);
+  });
+
+  // ── Lo que tiene que quedar afuera ──────────────────────────────────
+  it('una página cualquiera NO abre el cajón', () => {
+    expect(originOk('https://evil.com', permitidos)).toBe(false);
+    expect(originOk('http://evil.com', permitidos)).toBe(false);
+  });
+
+  it('no alcanza con que el dominio del negocio aparezca en el origen', () => {
+    for (const o of [
+      'https://admin.tercos.co.evil.com',
+      'https://evil.com/?x=https://admin.tercos.co',
+      'https://adminxtercos.co',
+      'http://admin.tercos.co',
+    ]) {
+      expect(originOk(o, permitidos)).toBe(false);
+    }
+  });
+
+  it('`Origin: null` (iframe aislado, data:) no pasa', () => {
+    expect(originOk('null', permitidos)).toBe(false);
+  });
+
+  it('un host que solo EMPIEZA con localhost no pasa', () => {
+    expect(originOk('http://localhost.evil.com', permitidos)).toBe(false);
+    expect(originOk('http://127.0.0.1.evil.com', permitidos)).toBe(false);
+  });
+
+  it('un esquema raro no pasa aunque el host sea local', () => {
+    expect(originOk('file://localhost', permitidos)).toBe(false);
+  });
+
+  it('con el header repetido manda el primero', () => {
+    expect(originOk(['https://evil.com', 'https://admin.tercos.co'], permitidos)).toBe(false);
   });
 });

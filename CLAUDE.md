@@ -3288,6 +3288,89 @@ leen facturas, y la ficha de una anulada no ofrece acciones de pago
 - Los 3 días se cuentan como **72 horas** desde `confirmedAt`, no como días
   calendario.
 
+## 7.v48 La impresora solo obedece a la caja (2026-08-29)
+
+> Auditoría de seguridad. El hallazgo que importaba no estaba en la API —que
+> salió limpia en 15 de los 20 puntos revisados— sino en el print-agent.
+> Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (print-agent 82,
+> +13), **e2e 60 suites / 741**, 8 builds, y la matriz HTTP del agent ejercitada
+> contra el servidor real. Sin migración.
+
+### Cualquier página que abriera el cajero abría el cajón monedero
+Tres decisiones se combinaban mal: `secretOk` devuelve `true` cuando no hay
+secreto configurado (y el `.env` que se instala en el mostrador no lo tiene),
+`Access-Control-Allow-Origin: *` con `Allow-Private-Network: true` invita a
+cualquier origen, y `/drawer-open` ejecuta `kickDrawer` **aunque el body no
+valide**. Un anuncio, un link de WhatsApp o un QR escaneado en la tablet del POS
+hacían `POST http://127.0.0.1:9120/drawer-open` y el cajón se abría. Con
+`enctype="text/plain"` ni siquiera hay preflight: las cabeceras CORS no
+participan y el request ejecuta igual.
+
+**El secreto compartido no podía ser la solución**: el navegador le pega al
+agent directo (`features/sales/api/print.ts`) y meterlo ahí lo publicaría en el
+bundle; además configurarlo mueve el `listen` a `0.0.0.0` (toda la LAN).
+
+### La regla
+- **La barrera es el header `Origin`**, que lo pone el navegador y una página no
+  puede falsificar. Se aplica **solo a los POST** (imprimir y abrir el cajón):
+  `GET /health` y `/printers` quedan abiertos, no tienen efecto físico y
+  romperlos dejaría al mostrador sin diagnóstico.
+- **Sin `Origin` pasa**: es la API (adapter escpos), `curl` o el chequeo de
+  vida. Una página web NO puede omitirlo en un POST, así que no abre nada.
+- **Cualquier `localhost`/`127.0.0.1`, en cualquier puerto, pasa** — todo
+  desarrollo cubierto sin configurar nada.
+- **Los dominios del negocio van EN EL CÓDIGO** (`ORIGENES_DEL_NEGOCIO` en
+  `auth.ts`), no en una variable: si dependieran de la config, olvidarla en la
+  PC del mostrador dejaría la caja sin imprimir.
+- `PRINT_AGENT_ALLOWED_ORIGINS` **suma**, nunca reemplaza: una variable mal
+  escrita no puede dejar a nadie sin imprimir.
+- `Access-Control-Allow-Origin` hace **eco del origen concreto** (+ `Vary`), ya
+  no `*`. `Allow-Private-Network` se conserva: sin él Chrome bloquea el salto
+  de HTTPS a localhost y la impresión falla muda.
+
+⚠️ **Válvula de escape**: `PRINT_AGENT_ALLOW_ANY_ORIGIN=1` vuelve al
+comportamiento viejo. Es para desatascar el mostrador en el momento, no para
+dejarla puesta — el arranque la grita en el log. Y si el agent rechaza algo
+legítimo, **el log dice qué origen fue y qué poner** en el `.env`.
+
+### Lo que se sube ya no se cree lo que dice llamarse
+`detectImageMimeLoose` tenía un "último recurso": si los magic bytes no
+matcheaban nada pero el navegador declaraba `image/*` y la extensión estaba en
+la tabla, aceptaba el archivo. Los dos datos los escribe quien sube, así que
+bastaba llamar `x.png` a un ejecutable para alojarlo en el bucket del negocio.
+Se eliminó: **el tipo lo deciden siempre los magic bytes**. "Permisivo" es por
+la LISTA de formatos (BMP, TIFF, HEIC, AVIF), no por el criterio — y esos cuatro
+ya se detectaban por sus bytes más arriba, así que la rama no cubría ningún caso
+legítimo. Los 6 sitios que la llaman perdieron dos parámetros.
+
+### Dependencias: 25 → 1
+`pnpm audit --prod` ya daba **cero** y sigue en cero; lo de arriba era todo de
+desarrollo, y se arregló igual porque corre en la máquina donde están los `.env`
+con las llaves de producción. Se fue la crítica (`vitest <3.2.6`, lectura de
+archivos con `--ui`) y las 17 altas.
+
+**Regla nueva para los overrides** (`package.json` → `pnpm.overrides`, que es la
+fuente REAL — los de `pnpm-workspace.yaml` se ignoran): el rango va **por
+major** y el reemplazo se **ancla con caret**. Un `">=1.1.18"` suelto deja que
+la resolución salte de major y `minimatch@3` termina con `brace-expansion` 5.x,
+que tiene otra API. Se probó y se revirtió.
+
+Queda **1 aviso LOW a propósito**: esbuild, lectura de archivos del dev server
+de vite **en Windows**, y aquí se trabaja en macOS. Forzarlo arrastraba **vite 8
+(un major)** a la cadena de tests y dejaba el árbol con tres esbuild.
+
+### No re-auditar: lo que se revisó y estaba bien
+Cero secretos en los 345+ commits (ni un `.env` en todo el historial); las 12
+`NEXT_PUBLIC_*` son URLs y el nombre del negocio; los 8 `$queryRaw` de
+producción son plantillas etiquetadas; cero `dangerouslySetInnerHTML`/`eval`/
+`innerHTML` y los tres renderizadores de HTML escapan interpolación por
+interpolación; ningún token en `localStorage`; los 15 `@Public` son legítimos y
+los 9 endpoints sin rol son lecturas de catálogo con `stripCostForRole`; el
+pedido web **no acepta precios**; los esquemas de Zod descartan claves
+desconocidas (sin asignación masiva); el open-redirect del login ya estaba
+tapado; y los 5xx nunca devuelven la traza.
+
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

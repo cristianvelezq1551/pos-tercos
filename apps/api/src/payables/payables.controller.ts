@@ -70,7 +70,7 @@ export class PayablesController {
     const input = PayPayableSchema.parse(parsed);
     let proof: { buffer: Buffer; mime: string; ext: string } | null = null;
     if (file) {
-      const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+      const detected = detectImageMimeLoose(file.buffer);
       if (!detected) throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
       proof = { buffer: file.buffer, mime: detected.mime, ext: detected.ext };
     }

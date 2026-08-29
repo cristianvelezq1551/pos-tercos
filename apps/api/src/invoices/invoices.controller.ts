@@ -238,7 +238,7 @@ export class InvoicesController {
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<UploadPaymentProofResponse> {
     if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
-    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    const detected = detectImageMimeLoose(file.buffer);
     if (!detected) {
       throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
     }
@@ -375,7 +375,7 @@ export class InvoicesController {
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<Invoice> {
     if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
-    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    const detected = detectImageMimeLoose(file.buffer);
     if (!detected) {
       throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
     }

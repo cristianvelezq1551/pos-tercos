@@ -108,7 +108,7 @@ export class FixedCostsController {
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<FinancePaidFixedCost> {
     if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
-    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    const detected = detectImageMimeLoose(file.buffer);
     if (!detected) {
       throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
     }

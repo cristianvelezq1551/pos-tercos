@@ -202,7 +202,7 @@ export class ProductsController {
     if (!file) {
       throw new BadRequestException('Falta el archivo en el campo "image".');
     }
-    const detected = detectImageMimeLoose(file.buffer, file.mimetype, file.originalname);
+    const detected = detectImageMimeLoose(file.buffer);
     if (!detected) {
       throw new BadRequestException(
         'Formato no soportado. Usa PNG, JPG, WebP, GIF, BMP, TIFF, HEIC o AVIF (SVG no permitido).',

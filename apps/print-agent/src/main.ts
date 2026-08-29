@@ -9,10 +9,7 @@ import { log, LOG_FILE } from './logger';
 // del .exe). Parser manual de respaldo si esta versión de Node no trae
 // process.loadEnvFile → así el .exe funciona en cualquier Node.
 function loadEnv(): void {
-  const candidates = [
-    resolve(dirname(process.execPath), '.env'),
-    resolve(process.cwd(), '.env'),
-  ];
+  const candidates = [resolve(dirname(process.execPath), '.env'), resolve(process.cwd(), '.env')];
   for (const path of candidates) {
     if (!existsSync(path)) continue;
     try {
@@ -37,7 +34,7 @@ function loadEnv(): void {
 loadEnv();
 
 import { renderReceiptEscPos } from '@pos-tercos/domain';
-import { isDangerouslyExposed, resolveHost, secretOk } from './auth';
+import { allowedOrigins, isDangerouslyExposed, originOk, resolveHost, secretOk } from './auth';
 import { createPrintQueue } from './print-queue';
 import { businessFromEnv, DrawerBodySchema, PrintBodySchema } from './schemas';
 import { sendBytes, kickDrawer, listPrinters } from './printer-driver';
@@ -67,6 +64,15 @@ const SHARED_SECRET = process.env.PRINT_AGENT_SECRET ?? null;
 
 const HOST = resolveHost(SHARED_SECRET, process.env.PRINT_AGENT_HOST);
 
+/**
+ * Orígenes que pueden imprimir o abrir el cajón (ver auth.ts). Válvula de
+ * escape: `PRINT_AGENT_ALLOW_ANY_ORIGIN=1` vuelve al comportamiento viejo
+ * (cualquier página). Está para desatascar el mostrador en el momento, no
+ * para dejarlo puesto — el arranque lo grita en el log.
+ */
+const ALLOWED_ORIGINS = allowedOrigins(process.env);
+const ORIGIN_CHECK_OFF = process.env.PRINT_AGENT_ALLOW_ANY_ORIGIN === '1';
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -75,11 +81,17 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf-8');
 }
 
-// El navegador del POS (en otra origin: localhost:3002 o el devtunnel https)
-// le pega al agent en localhost → es cross-origin. Permitimos CORS amplio: el
-// agent solo escucha local y la auth real es el secret opcional.
-function cors(res: ServerResponse): void {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// El navegador de la caja (en otra origin: localhost:3004 o admin.tercos.co)
+// le pega al agent en localhost → es cross-origin. Quién puede hacerlo lo
+// decide la barrera de ORIGEN del handler; estas cabeceras solo permiten que
+// el navegador LEA la respuesta.
+function cors(res: ServerResponse, origin?: string): void {
+  // Se hace ECO del origen que pidió en vez de '*': con '*' el navegador no
+  // distingue la página de la caja de cualquier otra. Los GET (/health,
+  // /printers) siguen abiertos a todos — no tienen efecto físico y romperlos
+  // dejaría sin diagnóstico al mostrador.
+  res.setHeader('Access-Control-Allow-Origin', origin ?? '*');
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Agent-Secret');
   res.setHeader('Access-Control-Max-Age', '86400');
@@ -90,38 +102,67 @@ function cors(res: ServerResponse): void {
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
 }
 
-function json(res: ServerResponse, status: number, body: unknown): void {
-  cors(res);
+function json(res: ServerResponse, status: number, body: unknown, origin?: string): void {
+  cors(res, origin);
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
 }
 
 const server = createServer(async (req, res) => {
+  const rawOrigin = req.headers.origin;
+  const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+
   try {
     // Preflight CORS del navegador.
     if (req.method === 'OPTIONS') {
-      cors(res);
+      cors(res, origin);
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // Barrera de ORIGEN, solo para lo que tiene efecto físico (POST: imprimir y
+    // abrir el cajón). Va ANTES del secreto porque cubre un caso que el secreto
+    // no puede cubrir: el navegador de la caja llama sin credencial, así que la
+    // única forma de distinguir la página del POS de una página cualquiera es
+    // de dónde viene. Un formulario `text/plain` se salta el preflight, por eso
+    // se valida acá y no confiando en las cabeceras CORS.
+    if (req.method === 'POST' && !ORIGIN_CHECK_OFF && !originOk(origin, ALLOWED_ORIGINS)) {
+      log(
+        `[print-agent] ✗ POST ${req.url} rechazado: origen "${origin ?? '(sin origen)'}" no autorizado. ` +
+          `Si es una pantalla legítima del negocio, agrégala a PRINT_AGENT_ALLOWED_ORIGINS ` +
+          `en el .env del agent (separadas por coma) y reinicia. Permitidos hoy: ` +
+          `${ALLOWED_ORIGINS.join(', ')} + cualquier localhost.`,
+      );
+      json(
+        res,
+        403,
+        {
+          error:
+            'Esta página no está autorizada a usar la impresora. ' +
+            'Si es la caja del negocio, avisa al administrador.',
+        },
+        origin,
+      );
       return;
     }
 
     // Auth via header X-Agent-Secret (timing-safe). Si no hay secret configurado,
     // el agent solo escucha en 127.0.0.1 (ver HOST) → no es alcanzable desde la red.
     if (!secretOk(req.headers['x-agent-secret'], SHARED_SECRET)) {
-      json(res, 401, { error: 'invalid agent secret' });
+      json(res, 401, { error: 'invalid agent secret' }, origin);
       return;
     }
 
     if (req.method === 'GET' && req.url === '/health') {
-      json(res, 200, { ok: true, name: 'print-agent', port: PORT });
+      json(res, 200, { ok: true, name: 'print-agent', port: PORT }, origin);
       return;
     }
 
     // Lista de impresoras disponibles → el POS arma la config de ruteo.
     if (req.method === 'GET' && req.url === '/printers') {
       const list = await listPrinters();
-      json(res, 200, list);
+      json(res, 200, list, origin);
       return;
     }
 
@@ -132,7 +173,7 @@ const server = createServer(async (req, res) => {
       const parsed = PrintBodySchema.safeParse(JSON.parse(body));
       if (!parsed.success) {
         log(`[print-agent] ✗ /print body inválido: ${JSON.stringify(parsed.error.flatten())}`);
-        json(res, 400, { error: parsed.error.flatten() });
+        json(res, 400, { error: parsed.error.flatten() }, origin);
         return;
       }
       // Online: bytes ya renderizados por el backend. Offline: el recibo en
@@ -152,12 +193,14 @@ const server = createServer(async (req, res) => {
           return sendBytes(bytes, parsed.data.printer ?? null);
         });
       } catch (e) {
-        log(`[print-agent] ✗ FALLO al imprimir en "${dest}" tras ${Date.now() - t0}ms: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
-        json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+        log(
+          `[print-agent] ✗ FALLO al imprimir en "${dest}" tras ${Date.now() - t0}ms: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`,
+        );
+        json(res, 500, { error: e instanceof Error ? e.message : String(e) }, origin);
         return;
       }
       log(`[print-agent] ✓ impreso en "${dest}" (${bytes.length}B, ${Date.now() - t0}ms)`);
-      json(res, 200, { ok: true, bytesSent: bytes.length });
+      json(res, 200, { ok: true, bytesSent: bytes.length }, origin);
       return;
     }
 
@@ -167,16 +210,23 @@ const server = createServer(async (req, res) => {
       const printer = parsed.success ? (parsed.data?.printer ?? null) : null;
       log(`[print-agent] /drawer-open (impresora ${printer ?? '(.env)'})`);
       await printQueue.enqueue(() => kickDrawer(printer));
-      json(res, 200, { ok: true });
+      json(res, 200, { ok: true }, origin);
       return;
     }
 
-    json(res, 404, { error: 'not found' });
+    json(res, 404, { error: 'not found' }, origin);
   } catch (err) {
-    log(`[print-agent] ✗ error: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
-    json(res, 500, {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    log(
+      `[print-agent] ✗ error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+    );
+    json(
+      res,
+      500,
+      {
+        error: err instanceof Error ? err.message : String(err),
+      },
+      origin,
+    );
   }
 });
 
@@ -188,6 +238,17 @@ server.listen(PORT, HOST, () => {
       `[print-agent] ⚠ SIN PRINT_AGENT_SECRET y escuchando en ${HOST} (red). ` +
         `Cualquier dispositivo de la LAN puede abrir el cajón/imprimir. ` +
         `Configura PRINT_AGENT_SECRET o deja HOST en 127.0.0.1.`,
+    );
+  }
+  if (ORIGIN_CHECK_OFF) {
+    log(
+      '[print-agent] ⚠ PRINT_AGENT_ALLOW_ANY_ORIGIN=1 — CUALQUIER página web que ' +
+        'abra el cajero puede imprimir y abrir el cajón. Es una válvula de escape ' +
+        'temporal: quítala del .env apenas se resuelva el problema.',
+    );
+  } else {
+    log(
+      `[print-agent] orígenes autorizados a imprimir → ${ALLOWED_ORIGINS.join(', ')} + localhost`,
     );
   }
   log(
