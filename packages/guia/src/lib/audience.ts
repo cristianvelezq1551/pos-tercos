@@ -1,4 +1,4 @@
-import { CHAPTERS, type Audience, type GuideChapter, type GuideSection } from '../content';
+import { CHAPTERS, type Audience, type GuideChapter, type GuideSection } from '@pos-tercos/domain/guia';
 
 /**
  * Los temas que le tocan a una audiencia. El modelo de contenido ya declara

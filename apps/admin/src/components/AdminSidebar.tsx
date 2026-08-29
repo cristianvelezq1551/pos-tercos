@@ -23,6 +23,7 @@ import {
   Globe,
   MonitorPlay,
   Package,
+  PackageCheck,
   PackageOpen,
   Receipt,
   Recycle,
@@ -121,6 +122,13 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Reportes', label: 'Ventas', href: '/reports/sales', icon: LineChart, onlyDueno: true },
   { section: 'Reportes', label: 'Productos', href: '/reports/products', icon: BarChart3, onlyDueno: true },
   { section: 'Reportes', label: 'Operación', href: '/reports/operations', icon: Activity, onlyDueno: true },
+  {
+    section: 'Reportes',
+    label: 'Compras y domicilios',
+    href: '/reports/compras',
+    icon: PackageCheck,
+    onlyDueno: true,
+  },
   {
     section: 'Reportes',
     label: 'Costos y margen real',

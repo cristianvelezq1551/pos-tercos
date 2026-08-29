@@ -8,7 +8,9 @@ import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
+import { CogsService } from '../src/reports/cogs.service';
 import { cleanDb } from './helpers/db-cleaner';
+import { hoyLocal } from './helpers/local-day';
 
 describe('Conteo físico E2E', () => {
   let app: INestApplication;
@@ -124,9 +126,20 @@ describe('Conteo físico E2E', () => {
       .expect(200);
     const harina = res.body.rows.find((r: { entityId: string }) => r.entityId === harinaId);
     expect(harina).toBeDefined();
-    expect(harina.adjustments).toBe(-10);
-    // lastUnitCost no está seteado (sin factura) → costo desconocido, cuenta en unknownCostCount
-    expect(harina.wasteCost).toBeNull();
+    // El faltante del conteo tiene columna propia y NO se mezcla con los
+    // ajustes manuales (§7.v43): así una reposición tecleada a mano no puede
+    // taparlo dejando el neto en cero.
+    expect(harina.adjustments).toBe(0);
+    expect(harina.shortageQty).toBe(10);
+    // Y se valoriza al costo REAL del lote que salió — el mismo número que la
+    // línea "Faltantes" del P&G. Antes se estimaba, y sin factura quedaba en
+    // blanco: la pérdida existía y la pantalla no la mostraba.
+    expect(harina.shortageCost).toBeGreaterThan(0);
+    // Hay lote del cual sacar el costo, así que NO es un estimado: la pantalla
+    // no debe pintarle la tilde de aproximado a un número exacto.
+    expect(harina.shortageCostEstimated).toBe(false);
+    // No hubo merma declarada: eso sí es cero, no desconocido.
+    expect(harina.wasteCost).toBe(0);
   });
 
   it('el historial de conteos lista los registros con nombre y usuario', async () => {
@@ -213,5 +226,91 @@ describe('Conteo físico E2E', () => {
       .set('Authorization', `Bearer ${duenoToken}`)
       .expect(200);
     expect(stock.body.currentStock).toBe(45);
+  });
+
+  it('un conteo que después encuentra lo faltante deja el período en cero, no en desconocido', async () => {
+    // El ledger netea la devolución en el mes en que se DECLARÓ la pérdida, así
+    // que este segundo conteo no tiene costo propio. Reportarlo como "no lo sé"
+    // marcaba como sin valorizar a un ítem que en el período no perdió nada.
+    const antes = await request
+      .get('/reports/inventory-usage')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    const desconocidosAntes = antes.body.unknownCostCount as number;
+
+    const stock = await request
+      .get(`/inventory/stock/ingredient/${harinaId}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    await request
+      .post('/inventory/counts')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        entityType: 'INGREDIENT',
+        ingredientId: harinaId,
+        // Encuentra MÁS de lo que faltaba: devuelve las 10 unidades perdidas y
+        // deja 5 de sobra, así el ítem sigue teniendo novedad en el período.
+        countedQty: Number(stock.body.currentStock) + 15,
+      })
+      .expect(201);
+
+    const res = await request
+      .get('/reports/inventory-usage')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    const harina = res.body.rows.find((r: { entityId: string }) => r.entityId === harinaId);
+    expect(harina).toBeDefined();
+    // Ya no falta nada: son $0, no "no lo sé". Este conteo no tiene costo
+    // propio en el ledger —la devolución se netea en el mes en que se declaró
+    // la pérdida— y antes eso lo dejaba como sin valorizar.
+    expect(harina.shortageQty).toBe(0);
+    expect(harina.shortageCost).toBe(0);
+    expect(harina.shortageCostEstimated).toBe(false);
+    expect(res.body.unknownCostCount).toBe(desconocidosAntes);
+  });
+
+  it('un faltante nuevo tras una corrección se valoriza igual que en el P&G', async () => {
+    // El caso que apareció probando en QA con datos reales: en el mismo período
+    // conviven el conteo que declaró la pérdida, el que la corrigió y uno nuevo
+    // que vuelve a encontrar de menos. El del medio no tiene costo propio —su
+    // devolución se atribuye al conteo que declaró la pérdida—, y eso hacía que
+    // el ítem entero saliera «sin valorizar» mientras el P&G sí cobraba la
+    // pérdida. Dos números para la misma plata según la pantalla.
+    const stock = await request
+      .get(`/inventory/stock/ingredient/${harinaId}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    await request
+      .post('/inventory/counts')
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({
+        entityType: 'INGREDIENT',
+        ingredientId: harinaId,
+        countedQty: Number(stock.body.currentStock) - 7,
+      })
+      .expect(201);
+
+    // El ledger cachea 60 s a propósito; acá se mide la lógica, no la caché.
+    app.get(CogsService).invalidateLedgerCache();
+    const hoy = hoyLocal();
+    const uso = await request
+      .get(`/reports/inventory-usage?from=${hoy}&to=${hoy}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    const harina = uso.body.rows.find((r: { entityId: string }) => r.entityId === harinaId);
+    expect(harina.shortageQty).toBeGreaterThan(0);
+    // Sin el arreglo esto es null: el conteo que corrigió contagiaba de
+    // "desconocido" al ítem entero y borraba el costo de los otros conteos.
+    expect(harina.shortageCost).not.toBeNull();
+    expect(uso.body.unknownCostCount).toBe(0);
+
+    const pnl = await request
+      .get(`/reports/cogs/pnl?from=${hoy}&to=${hoy}`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .expect(200);
+    // La misma plata, el mismo número: es toda la razón de ser de la línea.
+    // Se compara el TOTAL del reporte contra la línea del P&G porque el P&G
+    // suma todos los ítems, no solo este.
+    expect(uso.body.totalShortageCost).toBeCloseTo(pnl.body.shrinkageCost, 2);
   });
 });

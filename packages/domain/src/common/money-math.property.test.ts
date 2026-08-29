@@ -284,6 +284,7 @@ describe('computeBreakEven — propiedades', () => {
         wasteCost: revenue * wastePct,
         cortesiaCost: revenue * cortesiaPct,
         refundCost: revenue * refundPct,
+        freightCost: 0,
         totalFixed,
       });
       if (r.breakEven === null) continue;
@@ -310,6 +311,7 @@ describe('computeBreakEven — propiedades', () => {
         wasteCost: revenue * rng.float(0, 0.1),
         cortesiaCost: revenue * rng.float(0, 0.05),
         refundCost: revenue * rng.float(0, 0.05),
+        freightCost: 0,
         totalFixed,
       });
       if (r.breakEven === null) continue;
@@ -326,6 +328,7 @@ describe('computeBreakEven — propiedades', () => {
         cogs: 0,
         cortesiaCost: 0,
         refundCost: 0,
+        freightCost: 0,
         totalFixed: rng.int(100_000, 10_000_000),
       };
       base.cogs = base.revenue * rng.float(0.1, 0.5);

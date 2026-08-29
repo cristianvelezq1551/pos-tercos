@@ -1,4 +1,4 @@
-import type { GuideStep } from '../content';
+import type { GuideStep } from '@pos-tercos/domain/guia';
 
 /**
  * Pasos numerados. El "porqué" va bajo el paso, en tono secundario: se puede

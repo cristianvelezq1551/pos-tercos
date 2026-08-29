@@ -40,6 +40,8 @@ describe('Reportes financieros del dueño E2E', () => {
       breakEvenCoverage: number | null;
       contributionMargin: number; contributionMarginPct: number | null;
       deliveryCollected: number; deliveryOrderCount: number;
+      freightCost: number; freightInvoiceCount: number; purchasedTotal: number;
+      payablesPaidCost: number; payablesPaidCount: number;
       salesCount: number;
       fixedCosts: Array<{ name: string; monthlyAmount: number; isPayroll: boolean; isOneTime: boolean }>;
       cogsEstimated: boolean; cogsPartial: boolean;
@@ -355,11 +357,18 @@ describe('Reportes financieros del dueño E2E', () => {
     expect(res.reason).toContain('no es negativo');
   });
 
-  it('el estado financiero cierra: neto = margen bruto − fijos − puntuales − cortesías − reembolsos − merma', async () => {
+  it('el estado financiero cierra: neto = margen bruto − fijos − puntuales − cortesías − reembolsos − merma − fletes − compromisos', async () => {
     const m = await monthly();
     expect(m.grossMargin).toBeCloseTo(m.revenue - m.cogs, 2);
     const esperado =
-      m.grossMargin - m.totalFixed - m.oneTimeCost - m.cortesiasCost - m.refundCost - m.wasteCost;
+      m.grossMargin -
+      m.totalFixed -
+      m.oneTimeCost -
+      m.cortesiasCost -
+      m.refundCost -
+      m.wasteCost -
+      m.freightCost -
+      m.payablesPaidCost;
     // Es LA identidad del reporte: si esto se rompe, el dueño decide con un
     // número que no corresponde a ninguna suma.
     expect(m.netResult).toBeCloseTo(esperado, 2);
@@ -400,6 +409,74 @@ describe('Reportes financieros del dueño E2E', () => {
 
   // Solo lecturas con params rotos: no mueven los acumulados del mes que los
   // tests de arriba miden por delta.
+  /**
+   * Domicilio de compra: lo que cobra el proveedor por traer la mercancía.
+   *
+   * Es el caso que motivó el campo. Antes, ese gasto no aparecía en NINGUNA
+   * línea del P&G: se pagaba, salía de Tesorería, y el resultado neto quedaba
+   * inflado exactamente en esa plata. Acá se verifica que baja el neto SIN
+   * ensuciar el COGS — el flete no encarece ningún producto.
+   *
+   * Va al final porque confirmar una factura crea un lote FIFO nuevo y mueve
+   * `purchasedTotal`, que los tests de arriba leen como acumulado del mes.
+   */
+  it('el domicilio de una factura baja el neto y NO entra al COGS', async () => {
+    const before = await monthly();
+
+    const FLETE = 9_000;
+    const MERCANCIA = 60_000;
+    const draft = await prisma.invoice.create({
+      data: {
+        status: 'PENDING_REVIEW',
+        aiModelUsed: 'test-mock',
+        aiExtractionJson: {},
+        uploadedById: (await prisma.user.findFirstOrThrow({ where: { email: 'dueno-fr@test.local' } })).id,
+      },
+    });
+
+    await request
+      .post(`/invoices/${draft.id}/confirm`)
+      .set(auth())
+      .send({
+        supplierNit: '900999888-1',
+        supplierName: 'Proveedor con domicilio',
+        total: MERCANCIA + FLETE,
+        freight: FLETE,
+        items: [
+          {
+            entityType: 'PRODUCT',
+            productId,
+            descriptionRaw: 'Coca FR caja',
+            quantity: 1,
+            unit: 'caja',
+            unitPrice: MERCANCIA,
+            total: MERCANCIA,
+          },
+        ],
+      })
+      .expect(201);
+
+    const after = await monthly();
+
+    // El flete aparece como su propia línea, con su factura contada.
+    expect(after.freightCost - before.freightCost).toBeCloseTo(FLETE, 2);
+    expect(after.freightInvoiceCount - before.freightInvoiceCount).toBe(1);
+    // Y la mercancía queda como contexto (para el % de flete), sin el flete.
+    expect(after.purchasedTotal - before.purchasedTotal).toBeCloseTo(MERCANCIA, 2);
+
+    // Lo esencial: comprar no consume nada, así que el COGS del mes no se mueve
+    // NI por la mercancía (es inventario hasta que se venda) ni por el flete.
+    expect(after.cogs).toBeCloseTo(before.cogs, 2);
+    expect(after.revenue).toBeCloseTo(before.revenue, 2);
+    expect(after.grossMargin).toBeCloseTo(before.grossMargin, 2);
+
+    // Pero el neto SÍ baja: es plata que se pagó y no vuelve.
+    expect(before.netResult - after.netResult).toBeCloseTo(FLETE, 2);
+
+    // Y el margen de contribución también, porque el flete es variable.
+    expect(before.contributionMargin - after.contributionMargin).toBeCloseTo(FLETE, 2);
+  });
+
   describe('validación de ?year=&month= y ?from=&to=', () => {
     it('month fuera de rango → 400', async () => {
       // Bug: month=13 rebalsaba en silencio a enero del año siguiente (rollover de new Date) y el dueño leía otro mes.

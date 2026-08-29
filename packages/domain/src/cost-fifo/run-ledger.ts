@@ -89,6 +89,19 @@ export interface LedgerFifo {
   waste: LossEntry[];
   /** Cortesías valorizadas a FIFO con timestamp (consumo sourceType='cortesia'). */
   cortesia: LossEntry[];
+  /**
+   * FALTANTES valorizados: lo que un conteo físico encontró de menos.
+   *
+   * Es una pérdida como la merma, pero de otra naturaleza: la merma alguien la
+   * DECLARÓ ("se me cayó"), el faltante apareció solo al contar. Va en su
+   * propia línea justamente por eso — que la pérdida no declarada sea del mismo
+   * orden que la declarada es la señal que el dueño necesita ver.
+   *
+   * Solo cuenta el ajuste con `sourceType='stock_count'`. Un ajuste manual
+   * tecleado a mano NO entra: ese corrige un dato mal cargado, y tratarlo como
+   * pérdida contaría dos veces el mismo insumo.
+   */
+  shrinkage: LossEntry[];
   /** Costo FIFO por solicitud de cortesía: sourceId → costo + desconocido + estimado. */
   cortesiaCostBySource: Map<string, { cost: number; unknownQty: number; estimatedCost: number }>;
   /**
@@ -101,6 +114,9 @@ export interface LedgerFifo {
    * rango anterior al corte ya cae en replay completo (regla 2 de CogsService).
    */
   wasteCostByMovement: Map<string, { cost: number; unknownQty: number; estimatedCost: number }>;
+  /** Costo por CONTEO: id del stock_count → costo + desconocido + estimado.
+   *  Igual que `wasteCostByMovement`, NO viaja en el seed (son muchas filas). */
+  shrinkageCostBySource: Map<string, { cost: number; unknownQty: number; estimatedCost: number }>;
   /** Lotes restantes por stockable: `${entityType}:${id}` → valor/cantidad. */
   remaining: Map<string, { qty: number; value: number; unknownQty: number }>;
   /** Lotes restantes DETALLADOS (orden FIFO: más viejo primero) por stockable.
@@ -123,6 +139,8 @@ export interface LedgerFifo {
    * una compra posterior al corte pueda saldar una deuda anterior a él.
    */
   endingDebts: Record<string, Debt[]>;
+  /** Faltantes de conteo aún sin devolver, por stockable (para el snapshot). */
+  endingShrinkageDraws: Record<string, ShrinkageDraw[]>;
   /**
    * true = una REVERSA del replay incremental referencia un consumo ANTERIOR
    * al corte del seed (sus draws no existen acá) → este resultado es
@@ -149,7 +167,21 @@ interface Draw {
  * regalar, tirar y producir— estiman igual, pero al saldarse la deuda el costo
  * real se atribuye a lugares distintos (y en producción a ninguno: ver `addLot`).
  */
-export type DebtKind = 'sale' | 'cortesia' | 'waste' | 'production';
+export type DebtKind = 'sale' | 'cortesia' | 'waste' | 'production' | 'faltante';
+
+/**
+ * Unidades que un faltante de conteo se llevó, con su costo y a qué conteo
+ * cargarlas. Viven hasta que un conteo posterior las encuentre y las devuelva.
+ * Viajan en el snapshot por la misma razón que las deudas: si la corrección
+ * llega DESPUÉS del corte, sin este dato el sistema no sabría a qué costo
+ * devolverlas y las trataría como inventario aparecido de la nada.
+ */
+export interface ShrinkageDraw {
+  qty: number;
+  unitCost: number | null;
+  countId: string;
+  consumedAt: string;
+}
 
 /**
  * Deuda de stock (inventario negativo): unidades que un consumo se llevó sin
@@ -197,6 +229,9 @@ export interface LedgerSeed {
   /** `estimatedCost` es opcional: los snapshots anteriores a §7.v32 no lo traen. */
   waste: (Omit<LossEntry, 'estimatedCost'> & { estimatedCost?: number })[];
   cortesia: (Omit<LossEntry, 'estimatedCost'> & { estimatedCost?: number })[];
+  /** Faltantes de conteo históricos. Opcional: los snapshots anteriores a esta
+   *  línea no lo traen, y ahí se hidrata como vacío (no como cero inventado). */
+  shrinkage?: (Omit<LossEntry, 'estimatedCost'> & { estimatedCost?: number })[];
   cortesiaCostBySource: Record<
     string,
     { cost: number; unknownQty: number; estimatedCost?: number }
@@ -204,6 +239,8 @@ export interface LedgerSeed {
   /** Deudas de stock (inventario negativo) pendientes al corte. Opcional para
    *  compat con snapshots viejos (default = sin deudas). */
   debts?: Record<string, Debt[]>;
+  /** Faltantes de conteo sin devolver al corte. Opcional (snapshots viejos). */
+  shrinkageDraws?: Record<string, ShrinkageDraw[]>;
   /** Último costo unitario conocido por stockable al corte — para estimar el
    *  faltante de una venta sin stock. Opcional (snapshots viejos). */
   lastKnownUnitCost?: Record<string, number>;
@@ -348,18 +385,35 @@ export function runLedgerFifo(
    */
   const lossConsumedAt = new Map<string, string>();
 
+  /**
+   * Faltantes de conteo por stockable, con el costo de las unidades que se
+   * llevaron y a qué conteo cargárselas.
+   *
+   * Existe para que un conteo POSTERIOR que encuentre las unidades pueda
+   * devolverlas: sin esto, un conteo mal hecho dejaba la pérdida declarada para
+   * siempre Y el stock volvía sin costo (10 unidades valuadas como 4). La merma
+   * y la cortesía ya tenían su camino de vuelta (§7.v18); esta es la tercera.
+   *
+   * El pool es por STOCKABLE y no por conteo porque al contar se corrige el
+   * item, no un conteo puntual: el conteo bueno no sabe cuál fue el malo.
+   */
+  const shrinkageDraws = new Map<string, ShrinkageDraw[]>();
+
   const out: LedgerFifo = {
     saleIngredientCost: new Map(),
     saleProductCost: new Map(),
     saleSubproductCost: new Map(),
     waste: [],
     cortesia: [],
+    shrinkage: [],
     cortesiaCostBySource: new Map(),
     wasteCostByMovement: new Map(),
+    shrinkageCostBySource: new Map(),
     remaining: new Map(),
     remainingLots: new Map(),
     endingLots: {},
     endingDebts: {},
+    endingShrinkageDraws: {},
     endingLastKnownUnitCost: {},
     needsFullReplay: false,
   };
@@ -375,6 +429,12 @@ export function runLedgerFifo(
       );
     }
     out.waste.push(...seed.waste.map((w) => ({ ...w, estimatedCost: w.estimatedCost ?? 0 })));
+    out.shrinkage.push(
+      ...(seed.shrinkage ?? []).map((f) => ({ ...f, estimatedCost: f.estimatedCost ?? 0 })),
+    );
+    for (const [key, pool] of Object.entries(seed.shrinkageDraws ?? {})) {
+      shrinkageDraws.set(key, pool.map((d) => ({ ...d })));
+    }
     out.cortesia.push(...seed.cortesia.map((c) => ({ ...c, estimatedCost: c.estimatedCost ?? 0 })));
     for (const [sourceId, v] of Object.entries(seed.cortesiaCostBySource)) {
       out.cortesiaCostBySource.set(sourceId, { ...v, estimatedCost: v.estimatedCost ?? 0 });
@@ -471,7 +531,7 @@ export function runLedgerFifo(
    * por fecha— o el P&G viejo quedaría subestimado para siempre.
    */
   const attributeToLoss = (
-    kind: 'cortesia' | 'waste',
+    kind: 'cortesia' | 'waste' | 'faltante',
     consumerId: string,
     createdAt: string,
     cost: number,
@@ -484,8 +544,12 @@ export function runLedgerFifo(
       unknownQty: roundCost(unknownQty),
       estimatedCost: roundCost(estimatedCost),
     };
-    const index = kind === 'waste' ? out.wasteCostByMovement : out.cortesiaCostBySource;
+    const index =
+      kind === 'waste' ? out.wasteCostByMovement
+      : kind === 'faltante' ? out.shrinkageCostBySource
+      : out.cortesiaCostBySource;
     if (kind === 'waste') out.waste.push(entry);
+    else if (kind === 'faltante') out.shrinkage.push(entry);
     else out.cortesia.push(entry);
     // `consumerId` vacío = no hay a qué colgarlo (merma anulada sin origen).
     if (!consumerId) return;
@@ -932,12 +996,49 @@ export function runLedgerFifo(
 
     // Entrada (PURCHASE, INITIAL, MANUAL_ADJUSTMENT+).
     if (delta > 0) {
-      addLot(key, {
-        movementId: m.id,
-        qty: delta,
-        unitCost: m.unitCost,
-        createdAt: iso,
-      });
+      // Un conteo que encuentra DE MÁS primero deshace los faltantes que ese
+      // mismo item venía arrastrando: devuelve esas unidades a su costo
+      // original y netea la pérdida en el mes en que se declaró (no en el de la
+      // corrección — si no, el mes que perdió el insumo quedaría barato para
+      // siempre). Lo que sobre es una sobra de verdad: inventario que apareció
+      // sin que nadie sepa qué costó, y entra como lote sin costo. Eso es
+      // honesto: inventarle un precio sería peor.
+      let restante = delta;
+      if (m.sourceType === 'stock_count') {
+        const pool = shrinkageDraws.get(key) ?? [];
+        const devueltos: Lot[] = [];
+        while (restante > 1e-9 && pool.length > 0) {
+          const ultimo = pool[pool.length - 1]!;
+          const toma = Math.min(ultimo.qty, restante);
+          devueltos.push({ movementId: m.id, qty: toma, unitCost: ultimo.unitCost, createdAt: iso });
+          attributeToLoss(
+            'faltante',
+            ultimo.countId,
+            ultimo.consumedAt,
+            -(ultimo.unitCost === null ? 0 : toma * ultimo.unitCost),
+            -(ultimo.unitCost === null ? toma : 0),
+            0,
+          );
+          ultimo.qty -= toma;
+          restante -= toma;
+          if (ultimo.qty <= 1e-9) pool.pop();
+        }
+        if (pool.length === 0) shrinkageDraws.delete(key);
+        else shrinkageDraws.set(key, pool);
+        // A la CABEZA, en orden [más reciente … más viejo]: lo devuelto se
+        // consumió del frente, así que es más viejo que el resto de la cola.
+        const q = queues.get(key) ?? [];
+        for (const lot of devueltos) q.unshift(lot);
+        queues.set(key, q);
+      }
+      if (restante > 1e-9) {
+        addLot(key, {
+          movementId: m.id,
+          qty: restante,
+          unitCost: m.unitCost,
+          createdAt: iso,
+        });
+      }
       continue;
     }
 
@@ -1021,8 +1122,35 @@ export function runLedgerFifo(
         unknownQty + est.extraUnknown,
         est.estimatedCost,
       );
+    } else if (m.sourceType === 'stock_count') {
+      // FALTANTE de conteo: al contar físicamente apareció menos de lo que
+      // decían los libros. Es una pérdida real —el producto salió del negocio
+      // sin venderse— y hasta esta línea se iba del inventario sin aparecer en
+      // ningún lado, dejando el margen bruto alto por exactamente esa plata.
+      //
+      // Se estima igual que la merma si el inventario ya estaba en negativo:
+      // que no estuviera cargado no lo hace gratis.
+      const est = registerShortfall(key, m, iso, shortfall, 'faltante', m.sourceId ?? m.id);
+      // Se guardan las unidades con su costo para poder devolverlas si el
+      // conteo siguiente las encuentra.
+      const pool = shrinkageDraws.get(key) ?? [];
+      const countId = m.sourceId ?? m.id;
+      for (const d of draws) {
+        pool.push({ qty: d.qty, unitCost: d.unitCost, countId, consumedAt: iso });
+      }
+      shrinkageDraws.set(key, pool);
+      attributeToLoss(
+        'faltante',
+        m.sourceId ?? m.id,
+        iso,
+        cost + est.estimatedCost,
+        unknownQty + est.extraUnknown,
+        est.estimatedCost,
+      );
     }
-    // Otro MANUAL_ADJUSTMENT- no se atribuye (sale del libro y listo).
+    // Otro MANUAL_ADJUSTMENT- no se atribuye: ese lo teclea un admin para
+    // corregir un dato mal cargado, no para declarar una pérdida. Tratarlo como
+    // pérdida contaría dos veces el mismo insumo.
   }
 
   // Construir remaining + remainingLots + endingLots (estado serializable
@@ -1059,6 +1187,13 @@ export function runLedgerFifo(
     const kept = ds.filter((d) => d.qty > 1e-9).map((d) => ({ ...d, qty: roundCost(d.qty) }));
     if (kept.length > 0) out.endingDebts[key] = kept;
   }
+  // Faltantes de conteo aún sin devolver → viajan igual que las deudas: si la
+  // corrección llega DESPUÉS del corte, el incremental tiene que saber a qué
+  // costo devolver esas unidades (si no, las trata como aparecidas de la nada).
+  for (const [key, pool] of shrinkageDraws) {
+    const kept = pool.filter((d) => d.qty > 1e-9).map((d) => ({ ...d, qty: roundCost(d.qty) }));
+    if (kept.length > 0) out.endingShrinkageDraws[key] = kept;
+  }
   for (const [key, c] of lastKnownUnitCost) out.endingLastKnownUnitCost[key] = c;
   return out;
 }
@@ -1074,8 +1209,10 @@ export function buildLedgerSeed(fifo: LedgerFifo, cutoffIso: string): LedgerSeed
     lots: fifo.endingLots,
     waste: fifo.waste,
     cortesia: fifo.cortesia,
+    shrinkage: fifo.shrinkage,
     cortesiaCostBySource: Object.fromEntries(fifo.cortesiaCostBySource),
     debts: fifo.endingDebts,
+    shrinkageDraws: fifo.endingShrinkageDraws,
     lastKnownUnitCost: fifo.endingLastKnownUnitCost,
   };
 }

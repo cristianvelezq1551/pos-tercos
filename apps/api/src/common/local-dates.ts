@@ -43,6 +43,39 @@ export function localMidnightOfYmd(s: string): Date {
  * Parsea ?from=&to= como YYYY-MM-DD a Date local (00:00 from, 23:59 to).
  * Default: últimos `defaultDays` días (incluyendo hoy).
  */
+/**
+ * Rango OPCIONAL: si no viene ninguna fecha, no filtra (devuelve `{}`).
+ *
+ * Distinto de `parseDateRange`, que siempre devuelve una ventana con default.
+ * Se usa donde el listado sin filtro tiene que seguir mostrando todo: meterle
+ * un default de N días cambiaría en silencio lo que el usuario ve hoy.
+ *
+ * Una fecha mal formada es 400, igual que en `parseDateRange` — nunca se ignora
+ * calladamente (clase B9).
+ */
+export function parseOptionalDateRange(
+  from: string | undefined,
+  to: string | undefined,
+): { from?: Date; to?: Date } {
+  const out: { from?: Date; to?: Date } = {};
+  if (from !== undefined && from !== '') {
+    const parsed = parseLocalDate(from);
+    if (!parsed) throw new BadRequestException('La fecha inicial debe ser AAAA-MM-DD.');
+    parsed.setHours(0, 0, 0, 0);
+    out.from = parsed;
+  }
+  if (to !== undefined && to !== '') {
+    const parsed = parseLocalDate(to);
+    if (!parsed) throw new BadRequestException('La fecha final debe ser AAAA-MM-DD.');
+    parsed.setHours(23, 59, 59, 999);
+    out.to = parsed;
+  }
+  if (out.from && out.to && out.from > out.to) {
+    throw new BadRequestException('La fecha inicial no puede ser posterior a la final.');
+  }
+  return out;
+}
+
 export function parseDateRange(
   from: string | undefined,
   to: string | undefined,

@@ -35,6 +35,9 @@ export class PayablesService {
         beneficiary: input.beneficiary.trim(),
         description: input.description.trim(),
         amount: input.amount,
+        // Default gasto: el caso común es un arreglo o un servicio. Se
+        // desmarca solo al devolver un préstamo.
+        isExpense: input.isExpense ?? true,
         createdById: actorId,
       },
     });
@@ -43,7 +46,11 @@ export class PayablesService {
       action: 'PAYABLE_CREATED',
       entityType: 'payable_commitment',
       entityId: row.id,
-      metadata: { beneficiary: row.beneficiary, amount: Number(row.amount) },
+      metadata: {
+        beneficiary: row.beneficiary,
+        amount: Number(row.amount),
+        isExpense: row.isExpense,
+      },
     });
     return this.toDto(row);
   }
@@ -151,6 +158,7 @@ export class PayablesService {
     beneficiary: string;
     description: string;
     amount: { toString(): string };
+    isExpense: boolean;
     status: string;
     cashAmount: { toString(): string };
     bankAmount: { toString(): string };
@@ -164,6 +172,7 @@ export class PayablesService {
       beneficiary: row.beneficiary,
       description: row.description,
       amount: Number(row.amount),
+      isExpense: row.isExpense,
       status: row.status as PayableStatus,
       cashAmount: Number(row.cashAmount),
       bankAmount: Number(row.bankAmount),

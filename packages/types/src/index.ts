@@ -18,6 +18,7 @@ export * from './payables';
 export * from './promotions';
 export * from './purchase-suggestions';
 export * from './purchase-lists';
+export * from './purchases';
 export * from './reports';
 export * from './sales';
 export * from './shifts';

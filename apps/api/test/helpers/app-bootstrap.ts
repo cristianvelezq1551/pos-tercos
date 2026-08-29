@@ -30,6 +30,28 @@ export async function bootstrapApp(
   app.use(cookieParser());
   await app.init();
 
+  // Un ÚNICO socket de escucha para toda la suite.
+  //
+  // `app.init()` deja el servidor sin escuchar, y entonces supertest levanta y
+  // cierra uno en un puerto efímero POR PETICIÓN. Con pocas peticiones no se
+  // nota; con miles (la simulación financiera hace ~10.000) el sistema empieza
+  // a reciclar puertos que quedaron en TIME_WAIT y alguna petición aterriza en
+  // OTRO proceso que escuche en la máquina. El síntoma no se parece en nada a
+  // la causa: un 404 con cuerpo vacío en una ruta que existe, o un 401 con el
+  // cuerpo de error de una API ajena. Se persiguió como bug del backend hasta
+  // que se vio que la petición nunca había llegado a la app.
+  //
+  // Escuchando una sola vez, supertest reutiliza ese servidor para todas las
+  // peticiones. `app.close()` lo cierra.
+  await new Promise<void>((resolve, reject) => {
+    const server = app.getHttpServer() as {
+      listen: (port: number, cb: () => void) => void;
+      once: (evento: string, cb: (err: Error) => void) => void;
+    };
+    server.once('error', reject);
+    server.listen(0, resolve);
+  });
+
   const prisma = app.get(PrismaService);
   const request = supertest(app.getHttpServer());
 

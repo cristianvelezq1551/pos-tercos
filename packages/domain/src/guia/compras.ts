@@ -48,6 +48,10 @@ export const COMPRAS: GuideChapter = {
               why: 'El sistema sugiere el más parecido por nombre, pero la decisión es tuya. Asociar mal significa sumarle stock al insumo equivocado.',
             },
             { do: 'Si algo que compraste no existe todavía en el catálogo, créalo ahí mismo con "Crear nuevo".' },
+            {
+              do: 'Si te cobraron por traerlo, escribe ese valor en "Domicilio o flete".',
+              why: 'Va en su propio campo, no como una línea más: un domicilio no se almacena ni se cocina. La pantalla te muestra en vivo cuánto es mercancía y si cuadra con los ítems.',
+            },
             { do: 'Verifica que el total y el IVA coincidan con el papel.' },
             { do: 'Registra si ya la pagaste, con qué bolsillo y sube el comprobante.' },
             { do: 'Confirma.' },
@@ -56,6 +60,15 @@ export const COMPRAS: GuideChapter = {
         {
           kind: 'prose',
           text: 'Al confirmar pasan tres cosas: entra el inventario comprado, se actualiza el costo de cada insumo y se guarda cuánto te cobró ese proveedor por cada cosa.',
+        },
+        {
+          kind: 'note',
+          text: 'Si el domicilio no venía en el papel —le pagaste en efectivo al que trajo la mercancía— puedes agregarlo después: abre la factura y toca "Agregar domicilio". Es lo único de una factura confirmada que se puede corregir, porque el flete no mueve inventario. Si la factura ya estaba pagada, el sistema te va a preguntar de qué bolsillo salió esa plata: sin eso, el saldo de tesorería deja de cuadrar.',
+        },
+        {
+          kind: 'rule',
+          title: 'El domicilio no encarece ningún producto',
+          text: 'Lo que cobra el proveedor por traer la mercancía se registra aparte y NO se reparte entre los insumos. Si se repartiera, encarecería productos al azar y el precio guardado del proveedor dejaría de ser el que te cobra. Aparece como una línea propia en el estado financiero y en su tarjeta "Domicilios de compra", donde ves cuánto pesa sobre lo que compras.',
         },
         {
           kind: 'rule',
@@ -107,6 +120,38 @@ export const COMPRAS: GuideChapter = {
         {
           kind: 'note',
           text: 'Sin teléfono cargado no se le puede armar el pedido por WhatsApp. Vale la pena completarlo.',
+        },
+      ],
+    },
+    {
+      id: 'compras-domicilios',
+      title: 'Cuánto gastas en domicilios de compra',
+      audience: ['dueno'],
+      where: 'Gestión → Reportes → Compras y domicilios',
+      summary: 'Semana por semana y proveedor por proveedor.',
+      blocks: [
+        {
+          kind: 'prose',
+          text: 'Es el único lugar donde el domicilio se compara contra lo que compraste. El monto solo no dice nada: $300.000 de fletes es barato sobre $8 millones de compra y caro sobre $2. El porcentaje sí.',
+        },
+        {
+          kind: 'steps',
+          steps: [
+            { do: 'Elige el rango y si quieres verlo por semana o por mes.' },
+            {
+              do: 'Mira la tabla por proveedor: está ordenada por el que más cobró.',
+              why: 'Esa fila de arriba es la conversación que más plata devuelve. Ordenar por volumen de compra pondría primero al más grande, que puede ser justo el que no cobra domicilio.',
+            },
+            { do: 'Si alguno pasa del 5%, hablalo: envío gratis sobre un mínimo, o juntar pedidos para que vengan menos veces.' },
+          ],
+        },
+        {
+          kind: 'note',
+          text: 'Las semanas sin compras aparecen igual, en cero. Saltearlas haría leer la serie como si fueran semanas seguidas cuando hay un hueco en el medio.',
+        },
+        {
+          kind: 'warn',
+          text: 'Los cortes por semana usan la fecha en que REGISTRASTE la factura, no la que está impresa en el papel. Si subes el lunes las facturas de la semana pasada, todo ese domicilio cuenta como de esta semana. Súbelas el día que llega la mercancía.',
         },
       ],
     },
