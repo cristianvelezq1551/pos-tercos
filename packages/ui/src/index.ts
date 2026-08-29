@@ -109,3 +109,8 @@ export {
   type DateFormat,
 } from './lib/format';
 export { mensajeDeError, type OpcionesMensajeError } from './lib/error-message';
+export {
+  crearFiltroDeErrores,
+  instalarReporteDeErrores,
+  type ReporterApp,
+} from './lib/client-error-reporter';

@@ -20,6 +20,11 @@
 | **healthchecks.io "DOWN"** | correo | El **backup** lleva más de 7 h sin correr | el mismo día |
 | **Nightly rojo** | correo de GitHub | Las **leyes matemáticas del inventario** fallaron con historias aleatorias | esta semana |
 
+Además, los errores que revientan en el **navegador** de la web del cliente, la
+cocina y el TV se reportan solos al servidor y quedan en los logs de Railway con
+el prefijo de su app (`[web]`, `[cocina]`, `[display]`). No mandan correo: son
+para investigar cuando alguien reporta "no me dejó pedir", no para despertarte.
+
 Los dos primeros cuidan el **presente** (¿se puede vender ahora?), los dos
 últimos el **pasado** (¿los datos están respaldados y cuadran?).
 
@@ -27,11 +32,6 @@ Los dos primeros cuidan el **presente** (¿se puede vender ahora?), los dos
 
 Saberlo importa tanto como saber lo que sí cubren:
 
-- **Errores en el navegador del cliente.** Si a alguien se le rompe el checkout
-  en su teléfono, no queda rastro en ningún lado. Solo la caja reporta sus
-  errores al servidor.
-- **Las pantallas de Vercel caídas** o el certificado del dominio vencido. Hoy
-  solo se vigila el API. → se arregla en 10 minutos, ver §5.
 - **Que el negocio deje de vender.** Un login roto o una caja que no cobra se
   ven igual que un día flojo.
 - **Lentitud.** Nada mide cuánto tarda una respuesta.
@@ -136,6 +136,18 @@ await fetch('/api/healthz/alert-drill', { method: 'POST', credentials: 'include'
 - Si dice `delivered: false` con un motivo → el token venció o le falta el
   permiso `Issues: Read and write`.
 
+> ⚠️ **De qué depende que ese correo llegue.** El Issue lo abre un token que
+> actúa **como tu usuario**, y GitHub no te notifica de tu propia actividad. Por
+> eso hace falta tener marcada, en
+> [Settings → Notifications](https://github.com/settings/notifications) →
+> *Customize email updates*, la opción **"Include your own updates"**. Si algún
+> día se desmarca —o entra otra persona al proyecto con su cuenta—, el canal
+> **deja de avisar sin que nada falle**: el Issue se crea igual y nadie se
+> entera. Este simulacro es lo único que lo detecta.
+>
+> (Los avisos de backup sí llegan sin esa casilla porque los abre
+> `github-actions[bot]`, que no eres tú.)
+
 **2. UptimeRobot.** Crea un monitor temporal a
 `https://api.tercos.co/healthz-simulacro` (esa ruta da 404 = "caído"). En ≤5 min
 llega el correo "DOWN". Borra el monitor temporal. **El monitor real no se toca.**
@@ -156,11 +168,10 @@ En orden de lo que más rinde por lo que cuesta. Todo es gratis.
 | # | Qué | Cuesta | Qué tapa |
 |---|---|---|---|
 | 1 | **3 monitores más en UptimeRobot** (`tercos.co`, `admin.tercos.co`, `cocina.tercos.co`) + aviso de expiración del certificado | 10 min, cero código | Hoy si Vercel sirve mal el admin o vence el certificado, nadie avisa |
-| 2 | **Errores del navegador** en web, cocina y pantalla → al servidor, como ya hace la caja | ~20 líneas por app + un endpoint público con límite estricto | El checkout roto en el teléfono de un cliente, que hoy es invisible |
-| 3 | **Alarma de "dejó de vender"**: si entre las 12 y las 21 no hubo ninguna venta en 2 horas, avisa | media jornada | El fallo silencioso: nada se cayó, pero nadie puede cobrar |
-| 4 | **Leyes matemáticas contra los datos REALES** (hoy corren sobre datos inventados): reproducir el costeo de producción y verificar que el inventario del reporte coincide con la base | ~1 jornada | Los números que dejan de cuadrar sin que nada lance un error |
-| 5 | **Panel de novedades en el admin** leyendo `OWNER_ALERT_SENT` de la bitácora | pocas horas | Las alertas de negocio (descuadre, cortesía, anulación) que hoy solo quedan registradas y nadie ve |
-| 6 | **Retención de logs**: verificar cuántos días guarda Railway en tu plan | 5 min de revisión | "¿Qué pasó hace dos semanas?" hoy no tiene respuesta |
+| 2 | **Alarma de "dejó de vender"**: si entre las 12 y las 21 no hubo ninguna venta en 2 horas, avisa | media jornada | El fallo silencioso: nada se cayó, pero nadie puede cobrar |
+| 3 | **Leyes matemáticas contra los datos REALES** (hoy corren sobre datos inventados): reproducir el costeo de producción y verificar que el inventario del reporte coincide con la base | ~1 jornada | Los números que dejan de cuadrar sin que nada lance un error |
+| 4 | **Panel de novedades en el admin** leyendo `OWNER_ALERT_SENT` de la bitácora | pocas horas | Las alertas de negocio (descuadre, cortesía, anulación) que hoy solo quedan registradas y nadie ve |
+| 5 | **Retención de logs**: verificar cuántos días guarda Railway en tu plan | 5 min de revisión | "¿Qué pasó hace dos semanas?" hoy no tiene respuesta |
 
 ### 5.1 Los 4 monitores que faltan, con su configuración exacta
 

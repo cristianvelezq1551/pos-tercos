@@ -3444,6 +3444,62 @@ sigue llamando `ownerNotifications.alert('server_error', …)`.
 | Error en el navegador del cliente o la cocina | **nadie** — deuda abierta |
 | Frontends de Vercel caídos / certificado vencido | **nadie** — faltan monitores en UptimeRobot |
 
+## 7.v50 Los errores del navegador dejan de ser invisibles (2026-08-29)
+
+> Continuación de §7.v49. La caja ya reportaba sus errores al servidor
+> (`logError` → `POST /client-logs`); la web del cliente, la cocina y el TV no
+> reportaban nada. Un checkout que se rompía en el teléfono de alguien no dejaba
+> rastro en ninguna parte: la persona se iba y nadie se enteraba nunca.
+> Verificado: typecheck 13/13, lint 0, ui 144 (+6), api unit 146, e2e del canal
+> 3/3 + `client-logs-publico` 8/8. Sin migración.
+
+### El endpoint es público por necesidad, así que la defensa es la FORMA
+`POST /client-logs/public` (`@Public()`, Throttle 20/60s). El cliente de la web
+es anónimo: no hay sesión que exigir. Entonces lo que acota el abuso no es la
+autenticación sino el contrato: **campos fijos** (`app` de un enum de tres,
+`scope` ≤40, `message` ≤300, `path` opcional ≤120), **sin objeto libre**, **sin
+persistir en la base** y **sin devolver cuerpo** (204). Lo peor que puede hacer
+alguien que abuse es gastar líneas de log.
+- Un campo de más se **descarta**, no rompe: un bundle viejo en caché no debe
+  perder su reporte, y el campo nunca llega al log porque solo se escriben los
+  conocidos.
+- ⚠️ El navegador llega por el rewrite `/api` de Next, así que la IP que ve el
+  API puede ser la de Vercel y no la de la persona: el tope funciona entonces
+  como límite **global** de ingesta. Es aceptable — si se llena se pierden
+  líneas de log, no se rompe nada — pero no confiar en él como anti-abuso por
+  usuario.
+- El endpoint con sesión (`POST /client-logs`, CashierAccess) queda igual: la
+  caja sigue reportando con el correo de quien lo vivió, que vale más.
+
+### El filtro del navegador es lo que hace utilizable el log
+`instalarReporteDeErrores(app)` en `packages/ui/src/lib/client-error-reporter.ts`
+engancha `error` y `unhandledrejection` desde el layout raíz de las tres apps
+(cubre también la pantalla de login). `crearFiltroDeErrores` es puro y probado:
+- **No repite el mismo mensaje** dentro de la ventana: un error dentro de un
+  render se dispara cientos de veces por segundo y taparía todo lo demás.
+- **Máximo 5 distintos por minuto.**
+- **Descarta el ruido del navegador**: `ResizeObserver loop…` (aviso benigno de
+  Chrome al redimensionar) y `Script error.` (lo que se ve cuando revienta un
+  script de otro origen — una extensión; llega sin archivo ni línea, no se puede
+  investigar y casi nunca es nuestro). El ruido **no gasta cupo**.
+- `keepalive: true` en el fetch: el reporte tiene que sobrevivir a que la
+  persona cierre la pestaña justo después del error, que es lo más probable.
+
+### El aviso reabre el Issue si el error vuelve
+Si un error se arregla, se cierra su Issue y **vuelve dentro de los 30 minutos**
+(la ventana que el adapter recuerda), el aviso se iba como comentario a un Issue
+cerrado: el correo llegaba, pero la lista de `alerta-produccion` abiertos —donde
+`MONITOREO.md` manda a mirar— se veía vacía. Ahora al comentar se hace también
+`PATCH {state:'open'}`, que es idempotente.
+
+### ⚠️ El canal de avisos depende de una casilla de la cuenta de GitHub
+Descubierto probando el simulacro en producción: el Issue lo abre un token que
+actúa **como el usuario**, y GitHub **no notifica de la actividad propia**. Sin
+*Settings → Notifications → Customize email updates → "Include your own
+updates"*, el Issue se crea y **nadie se entera**. Los avisos de backup sí
+llegaban porque los abre `github-actions[bot]`. Queda documentado en
+`MONITOREO.md` §4: es una dependencia invisible que solo detecta el simulacro.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
