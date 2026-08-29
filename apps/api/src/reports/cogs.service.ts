@@ -754,13 +754,20 @@ export class CogsService {
           continue;
         }
 
+        const extras = modifiersOf(item.modifiersJson);
+        // Un extra BORRADO del catálogo después de la venta ya no tiene receta
+        // que leer, pero su consumo sí quedó en el ledger: la fila se marca
+        // parcial para que la pantalla no muestre un costo corto como si fuera
+        // exacto (mismo criterio que un producto eliminado, arriba).
+        if (extras.some((m) => !modifierDeltas.has(m.modifierId))) a.partial = true;
+
         const draws = await this.expandLineToConsumption(
           p,
           item.quantity,
           item.sizeId,
           meta,
           graphFor,
-          modifiersOf(item.modifiersJson),
+          extras,
           modifierDeltas,
         );
         for (const d of draws) {
