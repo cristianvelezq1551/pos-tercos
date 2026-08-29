@@ -356,9 +356,10 @@ export const InventoryUsageRowSchema = z.object({
   wasteCostEstimated: z.boolean(),
   /** Faltante detectado en conteo físico (parte negativa de `adjustments`). */
   shortageQty: z.number(),
-  /** $ del faltante. ESTIMADO con el último costo de compra: el ledger no le
-   *  atribuye costo a un ajuste, así que no hay lote del cual sacarlo.
-   *  Null cuando no hay con qué estimar (sin factura, o subproducto). */
+  /** $ REAL del faltante detectado al contar, al costo del lote que salió
+   *  (FIFO). Misma fuente que la línea "Faltantes" del P&G — los dos números
+   *  coinciden siempre (§7.v43). Null si el ledger todavía no pudo costearlo:
+   *  "no lo sé" y "no costó nada" no son lo mismo. */
   shortageCost: z.number().nullable(),
   /** Pérdida total de la fila = wasteCost + (shortageCost ?? 0). Ordena la tabla. */
   lostCost: z.number(),

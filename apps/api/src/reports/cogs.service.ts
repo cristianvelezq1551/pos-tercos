@@ -132,6 +132,20 @@ export class CogsService {
     return ledger.wasteCostByMovement;
   }
 
+  /**
+   * Costo FIFO de cada FALTANTE de conteo, indexado por id del conteo. Espeja
+   * `getWasteCostByMovement`: desde 2026-08-28 el faltante SÍ tiene costo real
+   * (§7.v43), así que el reporte de uso puede mostrar la misma cifra que el
+   * P&G en vez de estimarla por su cuenta — dos números para la misma pérdida
+   * es justo lo que hay que evitar.
+   */
+  async getShrinkageCostBySource(
+    from: Date,
+  ): Promise<Map<string, { cost: number; unknownQty: number; estimatedCost: number }>> {
+    const ledger = await this.runLedger(from);
+    return ledger.shrinkageCostBySource;
+  }
+
   /** Replay completo (sin seed), con su propia entrada de caché. */
   private fullLedger(): Promise<LedgerFifo> {
     return this.cachedLedger('full', () => this.computeLedger(null));
@@ -487,10 +501,15 @@ export class CogsService {
     const cortesiaInRange = ledger.cortesia.filter(
       (c) => c.createdAt >= fromIso && c.createdAt <= toIso,
     );
+    const shrinkageInRange = ledger.shrinkage.filter(
+      (f) => f.createdAt >= fromIso && f.createdAt <= toIso,
+    );
     const wasteCost = wasteInRange.reduce((s, w) => s + w.cost, 0);
     const cortesiaCost = cortesiaInRange.reduce((s, c) => s + c.cost, 0);
+    const shrinkageCost = shrinkageInRange.reduce((s, f) => s + f.cost, 0);
     const wasteEstimatedCost = wasteInRange.reduce((s, w) => s + w.estimatedCost, 0);
     const cortesiaEstimatedCost = cortesiaInRange.reduce((s, c) => s + c.estimatedCost, 0);
+    const shrinkageEstimatedCost = shrinkageInRange.reduce((s, f) => s + f.estimatedCost, 0);
 
     const grossMargin = revenue - cogs;
     return {
@@ -507,6 +526,7 @@ export class CogsService {
       grossMarginPct: revenue > 0 ? Math.round((grossMargin / revenue) * 10000) / 10000 : null,
       wasteCost: round(wasteCost),
       cortesiaCost: round(cortesiaCost),
+      shrinkageCost: round(shrinkageCost),
       refundCost: round(refundCost),
       freightCost: round(Number(purchases._sum.freightAmount ?? 0)),
       freightInvoiceCount,
@@ -527,6 +547,7 @@ export class CogsService {
       cogsEstimatedQty: Math.round(estimatedQty * 10000) / 10000,
       wasteEstimatedCost: round(wasteEstimatedCost),
       cortesiaEstimatedCost: round(cortesiaEstimatedCost),
+      shrinkageEstimatedCost: round(shrinkageEstimatedCost),
     };
   }
 

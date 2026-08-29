@@ -64,6 +64,32 @@ export function PnlLossLines({ s }: { s: MonthlyFinancialStatement }) {
         </div>
       ) : null}
 
+      {/* Faltantes: lo que apareció de menos al contar físicamente. Se muestra
+          JUNTO a la merma y no dentro de ella a propósito — la merma alguien la
+          declaró, esto no lo declaró nadie. Que la segunda pese como la primera
+          es la señal de que hay algo que revisar en el manejo del inventario. */}
+      {s.shrinkageCost > 0 ? (
+        <div className="space-y-1.5 text-sm">
+          <Row
+            label="− Faltantes (lo que apareció de menos al contar)"
+            value={`−${formatCop(s.shrinkageCost)}`}
+            muted
+          />
+          <p className="text-xs text-muted-foreground">
+            Nadie lo declaró: salió de comparar el conteo físico con lo que decían los libros.
+            {s.wasteCost > 0 && s.shrinkageCost >= s.wasteCost
+              ? ' Está pesando tanto como la merma declarada — vale la pena revisar porciones y control de bodega.'
+              : ''}
+          </p>
+          {s.shrinkageCostEstimated ? (
+            <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
+              Parte del faltante se valuó con un <strong>estimado</strong> (faltó sobre inventario
+              que ya estaba en negativo). Se corrige al subir la factura de compra.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Fletes de compra: lo que cobró el proveedor por traer la mercancía.
           Va acá abajo, con las otras pérdidas, y NO dentro del COGS: no
           encarece ningún producto (decisión del dueño 2026-08-28). */}

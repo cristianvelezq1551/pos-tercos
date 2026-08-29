@@ -414,13 +414,15 @@ describe('Anulación de merma E2E', () => {
 
     const row = await usageRowOf(id);
     expect(row.waste).toBe(0);
-    // El faltante sobrevive: −500 (antes el +1.000 de la reversa lo dejaba en +500).
+    // El ajuste sobrevive: −500 (antes el +1.000 de la reversa lo dejaba en +500).
     expect(row.adjustments).toBe(-500);
-    // La merma anulada no cuesta nada; el faltante va en su propia columna,
-    // estimado al último precio de compra: 500 g × $20 = $10.000.
     expect(row.wasteCost).toBe(0);
-    expect(row.shortageQty).toBe(500);
-    expect(row.shortageCost).toBe(10_000);
+    // Este movimiento es un AJUSTE MANUAL, no un conteo: desde §7.v43 la
+    // columna de faltantes cuenta solo lo detectado al CONTAR, que es lo que
+    // el ledger costea. Un ajuste tecleado a mano corrige un dato y no declara
+    // una pérdida — por eso queda en `adjustments` y no en el faltante.
+    expect(row.shortageQty).toBe(0);
+    expect(row.shortageCost).toBe(0);
   });
 
   it('la anulación de una CORTESÍA no cuenta como ajuste de inventario', async () => {

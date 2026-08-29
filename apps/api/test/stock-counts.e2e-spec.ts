@@ -124,11 +124,15 @@ describe('Conteo físico E2E', () => {
       .expect(200);
     const harina = res.body.rows.find((r: { entityId: string }) => r.entityId === harinaId);
     expect(harina).toBeDefined();
-    expect(harina.adjustments).toBe(-10);
-    // El faltante va en su columna. Sin factura no hay lastUnitCost con qué
-    // estimarlo → queda sin valorizar y cuenta en unknownCostCount.
+    // El faltante del conteo tiene columna propia y NO se mezcla con los
+    // ajustes manuales (§7.v43): así una reposición tecleada a mano no puede
+    // taparlo dejando el neto en cero.
+    expect(harina.adjustments).toBe(0);
     expect(harina.shortageQty).toBe(10);
-    expect(harina.shortageCost).toBeNull();
+    // Y se valoriza al costo REAL del lote que salió — el mismo número que la
+    // línea "Faltantes" del P&G. Antes se estimaba, y sin factura quedaba en
+    // blanco: la pérdida existía y la pantalla no la mostraba.
+    expect(harina.shortageCost).toBeGreaterThan(0);
     // No hubo merma declarada: eso sí es cero, no desconocido.
     expect(harina.wasteCost).toBe(0);
   });

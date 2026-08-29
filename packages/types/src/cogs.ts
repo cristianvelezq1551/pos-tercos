@@ -32,6 +32,20 @@ export const PnlReportSchema = z.object({
   /** Cortesías valorizadas a FIFO (producto regalado) en el período. */
   cortesiaCost: z.number(),
   /**
+   * FALTANTES: lo que un conteo físico encontró de menos, al costo real del
+   * lote. Es la pérdida que NADIE declaró — se detectó contando.
+   *
+   * Va en su propia línea y no dentro de `wasteCost` a propósito: la merma la
+   * declaró alguien ("se me cayó"), el faltante apareció solo. Que la pérdida
+   * no declarada sea del mismo orden que la declarada es exactamente la señal
+   * que hay que poder ver. Hasta 2026-08-28 esta plata se iba del inventario
+   * sin aparecer en ninguna línea y el margen bruto quedaba alto por su monto.
+   *
+   * Un ajuste manual tecleado a mano NO entra acá: ese corrige un dato mal
+   * cargado, y contarlo como pérdida cobraría dos veces el mismo insumo.
+   */
+  shrinkageCost: z.number(),
+  /**
    * Costo FIFO de los pedidos REEMBOLSADOS en el período (VOID con stock NO
    * revertido: la comida ya se preparó). Pérdida real que el void normal no
    * tiene. Se reporta aparte para que el neto la reste explícitamente.
@@ -83,6 +97,8 @@ export const PnlReportSchema = z.object({
   wasteEstimatedCost: z.number(),
   /** Ídem para `cortesiaCost`. */
   cortesiaEstimatedCost: z.number(),
+  /** Ídem para `shrinkageCost`. */
+  shrinkageEstimatedCost: z.number(),
 });
 export type PnlReport = z.infer<typeof PnlReportSchema>;
 
