@@ -13,10 +13,13 @@ import {
   type RecipeGraph,
 } from '@pos-tercos/domain';
 import {
+  ModifierRecipeDeltaSchema,
   NON_REVENUE_SALE_STATUSES,
   REFUND_VOID_REASON_PREFIX,
+  type AppliedModifier,
   type FifoLotsResponse,
   type InventoryValuationReport,
+  type ModifierRecipeDelta,
   type PnlReport,
   type ProductMargin,
   type ProductMarginReport,
@@ -31,6 +34,12 @@ const EXCLUDED_STATUSES = NON_REVENUE_SALE_STATUSES;
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Extras guardados en la línea de venta (`modifiers_json`). Nunca lanza: un
+ *  snapshot viejo o corrupto se lee como "sin extras", igual que en el cobro. */
+function modifiersOf(json: Prisma.JsonValue): AppliedModifier[] {
+  return Array.isArray(json) ? (json as unknown as AppliedModifier[]) : [];
 }
 
 @Injectable()
@@ -628,7 +637,17 @@ export class CogsService {
         select: {
           id: true,
           orderDiscountAmount: true,
-          items: { select: { productId: true, quantity: true, sizeId: true, lineTotal: true } },
+          items: {
+            select: {
+              productId: true,
+              quantity: true,
+              sizeId: true,
+              lineTotal: true,
+              // Los extras consumen inventario y el cobro los descuenta: sin
+              // leerlos acá, el margen del plato salía mejor de lo que es.
+              modifiersJson: true,
+            },
+          },
         },
       }),
     ]);
@@ -643,6 +662,27 @@ export class CogsService {
       },
     });
     const meta = new Map(products.map((p) => [p.id, p]));
+
+    // Consumo extra de los modificadores aplicados en el período. Se cargan de
+    // una sola vez (no por línea) para no multiplicar consultas en un reporte
+    // que recorre un mes entero. Mismo criterio que `computeConsumptionSpecs`:
+    // se lee la definición VIGENTE, y un modificador borrado no consume.
+    const appliedModifierIds = Array.from(
+      new Set(
+        sales.flatMap((s) =>
+          s.items.flatMap((it) => modifiersOf(it.modifiersJson).map((m) => m.modifierId)),
+        ),
+      ),
+    );
+    const modifierRows = appliedModifierIds.length
+      ? await this.prisma.productModifier.findMany({
+          where: { id: { in: appliedModifierIds } },
+          select: { id: true, recipeDelta: true },
+        })
+      : [];
+    const modifierDeltas = new Map<string, ModifierRecipeDelta>(
+      modifierRows.map((m) => [m.id, ModifierRecipeDeltaSchema.catch([]).parse(m.recipeDelta)]),
+    );
 
     // Cache de grafos por (producto, variante) para incluir la receta de la
     // variante (proteína), igual que en confirmPayment.
@@ -714,7 +754,15 @@ export class CogsService {
           continue;
         }
 
-        const draws = await this.expandLineToConsumption(p, item.quantity, item.sizeId, meta, graphFor);
+        const draws = await this.expandLineToConsumption(
+          p,
+          item.quantity,
+          item.sizeId,
+          meta,
+          graphFor,
+          modifiersOf(item.modifiersJson),
+          modifierDeltas,
+        );
         for (const d of draws) {
           if (d.kind === 'ingredient') {
             a.cogs += d.qty * unitOf(ingCost, d.id);
@@ -764,9 +812,10 @@ export class CogsService {
 
   /**
    * Expande una línea de venta a sus consumos (insumos DIRECTOS + subproductos
-   * DIRECTOS + productos de reventa), espejando exactamente la lógica de
-   * `SalesService.confirmPayment.consume` (one-level) para que las cantidades
-   * coincidan con los movimientos FIFO → atribución de costo exacta.
+   * DIRECTOS + productos de reventa + lo que descuentan sus EXTRAS), espejando
+   * exactamente la lógica de `SalesConsumptionService.computeConsumptionSpecs`
+   * (one-level) para que las cantidades coincidan con los movimientos FIFO →
+   * atribución de costo exacta.
    *
    * NO desciende por las recetas de los subproductos (el costo de ellos viene
    * del lot FIFO de su producción, no de expandir su receta).
@@ -783,8 +832,23 @@ export class CogsService {
     sizeId: string | null,
     meta: Map<string, { id: string; directResale: boolean; isCombo: boolean; comboComponents: { productId: string; quantity: number }[] }>,
     graphFor: (productId: string, sizeId: string | null) => Promise<{ graph: RecipeGraph; root: ParentRef }>,
+    modifiers: readonly AppliedModifier[] = [],
+    modifierDeltas: ReadonlyMap<string, ModifierRecipeDelta> = new Map(),
   ): Promise<{ kind: 'ingredient' | 'subproduct' | 'product'; id: string; qty: number }[]> {
     const draws: { kind: 'ingredient' | 'subproduct' | 'product'; id: string; qty: number }[] = [];
+
+    // Los extras van ANTES del producto y también en los combos — igual que en
+    // el cobro, donde `consumeModifiers` corre para toda línea. La cantidad es
+    // bruta (sin merma): es lo mismo que descontó el movimiento de la venta.
+    for (const applied of modifiers) {
+      for (const c of modifierDeltas.get(applied.modifierId) ?? []) {
+        draws.push({
+          kind: c.childType === 'ingredient' ? 'ingredient' : 'subproduct',
+          id: c.childId,
+          qty: c.quantity * quantity,
+        });
+      }
+    }
 
     const consume = async (p: { id: string; directResale: boolean }, qty: number, size: string | null): Promise<void> => {
       if (p.directResale) {

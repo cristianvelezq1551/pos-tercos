@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import type { LLMInvoiceExtractionResult, StorageProvider } from '@pos-tercos/domain';
 import {
   buildCostIncreaseAlertMessage,
+  compararExtracciones,
   normalizeExtractedInvoice,
   roundCost,
   roundMoney,
@@ -241,12 +242,33 @@ export class InvoicesService {
     const ext = extensionForMime(input.mimeType);
     const stored = await this.storage.put('invoices', input.fileBuffer, input.mimeType, ext);
 
+    const leer = (): Promise<LLMInvoiceExtractionResult> =>
+      this.llm.extractInvoice({ imageBuffer: input.fileBuffer, mimeType: input.mimeType });
+
     let llmResult: LLMInvoiceExtractionResult;
+    // SEGUNDA lectura de la misma foto, en paralelo. La IA no es determinista:
+    // con una factura real de 16 líneas, cuatro corridas dieron cuatro
+    // resultados distintos y una erró $10 en una línea —por debajo de cualquier
+    // tolerancia—. Peor: un error de CANTIDAD que no cambia el total de la
+    // línea no lo ve ninguna suma. Leer dos veces no arregla la lectura, pero
+    // convierte ese error invisible en un desacuerdo visible.
+    //
+    // Es DELIBERADAMENTE best-effort: si la segunda falla, se sigue con la
+    // primera y la pantalla se comporta igual que antes de este cambio. Nunca
+    // puede impedir cargar una factura.
+    let segunda: LLMInvoiceExtractionResult | null = null;
     try {
-      llmResult = await this.llm.extractInvoice({
-        imageBuffer: input.fileBuffer,
-        mimeType: input.mimeType,
-      });
+      const [a, b] = await Promise.all([
+        leer(),
+        leer().catch((err: unknown) => {
+          this.logger.warn(
+            `Segunda lectura de la factura falló; se sigue con una sola: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return null;
+        }),
+      ]);
+      llmResult = a;
+      segunda = b;
     } catch (err) {
       // Si la IA falló, no dejamos la foto huérfana — limpiamos ya mismo.
       await this.storage.delete(stored.key).catch(() => {});
@@ -262,10 +284,26 @@ export class InvoicesService {
       });
     }
 
+    // Los desacuerdos entran como avisos normales: la pantalla de confirmación
+    // ya los muestra, así que esto no cambia el contrato de la respuesta ni
+    // necesita UI nueva. Van PRIMERO porque son los que señalan una línea
+    // concreta contra la que hay que mirar el papel.
+    const desacuerdos = segunda
+      ? compararExtracciones(llmResult.extraction, segunda.extraction)
+      : [];
+    if (desacuerdos.length > 0) {
+      this.logger.log(
+        `Doble lectura de factura: ${desacuerdos.length} desacuerdo(s) entre las dos corridas.`,
+      );
+    }
+
     return {
       photoStorageKey: stored.key,
       aiModelUsed: llmResult.modelUsed,
-      extraction: llmResult.extraction,
+      extraction: {
+        ...llmResult.extraction,
+        warnings: [...desacuerdos, ...llmResult.extraction.warnings],
+      },
     };
   }
 

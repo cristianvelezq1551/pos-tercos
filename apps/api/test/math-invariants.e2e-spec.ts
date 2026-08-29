@@ -83,7 +83,11 @@ describe('Invariantes matemáticas entre reportes E2E', () => {
 
   /** Cobra una venta de mostrador y devuelve su id. */
   const vender = async (
-    items: Array<{ productId: string; quantity: number }>,
+    items: Array<{
+      productId: string;
+      quantity: number;
+      modifiers?: Array<{ modifierId: string }>;
+    }>,
     pago: Record<string, unknown>,
     extra: Record<string, unknown> = {},
   ): Promise<string> => {
@@ -833,5 +837,69 @@ describe('Invariantes matemáticas entre reportes E2E', () => {
     // Y los tres cortes del reporte miran las MISMAS facturas.
     expect(compras.periods.reduce((a, p) => a + p.freight, 0)).toBeCloseTo(pnl.freightCost, 2);
     expect(compras.bySupplier.reduce((a, x) => a + x.freight, 0)).toBeCloseTo(pnl.freightCost, 2);
+  });
+
+  // ==================================================================
+  // 10 · Los extras del plato también cuestan
+  // ==================================================================
+
+  it('el margen por producto cuenta lo que consumen los extras, igual que el P&G', async () => {
+    // Un modificador con `recipeDelta` descuenta inventario al cobrar. Si el
+    // reporte de margen no lo mira, el plato aparenta costar menos de lo que
+    // costó y las dos cifras de la MISMA pantalla dejan de cuadrar.
+    const queso = (
+      await request
+        .post('/ingredients')
+        .set(auth())
+        .send({ name: 'Queso Extras', unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000, thresholdMin: 0, isActive: true })
+        .expect(201)
+    ).body.id as string;
+    await stockIn({ entityType: 'INGREDIENT', ingredientId: queso, delta: 1000, type: 'INITIAL', unitCost: 10 });
+
+    const prod = (
+      await request
+        .post('/products')
+        .set(auth())
+        .send({
+          category: 'Comidas', name: 'Burger Extras', basePrice: 10_000,
+          directResale: false, modifiersEnabled: true,
+          modifiers: [{ name: 'Doble queso', priceDelta: 2000, recipeDelta: [{ childType: 'ingredient', childId: queso, quantity: 50 }] }],
+        })
+        .expect(201)
+    ).body as { id: string; modifiers: Array<{ id: string; name: string }> };
+    await request
+      .put(`/products/${prod.id}/recipe`)
+      .set(auth())
+      .send({ edges: [{ childType: 'ingredient', childId: queso, quantityNeta: 100 }] })
+      .expect(200);
+    const extraId = prod.modifiers.find((m) => m.name === 'Doble queso')!.id;
+
+    const margenes = async () => {
+      fresh();
+      return (
+        await request.get(`/reports/cogs/product-margins?${rango()}`).set(auth()).expect(200)
+      ).body as { products: Array<{ productId: string; cogs: number }>; totals: { cogs: number } };
+    };
+
+    const pnlAntes = await pnl();
+    const margenAntes = await margenes();
+
+    // 100 g de receta + 50 g del extra, a $10/g → $1.500.
+    await vender(
+      [{ productId: prod.id, quantity: 1, modifiers: [{ modifierId: extraId }] }],
+      { method: 'CASH', amountReceived: 12_000 },
+    );
+
+    const pnlDespues = await pnl();
+    const margenDespues = await margenes();
+    const fila = margenDespues.products.find((x) => x.productId === prod.id);
+
+    expect(pnlDespues.cogs - pnlAntes.cogs).toBeCloseTo(1500, 2);
+    expect(fila?.cogs).toBeCloseTo(1500, 2);
+    // La invariante que se rompía: las dos cifras de la misma pantalla.
+    expect(margenDespues.totals.cogs - margenAntes.totals.cogs).toBeCloseTo(
+      pnlDespues.cogs - pnlAntes.cogs,
+      2,
+    );
   });
 });
