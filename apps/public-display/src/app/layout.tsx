@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Anton, Barlow_Semi_Condensed } from 'next/font/google';
 import './globals.css';
+import { ClientErrorReporter } from '../components/ClientErrorReporter';
 
 // Tipografía de marca TERCOS-WEB: Barlow (cuerpo) + Anton (display condensado).
 const fontSans = Barlow_Semi_Condensed({
@@ -40,7 +41,10 @@ export default function RootLayout({
       data-theme="dark"
       className={`${fontSans.variable} ${fontDisplay.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <ClientErrorReporter />
+        {children}
+      </body>
     </html>
   );
 }

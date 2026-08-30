@@ -38,12 +38,32 @@ describe('GitHubIssueAlertAdapter', () => {
   it('comenta el Issue abierto cuando el título ya existe', async () => {
     fetchMock
       .mockResolvedValueOnce(ok([{ number: 7, title: `[prod] ${ALERTA.signature}` }]))
-      .mockResolvedValueOnce(ok({ id: 1 }));
+      .mockResolvedValueOnce(ok({ id: 1 }))
+      .mockResolvedValueOnce(ok({ number: 7 }));
 
     const res = await adapter.send(ALERTA);
 
     expect(res).toMatchObject({ ok: true, ref: '#7' });
     expect(fetchMock.mock.calls[1]?.[0]).toContain('/issues/7/comments');
+  });
+
+  /**
+   * Un error que vuelve después de darlo por arreglado tiene que reaparecer en
+   * la lista de abiertos; si no, el correo llega pero la pantalla donde se mira
+   * queda vacía.
+   */
+  it('reabre el Issue al comentar, por si estaba cerrado', async () => {
+    fetchMock
+      .mockResolvedValueOnce(ok([{ number: 7, title: `[prod] ${ALERTA.signature}` }]))
+      .mockResolvedValueOnce(ok({ id: 1 }))
+      .mockResolvedValueOnce(ok({ number: 7 }));
+
+    await adapter.send(ALERTA);
+
+    const [url, init] = fetchMock.mock.calls[2] as [string, RequestInit];
+    expect(url).toContain('/issues/7');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({ state: 'open' });
   });
 
   /** Un aviso que falla no puede tumbar la request que lo originó. */
@@ -65,7 +85,8 @@ describe('GitHubIssueAlertAdapter', () => {
     fetchMock
       .mockResolvedValueOnce(ok([])) // nada con la etiqueta
       .mockResolvedValueOnce(ok([{ number: 9, title: `[prod] ${ALERTA.signature}` }])) // sí entre todos
-      .mockResolvedValueOnce(ok({ id: 1 }));
+      .mockResolvedValueOnce(ok({ id: 1 }))
+      .mockResolvedValueOnce(ok({ number: 9 }));
 
     const res = await adapter.send(ALERTA);
 
@@ -94,15 +115,16 @@ describe('GitHubIssueAlertAdapter', () => {
       .mockResolvedValueOnce(ok([]))
       .mockResolvedValueOnce(ok([]))
       .mockResolvedValueOnce(ok({ number: 55, labels: [{ name: 'alerta-produccion' }] }))
-      .mockResolvedValueOnce(ok({ id: 1 })); // el comentario del segundo
+      .mockResolvedValueOnce(ok({ id: 1 })) // el comentario del segundo
+      .mockResolvedValueOnce(ok({ number: 55 })); // su reapertura
 
     const primero = await adapter.send(ALERTA);
     const segundo = await adapter.send(ALERTA);
 
     expect(primero.ref).toBe('#55');
     expect(segundo.ref).toBe('#55');
-    // 3 llamadas del primero + 1 comentario: el segundo NO vuelve a listar.
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    // 3 llamadas del primero + comentario y reapertura: el segundo NO vuelve a listar.
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls[3]?.[0]).toContain('/issues/55/comments');
   });
 

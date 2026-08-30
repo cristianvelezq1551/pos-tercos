@@ -55,6 +55,11 @@ export class GitHubIssueAlertAdapter implements AlertChannel {
       const abierto = await this.findOpenIssue(title);
       if (abierto !== null) {
         await this.request(`/repos/${this.repo}/issues/${abierto}/comments`, { body });
+        // Un error que vuelve después de darlo por arreglado tiene que VERSE de
+        // nuevo: el correo del comentario llega igual, pero la lista de Issues
+        // abiertos —donde MONITOREO.md manda a mirar— se quedaría vacía.
+        // Reabrir es idempotente: sobre uno ya abierto no cambia nada.
+        await this.request(`/repos/${this.repo}/issues/${abierto}`, { state: 'open' }, 'PATCH');
         return { ok: true, delivered: true, ref: `#${abierto}` };
       }
       const creado = await this.request<{ number: number; labels?: unknown[] }>(
@@ -107,9 +112,9 @@ export class GitHubIssueAlertAdapter implements AlertChannel {
     return todos.find((i) => i.title === title)?.number ?? null;
   }
 
-  private async request<T>(path: string, payload?: unknown): Promise<T> {
+  private async request<T>(path: string, payload?: unknown, method?: 'PATCH'): Promise<T> {
     const res = await fetch(`${GITHUB_API}${path}`, {
-      method: payload === undefined ? 'GET' : 'POST',
+      method: method ?? (payload === undefined ? 'GET' : 'POST'),
       headers: {
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${this.token}`,

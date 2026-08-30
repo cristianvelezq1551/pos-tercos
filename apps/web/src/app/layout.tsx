@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Big_Shoulders, Inter } from 'next/font/google';
 import './globals.css';
+import { ClientErrorReporter } from '../components/ClientErrorReporter';
 
 const fontSans = Inter({
   subsets: ['latin'],
@@ -61,7 +62,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es-CO" className={`${fontSans.variable} ${fontDisplay.variable}`}>
-      <body>{children}</body>
+      <body>
+        <ClientErrorReporter />
+        {children}
+      </body>
     </html>
   );
 }

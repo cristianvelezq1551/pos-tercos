@@ -297,6 +297,37 @@ Los dos servicios de QA (`api` y `Postgres` del env qa) tienen **App Sleeping** 
 - Para apagar QA "más duro" (semanas sin usarlo): Railway → env qa → cada servicio →
   Settings → Remove deployment (se recrea con el próximo push a `main`). Rara vez vale la pena.
 
+### 8.1 El tope diario de despliegues de Vercel (pasó el 2026-08-29)
+
+Los cuatro proyectos de Vercel construyen en **cada push**, aunque el cambio sea
+solo del API. Un día con dos PR y sus merges a `main` y `prod` gasta despliegues
+a un ritmo de 4 por push, y el plan gratis corta:
+
+```
+Vercel – pos-tercos-admin → failure: Deployment rate limited — retry in 24 hours.
+```
+
+**No es un fallo del código.** Se distingue mirando la descripción del check:
+si dice *rate limited*, el build ni siquiera arrancó. Los jobs que validan de
+verdad son `verify` y `browser-e2e`, que corren en GitHub Actions y no tienen
+que ver con esa cuota.
+
+**Mientras dura:** el backend se despliega igual (va por Railway). Las pantallas
+se quedan sirviendo el bundle anterior hasta que la ventana se libere; no hay
+estado inconsistente, solo cambios de frontend que todavía no se ven.
+
+**Cómo evitarlo:** en cada proyecto de Vercel → Settings → Git → *Ignored Build
+Step* → "Run my command":
+
+```
+npx turbo-ignore @pos-tercos/web
+```
+
+(con `@pos-tercos/admin`, `@pos-tercos/cocina` y `@pos-tercos/public-display` en
+el suyo). `turbo-ignore` mira el grafo de Turborepo y cancela el build si esa
+app y sus paquetes no cambiaron: un PR que solo toca `apps/api` pasa de 4
+despliegues a 0. Es configuración del panel, no del repo.
+
 ## 9. Dónde vive cada secreto (y cómo rotar)
 
 | Secreto | Vive en | Rotación |
