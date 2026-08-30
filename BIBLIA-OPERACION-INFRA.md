@@ -316,17 +316,46 @@ que ver con esa cuota.
 se quedan sirviendo el bundle anterior hasta que la ventana se libere; no hay
 estado inconsistente, solo cambios de frontend que todavía no se ven.
 
-**Cómo evitarlo:** en cada proyecto de Vercel → Settings → Git → *Ignored Build
-Step* → "Run my command":
+#### Por qué el filtro que había NO servía para esto
 
-```
-npx turbo-ignore @pos-tercos/web
-```
+Los cuatro proyectos tenían un *Ignored Build Step* a mano
+(`git diff HEAD^ HEAD -- ./ ../../packages/…`) que cancelaba el build cuando esa
+app y sus paquetes no habían cambiado. Parecía razonable y sin embargo la cuota
+se agotó igual, porque —textual de la documentación de Vercel— *"canceled builds
+initiated using the Ignored Build Step count towards your deployment and
+concurrent build limits"*. **Una cancelación gasta despliegue igual que un build
+completo.**
 
-(con `@pos-tercos/admin`, `@pos-tercos/cocina` y `@pos-tercos/public-display` en
-el suyo). `turbo-ignore` mira el grafo de Turborepo y cancela el build si esa
-app y sus paquetes no cambiaron: un PR que solo toca `apps/api` pasa de 4
-despliegues a 0. Es configuración del panel, no del repo.
+Y de paso, la lista escrita a mano se había desincronizado: le faltaba
+`packages/guia` a admin y cocina (un cambio solo en la guía **no** las
+reconstruía y quedaban sirviendo contenido viejo, en silencio) y le sobraba
+`packages/domain` en cocina y pantalla, que no lo usan.
+
+#### Lo que quedó configurado (2026-08-29)
+
+En los cuatro proyectos: *Ignored Build Step* → **Automatic** (sin comando) y,
+en **Build and Deployment → Root Directory**, el interruptor **Skip deployment**
+en **Enabled**. Vercel deduce del grafo de workspaces qué proyectos afecta cada
+commit, y esos saltos **no consumen slots de build** ni cuota.
+
+`npx turbo-ignore` **está deprecado** — Vercel responde a su uso recomendando
+esta función. Y tampoco resolvía el problema: seguía siendo un Ignored Build
+Step, con el mismo consumo de cuota.
+
+Requisitos, todos cumplidos por este repo: GitHub, workspaces de pnpm declarados
+en `pnpm-workspace.yaml`, `name` único por paquete, y dependencias entre
+paquetes declaradas explícitamente en cada `package.json` (de ahí sale el
+grafo). Si alguna vez una app usa un paquete sin declararlo en sus
+dependencias, Vercel no se entera y **no la reconstruye**.
+
+⚠️ **Un cambio fuera de los workspaces cuenta como global y despliega las cuatro
+apps.** Eso incluye la documentación de la raíz (`CLAUDE.md`, `MONITOREO.md`,
+este archivo) y `.github/`. Es el precio de que el grafo se calcule solo en vez
+de mantener una lista a mano que se desincroniza.
+
+⚠️ Ya no existe la guarda de "en producción construye siempre" que tenía el
+comando viejo. No hace falta: si Vercel salta una app es porque no cambió, así
+que el despliegue que sigue vivo ya es su código actual.
 
 ## 9. Dónde vive cada secreto (y cómo rotar)
 
