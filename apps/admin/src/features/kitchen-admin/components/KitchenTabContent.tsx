@@ -11,7 +11,7 @@ import { ChecklistHistoryPanel } from './ChecklistHistoryPanel';
 import { ChecklistItemsPanel } from './ChecklistItemsPanel';
 import { IncidentsPanel } from './IncidentsPanel';
 import { KitchenSummaryPanel } from './KitchenSummaryPanel';
-import type { KitchenTab } from './KitchenTabs';
+import type { KitchenTab } from '../tabs';
 import { ProductionsTable } from './ProductionsTable';
 import { WasteTable } from './WasteTable';
 import { WorkerFilter, type WorkerOption } from './WorkerFilter';

@@ -2,17 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-
-export const KITCHEN_TABS = [
-  { key: 'resumen', label: 'Resumen' },
-  { key: 'produccion', label: 'Producción' },
-  { key: 'merma', label: 'Merma' },
-  { key: 'checklist', label: 'Checklist' },
-  { key: 'incidencias', label: 'Incidencias' },
-  { key: 'tareas', label: 'Tareas' },
-] as const;
-
-export type KitchenTab = (typeof KITCHEN_TABS)[number]['key'];
+import { KITCHEN_TABS, type KitchenTab } from '../tabs';
 
 /** Navegación del hub. Conserva el rango y el trabajador al cambiar de pestaña:
  *  perder el filtro en cada clic obliga a re-elegirlo todo el tiempo. */
