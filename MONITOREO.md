@@ -410,11 +410,25 @@ formulario usa `useSearchParams` y Next lo deja detrás de un Suspense, así que
 HTML inicial llega sin él. Elegir esa palabra dejaría el monitor en rojo
 permanente. Lo único garantizado es el título de la página.
 
-**El de la web va al revés a propósito:** `No hay productos` es lo que se
-renderiza cuando el menú viene vacío, y viene vacío cuando **Vercel no pudo
-hablar con el API**. La página responde 200 y se ve bien, pero el cliente no
-puede pedir; nada más detecta ese caso. Contrapartida: si alguna vez desactivas
-todos los productos a propósito, ese monitor se pone rojo.
+**El de la web va al revés a propósito:** la palabra clave aparece cuando el
+menú sale **vacío**, y sale vacío cuando el catálogo no tiene productos o cuando
+**Vercel no pudo hablar con el API**. La página responde 200 y se ve bien, pero
+el cliente no puede pedir; nada más detecta ese caso.
+
+> ⚠️ **Ese monitor NO debe tener "Case-sensitive check" activado.** Con el
+> catálogo totalmente vacío, la web muestra *"Aún **no hay productos**
+> disponibles"* (con mayúscula en otra parte de la frase); con una categoría sin
+> productos muestra *"No hay productos disponibles en esta categoría"*. La
+> búsqueda insensible a mayúsculas es lo que hace que **los dos** casos se
+> detecten. Si alguien enciende esa opción, el monitor se queda mudo justo en el
+> caso que importa.
+
+**Se dispara también cuando el catálogo se vacía a propósito** — por ejemplo al
+limpiar la base de producción antes de cargar la carta real. Es correcto que lo
+haga: en ese momento la web efectivamente no puede vender. Si va a estar así un
+rato, **pausa el monitor** en UptimeRobot (⋯ → Pause) y **reactívalo al
+terminar**; un monitor pausado que nadie reactiva es peor que no tenerlo. Si vas
+a cargar el catálogo enseguida, déjalo: se cierra solo en el chequeo siguiente.
 
 ⚠️ **Estos monitores NO prueban que puedas iniciar sesión ni cobrar.** Para eso
 haría falta un monitor que haga login de verdad, que no está en el plan gratis.
