@@ -126,6 +126,13 @@ jobs:
       JWT_ACCESS_SECRET: ci-jwt-access-secret-not-for-production-0001
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret-not-for-production-001
       WEB_ORDER_TOKEN_SECRET: ci-web-order-token-secret-not-for-prod-0001
+      # Par VAPID de CI (generado para esto, NO sirve en producción: solo puede
+      # escribirle a suscripciones creadas con esta misma llave, y acá no existe
+      # ninguna). Sin él, `GET /push/status` devuelve publicKey null, la pantalla
+      # de Avisos deshabilita el interruptor y sus pruebas no podrían tocarlo.
+      VAPID_PUBLIC_KEY: BDt0iubJ9VQGpNrVWANh3ruo3WUNZxoP_BnXtnNUE019BDLcdRmn04ufUITJ4Ts43m_c7SWwopNlXLmCiqmyVBw
+      VAPID_PRIVATE_KEY: IGByouhlSKYqa4WH99M8R5hVRWyXepm-Woe89kD6Egw
+      VAPID_SUBJECT: mailto:ci@tercos.co
       # Misma TZ que exige prod (ver el comentario en el job verify).
       TZ: America/Bogota
 

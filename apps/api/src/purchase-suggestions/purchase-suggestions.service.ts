@@ -16,6 +16,8 @@ import {
   roundMoney,
   toWaLink,
   type WhatsAppProvider,
+  buildLowStockAlertMessage,
+  type LowStockAlertItem,
 } from '@pos-tercos/domain';
 import type {
   EvaluateAllResult,
@@ -35,6 +37,7 @@ import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
 import { BusinessConfigService } from '../business-config/business-config.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { businessName } from '../common/business-name';
 import { localMidnightOfYmd, ymdLocal } from '../common/local-dates';
@@ -54,6 +57,12 @@ interface ListFilter {
 
 /** Ítems que caben en el resumen por WhatsApp sin pasarse del largo máximo. */
 const MAX_LINEAS_RESUMEN = 40;
+/**
+ * Cuántos insumos entran en el aviso de stock bajo. Una notificación del
+ * navegador muestra unas pocas líneas antes de cortar; más allá de esto el
+ * mensaje deja de decir algo y solo hay que abrir la pantalla.
+ */
+const MAX_LINEAS_AVISO_STOCK = 6;
 
 /**
  * Cuánto esperar antes de volver a sugerir un ítem que ya se resolvió.
@@ -97,6 +106,7 @@ export class PurchaseSuggestionsService {
     private readonly audit: AuditService,
     private readonly llm: LLMService,
     private readonly businessConfig: BusinessConfigService,
+    private readonly ownerNotifications: OwnerNotificationService,
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
@@ -234,6 +244,14 @@ export class PurchaseSuggestionsService {
 
     let createdCount = 0;
     const lowStockKeys = new Set<string>();
+    /**
+     * Solo lo detectado en ESTA corrida. El escaneo corre cada hora y un insumo
+     * se queda bajo mínimo durante días: avisar de todo lo que sigue bajo
+     * convertiría el aviso en ruido horario y dejaría de leerse. Como una
+     * sugerencia abierta no se vuelve a crear, el anti-spam sale del dedupe que
+     * ya existía.
+     */
+    const nuevosBajoMinimo: LowStockAlertItem[] = [];
 
     let failedCount = 0;
 
@@ -285,6 +303,12 @@ export class PurchaseSuggestionsService {
           },
         });
         createdCount++;
+        nuevosBajoMinimo.push({
+          name: s.name,
+          currentStock,
+          thresholdMin,
+          unitStock: s.unitStock,
+        });
 
         await this.audit.log({
           userId: systemUserId,
@@ -346,6 +370,8 @@ export class PurchaseSuggestionsService {
       }
     }
 
+    this.notifyLowStock(nuevosBajoMinimo);
+
     this.logger.log(
       `Scan ${scannedAt.toISOString()}: ${stockables.length} stockables ` +
         `→ ${createdCount} suggestions created, ${staledCount} staled, ${failedCount} failed`,
@@ -359,6 +385,26 @@ export class PurchaseSuggestionsService {
       failedCount,
       skipped: false,
     };
+  }
+
+  /**
+   * Avisa de los insumos que ACABAN de cruzar el mínimo. Fire-and-forget: un
+   * fallo del aviso jamás puede tumbar el escaneo ni el cron que lo dispara.
+   */
+  private notifyLowStock(items: LowStockAlertItem[]): void {
+    if (items.length === 0) return;
+    // Una lista larga no entra en una notificación y tampoco se lee: se
+    // muestran las primeras y se DICE cuántas quedaron fuera.
+    const mostradas = items.slice(0, MAX_LINEAS_AVISO_STOCK);
+    void this.ownerNotifications.alert(
+      'low_stock',
+      buildLowStockAlertMessage({
+        businessName: businessName(),
+        items: mostradas,
+        hiddenCount: items.length - mostradas.length,
+      }),
+      { itemCount: items.length },
+    );
   }
 
   // ==================================================================

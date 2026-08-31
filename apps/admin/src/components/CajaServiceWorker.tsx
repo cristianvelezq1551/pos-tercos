@@ -17,7 +17,14 @@ export function CajaServiceWorker() {
     } else {
       navigator.serviceWorker
         .getRegistrations()
-        .then((regs) => regs.forEach((r) => void r.unregister()))
+        // El de AVISOS se respeta: no cachea nada (no tiene un solo `fetch`),
+        // así que no pelea con el HMR, y desregistrarlo apagaría en silencio
+        // las notificaciones que alguien acaba de activar.
+        .then((regs) =>
+          regs
+            .filter((r) => !r.scope.endsWith('/sw-avisos/'))
+            .forEach((r) => void r.unregister()),
+        )
         .catch(() => undefined);
       if ('caches' in window) {
         caches

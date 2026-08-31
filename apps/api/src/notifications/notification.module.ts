@@ -1,6 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { OwnerNotificationService } from './owner-notification.service';
+import { PushController } from './push.controller';
+import { PushSubscriptionsService } from './push-subscriptions.service';
 
 /**
  * @Global para que SalesService inyecte NotificationService
@@ -9,7 +11,8 @@ import { OwnerNotificationService } from './owner-notification.service';
  */
 @Global()
 @Module({
-  providers: [NotificationService, OwnerNotificationService],
-  exports: [NotificationService, OwnerNotificationService],
+  controllers: [PushController],
+  providers: [NotificationService, OwnerNotificationService, PushSubscriptionsService],
+  exports: [NotificationService, OwnerNotificationService, PushSubscriptionsService],
 })
 export class NotificationModule {}

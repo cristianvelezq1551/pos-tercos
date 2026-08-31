@@ -41,9 +41,16 @@ Estas son las únicas que te interrumpen. Todo lo demás hay que ir a buscarlo.
 | **Issue `alerta-produccion`** | correo de GitHub | Un **error 500** en el backend: el sistema sigue en pie pero algo se rompió | El mismo día |
 | **healthchecks.io "DOWN"** | correo | El **respaldo** lleva más de 7 horas sin correr | El mismo día |
 | **Nightly rojo** | correo de GitHub | Las **leyes matemáticas del inventario** fallaron con historias aleatorias | Esta semana |
+| **Aviso del navegador** | notificación en el celular y el computador | Lo que pasa en el **negocio**: descuadre de caja, anulación, cortesía, descuento manual, subida de costos, insumo bajo mínimo | Según el aviso |
 
-Las tres primeras cuidan el **presente** (¿se puede vender ahora?). Las dos
-últimas cuidan el **pasado** (¿los datos están respaldados y cuadran?).
+Las tres primeras cuidan el **presente** (¿se puede vender ahora?), las dos
+siguientes cuidan el **pasado** (¿los datos están respaldados y cuadran?), y la
+última cuida el **negocio** (¿alguien anuló una venta, falta plata en la caja,
+se está acabando el pan?).
+
+Las cinco primeras son técnicas y llegan por correo. La sexta es de negocio y
+llega como notificación del teléfono — se activa por dispositivo en
+`admin.tercos.co/avisos`.
 
 > **Regla mental:** *UptimeRobot rojo = deja todo y mira Railway o Vercel.
 > Issue de GitHub = hoy mismo, hay un bug vivo. healthchecks rojo = hoy mismo,
@@ -450,7 +457,44 @@ haría falta un monitor que haga login de verdad, que no está en el plan gratis
 - **Etiqueta**: `alerta-produccion`.
 - **Depende además** de la casilla "Include your own updates" de tu cuenta (§5).
 
-### 6.3 Respaldos
+### 6.3 Avisos del negocio (notificaciones del navegador)
+
+Es el único canal que NO llega por correo: aparece como notificación en el
+celular o el computador, aunque el admin esté cerrado.
+
+- **Llaves**: se generan UNA vez por entorno con
+  `pnpm -F @pos-tercos/api llaves:vapid`. La privada no sale del servidor; la
+  pública se la entrega el API al navegador (no hay que copiarla a ningún
+  frontend).
+- **Variables en Railway → `api-prod`**:
+  ```
+  VAPID_PUBLIC_KEY=…
+  VAPID_PRIVATE_KEY=…
+  VAPID_SUBJECT=mailto:tu-correo@tercos.co
+  ```
+  Con **una o dos** de las tres, el API **no arranca** — igual que las
+  `ALERT_GITHUB_*`. Sin ninguna, arranca mudo y lo grita en el log.
+- **Cada persona los activa en su dispositivo** en `admin.tercos.co/avisos`.
+  El permiso lo da el navegador, así que el celular y el computador se activan
+  por separado.
+- **Prueba**: el botón "Enviar aviso de prueba" de esa misma pantalla. Es el
+  equivalente del simulacro de §5 — una alarma que nadie probó es una alarma
+  que no se sabe si suena.
+- **Revisar las llaves sin exponerlas** (dice si sirven, si son pareja y si el
+  contacto es válido; no imprime ninguna):
+  ```
+  railway run --service api-prod -- pnpm -F @pos-tercos/api llaves:revisar
+  ```
+  Un par cruzado (la pública de una generación con la privada de otra) hoy hace
+  que el API **no arranque**, así que no puede llegar vivo a producción.
+- ⚠️ **Cambiar las llaves invalida TODAS las suscripciones**: cada dispositivo
+  tiene que volver a activar los avisos.
+- ⚠️ **En iPhone y iPad** solo funcionan si el admin está **agregado a la
+  pantalla de inicio**. La pantalla lo detecta y lo explica.
+- Los avisos técnicos (errores 500) NO pasan por acá: siguen yendo al Issue de
+  GitHub, que es para quien mantiene el código.
+
+### 6.4 Respaldos
 
 - Workflow `db-backup.yml`, **cada 6 horas** (1, 7, 13 y 19 UTC = 8 p.m., 2 a.m.,
   8 a.m. y 2 p.m. en Bogotá).
@@ -460,7 +504,7 @@ haría falta un monitor que haga login de verdad, que no está en el plan gratis
   (restringido a `main`; nunca a nivel de repositorio).
 - Dead-man: healthchecks.io, salta si pasan **más de 7 horas** sin ping.
 
-### 6.4 Vercel
+### 6.5 Vercel
 
 - **Skip deployments: activado** en los cuatro proyectos, e *Ignored Build Step*
   en **Automatic** (sin comando propio).
@@ -471,7 +515,7 @@ haría falta un monitor que haga login de verdad, que no está en el plan gratis
 - ⚠️ Una app que use un paquete **sin declararlo** en sus dependencias no se
   reconstruye: el grafo sale de los `package.json`.
 
-### 6.5 Invariantes que el sistema asume
+### 6.6 Invariantes que el sistema asume
 
 - **Una sola instancia del API.** Está fijado en `apps/api/railway.json`
   (`numReplicas: 1`). Con dos, el límite anti-abuso y los avisos de pedidos web
@@ -535,7 +579,7 @@ En orden de lo que más rinde por lo que cuesta. Todo es gratis.
 |---|---|---|---|
 | 1 | **Alarma de "dejó de vender"**: si entre las 12 y las 21 no hubo ninguna venta en 2 horas, avisa | media jornada | El fallo silencioso: nada se cayó, pero nadie puede cobrar |
 | 2 | **Leyes matemáticas contra los datos REALES** (hoy corren sobre datos inventados): reproducir el costeo de producción y verificar que el inventario del reporte coincide con la base | ~1 jornada | Los números que dejan de cuadrar sin que nada lance un error |
-| 3 | **Panel de novedades en el admin** leyendo `OWNER_ALERT_SENT` de la bitácora | pocas horas | Las alertas de negocio (descuadre, cortesía, anulación) que hoy solo quedan registradas y nadie ve |
+| 3 | **Historial de novedades en el admin** leyendo `OWNER_ALERT_SENT` de la bitácora | pocas horas | Repasar las alertas de negocio de días pasados. El aviso EN EL MOMENTO ya llega como notificación del navegador (§6.3); lo que falta es poder mirarlas después sin bucear en la bitácora |
 | 4 | **Retención de logs**: verificar cuántos días guarda Railway en tu plan | 5 minutos | "¿Qué pasó hace dos semanas?" hoy no tiene respuesta |
 | 5 | **Monitor que haga login de verdad** | requiere plan pago | "La página carga pero nadie puede entrar" |
 

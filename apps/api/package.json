@@ -18,7 +18,9 @@
     "bootstrap:prod": "ts-node -r tsconfig-paths/register prisma/bootstrap-prod.ts",
     "db:reset": "prisma migrate reset --force",
     "test:cov": "jest --config ./test/jest-unit.json --passWithNoTests --coverage",
-    "test:e2e:cov": "jest --config ./test/jest-e2e-cov.json --runInBand --forceExit --coverage"
+    "test:e2e:cov": "jest --config ./test/jest-e2e-cov.json --runInBand --forceExit --coverage",
+    "llaves:vapid": "node scripts/generar-llaves-vapid.mjs",
+    "llaves:revisar": "node scripts/revisar-llaves-vapid.mjs"
   },
   "prisma": {
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"

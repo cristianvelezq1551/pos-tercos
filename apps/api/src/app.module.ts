@@ -8,6 +8,7 @@ import { LLMModule } from './adapters/llm/llm.module';
 import { PrinterModule } from './adapters/printer/printer.module';
 import { StorageModule } from './adapters/storage/storage.module';
 import { AlertsModule } from './adapters/alerts/alerts.module';
+import { PushModule } from './adapters/push/push.module';
 import { WhatsAppModule } from './adapters/whatsapp/whatsapp.module';
 import { NotificationModule } from './notifications/notification.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
@@ -75,6 +76,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     CashDrawerModule,
     WhatsAppModule,
     AlertsModule,
+    PushModule,
     NotificationModule,
     PaymentMethodsModule,
     IdempotencyModule,

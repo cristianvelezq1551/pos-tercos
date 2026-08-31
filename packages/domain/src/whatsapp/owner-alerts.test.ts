@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCortesiaAlertMessage,
   buildCostIncreaseAlertMessage,
+  buildLowStockAlertMessage,
   buildManualDiscountAlertMessage,
   buildNoSaleDrawerAlertMessage,
   buildVoidAlertMessage,
+  splitOwnerAlert,
 } from './owner-alerts';
 
 describe('buildVoidAlertMessage', () => {
@@ -95,6 +97,10 @@ describe('formato común de las alertas al dueño', () => {
       businessName: 'Tercos', supplierName: null,
       items: [{ name: 'Pan', oldUnitCost: 100, newUnitCost: 200 }],
     }),
+    buildLowStockAlertMessage({
+      businessName: 'Tercos',
+      items: [{ name: 'Pan', currentStock: 21, thresholdMin: 30, unitStock: 'unidad' }],
+    }),
   ];
 
   it('arrancan con [negocio] *título* y una línea en blanco', () => {
@@ -116,5 +122,65 @@ describe('formato común de las alertas al dueño', () => {
   it('la cortesía dice quién la dio y cuánto costó', () => {
     expect(todas[4]).toContain('Laura');
     expect(todas[4]).toContain('$3.000');
+  });
+});
+
+describe('buildLowStockAlertMessage', () => {
+  const items = [
+    { name: 'Pan', currentStock: 21, thresholdMin: 30, unitStock: 'unidad' },
+    { name: 'Pollo', currentStock: 2500, thresholdMin: 3000, unitStock: 'g' },
+  ];
+
+  it('dice cuántos son y cuánto le falta a cada uno', () => {
+    const msg = buildLowStockAlertMessage({ businessName: 'Tercos', items });
+    expect(msg).toContain('2 insumos cruzaron el mínimo');
+    expect(msg).toContain('Pan: 21 de 30 unidad');
+    expect(msg).toContain('Pollo: 2.500 de 3.000 g');
+  });
+
+  it('concuerda en singular', () => {
+    const msg = buildLowStockAlertMessage({ businessName: 'Tercos', items: [items[0]] });
+    expect(msg).toContain('1 insumo cruzó el mínimo');
+    expect(msg).not.toContain('insumos');
+  });
+
+  it('un recorte se declara: la lista nunca se da por completa', () => {
+    const msg = buildLowStockAlertMessage({ businessName: 'Tercos', items, hiddenCount: 5 });
+    expect(msg).toContain('y 5 más');
+    // El conteo suma los ocultos: 2 mostrados + 5 = 7.
+    expect(msg).toContain('7 insumos cruzaron el mínimo');
+  });
+
+  it('las cantidades con decimales se leen con coma', () => {
+    const msg = buildLowStockAlertMessage({
+      businessName: 'Tercos',
+      items: [{ name: 'Queso', currentStock: 1.5, thresholdMin: 2, unitStock: 'kg' }],
+    });
+    expect(msg).toContain('Queso: 1,5 de 2 kg');
+  });
+});
+
+describe('splitOwnerAlert', () => {
+  it('parte el formato canónico en título y cuerpo', () => {
+    const { title, body } = splitOwnerAlert(
+      buildVoidAlertMessage({
+        businessName: 'Tercos', cashierName: 'Laura', receiptNumber: 412,
+        total: 28500, reason: 'Se arrepintió',
+      }),
+    );
+    expect(title).toBe('Tercos · Venta anulada');
+    expect(body.startsWith('Recibo: #412')).toBe(true);
+    expect(body).not.toContain('[Tercos]');
+  });
+
+  it('un texto ajeno al formato se devuelve entero: nunca se pierde', () => {
+    const { title, body } = splitOwnerAlert('algo escrito a mano');
+    expect(title).toBe('Aviso');
+    expect(body).toBe('algo escrito a mano');
+  });
+
+  it('el cuerpo conserva sus saltos de línea', () => {
+    const { body } = splitOwnerAlert('[Tercos] *Stock bajo*\n\nuno\ndos\n\ntres');
+    expect(body).toBe('uno\ndos\n\ntres');
   });
 });

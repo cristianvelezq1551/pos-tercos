@@ -10,7 +10,7 @@
  * La jerarquía la da la negrita de WhatsApp (`*texto*`) y el salto de línea.
  */
 
-import { formatCop } from './format';
+import { formatCop, formatQty } from './format';
 
 /**
  * Encabezado común de TODA alerta al dueño. Existe para que las 14 se lean
@@ -139,4 +139,56 @@ export function buildCostIncreaseAlertMessage(input: {
       `${lines.join('\n')}\n\n` +
       `Revisa si los precios de venta siguen dando el margen esperado.`,
   });
+}
+
+export interface LowStockAlertItem {
+  name: string;
+  /** Existencias al momento de la detección, en unidad de inventario. */
+  currentStock: number;
+  thresholdMin: number;
+  unitStock: string;
+}
+
+/**
+ * Insumos que cruzaron el mínimo. Se manda SOLO con los detectados en esta
+ * corrida (no con todo lo que sigue bajo): el escaneo corre cada hora y un
+ * insumo se queda bajo mínimo durante días, así que repetir la lista completa
+ * convertiría el aviso en ruido y dejaría de leerse.
+ */
+export function buildLowStockAlertMessage(input: {
+  businessName: string;
+  items: LowStockAlertItem[];
+  /** Cuántos quedaron fuera del recorte, para no dar la lista por completa. */
+  hiddenCount?: number;
+}): string {
+  const lines = input.items.map(
+    (it) =>
+      `· ${it.name}: ${formatQty(it.currentStock)} de ${formatQty(it.thresholdMin)} ${it.unitStock}`,
+  );
+  const ocultas = input.hiddenCount ?? 0;
+  if (ocultas > 0) lines.push(`· y ${ocultas} más`);
+  const cuantos =
+    input.items.length === 1
+      ? '1 insumo cruzó el mínimo'
+      : `${input.items.length + ocultas} insumos cruzaron el mínimo`;
+  return buildOwnerAlert({
+    businessName: input.businessName,
+    title: 'Stock bajo',
+    body: `${cuantos}:\n${lines.join('\n')}\n\nMíralos en Compras, Sugerencias.`,
+  });
+}
+
+/**
+ * Parte una alerta armada por `buildOwnerAlert` en título y cuerpo. Una
+ * notificación del navegador rinde esas dos partes por separado (el título en
+ * negrita, el cuerpo debajo), mientras que WhatsApp recibe un solo texto.
+ *
+ * Se parsea en vez de cambiar los 14 llamadores porque `buildOwnerAlert` es la
+ * ÚNICA forma de armar una alerta (§7.v33): el formato está garantizado. Lo
+ * que no calce con él se devuelve entero como cuerpo — nunca se pierde texto.
+ */
+export function splitOwnerAlert(text: string): { title: string; body: string } {
+  const m = /^\[([^\]]*)\]\s\*([^*]+)\*\n\n([\s\S]*)$/.exec(text);
+  if (!m) return { title: 'Aviso', body: text };
+  return { title: `${m[1]} · ${m[2]}`, body: m[3] };
 }

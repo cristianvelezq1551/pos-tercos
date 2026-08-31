@@ -3434,6 +3434,58 @@ noop + módulo `@Global` con factory lazy) · el ruteo en
 `OwnerNotificationService.reportTechnical`. El filtro global **no se tocó**:
 sigue llamando `ownerNotifications.alert('server_error', …)`.
 
+### La validación previa al despliegue encontró 4 fallas propias
+Verificar en un navegador de verdad no era ceremonia: **ninguna de estas cuatro
+salía en typecheck, lint ni en los 765 e2e**, y las cuatro habrían llegado a
+producción.
+
+1. **El permiso se daba por denegado sin preguntar.** `suscribirDispositivo`
+   cortaba temprano con `if (Notification.permission === 'denied')`, razonando
+   que un denegado previo no vuelve a preguntar. Es falso: hay navegadores donde
+   `permission` arranca en `denied` y aun así `requestPermission()` CONCEDE. Con
+   el atajo, esos dispositivos quedaban bloqueados para siempre sin haber
+   preguntado una vez. Ahora se pregunta siempre y se decide por la respuesta.
+2. **`navigator.serviceWorker.ready` colgaba la pantalla para siempre.** Ese
+   `await` espera un worker que controle la PÁGINA ACTUAL, y el de avisos tiene
+   su propio ámbito (`/sw-avisos/`), así que nunca la controla: la promesa
+   quedaba pendiente y el interruptor girando sin explicación. Se reemplazó por
+   esperar a que ESE registro quede activo, con tope.
+3. **El error del navegador llegaba crudo y en inglés** ("Registration failed -
+   permission denied"), contra la regla de copy de §3. Ahora
+   `explicarFalloDeSuscripcion` traduce por `err.name` a algo accionable.
+4. **`subscribe()` puede no resolver NUNCA** (red mala, firewall que bloquea
+   FCM, incógnito). Tiene tope de 15 s: colgar el interruptor en silencio es el
+   peor desenlace posible para algo cuyo único trabajo es avisar.
+
+También quedó cerrado que la limpieza de service workers del modo dev
+(`CajaServiceWorker`) desregistraba TODOS los registros, incluido el de avisos:
+en desarrollo, entrar a `/caja` apagaba las notificaciones recién activadas.
+
+### Cómo se verificó (y qué prueba cada cosa)
+| Prueba | Qué demuestra |
+|---|---|
+| Vector del §5 del RFC 8291, byte a byte | El cifrado es correcto según el estándar, no según nosotros |
+| Adapter contra un servicio de push falso local | Cabeceras, cuerpo y qué se hace con 410/404/500/red caída |
+| `push-avisos.e2e-spec.ts` (13) | El contrato: roles, llave fuera de curva, https, altas y bajas |
+| `push-entrega-real.e2e-spec.ts` (9) | El cableado de producción con llaves reales: del escaneo de stock bajo al aviso descifrado |
+| `sw-avisos.test.ts` (6) | El service worker, que vive en `public/` y ningún bundler compila |
+| `e2e/avisos.spec.ts` (4, Playwright) | La pantalla en un navegador: permiso, registro y fallo explicado en español |
+| `scripts/verificar-avisos-real.mjs` | **La cadena entera contra Google**: suscripción real de FCM, aceptación del aviso cifrado y firmado, y la notificación mostrada |
+
+⚠️ El último es **manual**: necesita un Chrome instalado, los dev servers arriba
+y llaves cargadas. No corre en CI. Y tiene que usar un perfil PERSISTENTE: en
+incógnito Chrome no soporta la API de Push y —según su propio aviso de consola—
+"deliberadamente no hay forma de detectarlo".
+
+### Un par de llaves mal copiado ya no puede llegar a producción
+`assertVapidKeyPair` corre al ARRANCAR y deriva la pública desde la privada para
+compararlas. Es el error más fácil de cometer (se generan dos pares, uno por
+entorno, y se cruzan) y el más difícil de notar: todo arranca bien, el navegador
+se suscribe bien, y el fallo aparece recién cuando el servicio de push responde
+401 sin decir por qué. Además hay `pnpm -F @pos-tercos/api llaves:revisar`, que
+revisa forma, pareja, firma verificable y contacto **sin imprimir las llaves**;
+sirve contra Railway con `railway run`.
+
 ### Lo que este canal NO cubre (y con qué se tapa)
 | Falla | Quién avisa |
 |---|---|
@@ -3499,6 +3551,113 @@ actúa **como el usuario**, y GitHub **no notifica de la actividad propia**. Sin
 updates"*, el Issue se crea y **nadie se entera**. Los avisos de backup sí
 llegaban porque los abre `github-actions[bot]`. Queda documentado en
 `MONITOREO.md` §4: es una dependencia invisible que solo detecta el simulacro.
+
+## 7.v51 Las alertas de negocio por fin le llegan a alguien: notificación del navegador (2026-08-30)
+
+> El dueño preguntó si la app avisa cuando un insumo baja del mínimo. No avisaba
+> —ni eso ni nada—: las 9 alertas de negocio se armaban y morían en el
+> `MockWhatsAppAdapter`, y el stock bajo ni siquiera tenía alerta. Descartado
+> Telegram por decisión del dueño, el canal elegido es **Web Push**: sin
+> terceros, sin cuenta, sin instalar una app, y llega al celular y al computador
+> aunque el admin esté cerrado.
+> Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (domain 505, api 181,
+> admin 214), **e2e 63 suites / 765**, 8 builds.
+> Migración: `20260830120000_push_subscriptions`.
+
+### El cifrado va a mano, y está probado contra el estándar
+`apps/api/src/adapters/push/web-push-crypto.ts` implementa RFC 8291 (`aes128gcm`
+sobre RFC 8188) y la firma VAPID del RFC 8292 con lo que ya trae Node
+(`hkdfSync`, ECDH P-256, AES-128-GCM, ECDSA). **No se usa la librería
+`web-push`**: aportaría su árbol de subdependencias justo en el proceso que
+tiene las llaves de producción (§7.v18 endureció exactamente eso), y esto no es
+criptografía inventada sino un procedimiento fijo con vectores oficiales.
+
+El test **reproduce byte a byte el vector del §5 del RFC**. ⚠️ La primera
+versión de ese test afirmaba un cuerpo esperado escrito **de memoria** que ni
+siquiera descifraba: se descargó el RFC y se copió el real. Un vector recordado
+es peor que ninguno — parece verificación externa y no lo es.
+
+También se valida el `p256dh` que manda el navegador (RFC 8291 §7: un punto
+fuera de la curva puede filtrar la llave privada del otro lado). Se valida al
+GUARDAR, no al enviar: una llave mal formada solo se descubriría con el primer
+aviso, o sea cuando más importa que salga.
+
+### Reglas duras
+- **Todo-o-nada en la config**, como `ALERT_GITHUB_*` y `KAPSO_*`: con una o dos
+  de `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` el API **no
+  arranca**. Sin ninguna arranca mudo y lo grita en el log.
+- **Nunca se finge el envío.** `NoopPushAdapter` declara `delivers: false` y la
+  bitácora registra `delivered: false` con el motivo (§7.v22).
+- **Push PRIMERO y WhatsApp de respaldo, no los dos**: si algún dispositivo
+  recibió el aviso, no se manda además el WhatsApp — para el dueño es el mismo
+  aviso dos veces. WhatsApp queda para el día que exista un proveedor real.
+- **Un 404/410 borra la suscripción en el acto.** Es la única señal de que el
+  navegador se desinstaló o revocó el permiso; sin eso las muertas se acumulan y
+  cada aviso las reintenta para siempre. Un 500 o un timeout **no** borran nada.
+- **El aviso aterriza donde se resuelve** (`PANTALLA_POR_TIPO`): un descuadre
+  abre `/shifts`, el stock bajo abre `/purchase-suggestions`. Una notificación
+  que abre el inicio deja a la persona buscando de qué le hablaban.
+- **`tag` por tipo de alerta**: dos descuadres seguidos dejan UN aviso, no dos.
+  Con `renotify` el reemplazo vuelve a sonar.
+- **La suscripción es por DISPOSITIVO** (`endpoint` UNIQUE), no por persona: el
+  celular y el computador se activan por separado. Re-suscribir el mismo
+  navegador ACTUALIZA (rota sus llaves por su cuenta) y en un equipo compartido
+  pasa a ser de quien se suscribió último.
+
+### El service worker de la caja NO servía
+`sw.js` se registra **solo dentro de `/caja` y solo en producción** — el dueño,
+que nunca entra a la caja, jamás lo tendría, y sin registro no hay
+notificaciones. Por eso hay un `sw-avisos.js` aparte, con ámbito `/sw-avisos/`
+(una ruta que no existe) para que los dos convivan. No tiene un solo `fetch`, así
+que también puede vivir en desarrollo, donde el otro se desregistra a propósito.
+El ámbito no limita a quién le llega: el push se entrega a la registración que
+creó la suscripción, no a la que controla la página abierta.
+
+⚠️ Ese archivo vive en `public/`: **ningún bundler lo compila**. Un error de
+tipeo ahí no rompe nada visible, simplemente el aviso nunca aparece. Por eso hay
+un test que lo evalúa contra un `self` de mentira y dispara los eventos como el
+navegador (`sw-avisos.test.ts`).
+
+### El stock bajo: solo lo que ACABA de cruzar el mínimo
+El escaneo corre cada hora y un insumo se queda bajo mínimo durante días.
+Avisar de todo lo que sigue bajo lo volvería ruido horario y dejaría de leerse.
+Se avisa **solo de las sugerencias creadas en esa corrida**, así que el
+anti-spam sale gratis del dedupe que ya existía (una sugerencia abierta no se
+vuelve a crear). Máximo 6 líneas, diciendo cuántas quedaron fuera.
+
+### Superficie
+- **Domain**: `alerts/push-notifier.ts` (puerto, exportado como `export type` —
+  un `export *` metería un require en el bundle de las cinco apps, §7.v40) +
+  `buildLowStockAlertMessage` y `splitOwnerAlert` en `whatsapp/owner-alerts.ts`.
+  El segundo parte el texto de WhatsApp en título y cuerpo: se parsea en vez de
+  cambiar los 14 llamadores porque `buildOwnerAlert` es la ÚNICA forma de armar
+  una alerta (§7.v33), así que el formato está garantizado.
+- **API**: `adapters/push/` (crypto + adapter + noop + módulo con factory lazy) ·
+  `notifications/push-subscriptions.service.ts` + `push.controller.ts`
+  (`GET /push/status`, `POST /push/{subscribe,unsubscribe,test}`, todos
+  `@AdminAccess`) · `pnpm -F @pos-tercos/api llaves:vapid` genera el par.
+- **Admin**: `/avisos` (sidebar → Operación, sin `onlyDueno`) con interruptor por
+  dispositivo, lista de dispositivos y **botón de prueba** — el equivalente del
+  simulacro de §7.v49: una alarma que nadie probó es una alarma que no se sabe si
+  suena, que es como el WhatsApp estuvo mudo meses.
+
+### Lo que este canal NO cubre
+Los **avisos al cliente** (instrucciones de pago, pedido listo). El cliente no va
+a activar notificaciones del admin: ahí sigue vigente el `wa.me` manual que manda
+el cajero desde su propio WhatsApp (§7.v22). Y los **avisos técnicos** (errores
+500) siguen yendo al Issue de GitHub (§7.v49): un stack trace no es para el dueño.
+
+### Pendientes conocidos
+- **En iPhone y iPad** los avisos solo funcionan con el admin **agregado a la
+  pantalla de inicio** (limitación de Safari, no del código). La pantalla lo
+  detecta y lo explica en vez de mostrar un interruptor que no haría nada.
+- Falta el **historial de novedades** en el admin: hoy las alertas se ven en el
+  momento y quedan en la bitácora como `OWNER_ALERT_SENT`, pero no hay una
+  pantalla para repasarlas.
+- La prueba de punta a punta con un servicio de push REAL (FCM, Mozilla) no está
+  automatizada: el adapter se prueba contra un servicio falso local que descifra
+  lo recibido. Lo que valida el camino real es el botón de prueba.
+
 
 ## 8. Estado del proyecto (commits y FASES)
 
