@@ -8,9 +8,10 @@
  * 50 MB. Lo mismo le pasaba a una factura fotografiada con el celular.
  *
  * La salida es hablarle DIRECTO al dominio de la API. Como es otro origen, la
- * cookie de sesión no viaja (`sameSite: lax`), así que se usa el mismo token
- * fresco que ya se usa para el WebSocket de pedidos web (§7.v9) —el endpoint
- * existe justo para esto— y se manda como `Authorization: Bearer`.
+ * cookie de sesión no viaja (`sameSite: lax`), así que se pide un PERMISO DE
+ * SUBIDA de dos minutos (`GET /auth/upload-ticket`) y se manda como
+ * `Authorization: Bearer`. Ese permiso solo abre las rutas marcadas con
+ * `@AllowUploadTicket()`: robado del JS de la página, no sirve para nada más.
  *
  * En desarrollo el origen directo es el mismo puerto de la API y no hay proxy
  * que corte, así que el camino es idéntico y no hay una rama sin probar.
@@ -30,7 +31,12 @@ export function origenDirectoDelApi(): string | null {
 }
 
 async function tokenParaOtroOrigen(): Promise<string> {
-  const res = await fetch('/api/auth/ws-token', { credentials: 'include' });
+  // Un permiso ACOTADO a subir, no la credencial del WebSocket: esa lleva
+  // `scope: 'ws'` y el guard de HTTP la rechaza a propósito (si un XSS la roba
+  // no debe poder tocar la API). Usarla acá devolvía 401 y el navegador lo
+  // mostraba como ERR_HTTP2_PROTOCOL_ERROR, porque el servidor corta el
+  // cuerpo a medio subir.
+  const res = await fetch('/api/auth/upload-ticket', { credentials: 'include' });
   if (!res.ok)
     throw new Error('No se pudo autorizar la subida. Vuelve a entrar y prueba de nuevo.');
   const body = (await res.json()) as { token?: string };

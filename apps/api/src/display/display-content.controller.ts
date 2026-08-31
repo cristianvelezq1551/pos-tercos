@@ -30,6 +30,7 @@ import {
   type UpdateDisplayTrack,
 } from '@pos-tercos/types';
 import { AdminAccess } from '../auth/decorators/roles.decorator';
+import { AllowUploadTicket } from '../auth/decorators/upload-ticket.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { detectImageMime } from '../common/image-mime';
 import { sendBufferWithRangeSupport } from '../common/http-range';
@@ -145,6 +146,7 @@ export class DisplayContentController {
   }
 
   @AdminAccess()
+  @AllowUploadTicket()
   @Post('tracks')
   @UseInterceptors(FileInterceptor('audio', { limits: { fileSize: MAX_AUDIO_BYTES } }))
   createTrack(

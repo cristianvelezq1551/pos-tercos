@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { JwtAccessPayloadSchema } from '@pos-tercos/types';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { ALLOW_UPLOAD_TICKET } from '../decorators/upload-ticket.decorator';
 import { TokenVersionService } from '../token-version/token-version.service';
 
 // Admin y pos usan cookies de access distintas (ver auth.controller). En dev
@@ -52,6 +53,21 @@ export class JwtAuthGuard implements CanActivate {
       // roba, no puede tocar la API. La sesión real siempre viaja por cookie.
       if (payload.scope === 'ws') {
         throw new UnauthorizedException('WS token no válido para HTTP');
+      }
+      // El permiso de subida abre UNA ruta y nada más: la que está marcada con
+      // `@AllowUploadTicket()`. Existe porque el navegador tiene que hablarle
+      // DIRECTO al API para mandar un archivo grande (el proxy de la app corta
+      // el cuerpo cerca de 4,5 MB) y la cookie httpOnly no viaja a otro origen.
+      // Sin este cerco, un permiso robado del JS de la página valdría lo mismo
+      // que la sesión entera.
+      if (payload.scope === 'upload') {
+        const permitido = this.reflector.getAllAndOverride<boolean>(ALLOW_UPLOAD_TICKET, [
+          ctx.getHandler(),
+          ctx.getClass(),
+        ]);
+        if (!permitido) {
+          throw new UnauthorizedException('Este permiso solo sirve para subir un archivo');
+        }
       }
       // Revocación de sesión: el `tv` del token debe coincidir con la versión
       // actual del usuario. Si se desactivó / cambió de rol / reseteó password,
