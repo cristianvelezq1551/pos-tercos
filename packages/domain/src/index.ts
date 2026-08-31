@@ -21,6 +21,12 @@ export * from './purchasing';
 // `export *` acá emitiría un require en el bundle de las cinco apps (el
 // paquete compila a CJS, §7.v40); un `export type` se borra al compilar.
 export type { AlertChannel, AlertDeliveryResult, SystemAlert } from './alerts/alert-channel';
+export type {
+  PushNotifier,
+  PushTarget,
+  PushMessage,
+  PushDeliveryResult,
+} from './alerts/push-notifier';
 
 // La guía NO se re-exporta acá a propósito: son ~250 KB de texto y este paquete
 // compila a CJS, así que colgarla del barril la metía en el bundle del

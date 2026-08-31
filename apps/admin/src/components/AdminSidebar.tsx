@@ -5,6 +5,7 @@ import {
   Activity,
   ArrowLeftRight,
   Banknote,
+  Bell,
   BarChart3,
   BookOpen,
   Box,
@@ -67,6 +68,9 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Operación', label: 'Web del cliente', href: '/publicidad', icon: Globe },
   { section: 'Operación', label: 'Solicitudes', href: '/solicitudes', icon: Gift },
   { section: 'Operación', label: 'Cocina', href: '/cocina', icon: CookingPot },
+  // Sin `onlyDueno` ni `onlyOperativo`: los avisos de negocio los reciben el
+  // dueño Y el administrador, y el permiso se activa por dispositivo.
+  { section: 'Operación', label: 'Avisos', href: '/avisos', icon: Bell },
   { section: 'Catálogo', label: 'Productos', href: '/products', icon: ShoppingBasket, onlyDueno: true },
   { section: 'Catálogo', label: 'Categorías', href: '/categories', icon: Shapes, onlyDueno: true },
   { section: 'Catálogo', label: 'Subproductos', href: '/subproducts', icon: Layers, onlyDueno: true },

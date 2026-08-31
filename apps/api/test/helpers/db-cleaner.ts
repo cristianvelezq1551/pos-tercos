@@ -42,6 +42,7 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
   }
   // Orden: hijos antes que padres
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE
+    push_subscriptions,
     display_slides,
     display_tracks,
     web_hero_slides,

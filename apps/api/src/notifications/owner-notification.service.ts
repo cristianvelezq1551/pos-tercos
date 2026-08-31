@@ -5,10 +5,12 @@ import {
   type AlertChannel,
   type WhatsAppProvider,
 } from '@pos-tercos/domain';
+import { splitOwnerAlert } from '@pos-tercos/domain';
 import { ALERT_CHANNEL } from '../adapters/alerts/alerts.module';
 import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
 import { templatesEnabled } from './notification.service';
+import { PushSubscriptionsService } from './push-subscriptions.service';
 
 export type OwnerAlertKind =
   | 'shift_discrepancy'
@@ -21,7 +23,9 @@ export type OwnerAlertKind =
   | 'server_error'
   | 'multi_instance'
   /** El mes va con margen de contribución negativo: cada venta pierde plata. */
-  | 'negative_contribution_margin';
+  | 'negative_contribution_margin'
+  /** Insumos que cruzaron el mínimo en el escaneo horario. */
+  | 'low_stock';
 
 /**
  * Avisos que NO son de negocio: fallas del sistema. Van al canal técnico
@@ -29,6 +33,25 @@ export type OwnerAlertKind =
  * sirve de nada.
  */
 const TECHNICAL_KINDS = new Set<OwnerAlertKind>(['server_error', 'multi_instance']);
+
+/**
+ * A dónde lleva el aviso al tocarlo. Una notificación que abre el inicio deja a
+ * la persona buscando de qué le hablaban; el valor está en aterrizar en la
+ * pantalla donde se resuelve.
+ */
+const PANTALLA_POR_TIPO: Record<OwnerAlertKind, string> = {
+  shift_discrepancy: '/shifts',
+  sale_voided: '/caja/historial',
+  drawer_no_sale: '/bitacora',
+  cost_increase: '/invoices',
+  cortesia_request: '/solicitudes',
+  cortesia_given: '/solicitudes',
+  manual_discount: '/caja/historial',
+  negative_contribution_margin: '/finanzas/estado',
+  low_stock: '/purchase-suggestions',
+  server_error: '/bitacora',
+  multi_instance: '/bitacora',
+};
 
 /**
  * Alertas puntuales al WhatsApp del DUEÑO (antifraude + costos). Igual que
@@ -46,6 +69,7 @@ export class OwnerNotificationService {
   constructor(
     @Inject(WHATSAPP_PROVIDER) private readonly wa: WhatsAppProvider,
     @Inject(ALERT_CHANNEL) private readonly alertChannel: AlertChannel,
+    private readonly push: PushSubscriptionsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -61,6 +85,15 @@ export class OwnerNotificationService {
     // siempre y queda el registro honesto de que no salió.
     if (TECHNICAL_KINDS.has(kind) && this.alertChannel.delivers) {
       return this.reportTechnical(kind, text, metadata);
+    }
+
+    // Las notificaciones del navegador van PRIMERO y, si alguien las recibe,
+    // no se manda además el WhatsApp: para el dueño son el mismo aviso dos
+    // veces. WhatsApp queda de respaldo para el día que exista un proveedor
+    // real (hoy el adapter es el mock y no entrega, §7.v22).
+    if (this.push.delivers) {
+      const outcome = await this.pushAlert(kind, text, metadata);
+      if (outcome) return true;
     }
 
     const phone = process.env.OWNER_WHATSAPP_PHONE?.trim();
@@ -116,6 +149,55 @@ export class OwnerNotificationService {
     } catch (err) {
       this.logger.warn(
         `Alerta '${kind}' al dueño lanzó: ${err instanceof Error ? err.message : err}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Manda el aviso a los dispositivos del dueño y los administradores.
+   * @returns true solo si al menos un dispositivo lo recibió.
+   */
+  private async pushAlert(
+    kind: OwnerAlertKind,
+    text: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<boolean> {
+    // El texto viene armado para WhatsApp (una sola cadena); una notificación
+    // rinde título y cuerpo por separado. `splitOwnerAlert` los separa sin
+    // tocar a los 14 llamadores.
+    const { title, body } = splitOwnerAlert(text);
+    try {
+      const outcome = await this.push.broadcastToOwners({
+        title,
+        // Los asteriscos son negrita de WhatsApp; en una notificación son ruido.
+        body: body.replace(/\*/g, ''),
+        url: PANTALLA_POR_TIPO[kind],
+        // Agrupa por tipo: dos descuadres seguidos dejan un aviso, no dos.
+        tag: kind,
+      });
+      await this.audit.log({
+        userId: null,
+        action: 'OWNER_ALERT_SENT',
+        entityType: 'owner_alert',
+        metadata: {
+          kind,
+          channel: 'web-push',
+          ok: outcome.sent > 0,
+          delivered: outcome.sent > 0,
+          error: outcome.reason,
+          devices: outcome.sent,
+          ...metadata,
+        },
+      });
+      if (outcome.sent === 0) {
+        this.logger.warn(`Alerta '${kind}' sin dispositivos: ${outcome.reason ?? 'sin detalle'}`);
+      }
+      return outcome.sent > 0;
+    } catch (err) {
+      // Un fallo del push NO puede impedir el intento por WhatsApp.
+      this.logger.warn(
+        `Alerta '${kind}' por notificación lanzó: ${err instanceof Error ? err.message : err}`,
       );
       return false;
     }

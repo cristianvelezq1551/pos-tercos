@@ -44,6 +44,7 @@ model User {
   createdAt                   DateTime                @default(now()) @map("created_at")
   approvalPin                 ApprovalPin?
   auditLogs                   AuditLog[]
+  pushSubscriptions           PushSubscription[]
   cashMovements               CashMovement[]
   idempotencyKeys             IdempotencyKey[]
   inventoryMovements          InventoryMovement[]
@@ -83,6 +84,31 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+/// Dispositivo suscrito a las notificaciones del navegador (Web Push, RFC 8291).
+/// Una fila por navegador/dispositivo, NO por persona: el dueño con el celular
+/// y el computador tiene dos. `endpoint` es la URL que da el navegador y es la
+/// identidad de la suscripción — de ahí el UNIQUE: re-suscribir el mismo
+/// dispositivo actualiza, no acumula. Cuando el servicio de push responde 404 o
+/// 410 la fila se borra (el navegador se desinstaló o revocó el permiso); sin
+/// eso las muertas se acumulan para siempre y cada aviso las reintenta.
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  /// Llave pública del cliente (P-256, base64url) — RFC 8291.
+  p256dh    String
+  /// Secreto de autenticación del cliente (16 bytes, base64url).
+  auth      String
+  /// Para que el dueño reconozca cuál dispositivo está desconectando.
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  lastSentAt DateTime? @map("last_sent_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 model Product {
