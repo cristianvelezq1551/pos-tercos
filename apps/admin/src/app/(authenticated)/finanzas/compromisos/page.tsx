@@ -14,7 +14,7 @@ export default async function PayablesPage() {
       <PageHeader
         eyebrow="Finanzas"
         title="Compromisos por pagar"
-        description="Lo que el negocio le debe a una persona (Cristian, Pablo u otro), fuera de proveedores, costos fijos y nómina. Al pagar elegís efectivo, cuenta o mixto. Entra a la Tesorería."
+        description="Lo que el negocio le debe a una persona, fuera de proveedores, costos fijos y nómina. Al pagar elegís efectivo, cuenta o mixto. Entra a la Tesorería."
         icon={<HandCoins className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">
