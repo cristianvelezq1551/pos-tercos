@@ -95,6 +95,12 @@ export class AuthController {
     return this.auth.mintWsToken(current);
   }
 
+  /** Permiso corto para subir un archivo grande DIRECTO al API (ver el service). */
+  @Get('upload-ticket')
+  uploadTicket(@CurrentUser() current: JwtAccessPayload): Promise<{ token: string }> {
+    return this.auth.mintUploadTicket(current);
+  }
+
   @Get('me')
   async me(@CurrentUser() current: JwtAccessPayload): Promise<User> {
     const dbUser = await this.users.getById(current.sub);

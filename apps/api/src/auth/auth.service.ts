@@ -15,6 +15,9 @@ const ACCESS_TOKEN_TTL = '24h';
  * `keepSocketAuthFresh` pide uno nuevo en `connect_error` y el socket se cura solo.
  */
 const WS_TOKEN_TTL = '120s';
+/** Lo justo para empezar la subida. Una canción grande tarda; el permiso
+ *  solo tiene que estar vivo cuando arranca la petición. */
+const UPLOAD_TICKET_TTL = '2m';
 const REFRESH_TOKEN_TTL_DAYS = 7;
 const REFRESH_TOKEN_BYTES = 48;
 const BCRYPT_ROUNDS = 10;
@@ -190,6 +193,37 @@ export class AuthService {
       throw new UnauthorizedException('Usuario inactivo o inexistente');
     }
     return { token: await this.signWs(user.id, user.role, user.email, user.tokenVersion) };
+  }
+
+  /**
+   * Permiso para subir UN archivo grande directo al API.
+   *
+   * El navegador no puede mandar un archivo pesado por el proxy de la app (que
+   * corta el cuerpo cerca de 4,5 MB) ni usar la cookie httpOnly contra otro
+   * origen. Este permiso dura lo justo para la subida y solo abre las rutas
+   * marcadas con `@AllowUploadTicket()`: robado, no sirve para nada más.
+   */
+  async mintUploadTicket(current: JwtAccessPayload): Promise<{ token: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: current.sub },
+      select: { id: true, role: true, email: true, active: true, tokenVersion: true },
+    });
+    if (!user || !user.active) {
+      throw new UnauthorizedException('Usuario inactivo o inexistente');
+    }
+    const payload: JwtAccessPayload = {
+      sub: user.id,
+      role: user.role as JwtAccessPayload['role'],
+      email: user.email,
+      tv: user.tokenVersion,
+      scope: 'upload',
+    };
+    return {
+      token: await this.jwt.signAsync(payload, {
+        secret: process.env.JWT_ACCESS_SECRET,
+        expiresIn: UPLOAD_TICKET_TTL,
+      }),
+    };
   }
 
   private async signAccess(

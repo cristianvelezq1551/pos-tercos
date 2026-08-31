@@ -65,6 +65,18 @@ export const JwtAccessPayloadSchema = z.object({
    *  httpOnly). `'ws'` = token efímero que SÍ es legible por el JS de la
    *  página, emitido solo para el handshake de WebSocket: el guard HTTP lo
    *  RECHAZA, así que robarlo por XSS no da acceso a la API. */
-  scope: z.literal('ws').optional(),
+  /**
+   * Alcance ACOTADO del token. Ausente = credencial de sesión completa.
+   *
+   * - `ws`: handshake del WebSocket (la cookie httpOnly no viaja al socket).
+   * - `upload`: subir UN archivo grande directo al API, saltando el proxy de
+   *   la app, que corta el cuerpo cerca de 4,5 MB. Vive segundos en el JS de
+   *   la página, así que NO puede servir para nada más: si alguien lo roba,
+   *   lo único que consigue es subir un archivo.
+   *
+   * Ninguno de los dos sirve como credencial HTTP general — eso lo enforza
+   * `JwtAuthGuard`. La sesión real siempre viaja por cookie.
+   */
+  scope: z.enum(['ws', 'upload']).optional(),
 });
 export type JwtAccessPayload = z.infer<typeof JwtAccessPayloadSchema>;
