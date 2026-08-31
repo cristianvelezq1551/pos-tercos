@@ -45,7 +45,10 @@ export function PendingCountsPanel({ initial }: { initial: StockCount[] }) {
   return (
     <div className="space-y-3">
       {error ? (
-        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
           {error}
         </p>
       ) : null}
@@ -69,7 +72,10 @@ export function PendingCountsPanel({ initial }: { initial: StockCount[] }) {
               </div>
               <div className="flex flex-wrap gap-4 border-t border-border pt-2 text-xs text-muted-foreground">
                 <span>
-                  Contó: <b className="text-foreground"><Quantity value={c.countedQty} maxDecimals={4} className="text-current" /></b>
+                  Contó:{' '}
+                  <b className="text-foreground">
+                    <Quantity value={c.countedQty} maxDecimals={4} className="text-current" />
+                  </b>
                 </span>
                 <span>
                   Sistema: <Quantity value={c.ledgerQty} maxDecimals={4} className="text-current" />
@@ -85,10 +91,19 @@ export function PendingCountsPanel({ initial }: { initial: StockCount[] }) {
                   className="flex-1"
                 />
                 <span className="flex gap-1.5">
-                  <Button size="sm" variant="outline" disabled={busyId === c.id} onClick={() => void resolve(c.id, 'reject')}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyId === c.id}
+                    onClick={() => void resolve(c.id, 'reject')}
+                  >
                     Rechazar
                   </Button>
-                  <Button size="sm" disabled={busyId === c.id} onClick={() => void resolve(c.id, 'approve')}>
+                  <Button
+                    size="sm"
+                    disabled={busyId === c.id}
+                    onClick={() => void resolve(c.id, 'approve')}
+                  >
                     {busyId === c.id ? '…' : 'Aprobar y ajustar'}
                   </Button>
                 </span>

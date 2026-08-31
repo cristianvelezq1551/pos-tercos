@@ -190,6 +190,29 @@ export const MonthlyFinancialStatementSchema = z.object({
   breakEven: z.number().nullable(),
   /** revenue / breakEven (0..1+). null si no se puede. */
   breakEvenCoverage: z.number().nullable(),
+  /**
+   * El equilibrio que se MUESTRA, calculado con el margen de la carta (precio
+   * vs receta de cada producto) en vez del margen realizado del mes.
+   *
+   * El realizado de arriba se conserva como contraste —es lo que de verdad
+   * pasó—, pero con poco volumen se mueve tanto que no sirve como meta: un
+   * flete de $34.000 sobre $92.000 vendidos se lleva 37 puntos de margen.
+   */
+  catalogBreakEven: z.object({
+    /** Ventas necesarias del mes. null si no hay margen con qué calcularlo. */
+    target: z.number().nullable(),
+    /** Margen promedio de los productos, 0..1. */
+    marginPct: z.number().nullable(),
+    /** true = ponderado por lo vendido en el mes; false = promedio de la carta. */
+    weightedBySales: z.boolean(),
+    productsConsidered: z.number().int().nonnegative(),
+    /** Con precio pero sin costo conocido: quedaron fuera del promedio. */
+    productsWithoutCost: z.number().int().nonnegative(),
+    worst: z.object({ name: z.string(), marginPct: z.number() }).nullable(),
+    best: z.object({ name: z.string(), marginPct: z.number() }).nullable(),
+    /** revenue / target. null si no hay target. */
+    coverage: z.number().nullable(),
+  }),
 });
 export type MonthlyFinancialStatement = z.infer<typeof MonthlyFinancialStatementSchema>;
 

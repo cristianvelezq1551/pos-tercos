@@ -1,5 +1,5 @@
 import type { ChecklistDay } from '@pos-tercos/types';
-import { Badge, EmptyState } from '@pos-tercos/ui';
+import { Badge, BUSINESS_TIME_ZONE, EmptyState } from '@pos-tercos/ui';
 
 const ROUTINE_LABEL = { OPEN: 'Apertura', CLOSE: 'Cierre' } as const;
 
@@ -56,6 +56,7 @@ export function ChecklistHistoryPanel({ days }: { days: ChecklistDay[] }) {
                     {item.doneByName}
                     {item.doneAt
                       ? ` · ${new Date(item.doneAt).toLocaleTimeString('es-CO', {
+                          timeZone: BUSINESS_TIME_ZONE,
                           hour: '2-digit',
                           minute: '2-digit',
                         })}`

@@ -1,4 +1,5 @@
 import { WEEKDAY_LABELS, type TimeRange, type WeekdayKey } from '@pos-tercos/types';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 /** Lunes primero: es como el cliente lee una semana (el dato usa 0=domingo). */
 export const WEEK_ORDER: WeekdayKey[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -34,7 +35,10 @@ export function todayKey(now: Date = new Date()): WeekdayKey {
  * `nextOpenAt` lo calcula el SERVER (hora de Bogotá): acá solo se formatea, sin
  * volver a decidir si está abierto.
  */
-export function formatNextOpen(nextOpenAtIso: string | null, now: Date = new Date()): string | null {
+export function formatNextOpen(
+  nextOpenAtIso: string | null,
+  now: Date = new Date(),
+): string | null {
   if (!nextOpenAtIso) return null;
   const at = new Date(nextOpenAtIso);
   if (Number.isNaN(at.getTime())) return null;
@@ -53,6 +57,9 @@ export function formatNextOpen(nextOpenAtIso: string | null, now: Date = new Dat
   );
   if (days <= 0) return `hoy a las ${time}`;
   if (days === 1) return `mañana a las ${time}`;
-  const weekday = new Intl.DateTimeFormat('es-CO', { weekday: 'long' }).format(at);
+  const weekday = new Intl.DateTimeFormat('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
+    weekday: 'long',
+  }).format(at);
   return `el ${weekday} a las ${time}`;
 }

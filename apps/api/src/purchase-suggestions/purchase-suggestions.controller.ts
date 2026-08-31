@@ -11,16 +11,12 @@ import {
 import {
   PurchaseSuggestionStatusEnum,
   ResolveSuggestionSchema,
-  SendToSupplierSchema,
   type EvaluateAllResult,
-  type HistoricalSupplier,
   type JwtAccessPayload,
   type PurchaseSuggestion,
   type PurchaseSuggestionStatus,
   type ResolveSuggestion,
   type ScanResult,
-  type SendToSupplier,
-  type SupplierOrderLink,
   type WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -107,38 +103,6 @@ export class PurchaseSuggestionsController {
     @CurrentUser() user: JwtAccessPayload,
   ): Promise<EvaluateAllResult> {
     return this.service.evaluateAllPending(user.sub);
-  }
-
-  /** Lista los proveedores que históricamente han vendido este item. */
-  @AdminAccess()
-  @Get(':id/suppliers')
-  listSuppliers(@Param('id', ParseUUIDPipe) id: string): Promise<HistoricalSupplier[]> {
-    return this.service.listSuppliersFor(id);
-  }
-
-  /**
-   * Vista previa del pedido: texto + link `wa.me`. No cambia nada — la UI lo
-   * pide cada vez que el usuario edita proveedor, cantidad o nota.
-   */
-  @AdminAccess()
-  @Post(':id/supplier-order/preview')
-  previewSupplierOrder(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(SendToSupplierSchema)) body: SendToSupplier,
-  ): Promise<SupplierOrderLink> {
-    return this.service.buildSupplierOrder(id, body, user.sub);
-  }
-
-  /** Marca la sugerencia ACCEPTED tras abrir el chat del proveedor. */
-  @AdminAccess()
-  @Post(':id/supplier-order')
-  markSupplierOrder(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: JwtAccessPayload,
-    @Body(new ZodValidationPipe(SendToSupplierSchema)) body: SendToSupplier,
-  ): Promise<{ link: SupplierOrderLink; suggestion: PurchaseSuggestion }> {
-    return this.service.markOrderedToSupplier(id, body, user.sub);
   }
 
   /** Manda un resumen de las sugerencias abiertas a dueños/admins por WhatsApp. */

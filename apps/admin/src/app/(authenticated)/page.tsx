@@ -2,9 +2,7 @@ import { Container, PageHeader, Section, formatDate } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
 import Link from 'next/link';
 import {
-  Activity,
   AlertTriangle,
-  ArrowLeftRight,
   ArrowUpRight,
   BarChart3,
   LineChart,
@@ -107,22 +105,10 @@ export default async function InicioPage() {
                 icon={<BarChart3 className="h-4 w-4" strokeWidth={1.75} />}
               />
               <ReportLink
-                href="/reports/operations"
-                title="Operación: WhatsApp + IA + horarios"
-                desc="Cobertura de WhatsApp, datos de la IA y mapa de calor por día y hora"
-                icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
-              />
-              <ReportLink
                 href="/reports/anomalies"
                 title="Anomalías por cajero"
                 desc="Detecta descuadres y anulaciones fuera de lo normal"
                 icon={<AlertTriangle className="h-4 w-4" strokeWidth={1.75} />}
-              />
-              <ReportLink
-                href="/reports/reconciliation"
-                title="Conciliación de pagos digitales"
-                desc="Cruza los movimientos de Nequi/Bancolombia con tus ventas"
-                icon={<ArrowLeftRight className="h-4 w-4" strokeWidth={1.75} />}
               />
             </div>
           </Section>

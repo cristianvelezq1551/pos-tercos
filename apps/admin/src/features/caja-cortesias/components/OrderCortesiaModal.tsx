@@ -2,7 +2,9 @@
 
 import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useEffect, useRef, useState } from 'react';
+import { logError } from '../../../lib/client-log';
 import { getErrorMessage } from '../../../lib/errors';
+import { printCortesia } from '../../sales';
 import type { CartLine } from '../../sales/lib/cart-types';
 import { createCortesia } from '../api/client';
 
@@ -25,6 +27,8 @@ export function OrderCortesiaModal({
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** La cortesía quedó registrada pero el papel no salió: hay que decirlo. */
+  const [printFailed, setPrintFailed] = useState(false);
 
   // Key idempotente ESTABLE por línea para esta apertura del modal. El registro
   // recorre las líneas una por una (no es atómico): si una falla a mitad y el
@@ -45,6 +49,7 @@ export function OrderCortesiaModal({
     setReason('');
     setError(null);
     setPending(false);
+    setPrintFailed(false);
     idemKeys.current = new Map();
   }, [open]);
 
@@ -55,9 +60,11 @@ export function OrderCortesiaModal({
     if (!canConfirm) return;
     setPending(true);
     setError(null);
+    setPrintFailed(false);
     try {
+      const ids: string[] = [];
       for (const it of items) {
-        await createCortesia(
+        const creada = await createCortesia(
           {
             productId: it.productId,
             sizeId: it.size?.id ?? null,
@@ -66,6 +73,21 @@ export function OrderCortesiaModal({
           },
           keyForLine(it.lineId),
         );
+        ids.push(creada.id);
+      }
+
+      // La impresión NO puede tumbar la cortesía: el producto ya salió y el
+      // stock ya se descontó. Si el papel falla, la cortesía queda registrada
+      // igual y el cajero se entera para cantarle el pedido a la cocina —que
+      // es exactamente el bache que este cambio vino a tapar.
+      try {
+        await printCortesia(ids);
+      } catch (e) {
+        logError('cortesia', e, { paso: 'imprimir el pedido regalado', lineas: ids.length });
+        setPrintFailed(true);
+        setPending(false);
+        onDone();
+        return;
       }
       onDone();
       onClose();
@@ -80,7 +102,7 @@ export function OrderCortesiaModal({
       open={open}
       onClose={pending ? () => {} : onClose}
       title="Marcar pedido como cortesía"
-      description="Todo el pedido se regala y queda registrado para que el dueño lo revise."
+      description="Todo el pedido se regala. Sale la comanda a cocina y el recibo del cliente, y queda registrado para que el dueño lo revise."
       maxWidth="max-w-sm"
       footer={
         <>
@@ -88,7 +110,7 @@ export function OrderCortesiaModal({
             Cancelar
           </Button>
           <Button onClick={() => void handleConfirm()} disabled={!canConfirm}>
-            {pending ? 'Registrando…' : 'Regalar pedido'}
+            {pending ? 'Registrando…' : printFailed ? 'Reintentar' : 'Regalar pedido'}
           </Button>
         </>
       }
@@ -105,7 +127,10 @@ export function OrderCortesiaModal({
           ))}
         </ul>
 
-        <FormField label="Motivo (3-200 caracteres)" hint={`${reason.trim().length}/200 · queda en auditoría`}>
+        <FormField
+          label="Motivo (3-200 caracteres)"
+          hint={`${reason.trim().length}/200 · queda en auditoría`}
+        >
           <Input
             type="text"
             value={reason}
@@ -115,6 +140,16 @@ export function OrderCortesiaModal({
           />
         </FormField>
 
+        {printFailed ? (
+          <p
+            role="alert"
+            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+          >
+            La cortesía quedó registrada, pero <strong>el papel no salió</strong>. Avísale a la
+            cocina de viva voz, o toca &quot;Reintentar&quot; para volver a imprimir (no se registra
+            dos veces).
+          </p>
+        ) : null}
         {error ? (
           <p
             role="alert"

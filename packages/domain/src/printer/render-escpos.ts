@@ -1,4 +1,6 @@
+import { truncate, twoCol, wrap } from './escpos-text';
 import type { ReceiptData } from './types';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
 
 /**
  * ESC/POS bytes para impresoras térmicas de 58mm (32 caracteres por línea;
@@ -62,7 +64,15 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   // Receipt # + datetime + cashier
   out.push(ALIGN_LEFT);
   out.push(BOLD_ON);
-  out.push(latin1(receipt.provisionalNumber ? 'RECIBO PROVISIONAL' : `RECIBO #${receipt.receiptNumber}`));
+  out.push(
+    latin1(
+      receipt.cortesia
+        ? 'CORTESÍA'
+        : receipt.provisionalNumber
+          ? 'RECIBO PROVISIONAL'
+          : `RECIBO #${receipt.receiptNumber}`,
+    ),
+  );
   out.push(BOLD_OFF);
   if (receipt.provisionalNumber) {
     out.push(LF);
@@ -87,12 +97,18 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
     out.push(latin1(`Cliente: ${receipt.customerName}`));
     out.push(LF);
   }
+  if (receipt.cortesia) {
+    for (const linea of wrap(`Motivo: ${receipt.cortesia.motivo}`, 32)) {
+      out.push(latin1(linea));
+      out.push(LF);
+    }
+  }
   out.push(SEPARATOR);
 
   // Items
   for (const item of receipt.items) {
-    const headLine = `${item.quantity}x ${item.productName}` +
-      (item.sizeName ? ` ${item.sizeName}` : '');
+    const headLine =
+      `${item.quantity}x ${item.productName}` + (item.sizeName ? ` ${item.sizeName}` : '');
     out.push(latin1(truncate(headLine, 32)));
     out.push(LF);
     if (item.modifiers.length > 0) {
@@ -102,11 +118,15 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
     out.push(latin1(twoCol(`  ${formatCop(item.unitPrice)}`, formatCop(item.lineSubtotal), 32)));
     out.push(LF);
     if (item.lineDiscount > 0) {
-      out.push(latin1(twoCol(
-        `  promo${item.appliedPromotionName ? ' ' + item.appliedPromotionName : ''}`,
-        `-${formatCop(item.lineDiscount)}`,
-        32,
-      )));
+      out.push(
+        latin1(
+          twoCol(
+            `  promo${item.appliedPromotionName ? ' ' + item.appliedPromotionName : ''}`,
+            `-${formatCop(item.lineDiscount)}`,
+            32,
+          ),
+        ),
+      );
       out.push(LF);
     }
   }
@@ -123,9 +143,15 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
     out.push(latin1(twoCol('Domicilio', formatCop(receipt.deliveryFee), 32)));
     out.push(LF);
   }
+  if (receipt.cortesia) {
+    // El valor NO se esconde: el cliente tiene que ver lo que se le regaló, y
+    // el papel es el respaldo de por qué ese producto salió sin cobrarse.
+    out.push(latin1(twoCol('Valor regalado', formatCop(receipt.cortesia.valorRegalado), 32)));
+    out.push(LF);
+  }
   out.push(BOLD_ON);
   out.push(SIZE_2H);
-  out.push(latin1(twoCol('TOTAL', formatCop(receipt.total), 16)));
+  out.push(latin1(twoCol('TOTAL', formatCop(receipt.cortesia ? 0 : receipt.total), 16)));
   out.push(SIZE_NORMAL);
   out.push(BOLD_OFF);
   out.push(LF);
@@ -141,7 +167,11 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
       if (pay.amountReceived !== null && pay.amountReceived > pay.amount) {
         out.push(
           latin1(
-            twoCol('    recibido / vuelto', `${formatCop(pay.amountReceived)} / ${formatCop(pay.amountReceived - pay.amount)}`, 32),
+            twoCol(
+              '    recibido / vuelto',
+              `${formatCop(pay.amountReceived)} / ${formatCop(pay.amountReceived - pay.amount)}`,
+              32,
+            ),
           ),
         );
         out.push(LF);
@@ -152,7 +182,7 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
 
   // Footer
   out.push(ALIGN_CENTER);
-  out.push(latin1('¡Gracias por tu compra!'));
+  out.push(latin1(receipt.cortesia ? 'Cortesía de la casa. ¡Gracias!' : '¡Gracias por tu compra!'));
   out.push(LF);
 
   // Abrir cajón monedero (ventas en efectivo) — pulso RJ-11 antes del margen.
@@ -192,10 +222,7 @@ const SIZE_2H_2W = Buffer.from([0x1d, 0x21, 0x11]); // double height + width
 const CUT_PARTIAL = Buffer.from([0x1d, 0x56, 0x01]);
 /** Margen inferior (6 líneas) para cortar a mano sin pegar dos tickets. */
 const FEED_TEAR_MARGIN = Buffer.from('\n'.repeat(6), 'latin1');
-const SEPARATOR = Buffer.from(
-  '-'.repeat(32) + '\n',
-  'latin1',
-);
+const SEPARATOR = Buffer.from('-'.repeat(32) + '\n', 'latin1');
 
 // ====================================================================
 // HELPERS PUROS
@@ -203,19 +230,6 @@ const SEPARATOR = Buffer.from(
 
 function latin1(s: string): Buffer {
   return Buffer.from(s, 'latin1');
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max - 1) + '…';
-}
-
-/**
- * Pega `left` y `right` con espacios en el medio para llenar `width`.
- * Si juntos pasan width, deja un espacio mínimo.
- */
-function twoCol(left: string, right: string, width: number): string {
-  const gap = Math.max(1, width - left.length - right.length);
-  return left + ' '.repeat(gap) + right;
 }
 
 function formatCop(n: number): string {
@@ -226,6 +240,7 @@ function formatCop(n: number): string {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

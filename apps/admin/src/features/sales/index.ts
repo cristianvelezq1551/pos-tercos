@@ -29,4 +29,4 @@ export { FALLBACK_METHODS, fetchEnabledMethods } from './api/payment-methods';
 export { useEnabledPaymentMethods } from './hooks/useEnabledPaymentMethods';
 export { getSale } from './api/get';
 export { notifyComandaFailed } from './lib/comanda-events';
-export { sendTabToKitchen } from './api/print';
+export { printCortesia, sendTabToKitchen } from './api/print';

@@ -1,7 +1,7 @@
 'use client';
 
 import type { PurchaseList } from '@pos-tercos/types';
-import { Button } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button } from '@pos-tercos/ui';
 import { Sparkles } from 'lucide-react';
 
 interface Props {
@@ -43,7 +43,7 @@ export function AiReviewSection({ list, disabled, reviewing, onReview }: Props) 
           <p className="text-xs text-muted-foreground">
             <span title={list.aiModel ?? undefined}>Revisado por IA</span>
             {list.aiEvaluatedAt
-              ? ` · ${new Date(list.aiEvaluatedAt).toLocaleString('es-CO')}`
+              ? ` · ${new Date(list.aiEvaluatedAt).toLocaleString('es-CO', { timeZone: BUSINESS_TIME_ZONE })}`
               : ''}
           </p>
         </div>

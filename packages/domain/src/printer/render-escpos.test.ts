@@ -142,3 +142,53 @@ describe('renderReceiptEscPos', () => {
     expect(DRAWER_KICK).toEqual(Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32]));
   });
 });
+
+/**
+ * Una cortesía no imprimía NADA: la cocina no se enteraba de qué preparar y el
+ * cliente se iba sin comprobante. Ahora sale el mismo recibo, con dos reglas
+ * que no se pueden relajar.
+ */
+describe('recibo de CORTESÍA', () => {
+  const regalado: ReceiptData = {
+    ...RECEIPT_BASE,
+    receiptNumber: null,
+    cortesia: { motivo: 'Cliente frecuente', valorRegalado: 36000 },
+  };
+  const texto = (r: ReceiptData): string => renderReceiptEscPos(r).toString('latin1');
+
+  it('se identifica como cortesía y NO gasta número de recibo', () => {
+    const t = texto(regalado);
+    expect(t).toContain('CORTESÍA');
+    expect(t).not.toContain('RECIBO #');
+    // "null" impreso sería el bug más vergonzoso posible en un papel al cliente.
+    expect(t).not.toContain('null');
+  });
+
+  it('cobra $0 pero declara lo que se regaló', () => {
+    const t = texto(regalado);
+    expect(t).toContain('Valor regalado');
+    expect(t).toContain('$36.000');
+    expect(t).toMatch(/TOTAL\s+\$0/);
+  });
+
+  it('el motivo queda impreso: es el respaldo de por qué salió sin cobrarse', () => {
+    expect(texto(regalado)).toContain('Cliente frecuente');
+  });
+
+  it('un motivo largo se parte en líneas en vez de recortarse', () => {
+    const largo = 'Se demoró el pedido más de cuarenta minutos por una falla del horno de la cocina';
+    const t = texto({ ...regalado, cortesia: { motivo: largo, valorRegalado: 1000 } });
+    for (const palabra of ['cuarenta', 'horno', 'cocina']) expect(t).toContain(palabra);
+  });
+
+  it('no abre el cajón: no hay plata que guardar', () => {
+    expect(renderReceiptEscPos({ ...regalado, openDrawer: false })).not.toContain(DRAWER_KICK);
+  });
+
+  it('una venta normal sigue igual', () => {
+    const t = texto(RECEIPT_BASE);
+    expect(t).toContain('RECIBO #42');
+    expect(t).not.toContain('CORTESÍA');
+    expect(t).not.toContain('Valor regalado');
+  });
+});

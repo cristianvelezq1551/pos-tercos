@@ -10,14 +10,10 @@ interface SalesSummaryViewProps {
   summary: SalesSummary;
 }
 
-const methodLabel = (m: string): string =>
-  PAYMENT_METHOD_LABELS[m as PaymentMethod] ?? m;
+const methodLabel = (m: string): string => PAYMENT_METHOD_LABELS[m as PaymentMethod] ?? m;
 
 export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
-  const maxBucketRevenue = summary.buckets.reduce(
-    (m, b) => (b.revenue > m ? b.revenue : m),
-    0,
-  );
+  const maxBucketRevenue = summary.buckets.reduce((m, b) => (b.revenue > m ? b.revenue : m), 0);
   return (
     <div className="space-y-6">
       {/* Totales */}
@@ -42,7 +38,6 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
         />
       </div>
 
-
       {/* Serie temporal — gráfica horizontal de barras */}
       <section className="rounded-lg border border-border bg-card p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
@@ -55,10 +50,7 @@ export function SalesSummaryView({ summary }: SalesSummaryViewProps) {
         ) : (
           <div className="mt-4 space-y-2">
             {summary.buckets.map((b) => {
-              const pct =
-                maxBucketRevenue > 0
-                  ? (b.revenue / maxBucketRevenue) * 100
-                  : 0;
+              const pct = maxBucketRevenue > 0 ? (b.revenue / maxBucketRevenue) * 100 : 0;
               return (
                 <div key={b.bucket} className="flex items-center gap-3 text-xs">
                   <span className="w-24 shrink-0 font-mono text-muted-foreground">
@@ -143,8 +135,12 @@ function BreakdownTable({
                 <tr key={r.key}>
                   <td className="py-2 text-foreground">{r.label}</td>
                   <td className="py-2 text-right tabular-nums">{r.count}</td>
-                  <td className="py-2 text-right tabular-nums font-medium">{formatCop(r.revenue)}</td>
-                  <td className="py-2 text-right tabular-nums text-muted-foreground">{formatNumber(pct, { decimals: 1 })}%</td>
+                  <td className="py-2 text-right tabular-nums font-medium">
+                    {formatCop(r.revenue)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-muted-foreground">
+                    {formatNumber(pct, { decimals: 1 })}%
+                  </td>
                 </tr>
               );
             })}
@@ -172,9 +168,7 @@ function Stat({
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <p className={`mt-1 text-2xl font-bold tracking-tight tabular-nums ${valueClass}`}>
-        {value}
-      </p>
+      <p className={`mt-1 text-2xl font-bold tracking-tight tabular-nums ${valueClass}`}>{value}</p>
       {hint ? <p className="mt-1 text-xs text-muted-foreground tabular-nums">{hint}</p> : null}
     </div>
   );

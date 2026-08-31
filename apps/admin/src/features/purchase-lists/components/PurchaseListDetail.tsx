@@ -2,7 +2,7 @@
 
 import type { PurchaseList } from '@pos-tercos/types';
 import { PURCHASE_LIST_STATUS_LABELS } from '@pos-tercos/types';
-import { Button, Money, StatusBadge, type StatusMapping } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button, Money, StatusBadge, type StatusMapping } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { getErrorMessage } from '../../../lib/errors';
@@ -60,7 +60,8 @@ export function PurchaseListDetail({ initial }: { initial: PurchaseList }) {
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={list.status} mapping={STATUS_MAPPING} size="sm" />
         <span className="text-sm text-muted-foreground">
-          Armada por {list.createdByName} el {new Date(list.createdAt).toLocaleString('es-CO')}
+          Armada por {list.createdByName} el{' '}
+          {new Date(list.createdAt).toLocaleString('es-CO', { timeZone: BUSINESS_TIME_ZONE })}
         </span>
       </div>
 

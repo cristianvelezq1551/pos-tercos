@@ -1,5 +1,5 @@
 import type { InventoryMovement, Stockable, Subproduct } from '@pos-tercos/types';
-import { Badge, Quantity, formatNumber, pluralizeUnit } from '@pos-tercos/ui';
+import { Badge, BUSINESS_TIME_ZONE, formatNumber, pluralizeUnit, Quantity } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { ProduceSubproductAction } from './ProduceSubproductAction';
 
@@ -57,7 +57,9 @@ export function SubproductStockPanel({
               <span className="font-display text-3xl font-bold tabular-nums text-foreground">
                 {formatNumber(current, { maxDecimals: 2 })}
               </span>
-              <span className="text-sm text-muted-foreground">{pluralizeUnit(subproduct.unit, current)}</span>
+              <span className="text-sm text-muted-foreground">
+                {pluralizeUnit(subproduct.unit, current)}
+              </span>
               {low ? (
                 <Badge tone="warning" size="sm">
                   Falta producir
@@ -101,7 +103,10 @@ export function SubproductStockPanel({
         ) : (
           <ul className="divide-y divide-border">
             {movements.map((m) => (
-              <li key={m.id} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+              <li
+                key={m.id}
+                className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0"
+              >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <Badge tone={TYPE_TONE[m.type]} size="sm">
@@ -109,6 +114,7 @@ export function SubproductStockPanel({
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       {new Date(m.createdAt).toLocaleString('es-CO', {
+                        timeZone: BUSINESS_TIME_ZONE,
                         day: '2-digit',
                         month: 'short',
                         hour: '2-digit',
@@ -137,4 +143,3 @@ export function SubproductStockPanel({
     </section>
   );
 }
-

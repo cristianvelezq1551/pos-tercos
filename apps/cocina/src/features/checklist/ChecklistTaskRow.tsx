@@ -2,6 +2,7 @@
 
 import type { ChecklistDayItem } from '@pos-tercos/types';
 import { Check } from 'lucide-react';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 /**
  * Una tarea de la rutina. Muestra quién la marcó: con dos cocineros en el
@@ -51,6 +52,7 @@ export function ChecklistTaskRow({
               {item.doneByName}
               {item.doneAt
                 ? ` · ${new Date(item.doneAt).toLocaleTimeString('es-CO', {
+                    timeZone: BUSINESS_TIME_ZONE,
                     hour: '2-digit',
                     minute: '2-digit',
                   })}`

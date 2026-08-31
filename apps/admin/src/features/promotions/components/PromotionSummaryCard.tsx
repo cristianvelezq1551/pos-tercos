@@ -1,6 +1,7 @@
 import type { Promotion } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
 import { channelLabel, labelFor } from './PromotionFormHelpers';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 /** Ficha de solo lectura de la promoción. Vive aparte para que el detalle
  *  —que además maneja apagar/encender— no se pase de las 200 líneas. */
@@ -15,10 +16,7 @@ export function PromotionSummaryCard({
     <div className="rounded-lg border border-border bg-card p-5">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <Row label="Tipo" value={labelFor(promotion.type)} />
-        <Row
-          label="Estado"
-          value={statusLabel ?? (promotion.isActive ? 'Encendida' : 'Apagada')}
-        />
+        <Row label="Estado" value={statusLabel ?? (promotion.isActive ? 'Encendida' : 'Apagada')} />
         <Row label="Dónde aplica" value={channelLabel(promotion.channel)} />
         <Row label="Descuento" value={describeDiscount(promotion)} mono />
         <Row label="Días" value={describeDays(promotion.daysOfWeekMask)} mono />
@@ -39,7 +37,9 @@ export function PromotionSummaryCard({
         <Row label="Creada por" value={promotion.createdByName ?? '—'} />
         <Row
           label="Creada el"
-          value={new Date(promotion.createdAt).toLocaleString('es-CO')}
+          value={new Date(promotion.createdAt).toLocaleString('es-CO', {
+            timeZone: BUSINESS_TIME_ZONE,
+          })}
           mono
         />
       </dl>
@@ -56,8 +56,7 @@ function describeDiscount(p: Promotion): string {
     case 'BOGO':
       return `Compra ${p.bogoBuyQty ?? '?'}, lleva ${p.bogoGetQty ?? '?'} gratis`;
     case 'COMBO_OFF': {
-      if (p.discountPct !== null)
-        return `${(p.discountPct * 100).toFixed(0)}% (solo combos)`;
+      if (p.discountPct !== null) return `${(p.discountPct * 100).toFixed(0)}% (solo combos)`;
       if (p.discountFixed !== null) return `${formatCop(p.discountFixed)} (solo combos)`;
       return '—';
     }
@@ -78,15 +77,7 @@ function hhmm(s: string): string {
   return s.slice(0, 5);
 }
 
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <>
       <dt className="text-muted-foreground">{label}</dt>

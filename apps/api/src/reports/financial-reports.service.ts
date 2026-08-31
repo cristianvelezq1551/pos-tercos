@@ -2,11 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   FINANCIAL_ANALYSIS_SYSTEM,
   buildFinancialAnalysisUserPrompt,
+  breakEvenFromCatalogMargin,
   computeBreakEven,
+  computeCatalogMargin,
   nextWeekRef,
   payrollWeekFor,
+  type CatalogMarginResult,
   type FinancialAnalysisInput,
 } from '@pos-tercos/domain';
+import { NON_REVENUE_SALE_STATUSES } from '@pos-tercos/types';
 import type {
   FinancialAnalysis,
   FixedCostLine,
@@ -20,6 +24,7 @@ import { BusinessConfigService } from '../business-config/business-config.servic
 import { utcDateOfLocalDay, ymdLocal } from '../common/local-dates';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RecipesService } from '../recipes/recipes.service';
 import { CogsService } from './cogs.service';
 
 const MONTHS_ES = [
@@ -44,7 +49,55 @@ export class FinancialReportsService {
     private readonly llm: LLMService,
     private readonly audit: AuditService,
     private readonly businessConfig: BusinessConfigService,
+    private readonly recipes: RecipesService,
   ) {}
+
+  /**
+   * Margen de la CARTA: precio de venta contra costo de receta, producto por
+   * producto, ponderado por lo que se vendió en el mes.
+   *
+   * Usa el costo TEÓRICO (`expandedCost`), no el FIFO de lo consumido: la
+   * pregunta es "¿cuánto deja lo que vendo?", y esa respuesta no debe moverse
+   * porque este mes se compró caro o se tiró comida. La realidad del mes ya
+   * está en el margen de contribución, que se conserva al lado.
+   *
+   * Una consulta por producto — el catálogo son decenas de filas y esto corre
+   * una vez al abrir el estado financiero (mismo criterio ya aceptado en
+   * `getTopProducts`). Un producto cuyo costo no se puede calcular (receta
+   * incompleta, insumo sin precio) entra con costo null y el promedio lo
+   * excluye: NUNCA se asume que es gratis.
+   */
+  private async catalogMargin(from: Date, to: Date): Promise<CatalogMarginResult> {
+    const [products, vendidos] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, basePrice: true, comboPrice: true, isCombo: true },
+      }),
+      this.prisma.saleItem.groupBy({
+        by: ['productId'],
+        _sum: { quantity: true },
+        where: {
+          sale: { paidAt: { gte: from, lte: to }, status: { notIn: [...NON_REVENUE_SALE_STATUSES] } },
+        },
+      }),
+    ]);
+    const unidades = new Map(vendidos.map((v) => [v.productId, Number(v._sum.quantity ?? 0)]));
+
+    const filas = await Promise.all(
+      products.map(async (p) => ({
+        productId: p.id,
+        name: p.name,
+        price:
+          p.isCombo && p.comboPrice !== null ? Number(p.comboPrice) : Number(p.basePrice ?? 0),
+        cost: await this.recipes
+          .expandedCost(p.id)
+          .then((r) => r.totalCost)
+          .catch(() => null),
+        unitsSold: unidades.get(p.id) ?? 0,
+      })),
+    );
+    return computeCatalogMargin(filas);
+  }
 
   /** Estado financiero del mes `(year, month1)` (month1: 1-12). */
   async getMonthlyStatement(year: number, month1: number): Promise<MonthlyFinancialStatement> {
@@ -177,6 +230,13 @@ export class FinancialReportsService {
       totalFixed,
     });
 
+    // El equilibrio que se MUESTRA sale del margen de la CARTA (ver
+    // `catalog-margin.ts`): el realizado de arriba es correcto pero, con poco
+    // volumen, se mueve tanto que no sirve como meta. Los dos viajan; la
+    // pantalla explica la diferencia en vez de esconderla.
+    const catalogo = await this.catalogMargin(monthStart, monthEnd);
+    const catalogTarget = breakEvenFromCatalogMargin(totalFixed, catalogo.marginPct);
+
     return {
       year,
       month: month1,
@@ -217,6 +277,23 @@ export class FinancialReportsService {
       breakEven: be.breakEven === null ? null : round(be.breakEven),
       breakEvenCoverage:
         be.breakEvenCoverage === null ? null : round4(be.breakEvenCoverage),
+      catalogBreakEven: {
+        target: catalogTarget === null ? null : round(catalogTarget),
+        marginPct: catalogo.marginPct === null ? null : round4(catalogo.marginPct),
+        weightedBySales: catalogo.weightedBySales,
+        productsConsidered: catalogo.productsConsidered,
+        productsWithoutCost: catalogo.productsWithoutCost,
+        worst: catalogo.worst && {
+          name: catalogo.worst.name,
+          marginPct: round4(catalogo.worst.marginPct),
+        },
+        best: catalogo.best && {
+          name: catalogo.best.name,
+          marginPct: round4(catalogo.best.marginPct),
+        },
+        coverage:
+          catalogTarget !== null && catalogTarget > 0 ? round4(revenue / catalogTarget) : null,
+      },
     };
   }
 

@@ -15,11 +15,7 @@ const PRESETS: { label: string; days: number }[] = [
  * Filtro from/to + granularity en URL search params. Cambia query →
  * router.push y deja que el SSR del page haga refetch.
  */
-export function RangeFilter({
-  showGranularity = false,
-}: {
-  showGranularity?: boolean;
-}) {
+export function RangeFilter({ showGranularity = false }: { showGranularity?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [from, setFrom] = useState(searchParams.get('from') ?? '');
@@ -31,10 +27,7 @@ export function RangeFilter({
     setTo(searchParams.get('to') ?? '');
   }, [searchParams]);
 
-  const activePreset = matchPreset(
-    searchParams.get('from'),
-    searchParams.get('to'),
-  );
+  const activePreset = matchPreset(searchParams.get('from'), searchParams.get('to'));
 
   const apply = (params: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams.toString());

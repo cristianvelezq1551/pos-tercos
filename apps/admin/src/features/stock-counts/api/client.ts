@@ -16,7 +16,11 @@ export function fetchCountTasks(limit = 5): Promise<CountTask[]> {
 }
 
 export function registerCount(input: CreateStockCount): Promise<StockCount> {
-  return request('/inventory/counts', { method: 'POST', body: JSON.stringify(input) }, StockCountSchema);
+  return request(
+    '/inventory/counts',
+    { method: 'POST', body: JSON.stringify(input) },
+    StockCountSchema,
+  );
 }
 
 export function fetchRecentCounts(limit = 30): Promise<StockCount[]> {
@@ -29,9 +33,17 @@ export function fetchPendingCounts(): Promise<StockCount[]> {
 }
 
 export function approveCount(id: string, note?: string): Promise<StockCount> {
-  return request(`/inventory/counts/${id}/approve`, { method: 'POST', body: JSON.stringify({ note }) }, StockCountSchema);
+  return request(
+    `/inventory/counts/${id}/approve`,
+    { method: 'POST', body: JSON.stringify({ note }) },
+    StockCountSchema,
+  );
 }
 
 export function rejectCount(id: string, note?: string): Promise<StockCount> {
-  return request(`/inventory/counts/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }, StockCountSchema);
+  return request(
+    `/inventory/counts/${id}/reject`,
+    { method: 'POST', body: JSON.stringify({ note }) },
+    StockCountSchema,
+  );
 }

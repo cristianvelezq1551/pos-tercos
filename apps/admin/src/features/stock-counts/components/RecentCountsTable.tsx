@@ -1,6 +1,7 @@
 import type { StockCount } from '@pos-tercos/types';
 import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
 import { formatNumber } from '../../../lib/format';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 interface RecentCountsTableProps {
   counts: StockCount[];
@@ -31,15 +32,25 @@ export function RecentCountsTable({ counts }: RecentCountsTableProps) {
         <tbody className="divide-y divide-border">
           {counts.map((c) => (
             <tr key={c.id} className="transition-colors hover:bg-muted/40">
-              <Td mono>{new Date(c.createdAt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}</Td>
+              <Td mono>
+                {new Date(c.createdAt).toLocaleString('es-CO', {
+                  timeZone: BUSINESS_TIME_ZONE,
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                })}
+              </Td>
               <Td>
                 <span className="inline-flex items-center gap-2">
                   <StockableTypeBadge type={c.entityType} size="sm" iconOnly />
                   <span className="font-medium text-foreground">{c.name}</span>
                 </span>
               </Td>
-              <Td mono align="right">{formatNumber(c.countedQty)}</Td>
-              <Td mono align="right">{formatNumber(c.ledgerQty)}</Td>
+              <Td mono align="right">
+                {formatNumber(c.countedQty)}
+              </Td>
+              <Td mono align="right">
+                {formatNumber(c.ledgerQty)}
+              </Td>
               <Td mono align="right">
                 <span
                   className={
@@ -85,7 +96,9 @@ function Td({
   mono?: boolean;
 }) {
   return (
-    <td className={`px-3 py-2.5 ${align === 'right' ? 'text-right' : 'text-left'} ${mono ? 'tabular-nums' : ''}`}>
+    <td
+      className={`px-3 py-2.5 ${align === 'right' ? 'text-right' : 'text-left'} ${mono ? 'tabular-nums' : ''}`}
+    >
       {children}
     </td>
   );

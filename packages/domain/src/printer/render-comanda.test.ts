@@ -108,3 +108,20 @@ describe('renderComandaEscPos — domicilio', () => {
     expect(out).not.toContain('ENTREGAR EN:');
   });
 });
+
+describe('comanda de CORTESÍA', () => {
+  it('dice CORTESÍA en vez de un número de pedido que no existe', () => {
+    const t = renderComandaEscPos({
+      ...BASE,
+      receiptNumber: null,
+      title: 'CORTESÍA',
+    }).toString('latin1');
+    expect(t).toContain('CORTESÍA');
+    expect(t).not.toContain('PEDIDO #');
+    expect(t).not.toContain('null');
+  });
+
+  it('un pedido cobrado sigue mostrando su número', () => {
+    expect(renderComandaEscPos(BASE).toString('latin1')).toContain('PEDIDO #42');
+  });
+});

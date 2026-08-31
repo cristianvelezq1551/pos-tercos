@@ -5,8 +5,16 @@
  * Pura: ComandaData → Buffer. El Print Agent la manda al device.
  */
 
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
+import { truncate, wrap } from './escpos-text';
+
 export interface ComandaData {
-  receiptNumber: number;
+  /**
+   * null en una CORTESÍA: no es una venta, así que no consume número de recibo
+   * (la numeración es contable y no puede tener huecos ni regalos dentro).
+   * El encabezado dice "CORTESÍA" en su lugar.
+   */
+  receiptNumber: number | null;
   /** ISO datetime de la venta. */
   createdAt: string;
   /** COUNTER | WEB_PICKUP | WEB_DELIVERY — la cocina distingue pedidos web. */
@@ -57,7 +65,9 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
     out.push(SIZE_NORMAL);
     out.push(latin1('DESCARTAR ESTE PEDIDO'));
   } else {
-    out.push(latin1(`*** ${comanda.title && comanda.title.trim() ? comanda.title : 'COMANDA COCINA'} ***`));
+    out.push(
+      latin1(`*** ${comanda.title && comanda.title.trim() ? comanda.title : 'COMANDA COCINA'} ***`),
+    );
   }
   out.push(BOLD_OFF);
   out.push(LF);
@@ -69,7 +79,9 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
   }
   out.push(SIZE_2H_2W);
   out.push(BOLD_ON);
-  out.push(latin1(`PEDIDO #${comanda.receiptNumber}`));
+  out.push(
+    latin1(comanda.receiptNumber === null ? 'CORTESÍA' : `PEDIDO #${comanda.receiptNumber}`),
+  );
   out.push(BOLD_OFF);
   out.push(SIZE_NORMAL);
   out.push(LF);
@@ -158,7 +170,9 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
   out.push(LF);
   out.push(ALIGN_CENTER);
   out.push(BOLD_ON);
-  out.push(latin1(truncate(comanda.footer && comanda.footer.trim() ? comanda.footer : 'TERCOS', 32)));
+  out.push(
+    latin1(truncate(comanda.footer && comanda.footer.trim() ? comanda.footer : 'TERCOS', 32)),
+  );
   out.push(BOLD_OFF);
   out.push(ALIGN_LEFT);
   out.push(FEED_TEAR_MARGIN);
@@ -187,40 +201,9 @@ function latin1(s: string): Buffer {
   return Buffer.from(s, 'latin1');
 }
 
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max - 1) + '…';
-}
-
-/**
- * Parte el texto en líneas de `max` chars sin cortar palabras. La dirección NO
- * se puede truncar: "Cra 43A #5-15, torre 2, apto 502" recortado a 32 pierde
- * justo el apartamento, que es lo único que el repartidor necesita al final.
- * Una palabra más larga que el ancho (una URL, un pegote sin espacios) se corta
- * a la fuerza — es eso o descartarla.
- */
-function wrap(text: string, max: number): string[] {
-  const lines: string[] = [];
-  let line = '';
-  for (const word of text.trim().split(/\s+/)) {
-    if (!line) {
-      line = word;
-    } else if (line.length + 1 + word.length <= max) {
-      line += ` ${word}`;
-    } else {
-      lines.push(line);
-      line = word;
-    }
-    while (line.length > max) {
-      lines.push(line.slice(0, max));
-      line = line.slice(max);
-    }
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',

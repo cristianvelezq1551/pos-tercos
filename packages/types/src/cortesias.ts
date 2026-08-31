@@ -71,3 +71,23 @@ export const CortesiaGivenSummarySchema = z.object({
   estimatedCost: z.number(),
 });
 export type CortesiaGivenSummary = z.infer<typeof CortesiaGivenSummarySchema>;
+
+/**
+ * Los dos papeles de un pedido regalado, en bytes ESC/POS (base64) para que el
+ * NAVEGADOR del mostrador los mande al print-agent local — igual que el recibo
+ * de una venta.
+ */
+export const CortesiaPrintDocsSchema = z.object({
+  receiptBase64: z.string(),
+  /** null cuando el pedido era solo reventa (nada que preparar en cocina). */
+  comandaBase64: z.string().nullable(),
+  kitchenItemCount: z.number().int().nonnegative(),
+  valorRegalado: z.number().nonnegative(),
+});
+export type CortesiaPrintDocs = z.infer<typeof CortesiaPrintDocsSchema>;
+
+/** Las líneas que forman UN pedido regalado (las que la caja acaba de crear). */
+export const PrintCortesiaSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(50),
+});
+export type PrintCortesia = z.infer<typeof PrintCortesiaSchema>;

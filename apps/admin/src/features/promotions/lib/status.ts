@@ -1,5 +1,6 @@
 import { promotionScheduleState } from '@pos-tercos/domain';
 import type { Promotion } from '@pos-tercos/types';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 /**
  * Estado de una promoción tal como lo lee una persona.
@@ -22,10 +23,7 @@ export type PromotionStatusInput = Pick<
   'isActive' | 'daysOfWeekMask' | 'timeStart' | 'timeEnd' | 'activeFrom' | 'activeTo'
 >;
 
-export function promotionStatus(
-  p: PromotionStatusInput,
-  at: Date = new Date(),
-): PromotionStatus {
+export function promotionStatus(p: PromotionStatusInput, at: Date = new Date()): PromotionStatus {
   if (!p.isActive) {
     return {
       label: 'Apagada',
@@ -118,7 +116,12 @@ function momentText(target: Date, at: Date): string {
   const diff = daysApart(at, target);
   if (diff === 0) return `hoy ${hora}`;
   if (diff === 1) return `mañana ${hora}`;
-  const fecha = target.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
+  const fecha = target.toLocaleDateString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
   return `el ${fecha} ${hora}`;
 }
 

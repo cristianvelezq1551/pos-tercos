@@ -1,7 +1,7 @@
 'use client';
 
 import type { CountTask, CreateStockCount, StockCount } from '@pos-tercos/types';
-import { Button, Input } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button, Input } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
@@ -95,7 +95,7 @@ function CountTaskRow({
           <p className="font-medium text-foreground">{task.name}</p>
           <p className="text-xs text-muted-foreground">
             {task.lastCountedAt
-              ? `Último conteo: ${new Date(task.lastCountedAt).toLocaleDateString('es-CO')}`
+              ? `Último conteo: ${new Date(task.lastCountedAt).toLocaleDateString('es-CO', { timeZone: BUSINESS_TIME_ZONE })}`
               : 'Nunca contado'}
           </p>
         </div>
@@ -140,12 +140,12 @@ function CountTaskRow({
 
 function CountResult({ result, unit }: { result: StockCount; unit: string }) {
   const diff = result.difference;
-  const tone =
-    diff === 0 ? 'text-emerald-400' : diff < 0 ? 'text-destructive' : 'text-amber-400';
+  const tone = diff === 0 ? 'text-emerald-400' : diff < 0 ? 'text-destructive' : 'text-amber-400';
   return (
     <p className="text-sm tabular-nums">
       <span className="text-muted-foreground">
-        Contado {formatNumber(result.countedQty)} · ledger {formatNumber(result.ledgerQty)} {unit} →{' '}
+        Contado {formatNumber(result.countedQty)} · ledger {formatNumber(result.ledgerQty)} {unit}{' '}
+        →{' '}
       </span>
       <span className={`font-medium ${tone}`}>
         {diff === 0

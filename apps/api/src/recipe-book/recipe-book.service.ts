@@ -86,7 +86,16 @@ export class RecipeBookService {
     });
 
     return {
-      products: productEntries,
+      // La biblia es la guía de PREPARACIÓN. Un producto que se compra y se
+      // revende —una gaseosa, un paquete de papas— no tiene receta, ni
+      // componentes, ni paso a paso: en la app del cocinero era una ficha
+      // vacía que solo estorbaba para llegar a lo que sí se prepara.
+      //
+      // El filtro mira lo que HAY que hacer, no la categoría: no se puede
+      // hardcodear "Bebidas" porque el dueño renombra y crea categorías. Y si
+      // algún día le escribe pasos a una bebida (un granizado, una limonada),
+      // vuelve sola a la biblia sin tocar código.
+      products: productEntries.filter(hayAlgoQuePreparar),
       subproducts: subproductEntries,
       asOf: new Date().toISOString(),
     };
@@ -118,4 +127,13 @@ export class RecipeBookService {
       mermaPct: edge.mermaPct,
     };
   }
+}
+
+/** Tiene receta, es un combo que se arma, o alguien escribió cómo se prepara. */
+function hayAlgoQuePreparar(entry: RecipeBookEntry): boolean {
+  return (
+    entry.components.length > 0 ||
+    entry.comboItems.length > 0 ||
+    (entry.preparationSteps ?? []).some((paso) => paso.trim().length > 0)
+  );
 }

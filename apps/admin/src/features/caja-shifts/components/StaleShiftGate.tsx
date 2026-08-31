@@ -1,7 +1,7 @@
 'use client';
 
 import type { Shift } from '@pos-tercos/types';
-import { Button } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button } from '@pos-tercos/ui';
 import { AlertTriangle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -18,6 +18,7 @@ export function StaleShiftGate({ shift }: { shift: Shift }) {
   const [open, setOpen] = useState(false);
 
   const openedDate = new Date(shift.openedAt).toLocaleDateString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -50,8 +51,8 @@ export function StaleShiftGate({ shift }: { shift: Shift }) {
               ni hacer movimientos hasta cerrarla.
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              Cerrar turno registra el efectivo con el que quedó y la hora de
-              cierre. Después vas a poder abrir la caja de hoy.
+              Cerrar turno registra el efectivo con el que quedó y la hora de cierre. Después vas a
+              poder abrir la caja de hoy.
             </p>
           </div>
           <Button size="lg" className="w-full" onClick={() => setOpen(true)}>

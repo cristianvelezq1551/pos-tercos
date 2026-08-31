@@ -1,7 +1,9 @@
 import type { Shift } from '@pos-tercos/types';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 const dayTime = (iso: string): string =>
   new Date(iso).toLocaleString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
@@ -9,10 +11,19 @@ const dayTime = (iso: string): string =>
   });
 
 const timeOnly = (iso: string): string =>
-  new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  new Date(iso).toLocaleTimeString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
-const sameCalendarDay = (a: string, b: string): boolean =>
-  new Date(a).toDateString() === new Date(b).toDateString();
+// El día lo decide la hora del LOCAL, no la del runtime: esta página se arma
+// en el servidor (que corre en UTC), donde una caja de las 8 pm a las 11 pm ya
+// se ve como dos días distintos y el aviso de "cruzó la medianoche" salía solo.
+const ymdBogota = (iso: string): string =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TIME_ZONE }).format(new Date(iso));
+
+const sameCalendarDay = (a: string, b: string): boolean => ymdBogota(a) === ymdBogota(b);
 
 /**
  * Etiqueta de una caja para el selector: "16/07 17:30 → 02:15 · Cajero Dev".
