@@ -56,19 +56,19 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
       </p>
 
       <div className="space-y-2">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">De cada $100 vendidos te quedan</span>
-          <span className="font-bold tabular-nums">
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="min-w-0 text-muted-foreground">De cada $100 vendidos te quedan</span>
+          <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">
             ${c.marginPct !== null ? Math.round(c.marginPct * 100) : '—'}
           </span>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Ventas necesarias del mes</span>
-          <span className="font-bold tabular-nums">{formatCop(c.target)}</span>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="min-w-0 text-muted-foreground">Ventas necesarias del mes</span>
+          <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">{formatCop(c.target)}</span>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Llevas vendido</span>
-          <span className="tabular-nums">{formatCop(s.revenue)}</span>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="min-w-0 text-muted-foreground">Llevas vendido</span>
+          <span className="shrink-0 whitespace-nowrap tabular-nums">{formatCop(s.revenue)}</span>
         </div>
 
         <div className="mt-2 h-3 overflow-hidden rounded-full bg-muted">

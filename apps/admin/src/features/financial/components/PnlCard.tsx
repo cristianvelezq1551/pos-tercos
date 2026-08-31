@@ -121,12 +121,14 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
 
 function CostLi({ name, category, amount }: { name: string; category: string; amount: number }) {
   return (
-    <li className="flex justify-between gap-2 text-foreground">
+    <li className="flex items-baseline justify-between gap-3 text-foreground">
       <span className="min-w-0 truncate">
         {name}
         <span className="ml-1 text-xs text-muted-foreground">· {category}</span>
       </span>
-      <span className="tabular-nums text-muted-foreground">−{formatCop(amount)}</span>
+      <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
+        −{formatCop(amount)}
+      </span>
     </li>
   );
 }

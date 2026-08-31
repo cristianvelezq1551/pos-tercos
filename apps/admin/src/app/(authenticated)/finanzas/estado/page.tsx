@@ -69,12 +69,16 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
         actions={<MonthPicker year={year} month={month} />}
       />
       <Container size="7xl" padY="md">
+        {/* `min-w-0` en las dos columnas: un ítem de grid trae `min-width: auto`,
+            así que su ancho mínimo es el de su contenido y NO se encoge. En
+            celular eso estiraba la columna a 502 px dentro de 390 y los montos
+            del estado financiero quedaban cortados por el borde derecho. */}
         <div className="grid gap-5 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-5">
+          <div className="min-w-0 space-y-5 lg:col-span-2">
             <PnlCard s={statement} />
             <AiAnalysisCard year={year} month={month} />
           </div>
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <MonthCutoffCard
               monthStartDay={businessConfig.monthStartDay}
               periodStart={statement.periodStart}
