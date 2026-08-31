@@ -18,6 +18,7 @@ import type { INestApplication } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { padEscalar } from '../src/adapters/push/web-push-crypto';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 
@@ -27,7 +28,9 @@ function llavesVapid() {
   e.generateKeys();
   return {
     publicKey: e.getPublicKey().toString('base64url'),
-    privateKey: e.getPrivateKey().toString('base64url'),
+    // Rellenado a 32 bytes: `getPrivateKey()` devuelve la representación
+    // mínima y ~4 de cada 1.000 salen con 31 (fue un fallo intermitente real).
+    privateKey: padEscalar(e.getPrivateKey()).toString('base64url'),
   };
 }
 

@@ -1,12 +1,14 @@
 import { createECDH, hkdfSync, createDecipheriv } from 'node:crypto';
 import {
   assertValidSubscriptionKeys,
+  assertVapidKeyPair,
   b64url,
   buildVapidAuthorization,
   encryptPushPayload,
   fromB64url,
   generateVapidKeys,
   MAX_PAYLOAD_BYTES,
+  padEscalar,
 } from './web-push-crypto';
 
 /**
@@ -161,5 +163,55 @@ describe('assertValidSubscriptionKeys', () => {
     expect(() => assertValidSubscriptionKeys({ ...KEYS, auth: b64url(Buffer.alloc(8)) })).toThrow(
       /16 bytes/,
     );
+  });
+});
+
+describe('escalar privado más corto de 32 bytes', () => {
+  /**
+   * `getPrivateKey()` de Node devuelve la representación MÍNIMA del escalar:
+   * cuando el número arranca con un byte cero, la llave sale con 31 bytes en
+   * vez de 32. Pasa en ~4 de cada 1.000 generaciones — o sea que aparecía como
+   * un fallo intermitente imposible de reproducir a pedido, y en producción
+   * habría sido "generé las llaves y el API no arranca".
+   */
+  it('las llaves generadas SIEMPRE miden 32 bytes', () => {
+    for (let i = 0; i < 400; i++) {
+      expect(fromB64url(generateVapidKeys().privateKey)).toHaveLength(32);
+    }
+  });
+
+  it('una llave de 31 bytes se rellena a la izquierda, no se rechaza', () => {
+    const corta = Buffer.alloc(31, 9);
+    expect(padEscalar(corta)).toHaveLength(32);
+    expect(padEscalar(corta)[0]).toBe(0);
+    expect(padEscalar(corta).subarray(1)).toEqual(corta);
+  });
+
+  it('un escalar de más de 32 bytes sí se rechaza: eso no es una llave P-256', () => {
+    expect(() => padEscalar(Buffer.alloc(33))).toThrow(/más de 32/);
+  });
+
+  it('un par válido con la privada corta sigue siendo pareja', () => {
+    // Se busca una generación corta de verdad en vez de fabricarla: así el test
+    // recorre el mismo camino que el generador real.
+    let corta: { publicKey: string; privateKey: string } | null = null;
+    for (let i = 0; i < 4000 && !corta; i++) {
+      const e = createECDH('prime256v1');
+      e.generateKeys();
+      if (e.getPrivateKey().length < 32) {
+        corta = {
+          publicKey: b64url(e.getPublicKey()),
+          privateKey: b64url(e.getPrivateKey()), // SIN rellenar, como salía antes
+        };
+      }
+    }
+    if (!corta) return; // no salió ninguna corta en esta corrida: nada que probar
+    expect(() => assertVapidKeyPair(corta)).not.toThrow();
+    expect(() =>
+      buildVapidAuthorization('https://fcm.googleapis.com/fcm/send/x', {
+        ...corta,
+        subject: 'mailto:x@tercos.co',
+      }),
+    ).not.toThrow();
   });
 });

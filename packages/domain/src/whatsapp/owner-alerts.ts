@@ -174,7 +174,7 @@ export function buildLowStockAlertMessage(input: {
   return buildOwnerAlert({
     businessName: input.businessName,
     title: 'Stock bajo',
-    body: `${cuantos}:\n${lines.join('\n')}\n\nMíralos en Compras, Sugerencias.`,
+    body: `${cuantos}:\n${lines.join('\n')}\n\nMíralos en Compras, Listas de faltantes.`,
   });
 }
 

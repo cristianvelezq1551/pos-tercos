@@ -52,13 +52,13 @@ const PANTALLA_POR_TIPO: Record<OwnerAlertKind, string> = {
   cortesia_given: '/solicitudes',
   manual_discount: '/caja/historial',
   negative_contribution_margin: '/finanzas/estado',
-  // El texto del aviso dice "Míralos en Compras, Sugerencias": el destino tiene
-  // que ser ESE. Llevar a otra pantalla que la anunciada desorienta.
-  low_stock: '/purchase-suggestions',
+  // Sugerencias se fusionó con Listas de faltantes: `/purchase-suggestions` ya
+  // NO existe en el admin, así que apuntar ahí abriría una página inexistente.
+  low_stock: '/purchase-lists',
   // El resumen se corta a 500 caracteres en la notificación; el texto completo
   // vive en la tarjeta del inicio, que es a donde lleva el toque.
   daily_digest: '/',
-  purchase_summary: '/purchase-suggestions',
+  purchase_summary: '/purchase-lists',
   server_error: '/bitacora',
   multi_instance: '/bitacora',
 };

@@ -3518,6 +3518,28 @@ así que **nunca se envía**. Pasarlo a notificación obliga a decidir qué hace
 con el texto largo del resumen de IA, que en una notificación se corta a 500
 caracteres. Es una decisión de producto, no un arreglo mecánico.
 
+### Dos sesiones a la vez: usa TU propia base de tests
+Con otra sesión trabajando en el mismo repo, la suite e2e dio 37, 22, 44 y 50
+suites en rojo en cuatro corridas seguidas — **suites distintas cada vez**, y
+todas las firmas del tipo "el estado desapareció debajo" (500 al crear el
+refresh token porque el usuario ya no existe, 409 de caja, 400 en cascada).
+Ninguna era de lógica de negocio. La causa: las dos corridas comparten
+`pos_tercos_test` y el `cleanDb` de una trunca los usuarios de la otra a mitad
+de vuelo.
+
+- **La pista que lo delata es la VARIABILIDAD**: un bug de código rompe siempre
+  las mismas suites. Si cambian entre corridas, es contención — mirá
+  `pgrep -f "jest.*jest-e2e"` ANTES de leer una línea de código.
+- **La salida no es coordinar turnos, es no compartir la base**:
+  `TEST_DATABASE_URL=postgres://…/pos_tercos_aislada_test pnpm -F @pos-tercos/api test:e2e`.
+  Con base propia el resultado fue **65 suites / 780 verdes** mientras la otra
+  corrida seguía andando.
+- ⚠️ El nombre DEBE terminar en `_test`: `cleanDb` se niega a truncar cualquier
+  otra cosa (ese TRUNCATE una vez borró usuarios y catálogo de dev). Llamarla
+  `pos_tercos_test_aislada` hace fallar las 65 suites con un mensaje claro.
+- Vale la pena correr con un vigía (`pgrep` cada 5 s) para saber si hubo
+  compañía: sin ese dato, un resultado rojo admite dos lecturas.
+
 ### Lo que este canal NO cubre (y con qué se tapa)
 | Falla | Quién avisa |
 |---|---|
