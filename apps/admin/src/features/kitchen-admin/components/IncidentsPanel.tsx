@@ -1,10 +1,7 @@
 'use client';
 
-import {
-  KITCHEN_INCIDENT_CATEGORY_LABELS,
-  type KitchenIncident,
-} from '@pos-tercos/types';
-import { Badge, Button } from '@pos-tercos/ui';
+import { KITCHEN_INCIDENT_CATEGORY_LABELS, type KitchenIncident } from '@pos-tercos/types';
+import { Badge, BUSINESS_TIME_ZONE, Button } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { listIncidents, resolveIncident } from '../api/client';
 import { getErrorMessage } from '../../../lib/errors';
@@ -47,12 +44,19 @@ export function IncidentsPanel() {
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-display text-lg font-bold text-foreground">Incidencias de cocina</h2>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={onlyOpen}
+            onChange={(e) => setOnlyOpen(e.target.checked)}
+          />
           Solo abiertas
         </label>
       </div>
       {error ? (
-        <p role="alert" className="mb-2 rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
+        <p
+          role="alert"
+          className="mb-2 rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning"
+        >
           {error}
         </p>
       ) : null}
@@ -71,6 +75,7 @@ export function IncidentsPanel() {
                 <span className="text-[0.6875rem] text-muted-foreground">
                   {KITCHEN_INCIDENT_CATEGORY_LABELS[i.category]} ·{' '}
                   {new Date(i.createdAt).toLocaleString('es-CO', {
+                    timeZone: BUSINESS_TIME_ZONE,
                     day: '2-digit',
                     month: '2-digit',
                     hour: '2-digit',
@@ -92,7 +97,12 @@ export function IncidentsPanel() {
               ) : null}
               {!i.resolvedAt ? (
                 <div className="mt-2 flex justify-end">
-                  <Button size="sm" variant="outline" disabled={busy === i.id} onClick={() => void resolve(i.id)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy === i.id}
+                    onClick={() => void resolve(i.id)}
+                  >
                     {busy === i.id ? '…' : 'Marcar resuelta'}
                   </Button>
                 </div>

@@ -9,7 +9,7 @@ import {
   VoidInvoiceAction,
 } from '../../../../features/invoices';
 import { getCurrentUserServer } from '../../../../features/auth/server';
-import { Button, Container, PageHeader, formatCop } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button, Container, formatCop, PageHeader } from '@pos-tercos/ui';
 import type { Invoice, InventoryMovement } from '@pos-tercos/types';
 import { StockableTypeBadge } from '../../../../components/StockableTypeBadge';
 
@@ -429,6 +429,7 @@ function formatNumber(n: number): string {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
     day: '2-digit',
     month: 'short',
     year: 'numeric',

@@ -3,6 +3,7 @@
 import type { Product } from '@pos-tercos/types';
 import { formatCop as fmtCop } from '../../../lib/format';
 import { marginTone } from '../../../lib/margin-thresholds';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 interface ProductFormCostInfoPanelProps {
   product: Product;
@@ -14,7 +15,10 @@ interface ProductFormCostInfoPanelProps {
  * `lastUnitCost` se actualiza automáticamente al confirmar facturas.
  * Calcula margen vs `basePrice` que el dueño está editando.
  */
-export function ProductFormCostInfoPanel({ product, basePriceInput }: ProductFormCostInfoPanelProps) {
+export function ProductFormCostInfoPanel({
+  product,
+  basePriceInput,
+}: ProductFormCostInfoPanelProps) {
   const cost = product.lastUnitCost;
   const factor = product.conversionFactor;
   const unitPurchase = product.unitPurchase ?? '';
@@ -51,16 +55,19 @@ export function ProductFormCostInfoPanel({ product, basePriceInput }: ProductFor
         </p>
         {date && (
           <span className="text-xs text-muted-foreground">
-            actualizado {new Date(date).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
+            actualizado{' '}
+            {new Date(date).toLocaleDateString('es-CO', {
+              timeZone: BUSINESS_TIME_ZONE,
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            })}
           </span>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <CostStat
-          label={`Costo por ${unitPurchase || 'unidad compra'}`}
-          value={fmtCop(cost)}
-        />
+        <CostStat label={`Costo por ${unitPurchase || 'unidad compra'}`} value={fmtCop(cost)} />
         <CostStat
           label={`Costo por ${unitStock || 'unidad venta'}`}
           value={costPerStock !== null ? fmtCop(costPerStock) : '—'}
@@ -113,7 +120,9 @@ function CostStat({
           : 'text-foreground';
   return (
     <div className="rounded-md bg-card px-3 py-2 ring-1 ring-gray-200">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
       <p className={`mt-1 text-base font-semibold tabular-nums ${toneClass}`}>{value}</p>
       {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
     </div>

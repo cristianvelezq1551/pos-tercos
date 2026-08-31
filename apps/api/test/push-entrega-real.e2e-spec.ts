@@ -209,8 +209,9 @@ describe('Entrega real de avisos E2E', () => {
     const aviso = leerAviso();
     expect(aviso.title).toBe('Tercos · Stock bajo');
     expect(aviso.body).toContain('Pan brioche: 21 de 30 unidad');
-    // Aterriza donde se resuelve, no en el inicio.
-    expect(aviso.url).toBe('/purchase-suggestions');
+    // Aterriza donde se resuelve, no en el inicio. Desde que Sugerencias se
+    // fusionó con Listas de faltantes, ese lugar es la lista.
+    expect(aviso.url).toBe('/purchase-lists');
     expect(aviso.tag).toBe('low_stock');
     // Sin asteriscos: son negrita de WhatsApp y acá serían ruido.
     expect(aviso.body).not.toContain('*');

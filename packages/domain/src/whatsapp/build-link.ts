@@ -13,6 +13,7 @@ import { formatCop } from './format';
 import { buildOwnerAlert } from './owner-alerts';
 import type { WhatsAppLinkResult } from './types';
 import { normalizeWaPhone, toWaLink } from './wa-link';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
 
 export function buildDiscrepancyAlertLink(input: {
   ownerPhone: string | null;
@@ -29,6 +30,7 @@ export function buildDiscrepancyAlertLink(input: {
   // 'es-CO' devuelve "06:10 p. m." — ya termina en punto, así que la hora va
   // en su propia línea sin puntuación adicional (antes salía "p. m..").
   const closedHour = input.closedAt.toLocaleTimeString('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
   });

@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -15,22 +16,29 @@ import {
   CreateCortesiaSchema,
   IDEMPOTENCY_HEADER,
   IdempotencyKeySchema,
+  PrintCortesiaSchema,
   ResolveCortesiaSchema,
   type CortesiaGivenSummary,
+  type CortesiaPrintDocs,
   type CortesiaRequest,
   type CortesiaStatus,
   type CreateCortesia,
   type JwtAccessPayload,
+  type PrintCortesia,
   type ResolveCortesia,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, CashierAccess } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { CortesiaPrintService } from './cortesia-print.service';
 import { CortesiasService } from './cortesias.service';
 
 @Controller('cortesias')
 export class CortesiasController {
-  constructor(private readonly cortesias: CortesiasService) {}
+  constructor(
+    private readonly cortesias: CortesiasService,
+    private readonly printService: CortesiaPrintService,
+  ) {}
 
   /** El cajero registra una cortesía: se aplica al instante (descuenta stock a
    * costo FIFO) y notifica al dueño. No requiere aprobación de admin. */
@@ -142,5 +150,16 @@ export class CortesiasController {
     @Body(new ZodValidationPipe(ResolveCortesiaSchema)) body: ResolveCortesia,
   ): Promise<CortesiaRequest> {
     return this.cortesias.reverse(id, user.sub, body.note);
+  }
+
+  /** Los dos papeles del pedido regalado: comanda de cocina y recibo del cliente. */
+  @CashierAccess()
+  @HttpCode(200)
+  @Post('print')
+  print(
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(PrintCortesiaSchema)) body: PrintCortesia,
+  ): Promise<CortesiaPrintDocs> {
+    return this.printService.buildDocs(body.ids, user.sub);
   }
 }

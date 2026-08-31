@@ -1,13 +1,7 @@
 'use client';
 
 import type { DashboardSummary } from '@pos-tercos/types';
-import {
-  Card,
-  Money,
-  Section,
-  StatCard,
-  cn,
-} from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Card, cn, Money, Section, StatCard } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
 import {
   AlertTriangle,
@@ -87,7 +81,11 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
                 'inline-flex items-center gap-1.5 text-[0.6875rem]',
                 stale ? 'text-warning' : 'text-success',
               )}
-              title={updatedAt ? `Actualizado: ${updatedAt.toLocaleTimeString('es-CO')}` : undefined}
+              title={
+                updatedAt
+                  ? `Actualizado: ${updatedAt.toLocaleTimeString('es-CO', { timeZone: BUSINESS_TIME_ZONE })}`
+                  : undefined
+              }
             >
               <span
                 className={cn(
@@ -116,9 +114,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
                 ? null
                 : Number((summary.weekOverWeekPct * 100).toFixed(1))
             }
-            deltaLabel={
-              summary.weekOverWeekPct == null ? 'sin datos previos' : 'vs semana pasada'
-            }
+            deltaLabel={summary.weekOverWeekPct == null ? 'sin datos previos' : 'vs semana pasada'}
             icon={<BrandIcon name="flame" className="h-5 w-5" />}
             tone="primary"
           />
@@ -127,8 +123,7 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
             value={String(summary.todayCount)}
             hint={
               <>
-                Descuentos:{' '}
-                <Money amount={summary.todayDiscount} size="xs" weight="medium" />
+                Descuentos: <Money amount={summary.todayDiscount} size="xs" weight="medium" />
               </>
             }
             icon={<BrandIcon name="burger" className="h-5 w-5" />}
@@ -144,9 +139,9 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
             label="Inventario crítico"
             value={String(summary.lowStockCount)}
             hint={
-              summary.pendingSuggestions > 0
-                ? `${summary.pendingSuggestions} sugerencias IA esperando`
-                : 'sin sugerencias pendientes'
+              summary.lowStockCount > 0
+                ? 'arma la lista de faltantes'
+                : 'todo por encima del mínimo'
             }
             tone={summary.lowStockCount > 0 ? 'warning' : 'neutral'}
             icon={<PackageCheck className="h-5 w-5" strokeWidth={1.75} />}
@@ -168,11 +163,15 @@ export function LiveDashboardSections({ initial }: { initial: DashboardSummary }
             icon={<BrandIcon name="flame" className="h-5 w-5" />}
             tone="success"
           />
+          {/* Lo que hay que comprar se decide en UN solo lugar: la lista de
+              faltantes. El detector de stock bajo sigue corriendo detrás (es lo
+              que dispara el aviso al navegador); lo que se retiró es la
+              segunda pantalla donde había que volver a decidir lo mismo. */}
           <KitchenCard
-            label="Sugerencias pendientes"
-            value={summary.pendingSuggestions}
+            label="Ítems bajo el mínimo"
+            value={summary.lowStockCount}
             icon={<Sparkles className="h-5 w-5" strokeWidth={1.75} />}
-            href="/purchase-suggestions"
+            href="/purchase-lists"
           />
         </div>
       </Section>

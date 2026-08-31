@@ -61,7 +61,7 @@ describe('service worker de avisos', () => {
       eventoPush({
         title: 'Tercos · Stock bajo',
         body: 'Pan: 21 de 30 unidad',
-        url: '/purchase-suggestions',
+        url: '/purchase-lists',
         tag: 'low_stock',
       }),
     );
@@ -71,7 +71,7 @@ describe('service worker de avisos', () => {
         body: 'Pan: 21 de 30 unidad',
         tag: 'low_stock',
         renotify: true,
-        data: { url: '/purchase-suggestions' },
+        data: { url: '/purchase-lists' },
       }),
     );
   });
@@ -117,11 +117,11 @@ describe('service worker de avisos', () => {
   it('sin pestañas abiertas abre una nueva en la pantalla del aviso', async () => {
     const esperas: Promise<unknown>[] = [];
     w.oyentes.notificationclick?.({
-      notification: { close: vi.fn(), data: { url: '/purchase-suggestions' } },
+      notification: { close: vi.fn(), data: { url: '/purchase-lists' } },
       waitUntil: (p: Promise<unknown>) => esperas.push(p),
     });
     await Promise.all(esperas);
-    expect(w.openWindow).toHaveBeenCalledWith('/purchase-suggestions');
+    expect(w.openWindow).toHaveBeenCalledWith('/purchase-lists');
   });
 
   it('una pestaña de otro origen no cuenta como propia', async () => {

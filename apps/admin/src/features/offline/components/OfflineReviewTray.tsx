@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Dialog, formatCop } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button, Dialog, formatCop } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { offlineDb } from '../lib/db';
 import { drainOfflineQueue } from '../lib/sync-engine';
@@ -88,10 +88,7 @@ export function OfflineReviewTray({
       ) : (
         <ul className="space-y-2">
           {sales.map((s) => (
-            <li
-              key={s.localId}
-              className="rounded-lg border border-border bg-card p-3 text-sm"
-            >
+            <li key={s.localId} className="rounded-lg border border-border bg-card p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-foreground">
                   {s.provisionalNumber} · {formatCop(s.payload.total)}
@@ -107,7 +104,10 @@ export function OfflineReviewTray({
                 </span>
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {s.payment.method} · {new Date(s.soldOfflineAt).toLocaleString('es-CO')}
+                {s.payment.method} ·{' '}
+                {new Date(s.soldOfflineAt).toLocaleString('es-CO', {
+                  timeZone: BUSINESS_TIME_ZONE,
+                })}
               </p>
               {s.status === 'failed' && s.failReason ? (
                 <p className="mt-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">

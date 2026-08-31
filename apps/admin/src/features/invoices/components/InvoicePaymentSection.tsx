@@ -1,7 +1,7 @@
 'use client';
 
 import type { Invoice } from '@pos-tercos/types';
-import { Badge, formatCop } from '@pos-tercos/ui';
+import { Badge, BUSINESS_TIME_ZONE, formatCop } from '@pos-tercos/ui';
 import { CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { InvoicePaymentActions } from './InvoicePaymentActions';
@@ -29,6 +29,7 @@ export function InvoicePaymentSection({
   const isPaid = invoice.paymentStatus === 'PAID';
   const paidAtLabel = invoice.paidAt
     ? new Date(invoice.paidAt).toLocaleDateString('es-CO', {
+        timeZone: BUSINESS_TIME_ZONE,
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -56,7 +57,9 @@ export function InvoicePaymentSection({
                 <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
               </Badge>
             ) : (
-              <Badge tone="warning" size="sm">Por pagar</Badge>
+              <Badge tone="warning" size="sm">
+                Por pagar
+              </Badge>
             )}
             <span className="text-lg font-semibold tabular-nums text-foreground">
               {formatCop(invoice.total ?? 0)}

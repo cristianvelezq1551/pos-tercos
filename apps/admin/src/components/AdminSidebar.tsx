@@ -2,8 +2,6 @@
 
 import { Sidebar, sidebarLinkClass } from '@pos-tercos/ui';
 import {
-  Activity,
-  ArrowLeftRight,
   Banknote,
   Bell,
   BarChart3,
@@ -30,7 +28,6 @@ import {
   Recycle,
   Shapes,
   ShoppingBasket,
-  Sparkles,
   Tag,
   TrendingDown,
   TrendingUp,
@@ -78,7 +75,6 @@ const NAV_ITEMS: NavItem[] = [
   { section: 'Catálogo', label: 'Promociones', href: '/promotions', icon: Tag, onlyDueno: true },
   { section: 'Compras', label: 'Facturas', href: '/invoices', icon: Receipt },
   { section: 'Compras', label: 'Proveedores', href: '/suppliers', icon: Truck },
-  { section: 'Compras', label: 'Sugerencias inteligentes', href: '/purchase-suggestions', icon: Sparkles },
   { section: 'Compras', label: 'Listas de faltantes', href: '/purchase-lists', icon: ClipboardList },
   { section: 'Inventario', label: 'Existencias', href: '/inventory', icon: Box },
   { section: 'Inventario', label: 'Deudas', href: '/inventory/negativos', icon: TrendingDown },
@@ -125,7 +121,6 @@ const NAV_ITEMS: NavItem[] = [
   },
   { section: 'Reportes', label: 'Ventas', href: '/reports/sales', icon: LineChart, onlyDueno: true },
   { section: 'Reportes', label: 'Productos', href: '/reports/products', icon: BarChart3, onlyDueno: true },
-  { section: 'Reportes', label: 'Operación', href: '/reports/operations', icon: Activity, onlyDueno: true },
   {
     section: 'Reportes',
     label: 'Compras y domicilios',
@@ -152,13 +147,6 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Anomalías',
     href: '/reports/anomalies',
     icon: CalendarRange,
-    onlyDueno: true,
-  },
-  {
-    section: 'Reportes',
-    label: 'Reconciliación',
-    href: '/reports/reconciliation',
-    icon: ArrowLeftRight,
     onlyDueno: true,
   },
   { section: 'Auditoría', label: 'Bitácora', href: '/bitacora', icon: ClipboardList, onlyDueno: true },

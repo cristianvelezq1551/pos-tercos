@@ -1,7 +1,7 @@
 'use client';
 
 import type { FinancialAnalysis } from '@pos-tercos/types';
-import { Button } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button } from '@pos-tercos/ui';
 import { AlertTriangle, CheckCircle2, Lightbulb, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { analyzeFinancial } from '../api/client';
@@ -48,7 +48,9 @@ export function AiAnalysisCard({ year, month }: Props) {
   };
 
   return (
-    <div className={`space-y-3 rounded-2xl border p-5 ${data ? TONE_CLASS[data.tono] : 'border-border bg-card'}`}>
+    <div
+      className={`space-y-3 rounded-2xl border p-5 ${data ? TONE_CLASS[data.tono] : 'border-border bg-card'}`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" strokeWidth={1.75} />
@@ -67,13 +69,16 @@ export function AiAnalysisCard({ year, month }: Props) {
       {!data && !error ? (
         <p className="text-sm text-muted-foreground">
           La IA lee el estado financiero del mes + la tendencia y devuelve un titular, qué va bien,
-          qué vigilar y la acción concreta a tomar. Cuesta una llamada — apretás cuando quieras
-          (no se evalúa solo).
+          qué vigilar y la acción concreta a tomar. Cuesta una llamada — apretás cuando quieras (no
+          se evalúa solo).
         </p>
       ) : null}
 
       {error ? (
-        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
           {error}
         </p>
       ) : null}
@@ -94,7 +99,8 @@ export function AiAnalysisCard({ year, month }: Props) {
             <p className="mt-1 text-sm text-foreground">{data.siguiente_paso}</p>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            {data.modelUsed} · {new Date(data.generatedAt).toLocaleString('es-CO')}
+            {data.modelUsed} ·{' '}
+            {new Date(data.generatedAt).toLocaleString('es-CO', { timeZone: BUSINESS_TIME_ZONE })}
           </p>
         </>
       ) : null}

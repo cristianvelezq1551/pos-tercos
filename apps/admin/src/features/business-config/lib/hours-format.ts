@@ -1,4 +1,5 @@
 import type { TimeRange } from '@pos-tercos/types';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 /** "17:00" → "5:00 pm". El dueño piensa en 12 h; el dato se guarda en 24 h. */
 export function formatTime(hhmm: string): string {
@@ -27,6 +28,7 @@ export function formatOverrideDate(ymd: string): string {
   if (!y || !m || !d) return ymd;
   // Mediodía UTC: evita que la zona horaria corra el día al formatear.
   return new Intl.DateTimeFormat('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
     weekday: 'long',
     day: 'numeric',
     month: 'long',

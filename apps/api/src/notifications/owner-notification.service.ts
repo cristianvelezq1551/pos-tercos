@@ -48,7 +48,7 @@ const PANTALLA_POR_TIPO: Record<OwnerAlertKind, string> = {
   cortesia_given: '/solicitudes',
   manual_discount: '/caja/historial',
   negative_contribution_margin: '/finanzas/estado',
-  low_stock: '/purchase-suggestions',
+  low_stock: '/purchase-lists',
   server_error: '/bitacora',
   multi_instance: '/bitacora',
 };

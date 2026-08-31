@@ -1,6 +1,11 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { ClipboardCheck } from 'lucide-react';
-import { CountTasksPanel, PendingCountsPanel, RecentCountsTable } from '../../../../features/stock-counts';
+import {
+  CountApprovalGuide,
+  CountTasksPanel,
+  PendingCountsPanel,
+  RecentCountsTable,
+} from '../../../../features/stock-counts';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
 import type { CountTask, StockCount } from '@pos-tercos/types';
@@ -30,7 +35,7 @@ export default async function InventoryCountsPage() {
       <PageHeader
         eyebrow="Inventario"
         title="Conteo físico del día"
-        description="Cuenta estos ítems hoy (rotan solos: nunca contados y más viejos primero). El conteo es ciego: el sistema no te muestra cuánto debería haber. Si difiere, se ajusta el stock y la pérdida aparece en Uso y mermas."
+        description="Contar es la única forma de saber lo que hay de verdad: el sistema lleva la cuenta en papel, y las porciones mal servidas, los derrames y el robo solo aparecen contando. Los ítems de hoy rotan solos (nunca contados y más viejos primero)."
         icon={<ClipboardCheck className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">
@@ -47,6 +52,7 @@ export default async function InventoryCountsPage() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Conteos del cocinero por aprobar
               </h2>
+              <CountApprovalGuide />
               <PendingCountsPanel initial={result.pending} />
             </section>
             <CountTasksPanel tasks={result.tasks} />

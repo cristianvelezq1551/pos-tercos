@@ -4,6 +4,10 @@
  * números, fechas u horas.
  */
 
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
+
+export { BUSINESS_TIME_ZONE };
+
 const COP = new Intl.NumberFormat('es-CO', {
   style: 'currency',
   currency: 'COP',
@@ -26,7 +30,10 @@ const NUM_FRACTION = (decimals: number) =>
  * Formatea pesos colombianos. Acepta number o string (parsea).
  * `withSymbol = false` omite "$" — útil cuando el contexto ya lo deja claro.
  */
-export function formatCop(amount: number | string | null | undefined, opts?: { withSymbol?: boolean }): string {
+export function formatCop(
+  amount: number | string | null | undefined,
+  opts?: { withSymbol?: boolean },
+): string {
   if (amount == null || amount === '') return '—';
   const n = typeof amount === 'string' ? Number(amount) : amount;
   if (!Number.isFinite(n)) return '—';
@@ -84,31 +91,77 @@ export function formatPercent(
   return `${sign}${formatNumber(value, { decimals: opts?.decimals ?? 1 })} %`;
 }
 
-/** Símbolos de medida — invariables, NO se pluralizan (g, ml, kg…). */
-const MEASUREMENT_SYMBOLS = new Set(['g', 'kg', 'mg', 'ml', 'l', 'cl', 'cc', 'oz', 'lb']);
-const NUMERIC_UNIT = /^\d+(?:[.,]\d+)?$/;
+/**
+ * Unidades que SÍ sabemos pluralizar: palabras españolas de conteo, con su
+ * plural escrito a mano (los acentos y las erres finales no salen de una regla).
+ */
+const KNOWN_PLURALS: Record<string, string> = {
+  unidad: 'unidades',
+  porción: 'porciones',
+  porcion: 'porciones',
+  ración: 'raciones',
+  racion: 'raciones',
+  taza: 'tazas',
+  vaso: 'vasos',
+  plato: 'platos',
+  cucharada: 'cucharadas',
+  cucharadita: 'cucharaditas',
+  gramo: 'gramos',
+  kilo: 'kilos',
+  kilogramo: 'kilogramos',
+  litro: 'litros',
+  mililitro: 'mililitros',
+  libra: 'libras',
+  onza: 'onzas',
+  arroba: 'arrobas',
+  paquete: 'paquetes',
+  bolsa: 'bolsas',
+  caja: 'cajas',
+  canasta: 'canastas',
+  cubeta: 'cubetas',
+  bandeja: 'bandejas',
+  botella: 'botellas',
+  frasco: 'frascos',
+  tarro: 'tarros',
+  lata: 'latas',
+  sobre: 'sobres',
+  rollo: 'rollos',
+  barra: 'barras',
+  pieza: 'piezas',
+  tira: 'tiras',
+  hoja: 'hojas',
+  docena: 'docenas',
+  bulto: 'bultos',
+  galón: 'galones',
+  galon: 'galones',
+  tanda: 'tandas',
+  unidades: 'unidades',
+};
 
-function spanishPlural(word: string): string {
-  if (/s$/i.test(word)) return word; // ya termina en s → asumimos plural
-  const last = word.at(-1)!.toLowerCase();
-  if ('aeiou'.includes(last)) return `${word}s`; // taza → tazas, litro → litros
-  if (/ón$/i.test(word)) return `${word.slice(0, -2)}ones`; // porción → porciones
-  if (last === 'z') return `${word.slice(0, -1)}ces`;
-  return `${word}es`; // unidad → unidades
-}
+const NUMERIC_UNIT = /^\d+(?:[.,]\d+)?$/;
 
 /**
  * Pluraliza una unidad de conteo según la cantidad (es-CO).
- * - Los símbolos de medida (g, ml, kg…) son invariables.
- * - Una unidad vacía o numérica ("1", "2" — dato heredado sucio) se trata como
- *   "unidad" (nunca dejamos que un número se muestre como unidad).
+ *
+ * REGLA: solo se pluraliza lo que RECONOCEMOS. Cualquier otra cosa se muestra
+ * tal como la escribió el dueño.
+ *
+ * Antes había una regla que adivinaba el plural de cualquier palabra ("le pego
+ * -es si termina en consonante"), y con las abreviaturas que la gente escribe
+ * de verdad producía disparates: "gr" salía como **"gres"**, "und" como
+ * "undes". Ese texto aparece en la receta, en la producción y en el conteo —
+ * o sea, justo donde alguien está midiendo. Inventarle una letra a la unidad
+ * que el dueño definió es peor que dejarla en singular.
+ *
+ * Una unidad vacía o numérica ("1", "2" — dato heredado sucio) se trata como
+ * "unidad": nunca dejamos que un número se muestre como unidad.
  */
 export function pluralizeUnit(unit: string | null | undefined, quantity: number): string {
   const u = (unit ?? '').trim();
   const singular = Math.abs(quantity) === 1;
   if (u === '' || NUMERIC_UNIT.test(u)) return singular ? 'unidad' : 'unidades';
-  if (MEASUREMENT_SYMBOLS.has(u.toLowerCase())) return u;
-  return singular ? u : spanishPlural(u);
+  if (singular) return u;
+  return KNOWN_PLURALS[u.toLowerCase()] ?? u;
 }
 
 export type DateFormat = 'short' | 'long' | 'datetime' | 'time' | 'time-short' | 'relative';
@@ -123,18 +176,22 @@ export type DateFormat = 'short' | 'long' | 'datetime' | 'time' | 'time-short' |
  * - `time-short`: 14:32
  * - `relative`: "hace 5 min" / "en 2 h"
  */
-export function formatDate(value: Date | string | null | undefined, format: DateFormat = 'short'): string {
+export function formatDate(
+  value: Date | string | null | undefined,
+  format: DateFormat = 'short',
+): string {
   if (value == null) return '—';
-  // Una fecha-solo `YYYY-MM-DD` la parsea JS como medianoche UTC; al formatear
-  // en una zona con offset negativo (Bogotá UTC-5) retrocede un día. La
-  // interpretamos como fecha LOCAL para que "2026-06-24" muestre el 24.
+  // Una fecha-solo `YYYY-MM-DD` la parsea JS como medianoche UTC; al mostrarla
+  // en Bogotá (UTC-5) esa medianoche es todavía el día anterior a las 7 pm, y
+  // "2026-06-24" se leería 23. La anclamos al MEDIODÍA UTC: cae en el mismo día
+  // calendario en cualquier zona entre UTC-11 y UTC+11, así que el 24 se ve 24.
   const d =
     value instanceof Date
       ? value
       : /^\d{4}-\d{2}-\d{2}$/.test(value)
         ? (() => {
             const [y, m, day] = value.split('-').map(Number);
-            return new Date(y, m - 1, day);
+            return new Date(Date.UTC(y, m - 1, day, 12));
           })()
         : new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
@@ -142,12 +199,14 @@ export function formatDate(value: Date | string | null | undefined, format: Date
   switch (format) {
     case 'short':
       return new Intl.DateTimeFormat('es-CO', {
+        timeZone: BUSINESS_TIME_ZONE,
         day: '2-digit',
         month: 'short',
         year: 'numeric',
       }).format(d);
     case 'long':
       return new Intl.DateTimeFormat('es-CO', {
+        timeZone: BUSINESS_TIME_ZONE,
         weekday: 'long',
         day: '2-digit',
         month: 'long',
@@ -155,6 +214,7 @@ export function formatDate(value: Date | string | null | undefined, format: Date
       }).format(d);
     case 'datetime':
       return new Intl.DateTimeFormat('es-CO', {
+        timeZone: BUSINESS_TIME_ZONE,
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -164,6 +224,7 @@ export function formatDate(value: Date | string | null | undefined, format: Date
       }).format(d);
     case 'time':
       return new Intl.DateTimeFormat('es-CO', {
+        timeZone: BUSINESS_TIME_ZONE,
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
@@ -171,6 +232,7 @@ export function formatDate(value: Date | string | null | undefined, format: Date
       }).format(d);
     case 'time-short':
       return new Intl.DateTimeFormat('es-CO', {
+        timeZone: BUSINESS_TIME_ZONE,
         hour: '2-digit',
         minute: '2-digit',
         hour12: false,

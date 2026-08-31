@@ -4,7 +4,8 @@
  * al renderer puro).
  */
 export interface ReceiptData {
-  receiptNumber: number;
+  /** null en una CORTESÍA: no es una venta y no consume número de recibo. */
+  receiptNumber: number | null;
   /** Venta OFFLINE: número provisional (ej. "OFF-7"). Cuando está presente, el
    *  recibo muestra ese número en grande, "RECIBO PROVISIONAL" y un sello
    *  "PENDIENTE DE SINCRONIZAR". El backend NUNCA lo setea (online intacto). */
@@ -41,6 +42,13 @@ export interface ReceiptData {
   /** Si true, el ESC/POS incluye el pulso para abrir el cajón monedero
    *  (RJ-11 en la impresora). Se usa en ventas en efectivo. */
   openDrawer?: boolean;
+  /**
+   * Pedido REGALADO. El recibo sale igual —el cliente se lleva su comprobante
+   * de lo que recibió— pero con el valor tachado por lo que es: el total a
+   * pagar es $0 y aparte se declara cuánto se regaló, que es lo que después
+   * el dueño ve como pérdida en el estado financiero.
+   */
+  cortesia?: { motivo: string; valorRegalado: number } | null;
   /** Branding del negocio (env-provided, no del Sale). */
   business: {
     name: string;

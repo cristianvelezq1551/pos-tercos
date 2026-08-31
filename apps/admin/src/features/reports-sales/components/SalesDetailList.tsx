@@ -6,6 +6,9 @@ import { saleTypeLabel, type Sale, type Shift } from '@pos-tercos/types';
 import { formatCop, formatDate } from '../../../lib/format';
 import { paymentSummary } from '../lib/payment-label';
 import { shiftCrossedMidnight, shiftLabel } from '../lib/shift-label';
+import { matchesLens, sumSales, type SalesLens } from '../lib/sales-lens';
+import { SalesLensTabs } from './SalesLensTabs';
+import { SaleAmountCell } from './SaleAmountCell';
 import { SaleExpandedDetail } from './SaleExpandedDetail';
 import { SalesScopeFilter } from './SalesScopeFilter';
 
@@ -25,13 +28,17 @@ export function SalesDetailList({
   selectedShift,
   outOfRangeShift,
 }: SalesDetailListProps) {
+  // Lente de la vista (no una consulta): "con descuento" es la pregunta que el
+  // dueño no podía responder sin leer fila por fila.
+  const [lens, setLens] = useState<SalesLens>('todas');
+  const visibles = sales.filter((s) => matchesLens(s, lens));
+
   // Anuladas y pendientes NO llegan acá (el backend lista el mismo universo que
-  // el resumen), así que este total espeja el "Ingresos" de arriba.
-  // Neto de domicilios, por la misma razón: esa plata es del repartidor y si se
-  // sumara, este pie no cuadraría con el "Ingresos" de la cabecera.
-  const total = sales.reduce((sum, s) => sum + s.total - s.deliveryFee, 0);
-  const delivery = sales.reduce((sum, s) => sum + s.deliveryFee, 0);
-  const discount = sales.reduce((sum, s) => sum + s.discountTotal, 0);
+  // el resumen), así que con la lente en "todas" este total espeja el
+  // "Ingresos" de arriba. Neto de domicilios, por la misma razón: esa plata es
+  // del repartidor y si se sumara, este pie no cuadraría con la cabecera.
+  const { net: total, delivery, discount } = sumSales(visibles);
+  const conDomicilio = visibles.some((s) => s.deliveryFee > 0);
 
   return (
     <section className="rounded-lg border border-border bg-card p-5">
@@ -45,12 +52,11 @@ export function SalesDetailList({
             selectedShiftId={selectedShift?.id}
             outOfRangeShift={outOfRangeShift}
           />
+          <SalesLensTabs sales={sales} lens={lens} onChange={setLens} />
           <span className="text-xs text-muted-foreground">
-            {sales.length} {sales.length === 1 ? 'venta' : 'ventas'}
+            {visibles.length} {visibles.length === 1 ? 'venta' : 'ventas'}
             {sales.length >= 1000 ? ' (máximo mostrado)' : ''} ·{' '}
-            <span className="font-medium text-foreground tabular-nums">
-              {formatCop(total)}
-            </span>
+            <span className="font-medium text-foreground tabular-nums">{formatCop(total)}</span>
             {discount > 0 ? (
               <span className="tabular-nums"> · {formatCop(discount)} en descuentos</span>
             ) : null}
@@ -66,11 +72,13 @@ export function SalesDetailList({
 
       {selectedShift && <ShiftContextBand shift={selectedShift} />}
 
-      {sales.length === 0 ? (
+      {visibles.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          {selectedShift
-            ? 'Esta caja no registró ventas cobradas.'
-            : 'Sin ventas en el período seleccionado.'}
+          {lens !== 'todas'
+            ? 'Ninguna venta del período cumple ese filtro.'
+            : selectedShift
+              ? 'Esta caja no registró ventas cobradas.'
+              : 'Sin ventas en el período seleccionado.'}
         </p>
       ) : (
         <div className="mt-4 overflow-x-auto">
@@ -87,11 +95,18 @@ export function SalesDetailList({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {sales.map((sale) => (
+              {visibles.map((sale) => (
                 <SaleRow key={sale.id} sale={sale} />
               ))}
             </tbody>
           </table>
+          {conDomicilio ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              En los pedidos con domicilio, el total de la fila es lo que queda en el negocio; el
+              domicilio va marcado aparte porque se lo lleva el repartidor. Así la columna suma
+              exactamente lo del pie.
+            </p>
+          ) : null}
         </div>
       )}
     </section>
@@ -140,18 +155,9 @@ function SaleRow({ sale }: { sale: Sale }) {
         <td className="py-2 text-muted-foreground">{saleTypeLabel(sale.type)}</td>
         <td className="py-2 text-foreground">{sale.customerName ?? '—'}</td>
         <td className="py-2 text-muted-foreground">{paymentSummary(sale)}</td>
-        <td className="py-2 text-muted-foreground">
-          {sale.cashierName ?? sale.paidByName ?? '—'}
-        </td>
-        <td className="py-2 pr-1 text-right tabular-nums font-medium text-foreground">
-          {/* Con descuento, el precio de lista tachado al lado: si no, una venta
-              rebajada se ve idéntica a una barata y el descuento es invisible. */}
-          {sale.discountTotal > 0 ? (
-            <span className="mr-2 text-xs font-normal text-muted-foreground line-through">
-              {formatCop(sale.subtotal)}
-            </span>
-          ) : null}
-          {formatCop(sale.total)}
+        <td className="py-2 text-muted-foreground">{sale.cashierName ?? sale.paidByName ?? '—'}</td>
+        <td className="py-2 pr-1 text-right tabular-nums">
+          <SaleAmountCell sale={sale} />
         </td>
       </tr>
 

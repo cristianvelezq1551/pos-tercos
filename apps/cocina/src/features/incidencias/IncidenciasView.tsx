@@ -5,7 +5,7 @@ import {
   type KitchenIncident,
   type KitchenIncidentCategory,
 } from '@pos-tercos/types';
-import { Badge, Button, EmptyState } from '@pos-tercos/ui';
+import { Badge, BUSINESS_TIME_ZONE, Button, EmptyState } from '@pos-tercos/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { PhotoField } from '../../components/PhotoField';
 import { uploadEvidence } from '../../lib/evidence';
@@ -65,8 +65,12 @@ export function IncidenciasView() {
 
   return (
     <div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-      <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground">Incidencias</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Avísale al dueño de un problema en cocina.</p>
+      <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground">
+        Incidencias
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Avísale al dueño de un problema en cocina.
+      </p>
 
       {/* Nueva incidencia */}
       <div className="mt-4 space-y-3 rounded-xl border border-border bg-card p-4">
@@ -96,7 +100,11 @@ export function IncidenciasView() {
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
         />
         <PhotoField file={photo} onChange={setPhoto} disabled={pending} label="Foto (opcional)" />
-        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
         <Button className="min-h-11" onClick={() => void submit()} disabled={pending}>
           {pending ? 'Enviando…' : 'Enviar incidencia'}
         </Button>
@@ -110,11 +118,18 @@ export function IncidenciasView() {
         {loading ? (
           <p className="text-sm text-muted-foreground">Cargando…</p>
         ) : listError ? (
-          <p role="alert" className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm text-warning">
+          <p
+            role="alert"
+            className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm text-warning"
+          >
             {listError}
           </p>
         ) : items.length === 0 ? (
-          <EmptyState title="Sin incidencias" description="Cuando registres una aparece aquí." size="sm" />
+          <EmptyState
+            title="Sin incidencias"
+            description="Cuando registres una aparece aquí."
+            size="sm"
+          />
         ) : (
           <ul className="space-y-2">
             {items.map((i) => (
@@ -125,7 +140,13 @@ export function IncidenciasView() {
                   </Badge>
                   <span className="text-[0.6875rem] text-muted-foreground">
                     {KITCHEN_INCIDENT_CATEGORY_LABELS[i.category]} ·{' '}
-                    {new Date(i.createdAt).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {new Date(i.createdAt).toLocaleString('es-CO', {
+                      timeZone: BUSINESS_TIME_ZONE,
+                      day: '2-digit',
+                      month: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </span>
                 </div>
                 <p className="mt-1.5 text-sm text-foreground">{i.note}</p>

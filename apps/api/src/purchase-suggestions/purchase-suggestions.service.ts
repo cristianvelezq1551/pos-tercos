@@ -10,24 +10,17 @@ import {
   buildOwnerAlert,
   buildPurchaseSuggestionUserPrompt,
   computeSuggestedPurchase,
-  normalizeConversionFactor,
-  buildSupplierOrderMessage,
-  normalizeWaPhone,
   roundMoney,
-  toWaLink,
   type WhatsAppProvider,
   buildLowStockAlertMessage,
   type LowStockAlertItem,
 } from '@pos-tercos/domain';
 import type {
   EvaluateAllResult,
-  HistoricalSupplier,
   PurchaseSuggestion,
   PurchaseSuggestionStatus,
   ResolveSuggestion,
   ScanResult,
-  SendToSupplier,
-  SupplierOrderLink,
   WhatsAppSendOutcome,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
@@ -40,7 +33,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { businessName } from '../common/business-name';
-import { localMidnightOfYmd, ymdLocal } from '../common/local-dates';
+import { ymdLocal } from '../common/local-dates';
 
 type DbSuggestionWithRelations = Prisma.PurchaseSuggestionGetPayload<{
   include: {
@@ -660,193 +653,6 @@ export class PurchaseSuggestionsService {
     return toDto(updated);
   }
 
-  // ==================================================================
-  // PROVEEDORES: histórico + envío por WhatsApp
-  // ==================================================================
-
-  /**
-   * Devuelve los proveedores que alguna vez vendieron el item de la sugerencia.
-   * Ordenado por última compra DESC. Marca el más reciente como `isLast=true`
-   * (la UI lo usa como default en el selector).
-   */
-  async listSuppliersFor(suggestionId: string): Promise<HistoricalSupplier[]> {
-    const s = await this.prisma.purchaseSuggestion.findUnique({
-      where: { id: suggestionId },
-      select: { entityType: true, ingredientId: true, productId: true },
-    });
-    if (!s) throw new NotFoundException(NO_EXISTE);
-
-    const rows = await this.prisma.supplierProduct.findMany({
-      where:
-        s.entityType === 'INGREDIENT'
-          ? { ingredientId: s.ingredientId! }
-          : { productId: s.productId! },
-      include: {
-        supplier: { select: { id: true, name: true, phone: true, isActive: true } },
-      },
-      // NULLS LAST explícito: en Postgres, DESC pone los nulos PRIMERO, así
-      // que un proveedor sin fecha de compra se coronaría "el más reciente".
-      orderBy: [
-        { lastPurchaseDate: { sort: 'desc', nulls: 'last' } },
-        { updatedAt: 'desc' },
-      ],
-    });
-
-    if (rows.length === 0) return [];
-    const lastId = rows[0].supplierId;
-    return rows.map((r) => ({
-      supplierId: r.supplier.id,
-      name: r.supplier.name,
-      phone: r.supplier.phone,
-      isActive: r.supplier.isActive,
-      lastUnitPrice: r.lastUnitPrice === null ? null : Number(r.lastUnitPrice),
-      lastPurchaseDate: r.lastPurchaseDate ? r.lastPurchaseDate.toISOString() : null,
-      isLast: r.supplierId === lastId,
-    }));
-  }
-
-  /**
-   * Arma el pedido al proveedor: texto + link `wa.me`. NO envía nada — quien
-   * compra lo abre en SU WhatsApp y lo manda (puede editarlo antes). Read-only:
-   * la UI lo llama cada vez que cambian proveedor, cantidad o nota.
-   */
-  async buildSupplierOrder(
-    suggestionId: string,
-    input: SendToSupplier,
-    actorId: string,
-  ): Promise<SupplierOrderLink> {
-    const { sugg, supplier } = await this.loadOrderContext(suggestionId, input.supplierId);
-
-    const itemName =
-      sugg.entityType === 'INGREDIENT'
-        ? (sugg.ingredient?.name ?? '(insumo)')
-        : (sugg.product?.name ?? '(producto)');
-    const quantity = input.quantity ?? Number(sugg.suggestedQty);
-
-    const [config, actor] = await Promise.all([
-      this.businessConfig.get(),
-      this.prisma.user.findUnique({ where: { id: actorId }, select: { fullName: true } }),
-    ]);
-
-    const message = buildSupplierOrderMessage({
-      supplierPhone: supplier.phone,
-      supplierName: supplier.name,
-      businessName: businessName(),
-      neededByLabel: input.neededBy ? formatNeededByLabel(input.neededBy) : null,
-      requestedBy: actor?.fullName ?? null,
-      businessPhoneDisplay: config.phoneDisplay || config.phone || null,
-      deliveryAddress: config.address || null,
-      note: input.note,
-      items: [{ name: itemName, quantity, unitPurchase: sugg.unitPurchase }],
-    });
-
-    const phone = normalizeWaPhone(supplier.phone);
-
-    // Mismo pedido en formato documento. Se arma acá —y no en la pantalla—
-    // porque los datos del negocio viven en la configuración del servidor: si
-    // el papel y el WhatsApp se armaran por separado terminarían diciendo
-    // cosas distintas.
-    const factor = normalizeConversionFactor(
-      sugg.conversionFactor === null ? null : Number(sugg.conversionFactor),
-    );
-    const unitStock = sugg.unitStock ?? sugg.unitPurchase;
-    const estUnitCost =
-      sugg.estUnitCost === null ? null : Number(sugg.estUnitCost);
-    const lineTotal =
-      estUnitCost === null ? null : roundMoney(quantity * estUnitCost);
-
-    return {
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      phone,
-      url: phone ? toWaLink(phone, message).url : null,
-      messagePlain: message,
-      document: {
-        businessName: businessName(),
-        businessPhone: config.phoneDisplay || config.phone || null,
-        businessAddress: config.address || null,
-        supplierName: supplier.name,
-        supplierPhone: supplier.phone,
-        issuedOnLabel: formatLongDate(new Date()),
-        neededByLabel: input.neededBy ? formatNeededByLabel(input.neededBy) : null,
-        requestedBy: actor?.fullName ?? null,
-        note: input.note ?? null,
-        items: [
-          {
-            name: itemName,
-            quantity,
-            unitPurchase: sugg.unitPurchase,
-            equivalence:
-              factor === 1 && unitStock === sugg.unitPurchase
-                ? null
-                : `${(quantity * factor).toLocaleString('es-CO', { maximumFractionDigits: 2 })} ${unitStock}`,
-            estTotal: lineTotal,
-          },
-        ],
-        estTotal: lineTotal,
-      },
-    };
-  }
-
-  /**
-   * Marca la sugerencia ACCEPTED tras abrir el chat del proveedor. Se llama en
-   * el mismo click que abre WhatsApp: el sistema no puede saber si el mensaje
-   * se envió de verdad, y perseguirlo no vale la pena — quien compra siempre
-   * puede rechazar o volver a pedir.
-   */
-  async markOrderedToSupplier(
-    suggestionId: string,
-    input: SendToSupplier,
-    actorId: string,
-  ): Promise<{ link: SupplierOrderLink; suggestion: PurchaseSuggestion }> {
-    const link = await this.buildSupplierOrder(suggestionId, input, actorId);
-    // Sin teléfono no hubo chat que abrir: marcar ACCEPTED con nota "pedido por
-    // WhatsApp" sería mentira. La UI ya deshabilita el botón; esto cubre el API.
-    if (!link.url) {
-      throw new BadRequestException(
-        'El proveedor no tiene teléfono. Agrégalo en Proveedores para poder abrir el chat.',
-      );
-    }
-    // Con unidad y la fecha en palabras: "20" a secas no dice si son kilos o
-    // paquetes, y "2026-08-26" no se lee.
-    const pedido = link.document.items[0];
-    const detail = [
-      pedido ? `${pedido.quantity} ${pedido.unitPurchase}` : null,
-      input.neededBy ? `para el ${formatNeededByLabel(input.neededBy)}` : null,
-      input.note ?? null,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-
-    const updated = await this.prisma.purchaseSuggestion.update({
-      where: { id: suggestionId },
-      data: {
-        status: 'ACCEPTED',
-        resolvedById: actorId,
-        resolvedAt: new Date(),
-        resolutionNote: `Pedido a ${link.supplierName} por WhatsApp${detail ? ` · ${detail}` : ''}`,
-      },
-      include: includeFull(),
-    });
-    await this.audit.log({
-      userId: actorId,
-      action: 'PURCHASE_SUGGESTION_SENT_SUPPLIER',
-      entityType: 'purchase_suggestion',
-      entityId: suggestionId,
-      metadata: {
-        supplierId: link.supplierId,
-        supplierName: link.supplierName,
-        phone: link.phone,
-        quantity: input.quantity ?? null,
-        neededBy: input.neededBy ?? null,
-        channel: 'wa_link',
-        message: link.messagePlain,
-      },
-    });
-
-    return { link, suggestion: toDto(updated) };
-  }
-
   /** Sugerencia sin resolver + proveedor existente. Lanza si algo no cuadra. */
   private async loadOrderContext(suggestionId: string, supplierId: string) {
     const sugg = await this.prisma.purchaseSuggestion.findUnique({
@@ -996,36 +802,6 @@ export class PurchaseSuggestionsService {
 /** El instante N horas antes de `from`. */
 function hoursAgo(from: Date, hours: number): Date {
   return new Date(from.getTime() - hours * 60 * 60 * 1000);
-}
-
-/** Fecha de emisión de la orden, legible en español. */
-function formatLongDate(d: Date): string {
-  return new Intl.DateTimeFormat('es-CO', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(d);
-}
-
-/**
- * Día de entrega legible para el proveedor: "mañana, martes 28 de julio".
- * El "hoy/mañana" se mide en hora LOCAL del server (prod: America/Bogota),
- * igual que el resto de las fechas elegidas por el usuario.
- */
-function formatNeededByLabel(ymd: string): string {
-  const target = localMidnightOfYmd(ymd);
-  const today = localMidnightOfYmd(ymdLocal(new Date()));
-  const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
-
-  const pretty = new Intl.DateTimeFormat('es-CO', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(target);
-
-  if (days === 0) return `hoy, ${pretty}`;
-  if (days === 1) return `mañana, ${pretty}`;
-  return pretty;
 }
 
 /** Normaliza teléfono a E.164 colombiano cuando es razonable. Best-effort. */

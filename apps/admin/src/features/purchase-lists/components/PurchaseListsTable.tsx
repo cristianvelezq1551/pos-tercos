@@ -1,6 +1,7 @@
 import type { PurchaseListSummary } from '@pos-tercos/types';
 import { PURCHASE_LIST_STATUS_LABELS } from '@pos-tercos/types';
 import {
+  BUSINESS_TIME_ZONE,
   DataTable,
   EmptyState,
   Money,
@@ -26,7 +27,8 @@ export function PurchaseListsTable({ lists }: { lists: PurchaseListSummary[] }) 
         <span>
           <span className="font-medium text-foreground">{l.title ?? 'Sin nombre'}</span>
           <span className="block text-xs text-muted-foreground">
-            {l.createdByName} · {new Date(l.createdAt).toLocaleDateString('es-CO')}
+            {l.createdByName} ·{' '}
+            {new Date(l.createdAt).toLocaleDateString('es-CO', { timeZone: BUSINESS_TIME_ZONE })}
           </span>
         </span>
       ),

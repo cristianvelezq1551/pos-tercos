@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { getErrorMessage } from '../../../lib/errors';
@@ -24,7 +24,7 @@ export function NewListButton() {
     setError(null);
     try {
       const list = await createPurchaseList({
-        title: `Pedido del ${new Date().toLocaleDateString('es-CO')}`,
+        title: `Pedido del ${new Date().toLocaleDateString('es-CO', { timeZone: BUSINESS_TIME_ZONE })}`,
         prefillFromLowStock: kind === 'auto',
       });
       router.push(`/purchase-lists/${list.id}`);

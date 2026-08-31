@@ -36,6 +36,7 @@ const ACTION_LABELS: Record<string, string> = {
   CORTESIA_APPROVED: 'Registró cortesía',
   CORTESIA_REJECTED: 'Rechazó cortesía',
   CORTESIA_REVERSED: 'Anuló cortesía',
+  CORTESIA_PRINTED: 'Imprimió el pedido regalado',
   SALE_STATUS_CHANGED: 'Cambió estado de venta',
   SALE_SYNCED_OFFLINE: 'Sincronizó venta offline',
   OFFLINE_SYNC_DISCREPANCY: 'Descuadre al sincronizar offline',

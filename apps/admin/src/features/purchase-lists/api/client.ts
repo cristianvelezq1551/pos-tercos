@@ -57,10 +57,7 @@ export function createPurchaseList(input: CreatePurchaseList): Promise<PurchaseL
   );
 }
 
-export function updatePurchaseList(
-  id: string,
-  input: UpdatePurchaseList,
-): Promise<PurchaseList> {
+export function updatePurchaseList(id: string, input: UpdatePurchaseList): Promise<PurchaseList> {
   return request(
     `/purchase-lists/${id}`,
     { method: 'PATCH', body: JSON.stringify(input) },
@@ -89,11 +86,7 @@ export function updateItem(
 }
 
 export function removeItem(id: string, itemId: string): Promise<PurchaseList> {
-  return request(
-    `/purchase-lists/${id}/items/${itemId}`,
-    { method: 'DELETE' },
-    PurchaseListSchema,
-  );
+  return request(`/purchase-lists/${id}/items/${itemId}`, { method: 'DELETE' }, PurchaseListSchema);
 }
 
 export function closePurchaseList(id: string): Promise<PurchaseList> {

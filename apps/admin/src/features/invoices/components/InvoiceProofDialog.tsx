@@ -1,7 +1,7 @@
 'use client';
 
 import type { Invoice } from '@pos-tercos/types';
-import { Button, Dialog, formatCop } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Button, Dialog, formatCop } from '@pos-tercos/ui';
 import { invoicePaymentProofUrl } from '../api/client';
 
 export function InvoiceProofDialog({
@@ -13,7 +13,7 @@ export function InvoiceProofDialog({
 }) {
   const supplier = invoice.supplierName ?? 'Proveedor sin nombre';
   const paidAtLabel = invoice.paidAt
-    ? new Date(invoice.paidAt).toLocaleString('es-CO')
+    ? new Date(invoice.paidAt).toLocaleString('es-CO', { timeZone: BUSINESS_TIME_ZONE })
     : '—';
   return (
     <Dialog

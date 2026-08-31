@@ -1,5 +1,5 @@
 import type { FinancePendingPayroll } from '@pos-tercos/types';
-import { Money } from '@pos-tercos/ui';
+import { BUSINESS_TIME_ZONE, Money } from '@pos-tercos/ui';
 import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { AgingBadge } from './AgingBadge';
@@ -8,9 +8,11 @@ import { EmptyHint } from './EmptyHint';
 /** "2026-07-09" → "9 jul" (local, sin año — va inline en el sublabel). */
 function shortDay(ymd: string): string {
   const [y, m, d] = ymd.split('-').map(Number);
-  return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).format(
-    new Date(y, m - 1, d),
-  );
+  return new Intl.DateTimeFormat('es-CO', {
+    timeZone: BUSINESS_TIME_ZONE,
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(y, m - 1, d));
 }
 
 /** Semana en curso: devengado a la fecha, todavía no es deuda vencida. */

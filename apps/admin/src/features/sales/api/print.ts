@@ -14,6 +14,7 @@
  * NO usa el diálogo del navegador (causaba papel infinito).
  */
 import {
+  CortesiaPrintDocsSchema,
   SendToKitchenResponseSchema,
   type Sale,
   type SendToKitchenResponse,
@@ -22,8 +23,7 @@ import { buildReceiptDataInput, type ReceiptDataInput } from '../lib/build-recei
 import { printersForDoc } from '../../printing/lib/printer-config';
 import { logError, logInfo } from '../../../lib/client-log';
 
-const AGENT_URL =
-  process.env.NEXT_PUBLIC_PRINT_AGENT_URL ?? 'http://localhost:9120';
+const AGENT_URL = process.env.NEXT_PUBLIC_PRINT_AGENT_URL ?? 'http://localhost:9120';
 /** Corte si el agent no responde (caído/colgado) — no colgar la UI del cajero. */
 const AGENT_TIMEOUT_MS = 15_000;
 
@@ -34,10 +34,7 @@ export interface PrintOptions {
   reprint?: boolean;
 }
 
-export async function printReceipt(
-  saleId: string,
-  opts: PrintOptions = {},
-): Promise<void> {
+export async function printReceipt(saleId: string, opts: PrintOptions = {}): Promise<void> {
   const targets = printersForDoc('factura');
   logInfo('print', 'recibo: inicio', { saleId, targets, agent: AGENT_URL });
   const escposBase64 = await tryBackendBytes(saleId);
@@ -110,6 +107,43 @@ export async function printComanda(
     });
     await sendToTargets({ escposBase64 }, full);
   }
+}
+
+/**
+ * Los dos papeles de un pedido REGALADO.
+ *
+ * Una cortesía no es una venta: no tiene `saleId`, así que no puede pasar por
+ * `printComanda`/`printReceipt`. El grupo lo definen los ids que la caja acaba
+ * de crear (una fila por línea del carrito).
+ *
+ * Sale por las MISMAS impresoras que un pedido cobrado —cocina prepara igual y
+ * el cliente se lleva su comprobante— y usa el mismo ruteo, así que una
+ * terminal con dos impresoras configuradas no necesita nada aparte.
+ *
+ * Sin nada que preparar (un pedido de solo bebidas) no se imprime comanda: una
+ * comanda vacía hace que la cocina deje de creerle al papel.
+ */
+export async function printCortesia(ids: string[]): Promise<void> {
+  const res = await fetch('/api/cortesias/print', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Error ${res.status}`);
+  }
+  const docs = CortesiaPrintDocsSchema.parse(await res.json());
+  logInfo('print', 'cortesía: documentos listos', {
+    lineas: ids.length,
+    aCocina: docs.kitchenItemCount,
+  });
+
+  if (docs.comandaBase64) {
+    await sendToTargets({ escposBase64: docs.comandaBase64 }, printersForDoc('comanda-cocina'));
+  }
+  await sendToTargets({ escposBase64: docs.receiptBase64 }, printersForDoc('factura'));
 }
 
 /**
@@ -232,9 +266,7 @@ async function sendToTargets(body: PrintPayload, targets: string[]): Promise<voi
   }
 }
 
-async function sendToAgent(
-  body: PrintPayload & { printer?: string },
-): Promise<void> {
+async function sendToAgent(body: PrintPayload & { printer?: string }): Promise<void> {
   const dest = body.printer ?? '(impresora por defecto del agent)';
   logInfo('print', 'enviando al print-agent', { printer: dest });
   let agentRes: Response;
@@ -253,7 +285,11 @@ async function sendToAgent(
     // Causa típica en Vercel: el navegador bloqueó el request a localhost
     // (Private Network Access / mixed-content), el agent no está corriendo, o
     // se colgó y el request agotó el timeout (abort).
-    logError('print', e, { printer: dest, agent: AGENT_URL, hint: 'agent no contactable / PNA bloqueado / timeout' });
+    logError('print', e, {
+      printer: dest,
+      agent: AGENT_URL,
+      hint: 'agent no contactable / PNA bloqueado / timeout',
+    });
     throw new Error(
       'No se pudo contactar la impresora local (print-agent). ¿Está corriendo el agent en esta PC y el navegador permite conexiones a localhost?',
     );

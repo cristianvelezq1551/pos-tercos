@@ -46,7 +46,7 @@ export function renderReceiptHtml(r: ReceiptData): string {
 <html lang="es-CO">
 <head>
 <meta charset="utf-8" />
-<title>Recibo #${r.receiptNumber}</title>
+<title>${r.receiptNumber === null ? 'Cortesía' : `Recibo #${r.receiptNumber}`}</title>
 <style>
   @page { size: 80mm auto; margin: 0; }
   html, body { background: #fff; }
@@ -85,7 +85,7 @@ export function renderReceiptHtml(r: ReceiptData): string {
 
   <hr />
 
-  <div class="meta-row"><span>Recibo</span><span>#${r.receiptNumber}</span></div>
+  <div class="meta-row"><span>Recibo</span><span>${r.receiptNumber === null ? 'Cortesía' : `#${r.receiptNumber}`}</span></div>
   <div class="meta-row"><span>Fecha</span><span>${date}</span></div>
   ${r.cashierName ? `<div class="meta-row"><span>Cajero</span><span>${escape(r.cashierName)}</span></div>` : ''}
   ${r.customerName ? `<div class="meta-row"><span>Cliente</span><span>${escape(r.customerName)}</span></div>` : ''}

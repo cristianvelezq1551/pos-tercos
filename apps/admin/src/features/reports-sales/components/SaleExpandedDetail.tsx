@@ -8,9 +8,7 @@ export function SaleExpandedDetail({ sale }: { sale: Sale }) {
   return (
     <div className="space-y-3">
       {lines.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Sin detalle de productos disponible.
-        </p>
+        <p className="text-xs text-muted-foreground">Sin detalle de productos disponible.</p>
       ) : (
         <table className="w-full text-xs">
           <thead>
@@ -63,13 +61,9 @@ export function SaleExpandedDetail({ sale }: { sale: Sale }) {
           {sale.discountTotal > 0 && (
             <p>
               Subtotal:{' '}
-              <span className="tabular-nums text-foreground">
-                {formatCop(sale.subtotal)}
-              </span>{' '}
-              · Descuento:{' '}
-              <span className="tabular-nums text-warning">
-                −{formatCop(sale.discountTotal)}
-              </span>
+              <span className="tabular-nums text-foreground">{formatCop(sale.subtotal)}</span> ·
+              Descuento:{' '}
+              <span className="tabular-nums text-warning">−{formatCop(sale.discountTotal)}</span>
             </p>
           )}
           {sale.discountReason ? (
@@ -80,10 +74,8 @@ export function SaleExpandedDetail({ sale }: { sale: Sale }) {
           {sale.deliveryFee > 0 ? (
             <p>
               Domicilio (del repartidor):{' '}
-              <span className="tabular-nums text-foreground">
-                {formatCop(sale.deliveryFee)}
-              </span>{' '}
-              · Queda en el negocio:{' '}
+              <span className="tabular-nums text-foreground">{formatCop(sale.deliveryFee)}</span> ·
+              Queda en el negocio:{' '}
               <span className="tabular-nums text-foreground">
                 {formatCop(sale.total - sale.deliveryFee)}
               </span>

@@ -6,6 +6,7 @@ import type {
   SaleItem,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { businessInfo } from '../common/business-info';
 
 /**
  * Mappers y shapes compartidos entre los servicios de ventas
@@ -81,12 +82,7 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
     openDrawer:
       sale.paymentMethod === 'CASH' ||
       (sale.payments ?? []).some((p) => p.method === 'CASH'),
-    business: {
-      name: process.env.BUSINESS_NAME ?? 'POS Tercos',
-      address: process.env.BUSINESS_ADDRESS ?? 'Dirección por configurar',
-      nit: process.env.BUSINESS_NIT ?? '900.000.000-0',
-      phone: process.env.BUSINESS_PHONE ?? null,
-    },
+    business: businessInfo(),
   };
 }
 

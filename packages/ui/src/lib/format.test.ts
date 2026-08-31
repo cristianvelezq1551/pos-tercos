@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BUSINESS_TIME_ZONE,
   formatCop,
   formatDate,
   formatDuration,
@@ -140,48 +142,43 @@ describe('formatPercent', () => {
 });
 
 describe('pluralizeUnit', () => {
-  it('los símbolos de medida son invariables', () => {
-    for (const u of ['g', 'kg', 'ml', 'l', 'oz', 'lb']) {
+  it('las abreviaturas se muestran tal como se escribieron', () => {
+    // El bug que esto fija: la regla vieja adivinaba el plural y "gr" salía
+    // como "gres" en la receta, la producción y el conteo.
+    for (const u of ['gr', 'grs', 'kg', 'g', 'ml', 'und', 'uds', 'cc', 'lb', 'oz', 'porc', 'paq']) {
       expect(pluralizeUnit(u, 5), u).toBe(u);
       expect(pluralizeUnit(u, 1), u).toBe(u);
     }
   });
 
-  it('reconoce el símbolo sin importar mayúsculas', () => {
-    expect(pluralizeUnit('KG', 5)).toBe('KG');
-  });
-
-  it('pluraliza palabras terminadas en vocal', () => {
-    expect(pluralizeUnit('taza', 3)).toBe('tazas');
-    expect(pluralizeUnit('taza', 1)).toBe('taza');
-  });
-
-  it('pluraliza consonante con -es', () => {
+  it('pluraliza las palabras que reconoce', () => {
     expect(pluralizeUnit('unidad', 2)).toBe('unidades');
-  });
-
-  it('resuelve el acento de -ón', () => {
     expect(pluralizeUnit('porción', 2)).toBe('porciones');
+    expect(pluralizeUnit('taza', 3)).toBe('tazas');
+    expect(pluralizeUnit('paquete', 4)).toBe('paquetes');
+    expect(pluralizeUnit('galón', 2)).toBe('galones');
   });
 
-  it('convierte la z final en -ces', () => {
-    expect(pluralizeUnit('nuez', 3)).toBe('nueces');
+  it('reconoce sin importar mayúsculas, y respeta cómo se escribió', () => {
+    expect(pluralizeUnit('KG', 5)).toBe('KG');
+    expect(pluralizeUnit('Unidad', 1)).toBe('Unidad');
   });
 
-  it('no re-pluraliza lo que ya termina en s', () => {
+  it('en singular nunca toca la unidad', () => {
+    expect(pluralizeUnit('unidad', 1)).toBe('unidad');
+    expect(pluralizeUnit('taza', 1)).toBe('taza');
+    expect(pluralizeUnit('taza', -1)).toBe('taza');
+  });
+
+  it('no re-pluraliza lo que ya viene en plural', () => {
     expect(pluralizeUnit('papas', 3)).toBe('papas');
+    expect(pluralizeUnit('unidades', 3)).toBe('unidades');
   });
 
   it('una unidad vacía o numérica (dato sucio) cae a unidad/unidades', () => {
-    expect(pluralizeUnit('', 1)).toBe('unidad');
-    expect(pluralizeUnit(null, 5)).toBe('unidades');
+    expect(pluralizeUnit('', 3)).toBe('unidades');
+    expect(pluralizeUnit(null, 1)).toBe('unidad');
     expect(pluralizeUnit('2', 5)).toBe('unidades');
-    expect(pluralizeUnit('1,5', 1)).toBe('unidad');
-  });
-
-  it('la cantidad negativa se juzga por su valor absoluto', () => {
-    expect(pluralizeUnit('unidad', -1)).toBe('unidad');
-    expect(pluralizeUnit('unidad', -3)).toBe('unidades');
   });
 
   it('el 0 va en plural (0 unidades)', () => {
@@ -283,5 +280,61 @@ describe('formatDuration', () => {
 
   it('trunca los milisegundos sueltos hacia abajo', () => {
     expect(formatDuration(1_999)).toBe('0:01');
+  });
+});
+
+/**
+ * Novedad del ensayo en prod: una caja abierta a las 4:35 pm se leía "9:35 pm".
+ *
+ * La causa NO era el dato: era que la hora la ponía el reloj de quien
+ * renderizaba. El admin arma varias páginas en el servidor y Vercel corre en
+ * UTC, así que Bogotá (UTC-5) salía cinco horas adelante.
+ *
+ * El caso del servidor corre en un proceso APARTE con TZ=UTC: cambiar
+ * `process.env.TZ` a mitad de un proceso no es confiable (Node ya tiene la zona
+ * cacheada), así que un test que lo intente puede pasar sin probar nada.
+ */
+describe('formatDate — la hora es siempre la del local', () => {
+  it('la zona del negocio es Bogotá', () => {
+    expect(BUSINESS_TIME_ZONE).toBe('America/Bogota');
+  });
+
+  // 21:35 UTC = 16:35 en Bogotá. Es exactamente el caso reportado.
+  const aperturaUtc = '2026-08-30T21:35:00.000Z';
+
+  it('muestra la hora de Bogotá', () => {
+    expect(formatDate(aperturaUtc, 'time-short')).toBe('16:35');
+    expect(formatDate(aperturaUtc, 'datetime')).toContain('16:35');
+  });
+
+  it('la noche no corre el día al siguiente', () => {
+    // 03:00 UTC del 31 es todavía el 30 a las 10 pm en Bogotá.
+    expect(formatDate('2026-08-31T03:00:00.000Z', 'short')).toContain('30');
+  });
+
+  it('una fecha-solo muestra su propio día', () => {
+    expect(formatDate('2026-06-24', 'short')).toContain('24');
+  });
+
+  it('EN UN SERVIDOR EN UTC da la MISMA hora que acá', () => {
+    const enUTC = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        `process.stdout.write(new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date('${aperturaUtc}')))`,
+      ],
+      { env: { ...process.env, TZ: 'UTC' }, encoding: 'utf8' },
+    );
+    expect(enUTC).toBe(formatDate(aperturaUtc, 'time-short'));
+    // Y sin fijar la zona, ese mismo servidor diría 21:35 — 5 horas de más.
+    const sinFijar = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        `process.stdout.write(new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date('${aperturaUtc}')))`,
+      ],
+      { env: { ...process.env, TZ: 'UTC' }, encoding: 'utf8' },
+    );
+    expect(sinFijar).toBe('21:35');
   });
 });

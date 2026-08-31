@@ -3659,6 +3659,115 @@ el cajero desde su propio WhatsApp (§7.v22). Y los **avisos técnicos** (errore
   lo recibido. Lo que valida el camino real es el botón de prueba.
 
 
+## 7.v52 Ajustes del ensayo en prod: la hora del local y el fin de la pantalla duplicada (2026-08-31)
+
+> 12 novedades reportadas por el dueño probando en producción (datos
+> desechables). Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes,
+> e2e 64 suites / 774. Sin migración.
+
+### La hora estaba 5 horas adelante en todo lo que arma el servidor
+Una caja abierta a las 4:35 pm se leía **"9:35 pm"**. No era el dato: **ningún**
+formateador fijaba zona horaria, así que la ponía el reloj del runtime — y el
+admin arma varias páginas en el SERVIDOR, donde Vercel corre en UTC. El mismo
+dato tampoco coincidía entre servidor y navegador, que es una discrepancia de
+hidratación.
+
+- **`BUSINESS_TIME_ZONE`** vive en `packages/types/src/business-time.ts` (la capa
+  más baja: la importan `ui` y `domain`). Lo usan los 5 formatos de `formatDate`,
+  el shim del admin y los ~25 sitios que formateaban a mano.
+- Una **fecha-solo** (`YYYY-MM-DD`) ahora se ancla al **mediodía UTC**: cae en el
+  mismo día calendario en cualquier zona entre UTC-11 y UTC+11. Anclarla a
+  medianoche local del runtime y mostrarla en Bogotá corría el día hacia atrás.
+- ⚠️ **`TZ` es un nombre de variable RESERVADO en Vercel**: no se puede cambiar
+  el reloj del runtime desde la configuración. Lo que se decide con el
+  calendario se resuelve en código con **`businessWallClock(at)`**, que convierte
+  un instante a la hora de PARED del local. Dos lugares lo necesitaban de verdad:
+  `promotionStatus` (una promo de viernes 5-11 pm se evaluaba contra la franja
+  del sábado, así que el badge "Descontando ahora" mentía) y `todayKey` del
+  horario de la web (después de las 7 pm mostraba el día siguiente).
+- **Regla que queda:** para MOSTRAR una fecha va `timeZone: BUSINESS_TIME_ZONE`
+  en el formateador (conserva el instante); para DECIDIR con el calendario va
+  `businessWallClock` (cambia el instante a propósito). No se mezclan.
+- ⚠️ **Cambiar `process.env.TZ` a mitad del proceso NO es una técnica de test
+  válida** (Node ya tiene la zona cacheada; un caso así puede pasar sin probar
+  nada). El caso del servidor corre en un proceso APARTE con `TZ=UTC`, con un
+  caso gemelo que verifica que sin fijar la zona ese mismo proceso SÍ da la hora
+  corrida.
+
+### Compras: una sola pantalla
+Se retira **Sugerencias inteligentes**. Había dos pantallas para decidir la
+misma compra, y la lista de faltantes ya hacía todo lo que importa (nace llena
+con lo que falta, la IA revisa si las cantidades alcanzan, saca el PDF general
+o por proveedor).
+
+- **El detector de stock bajo SIGUE VIVO**: el cron horario y su aviso al
+  navegador (§7.v51) son lo que el dueño pidió conservar. Solo cambió a dónde
+  aterriza el aviso (`/purchase-lists`). La tabla `purchase_suggestions` queda
+  **dormida** (sin migración).
+- **Se eliminó el pedido al proveedor por WhatsApp** (§7.v19) — decisión del
+  dueño: *"como no usamos wpp, no definas esta funcionalidad"*. El PDF es la
+  herramienta.
+- `ShortageAlert` en la lista muestra qué está bajo el mínimo, con la falta en
+  unidad de INVENTARIO y lo que hay que comprar en unidad de COMPRA.
+
+### El punto de equilibrio se calcula con la carta, no con el mes
+El dueño lo vio saltar de **$4,3M a $8,7M** entre dos miradas y lo llamó *"vender
+humo"*. La fórmula estaba bien: con $92.000 vendidos, un flete de $34.000 se
+lleva 37 puntos del margen de contribución. El problema es que un número que se
+mueve así **no es una meta**.
+
+- `computeCatalogMargin` (domain, puro, 12 tests): margen de cada producto por
+  **precio contra receta**, ponderado por la mezcla vendida cuando la hay, y
+  promedio simple de la carta cuando todavía no hay ventas.
+- **Un producto sin costo conocido queda FUERA y se reporta.** Con costo 0
+  parecería 100 % de margen y subiría el promedio de todos — el mismo error de
+  "lo que no sé vale cero" que se cerró en §7.v32.
+- El margen **realizado no se esconde**: va debajo, en "Cómo se calculó", y la
+  diferencia entre los dos es el dato útil (es lo que se llevan la merma, las
+  cortesías, los faltantes y los fletes).
+
+### La cortesía imprime
+No imprimía **nada**: la cocina no se enteraba de qué preparar y el cliente se
+iba sin comprobante. `POST /cortesias/print` devuelve los dos papeles en ESC/POS.
+
+- **No gasta número de recibo**: la numeración es contable y no puede tener
+  regalos adentro. `ReceiptData.receiptNumber` y `ComandaData.receiptNumber`
+  pasaron a `number | null`.
+- El recibo **declara el valor regalado y cobra $0**. Esconderlo lo haría ver
+  gratis, y no lo es: ese costo baja el resultado del mes.
+- El grupo de líneas lo definen **los ids que la caja acaba de crear** (una fila
+  por línea del carrito): no hizo falta una columna de lote.
+- Un pedido de solo bebidas **no imprime comanda**: una comanda vacía hace que
+  la cocina deje de creerle al papel. Y si la impresión falla, la cortesía queda
+  registrada igual y la caja lo dice — el producto ya salió.
+
+### Lo demás
+- **`pluralizeUnit` ya no adivina.** La regla vieja le pegaba `-es` a cualquier
+  consonante final y "gr" salía **"gres"** en la receta, la producción y el
+  conteo. Ahora solo se pluraliza lo que se reconoce (`KNOWN_PLURALS`); una
+  abreviatura se muestra **tal como la escribió el dueño**.
+- **Ventas** (`/reports/sales`): la fila con domicilio muestra lo que queda en el
+  negocio —así la columna suma exacto el pie y el "Ingresos" de arriba
+  (§7.v24)— con el envío marcado aparte. Y hay lentes **Con descuento / Con
+  domicilio** con contador; el pie habla de lo filtrado.
+- **Biblia de cocina**: entra solo lo que tiene receta, combo o paso a paso. No
+  se hardcodea "Bebidas" — el dueño renombra categorías, y si algún día le
+  escribe pasos a una limonada vuelve sola.
+- **Conteo físico**: la pantalla ahora dice que aprobar **registra una pérdida
+  real del mes** (§7.v43), que rechazar no cambia nada, y qué revisar antes
+  (unidad, factura sin cargar, producción sin registrar).
+- **Reportes**: fuera *Operación* y *Reconciliación* (rutas y componentes; el
+  backend y la tabla `payment_reconciliations` quedan intactos, sin migración
+  destructiva en ensayo).
+- **El logotipo de la web se veía AZUL**: su variante oscura es `#14181F` (el
+  gris azulado heredado del admin) sobre un fondo `#141414`. La barra tiene dos
+  estados y los dos son oscuros → siempre la blanca.
+- `escpos-text.ts`: `truncate`/`wrap`/`twoCol` estaban copiados entre el recibo y
+  la comanda (y `wrap` solo en una, así que el recibo no sabía partir un texto
+  largo). `businessInfo()` reemplaza los cuatro `process.env` del mapper de
+  ventas — dos copias terminan diciendo cosas distintas en dos papeles del mismo
+  mostrador.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

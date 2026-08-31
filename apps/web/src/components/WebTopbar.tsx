@@ -29,9 +29,14 @@ export function WebTopbar({ transparent = false }: { transparent?: boolean }) {
       )}
     >
       <Link href="/" aria-label="Inicio Terco's" className="flex items-center">
-        {/* Sobre el hero transparente (oscuro) va el cursivo blanco; sobre el
-            topbar claro va el cursivo oscuro. */}
-        <BrandLogo variant="wordmark" theme={transparent ? 'dark' : 'light'} size="h-7" />
+        {/* SIEMPRE el cursivo blanco: los dos estados de esta barra son
+            oscuros — sobre el hero es negro traslúcido y fuera de él es el
+            fondo de la web, que es #141414. La variante oscura del logotipo es
+            casi negra con un tinte azul (#14181F, heredado del gris azulado
+            del admin), así que sobre este fondo se leía como una mancha AZUL.
+            El `theme` de abajo describe el fondo, no el logo: `dark` = fondo
+            oscuro → tinta blanca. */}
+        <BrandLogo variant="wordmark" theme="dark" size="h-7" />
       </Link>
 
       <nav className="hidden items-center gap-8 md:flex">
