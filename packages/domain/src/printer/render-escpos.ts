@@ -1,11 +1,11 @@
 import { truncate, twoCol, wrap } from './escpos-text';
+import type { ReceiptData } from './types';
+import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
 
 /** Caracteres por línea del papel (58 mm a fuente A). */
 const ANCHO = 32;
 /** A doble ancho entra la mitad. */
 const ANCHO_DOBLE = 16;
-import type { ReceiptData } from './types';
-import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
 
 /**
  * ESC/POS bytes para impresoras térmicas de 58mm (32 caracteres por línea;
