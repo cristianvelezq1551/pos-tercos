@@ -1,5 +1,6 @@
 import { promotionScheduleState } from '@pos-tercos/domain';
 import type { Promotion } from '@pos-tercos/types';
+import { businessWallClock } from '@pos-tercos/types';
 import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 /**
@@ -23,7 +24,15 @@ export type PromotionStatusInput = Pick<
   'isActive' | 'daysOfWeekMask' | 'timeStart' | 'timeEnd' | 'activeFrom' | 'activeTo'
 >;
 
-export function promotionStatus(p: PromotionStatusInput, at: Date = new Date()): PromotionStatus {
+/**
+ * `at` por defecto es la hora del LOCAL, no la del runtime: esta pantalla se
+ * arma en el servidor (Vercel corre en UTC) y con el reloj corrido 5 horas una
+ * promo de viernes por la noche se evaluaba contra la franja del sábado.
+ */
+export function promotionStatus(
+  p: PromotionStatusInput,
+  at: Date = businessWallClock(),
+): PromotionStatus {
   if (!p.isActive) {
     return {
       label: 'Apagada',

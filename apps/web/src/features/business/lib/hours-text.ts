@@ -1,4 +1,9 @@
-import { WEEKDAY_LABELS, type TimeRange, type WeekdayKey } from '@pos-tercos/types';
+import {
+  WEEKDAY_LABELS,
+  businessWallClock,
+  type TimeRange,
+  type WeekdayKey,
+} from '@pos-tercos/types';
 import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
 
 /** Lunes primero: es como el cliente lee una semana (el dato usa 0=domingo). */
@@ -25,8 +30,14 @@ export function formatDayRanges(ranges: TimeRange[]): string {
   return ranges.map(formatRange).join(' · ');
 }
 
-/** El día de la semana de HOY, en la clave que usa el horario. */
-export function todayKey(now: Date = new Date()): WeekdayKey {
+/**
+ * El día de la semana de HOY, en la clave que usa el horario.
+ *
+ * Por defecto en hora del LOCAL: esta página se arma en el servidor (UTC), y
+ * después de las 7 pm de Bogotá el día calendario allá ya cambió — el horario
+ * mostraba el del día siguiente.
+ */
+export function todayKey(now: Date = businessWallClock()): WeekdayKey {
   return (['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const)[now.getDay()]!;
 }
 
@@ -37,11 +48,14 @@ export function todayKey(now: Date = new Date()): WeekdayKey {
  */
 export function formatNextOpen(
   nextOpenAtIso: string | null,
-  now: Date = new Date(),
+  now: Date = businessWallClock(),
 ): string | null {
   if (!nextOpenAtIso) return null;
-  const at = new Date(nextOpenAtIso);
-  if (Number.isNaN(at.getTime())) return null;
+  const instante = new Date(nextOpenAtIso);
+  if (Number.isNaN(instante.getTime())) return null;
+  // Las dos fechas en la MISMA hora de pared: comparar una en UTC contra otra
+  // en Bogotá daría "mañana" para algo que abre hoy.
+  const at = businessWallClock(instante);
 
   // A mano y no con Intl: en es-CO devuelve "5:00 p. m." (con punto final), que
   // choca con el punto de la frase ("…a las 5:00 p. m..") y además no coincide

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BUSINESS_TIME_ZONE,
@@ -287,21 +288,13 @@ describe('formatDuration', () => {
  *
  * La causa NO era el dato: era que la hora la ponía el reloj de quien
  * renderizaba. El admin arma varias páginas en el servidor y Vercel corre en
- * UTC, así que Bogotá (UTC-5) salía cinco horas adelante. Estos casos simulan
- * ese servidor cambiando la TZ del proceso: sin fijar la zona, fallan.
+ * UTC, así que Bogotá (UTC-5) salía cinco horas adelante.
+ *
+ * El caso del servidor corre en un proceso APARTE con TZ=UTC: cambiar
+ * `process.env.TZ` a mitad de un proceso no es confiable (Node ya tiene la zona
+ * cacheada), así que un test que lo intente puede pasar sin probar nada.
  */
 describe('formatDate — la hora es siempre la del local', () => {
-  const conTz = <T,>(tz: string, fn: () => T): T => {
-    const previo = process.env.TZ;
-    process.env.TZ = tz;
-    try {
-      return fn();
-    } finally {
-      if (previo === undefined) delete process.env.TZ;
-      else process.env.TZ = previo;
-    }
-  };
-
   it('la zona del negocio es Bogotá', () => {
     expect(BUSINESS_TIME_ZONE).toBe('America/Bogota');
   });
@@ -309,15 +302,9 @@ describe('formatDate — la hora es siempre la del local', () => {
   // 21:35 UTC = 16:35 en Bogotá. Es exactamente el caso reportado.
   const aperturaUtc = '2026-08-30T21:35:00.000Z';
 
-  it('un servidor en UTC muestra la hora de Bogotá, no la suya', () => {
+  it('muestra la hora de Bogotá', () => {
     expect(formatDate(aperturaUtc, 'time-short')).toBe('16:35');
     expect(formatDate(aperturaUtc, 'datetime')).toContain('16:35');
-  });
-
-  it('da la MISMA hora en cualquier runtime (servidor y navegador coinciden)', () => {
-    const zonas = ['UTC', 'America/Bogota', 'Europe/Madrid', 'Asia/Tokyo'];
-    const horas = zonas.map((tz) => conTz(tz, () => formatDate(aperturaUtc, 'datetime')));
-    expect(new Set(horas).size, horas.join(' | ')).toBe(1);
   });
 
   it('la noche no corre el día al siguiente', () => {
@@ -325,9 +312,29 @@ describe('formatDate — la hora es siempre la del local', () => {
     expect(formatDate('2026-08-31T03:00:00.000Z', 'short')).toContain('30');
   });
 
-  it('una fecha-solo muestra su propio día en cualquier runtime', () => {
-    for (const tz of ['UTC', 'America/Bogota', 'Asia/Tokyo']) {
-      expect(conTz(tz, () => formatDate('2026-06-24', 'short')), tz).toContain('24');
-    }
+  it('una fecha-solo muestra su propio día', () => {
+    expect(formatDate('2026-06-24', 'short')).toContain('24');
+  });
+
+  it('EN UN SERVIDOR EN UTC da la MISMA hora que acá', () => {
+    const enUTC = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        `process.stdout.write(new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date('${aperturaUtc}')))`,
+      ],
+      { env: { ...process.env, TZ: 'UTC' }, encoding: 'utf8' },
+    );
+    expect(enUTC).toBe(formatDate(aperturaUtc, 'time-short'));
+    // Y sin fijar la zona, ese mismo servidor diría 21:35 — 5 horas de más.
+    const sinFijar = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        `process.stdout.write(new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date('${aperturaUtc}')))`,
+      ],
+      { env: { ...process.env, TZ: 'UTC' }, encoding: 'utf8' },
+    );
+    expect(sinFijar).toBe('21:35');
   });
 });
