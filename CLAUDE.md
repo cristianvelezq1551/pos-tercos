@@ -3864,6 +3864,27 @@ callejón sin salida porque su sesión está bien.
 `requireRole` redirige con `?motivo=seccion` y la pantalla dice lo que pasa.
 De paso salen los nombres de enum, que van contra la regla de copy de §3.
 
+### Un test que perdía una carrera (mismo día, después de desplegar)
+El caso del descuadre falló 1 de 786 en CI y pasa siempre en local: el aviso al
+dueño sale **fire-and-forget** (`void this.ownerNotifications.alert(...)`) para
+que un fallo del canal nunca revierta el cierre, así que su fila de auditoría se
+escribe DESPUÉS de que la petición respondió. El test la leía de inmediato.
+
+`test/helpers/esperar-hasta.ts` reintenta hasta 2 s y devuelve `null` al
+agotarse, para que falle la aserción del test y no un timeout mudo. **Úsalo en
+cualquier caso que verifique algo disparado sin esperar** — un test inestable es
+peor que uno rojo: enseña a re-lanzar el CI en vez de mirar el fallo.
+
+⚠️ Ese commit se mergeó con su corrida EN VUELO y terminó en rojo. El orden
+correcto es esperar el CI aunque el cambio parezca inocuo (era solo docs).
+
+### El code del medio de pago se sigue colando
+Ya van dos pantallas: el reporte de cierre decía "TRANSFER (12)" y la lista de
+anular «Recibo #18 · 13:39 · **CASH**». El nombre vivo lo da
+`paymentMethodLabel(code, catálogo)` y el catálogo viene del endpoint de
+esperado o de `useEnabledPaymentMethods`. Al pintar un medio, NUNCA imprimir
+`s.paymentMethod` directo.
+
 ### Aprendizaje de método
 **Verificar por la interfaz real, no por la API.** Los dos bugs de esta tanda
 —la subida y el mensaje— solo aparecen operando la app como la opera una
