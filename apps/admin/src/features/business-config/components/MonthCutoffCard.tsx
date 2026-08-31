@@ -57,7 +57,7 @@ export function MonthCutoffCard({ monthStartDay, periodStart, periodEnd }: Month
         El estado financiero usa esta ventana, no el mes calendario.
       </p>
 
-      <div className="mt-3 flex items-end gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <FormField
           label="Empieza el día"
           hint="1–28 (1 = mes calendario)"

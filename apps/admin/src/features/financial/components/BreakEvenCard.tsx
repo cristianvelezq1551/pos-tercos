@@ -43,8 +43,12 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
   }
 
   const cobertura = c.coverage ?? 0;
-  const cubierto = cobertura >= 1;
-  const falta = cubierto ? 0 : c.target - s.revenue;
+  // Sin costos fijos recurrentes cargados la meta es $0: no hay nada que
+  // cubrir. Tratarlo como "0% cubierto" mostraba "te faltan −$ 12.000", un
+  // faltante negativo en una frase que ya dice "faltan".
+  const sinMeta = c.target <= 0;
+  const cubierto = !sinMeta && cobertura >= 1;
+  const falta = Math.max(0, c.target - s.revenue);
 
   return (
     <Marco>
@@ -78,16 +82,26 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Cobertura:{' '}
-          <strong className={cubierto ? 'text-success' : 'text-warning'}>
-            {pctText(cobertura)}
-          </strong>
-          {cubierto ? (
-            <> · ya cubre los costos fijos recurrentes.</>
+          {sinMeta ? (
+            <>
+              No hay costos fijos recurrentes cargados, así que no hay meta que cubrir. Cárgalos en
+              Finanzas → Costos y gastos y este número aparece solo.
+            </>
           ) : (
             <>
-              {' '}
-              · te faltan <strong>{formatCop(falta)}</strong> de ventas para llegar al equilibrio.
+              Cobertura:{' '}
+              <strong className={cubierto ? 'text-success' : 'text-warning'}>
+                {pctText(cobertura)}
+              </strong>
+              {cubierto ? (
+                <> · ya cubre los costos fijos recurrentes.</>
+              ) : (
+                <>
+                  {' '}
+                  · te faltan <strong>{formatCop(falta)}</strong> de ventas para llegar al
+                  equilibrio.
+                </>
+              )}
             </>
           )}
         </p>

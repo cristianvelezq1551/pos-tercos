@@ -51,7 +51,7 @@ export function AiAnalysisCard({ year, month }: Props) {
     <div
       className={`space-y-3 rounded-2xl border p-5 ${data ? TONE_CLASS[data.tono] : 'border-border bg-card'}`}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" strokeWidth={1.75} />
           <h2 className="font-display text-lg font-bold text-foreground">Análisis con IA</h2>
@@ -69,7 +69,7 @@ export function AiAnalysisCard({ year, month }: Props) {
       {!data && !error ? (
         <p className="text-sm text-muted-foreground">
           La IA lee el estado financiero del mes + la tendencia y devuelve un titular, qué va bien,
-          qué vigilar y la acción concreta a tomar. Cuesta una llamada — apretás cuando quieras (no
+          qué vigilar y la acción concreta a tomar. Cuesta una llamada — la pides cuando quieras (no
           se evalúa solo).
         </p>
       ) : null}

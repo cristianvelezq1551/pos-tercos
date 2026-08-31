@@ -18,29 +18,52 @@ const EJEMPLOS = [
  * Responde SOLO con lo que dice la guía: no ve datos del negocio. Si el
  * proveedor de IA no está configurado o falla, el error lo dice y remite a la
  * guía escrita — nunca inventa una respuesta ni finge que funcionó.
+ *
+ * El estado puede vivir AFUERA (`estado` + `onEstado`): la burbuja lo guarda
+ * para que minimizarla no borre lo que estabas leyendo. Sin eso, apartar la
+ * ayuda para mirar la pantalla de atrás —que es justo para lo que sirve—
+ * costaba volver a preguntar.
  */
+export interface EstadoAsistente {
+  q: string;
+  answer: string | null;
+  error: string | null;
+}
+
+export const ESTADO_INICIAL: EstadoAsistente = { q: '', answer: null, error: null };
+
 export function GuiaAsistenteForm({
   ask,
   autoFocus = false,
+  estado,
+  onEstado,
 }: {
   ask: (q: string) => Promise<string>;
   autoFocus?: boolean;
+  estado?: EstadoAsistente;
+  onEstado?: (e: EstadoAsistente) => void;
 }) {
-  const [q, setQ] = useState('');
-  const [answer, setAnswer] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [propio, setPropio] = useState<EstadoAsistente>(ESTADO_INICIAL);
+  const actual = estado ?? propio;
+  const guardar = onEstado ?? setPropio;
+  const { q, answer, error } = actual;
+  const setQ = (texto: string) => guardar({ ...actual, q: texto });
   const [pending, setPending] = useState(false);
 
   const submit = async (pregunta: string) => {
     const texto = pregunta.trim();
     if (texto.length < 5 || pending) return;
     setPending(true);
-    setError(null);
-    setAnswer(null);
+    guardar({ q: texto, answer: null, error: null });
     try {
-      setAnswer(await ask(texto));
+      const respuesta = await ask(texto);
+      guardar({ q: texto, answer: respuesta, error: null });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo responder.');
+      guardar({
+        q: texto,
+        answer: null,
+        error: e instanceof Error ? e.message : 'No se pudo responder.',
+      });
     } finally {
       setPending(false);
     }
@@ -110,6 +133,16 @@ export function GuiaAsistenteForm({
             pantalla: avísale al dueño para corregir el texto.
           </p>
         </div>
+      ) : null}
+
+      {answer || error ? (
+        <button
+          type="button"
+          onClick={() => guardar(ESTADO_INICIAL)}
+          className="mt-2 min-h-11 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Hacer otra pregunta
+        </button>
       ) : null}
     </>
   );
