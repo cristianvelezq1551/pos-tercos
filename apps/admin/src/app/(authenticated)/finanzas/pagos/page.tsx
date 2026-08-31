@@ -7,7 +7,7 @@ import {
 } from '../../../../features/financial';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { requireRole } from '../../../../lib/guards';
-import { FinanceSummarySchema, type FinanceSummary } from '@pos-tercos/types';
+import { FinanceSummarySchema, businessWallClock, type FinanceSummary } from '@pos-tercos/types';
 
 interface PageProps {
   searchParams: Promise<{ year?: string; month?: string }>;
@@ -24,7 +24,10 @@ export default async function FinancePagosPage({ searchParams }: PageProps) {
   await requireRole(['DUENO']);
   const sp = await searchParams;
   // Hora local del server (TZ=America/Bogota en prod) — NO UTC (ver /finanzas/estado).
-  const now = new Date();
+  // El mes que se muestra por defecto lo decide la hora del LOCAL: esta
+  // página se arma en el servidor (UTC), donde el 31 a las 8 pm ya es el
+  // mes siguiente y el dueño abría un estado financiero vacío.
+  const now = businessWallClock();
   const year = sp.year ? Number(sp.year) : now.getFullYear();
   const month = sp.month ? Number(sp.month) : now.getMonth() + 1;
 

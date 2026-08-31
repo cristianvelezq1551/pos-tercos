@@ -1,3 +1,5 @@
+import { businessWallClock } from '@pos-tercos/types';
+
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 function day(d: Date): string {
@@ -16,9 +18,13 @@ function time(d: Date): string {
  * 06:47 p. m.`) parte la columna en cuatro renglones y vuelve ilegible la fila.
  */
 export function formatShiftWindow(openedAt: string, closedAt: string | null): string {
-  const o = new Date(openedAt);
+  // Hora de PARED del local. Esta tabla se arma en el SERVIDOR (Vercel corre en
+  // UTC) y estos números se leen con `getHours()`/`getDate()` a mano, así que
+  // sin la conversión una caja abierta a las 4:35 pm se mostraba "9:35 pm" y
+  // una de las 11:20 pm saltaba al día siguiente.
+  const o = businessWallClock(new Date(openedAt));
   if (!closedAt) return `${day(o)} · ${time(o)} → sin cerrar`;
-  const c = new Date(closedAt);
+  const c = businessWallClock(new Date(closedAt));
   const sameDay =
     o.getFullYear() === c.getFullYear() &&
     o.getMonth() === c.getMonth() &&

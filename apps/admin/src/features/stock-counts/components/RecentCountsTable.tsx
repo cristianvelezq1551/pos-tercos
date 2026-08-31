@@ -1,7 +1,7 @@
 import type { StockCount } from '@pos-tercos/types';
 import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
 import { formatNumber } from '../../../lib/format';
-import { BUSINESS_TIME_ZONE } from '@pos-tercos/ui';
+import { formatDate } from '@pos-tercos/ui';
 
 interface RecentCountsTableProps {
   counts: StockCount[];
@@ -32,13 +32,7 @@ export function RecentCountsTable({ counts }: RecentCountsTableProps) {
         <tbody className="divide-y divide-border">
           {counts.map((c) => (
             <tr key={c.id} className="transition-colors hover:bg-muted/40">
-              <Td mono>
-                {new Date(c.createdAt).toLocaleString('es-CO', {
-                  timeZone: BUSINESS_TIME_ZONE,
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                })}
-              </Td>
+              <Td mono>{formatDate(c.createdAt, 'datetime')}</Td>
               <Td>
                 <span className="inline-flex items-center gap-2">
                   <StockableTypeBadge type={c.entityType} size="sm" iconOnly />
