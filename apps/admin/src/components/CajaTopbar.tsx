@@ -31,17 +31,21 @@ export function CajaTopbar({
 }) {
   return (
     <Topbar variant="light">
-      {/* En celular el logotipo se esconde: las pestañas no cabían y, al estar
-          centradas en un espacio más chico que su contenido, arrancaban en
-          x=-7 y se montaban 85 px ENCIMA del logo. Acá la herramienta son las
-          pestañas; la marca es decoración. */}
+      {/* En celular el logotipo se esconde: la herramienta son las pestañas y
+          la marca es decoración. */}
       <Topbar.Brand className="hidden shrink-0 sm:flex">
         <BrandLogo variant="wordmark" theme="dark" size="h-6" />
       </Topbar.Brand>
 
-      {/* Y si aun así no caben (una pestaña más, un idioma más largo), que se
-          desplacen en vez de salirse de la pantalla. */}
-      <div className="flex min-w-0 flex-1 items-stretch justify-start self-stretch overflow-x-auto py-1.5 sm:justify-center">
+      {/* Las pestañas SOLO se centran cuando sobra espacio.
+          Centradas siempre, un contenido más ancho que su caja se desborda
+          hacia los DOS lados: medido, entre 768 y 1280 px —el rango de una
+          tableta, que es el dispositivo de la caja— arrancaban en x=-107, o
+          sea fuera de la pantalla y encima del logotipo, dejando "Historial"
+          cortado en "storial". Alineadas a la izquierda cada una ocupa su
+          caja, y si no caben se desplazan en vez de salirse. El centrado vuelve
+          en 2xl (1536 px) y no antes: a 1280 todavía mordía el logo por 7 px. */}
+      <div className="flex min-w-0 flex-1 items-stretch justify-start self-stretch overflow-x-auto py-1.5 2xl:justify-center">
         <CajaNav />
       </div>
 

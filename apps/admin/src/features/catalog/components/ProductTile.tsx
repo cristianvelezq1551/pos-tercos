@@ -129,9 +129,7 @@ export function ProductTile({
               size="lg"
               weight="bold"
               className={
-                showPromo && promo.discountedPrice !== null
-                  ? 'text-success'
-                  : 'text-foreground'
+                showPromo && promo.discountedPrice !== null ? 'text-success' : 'text-foreground'
               }
             />
             {/* Tag de descuento — junto al precio. */}
@@ -139,9 +137,7 @@ export function ProductTile({
               <span
                 className={cn(
                   'inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide',
-                  promo.kind === 'discount'
-                    ? 'bg-success/20 text-success'
-                    : 'bg-info/20 text-info',
+                  promo.kind === 'discount' ? 'bg-success/20 text-success' : 'bg-info/20 text-info',
                 )}
               >
                 {promo.label}
@@ -167,18 +163,32 @@ export function ProductTile({
         </div>
       </button>
 
-      {/* AGOTADO + motivo — overlay centrado, no altera la altura. */}
+      {/* AGOTADO + motivo.
+          El velo cubre toda la tarjeta —es lo que dice "esto no se vende"—
+          pero el sello va como CHIP en la esquina, no centrado. Centrado
+          tapaba el nombre: en una tarjeta angosta se leía "AGOTADO / Sin
+          stock" y debajo nada, así que el cajero no sabía QUÉ producto era el
+          que no podía vender. La tarjeta es cuadrada, así que en celular mide
+          ~118 px de alto: no hay franja libre encima del pie, y cualquier
+          sello centrado o anclado arriba vuelve a chocar. Como chip el pie
+          (nombre + precio) queda libre a cualquier tamaño.
+          `forced` y `unavailable` no conviven —forzar existe justamente para
+          poder venderlo— así que comparten la esquina sin pisarse, y el ancho
+          se acota para no chocar con el botón de la esquina derecha. */}
       {unavailable ? (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-2xl bg-background/30 px-2 text-center">
-          <span className="rounded-md bg-destructive px-2.5 py-1 text-[0.6875rem] font-bold uppercase tracking-wide text-destructive-foreground shadow">
-            Agotado
-          </span>
-          {reason ? (
-            <span className="line-clamp-2 max-w-[92%] text-[0.625rem] font-semibold leading-tight text-foreground">
-              {reason}
+        <>
+          <span className="pointer-events-none absolute inset-0 rounded-2xl bg-background/45" />
+          <span className="pointer-events-none absolute left-2 top-2 flex max-w-[62%] flex-col items-start gap-0.5">
+            <span className="rounded-md bg-destructive px-1.5 py-0.5 text-[0.5625rem] font-bold uppercase tracking-wide text-destructive-foreground shadow">
+              Agotado
             </span>
-          ) : null}
-        </div>
+            {reason ? (
+              <span className="line-clamp-2 rounded bg-background/85 px-1 py-0.5 text-[0.5625rem] font-semibold leading-tight text-foreground">
+                {reason}
+              </span>
+            ) : null}
+          </span>
+        </>
       ) : null}
 
       {/* Chip "Forzado": el producto se vende pese a que el stock no alcanza

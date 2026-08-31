@@ -25,7 +25,11 @@ export type OwnerAlertKind =
   /** El mes va con margen de contribución negativo: cada venta pierde plata. */
   | 'negative_contribution_margin'
   /** Insumos que cruzaron el mínimo en el escaneo horario. */
-  | 'low_stock';
+  | 'low_stock'
+  /** Resumen del día escrito por la IA (cron 21:30). */
+  | 'daily_digest'
+  /** Resumen de las sugerencias de compra abiertas (a pedido). */
+  | 'purchase_summary';
 
 /**
  * Avisos que NO son de negocio: fallas del sistema. Van al canal técnico
@@ -48,7 +52,13 @@ const PANTALLA_POR_TIPO: Record<OwnerAlertKind, string> = {
   cortesia_given: '/solicitudes',
   manual_discount: '/caja/historial',
   negative_contribution_margin: '/finanzas/estado',
-  low_stock: '/purchase-lists',
+  // El texto del aviso dice "Míralos en Compras, Sugerencias": el destino tiene
+  // que ser ESE. Llevar a otra pantalla que la anunciada desorienta.
+  low_stock: '/purchase-suggestions',
+  // El resumen se corta a 500 caracteres en la notificación; el texto completo
+  // vive en la tarjeta del inicio, que es a donde lleva el toque.
+  daily_digest: '/',
+  purchase_summary: '/purchase-suggestions',
   server_error: '/bitacora',
   multi_instance: '/bitacora',
 };

@@ -60,11 +60,6 @@ export class OwnerDigestService {
     reason?: string;
     modelUsed?: string;
   }> {
-    const phone = process.env.OWNER_WHATSAPP_PHONE?.trim();
-    if (!phone) {
-      return { sent: false, reason: 'OWNER_WHATSAPP_PHONE no configurado' };
-    }
-
     const summary = await this.salesReports.getDailyAiSummary(date);
     const text = buildOwnerAlert({
       businessName: businessName(),
@@ -72,21 +67,26 @@ export class OwnerDigestService {
       body: summary.text,
     });
 
-    const result = await this.wa.sendText(phone, text);
-    if (!result.ok) {
-      this.logger.warn(`Envío del digest falló: ${result.error ?? 'sin detalle'}`);
-      return { sent: false, reason: result.error ?? 'envío falló', modelUsed: summary.modelUsed };
+    // Sale por el MISMO camino que las demás alertas: notificación primero y
+    // WhatsApp de respaldo. Antes exigía `OWNER_WHATSAPP_PHONE` y llamaba a
+    // WhatsApp directo, así que en producción —donde esa variable no está—
+    // este resumen NUNCA se envió. El texto son máximo 5 frases (lo fija el
+    // prompt), así que entra en una notificación; si se pasara, se corta y el
+    // completo se lee en la tarjeta del inicio, que es a donde lleva el toque.
+    const enviado = await this.ownerNotifications.alert('daily_digest', text, {
+      modelUsed: summary.modelUsed,
+      textLength: text.length,
+    });
+    if (!enviado) {
+      this.logger.warn('El resumen del día no llegó a ningún canal.');
+      return { sent: false, reason: 'no llegó a ningún canal', modelUsed: summary.modelUsed };
     }
 
     await this.audit.log({
       userId: null,
       action: 'OWNER_DAILY_DIGEST_SENT',
       entityType: 'report',
-      metadata: {
-        modelUsed: summary.modelUsed,
-        textLength: text.length,
-        providerMessageId: result.providerMessageId ?? null,
-      },
+      metadata: { modelUsed: summary.modelUsed, textLength: text.length },
     });
     return { sent: true, modelUsed: summary.modelUsed };
   }

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,7 +10,6 @@ import {
   buildPurchaseSuggestionUserPrompt,
   computeSuggestedPurchase,
   roundMoney,
-  type WhatsAppProvider,
   buildLowStockAlertMessage,
   type LowStockAlertItem,
 } from '@pos-tercos/domain';
@@ -26,7 +24,6 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { describeLlmFailure } from '../adapters/llm/llm-failure';
 import { LLMService } from '../adapters/llm/llm.service';
-import { WHATSAPP_PROVIDER } from '../adapters/whatsapp/whatsapp.module';
 import { AuditService } from '../audit/audit.service';
 import { BusinessConfigService } from '../business-config/business-config.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -100,7 +97,6 @@ export class PurchaseSuggestionsService {
     private readonly llm: LLMService,
     private readonly businessConfig: BusinessConfigService,
     private readonly ownerNotifications: OwnerNotificationService,
-    @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
   // ==================================================================
@@ -730,72 +726,36 @@ export class PurchaseSuggestionsService {
       ].join('\n'),
     });
 
-    const recipients: WhatsAppSendOutcome['recipients'] = [];
-    let sent = 0;
-    let failed = 0;
-
-    // Sin proveedor real (el mock de dev) NO se finge el envío: antes decía
-    // "Enviado a 2 destinatarios" y no salía ni un mensaje (§7.v22).
-    if (this.whatsapp.delivers === false) {
-      this.logger.log(
-        'Sin proveedor de WhatsApp: el resumen de compras NO se envió.',
-      );
-      await this.audit.log({
-        userId: actorId,
-        action: 'PURCHASE_SUGGESTION_SUMMARY_SENT',
-        entityType: 'purchase_suggestion',
-        metadata: {
-          suggestions: open.length,
-          sent: 0,
-          failed: 0,
-          delivered: false,
-          error: 'sin proveedor de WhatsApp',
-        },
-      });
-      return {
-        sent: 0,
-        failed: 0,
-        recipients: admins.map((a) => ({
-          name: a.fullName,
-          phone: a.phone ?? '—',
-          status: 'skipped' as const,
-          reason: 'no hay WhatsApp conectado en el servidor',
-        })),
-        preview: message,
-      };
-    }
-
-    for (const a of admins) {
-      if (!a.phone) {
-        recipients.push({
-          name: a.fullName,
-          phone: '—',
-          status: 'skipped',
-          reason: 'sin teléfono cargado',
-        });
-        continue;
-      }
-      const phoneE164 = normalizePhone(a.phone);
-      const res = await this.whatsapp.sendText(phoneE164, message);
-      const ok = res.ok;
-      if (ok) sent += 1;
-      else failed += 1;
-      recipients.push({
-        name: a.fullName,
-        phone: phoneE164,
-        status: ok ? 'sent' : 'failed',
-        reason: res.error,
-      });
-    }
+    // Sale por NOTIFICACIÓN, no por WhatsApp. Antes recorría los admins con
+    // teléfono cargado y les mandaba un mensaje: con el mock de dev eso decía
+    // "Enviado a 2 destinatarios" sin que saliera nada (§7.v22), y en
+    // producción no hay proveedor, así que no llegaba a nadie. El aviso ahora
+    // va a los dispositivos de dueños y administradores, igual que los demás.
+    const entregado = await this.ownerNotifications.alert('purchase_summary', message, {
+      suggestions: open.length,
+      total,
+    });
 
     await this.audit.log({
       userId: actorId,
       action: 'PURCHASE_SUGGESTION_SUMMARY_SENT',
       entityType: 'purchase_suggestion',
-      metadata: { suggestions: open.length, sent, failed, total },
+      metadata: { suggestions: open.length, delivered: entregado, total },
     });
 
-    return { sent, failed, recipients, preview: message };
+    return {
+      sent: entregado ? 1 : 0,
+      failed: 0,
+      // `recipients` queda como el rastro de a quién le importa este resumen.
+      // Ya no lleva teléfono: el aviso va a los dispositivos, no a un número.
+      recipients: admins.map((a) => ({
+        name: a.fullName,
+        phone: '—',
+        status: (entregado ? 'sent' : 'skipped') as 'sent' | 'skipped',
+        ...(entregado ? {} : { reason: 'ningún dispositivo tiene los avisos activados' }),
+      })),
+      preview: message,
+    };
   }
 }
 
@@ -805,14 +765,6 @@ function hoursAgo(from: Date, hours: number): Date {
 }
 
 /** Normaliza teléfono a E.164 colombiano cuando es razonable. Best-effort. */
-function normalizePhone(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
-  const digits = trimmed.replace(/\D/g, '');
-  if (digits.length === 10) return `+57${digits}`;
-  if (digits.startsWith('57') && digits.length === 12) return `+${digits}`;
-  return `+${digits}`;
-}
 
 // ====================================================================
 // HELPERS
