@@ -109,14 +109,38 @@ async function cajaNavNetworkFirst(req) {
   }
 }
 
+/**
+ * Static de Next (chunks con hash, inmutables).
+ *
+ * Si hay copia local se sirve y se refresca en segundo plano. Si no hay, se
+ * pide a la red con UN reintento: en el local la conexión parpadea, y un chunk
+ * que no llega no degrada la pantalla — la tumba entera con "Algo salió mal".
+ * Un 404 no se reintenta (ese archivo no existe; insistir solo demora el error).
+ */
 async function staleWhileRevalidate(req) {
   const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(req);
-  const fetchPromise = fetch(req)
-    .then((res) => {
-      if (res && res.ok) cache.put(req, res.clone());
-      return res;
-    })
-    .catch(() => cached);
-  return cached ?? fetchPromise;
+  if (cached) {
+    fetch(req)
+      .then((res) => (res && res.ok ? cache.put(req, res.clone()) : undefined))
+      .catch(() => undefined);
+    return cached;
+  }
+  try {
+    return await pedirYGuardar(cache, req);
+  } catch (primerFallo) {
+    try {
+      return await pedirYGuardar(cache, req);
+    } catch {
+      // Se propaga el fallo REAL en vez de resolver a `undefined`, que al
+      // navegador le llega como un error de red inventado por el SW.
+      throw primerFallo;
+    }
+  }
+}
+
+async function pedirYGuardar(cache, req) {
+  const res = await fetch(req);
+  if (res && res.ok) cache.put(req, res.clone());
+  return res;
 }

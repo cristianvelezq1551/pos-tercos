@@ -8,7 +8,8 @@ export { KitchenSummaryPanel } from './components/KitchenSummaryPanel';
 // página (server) — si algún día lo importa un componente 'use client', el
 // barril arrastraría next/headers y rompería el build.
 export { KitchenTabContent } from './components/KitchenTabContent';
-export { KitchenTabs, KITCHEN_TABS, type KitchenTab } from './components/KitchenTabs';
+export { KitchenTabs } from './components/KitchenTabs';
+export { KITCHEN_TABS, type KitchenTab } from './tabs';
 export { ProductionsTable } from './components/ProductionsTable';
 export { WasteTable } from './components/WasteTable';
 export { WorkerFilter, type WorkerOption } from './components/WorkerFilter';
