@@ -1,7 +1,6 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { BookOpen } from 'lucide-react';
 import { CHAPTERS, ChapterCard, FLOWS, FlowIndex, GuiaSearch } from '@pos-tercos/guia';
-import { GuiaAsistentePanel } from '../../../features/guia';
 
 export const metadata = { title: 'Guía de uso · POS Tercos' };
 
@@ -20,9 +19,16 @@ export default function GuiaIndexPage() {
         icon={<BookOpen className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">
-        <div className="max-w-2xl space-y-5">
-          <GuiaAsistentePanel />
+        <div className="max-w-2xl space-y-3">
           <GuiaSearch />
+          {/* El asistente pasó a la burbuja de abajo a la derecha, que está en
+              TODAS las pantallas. Repetirlo acá sería el mismo formulario dos
+              veces en la misma página. */}
+          <p className="text-xs text-muted-foreground">
+            ¿Prefieres preguntar con tus palabras? Usa el botón{' '}
+            <span className="font-semibold text-foreground">Ayuda</span> de la esquina inferior
+            derecha: está en todas las pantallas y responde con lo que dice esta guía.
+          </p>
         </div>
 
         <section className="mt-10">

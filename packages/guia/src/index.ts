@@ -41,6 +41,7 @@ export { FlowView } from './components/FlowView';
 export { FlowCard } from './components/FlowCard';
 export { FlowIndex } from './components/FlowIndex';
 export { GuiaAsistente } from './components/GuiaAsistente';
+export { GuiaAsistenteFlotante } from './components/GuiaAsistenteFlotante';
 export { ChapterCard } from './components/ChapterCard';
 export { GuiaSearch } from './components/GuiaSearch';
 export { GuideSectionView } from './components/GuideSectionView';

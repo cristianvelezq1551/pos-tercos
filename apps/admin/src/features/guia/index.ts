@@ -1,1 +1,1 @@
-export { GuiaAsistentePanel } from './GuiaAsistentePanel';
+export { GuiaAsistenteBurbuja } from './GuiaAsistenteBurbuja';
