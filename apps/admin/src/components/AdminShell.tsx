@@ -29,7 +29,7 @@ export function AdminShell({ user, children }: AdminShellProps) {
       <AppShell
         topbar={<AdminTopbar user={user} onMenuClick={() => setNavOpen(true)} />}
         sidebar={<AdminSidebar role={user?.role} />}
-        mainClassName="overflow-y-auto"
+        mainClassName="overflow-y-auto pb-24"
       >
         <MainSkeletonGate>{children}</MainSkeletonGate>
       </AppShell>
