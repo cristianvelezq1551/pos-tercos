@@ -39,6 +39,7 @@ Debe responder `{"status":"ok","checks":{"db":"ok"}}`. Si no, ve a la sección 6
 | Estado financiero | https://admin.tercos.co/finanzas/estado |
 | Usuarios | https://admin.tercos.co/users |
 | Bitácora | https://admin.tercos.co/bitacora |
+| **Avisos al celular** | https://admin.tercos.co/avisos |
 
 **Guía del cocinero:** https://cocina.tercos.co/guia
 

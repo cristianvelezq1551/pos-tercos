@@ -77,6 +77,9 @@ test.describe('Avisos del navegador', () => {
   test('si el navegador no puede suscribirse, lo explica en español y se recupera', async ({
     page,
   }) => {
+    // Margen para el tope de 15 s de `subscribe`: en algunos navegadores no
+    // rechaza, se queda pendiente, y ahí el mensaje llega recién al vencerlo.
+    test.setTimeout(60_000);
     // El Chromium de pruebas corre en un contexto incógnito, donde Chrome NO
     // soporta la API de Push ("deliberadamente no hay forma de detectarlo",
     // dice su propio aviso de consola). Sirve igual: reproduce lo que le pasa
