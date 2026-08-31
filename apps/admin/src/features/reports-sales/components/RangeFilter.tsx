@@ -71,23 +71,23 @@ export function RangeFilter({ showGranularity = false }: { showGranularity?: boo
           </button>
         ))}
       </div>
-      <div className="flex items-end gap-2">
-        <label className="text-xs">
+      <div className="flex w-full flex-wrap items-end gap-2 sm:w-auto">
+        <label className="min-w-0 flex-1 text-xs sm:flex-none">
           <span className="block text-muted-foreground">Desde</span>
           <input
             type="date"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="mt-0.5 h-9 rounded-md border border-input bg-card px-2 text-sm"
+            className="mt-0.5 h-9 w-full rounded-md border border-input bg-card px-2 text-base sm:w-auto sm:text-sm"
           />
         </label>
-        <label className="text-xs">
+        <label className="min-w-0 flex-1 text-xs sm:flex-none">
           <span className="block text-muted-foreground">Hasta</span>
           <input
             type="date"
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="mt-0.5 h-9 rounded-md border border-input bg-card px-2 text-sm"
+            className="mt-0.5 h-9 w-full rounded-md border border-input bg-card px-2 text-base sm:w-auto sm:text-sm"
           />
         </label>
         <Button size="sm" onClick={handleApply}>

@@ -171,7 +171,11 @@ describe('VoidModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Devolver la plata' }));
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(devuelta));
-    expect(refundSale).toHaveBeenCalledWith('a', { reason: 'se demoró y pidió la plata' }, '654321');
+    expect(refundSale).toHaveBeenCalledWith(
+      'a',
+      { reason: 'se demoró y pidió la plata' },
+      '654321',
+    );
     expect(voidSale).not.toHaveBeenCalled();
     // La cocina NO recibe ticket de anular: ese pedido ya salió del local.
     expect(printComanda).not.toHaveBeenCalled();
