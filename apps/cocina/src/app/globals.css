@@ -2,3 +2,4 @@
 @import '../../../../packages/ui/src/styles/tokens.css';
 @source '../../../../packages/ui/src/**/*.{ts,tsx}';
 @source '../../../../packages/brand/src/**/*.{ts,tsx}';
+@source '../../../../packages/guia/src/**/*.{ts,tsx}';
