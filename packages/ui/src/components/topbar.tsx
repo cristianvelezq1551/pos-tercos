@@ -48,11 +48,7 @@ export const Topbar = Object.assign(
 );
 Topbar.displayName = 'Topbar';
 
-function TopbarBrand({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function TopbarBrand({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cn('flex items-center gap-3', className)} {...rest}>
       {children}
@@ -61,11 +57,7 @@ function TopbarBrand({
 }
 TopbarBrand.displayName = 'Topbar.Brand';
 
-function TopbarNav({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLElement>) {
+function TopbarNav({ className, children, ...rest }: React.HTMLAttributes<HTMLElement>) {
   return (
     <nav
       className={cn('hidden min-w-0 flex-1 items-center gap-1 lg:flex', className)}
@@ -78,11 +70,7 @@ function TopbarNav({
 }
 TopbarNav.displayName = 'Topbar.Nav';
 
-function TopbarActions({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function TopbarActions({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cn('ml-auto flex items-center gap-2', className)} {...rest}>
       {children}

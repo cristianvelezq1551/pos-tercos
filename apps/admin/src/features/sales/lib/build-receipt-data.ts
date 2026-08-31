@@ -14,10 +14,7 @@ import type { CartTotalsResult } from './totals';
  */
 export type ReceiptDataInput = Omit<ReceiptData, 'business'>;
 
-export function buildReceiptDataInput(
-  sale: Sale,
-  opts?: { reprint?: boolean },
-): ReceiptDataInput {
+export function buildReceiptDataInput(sale: Sale, opts?: { reprint?: boolean }): ReceiptDataInput {
   return {
     receiptNumber: sale.receiptNumber,
     createdAt: sale.createdAt,

@@ -82,9 +82,7 @@ describe('LoginForm — estado del botón', () => {
 
 describe('LoginForm — errores', () => {
   it('muestra el error del backend y lo anuncia a lectores de pantalla', () => {
-    render(
-      <LoginForm appLabel="Admin" onSubmit={vi.fn()} errorMessage="Credenciales inválidas" />,
-    );
+    render(<LoginForm appLabel="Admin" onSubmit={vi.fn()} errorMessage="Credenciales inválidas" />);
     const alerta = screen.getByRole('alert');
     expect(alerta.textContent).toBe('Credenciales inválidas');
     expect(alerta.getAttribute('aria-live')).toBe('polite');
@@ -111,9 +109,7 @@ describe('LoginForm — accesibilidad y personalización', () => {
   });
 
   it('un header propio reemplaza al default', () => {
-    render(
-      <LoginForm appLabel="Admin" onSubmit={vi.fn()} header={<h1>Bienvenido a Tercos</h1>} />,
-    );
+    render(<LoginForm appLabel="Admin" onSubmit={vi.fn()} header={<h1>Bienvenido a Tercos</h1>} />);
     expect(screen.getByText('Bienvenido a Tercos')).toBeDefined();
     expect(screen.queryByText('Iniciar sesión')).toBeNull();
   });

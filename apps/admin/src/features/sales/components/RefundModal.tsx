@@ -78,10 +78,9 @@ export function RefundModal({
     >
       <div className="space-y-5">
         <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs leading-relaxed text-warning">
-          La comida ya se preparó: el stock <strong>NO se devuelve</strong> (es
-          una pérdida). El pedido sale de los ingresos y del arqueo —{' '}
-          <strong>devuelve el dinero al cliente</strong>. Queda en auditoría.
-          Requiere PIN de Admin/Dueño.
+          La comida ya se preparó: el stock <strong>NO se devuelve</strong> (es una pérdida). El
+          pedido sale de los ingresos y del arqueo — <strong>devuelve el dinero al cliente</strong>.
+          Queda en auditoría. Requiere PIN de Admin/Dueño.
         </div>
 
         <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2 text-sm">
@@ -89,7 +88,10 @@ export function RefundModal({
           <Money amount={sale.total} weight="semibold" />
         </div>
 
-        <FormField label="Motivo (5-200 caracteres)" hint={`${reason.trim().length}/200 · queda en audit log`}>
+        <FormField
+          label="Motivo (5-200 caracteres)"
+          hint={`${reason.trim().length}/200 · queda en audit log`}
+        >
           <Input
             type="text"
             value={reason}

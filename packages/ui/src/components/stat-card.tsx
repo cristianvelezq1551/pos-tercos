@@ -37,7 +37,18 @@ const TONE_ICON: Record<StatTone, string> = {
  */
 export const StatCard = React.forwardRef<HTMLDivElement, StatCardProps>(
   (
-    { label, value, hint, delta, deltaLabel, deltaTone, icon, tone = 'neutral', className, ...rest },
+    {
+      label,
+      value,
+      hint,
+      delta,
+      deltaLabel,
+      deltaTone,
+      icon,
+      tone = 'neutral',
+      className,
+      ...rest
+    },
     ref,
   ) => (
     <div

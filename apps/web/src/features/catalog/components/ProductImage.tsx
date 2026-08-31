@@ -54,7 +54,9 @@ export function ProductImage({
         className={cn(
           'object-contain',
           unavailable && 'grayscale',
-          zoomOnHover && !unavailable && 'sm:transition-transform sm:duration-300 sm:group-hover:scale-105',
+          zoomOnHover &&
+            !unavailable &&
+            'sm:transition-transform sm:duration-300 sm:group-hover:scale-105',
           className,
         )}
       />
@@ -62,13 +64,7 @@ export function ProductImage({
   );
 }
 
-export function ProductImageFallback({
-  label,
-  className,
-}: {
-  label: string;
-  className?: string;
-}) {
+export function ProductImageFallback({ label, className }: { label: string; className?: string }) {
   const initial = label.trim().charAt(0).toUpperCase() || 'T';
   return (
     <div

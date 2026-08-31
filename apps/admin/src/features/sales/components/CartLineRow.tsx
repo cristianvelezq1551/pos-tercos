@@ -78,13 +78,10 @@ export function CartLineRow({
               <span className="mr-1.5 text-xs text-ink-400 line-through tabular">
                 <Money amount={lineSubtotal} size="xs" weight="normal" className="text-current" />
               </span>
-              <Money
-                amount={lineTotal}
-                weight="bold"
-                className={cn('text-success')}
-              />
+              <Money amount={lineTotal} weight="bold" className={cn('text-success')} />
               <span className="block text-[10px] font-medium text-success">
-                −<Money amount={lineDiscount} size="xs" weight="normal" className="text-current" /> promo
+                −<Money amount={lineDiscount} size="xs" weight="normal" className="text-current" />{' '}
+                promo
               </span>
             </>
           ) : (

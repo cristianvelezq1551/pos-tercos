@@ -52,7 +52,8 @@ export function explodeUnits(totals: CartTotalsResult): SplitUnit[] {
     for (let i = 0; i < line.quantity; i++) {
       units.push({
         key: `${line.lineId}:${i}`,
-        label: line.quantity > 1 ? `${line.productName} (${i + 1}/${line.quantity})` : line.productName,
+        label:
+          line.quantity > 1 ? `${line.productName} (${i + 1}/${line.quantity})` : line.productName,
         amount: perUnit + (i < remainder ? 1 : 0),
         assignedTo: 1,
       });
@@ -106,7 +107,10 @@ export function validateSplit(parts: readonly SplitPart[], total: number): Split
     const diff = total - sum;
     return {
       ok: false,
-      reason: diff > 0 ? `Faltan $${diff.toLocaleString('es-CO')} por asignar` : `Sobran $${(-diff).toLocaleString('es-CO')} asignados`,
+      reason:
+        diff > 0
+          ? `Faltan $${diff.toLocaleString('es-CO')} por asignar`
+          : `Sobran $${(-diff).toLocaleString('es-CO')} asignados`,
     };
   }
   for (const p of parts) {
@@ -127,7 +131,8 @@ export function validateSplit(parts: readonly SplitPart[], total: number): Split
 export function totalChange(parts: readonly SplitPart[]): number {
   return parts.reduce(
     (acc, p) =>
-      acc + (p.method === 'CASH' && p.cashReceived !== null ? Math.max(0, p.cashReceived - p.amount) : 0),
+      acc +
+      (p.method === 'CASH' && p.cashReceived !== null ? Math.max(0, p.cashReceived - p.amount) : 0),
     0,
   );
 }

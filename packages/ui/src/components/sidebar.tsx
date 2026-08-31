@@ -27,11 +27,7 @@ function SidebarRoot({ className, children, ...rest }: SidebarProps) {
 }
 SidebarRoot.displayName = 'Sidebar';
 
-function SidebarHeader({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function SidebarHeader({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn('flex h-14 shrink-0 items-center gap-3 border-b border-border px-4', className)}
@@ -43,11 +39,7 @@ function SidebarHeader({
 }
 SidebarHeader.displayName = 'Sidebar.Header';
 
-function SidebarSections({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function SidebarSections({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cn('flex-1 overflow-y-auto px-3 py-4', className)} {...rest}>
       {children}
@@ -118,11 +110,7 @@ function SidebarLink({
 }
 SidebarLink.displayName = 'Sidebar.Link';
 
-function SidebarFooter({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function SidebarFooter({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cn('shrink-0 border-t border-border px-3 py-3', className)} {...rest}>
       {children}

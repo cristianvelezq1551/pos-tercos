@@ -1,7 +1,6 @@
 import type { StockCount } from '@pos-tercos/types';
 import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
-import { formatNumber } from '../../../lib/format';
-import { formatDate } from '@pos-tercos/ui';
+import { Quantity, formatDate } from '@pos-tercos/ui';
 
 interface RecentCountsTableProps {
   counts: StockCount[];
@@ -40,10 +39,10 @@ export function RecentCountsTable({ counts }: RecentCountsTableProps) {
                 </span>
               </Td>
               <Td mono align="right">
-                {formatNumber(c.countedQty)}
+                <Quantity value={c.countedQty} unit={c.unit} maxDecimals={4} />
               </Td>
               <Td mono align="right">
-                {formatNumber(c.ledgerQty)}
+                <Quantity value={c.ledgerQty} maxDecimals={4} className="text-muted-foreground" />
               </Td>
               <Td mono align="right">
                 <span
@@ -56,7 +55,7 @@ export function RecentCountsTable({ counts }: RecentCountsTableProps) {
                   }
                 >
                   {c.difference > 0 ? '+' : ''}
-                  {formatNumber(c.difference)}
+                  <Quantity value={c.difference} maxDecimals={4} className="text-current" />
                 </span>
               </Td>
               <Td>{c.userName ?? '—'}</Td>

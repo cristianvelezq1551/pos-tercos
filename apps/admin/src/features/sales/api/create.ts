@@ -1,9 +1,4 @@
-import {
-  IDEMPOTENCY_HEADER,
-  SaleSchema,
-  type CreateSale,
-  type Sale,
-} from '@pos-tercos/types';
+import { IDEMPOTENCY_HEADER, SaleSchema, type CreateSale, type Sale } from '@pos-tercos/types';
 
 export async function createSale(input: CreateSale, idempotencyKey: string): Promise<Sale> {
   const res = await fetch('/api/sales', {

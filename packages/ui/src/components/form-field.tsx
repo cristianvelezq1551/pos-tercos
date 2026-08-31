@@ -6,7 +6,11 @@ export interface FormFieldProps {
   /** Label visible. Si se omite, no renderiza Label (raro — preferir always). */
   label?: React.ReactNode;
   /** Children = el control (Input, Select, Textarea, NumberInput, etc.). */
-  children: React.ReactElement<{ id?: string; 'aria-invalid'?: boolean | 'true' | 'false'; 'aria-describedby'?: string }>;
+  children: React.ReactElement<{
+    id?: string;
+    'aria-invalid'?: boolean | 'true' | 'false';
+    'aria-describedby'?: string;
+  }>;
   /** id del control. Si no se pasa, se genera. Inyectado en el child. */
   htmlFor?: string;
   /** Texto de ayuda persistente debajo del input. */

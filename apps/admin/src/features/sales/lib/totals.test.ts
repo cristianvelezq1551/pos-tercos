@@ -104,7 +104,10 @@ describe('computeCartTotals', () => {
 
   it('los totales siempre cuadran: total = subtotal − descuento, suma de líneas', () => {
     const r = computeCartTotals(
-      [line({ quantity: 3, unitPrice: 3_333 }), line({ lineId: 'l2', productId: 'p2', unitPrice: 7_777 })],
+      [
+        line({ quantity: 3, unitPrice: 3_333 }),
+        line({ lineId: 'l2', productId: 'p2', unitPrice: 7_777 }),
+      ],
       [promo()],
       AT,
     );

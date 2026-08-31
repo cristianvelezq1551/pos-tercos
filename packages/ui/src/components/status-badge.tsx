@@ -12,8 +12,10 @@ export interface StatusMappingEntry {
 
 export type StatusMapping<S extends string = string> = Record<S, StatusMappingEntry>;
 
-export interface StatusBadgeProps<S extends string = string>
-  extends Omit<BadgeProps, 'children' | 'tone' | 'withDot'> {
+export interface StatusBadgeProps<S extends string = string> extends Omit<
+  BadgeProps,
+  'children' | 'tone' | 'withDot'
+> {
   /** Estado canónico (típicamente un enum del backend) */
   status: S;
   /** Mapping status → { label, tone, pulse } */
@@ -58,9 +60,7 @@ export function StatusBadge<S extends string = string>({
       className={className}
       {...rest}
     >
-      {showDot && entry?.pulse ? (
-        <PulseDot />
-      ) : null}
+      {showDot && entry?.pulse ? <PulseDot /> : null}
       {finalLabel}
     </Badge>
   );

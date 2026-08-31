@@ -57,9 +57,7 @@ export function Section({
       {hasHeader ? (
         <header className="space-y-2">
           {eyebrow ? (
-            <span className="caps inline-block text-[0.6875rem] text-primary">
-              {eyebrow}
-            </span>
+            <span className="caps inline-block text-[0.6875rem] text-primary">{eyebrow}</span>
           ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">

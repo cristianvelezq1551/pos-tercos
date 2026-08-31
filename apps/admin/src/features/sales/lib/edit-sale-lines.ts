@@ -13,10 +13,7 @@ function isKitchenStarted(status: string): boolean {
  * líneas de preparación cuando la cocina ya inició el pedido — solo la reventa
  * directa (mapa productId→directResale) queda editable.
  */
-export function saleItemsToEditLines(
-  sale: Sale,
-  resaleById: Map<string, boolean>,
-): EditLine[] {
+export function saleItemsToEditLines(sale: Sale, resaleById: Map<string, boolean>): EditLine[] {
   const kitchenStarted = isKitchenStarted(sale.status);
   return (sale.items ?? []).map((it) => ({
     productId: it.productId,

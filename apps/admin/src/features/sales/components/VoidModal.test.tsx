@@ -9,12 +9,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * solo ventas PAGADO (no iniciadas por cocina) son anulables. Mutantes que
  * estos tests matan: filtro de status relajado, validación de PIN/motivo
  * salteada, anulación sin selección.
+ *
+ * Y desde que la anulación tiene DOS desenlaces —según si la comida salió o
+ * no— el desenlace es obligatorio: sin responder no se confirma, porque esa
+ * respuesta decide si la pérdida entra a los libros o desaparece.
  */
+/** Responde "¿el cliente se llevó la comida?" con la opción indicada. */
+function respondeSiSalio(salio: boolean): void {
+  fireEvent.click(
+    screen.getByRole('radio', {
+      name: salio ? /Sí, ya se había preparado/ : /No, se cobró por error/,
+    }),
+  );
+}
 
 const listSales = vi.fn();
 vi.mock('../api/list', () => ({ listSales: (...a: unknown[]) => listSales(...a) }));
 const voidSale = vi.fn();
-vi.mock('../api/void', () => ({ voidSale: (...a: unknown[]) => voidSale(...a) }));
+const refundSale = vi.fn();
+vi.mock('../api/void', () => ({
+  voidSale: (...a: unknown[]) => voidSale(...a),
+  refundSale: (...a: unknown[]) => refundSale(...a),
+}));
 const printComanda = vi.fn().mockResolvedValue(undefined);
 vi.mock('../api/print', () => ({ printComanda: (...a: unknown[]) => printComanda(...a) }));
 vi.mock('../lib/comanda-events', () => ({ notifyComandaFailed: vi.fn() }));
@@ -62,7 +78,9 @@ describe('VoidModal', () => {
     const confirmBtn = screen.getByRole('button', { name: 'Anular venta' });
     expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.click(screen.getByRole('radio'));
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+    expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+    respondeSiSalio(false);
     expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
 
     const reason = screen.getByPlaceholderText(/cliente devolvió/);
@@ -97,7 +115,8 @@ describe('VoidModal', () => {
     render(<VoidModal open shiftId="s1" onClose={onClose} onSuccess={onSuccess} />);
     await screen.findByText('Recibo #1');
 
-    fireEvent.click(screen.getByRole('radio'));
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+    respondeSiSalio(false);
     fireEvent.change(screen.getByPlaceholderText(/cliente devolvió/), {
       target: { value: '  pedido equivocado  ' },
     });
@@ -118,7 +137,8 @@ describe('VoidModal', () => {
     render(<VoidModal open shiftId="s1" onClose={onClose} onSuccess={vi.fn()} />);
     await screen.findByText('Recibo #1');
 
-    fireEvent.click(screen.getByRole('radio'));
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+    respondeSiSalio(false);
     fireEvent.change(screen.getByPlaceholderText(/cliente devolvió/), {
       target: { value: 'pedido equivocado' },
     });
@@ -127,5 +147,45 @@ describe('VoidModal', () => {
 
     expect(await screen.findByRole('alert')).toBeDefined();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  /**
+   * El caso que motivó todo: hasta ahora, devolverle la plata a alguien cuya
+   * comida YA se había hecho solo se podía hacer anulando, y anular devuelve
+   * el inventario — así que el costo desaparecía de los libros.
+   */
+  it('si la comida SÍ salió llama al reembolso, NO a la anulación', async () => {
+    const devuelta = sale({ id: 'a', receiptNumber: 1, status: 'VOID' });
+    listSales.mockResolvedValue([sale({ id: 'a', receiptNumber: 1 })]);
+    refundSale.mockResolvedValue(devuelta);
+    const onSuccess = vi.fn();
+    render(<VoidModal open shiftId="s1" onClose={vi.fn()} onSuccess={onSuccess} />);
+    await screen.findByText('Recibo #1');
+
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+    respondeSiSalio(true);
+    fireEvent.change(screen.getByPlaceholderText(/cliente devolvió/), {
+      target: { value: 'se demoró y pidió la plata' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('••••••'), { target: { value: '654321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Devolver la plata' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(devuelta));
+    expect(refundSale).toHaveBeenCalledWith('a', { reason: 'se demoró y pidió la plata' }, '654321');
+    expect(voidSale).not.toHaveBeenCalled();
+    // La cocina NO recibe ticket de anular: ese pedido ya salió del local.
+    expect(printComanda).not.toHaveBeenCalled();
+  });
+
+  it('el botón nombra lo que va a pasar según la respuesta', async () => {
+    listSales.mockResolvedValue([sale({ id: 'a', receiptNumber: 1 })]);
+    render(<VoidModal open shiftId="s1" onClose={vi.fn()} onSuccess={vi.fn()} />);
+    await screen.findByText('Recibo #1');
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+
+    respondeSiSalio(true);
+    expect(screen.getByRole('button', { name: 'Devolver la plata' })).toBeDefined();
+    respondeSiSalio(false);
+    expect(screen.getByRole('button', { name: 'Anular venta' })).toBeDefined();
   });
 });

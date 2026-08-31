@@ -1,5 +1,6 @@
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import { CogsService } from '../src/reports/cogs.service';
 import { AppContext, bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 
@@ -297,5 +298,87 @@ describe('COGS refund post-preparación (e2e HTTP)', () => {
     ).body;
     expect(stmt.refundCost).toBe(6000);
     expect(stmt.netResult).toBeLessThanOrEqual(-6000);
+  });
+
+  /**
+   * El caso que faltaba, y que hacía inalcanzable todo lo de arriba: una venta
+   * de MOSTRADOR nace y muere en PAGADO desde que se eliminó el KDS (§7.v10).
+   * El test de arriba llega a LISTO_DESPACHO forzando el estado por Prisma —
+   * ninguna acción del cajero lo hace— así que en la práctica el reembolso era
+   * imposible y el cajero solo podía anular, lo que devuelve el inventario y
+   * borra la pérdida de los libros.
+   */
+  it('una venta de MOSTRADOR se puede reembolsar sin tocar el estado a mano', async () => {
+    // Otro kilo al MISMO precio: el caso anterior dejó 400 g y una hamburguesa
+    // se lleva 600. Así el costo del lote sigue siendo $10/g y la cuenta de
+    // abajo no depende de qué corrió antes.
+    const compra = await ctx.prisma.invoice.create({ data: { uploadedById: duenoId } });
+    await auth(ctx.request.post(`/invoices/${compra.id}/confirm`))
+      .send({
+        supplierNit: '900123456-7',
+        supplierName: 'Proveedor refund',
+        total: 10000,
+        items: [
+          {
+            entityType: 'INGREDIENT',
+            ingredientId: polloId,
+            descriptionRaw: 'Pollo',
+            quantity: 1,
+            unit: 'kg',
+            unitPrice: 10000,
+            total: 10000,
+          },
+        ],
+      })
+      .expect(201);
+
+    // El ledger cachea 60 s (staleness deliberada de los reportes) y este caso
+    // lee el P&G ANTES y DESPUÉS dentro de esa ventana: sin invalidar, la
+    // segunda lectura devuelve la primera y el delta sale en 0.
+    const pnl = async () => {
+      ctx.app.get(CogsService).invalidateLedgerCache();
+      return (await auth(ctx.request.get('/reports/cogs/pnl')).expect(200)).body;
+    };
+    const antes = await pnl();
+
+    const created = await auth(ctx.request.post('/sales'))
+      .set('Idempotency-Key', randomUUID())
+      .send({ type: 'COUNTER', items: [{ productId: burgerId, quantity: 1 }] })
+      .expect(201);
+    const saleId = created.body.id as string;
+    const pagada = await auth(ctx.request.post(`/sales/${saleId}/confirm-payment`))
+      .send({ method: 'CASH', amountReceived: 9000 })
+      .expect(201);
+    // Sin pasar por ningún estado de cocina: así queda una venta de mostrador.
+    expect(pagada.body.status).toBe('PAGADO');
+
+    await auth(ctx.request.post(`/sales/${saleId}/refund`))
+      .set('x-approval-pin', PIN)
+      .send({ reason: 'se demoró y pidió la plata de vuelta' })
+      .expect(201);
+
+    const despues = await pnl();
+    // La comida se gastó: el costo queda como pérdida y NO como venta.
+    expect(despues.refundCost - antes.refundCost).toBe(6000);
+    expect(despues.revenue).toBe(antes.revenue);
+
+    // Y la prueba de que NO se devolvió el inventario: anular lo habría subido.
+    const val = (await auth(ctx.request.get('/reports/cogs/inventory-valuation')).expect(200)).body;
+    const pollo = val.items.find((i: { id: string }) => i.id === polloId);
+    expect(pollo?.qty ?? 0).toBe(800);
+  });
+
+  it('un pedido sin cobrar no se puede reembolsar (no hay plata que devolver)', async () => {
+    const created = await auth(ctx.request.post('/sales'))
+      .set('Idempotency-Key', randomUUID())
+      .send({ type: 'COUNTER', items: [{ productId: burgerId, quantity: 1 }] })
+      .expect(201);
+    const res = await auth(ctx.request.post(`/sales/${created.body.id}/refund`))
+      .set('x-approval-pin', PIN)
+      .send({ reason: 'intento sobre un pedido sin pagar' })
+      .expect(400);
+    // El mensaje habla en estados que la persona ve, no en el enum.
+    expect(String(res.body.message)).toContain('cobrado');
+    expect(String(res.body.message)).not.toContain('PENDIENTE_PAGO');
   });
 });

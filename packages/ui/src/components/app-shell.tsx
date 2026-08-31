@@ -35,10 +35,7 @@ export function AppShell({
 }: AppShellProps) {
   return (
     <div
-      className={cn(
-        'flex h-dvh flex-col overflow-hidden bg-background text-foreground',
-        className,
-      )}
+      className={cn('flex h-dvh flex-col overflow-hidden bg-background text-foreground', className)}
     >
       {topbar}
       <div className="flex min-h-0 flex-1">

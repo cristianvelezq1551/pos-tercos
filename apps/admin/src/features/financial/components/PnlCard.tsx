@@ -56,8 +56,8 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         <p className="caps text-[0.625rem] text-muted-foreground">Costos fijos (recurrentes)</p>
         {recurring.length === 0 ? (
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            Aún no tienes costos fijos cargados. Crealos en Finanzas → Costos y gastos para que este
-            reporte sea preciso.
+            Aún no tienes costos fijos cargados. Créalos en Finanzas → Costos y gastos para que
+            este reporte sea preciso.
           </p>
         ) : (
           <ul className="space-y-1">
@@ -68,6 +68,15 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         )}
         <div className="my-2 border-t border-border" />
         <Row label="Total costos fijos" value={`−${formatCop(s.totalFixed)}`} strong />
+        {/* La pregunta que aparece al leer esta lista: "¿pero si no lo pagué?".
+            El resultado del mes cuenta lo que el mes CONSUMIÓ, se haya pagado o
+            no — si no, un mes se vería barato solo por deber. Lo que falta por
+            pagar (incluidos meses anteriores) vive en Finanzas → Pagos. */}
+        <p className="pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
+          Cada costo pesa en el mes que corresponde, esté pagado o no: así el resultado dice si el
+          mes dio ganancia, no si alcanzaste a pagar. Lo que queda debiendo —de este mes o de
+          anteriores— está en Finanzas → Pagos.
+        </p>
       </div>
 
       {/* Bloque gastos únicos / excepcionales del mes */}

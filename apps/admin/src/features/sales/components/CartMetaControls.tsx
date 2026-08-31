@@ -71,7 +71,9 @@ export function CartMetaControls({
       });
       clear();
       notifyOrdersChanged();
-      onInfo(`Cuenta abierta #${sale.receiptNumber} · ${sale.customerName ?? ''} · comanda enviada`);
+      onInfo(
+        `Cuenta abierta #${sale.receiptNumber} · ${sale.customerName ?? ''} · comanda enviada`,
+      );
     } catch (err) {
       setError(getErrorMessage(err, 'No se pudo abrir la cuenta'));
     } finally {
@@ -89,7 +91,7 @@ export function CartMetaControls({
           onChange={(e) => setCustomerName(e.target.value)}
           maxLength={120}
           placeholder="Cliente (opcional)"
-          className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+          className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-base sm:text-sm"
           aria-label="Nombre del cliente"
         />
         {!offline ? (
@@ -118,15 +120,25 @@ export function CartMetaControls({
           // Sin red los descuentos manuales NO viajan (el sync offline no los
           // representa): avisar en vez de mostrar un "activo" mentiroso.
           <p className="flex items-center justify-between gap-2 text-xs text-destructive">
-            <span className="truncate">Sin conexión: el descuento manual NO aplica (se cobra con promos normales)</span>
-            <button type="button" className="font-semibold hover:opacity-70" onClick={clearDiscounts}>
+            <span className="truncate">
+              Sin conexión: el descuento manual NO aplica (se cobra con promos normales)
+            </span>
+            <button
+              type="button"
+              className="font-semibold hover:opacity-70"
+              onClick={clearDiscounts}
+            >
               Quitar
             </button>
           </p>
         ) : (
           <p className="flex items-center justify-between gap-2 text-xs text-warning">
             <span className="truncate">Descuento manual activo · promos desactivadas</span>
-            <button type="button" className="font-semibold hover:opacity-70" onClick={clearDiscounts}>
+            <button
+              type="button"
+              className="font-semibold hover:opacity-70"
+              onClick={clearDiscounts}
+            >
               Quitar
             </button>
           </p>

@@ -1,8 +1,5 @@
 import type { SaleStatus } from '@pos-tercos/types';
-import {
-  ACTIVE_SALE_STATUSES,
-  SLOW_ORDER_THRESHOLD_MIN,
-} from './sale-status-mapping';
+import { ACTIVE_SALE_STATUSES, SLOW_ORDER_THRESHOLD_MIN } from './sale-status-mapping';
 
 export interface HistoryFilter {
   key: string;
@@ -19,8 +16,7 @@ export const HISTORY_FILTERS: HistoryFilter[] = [
   {
     key: 'anulados',
     label: 'Anulados',
-    match: (s) =>
-      s === 'VOID' || s === 'CANCELADO_NO_PAGO' || s === 'CANCELADO_SIN_REEMBOLSO',
+    match: (s) => s === 'VOID' || s === 'CANCELADO_NO_PAGO' || s === 'CANCELADO_SIN_REEMBOLSO',
   },
 ];
 

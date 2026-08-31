@@ -57,17 +57,14 @@ export function Popover({
 
   return (
     <span ref={containerRef} className="relative inline-flex">
-      {React.cloneElement(
-        trigger as React.ReactElement<React.HTMLAttributes<HTMLElement>>,
-        {
-          onClick: (e: React.MouseEvent) => {
-            e.preventDefault();
-            setOpen((o) => !o);
-          },
-          'aria-expanded': open,
-          'aria-haspopup': true,
+      {React.cloneElement(trigger as React.ReactElement<React.HTMLAttributes<HTMLElement>>, {
+        onClick: (e: React.MouseEvent) => {
+          e.preventDefault();
+          setOpen((o) => !o);
         },
-      )}
+        'aria-expanded': open,
+        'aria-haspopup': true,
+      })}
       {open ? (
         <div
           role="dialog"

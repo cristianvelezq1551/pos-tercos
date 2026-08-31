@@ -104,11 +104,7 @@ export function DiscountModal({ open, onClose }: { open: boolean; onClose: () =>
       }
     >
       <div className="space-y-4">
-        <SpecInputs
-          label="Sobre el total"
-          draft={order}
-          onChange={(d) => setOrder(d)}
-        />
+        <SpecInputs label="Sobre el total" draft={order} onChange={(d) => setOrder(d)} />
 
         {items.length > 0 ? (
           <div className="space-y-2">
@@ -126,7 +122,7 @@ export function DiscountModal({ open, onClose }: { open: boolean; onClose: () =>
           </div>
         ) : null}
 
-        <label className="block text-sm">
+        <label className="block text-base sm:text-sm">
           <span className="mb-1 block font-medium text-foreground">Motivo (obligatorio)</span>
           <input
             type="text"
@@ -134,12 +130,15 @@ export function DiscountModal({ open, onClose }: { open: boolean; onClose: () =>
             onChange={(e) => setReason(e.target.value)}
             maxLength={200}
             placeholder="Ej. cliente frecuente, demora en la entrega…"
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-base sm:text-sm"
           />
         </label>
 
         {error ? (
-          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-base sm:text-sm text-destructive"
+          >
             {error}
           </p>
         ) : null}
@@ -159,11 +158,11 @@ function SpecInputs({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-base sm:text-sm text-foreground">{label}</span>
       <select
         value={draft.kind}
         onChange={(e) => onChange({ ...draft, kind: e.target.value as DraftSpec['kind'] })}
-        className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+        className="rounded-md border border-border bg-background px-2 py-1.5 text-base sm:text-sm"
         aria-label={`Tipo de descuento — ${label}`}
       >
         <option value="FIXED">$</option>
@@ -176,7 +175,7 @@ function SpecInputs({
         value={draft.value}
         onChange={(e) => onChange({ ...draft, value: e.target.value })}
         placeholder="0"
-        className="w-24 rounded-md border border-border bg-background px-2 py-1.5 text-right text-sm tabular-nums"
+        className="w-24 rounded-md border border-border bg-background px-2 py-1.5 text-right text-base sm:text-sm tabular-nums"
         aria-label={`Valor del descuento — ${label}`}
       />
     </div>

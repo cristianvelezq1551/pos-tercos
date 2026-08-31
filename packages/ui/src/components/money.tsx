@@ -40,7 +40,18 @@ const WEIGHTS: Record<NonNullable<MoneyProps['weight']>, string> = {
  * para que las columnas de tablas y los totales del carrito alineen.
  */
 export const Money = React.forwardRef<HTMLSpanElement, MoneyProps>(
-  ({ amount, withSymbol = true, withSign = false, size = 'md', weight = 'medium', className, ...rest }, ref) => {
+  (
+    {
+      amount,
+      withSymbol = true,
+      withSign = false,
+      size = 'md',
+      weight = 'medium',
+      className,
+      ...rest
+    },
+    ref,
+  ) => {
     const formatted = formatCop(amount, { withSymbol });
     const showPlus =
       withSign && typeof amount === 'number' && amount > 0 && !formatted.startsWith('-');

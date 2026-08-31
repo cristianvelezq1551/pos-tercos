@@ -33,8 +33,18 @@ export function SplitPaymentSection({
   methods: readonly PaymentMethodSetting[];
   onChange: (result: SplitResult | null, reason: string | null) => void;
 }) {
-  const { mode, setMode, count, setCount, units, setUnits, parts, setParts, setPartAmount, assigned } =
-    useSplitPayment(total, totals, onChange);
+  const {
+    mode,
+    setMode,
+    count,
+    setCount,
+    units,
+    setUnits,
+    parts,
+    setParts,
+    setPartAmount,
+    assigned,
+  } = useSplitPayment(total, totals, onChange);
 
   return (
     <div className="space-y-3">

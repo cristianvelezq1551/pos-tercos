@@ -127,11 +127,7 @@ function DrawerHeader({ title, subtitle, onClose, trailing }: DrawerHeaderProps)
 }
 DrawerHeader.displayName = 'Drawer.Header';
 
-function DrawerBody({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function DrawerBody({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cn('flex-1 overflow-y-auto px-5 py-4', className)} {...rest}>
       {children}
@@ -140,17 +136,10 @@ function DrawerBody({
 }
 DrawerBody.displayName = 'Drawer.Body';
 
-function DrawerFooter({
-  className,
-  children,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function DrawerFooter({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <footer
-      className={cn(
-        'shrink-0 border-t border-border bg-muted/40 px-5 py-3',
-        className,
-      )}
+      className={cn('shrink-0 border-t border-border bg-muted/40 px-5 py-3', className)}
       {...rest}
     >
       {children}

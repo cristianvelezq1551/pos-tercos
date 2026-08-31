@@ -14,7 +14,13 @@ import { MoneyInput } from './money-input';
  */
 
 /** Wrapper controlado, como lo usan los formularios reales. */
-function Controlled({ initial = '', onDigits }: { initial?: string; onDigits?: (d: string) => void }) {
+function Controlled({
+  initial = '',
+  onDigits,
+}: {
+  initial?: string;
+  onDigits?: (d: string) => void;
+}) {
   const [value, setValue] = useState(initial);
   return (
     <MoneyInput

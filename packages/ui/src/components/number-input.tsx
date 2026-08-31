@@ -2,8 +2,10 @@ import * as React from 'react';
 import { cn } from '../lib/utils';
 import { groupDigits, onlyDigits } from '../lib/format';
 
-export interface NumberInputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange' | 'prefix'> {
+export interface NumberInputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'type' | 'value' | 'onChange' | 'prefix'
+> {
   /** Valor numérico (controlado). null = vacío. */
   value: number | null;
   /** Callback con el nuevo número (o null si vacío). */
@@ -33,7 +35,19 @@ export interface NumberInputProps
  */
 export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
   (
-    { value, onChange, prefix, suffix, decimals = 0, grouping = false, min, max, className, disabled, ...rest },
+    {
+      value,
+      onChange,
+      prefix,
+      suffix,
+      decimals = 0,
+      grouping = false,
+      min,
+      max,
+      className,
+      disabled,
+      ...rest
+    },
     ref,
   ) => {
     const grouped = grouping && decimals === 0;
@@ -85,7 +99,7 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           step={grouped ? undefined : decimals === 0 ? 1 : Math.pow(10, -decimals)}
           min={grouped ? undefined : min}
           max={grouped ? undefined : max}
-          value={grouped ? (value == null ? '' : groupDigits(String(value))) : value ?? ''}
+          value={grouped ? (value == null ? '' : groupDigits(String(value))) : (value ?? '')}
           onChange={handleChange}
           disabled={disabled}
           className={cn(

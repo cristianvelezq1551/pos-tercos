@@ -53,7 +53,10 @@ interface CartState {
 
 function lineSignature(item: AddInput | CartLine): string {
   const sizeId = item.size?.id ?? '';
-  const modIds = [...item.modifiers].map((m) => m.id).sort().join('|');
+  const modIds = [...item.modifiers]
+    .map((m) => m.id)
+    .sort()
+    .join('|');
   // Las notas distinguen líneas: una "sin cebolla" no se fusiona con una normal.
   return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}`;
 }
@@ -109,9 +112,7 @@ export const useCartStore = create<CartState>((set) => ({
   setNotes: (lineId, notes) =>
     set((state) => ({
       items: state.items.map((it) =>
-        it.lineId === lineId
-          ? { ...it, notes: notes.trim() ? notes : undefined }
-          : it,
+        it.lineId === lineId ? { ...it, notes: notes.trim() ? notes : undefined } : it,
       ),
     })),
   setCustomerName: (name) => set({ customerName: name }),

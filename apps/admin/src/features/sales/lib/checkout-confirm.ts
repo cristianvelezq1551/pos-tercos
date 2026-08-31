@@ -62,8 +62,7 @@ function ensureSale(
       items: cartLinesToCreateItems(items, meta.lineDiscounts),
       customerName: meta.customerName?.trim() ? meta.customerName.trim() : undefined,
       orderDiscount: meta.orderDiscount ?? undefined,
-      discountReason:
-        hasManualDiscount && meta.discountReason ? meta.discountReason : undefined,
+      discountReason: hasManualDiscount && meta.discountReason ? meta.discountReason : undefined,
     },
     idempotencyKey,
   );

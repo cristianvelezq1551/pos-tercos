@@ -36,9 +36,7 @@ export function BrandHeader({
       )}
       {...rest}
     >
-      {eyebrow ? (
-        <span className="caps text-[0.6875rem] text-primary">{eyebrow}</span>
-      ) : null}
+      {eyebrow ? <span className="caps text-[0.6875rem] text-primary">{eyebrow}</span> : null}
       <div className="flex items-center gap-3">{logo}</div>
       {tagline ? (
         <p

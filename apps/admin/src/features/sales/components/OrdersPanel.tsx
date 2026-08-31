@@ -147,14 +147,15 @@ export function OrdersPanel() {
   return (
     <aside className="hidden h-full w-[clamp(230px,22vw,310px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card lg:flex">
       <header className="border-b border-border px-3 py-3">
-        <h2 className="font-display text-base font-bold tracking-tight text-foreground">
-          Pedidos
-        </h2>
+        <h2 className="font-display text-base font-bold tracking-tight text-foreground">Pedidos</h2>
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-3">
         {error ? (
-          <p role="alert" className="rounded-md border border-warning-border bg-warning-bg px-2 py-1.5 text-xs text-warning">
+          <p
+            role="alert"
+            className="rounded-md border border-warning-border bg-warning-bg px-2 py-1.5 text-xs text-warning"
+          >
             {error}
           </p>
         ) : null}
@@ -195,7 +196,11 @@ export function OrdersPanel() {
         open={payTab !== null}
         total={payTab?.total ?? 0}
         items={[]}
-        totals={payTab ? totalsFromSale(payTab) : { lines: [], subtotal: 0, discount: 0, orderDiscountAmount: 0, total: 0 }}
+        totals={
+          payTab
+            ? totalsFromSale(payTab)
+            : { lines: [], subtotal: 0, discount: 0, orderDiscountAmount: 0, total: 0 }
+        }
         promos={promos}
         sale={payTab}
         onClose={() => setPayTab(null)}
@@ -219,10 +224,7 @@ export function OrdersPanel() {
 
       <SaleDetailModal sale={detailSale} onClose={() => setDetailSale(null)} />
 
-      <CortesiaDetailModal
-        cortesia={detailCortesia}
-        onClose={() => setDetailCortesia(null)}
-      />
+      <CortesiaDetailModal cortesia={detailCortesia} onClose={() => setDetailCortesia(null)} />
 
       <ConfirmDialog
         open={cancelTab !== null}

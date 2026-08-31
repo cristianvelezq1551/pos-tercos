@@ -54,7 +54,11 @@ describe('validateCheckout', () => {
   });
 
   it('split abierto sin resultado → inválido con la razón del editor', () => {
-    const v = validateCheckout({ ...BASE, splitOpen: true, splitReason: 'Falta cobrar a 2 personas' });
+    const v = validateCheckout({
+      ...BASE,
+      splitOpen: true,
+      splitReason: 'Falta cobrar a 2 personas',
+    });
     expect(v.ok).toBe(false);
     expect(v.reason).toBe('Falta cobrar a 2 personas');
   });
