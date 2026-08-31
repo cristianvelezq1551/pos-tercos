@@ -1,4 +1,4 @@
-import type { Sale } from '@pos-tercos/types';
+import { paymentMethodLabel, type Sale } from '@pos-tercos/types';
 import {
   EmptyState,
   FormField,
@@ -16,11 +16,14 @@ export function VoidableSalesList({
   loading,
   selectedId,
   onSelect,
+  nombresDeMedios,
 }: {
   sales: Sale[];
   loading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** `{code: nombre}` del catálogo, para no mostrar "CASH" en pantalla. */
+  nombresDeMedios?: Record<string, string>;
 }) {
   return (
     <FormField label={`Ventas anulables del turno (${sales.length})`}>
@@ -48,11 +51,15 @@ export function VoidableSalesList({
                       className="h-4 w-4 accent-primary"
                     />
                     <span>
-                      <span className="font-semibold">{`Recibo #${s.receiptNumber}`}</span>
+                      <span className="font-semibold">Recibo #{s.receiptNumber}</span>
+                      {/* El número ya está arriba: repetirlo gastaba la línea
+                              donde el cajero busca la hora y cómo pagó. Y el
+                              medio va con su NOMBRE, no con el code ("CASH"). */}
                       <span className="ml-2 text-xs text-muted-foreground">
-                        Recibo #{s.receiptNumber} ·{' '}
                         {formatDate(s.paidAt ?? s.createdAt, 'time-short')}
-                        {s.paymentMethod ? ` · ${s.paymentMethod}` : ''}
+                        {s.paymentMethod
+                          ? ` · ${paymentMethodLabel(s.paymentMethod, nombresDeMedios)}`
+                          : ''}
                       </span>
                     </span>
                   </span>
