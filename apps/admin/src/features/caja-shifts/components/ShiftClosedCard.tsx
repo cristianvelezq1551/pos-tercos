@@ -52,7 +52,10 @@ export function ShiftClosedCard({ shift }: { shift: Shift }) {
       <DifferenceWidget difference={difference} accountDifference={accountDifference} />
 
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Link href="/caja/shift/open" className={buttonVariants({ size: 'lg', className: 'flex-1' })}>
+        <Link
+          href="/caja/shift/open"
+          className={buttonVariants({ size: 'lg', className: 'flex-1' })}
+        >
           Abrir nuevo turno
         </Link>
         <Link

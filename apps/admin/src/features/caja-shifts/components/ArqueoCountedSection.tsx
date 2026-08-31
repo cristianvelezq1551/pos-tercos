@@ -1,9 +1,6 @@
 'use client';
 
-import {
-  PAYMENT_METHOD_LABELS,
-  type ShiftSessionDetail,
-} from '@pos-tercos/types';
+import { PAYMENT_METHOD_LABELS, type ShiftSessionDetail } from '@pos-tercos/types';
 import { Money, cn } from '@pos-tercos/ui';
 import { SectionRow } from './ArqueoBreakdown';
 
@@ -22,8 +19,7 @@ export function ArqueoCountedSection({ shift }: { shift: ShiftSessionDetail['shi
     ...digital.map((d) => ({ method: d.method as string, amount: d.counted })),
   ];
   const countedTotal = countedRows.reduce((a, r) => a + (r.amount ?? 0), 0);
-  const diffTotal =
-    (shift.difference ?? 0) + digital.reduce((a, d) => a + (d.difference ?? 0), 0);
+  const diffTotal = (shift.difference ?? 0) + digital.reduce((a, d) => a + (d.difference ?? 0), 0);
 
   return (
     <>
@@ -49,11 +45,7 @@ export function ArqueoCountedSection({ shift }: { shift: ShiftSessionDetail['shi
       <div
         className={cn(
           'flex items-center justify-between px-3 py-2.5',
-          diffTotal === 0
-            ? 'bg-success/15'
-            : diffTotal < 0
-              ? 'bg-destructive/15'
-              : 'bg-success/15',
+          diffTotal === 0 ? 'bg-success/15' : diffTotal < 0 ? 'bg-destructive/15' : 'bg-success/15',
         )}
       >
         <span className="text-sm font-bold uppercase tracking-wide text-foreground">
@@ -65,7 +57,9 @@ export function ArqueoCountedSection({ shift }: { shift: ShiftSessionDetail['shi
             diffTotal === 0 ? 'text-success' : diffTotal < 0 ? 'text-destructive' : 'text-success',
           )}
         >
-          {diffTotal === 0 ? 'Cuadró ✓' : (
+          {diffTotal === 0 ? (
+            'Cuadró ✓'
+          ) : (
             <>
               {diffTotal > 0 ? '+' : ''}
               <Money amount={diffTotal} weight="bold" className="text-current" />

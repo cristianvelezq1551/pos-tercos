@@ -42,10 +42,7 @@ export function CajaScreen({ shift }: { shift: Shift | null }) {
           Abre la caja con el efectivo inicial para empezar a vender.
         </p>
       </div>
-      <Link
-        href="/caja/shift/open"
-        className={buttonVariants({ size: 'lg', className: 'w-full' })}
-      >
+      <Link href="/caja/shift/open" className={buttonVariants({ size: 'lg', className: 'w-full' })}>
         Abrir turno
       </Link>
     </div>

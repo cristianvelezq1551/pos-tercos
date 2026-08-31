@@ -1,10 +1,6 @@
 'use client';
 
-import type {
-  CashMovementType,
-  PaymentMethod,
-  PaymentMethodSetting,
-} from '@pos-tercos/types';
+import type { CashMovementType, PaymentMethod, PaymentMethodSetting } from '@pos-tercos/types';
 import { Button, Input, NumberInput, cn } from '@pos-tercos/ui';
 
 /**
@@ -73,7 +69,10 @@ export function CashMovementForm({
         ))}
       </div>
 
-      <div className="mt-2 flex gap-2">
+      {/* En celular los tres en fila dejaban el motivo en un hueco donde se leía
+          "Motivo (ej." — el monto va arriba con el botón, y el motivo abajo con
+          todo el ancho, que es el campo donde de verdad se escribe. */}
+      <div className="mt-2 flex flex-wrap gap-2">
         <NumberInput
           value={amount}
           onChange={onAmountChange}
@@ -87,9 +86,11 @@ export function CashMovementForm({
           type="text"
           value={reason}
           onChange={(e) => onReasonChange(e.target.value)}
-          placeholder={type === 'OUT' ? 'Motivo (ej. pago proveedor)' : 'Motivo (ej. fondo de cambio)'}
+          placeholder={
+            type === 'OUT' ? 'Motivo (ej. pago proveedor)' : 'Motivo (ej. fondo de cambio)'
+          }
           maxLength={200}
-          className="flex-1"
+          className="order-last w-full sm:order-none sm:w-auto sm:flex-1"
         />
         <Button variant="secondary" disabled={!valid || busy} onClick={() => void onSubmit()}>
           {busy ? '…' : editing ? 'Guardar' : 'Registrar'}

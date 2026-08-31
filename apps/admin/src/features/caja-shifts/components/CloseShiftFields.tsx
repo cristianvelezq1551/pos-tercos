@@ -12,11 +12,7 @@ import {
 } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { sumBreakdown } from '../lib/denominations';
-import {
-  digitalDifference,
-  missingDigitalCounts,
-  type DigitalTarget,
-} from '../lib/digital-arqueo';
+import { digitalDifference, missingDigitalCounts, type DigitalTarget } from '../lib/digital-arqueo';
 import type { ShiftSummary } from '../lib/shift-summary';
 import { DigitalCountSection } from './DigitalCountSection';
 import { DenominationCounter } from './DenominationCounter';
@@ -95,6 +91,7 @@ export function CloseShiftFields({
           expectedCash={expectedCash ?? 0}
           cashIn={cashIn}
           cashOut={cashOut}
+          nombresDeMedios={Object.fromEntries(digitalTargets.map((d) => [d.method, d.name]))}
         />
       ) : null}
 
@@ -130,7 +127,9 @@ export function CloseShiftFields({
               prefix="$"
               grouping
               min={0}
-              placeholder={showResult && expectedCash !== null ? groupDigits(String(expectedCash)) : '0'}
+              placeholder={
+                showResult && expectedCash !== null ? groupDigits(String(expectedCash)) : '0'
+              }
               disabled={pending}
               autoFocus
               required
@@ -184,8 +183,8 @@ export function CloseShiftFields({
           />
         </FormField>
         <p className="mt-1 text-[0.6875rem] text-muted-foreground">
-          No suma al efectivo esperado de la caja — es el bote de propinas
-          que se reparte entre los trabajadores.
+          No suma al efectivo esperado de la caja — es el bote de propinas que se reparte entre los
+          trabajadores.
         </p>
       </div>
 

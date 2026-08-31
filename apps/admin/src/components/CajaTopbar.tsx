@@ -1,4 +1,10 @@
-import { USER_ROLE_LABELS, type PublicWebOrder, type Shift, type User, type UserRole } from '@pos-tercos/types';
+import {
+  USER_ROLE_LABELS,
+  type PublicWebOrder,
+  type Shift,
+  type User,
+  type UserRole,
+} from '@pos-tercos/types';
 import { Topbar, UserMenu } from '@pos-tercos/ui';
 import { BrandLogo } from '@pos-tercos/brand';
 import Link from 'next/link';
@@ -25,11 +31,17 @@ export function CajaTopbar({
 }) {
   return (
     <Topbar variant="light">
-      <Topbar.Brand className="shrink-0">
+      {/* En celular el logotipo se esconde: las pestañas no cabían y, al estar
+          centradas en un espacio más chico que su contenido, arrancaban en
+          x=-7 y se montaban 85 px ENCIMA del logo. Acá la herramienta son las
+          pestañas; la marca es decoración. */}
+      <Topbar.Brand className="hidden shrink-0 sm:flex">
         <BrandLogo variant="wordmark" theme="dark" size="h-6" />
       </Topbar.Brand>
 
-      <div className="flex min-w-0 flex-1 items-stretch justify-center self-stretch py-1.5">
+      {/* Y si aun así no caben (una pestaña más, un idioma más largo), que se
+          desplacen en vez de salirse de la pantalla. */}
+      <div className="flex min-w-0 flex-1 items-stretch justify-start self-stretch overflow-x-auto py-1.5 sm:justify-center">
         <CajaNav />
       </div>
 

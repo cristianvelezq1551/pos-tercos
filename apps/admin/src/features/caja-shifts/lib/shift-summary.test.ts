@@ -23,7 +23,15 @@ const sale = (over: Partial<Sale> = {}): Sale =>
     shiftId: null,
     paidAt: new Date('2026-06-10T12:00:00Z').toISOString(),
     createdAt: new Date('2026-06-10T12:00:00Z').toISOString(),
-    payments: [{ id: 'p1', createdAt: '2026-06-10T12:00:00.000Z', method: 'CASH', amount: 10_000, amountReceived: 10_000 }],
+    payments: [
+      {
+        id: 'p1',
+        createdAt: '2026-06-10T12:00:00.000Z',
+        method: 'CASH',
+        amount: 10_000,
+        amountReceived: 10_000,
+      },
+    ],
     ...over,
   }) as Sale;
 
@@ -46,8 +54,20 @@ describe('computeShiftSummary', () => {
         total: 30_000,
         paymentMethod: null,
         payments: [
-          { id: 'p2', createdAt: '2026-06-10T12:00:00.000Z', method: 'CASH', amount: 12_000, amountReceived: 20_000 },
-          { id: 'p3', createdAt: '2026-06-10T12:00:00.000Z', method: 'TRANSFER', amount: 18_000, amountReceived: null },
+          {
+            id: 'p2',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'CASH',
+            amount: 12_000,
+            amountReceived: 20_000,
+          },
+          {
+            id: 'p3',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'TRANSFER',
+            amount: 18_000,
+            amountReceived: null,
+          },
         ],
       } as Partial<Sale>),
     ]);
@@ -84,7 +104,15 @@ describe('computeShiftSummary — domicilios', () => {
         total: 61_000,
         deliveryFee: 11_000,
         paymentMethod: 'TRANSFER',
-        payments: [{ id: 'p4', createdAt: '2026-06-10T12:00:00.000Z', method: 'TRANSFER', amount: 61_000, amountReceived: 61_000 }],
+        payments: [
+          {
+            id: 'p4',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'TRANSFER',
+            amount: 61_000,
+            amountReceived: 61_000,
+          },
+        ],
       }),
     ]);
     expect(r.totalSales).toBe(50_000);
@@ -99,7 +127,15 @@ describe('computeShiftSummary — domicilios', () => {
         total: 61_000,
         deliveryFee: 11_000,
         paymentMethod: 'TRANSFER',
-        payments: [{ id: 'p5', createdAt: '2026-06-10T12:00:00.000Z', method: 'TRANSFER', amount: 61_000, amountReceived: 61_000 }],
+        payments: [
+          {
+            id: 'p5',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'TRANSFER',
+            amount: 61_000,
+            amountReceived: 61_000,
+          },
+        ],
       }),
     ]);
     expect(r.byMethod.TRANSFER?.total).toBe(50_000);
@@ -121,7 +157,15 @@ describe('computeShiftSummary — domicilios', () => {
         total: 61_000,
         deliveryFee: 11_000,
         paymentMethod: 'CASH',
-        payments: [{ id: 'p6', createdAt: '2026-06-10T12:00:00.000Z', method: 'CASH', amount: 61_000, amountReceived: 61_000 }],
+        payments: [
+          {
+            id: 'p6',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'CASH',
+            amount: 61_000,
+            amountReceived: 61_000,
+          },
+        ],
       }),
     ]);
     expect(r.cashSalesTotal).toBe(50_000);
@@ -138,7 +182,15 @@ describe('computeShiftSummary — domicilios', () => {
         total: 61_000,
         deliveryFee: 11_000,
         paymentMethod: 'TRANSFER',
-        payments: [{ id: 'p7', createdAt: '2026-06-10T12:00:00.000Z', method: 'TRANSFER', amount: 61_000, amountReceived: 61_000 }],
+        payments: [
+          {
+            id: 'p7',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'TRANSFER',
+            amount: 61_000,
+            amountReceived: 61_000,
+          },
+        ],
       }),
     ]);
     expect(r.cashSalesTotal).toBe(0);
@@ -154,8 +206,20 @@ describe('computeShiftSummary — domicilios', () => {
         deliveryFee: 12_000,
         paymentMethod: null,
         payments: [
-          { id: 'p8', createdAt: '2026-06-10T12:00:00.000Z', method: 'CASH', amount: 30_000, amountReceived: 30_000 },
-          { id: 'p9', createdAt: '2026-06-10T12:00:00.000Z', method: 'TRANSFER', amount: 30_000, amountReceived: 30_000 },
+          {
+            id: 'p8',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'CASH',
+            amount: 30_000,
+            amountReceived: 30_000,
+          },
+          {
+            id: 'p9',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'TRANSFER',
+            amount: 30_000,
+            amountReceived: 30_000,
+          },
         ],
       }),
     ]);
@@ -183,7 +247,15 @@ describe('computeShiftSummary — domicilios', () => {
         total: 50_000,
         deliveryFee: 7_000,
         paymentMethod: 'CASH',
-        payments: [{ id: 'pA', createdAt: '2026-06-10T12:00:00.000Z', method: 'CASH', amount: 50_000, amountReceived: 50_000 }],
+        payments: [
+          {
+            id: 'pA',
+            createdAt: '2026-06-10T12:00:00.000Z',
+            method: 'CASH',
+            amount: 50_000,
+            amountReceived: 50_000,
+          },
+        ],
       }),
     ]);
     expect(openingCash + r.cashSalesTotal).toBe(143_000);

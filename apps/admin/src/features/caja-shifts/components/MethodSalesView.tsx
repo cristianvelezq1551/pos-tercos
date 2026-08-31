@@ -16,7 +16,6 @@ import { getErrorMessage } from '../../../lib/errors';
 const label = (m: string): string =>
   PAYMENT_METHOD_LABELS[m as keyof typeof PAYMENT_METHOD_LABELS] ?? m;
 
-
 /**
  * Ventas de UN método de pago dentro de una caja cerrada: cada venta con
  * sus productos (cantidad, nombre, valor) y sus partes de pago. Es solo
@@ -42,7 +41,10 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
 
   if (error) {
     return (
-      <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      <p
+        role="alert"
+        className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      >
         {error}
       </p>
     );
@@ -54,14 +56,10 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
   const entries = detail.orders
     .filter((o) => PAID_STATUSES.has(o.status))
     .flatMap((o) => {
-      const part = o.payments
-        .filter((p) => p.method === method)
-        .reduce((a, p) => a + p.amount, 0);
+      const part = o.payments.filter((p) => p.method === method).reduce((a, p) => a + p.amount, 0);
       return part > 0 ? [{ order: o, amount: part }] : [];
     })
-    .sort(
-      (a, b) => new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime(),
-    );
+    .sort((a, b) => new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime());
   const total = entries.reduce((a, e) => a + e.amount, 0);
 
   return (
@@ -86,7 +84,6 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
           <Money amount={total} weight="bold" />
         </span>
       </div>
-
 
       {entries.length === 0 ? (
         <EmptyState title={`Sin ventas en ${label(method)} en esta caja`} size="sm" />
@@ -129,13 +126,7 @@ export function MethodSalesView({ shiftId, method }: { shiftId: string; method: 
 }
 
 /** Movimientos de caja (entradas/salidas) registrados en este método. */
-function MethodMovements({
-  detail,
-  method,
-}: {
-  detail: ShiftSessionDetail;
-  method: string;
-}) {
+function MethodMovements({ detail, method }: { detail: ShiftSessionDetail; method: string }) {
   const movements = detail.cashMovements.filter((m) => m.method === method);
   if (movements.length === 0) return null;
   return (
