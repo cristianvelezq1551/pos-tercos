@@ -3486,6 +3486,38 @@ se suscribe bien, y el fallo aparece recién cuando el servicio de push responde
 revisa forma, pareja, firma verificable y contacto **sin imprimir las llaves**;
 sirve contra Railway con `railway run`.
 
+### Un descuadre de efectivo no avisaba (encontrado en producción, 2026-08-31)
+La anulación llegó al iPhone; el cierre con descuadre, no. La causa no era el
+canal nuevo sino un enganche viejo: `alertCashDiscrepancy` armaba el texto con
+`buildDiscrepancyAlertLink`, que **devuelve null sin `OWNER_WHATSAPP_PHONE`**, y
+el aviso colgaba de `if (alertLink)`. En producción esa variable NO está, así
+que el descuadre de efectivo no salía por ningún canal — tampoco antes, por
+WhatsApp. Los caminos **digital** y **combinado** (§7.v20) nunca lo tuvieron:
+usan `buildOwnerAlert` directo. Era el más viejo de los tres el que arrastraba
+la dependencia.
+
+- El texto se separó en `buildDiscrepancyAlertMessage` (domain): existe siempre,
+  y el link `wa.me` queda como extra opcional para abrir el chat desde `/audit`.
+- **Un aviso sin ningún canal ahora deja registro.** Antes, sin push y sin
+  teléfono, `alert()` salía con un `return false` mudo: ni una fila en la
+  bitácora. Se podía revisar `/audit` y no encontrar nada de un descuadre que
+  sí ocurrió — el mismo silencio que este trabajo vino a cerrar.
+- **El `kind` del llamador pisaba el del aviso.** El `...metadata` iba al final,
+  así que un descuadre quedaba en la bitácora como `kind: 'combined'` en vez de
+  `'shift_discrepancy'`. Las señas del aviso van ahora DESPUÉS del spread y el
+  subtipo pasó a `discrepancyKind`.
+- Regresión en `shift-descuadre-sin-whatsapp.e2e-spec.ts`, **suite aparte**: la
+  caja es única por día de negocio y no se puede abrir una segunda en la misma
+  corrida. ⚠️ Y el `delete process.env.OWNER_WHATSAPP_PHONE` tiene que ir
+  DESPUÉS de `bootstrapApp`: el `.env` se carga como efecto colateral de
+  importar `@prisma/client` (§7.v35), así que borrarlo antes no sirve de nada.
+
+⚠️ **Queda abierto**: el resumen diario del dueño (`OwnerDigestService`, cron
+21:30) sigue exigiendo `OWNER_WHATSAPP_PHONE` y llama a `wa.sendText` directo,
+así que **nunca se envía**. Pasarlo a notificación obliga a decidir qué hacer
+con el texto largo del resumen de IA, que en una notificación se corta a 500
+caracteres. Es una decisión de producto, no un arreglo mecánico.
+
 ### Lo que este canal NO cubre (y con qué se tapa)
 | Falla | Quién avisa |
 |---|---|
