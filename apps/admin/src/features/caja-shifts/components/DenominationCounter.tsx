@@ -48,7 +48,7 @@ export function DenominationCounter({
                 onChange={(e) => set(d, e.target.value)}
                 disabled={disabled}
                 placeholder="0"
-                className="h-9 w-16 rounded-md border border-input bg-background px-2 text-sm tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                className="h-9 w-16 rounded-md border border-input bg-background px-2 text-base tabular-nums sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
               />
             </label>
           );

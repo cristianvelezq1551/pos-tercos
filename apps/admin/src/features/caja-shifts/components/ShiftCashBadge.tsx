@@ -19,9 +19,7 @@ const REFRESH_MS = 30_000;
  * (`notifyCajaChanged`).
  */
 export function ShiftCashBadge({ shift }: { shift: Shift | null }) {
-  const [expected, setExpected] = useState<number | null>(
-    shift ? shift.openingCash : null,
-  );
+  const [expected, setExpected] = useState<number | null>(shift ? shift.openingCash : null);
 
   const load = async () => {
     if (!shift) return;
@@ -59,11 +57,7 @@ export function ShiftCashBadge({ shift }: { shift: Shift | null }) {
   }, [shift?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!shift) {
-    return (
-      <span className="caps ml-2 text-[0.625rem] text-muted-foreground">
-        Sin turno
-      </span>
-    );
+    return <span className="caps ml-2 text-[0.625rem] text-muted-foreground">Sin turno</span>;
   }
 
   return (

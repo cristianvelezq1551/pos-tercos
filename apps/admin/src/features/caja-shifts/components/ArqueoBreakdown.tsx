@@ -40,10 +40,13 @@ export function SectionRow({
         strong ? 'bg-muted/50' : '',
       )}
     >
-      <span className="text-sm font-bold uppercase tracking-wide text-foreground">
-        {title}
-      </span>
-      <span className={cn('text-sm font-bold tabular-nums', negative ? 'text-destructive' : 'text-foreground')}>
+      <span className="text-sm font-bold uppercase tracking-wide text-foreground">{title}</span>
+      <span
+        className={cn(
+          'text-sm font-bold tabular-nums',
+          negative ? 'text-destructive' : 'text-foreground',
+        )}
+      >
         {negative && amount > 0 ? '−' : ''}
         <Money amount={amount} weight="bold" className="text-current" />
       </span>

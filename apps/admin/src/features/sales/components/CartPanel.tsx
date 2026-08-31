@@ -24,6 +24,7 @@ const PROMO_REFRESH_MS = 60_000;
 export function CartPanel() {
   const items = useCartStore((s) => s.items);
   const removeLine = useCartStore((s) => s.removeLine);
+  const duplicateLine = useCartStore((s) => s.duplicateLine);
   const updateQty = useCartStore((s) => s.updateQty);
   const setNotes = useCartStore((s) => s.setNotes);
   const clear = useCartStore((s) => s.clear);
@@ -172,6 +173,7 @@ export function CartPanel() {
                   lineTotal={totalLine?.lineTotal ?? 0}
                   hasPromo={!!totalLine?.appliedPromotionId}
                   onQty={(qty) => updateQty(line.lineId, qty)}
+                  onDuplicate={() => duplicateLine(line.lineId)}
                   onRemove={() => removeLine(line.lineId)}
                   onNotes={(notes) => setNotes(line.lineId, notes)}
                 />
@@ -212,4 +214,3 @@ export function CartPanel() {
     </aside>
   );
 }
-

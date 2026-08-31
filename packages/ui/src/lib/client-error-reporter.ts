@@ -31,9 +31,10 @@ const RUIDO = [/^ResizeObserver loop/i, /^Script error\.?$/i];
  * de veces por segundo; sin esto, el primer bug de una tarde llena el log y
  * tapa todo lo demás. Puro a propósito — la parte que se puede probar.
  */
-export function crearFiltroDeErrores(
-  { maxPorVentana = MAX_PER_WINDOW, ventanaMs = WINDOW_MS } = {},
-): { permite: (mensaje: string, ahora: number) => boolean } {
+export function crearFiltroDeErrores({
+  maxPorVentana = MAX_PER_WINDOW,
+  ventanaMs = WINDOW_MS,
+} = {}): { permite: (mensaje: string, ahora: number) => boolean } {
   let inicioVentana = 0;
   let contador = 0;
   let vistos = new Set<string>();

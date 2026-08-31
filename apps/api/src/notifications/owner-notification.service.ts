@@ -25,7 +25,11 @@ export type OwnerAlertKind =
   /** El mes va con margen de contribución negativo: cada venta pierde plata. */
   | 'negative_contribution_margin'
   /** Insumos que cruzaron el mínimo en el escaneo horario. */
-  | 'low_stock';
+  | 'low_stock'
+  /** Resumen del día escrito por la IA (cron 21:30). */
+  | 'daily_digest'
+  /** Resumen de las sugerencias de compra abiertas (a pedido). */
+  | 'purchase_summary';
 
 /**
  * Avisos que NO son de negocio: fallas del sistema. Van al canal técnico
@@ -48,7 +52,13 @@ const PANTALLA_POR_TIPO: Record<OwnerAlertKind, string> = {
   cortesia_given: '/solicitudes',
   manual_discount: '/caja/historial',
   negative_contribution_margin: '/finanzas/estado',
+  // Sugerencias se fusionó con Listas de faltantes: `/purchase-suggestions` ya
+  // NO existe en el admin, así que apuntar ahí abriría una página inexistente.
   low_stock: '/purchase-lists',
+  // El resumen se corta a 500 caracteres en la notificación; el texto completo
+  // vive en la tarjeta del inicio, que es a donde lleva el toque.
+  daily_digest: '/',
+  purchase_summary: '/purchase-lists',
   server_error: '/bitacora',
   multi_instance: '/bitacora',
 };
@@ -97,7 +107,30 @@ export class OwnerNotificationService {
     }
 
     const phone = process.env.OWNER_WHATSAPP_PHONE?.trim();
-    if (!phone) return false;
+    if (!phone) {
+      // Ni notificaciones ni WhatsApp: el aviso no le llega a NADIE. Antes se
+      // descartaba en silencio y no quedaba ni una fila — o sea que ni
+      // revisando la bitácora se podía saber que había pasado algo. Ahora al
+      // menos queda dicho, con su motivo.
+      this.logger.warn(`Sin ningún canal: alerta '${kind}' al dueño NO se envió.`);
+      try {
+        await this.audit.log({
+          userId: null,
+          action: 'OWNER_ALERT_SENT',
+          entityType: 'owner_alert',
+          metadata: {
+            ...metadata,
+            kind,
+            ok: false,
+            delivered: false,
+            error: 'no hay ningún canal de avisos configurado',
+          },
+        });
+      } catch {
+        // la bitácora es best-effort
+      }
+      return false;
+    }
     // Sin proveedor real (mock) no se finge el envío: se loguea y se registra
     // delivered:false — antes el mock devolvía ok:true y la bitácora afirmaba
     // alertas que nunca salieron (patrón "no fingir efectos", §7.v22).
@@ -108,7 +141,7 @@ export class OwnerNotificationService {
           userId: null,
           action: 'OWNER_ALERT_SENT',
           entityType: 'owner_alert',
-          metadata: { kind, ok: false, delivered: false, error: 'sin proveedor', ...metadata },
+          metadata: { ...metadata, kind, ok: false, delivered: false, error: 'sin proveedor' },
         });
       } catch {
         // la bitácora es best-effort
@@ -137,12 +170,12 @@ export class OwnerNotificationService {
         action: 'OWNER_ALERT_SENT',
         entityType: 'owner_alert',
         metadata: {
+          ...metadata,
           kind,
           ok: result.ok,
           delivered: result.ok,
           error: result.error ?? null,
           providerMessageId: result.providerMessageId ?? null,
-          ...metadata,
         },
       });
       return result.ok;
@@ -181,13 +214,16 @@ export class OwnerNotificationService {
         action: 'OWNER_ALERT_SENT',
         entityType: 'owner_alert',
         metadata: {
+          ...metadata,
+          // Las señas del aviso van DESPUÉS del spread: si no, un llamador que
+          // mande su propio `kind` (los tres caminos del descuadre lo hacen)
+          // pisa la identidad de la alerta y la bitácora deja de ser uniforme.
           kind,
           channel: 'web-push',
           ok: outcome.sent > 0,
           delivered: outcome.sent > 0,
           error: outcome.reason,
           devices: outcome.sent,
-          ...metadata,
         },
       });
       if (outcome.sent === 0) {
@@ -226,13 +262,13 @@ export class OwnerNotificationService {
         action: 'OWNER_ALERT_SENT',
         entityType: 'owner_alert',
         metadata: {
+          ...metadata,
           kind,
           channel: this.alertChannel.name,
           ok: result.ok,
           delivered: result.delivered,
           error: result.error ?? null,
           ref: result.ref ?? null,
-          ...metadata,
         },
       });
     } catch {

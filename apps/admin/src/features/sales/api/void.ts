@@ -1,9 +1,4 @@
-import {
-  APPROVAL_PIN_HEADER,
-  SaleSchema,
-  type Sale,
-  type VoidSale,
-} from '@pos-tercos/types';
+import { APPROVAL_PIN_HEADER, SaleSchema, type Sale, type VoidSale } from '@pos-tercos/types';
 
 export async function voidSale(
   saleId: string,

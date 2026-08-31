@@ -1,25 +1,16 @@
 'use client';
 
 import type { Sale, SaleStatus } from '@pos-tercos/types';
-import {
-  Button,
-  Dialog,
-  EmptyState,
-  FormField,
-  Input,
-  LoadingSkeleton,
-  Money,
-  StatusBadge,
-  cn,
-  formatDate,
-} from '@pos-tercos/ui';
+import { Button, Dialog, FormField, Input } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
 import { listSales } from '../api/list';
 import { printComanda } from '../api/print';
 import { notifyComandaFailed } from '../lib/comanda-events';
-import { voidSale } from '../api/void';
+import { refundSale, voidSale } from '../api/void';
+import { endpointForOutcome, outcomeVerb, type VoidOutcome } from '../lib/void-outcome';
+import { VoidOutcomePicker } from './VoidOutcomePicker';
+import { VoidableSalesList } from './VoidableSalesList';
 import { notifyCajaChanged } from '../../../lib/caja-events';
-import { SALE_STATUS_MAPPING } from '../lib/sale-status-mapping';
 import { getErrorMessage } from '../../../lib/errors';
 import { logError } from '../../../lib/client-log';
 
@@ -42,6 +33,7 @@ export function VoidModal({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [pin, setPin] = useState('');
+  const [outcome, setOutcome] = useState<VoidOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState(false);
@@ -51,6 +43,7 @@ export function VoidModal({
     setSelectedId(null);
     setReason('');
     setPin('');
+    setOutcome(null);
     setError(null);
     setPending(false);
     setLoading(true);
@@ -59,10 +52,7 @@ export function VoidModal({
         setSales(
           all
             .filter((s) => VOIDABLE.includes(s.status))
-            .sort(
-              (a, b) =>
-                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-            ),
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
         ),
       )
       .catch((err) => setError(getErrorMessage(err, 'Error cargando ventas')))
@@ -71,21 +61,36 @@ export function VoidModal({
 
   const reasonValid = reason.trim().length >= 5 && reason.trim().length <= 200;
   const pinValid = /^\d{6}$/.test(pin);
-  const canConfirm = selectedId !== null && reasonValid && pinValid && !pending;
+  // Sin responder la pregunta no se puede confirmar: es lo que decide si la
+  // pérdida entra a los libros o desaparece.
+  const canConfirm = selectedId !== null && outcome !== null && reasonValid && pinValid && !pending;
 
   const handleConfirm = async () => {
     if (!canConfirm || !selectedId) return;
     setError(null);
     setPending(true);
     try {
-      const voided = await voidSale(selectedId, { reason: reason.trim() }, pin);
+      const anular = endpointForOutcome(outcome!) === 'void';
+      const voided = anular
+        ? await voidSale(selectedId, { reason: reason.trim() }, pin)
+        : await refundSale(selectedId, { reason: reason.trim() }, pin);
       notifyCajaChanged();
       // #8: la cocina recibió la comanda al cobrar — avisarle con el ticket de
       // ANULACIÓN (número gigante) que descarte el pedido. Best-effort.
-      void printComanda(voided.id, { cancel: true }).catch((e) => {
-        logError('void.cancel-comanda', e, { saleId: voided.id });
-        notifyComandaFailed({ saleId: voided.id, receiptNumber: voided.receiptNumber, kind: 'anulacion' });
-      });
+      //
+      // Solo cuando la comida NO salió: si ya se preparó y se entregó, mandarle
+      // a la cocina que descarte un pedido que ya no tiene es ruido, y peor,
+      // les hace dudar del papel.
+      if (anular) {
+        void printComanda(voided.id, { cancel: true }).catch((e) => {
+          logError('void.cancel-comanda', e, { saleId: voided.id });
+          notifyComandaFailed({
+            saleId: voided.id,
+            receiptNumber: voided.receiptNumber,
+            kind: 'anulacion',
+          });
+        });
+      }
       onSuccess(voided);
       onClose();
     } catch (err) {
@@ -107,68 +112,34 @@ export function VoidModal({
             Cancelar
           </Button>
           <Button variant="destructive" onClick={handleConfirm} disabled={!canConfirm}>
-            {pending ? 'Anulando…' : 'Anular venta'}
+            {pending
+              ? outcomeVerb(outcome ?? 'no-salio').gerund
+              : outcomeVerb(outcome ?? 'no-salio').action}
           </Button>
         </>
       }
     >
       <div className="space-y-5">
         <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs leading-relaxed text-warning">
-          Solo se anula un pedido <strong>pagado que la cocina aún no inició</strong>.
-          Al anular: pasa a <strong>ANULADA</strong>, se{' '}
-          <strong>revierte el stock</strong>, <strong>sale de la caja</strong> y
-          queda en auditoría. Requiere PIN de Admin/Dueño.
+          En los dos casos el pedido pasa a <strong>ANULADA</strong>, sale de la caja y de los
+          ingresos, y queda en auditoría. Lo que cambia es el inventario: por eso hay que decir si
+          la comida salió. Requiere PIN de Admin/Dueño.
         </div>
-        <FormField label={`Ventas anulables del turno (${sales.length})`}>
-          {loading ? (
-            <LoadingSkeleton shape="table-row" count={3} />
-          ) : sales.length === 0 ? (
-            <EmptyState title="No hay ventas anulables." size="sm" />
-          ) : (
-            <div className="max-h-56 overflow-y-auto rounded-lg border border-border">
-              <ul className="divide-y divide-border">
-                {sales.map((s) => (
-                  <li key={s.id}>
-                    <label
-                      className={cn(
-                        'flex cursor-pointer items-center justify-between px-3 py-2 text-sm transition-colors',
-                        selectedId === s.id
-                          ? 'bg-destructive/10 text-foreground'
-                          : 'hover:bg-muted/40',
-                      )}
-                    >
-                      <span className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="sale"
-                          checked={selectedId === s.id}
-                          onChange={() => setSelectedId(s.id)}
-                          className="h-4 w-4 accent-primary"
-                        />
-                        <span>
-                          <span className="font-semibold">
-                            {`Recibo #${s.receiptNumber}`}
-                          </span>
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            Recibo #{s.receiptNumber} ·{' '}
-                            {formatDate(s.paidAt ?? s.createdAt, 'time-short')}
-                            {s.paymentMethod ? ` · ${s.paymentMethod}` : ''}
-                          </span>
-                        </span>
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <StatusBadge status={s.status} mapping={SALE_STATUS_MAPPING} />
-                        <Money amount={s.total} weight="semibold" />
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </FormField>
+        <VoidableSalesList
+          sales={sales}
+          loading={loading}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
 
-        <FormField label="Motivo (5-200 caracteres)" hint={`${reason.trim().length}/200 · queda en audit log`}>
+        {selectedId ? (
+          <VoidOutcomePicker value={outcome} onChange={setOutcome} disabled={pending} />
+        ) : null}
+
+        <FormField
+          label="Motivo (5-200 caracteres)"
+          hint={`${reason.trim().length}/200 · queda en audit log`}
+        >
           <Input
             type="text"
             value={reason}

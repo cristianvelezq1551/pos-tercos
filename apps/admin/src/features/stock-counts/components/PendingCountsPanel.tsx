@@ -74,7 +74,12 @@ export function PendingCountsPanel({ initial }: { initial: StockCount[] }) {
                 <span>
                   Contó:{' '}
                   <b className="text-foreground">
-                    <Quantity value={c.countedQty} maxDecimals={4} className="text-current" />
+                    <Quantity
+                      value={c.countedQty}
+                      unit={c.unit}
+                      maxDecimals={4}
+                      className="text-current"
+                    />
                   </b>
                 </span>
                 <span>

@@ -46,8 +46,8 @@ export function ProductCard({
         unavailable
           ? 'cursor-not-allowed opacity-50'
           : closed
-            // Cerrado atenúa menos que agotado: el menú se sigue leyendo.
-            ? 'cursor-not-allowed opacity-75'
+            ? // Cerrado atenúa menos que agotado: el menú se sigue leyendo.
+              'cursor-not-allowed opacity-75'
             : 'active:scale-[0.99] sm:hover:bg-muted/60 sm:active:scale-100',
       )}
     >

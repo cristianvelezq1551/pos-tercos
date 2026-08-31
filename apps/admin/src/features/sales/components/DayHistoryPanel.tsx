@@ -11,22 +11,14 @@ import { ChangePaymentModal } from './ChangePaymentModal';
 import { EditSaleModal } from './EditSaleModal';
 import { RefundModal } from './RefundModal';
 import { HistoryRow } from './HistoryRow';
-import {
-  CortesiaHistoryRow,
-  listDayCortesias,
-  useUnseenCortesias,
-} from '../../caja-cortesias';
+import { CortesiaHistoryRow, listDayCortesias, useUnseenCortesias } from '../../caja-cortesias';
 
 const CORTESIAS_KEY = '__cortesias__';
 import { startOfTodayIso } from '../../../lib/dates';
 import { usePolling } from '../../../lib/use-polling';
 import { getErrorMessage } from '../../../lib/errors';
 import { SLOW_ORDER_THRESHOLD_MIN } from '../lib/sale-status-mapping';
-import {
-  HISTORY_FILTERS,
-  isActiveSale,
-  minutesSince,
-} from '../lib/history-filters';
+import { HISTORY_FILTERS, isActiveSale, minutesSince } from '../lib/history-filters';
 import { entryMatchesFilter, mergeDayEntries } from '../lib/day-entries';
 import { onOrdersChanged } from '../lib/orders-events';
 
@@ -100,8 +92,7 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
     });
   };
 
-  const filter =
-    HISTORY_FILTERS.find((f) => f.key === filterKey) ?? HISTORY_FILTERS[0]!;
+  const filter = HISTORY_FILTERS.find((f) => f.key === filterKey) ?? HISTORY_FILTERS[0]!;
   const entries = useMemo(() => mergeDayEntries(sales, cortesias), [sales, cortesias]);
   const visible = useMemo(
     () => entries.filter((e) => entryMatchesFilter(e, filter)),
@@ -179,9 +170,8 @@ export function DayHistoryPanel({ active = true }: { active?: boolean }) {
           {/* Solo cuenta pedidos SIN COBRAR (ACTIVE_SALE_STATUSES): el reloj
               corre desde que se creó el pedido. "Sin completarse" hacía pensar
               en cocina; lo que pasa es que nadie los cobró ni los rechazó. */}
-          ⚠ {slowCount} pedido{slowCount === 1 ? '' : 's'}{' '}
-          {slowCount === 1 ? 'lleva' : 'llevan'} más de {SLOW_ORDER_THRESHOLD_MIN} min sin
-          cobrarse.
+          ⚠ {slowCount} pedido{slowCount === 1 ? '' : 's'} {slowCount === 1 ? 'lleva' : 'llevan'}{' '}
+          más de {SLOW_ORDER_THRESHOLD_MIN} min sin cobrarse.
         </p>
       ) : null}
 

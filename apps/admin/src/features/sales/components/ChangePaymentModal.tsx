@@ -66,10 +66,7 @@ export function ChangePaymentModal({
   const addPart = () => {
     if (parts.length >= MAX_SPLIT_PARTS) return;
     // La parte nueva arranca con lo que falta por asignar.
-    setParts((prev) => [
-      ...prev,
-      { method: 'CASH', amount: remaining > 0 ? remaining : null },
-    ]);
+    setParts((prev) => [...prev, { method: 'CASH', amount: remaining > 0 ? remaining : null }]);
   };
 
   const handleConfirm = async () => {
@@ -122,7 +119,8 @@ export function ChangePaymentModal({
 
         <div className="space-y-2">
           <p className="caps text-[0.625rem] text-muted-foreground">
-            Cómo pagaron en realidad — {parts.length === 1 ? 'pago único' : `${parts.length} partes`}:
+            Cómo pagaron en realidad —{' '}
+            {parts.length === 1 ? 'pago único' : `${parts.length} partes`}:
           </p>
           {parts.map((part, i) => (
             <PaymentPartRow
@@ -138,9 +136,7 @@ export function ChangePaymentModal({
                 setParts((prev) => {
                   const next = prev.filter((_, j) => j !== i);
                   // Si queda una sola parte, cubre el total completo.
-                  return next.length === 1
-                    ? [{ ...next[0]!, amount: sale.total }]
-                    : next;
+                  return next.length === 1 ? [{ ...next[0]!, amount: sale.total }] : next;
                 })
               }
             />
@@ -173,12 +169,15 @@ export function ChangePaymentModal({
         </div>
 
         <p className="text-[0.6875rem] text-muted-foreground">
-          El dinero ya entró — esto solo corrige el registro (método o división)
-          para que el arqueo cuadre. El cambio queda en la bitácora del dueño.
+          El dinero ya entró — esto solo corrige el registro (método o división) para que el arqueo
+          cuadre. El cambio queda en la bitácora del dueño.
         </p>
 
         {error ? (
-          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
             {error}
           </p>
         ) : null}

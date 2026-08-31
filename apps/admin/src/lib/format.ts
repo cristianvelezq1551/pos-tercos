@@ -12,7 +12,17 @@ export function formatCop(amount: number): string {
   return fmtCop(amount);
 }
 
-export function formatNumber(n: number, opts?: { decimals?: number }): string {
+/**
+ * `maxDecimals` recorta los ceros del final (700 en vez de "700,0000") y es lo
+ * que se quiere cuando la cantidad es variable: un gramaje puede tener
+ * decimales, pero "700,0000 gr de sal" solo agrega ruido a la lectura.
+ * `decimals` los fija. Sin opciones se mantienen los 4 fijos de siempre.
+ */
+export function formatNumber(
+  n: number,
+  opts?: { decimals?: number; maxDecimals?: number },
+): string {
+  if (opts?.maxDecimals !== undefined) return fmtNumber(n, { maxDecimals: opts.maxDecimals });
   return fmtNumber(n, { decimals: opts?.decimals ?? 4 });
 }
 

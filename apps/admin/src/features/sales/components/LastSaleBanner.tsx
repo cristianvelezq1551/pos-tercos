@@ -31,8 +31,8 @@ export function LastSaleBanner({
             )}
           </p>
           <p className="mt-0.5 text-muted-foreground">
-            {sale.provisionalNumber ? 'Pendiente de sincronizar' : `Recibo #${sale.receiptNumber}`} ·{' '}
-            <Money amount={sale.total} size="xs" weight="medium" className="text-current" /> ·{' '}
+            {sale.provisionalNumber ? 'Pendiente de sincronizar' : `Recibo #${sale.receiptNumber}`}{' '}
+            · <Money amount={sale.total} size="xs" weight="medium" className="text-current" /> ·{' '}
             {sale.paymentMethod}
             {sale.changeDue > 0 ? (
               <>

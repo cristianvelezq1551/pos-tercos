@@ -8,6 +8,7 @@
 import { createECDH, createPrivateKey, sign, createPublicKey, verify } from 'node:crypto';
 
 const b64 = (s) => Buffer.from(s, 'base64url');
+const pad32 = (b) => (b.length === 32 ? b : Buffer.concat([Buffer.alloc(32 - b.length), b]));
 const problemas = [];
 const ok = [];
 
@@ -32,9 +33,12 @@ if (b64(publica).length !== 65 || b64(publica)[0] !== 0x04) {
   ok.push('La llave pública tiene la forma correcta.');
 }
 
-// 2. Forma de la privada
-if (b64(privada).length !== 32) {
-  problemas.push('VAPID_PRIVATE_KEY no mide 32 bytes.');
+// 2. Forma de la privada. Se admite 31 porque `getPrivateKey()` devuelve la
+// representación mínima del escalar: con un cero inicial sale más corta y la
+// llave es igual de válida (~4 de cada 1.000 generaciones).
+const largoPrivada = b64(privada).length;
+if (largoPrivada > 32 || largoPrivada < 31) {
+  problemas.push('VAPID_PRIVATE_KEY no es un escalar P-256 de 32 bytes.');
 } else {
   ok.push('La llave privada tiene la forma correcta.');
 }
@@ -42,7 +46,7 @@ if (b64(privada).length !== 32) {
 // 3. Que sean PAREJA — el error más fácil de cometer al generar dos pares
 if (problemas.length === 0) {
   const ecdh = createECDH('prime256v1');
-  ecdh.setPrivateKey(b64(privada));
+  ecdh.setPrivateKey(pad32(b64(privada)));
   if (!ecdh.getPublicKey().equals(b64(publica))) {
     problemas.push(
       'La pública y la privada NO son pareja: parecen de dos generaciones distintas.\n' +
@@ -64,7 +68,7 @@ if (problemas.length === 0) {
   };
   const mensaje = Buffer.from('prueba de firma');
   const firma = sign('sha256', mensaje, {
-    key: createPrivateKey({ key: { ...jwk, d: privada }, format: 'jwk' }),
+    key: createPrivateKey({ key: { ...jwk, d: pad32(b64(privada)).toString('base64url') }, format: 'jwk' }),
     dsaEncoding: 'ieee-p1363',
   });
   const valida = verify(

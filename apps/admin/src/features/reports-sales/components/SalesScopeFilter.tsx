@@ -33,12 +33,12 @@ export function SalesScopeFilter({
   };
 
   return (
-    <label className="flex items-center gap-2 text-xs">
+    <label className="flex w-full min-w-0 items-center gap-2 text-xs sm:w-auto">
       <span className="text-muted-foreground">Ver:</span>
       <select
         value={selectedShiftId ?? ''}
         onChange={(e) => handleChange(e.target.value)}
-        className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-base text-foreground sm:flex-none sm:text-xs"
       >
         <option value="">Por fecha (rango de arriba)</option>
         {outOfRangeShift && (

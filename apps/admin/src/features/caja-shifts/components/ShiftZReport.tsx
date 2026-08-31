@@ -1,6 +1,6 @@
 'use client';
 
-import type { Shift } from '@pos-tercos/types';
+import { paymentMethodLabel, type Shift } from '@pos-tercos/types';
 import { Money } from '@pos-tercos/ui';
 // El tipo REAL, no una copia local: acá había una interfaz duplicada con solo
 // 4 campos, así que agregar datos al resumen no llegaba a este reporte.
@@ -38,12 +38,18 @@ function Row({
   );
 }
 
+/**
+ * El cierre imprimía el CODE crudo del medio: decía "TRANSFER (12)" donde el
+ * dueño lee "Transferencia". El nombre vivo lo trae el endpoint de esperado
+ * (§7.v20), así que no hace falta pedir el catálogo otra vez.
+ */
 export function ShiftZReport({
   shift,
   summary,
   expectedCash,
   cashIn = 0,
   cashOut = 0,
+  nombresDeMedios,
 }: {
   shift: Shift;
   summary: ShiftSummary;
@@ -51,6 +57,8 @@ export function ShiftZReport({
   /** Entradas/salidas de efectivo del turno (movimientos de caja). */
   cashIn?: number;
   cashOut?: number;
+  /** `{code: nombre}` del catálogo, para llamarlos como el dueño los llama. */
+  nombresDeMedios?: Record<string, string>;
 }) {
   return (
     <section className="rounded-xl bg-muted/40 p-4">
@@ -68,16 +76,12 @@ export function ShiftZReport({
             <Row
               key={method}
               muted
-              label={`${method} (${v.count})`}
+              label={`${paymentMethodLabel(method, nombresDeMedios)} (${v.count})`}
               value={v.total}
             />
           ))}
-        {cashIn > 0 ? (
-          <Row label="Entradas de efectivo" value={cashIn} positive />
-        ) : null}
-        {cashOut > 0 ? (
-          <Row label="Salidas de efectivo" value={-cashOut} />
-        ) : null}
+        {cashIn > 0 ? <Row label="Entradas de efectivo" value={cashIn} positive /> : null}
+        {cashOut > 0 ? <Row label="Salidas de efectivo" value={-cashOut} /> : null}
         <div className="border-t border-border pt-2">
           <Row label="Esperado en caja" value={expectedCash} bold />
         </div>

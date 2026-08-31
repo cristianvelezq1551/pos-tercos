@@ -81,9 +81,7 @@ export function PageHeader({
             </nav>
           ) : null}
 
-          {eyebrow ? (
-            <p className="caps mb-2 text-[0.6875rem] text-primary">{eyebrow}</p>
-          ) : null}
+          {eyebrow ? <p className="caps mb-2 text-[0.6875rem] text-primary">{eyebrow}</p> : null}
 
           <div className="flex items-start gap-3 sm:gap-4">
             {icon ? (
@@ -101,15 +99,11 @@ export function PageHeader({
             </div>
           </div>
 
-          {withDivider ? (
-            <span aria-hidden="true" className="double-rule mt-5 block w-24" />
-          ) : null}
+          {withDivider ? <span aria-hidden="true" className="double-rule mt-5 block w-24" /> : null}
         </div>
 
         {actions ? (
-          <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
-            {actions}
-          </div>
+          <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{actions}</div>
         ) : null}
       </div>
     </header>

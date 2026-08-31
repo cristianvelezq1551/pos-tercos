@@ -1,46 +1,14 @@
 import { EvidenceUploadSchema } from '@pos-tercos/types';
+import { comprimirImagen } from '@pos-tercos/ui';
 import { logError } from './client-log';
 
-/** Lado mayor al que se reduce la foto antes de subirla. */
-const MAX_EDGE_PX = 1600;
-const JPEG_QUALITY = 0.8;
-
 /**
- * Achica la foto antes de subirla.
- *
- * Una cámara de teléfono entrega 3–8 MB por disparo; a 1600 px de lado mayor y
- * JPEG 0.8 queda en ~200–400 KB, de sobra para ver qué se tiró y sin castigar
- * la red de la cocina ni el bucket (una merma por día durante un año son miles
- * de fotos).
- *
- * Si el navegador no puede decodificar el archivo —HEIC de iPhone en algunos
- * casos— devuelve el original: subir pesado es mejor que no poder registrar.
+ * Achica la foto antes de subirla. La implementación vive en `@pos-tercos/ui`
+ * porque el admin la necesita igual para las fotos de factura: una sola copia
+ * evita que las dos se separen en calidad o en tamaño máximo.
  */
-export async function compressImage(file: File): Promise<File> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_EDGE_PX / Math.max(bitmap.width, bitmap.height));
-    const width = Math.round(bitmap.width * scale);
-    const height = Math.round(bitmap.height * scale);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close();
-
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY);
-    });
-    // Una foto ya chica puede salir MÁS pesada re-codificada: ahí no toca nada.
-    if (!blob || blob.size >= file.size) return file;
-    return new File([blob], 'evidencia.jpg', { type: 'image/jpeg' });
-  } catch (e) {
-    logError('compress-image', e);
-    return file;
-  }
+export function compressImage(file: File): Promise<File> {
+  return comprimirImagen(file, (e) => logError('compress-image', e));
 }
 
 /**

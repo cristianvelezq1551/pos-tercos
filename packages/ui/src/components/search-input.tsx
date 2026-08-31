@@ -3,8 +3,10 @@
 import * as React from 'react';
 import { cn } from '../lib/utils';
 
-export interface SearchInputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
+export interface SearchInputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'type' | 'size'
+> {
   /** Mostrar atajo visual (`/` o `⌘K`). Solo decorativo. */
   shortcut?: string;
   /** Callback opcional para "limpiar". Si se pasa, muestra la X cuando hay texto. */

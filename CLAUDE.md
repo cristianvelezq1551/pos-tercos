@@ -3486,6 +3486,60 @@ se suscribe bien, y el fallo aparece recién cuando el servicio de push responde
 revisa forma, pareja, firma verificable y contacto **sin imprimir las llaves**;
 sirve contra Railway con `railway run`.
 
+### Un descuadre de efectivo no avisaba (encontrado en producción, 2026-08-31)
+La anulación llegó al iPhone; el cierre con descuadre, no. La causa no era el
+canal nuevo sino un enganche viejo: `alertCashDiscrepancy` armaba el texto con
+`buildDiscrepancyAlertLink`, que **devuelve null sin `OWNER_WHATSAPP_PHONE`**, y
+el aviso colgaba de `if (alertLink)`. En producción esa variable NO está, así
+que el descuadre de efectivo no salía por ningún canal — tampoco antes, por
+WhatsApp. Los caminos **digital** y **combinado** (§7.v20) nunca lo tuvieron:
+usan `buildOwnerAlert` directo. Era el más viejo de los tres el que arrastraba
+la dependencia.
+
+- El texto se separó en `buildDiscrepancyAlertMessage` (domain): existe siempre,
+  y el link `wa.me` queda como extra opcional para abrir el chat desde `/audit`.
+- **Un aviso sin ningún canal ahora deja registro.** Antes, sin push y sin
+  teléfono, `alert()` salía con un `return false` mudo: ni una fila en la
+  bitácora. Se podía revisar `/audit` y no encontrar nada de un descuadre que
+  sí ocurrió — el mismo silencio que este trabajo vino a cerrar.
+- **El `kind` del llamador pisaba el del aviso.** El `...metadata` iba al final,
+  así que un descuadre quedaba en la bitácora como `kind: 'combined'` en vez de
+  `'shift_discrepancy'`. Las señas del aviso van ahora DESPUÉS del spread y el
+  subtipo pasó a `discrepancyKind`.
+- Regresión en `shift-descuadre-sin-whatsapp.e2e-spec.ts`, **suite aparte**: la
+  caja es única por día de negocio y no se puede abrir una segunda en la misma
+  corrida. ⚠️ Y el `delete process.env.OWNER_WHATSAPP_PHONE` tiene que ir
+  DESPUÉS de `bootstrapApp`: el `.env` se carga como efecto colateral de
+  importar `@prisma/client` (§7.v35), así que borrarlo antes no sirve de nada.
+
+⚠️ **Queda abierto**: el resumen diario del dueño (`OwnerDigestService`, cron
+21:30) sigue exigiendo `OWNER_WHATSAPP_PHONE` y llama a `wa.sendText` directo,
+así que **nunca se envía**. Pasarlo a notificación obliga a decidir qué hacer
+con el texto largo del resumen de IA, que en una notificación se corta a 500
+caracteres. Es una decisión de producto, no un arreglo mecánico.
+
+### Dos sesiones a la vez: usa TU propia base de tests
+Con otra sesión trabajando en el mismo repo, la suite e2e dio 37, 22, 44 y 50
+suites en rojo en cuatro corridas seguidas — **suites distintas cada vez**, y
+todas las firmas del tipo "el estado desapareció debajo" (500 al crear el
+refresh token porque el usuario ya no existe, 409 de caja, 400 en cascada).
+Ninguna era de lógica de negocio. La causa: las dos corridas comparten
+`pos_tercos_test` y el `cleanDb` de una trunca los usuarios de la otra a mitad
+de vuelo.
+
+- **La pista que lo delata es la VARIABILIDAD**: un bug de código rompe siempre
+  las mismas suites. Si cambian entre corridas, es contención — mirá
+  `pgrep -f "jest.*jest-e2e"` ANTES de leer una línea de código.
+- **La salida no es coordinar turnos, es no compartir la base**:
+  `TEST_DATABASE_URL=postgres://…/pos_tercos_aislada_test pnpm -F @pos-tercos/api test:e2e`.
+  Con base propia el resultado fue **65 suites / 780 verdes** mientras la otra
+  corrida seguía andando.
+- ⚠️ El nombre DEBE terminar en `_test`: `cleanDb` se niega a truncar cualquier
+  otra cosa (ese TRUNCATE una vez borró usuarios y catálogo de dev). Llamarla
+  `pos_tercos_test_aislada` hace fallar las 65 suites con un mensaje claro.
+- Vale la pena correr con un vigía (`pgrep` cada 5 s) para saber si hubo
+  compañía: sin ese dato, un resultado rojo admite dos lecturas.
+
 ### Lo que este canal NO cubre (y con qué se tapa)
 | Falla | Quién avisa |
 |---|---|

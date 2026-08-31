@@ -72,7 +72,9 @@ export function RadioGroup({
             <div className="min-w-0 flex-1">
               <span className="block text-sm font-medium text-foreground">{opt.label}</span>
               {opt.description ? (
-                <span className="mt-0.5 block text-xs text-muted-foreground">{opt.description}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {opt.description}
+                </span>
               ) : null}
             </div>
           </label>

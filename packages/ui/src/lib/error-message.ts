@@ -14,7 +14,8 @@
  */
 
 /** Errores de red del navegador: el fetch ni siquiera llegó al servidor. */
-const SIN_CONEXION = /failed to fetch|networkerror|network request failed|load failed|err_internet|err_network|err_connection/i;
+const SIN_CONEXION =
+  /failed to fetch|networkerror|network request failed|load failed|err_internet|err_network|err_connection/i;
 
 /**
  * Huellas de que el texto NO fue escrito para un usuario final:

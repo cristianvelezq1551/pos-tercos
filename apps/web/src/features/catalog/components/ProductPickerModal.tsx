@@ -1,10 +1,6 @@
 'use client';
 
-import type {
-  ProductSize,
-  PublicMenuModifier,
-  PublicMenuProduct,
-} from '@pos-tercos/types';
+import type { ProductSize, PublicMenuModifier, PublicMenuProduct } from '@pos-tercos/types';
 import { useEffect, useMemo, useState } from 'react';
 import { COP } from '../../../lib/format';
 import { displayBasePrice } from '../../../lib/menu-price';
@@ -43,10 +39,7 @@ export function ProductPickerModal({
   const modifiers = useMemo(() => product?.modifiers ?? [], [product]);
   const modifiersEnabled = product?.modifiersEnabled ?? false;
   const requiresSize = sizes.length > 0;
-  const sortedSizes = useMemo(
-    () => [...sizes].sort((a, b) => a.sortOrder - b.sortOrder),
-    [sizes],
-  );
+  const sortedSizes = useMemo(() => [...sizes].sort((a, b) => a.sortOrder - b.sortOrder), [sizes]);
 
   const [sizeId, setSizeId] = useState<string | null>(null);
   const [modifierIds, setModifierIds] = useState<Set<string>>(new Set());
@@ -77,7 +70,7 @@ export function ProductPickerModal({
   }, [open, onClose]);
 
   const selectedSize = useMemo(
-    () => (sizeId ? sizes.find((s) => s.id === sizeId) ?? null : null),
+    () => (sizeId ? (sizes.find((s) => s.id === sizeId) ?? null) : null),
     [sizeId, sizes],
   );
   const selectedModifiers = useMemo(
@@ -98,13 +91,7 @@ export function ProductPickerModal({
   // badge da el precio por unidad con descuento y el total de la línea el ahorro.
   const promoPreview = useMemo(() => {
     if (!product) return { badge: null, lineDiscount: 0 };
-    const badge = getMenuPromoBadge(
-      product.id,
-      unitPrice,
-      promotions,
-      undefined,
-      product.isCombo,
-    );
+    const badge = getMenuPromoBadge(product.id, unitPrice, promotions, undefined, product.isCombo);
     const { discount } = computeCartPromoTotals(
       [{ productId: product.id, quantity, unitPrice, isCombo: product.isCombo }],
       promotions,
@@ -171,9 +158,7 @@ export function ProductPickerModal({
               {product.name}
             </h2>
             {product.description ? (
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {product.description}
-              </p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{product.description}</p>
             ) : null}
           </div>
 
@@ -206,7 +191,11 @@ export function ProductPickerModal({
           <PickerQuantity quantity={quantity} onChange={setQuantity} />
 
           {modifiersEnabled && modifiers.length > 0 ? (
-            <PickerModifiers modifiers={modifiers} selected={modifierIds} onToggle={toggleModifier} />
+            <PickerModifiers
+              modifiers={modifiers}
+              selected={modifierIds}
+              onToggle={toggleModifier}
+            />
           ) : null}
 
           <div className="h-px w-full bg-border" />

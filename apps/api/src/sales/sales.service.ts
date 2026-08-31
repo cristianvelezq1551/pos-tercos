@@ -1284,14 +1284,21 @@ export class SalesService {
   // ==================================================================
 
   /**
-   * Reembolsa un pedido ya entregado/retirado: hoy aplica a un pedido web en
-   * LISTO_DESPACHO (más EN_PREPARACION/ENTREGADO en datos históricos previos a
-   * la eliminación del KDS). Requiere PIN de Admin/Dueño. A diferencia del void:
-   *  - NO revierte stock: la comida ya se preparó/entregó → es una pérdida.
-   *  - El pedido pasa a VOID (se excluye de ingresos y del arqueo) → la plata
-   *    devuelta al cliente queda reflejada (el cajero entrega el efectivo /
-   *    reversa la transferencia; el esperado de caja ya no la incluye).
-   * Para anular un PAGADO de mostrador (no retirado), se usa `void`.
+   * Devuelve la plata de un pedido cuya COMIDA YA SALIÓ. A diferencia del void:
+   *  - NO revierte stock: los insumos se gastaron → es una pérdida real, y su
+   *    costo entra al P&G como `refundCost` aunque la venta salga de ingresos.
+   *  - El pedido pasa a VOID (fuera de ingresos y del arqueo) → la plata
+   *    devuelta queda reflejada (el cajero entrega el efectivo / reversa la
+   *    transferencia; el esperado de caja ya no la incluye).
+   *
+   * Acepta PAGADO además de los estados de cocina. Ese es el punto: desde que
+   * se eliminó el KDS (§7.v10) una venta de MOSTRADOR nace y muere en PAGADO,
+   * así que exigir EN_PREPARACION dejaba el reembolso inalcanzable para la
+   * mayoría de las ventas — y el cajero tenía que anular, lo que devuelve el
+   * inventario y hace desaparecer la pérdida de los libros.
+   *
+   * Cuál de las dos corresponde ya no lo dice el estado (no hay quien lo
+   * avance): lo declara quien cobra, respondiendo si la comida salió.
    */
   async refund(
     saleId: string,
@@ -1316,12 +1323,10 @@ export class SalesService {
       },
     });
     if (!existing) throw new NotFoundException(`Sale ${saleId} not found`);
-    const REFUNDABLE = ['EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
+    const REFUNDABLE = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
     if (!REFUNDABLE.includes(existing.status as (typeof REFUNDABLE)[number])) {
       throw new BadRequestException(
-        existing.status === 'PAGADO'
-          ? 'La cocina aún no inició este pedido — usa "Anular" (revierte el stock).'
-          : `No se puede reembolsar en estado ${existing.status}.`,
+        `Solo se puede devolver la plata de un pedido cobrado. Este está en "${saleStatusLabel(existing.status)}".`,
       );
     }
     const movementShiftId = await this.resolveRefundMovementShift(existing.shiftId, cashierId);

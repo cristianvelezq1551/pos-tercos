@@ -57,6 +57,11 @@ function UsageLegend() {
       <strong className="text-foreground">ajustes</strong> son correcciones tecleadas a
       mano: arreglan un dato mal cargado y no son una pérdida, por eso van aparte y no
       cuestan.{' '}
+      El <strong className="text-foreground">% de merma</strong> es qué parte de todo lo que
+      SALIÓ del inventario se tiró:{' '}
+      <em>merma ÷ (vendido + producción + merma)</em>. Si de 250 g de sal que salieron, 100
+      se botaron, el porcentaje es 40 %. No se compara contra lo comprado a propósito: lo
+      que está en la bodega todavía no se pudo perder.{' '}
       <strong className="text-foreground">$ merma</strong> y{' '}
       <strong className="text-foreground">$ faltante</strong> son los dos el costo real del
       lote que salió, y los dos bajan el resultado del mes: son las mismas cifras que las

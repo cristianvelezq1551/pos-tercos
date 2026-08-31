@@ -40,6 +40,7 @@ interface CartState {
   discountReason: string;
   addItem: (input: AddInput) => void;
   removeLine: (lineId: string) => void;
+  duplicateLine: (lineId: string) => void;
   updateQty: (lineId: string, qty: number) => void;
   setNotes: (lineId: string, notes: string) => void;
   setCustomerName: (name: string) => void;
@@ -53,7 +54,10 @@ interface CartState {
 
 function lineSignature(item: AddInput | CartLine): string {
   const sizeId = item.size?.id ?? '';
-  const modIds = [...item.modifiers].map((m) => m.id).sort().join('|');
+  const modIds = [...item.modifiers]
+    .map((m) => m.id)
+    .sort()
+    .join('|');
   // Las notas distinguen líneas: una "sin cebolla" no se fusiona con una normal.
   return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}`;
 }
@@ -95,6 +99,27 @@ export const useCartStore = create<CartState>((set) => ({
         ],
       };
     }),
+  /**
+   * Otra unidad del mismo producto, en su PROPIA línea.
+   *
+   * Sumarle cantidad a la línea no sirve cuando cada unidad lleva una
+   * indicación distinta: dos hamburguesas en una línea de cantidad 2 comparten
+   * una sola nota, así que "una sin cebolla" no se puede escribir. Es lo que
+   * pasaba al tocar "+": el cajero tenía que borrar y agregar de a una.
+   *
+   * La copia nace SIN nota (es otra unidad, no la misma) y sin el descuento
+   * manual de la original — un descuento se autoriza sobre una línea concreta.
+   */
+  duplicateLine: (lineId) =>
+    set((state) => {
+      const i = state.items.findIndex((it) => it.lineId === lineId);
+      if (i < 0) return state;
+      const origen = state.items[i]!;
+      const copia = { ...origen, lineId: nextLineId(), quantity: 1, notes: undefined };
+      const items = state.items.slice();
+      items.splice(i + 1, 0, copia);
+      return { items };
+    }),
   removeLine: (lineId) =>
     set((state) => {
       const { [lineId]: _dropped, ...rest } = state.lineDiscounts;
@@ -109,9 +134,7 @@ export const useCartStore = create<CartState>((set) => ({
   setNotes: (lineId, notes) =>
     set((state) => ({
       items: state.items.map((it) =>
-        it.lineId === lineId
-          ? { ...it, notes: notes.trim() ? notes : undefined }
-          : it,
+        it.lineId === lineId ? { ...it, notes: notes.trim() ? notes : undefined } : it,
       ),
     })),
   setCustomerName: (name) => set({ customerName: name }),

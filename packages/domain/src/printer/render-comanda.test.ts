@@ -110,15 +110,26 @@ describe('renderComandaEscPos — domicilio', () => {
 });
 
 describe('comanda de CORTESÍA', () => {
-  it('dice CORTESÍA en vez de un número de pedido que no existe', () => {
-    const t = renderComandaEscPos({
-      ...BASE,
-      receiptNumber: null,
-      title: 'CORTESÍA',
-    }).toString('latin1');
-    expect(t).toContain('CORTESÍA');
+  const cortesia = () =>
+    renderComandaEscPos({ ...BASE, receiptNumber: null, title: 'CORTESÍA' }).toString('latin1');
+
+  it('se rotula CORTESÍA y no inventa un número de pedido', () => {
+    const t = cortesia();
+    expect(t).toContain('*** CORTESÍA ***');
     expect(t).not.toContain('PEDIDO #');
     expect(t).not.toContain('null');
+  });
+
+  it('no repite la palabra: el encabezado la dice UNA vez', () => {
+    // El renglón grande es donde el cocinero busca el número del pedido. Sin
+    // número, repetir ahí "CORTESÍA" gasta la línea que más se ve.
+    expect(cortesia().split('CORTESÍA').length - 1).toBe(1);
+  });
+
+  it('NO se confunde con una anulación (que grita que se descarte)', () => {
+    expect(cortesia()).not.toContain('DESCARTAR ESTE PEDIDO');
+    const anulada = renderComandaEscPos({ ...BASE, cancelled: true }).toString('latin1');
+    expect(anulada).toContain('DESCARTAR ESTE PEDIDO');
   });
 
   it('un pedido cobrado sigue mostrando su número', () => {

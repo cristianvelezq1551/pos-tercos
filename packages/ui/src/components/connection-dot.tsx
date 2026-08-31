@@ -39,7 +39,10 @@ export const ConnectionDot = React.forwardRef<HTMLSpanElement, ConnectionDotProp
           {cfg.pulse ? (
             <span
               aria-hidden="true"
-              className={cn('absolute inline-flex h-full w-full animate-ping rounded-full opacity-60', cfg.color)}
+              className={cn(
+                'absolute inline-flex h-full w-full animate-ping rounded-full opacity-60',
+                cfg.color,
+              )}
             />
           ) : null}
           <span

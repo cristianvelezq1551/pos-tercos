@@ -20,10 +20,7 @@ export interface EmptyStateProps extends React.HTMLAttributes<HTMLDivElement> {
  * Si no se pasa `illustration`, queda solo texto + acción (variante mínima).
  */
 export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
-  (
-    { illustration, title, description, action, size = 'md', className, ...rest },
-    ref,
-  ) => (
+  ({ illustration, title, description, action, size = 'md', className, ...rest }, ref) => (
     <div
       ref={ref}
       role="status"
@@ -44,12 +41,7 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
         {title}
       </h3>
       {description ? (
-        <p
-          className={cn(
-            'max-w-md text-muted-foreground',
-            size === 'sm' ? 'text-xs' : 'text-sm',
-          )}
-        >
+        <p className={cn('max-w-md text-muted-foreground', size === 'sm' ? 'text-xs' : 'text-sm')}>
           {description}
         </p>
       ) : null}

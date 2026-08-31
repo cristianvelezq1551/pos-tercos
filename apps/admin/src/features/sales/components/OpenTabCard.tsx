@@ -44,9 +44,7 @@ export function OpenTabCard({
           <p className="text-xs text-muted-foreground">
             #{tab.receiptNumber} · {itemsCount} ítem{itemsCount === 1 ? '' : 's'}
             {pending > 0 ? (
-              <span className="ml-1 font-semibold text-warning">
-                · {pending} sin enviar
-              </span>
+              <span className="ml-1 font-semibold text-warning">· {pending} sin enviar</span>
             ) : null}
           </p>
         </div>
@@ -59,7 +57,12 @@ export function OpenTabCard({
         <Button size="sm" variant="outline" disabled={busy} onClick={onEdit}>
           Agregar / editar
         </Button>
-        <Button size="sm" variant="outline" disabled={busy || pending === 0} onClick={onSendKitchen}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || pending === 0}
+          onClick={onSendKitchen}
+        >
           {pending > 0 ? `A cocina (${pending})` : 'A cocina'}
         </Button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>

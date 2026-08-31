@@ -41,21 +41,21 @@ export function Tooltip({ content, side = 'top', delay = 300, children, classNam
     setOpen(false);
   };
 
-  React.useEffect(() => () => {
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-  }, []);
+  React.useEffect(
+    () => () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
 
   return (
     <span className="relative inline-flex">
-      {React.cloneElement(
-        children as React.ReactElement<React.HTMLAttributes<HTMLElement>>,
-        {
-          onMouseEnter: show,
-          onMouseLeave: hide,
-          onFocus: show,
-          onBlur: hide,
-        },
-      )}
+      {React.cloneElement(children as React.ReactElement<React.HTMLAttributes<HTMLElement>>, {
+        onMouseEnter: show,
+        onMouseLeave: hide,
+        onFocus: show,
+        onBlur: hide,
+      })}
       {open ? (
         <span
           role="tooltip"

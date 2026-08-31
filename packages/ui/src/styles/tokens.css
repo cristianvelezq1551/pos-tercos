@@ -11,78 +11,77 @@
 @theme {
   /* ─── Tipografía ─────────────────────────────────── */
   --font-sans:
-    var(--font-sans-app), 'Inter', ui-sans-serif, system-ui, -apple-system,
-    'Segoe UI', sans-serif;
+    var(--font-sans-app), 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display:
-    var(--font-display-app), 'Big Shoulders Display', 'Inter Display',
-    ui-sans-serif, system-ui, sans-serif;
+    var(--font-display-app), 'Big Shoulders Display', 'Inter Display', ui-sans-serif, system-ui,
+    sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
 
   /* ─── Rojo Tizón · saturado ─────────────────────── */
-  --color-red-50: #FFE5E8;
-  --color-red-100: #FFB8C0;
-  --color-red-200: #FF8893;
-  --color-red-300: #FF5867;
-  --color-red-400: #F2384A;
-  --color-red-500: #E5293E;
-  --color-red-600: #CB1E32;
-  --color-red-700: #A91824;
+  --color-red-50: #ffe5e8;
+  --color-red-100: #ffb8c0;
+  --color-red-200: #ff8893;
+  --color-red-300: #ff5867;
+  --color-red-400: #f2384a;
+  --color-red-500: #e5293e;
+  --color-red-600: #cb1e32;
+  --color-red-700: #a91824;
   --color-red-800: #821218;
-  --color-red-900: #5C0D11;
-  --color-red-950: #3A080B;
+  --color-red-900: #5c0d11;
+  --color-red-950: #3a080b;
 
   /* ─── Neutros · grafito azulado ─────────────────── */
-  --color-ink-50: #F1F5FA;
-  --color-ink-100: #DEE5EE;
-  --color-ink-200: #BFC9D6;
-  --color-ink-300: #94A0B0;
-  --color-ink-400: #6E7A8C;
-  --color-ink-500: #525D6E;
-  --color-ink-600: #3B4453;
-  --color-ink-700: #2C3340;
-  --color-ink-800: #232A36;
-  --color-ink-850: #1D232E;
-  --color-ink-900: #181D26;
+  --color-ink-50: #f1f5fa;
+  --color-ink-100: #dee5ee;
+  --color-ink-200: #bfc9d6;
+  --color-ink-300: #94a0b0;
+  --color-ink-400: #6e7a8c;
+  --color-ink-500: #525d6e;
+  --color-ink-600: #3b4453;
+  --color-ink-700: #2c3340;
+  --color-ink-800: #232a36;
+  --color-ink-850: #1d232e;
+  --color-ink-900: #181d26;
   --color-ink-950: #131822;
 
   /* ─── Tonales ─────────────────────────────────── */
-  --color-success: #4ADE80;
+  --color-success: #4ade80;
   --color-success-foreground: #042713;
   --color-success-bg: #042713;
   --color-success-border: #166534;
 
-  --color-warning: #FBBF24;
-  --color-warning-foreground: #1F1300;
-  --color-warning-bg: #2D1F00;
-  --color-warning-border: #92400E;
+  --color-warning: #fbbf24;
+  --color-warning-foreground: #1f1300;
+  --color-warning-bg: #2d1f00;
+  --color-warning-border: #92400e;
 
   /* ─── Tokens semánticos · HEX LITERALES ───────── */
   --color-background: #131822;
-  --color-foreground: #F1F5FA;
+  --color-foreground: #f1f5fa;
 
-  --color-card: #1D232E;
-  --color-card-foreground: #F1F5FA;
+  --color-card: #1d232e;
+  --color-card-foreground: #f1f5fa;
 
-  --color-popover: #232A36;
-  --color-popover-foreground: #F1F5FA;
+  --color-popover: #232a36;
+  --color-popover-foreground: #f1f5fa;
 
-  --color-muted: #232A36;
-  --color-muted-foreground: #94A0B0;
+  --color-muted: #232a36;
+  --color-muted-foreground: #94a0b0;
 
-  --color-accent: #232A36;
-  --color-accent-foreground: #F1F5FA;
+  --color-accent: #232a36;
+  --color-accent-foreground: #f1f5fa;
 
-  --color-primary: #E5293E;
-  --color-primary-foreground: #FFFFFF;
+  --color-primary: #e5293e;
+  --color-primary-foreground: #ffffff;
 
-  --color-secondary: #232A36;
-  --color-secondary-foreground: #F1F5FA;
+  --color-secondary: #232a36;
+  --color-secondary-foreground: #f1f5fa;
 
-  --color-destructive: #E5293E;
-  --color-destructive-foreground: #FFFFFF;
+  --color-destructive: #e5293e;
+  --color-destructive-foreground: #ffffff;
 
-  --color-border: #2C3340;
-  --color-input: #2C3340;
+  --color-border: #2c3340;
+  --color-input: #2c3340;
   --color-ring: rgb(229 41 62 / 0.55);
 
   /* ─── Radius ─────────────────────────────────── */
@@ -118,7 +117,7 @@
  * ───────────────────────────────────────────────────────────────── */
 
 body {
-  color: #F1F5FA;
+  color: #f1f5fa;
   background: #131822;
   font-family: var(--font-sans);
   font-feature-settings: 'cv11', 'ss01', 'ss03';
@@ -181,7 +180,7 @@ body {
 
   .hairline {
     height: 1px;
-    background: #2C3340;
+    background: #2c3340;
   }
 
   /* ── Pantalla pública: animaciones ─────────────────────────── */

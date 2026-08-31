@@ -4,7 +4,7 @@ export {
   buildPickupReadyMessage,
   buildNotificationMessage,
 } from './messages';
-export { buildDiscrepancyAlertLink } from './build-link';
+export { buildDiscrepancyAlertLink, buildDiscrepancyAlertMessage } from './build-link';
 export { buildManualNotificationLink } from './manual-send';
 export { buildCanceledMessage } from './messages';
 export {

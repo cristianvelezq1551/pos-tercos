@@ -6,6 +6,7 @@ import {
   type UpdateDisplaySlide,
 } from '@pos-tercos/types';
 import { z } from 'zod';
+import { subirArchivoGrande } from '../../../lib/upload-directo';
 
 const SlideList = z.array(DisplaySlideSchema);
 const TrackList = z.array(DisplayTrackSchema);
@@ -45,10 +46,7 @@ export async function createSlide(input: {
   return DisplaySlideSchema.parse(await jsonOrThrow(res));
 }
 
-export async function updateSlide(
-  id: string,
-  body: UpdateDisplaySlide,
-): Promise<DisplaySlide> {
+export async function updateSlide(id: string, body: UpdateDisplaySlide): Promise<DisplaySlide> {
   const res = await fetch(`/api/display/slides/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -102,10 +100,10 @@ export async function listTracks(): Promise<DisplayTrack[]> {
 }
 
 /**
- * Sube una pista reportando progreso (XHR: `fetch` no expone el progreso de
- * subida, y con archivos de hasta 50 MB el usuario necesita ver que avanza).
+ * Sube una pista reportando progreso. El detalle de por qué no pasa por el
+ * proxy de la app está en `subirArchivoGrande`.
  */
-export function createTrack(
+export async function createTrack(
   label: string,
   audio: File,
   onProgress?: (pct: number) => void,
@@ -113,35 +111,10 @@ export function createTrack(
   const fd = new FormData();
   fd.append('label', label);
   fd.append('audio', audio);
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/display/tracks');
-    xhr.withCredentials = true;
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      let body: unknown = null;
-      try {
-        body = JSON.parse(xhr.responseText);
-      } catch {
-        // sin body JSON — cae al mensaje genérico
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(DisplayTrackSchema.parse(body));
-        } catch {
-          reject(new Error('Respuesta inesperada del servidor.'));
-        }
-      } else {
-        const msg = (body as { message?: string } | null)?.message;
-        reject(new Error(msg ?? `Error ${xhr.status}`));
-      }
-    };
-    xhr.onerror = () =>
-      reject(new Error('Se cortó la conexión durante la subida. Prueba de nuevo.'));
-    xhr.send(fd);
-  });
+  // Directo a la API: por el proxy, una canción de más de ~4,5 MB moría con un
+  // 413 del propio Vercel antes de llegar al backend (que acepta 50 MB).
+  const body = await subirArchivoGrande<unknown>({ ruta: 'display/tracks', form: fd, onProgress });
+  return DisplayTrackSchema.parse(body);
 }
 
 export async function updateTrack(

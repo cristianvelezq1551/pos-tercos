@@ -55,15 +55,16 @@ export function DifferenceWidget({
   const Icon = exact ? Check : surplus ? ArrowUpRight : ArrowDownRight;
 
   const title = exact ? 'La caja cuadra' : surplus ? 'Sobra plata' : 'Falta plata';
-  const subtitle = accountPending > 0
-    ? `Faltan ${accountPending} medio(s) de cuenta por contar: el total todavía no es definitivo.`
-    : split
-      ? `Efectivo ${signed(difference)} · cuenta ${signed(accountDifference)}`
-      : exact
-        ? 'El conteo coincide con lo esperado.'
-        : Math.abs(accountDifference) >= 1
-          ? 'La diferencia está en la cuenta, no en el cajón.'
-          : 'La diferencia está en el cajón.';
+  const subtitle =
+    accountPending > 0
+      ? `Faltan ${accountPending} medio(s) de cuenta por contar: el total todavía no es definitivo.`
+      : split
+        ? `Efectivo ${signed(difference)} · cuenta ${signed(accountDifference)}`
+        : exact
+          ? 'El conteo coincide con lo esperado.'
+          : Math.abs(accountDifference) >= 1
+            ? 'La diferencia está en la cuenta, no en el cajón.'
+            : 'La diferencia está en el cajón.';
 
   return (
     <div className={cn('rounded-xl border p-3.5', styles.container)}>
@@ -81,13 +82,7 @@ export function DifferenceWidget({
           <p className="text-sm font-semibold leading-tight">{title}</p>
           <p className="text-xs leading-tight opacity-80">{subtitle}</p>
         </div>
-        <Money
-          amount={total}
-          size="2xl"
-          weight="bold"
-          withSign
-          className="shrink-0 text-current"
-        />
+        <Money amount={total} size="2xl" weight="bold" withSign className="shrink-0 text-current" />
       </div>
 
       {flagged ? (

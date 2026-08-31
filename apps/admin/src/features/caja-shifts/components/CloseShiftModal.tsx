@@ -201,8 +201,8 @@ export function CloseShiftModal({
             role="status"
             className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm font-semibold text-warning"
           >
-            Para cerrar falta arquear {missingDigital.map((m) => m.name).join(', ')}. Mira cada
-            app y anota cuánto entró; si no entró nada, escribe 0.
+            Para cerrar falta arquear {missingDigital.map((m) => m.name).join(', ')}. Mira cada app
+            y anota cuánto entró; si no entró nada, escribe 0.
           </p>
         ) : null}
 

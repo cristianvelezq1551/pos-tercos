@@ -33,7 +33,10 @@ export function ArqueosPanel() {
 
   if (error) {
     return (
-      <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      <p
+        role="alert"
+        className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      >
         {error}
       </p>
     );
@@ -74,12 +77,16 @@ export function ArqueosPanel() {
                 {diff === 0 ? (
                   <span className="font-semibold text-success">cuadró ✓</span>
                 ) : (
-                  <span className={`font-semibold ${diff < 0 ? 'text-destructive' : 'text-warning'}`}>
+                  <span
+                    className={`font-semibold ${diff < 0 ? 'text-destructive' : 'text-warning'}`}
+                  >
                     {diff > 0 ? '+' : ''}
                     <Money amount={diff} size="sm" className="text-current" />
                   </span>
                 )}
-                <span aria-hidden className="text-muted-foreground">{open ? '▾' : '▸'}</span>
+                <span aria-hidden className="text-muted-foreground">
+                  {open ? '▾' : '▸'}
+                </span>
               </span>
             </button>
             {open ? <ArqueoDetail shiftId={s.id} /> : null}

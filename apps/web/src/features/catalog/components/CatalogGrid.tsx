@@ -82,7 +82,7 @@ export function CatalogGrid({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar en el menú"
-            className="h-11 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-11 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-base sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </label>
 

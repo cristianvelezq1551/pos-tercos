@@ -14,6 +14,7 @@ import { MonthCutoffCard, WebOrdersToggleCard, getBusinessConfigServer } from '.
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import { requireRole } from '../../../../lib/guards';
 import {
+  businessWallClock,
   MonthlyFinancialStatementSchema,
   MonthlyTrendSchema,
   type MonthlyFinancialStatement,
@@ -29,7 +30,10 @@ export default async function FinancialStatementPage({ searchParams }: PageProps
   const sp = await searchParams;
   // Hora local del server (TZ=America/Bogota en prod) — NO UTC: con getUTC* el
   // default saltaba al mes siguiente al final del mes después de las 19:00 Bogotá.
-  const now = new Date();
+  // El mes que se muestra por defecto lo decide la hora del LOCAL: esta
+  // página se arma en el servidor (UTC), donde el 31 a las 8 pm ya es el
+  // mes siguiente y el dueño abría un estado financiero vacío.
+  const now = businessWallClock();
   const year = sp.year ? Number(sp.year) : now.getFullYear();
   const month = sp.month ? Number(sp.month) : now.getMonth() + 1;
 

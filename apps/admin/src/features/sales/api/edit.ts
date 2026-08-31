@@ -27,10 +27,7 @@ export async function editSaleItems(saleId: string, input: EditSaleItems): Promi
 }
 
 /** Reclasifica el método/división de pago de una venta cobrada. */
-export async function changeSalePayment(
-  saleId: string,
-  input: ChangeSalePayment,
-): Promise<Sale> {
+export async function changeSalePayment(saleId: string, input: ChangeSalePayment): Promise<Sale> {
   const body = ChangeSalePaymentSchema.parse(input);
   const res = await fetch(`/api/sales/${saleId}/payment`, {
     method: 'PATCH',

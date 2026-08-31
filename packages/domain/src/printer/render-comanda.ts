@@ -77,14 +77,18 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
     out.push(BOLD_OFF);
     out.push(LF);
   }
-  out.push(SIZE_2H_2W);
-  out.push(BOLD_ON);
-  out.push(
-    latin1(comanda.receiptNumber === null ? 'CORTESÍA' : `PEDIDO #${comanda.receiptNumber}`),
-  );
-  out.push(BOLD_OFF);
-  out.push(SIZE_NORMAL);
-  out.push(LF);
+  // La línea grande es el NÚMERO del pedido: es por donde el cocinero engancha
+  // el papel con la orden cuando está lista. Una cortesía no tiene número, y
+  // repetir ahí la palabra del encabezado ("*** CORTESÍA ***" y debajo
+  // "CORTESÍA" en grande) solo gasta el renglón que más se ve.
+  if (comanda.receiptNumber !== null) {
+    out.push(SIZE_2H_2W);
+    out.push(BOLD_ON);
+    out.push(latin1(`PEDIDO #${comanda.receiptNumber}`));
+    out.push(BOLD_OFF);
+    out.push(SIZE_NORMAL);
+    out.push(LF);
+  }
   if (comanda.type === 'WEB_DELIVERY') {
     out.push(SIZE_2H);
     out.push(BOLD_ON);

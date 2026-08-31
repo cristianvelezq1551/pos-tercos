@@ -27,7 +27,7 @@ export function UsageRow({ row }: { row: InventoryUsageRow }) {
         {row.wastePct === null ? (
           <span className="text-muted-foreground">—</span>
         ) : (
-          <span className={wastePctClass(row.wastePct)}>
+          <span className={wastePctClass(row.wastePct)} title={explicaPct(row)}>
             {formatNumber(row.wastePct * 100, { decimals: 1 })}%
           </span>
         )}
@@ -130,4 +130,13 @@ function Td({
       {children}
     </td>
   );
+}
+
+/**
+ * El porcentaje con sus dos números a la vista. Un "40 %" suelto no dice sobre
+ * qué se calculó, y era la primera pregunta al verlo.
+ */
+function explicaPct(row: InventoryUsageRow): string {
+  const salio = row.sales + row.productionOut + Math.max(0, row.waste);
+  return `Se tiraron ${formatNumber(Math.max(0, row.waste), { maxDecimals: 2 })} ${row.unit} de ${formatNumber(salio, { maxDecimals: 2 })} que salieron del inventario (${formatNumber(row.sales, { maxDecimals: 2 })} por ventas + ${formatNumber(row.productionOut, { maxDecimals: 2 })} por producción + la merma).`;
 }

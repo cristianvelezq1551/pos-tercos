@@ -2,8 +2,10 @@ import * as React from 'react';
 import { cn } from '../lib/utils';
 import { groupDigits, onlyDigits } from '../lib/format';
 
-export interface MoneyInputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange' | 'prefix'> {
+export interface MoneyInputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'type' | 'value' | 'onChange' | 'prefix'
+> {
   /** Valor en dígitos crudos, sin separadores. Ej: "100000". '' = vacío. */
   value: string;
   /** Devuelve los dígitos sin separadores (lo que se guarda en el estado). */

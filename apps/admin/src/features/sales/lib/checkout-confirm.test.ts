@@ -48,7 +48,12 @@ const items: CartLine[] = [
   } as unknown as CartLine,
 ];
 
-const totals = { subtotal: 20_000, discount: 0, total: 20_000, lines: [] } as unknown as CartTotalsResult;
+const totals = {
+  subtotal: 20_000,
+  discount: 0,
+  total: 20_000,
+  lines: [],
+} as unknown as CartTotalsResult;
 
 /** Deps base; cada test sobreescribe lo que le importa. */
 function deps(over: Record<string, unknown> = {}) {
@@ -95,7 +100,10 @@ describe('runConfirmCheckout — cobro ONLINE simple', () => {
   it('crea la venta con el idempotency-key y la cobra', async () => {
     const d = deps();
     await runConfirmCheckout(d);
-    expect(createSale).toHaveBeenCalledWith(expect.objectContaining({ type: 'COUNTER' }), 'idem-key-1');
+    expect(createSale).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'COUNTER' }),
+      'idem-key-1',
+    );
     expect(confirmPayment).toHaveBeenCalledWith(SALE_ID, {
       method: 'CASH',
       amountReceived: 50_000,
@@ -197,7 +205,10 @@ describe('runConfirmCheckout — cuenta dividida', () => {
   it('el flag splitOpen sin resultado cae al cobro simple (no cobra a medias)', async () => {
     const d = deps({ splitOpen: true, splitResult: null });
     await runConfirmCheckout(d);
-    expect(confirmPayment).toHaveBeenCalledWith(SALE_ID, expect.objectContaining({ method: 'CASH' }));
+    expect(confirmPayment).toHaveBeenCalledWith(
+      SALE_ID,
+      expect.objectContaining({ method: 'CASH' }),
+    );
   });
 });
 

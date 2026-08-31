@@ -56,8 +56,7 @@ export function ArqueoDetail({ shiftId }: { shiftId: string }) {
         return [{ order: o, amount: part, isPart: o.payments.length > 1 }];
       })
       .sort(
-        (a, b) =>
-          new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime(),
+        (a, b) => new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime(),
       );
 
   // Lo COBRADO por método = ventas (sale_payments) + entradas de caja.

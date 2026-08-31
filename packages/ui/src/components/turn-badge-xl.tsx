@@ -20,12 +20,7 @@ const TICK_IN_MS = 280;
  * Cuando `value` cambia: slide-out del viejo + slide-in del nuevo (~460 ms).
  * Sin sonido (lo dispara el padre vía `onTickEnd`).
  */
-export function TurnBadgeXL({
-  value,
-  label = 'Turno',
-  className,
-  onTickEnd,
-}: TurnBadgeXLProps) {
+export function TurnBadgeXL({ value, label = 'Turno', className, onTickEnd }: TurnBadgeXLProps) {
   const [displayValue, setDisplayValue] = useState(value);
   const [phase, setPhase] = useState<'idle' | 'out' | 'in'>('idle');
   const prevRef = useRef(value);
@@ -56,9 +51,7 @@ export function TurnBadgeXL({
         className,
       )}
     >
-      <span className="caps text-xl tracking-[0.5em] text-muted-foreground">
-        {label}
-      </span>
+      <span className="caps text-xl tracking-[0.5em] text-muted-foreground">{label}</span>
       <div className="mt-1 overflow-hidden">
         <span
           className={cn(

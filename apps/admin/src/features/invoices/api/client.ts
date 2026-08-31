@@ -19,6 +19,8 @@ import {
   type VoidInvoicePreview,
 } from '@pos-tercos/types';
 import { z } from 'zod';
+import { comprimirImagen } from '@pos-tercos/ui';
+import { logError } from '../../../lib/client-log';
 
 const InvoiceListSchema = z.array(InvoiceSchema);
 
@@ -27,7 +29,9 @@ async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T
     credentials: 'include',
     ...init,
     headers: {
-      ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.body && !(init.body instanceof FormData)
+        ? { 'Content-Type': 'application/json' }
+        : {}),
       ...(init.headers ?? {}),
     },
   });
@@ -44,10 +48,17 @@ async function request<T>(path: string, init: RequestInit, schema: z.ZodSchema<T
  * Sube foto a IA. NO crea borrador — solo devuelve la extracción + photoStorageKey.
  * El cliente debe llamar `confirmFromPhoto` al confirmar (o `discardPhoto` si abandona).
  */
-export function uploadInvoicePhoto(file: File): Promise<ExtractInvoiceResponse> {
+export async function uploadInvoicePhoto(file: File): Promise<ExtractInvoiceResponse> {
   const fd = new FormData();
-  fd.append('photo', file);
-  return request('/invoices/upload-photo', { method: 'POST', body: fd }, ExtractInvoiceResponseSchema);
+  // Achicada antes de salir: una factura fotografiada de frente pesa 3-8 MB y
+  // el proxy de la app corta el cuerpo cerca de 4,5 MB — moría con un 413 sin
+  // llegar nunca a la IA. A 1600 px la letra de una factura se lee de sobra.
+  fd.append('photo', await comprimirImagen(file, (e) => logError('invoice-photo', e)));
+  return request(
+    '/invoices/upload-photo',
+    { method: 'POST', body: fd },
+    ExtractInvoiceResponseSchema,
+  );
 }
 
 /** Crear+confirmar factura desde foto (IA) en un solo paso. */
@@ -165,10 +176,7 @@ export function saveInvoiceDraft(payload: SaveInvoiceDraft, id?: string): Promis
   );
 }
 
-export function updateInvoiceFreight(
-  id: string,
-  payload: UpdateInvoiceFreight,
-): Promise<Invoice> {
+export function updateInvoiceFreight(id: string, payload: UpdateInvoiceFreight): Promise<Invoice> {
   UpdateInvoiceFreightSchema.parse(payload);
   return request(
     `/invoices/${id}/freight`,

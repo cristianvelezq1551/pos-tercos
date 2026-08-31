@@ -110,7 +110,15 @@ export function useCheckoutFlow({
 
   const validation = useMemo(
     () =>
-      validateCheckout({ splitOpen, splitResult, splitReason, method, cashNum, doubleVerified, total }),
+      validateCheckout({
+        splitOpen,
+        splitResult,
+        splitReason,
+        method,
+        cashNum,
+        doubleVerified,
+        total,
+      }),
     [splitOpen, splitResult, splitReason, method, cashNum, doubleVerified, total],
   );
 

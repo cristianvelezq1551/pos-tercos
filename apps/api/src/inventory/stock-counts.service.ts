@@ -118,7 +118,7 @@ export class StockCountsService {
       },
     });
 
-    return this.toDto(created, stockable.name, null);
+    return this.toDto(created, stockable.name, stockable.unitStock ?? '', null);
   }
 
   /** Conteos del cocinero pendientes de aprobación (para el admin). */
@@ -329,6 +329,7 @@ export class StockCountsService {
       entityType: r.entityType,
       entityId: (r.ingredientId ?? r.productId ?? r.subproductId)!,
       name: r.ingredient?.name ?? r.product?.name ?? r.subproduct?.name ?? '(eliminado)',
+      unit: r.ingredient?.unitRecipe ?? r.product?.unitStock ?? r.subproduct?.unit ?? '',
       countedQty: Number(r.countedQty),
       ledgerQty: Number(r.ledgerQty),
       difference: Number(r.difference),
@@ -346,6 +347,7 @@ export class StockCountsService {
   private toDto(
     created: Prisma.StockCountGetPayload<object>,
     name: string,
+    unit: string,
     resolverName: string | null,
   ): StockCount {
     return {
@@ -353,6 +355,7 @@ export class StockCountsService {
       entityType: created.entityType,
       entityId: (created.ingredientId ?? created.productId ?? created.subproductId)!,
       name,
+      unit,
       countedQty: Number(created.countedQty),
       ledgerQty: Number(created.ledgerQty),
       difference: Number(created.difference),
@@ -386,9 +389,9 @@ export class StockCountsService {
 /** Include estándar para resolver el nombre del stockable y de quien contó. */
 function countIncludes() {
   return {
-    ingredient: { select: { name: true } },
-    product: { select: { name: true } },
-    subproduct: { select: { name: true } },
+    ingredient: { select: { name: true, unitRecipe: true } },
+    product: { select: { name: true, unitStock: true } },
+    subproduct: { select: { name: true, unit: true } },
     user: { select: { fullName: true } },
   } satisfies Prisma.StockCountInclude;
 }

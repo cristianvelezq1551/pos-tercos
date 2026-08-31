@@ -67,9 +67,7 @@ describe('RecentOrdersSection', () => {
   });
 
   it('sin nada del día lo dice explícito', () => {
-    render(
-      <RecentOrdersSection entries={[]} onSelectSale={vi.fn()} onSelectCortesia={vi.fn()} />,
-    );
+    render(<RecentOrdersSection entries={[]} onSelectSale={vi.fn()} onSelectCortesia={vi.fn()} />);
     expect(screen.getByText('Todavía no hay pedidos hoy.')).toBeDefined();
   });
 });

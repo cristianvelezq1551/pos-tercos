@@ -16,18 +16,22 @@ export function mergeDayEntries(
   cortesias: readonly CortesiaRequest[],
 ): DayEntry[] {
   const entries: DayEntry[] = [
-    ...sales.map((sale): DayEntry => ({
-      kind: 'sale',
-      id: sale.id,
-      at: sale.createdAt,
-      sale,
-    })),
-    ...cortesias.map((cortesia): DayEntry => ({
-      kind: 'cortesia',
-      id: cortesia.id,
-      at: cortesia.createdAt,
-      cortesia,
-    })),
+    ...sales.map(
+      (sale): DayEntry => ({
+        kind: 'sale',
+        id: sale.id,
+        at: sale.createdAt,
+        sale,
+      }),
+    ),
+    ...cortesias.map(
+      (cortesia): DayEntry => ({
+        kind: 'cortesia',
+        id: cortesia.id,
+        at: cortesia.createdAt,
+        cortesia,
+      }),
+    ),
   ];
   return entries.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 }

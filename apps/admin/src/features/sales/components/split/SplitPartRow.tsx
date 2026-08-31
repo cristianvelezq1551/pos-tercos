@@ -95,9 +95,7 @@ export function SplitPartRow({
               />
             </div>
             {change > 0 ? (
-              <span className="text-sm font-medium text-success">
-                Vuelto {formatCop(change)}
-              </span>
+              <span className="text-sm font-medium text-success">Vuelto {formatCop(change)}</span>
             ) : null}
           </>
         ) : null}

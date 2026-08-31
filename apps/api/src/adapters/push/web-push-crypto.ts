@@ -42,6 +42,19 @@ export function fromB64url(value: string): Buffer {
 }
 
 /**
+ * El escalar privado de P-256 mide 32 bytes, pero `getPrivateKey()` de Node
+ * devuelve la representación MÍNIMA: si el número arranca con un byte cero, la
+ * llave sale con 31 (pasa en ~4 de cada 1.000 generaciones). Es una llave
+ * perfectamente válida, así que rellenarla a la izquierda es lo correcto —
+ * rechazarla sería descartar una de cada doscientas cincuenta al azar.
+ */
+export function padEscalar(escalar: Buffer): Buffer {
+  if (escalar.length === 32) return escalar;
+  if (escalar.length > 32) throw new Error('El escalar privado mide más de 32 bytes.');
+  return Buffer.concat([Buffer.alloc(32 - escalar.length), escalar]);
+}
+
+/**
  * Valida la suscripción que manda el navegador ANTES de guardarla.
  *
  * El RFC 8291 §7 lo pide explícitamente: un punto que no está sobre la curva
@@ -192,10 +205,7 @@ function privateKeyObject(keys: VapidKeys) {
   if (pub.length !== 65 || pub[0] !== 0x04) {
     throw new Error('VAPID_PUBLIC_KEY no es un punto P-256 sin comprimir (65 bytes).');
   }
-  const priv = fromB64url(keys.privateKey);
-  if (priv.length !== 32) {
-    throw new Error('VAPID_PRIVATE_KEY no mide 32 bytes.');
-  }
+  const priv = padEscalar(fromB64url(keys.privateKey));
   return createPrivateKey({
     key: {
       kty: 'EC',
@@ -224,9 +234,11 @@ export function assertVapidKeyPair(keys: { publicKey: string; privateKey: string
   if (declarada.length !== 65 || declarada[0] !== 0x04) {
     throw new Error('VAPID_PUBLIC_KEY no es un punto P-256 sin comprimir (65 bytes).');
   }
-  const privada = fromB64url(keys.privateKey);
-  if (privada.length !== 32) {
-    throw new Error('VAPID_PRIVATE_KEY no mide 32 bytes.');
+  let privada: Buffer;
+  try {
+    privada = padEscalar(fromB64url(keys.privateKey));
+  } catch {
+    throw new Error('VAPID_PRIVATE_KEY no es un escalar P-256 (más de 32 bytes).');
   }
   const ecdh = createECDH('prime256v1');
   try {
@@ -248,6 +260,8 @@ export function generateVapidKeys(): { publicKey: string; privateKey: string } {
   ecdh.generateKeys();
   return {
     publicKey: b64url(ecdh.getPublicKey()),
-    privateKey: b64url(ecdh.getPrivateKey()),
+    // Rellenada a 32 bytes para que la llave guardada siempre tenga el mismo
+    // largo, se genere el día que se genere.
+    privateKey: b64url(padEscalar(ecdh.getPrivateKey())),
   };
 }

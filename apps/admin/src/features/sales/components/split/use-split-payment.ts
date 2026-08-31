@@ -117,5 +117,16 @@ export function useSplitPayment(
 
   const assigned = parts.reduce((acc, p) => acc + p.amount, 0);
 
-  return { mode, setMode, count, setCount, units, setUnits, parts, setParts, setPartAmount, assigned };
+  return {
+    mode,
+    setMode,
+    count,
+    setCount,
+    units,
+    setUnits,
+    parts,
+    setParts,
+    setPartAmount,
+    assigned,
+  };
 }

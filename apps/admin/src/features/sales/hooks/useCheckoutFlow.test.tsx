@@ -36,8 +36,26 @@ vi.mock('../../offline', () => ({
 }));
 vi.mock('./useEnabledPaymentMethods', () => ({
   useEnabledPaymentMethods: () => [
-    { code: 'CASH', name: 'Efectivo', enabled: true, isCash: true, requiresVerification: false, reconciliationSource: null, isSystem: true, sortOrder: 1 },
-    { code: 'TRANSFER', name: 'Transferencia', enabled: true, isCash: false, requiresVerification: true, reconciliationSource: 'BANCOLOMBIA_CSV', isSystem: false, sortOrder: 2 },
+    {
+      code: 'CASH',
+      name: 'Efectivo',
+      enabled: true,
+      isCash: true,
+      requiresVerification: false,
+      reconciliationSource: null,
+      isSystem: true,
+      sortOrder: 1,
+    },
+    {
+      code: 'TRANSFER',
+      name: 'Transferencia',
+      enabled: true,
+      isCash: false,
+      requiresVerification: true,
+      reconciliationSource: 'BANCOLOMBIA_CSV',
+      isSystem: false,
+      sortOrder: 2,
+    },
   ],
 }));
 vi.mock('../../../lib/caja-events', () => ({ notifyCajaChanged: vi.fn() }));
@@ -46,7 +64,12 @@ vi.mock('../../../lib/client-log', () => ({ logError: vi.fn() }));
 import { useCheckoutFlow } from './useCheckoutFlow';
 
 const TOTAL = 10000;
-const EMPTY_TOTALS = { lines: [], subtotal: TOTAL, discount: 0, total: TOTAL } as unknown as CartTotalsResult;
+const EMPTY_TOTALS = {
+  lines: [],
+  subtotal: TOTAL,
+  discount: 0,
+  total: TOTAL,
+} as unknown as CartTotalsResult;
 
 function render(onSuccess = vi.fn(), onClose = vi.fn()) {
   return renderHook(() =>

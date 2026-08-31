@@ -1,4 +1,10 @@
-import { USER_ROLE_LABELS, type PublicWebOrder, type Shift, type User, type UserRole } from '@pos-tercos/types';
+import {
+  USER_ROLE_LABELS,
+  type PublicWebOrder,
+  type Shift,
+  type User,
+  type UserRole,
+} from '@pos-tercos/types';
 import { Topbar, UserMenu } from '@pos-tercos/ui';
 import { BrandLogo } from '@pos-tercos/brand';
 import Link from 'next/link';
@@ -25,11 +31,21 @@ export function CajaTopbar({
 }) {
   return (
     <Topbar variant="light">
-      <Topbar.Brand className="shrink-0">
+      {/* En celular el logotipo se esconde: la herramienta son las pestañas y
+          la marca es decoración. */}
+      <Topbar.Brand className="hidden shrink-0 sm:flex">
         <BrandLogo variant="wordmark" theme="dark" size="h-6" />
       </Topbar.Brand>
 
-      <div className="flex min-w-0 flex-1 items-stretch justify-center self-stretch py-1.5">
+      {/* Las pestañas SOLO se centran cuando sobra espacio.
+          Centradas siempre, un contenido más ancho que su caja se desborda
+          hacia los DOS lados: medido, entre 768 y 1280 px —el rango de una
+          tableta, que es el dispositivo de la caja— arrancaban en x=-107, o
+          sea fuera de la pantalla y encima del logotipo, dejando "Historial"
+          cortado en "storial". Alineadas a la izquierda cada una ocupa su
+          caja, y si no caben se desplazan en vez de salirse. El centrado vuelve
+          en 2xl (1536 px) y no antes: a 1280 todavía mordía el logo por 7 px. */}
+      <div className="flex min-w-0 flex-1 items-stretch justify-start self-stretch overflow-x-auto py-1.5 2xl:justify-center">
         <CajaNav />
       </div>
 

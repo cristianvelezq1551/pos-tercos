@@ -51,7 +51,9 @@ export function OpenTabsResolver({
   }, [shiftId, onCountChange]);
 
   useEffect(() => {
-    reload().catch((e) => setError(getErrorMessage(e, 'No se pudieron cargar las cuentas abiertas')));
+    reload().catch((e) =>
+      setError(getErrorMessage(e, 'No se pudieron cargar las cuentas abiertas')),
+    );
     fetchActivePromotions()
       .then(setPromos)
       .catch((e) => logError('open-tabs-resolver.promos', e));
@@ -118,7 +120,10 @@ export function OpenTabsResolver({
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-xs text-destructive"
+        >
           {error}
         </p>
       ) : null}
@@ -139,7 +144,12 @@ export function OpenTabsResolver({
                 <Button size="sm" disabled={busy} onClick={() => void openPay(tab)}>
                   Cobrar
                 </Button>
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => void handleCarryOver(tab)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void handleCarryOver(tab)}
+                >
                   Traspasar
                 </Button>
                 <Button size="sm" variant="ghost" disabled={busy} onClick={() => setCancelTab(tab)}>
@@ -151,8 +161,9 @@ export function OpenTabsResolver({
         })}
       </ul>
       <p className="text-[0.6875rem] text-muted-foreground">
-        <strong className="font-semibold">Traspasar</strong> deja la cuenta viva para cobrarla en la próxima caja
-        (sale de este arqueo). <strong className="font-semibold">Cancelar</strong> la marca como no pagada.
+        <strong className="font-semibold">Traspasar</strong> deja la cuenta viva para cobrarla en la
+        próxima caja (sale de este arqueo). <strong className="font-semibold">Cancelar</strong> la
+        marca como no pagada.
       </p>
 
       <CheckoutModal

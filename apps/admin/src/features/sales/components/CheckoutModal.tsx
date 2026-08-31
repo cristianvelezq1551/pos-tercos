@@ -64,7 +64,9 @@ export function CheckoutModal({
     <Dialog
       open={open}
       onClose={pending ? () => {} : handleClose}
-      title={sale ? `Cobrar cuenta · ${sale.customerName ?? `#${sale.receiptNumber}`}` : 'Cobrar venta'}
+      title={
+        sale ? `Cobrar cuenta · ${sale.customerName ?? `#${sale.receiptNumber}`}` : 'Cobrar venta'
+      }
       description={`Total ${formatCop(total)} · ${linesCount} ${
         linesCount === 1 ? 'línea' : 'líneas'
       }`}

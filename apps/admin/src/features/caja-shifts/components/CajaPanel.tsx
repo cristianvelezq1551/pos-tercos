@@ -82,6 +82,9 @@ export function CajaPanel({
         expectedCash={expectedCash ?? 0}
         cashIn={net.cashIn}
         cashOut={net.cashOut}
+        nombresDeMedios={Object.fromEntries(
+          (serverExpected?.digital ?? []).map((d) => [d.method, d.name]),
+        )}
       />
       <div className="grid grid-cols-3 gap-2">
         <Stat label="Ventas" value={summary.countSales} />

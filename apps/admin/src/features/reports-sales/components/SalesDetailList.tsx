@@ -9,6 +9,7 @@ import { shiftCrossedMidnight, shiftLabel } from '../lib/shift-label';
 import { matchesLens, sumSales, type SalesLens } from '../lib/sales-lens';
 import { SalesLensTabs } from './SalesLensTabs';
 import { SaleAmountCell } from './SaleAmountCell';
+import { SaleCard } from './SaleCard';
 import { SaleExpandedDetail } from './SaleExpandedDetail';
 import { SalesScopeFilter } from './SalesScopeFilter';
 
@@ -46,7 +47,7 @@ export function SalesDetailList({
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Detalle de ventas
         </h2>
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:w-auto sm:gap-4">
           <SalesScopeFilter
             shifts={shifts}
             selectedShiftId={selectedShift?.id}
@@ -81,25 +82,36 @@ export function SalesDetailList({
               : 'Sin ventas en el período seleccionado.'}
         </p>
       ) : (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs uppercase text-muted-foreground">
-                <th className="pb-2 pl-1 text-left font-semibold">#</th>
-                <th className="pb-2 text-left font-semibold">Fecha</th>
-                <th className="pb-2 text-left font-semibold">Tipo</th>
-                <th className="pb-2 text-left font-semibold">Cliente</th>
-                <th className="pb-2 text-left font-semibold">Método</th>
-                <th className="pb-2 text-left font-semibold">Cajero</th>
-                <th className="pb-2 pr-1 text-right font-semibold">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {visibles.map((sale) => (
-                <SaleRow key={sale.id} sale={sale} />
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-4">
+          {/* En celular la tabla se comprimía hasta ser ilegible; de `sm` para
+              arriba sí hay ancho para las siete columnas. */}
+          <ul className="sm:hidden">
+            {visibles.map((sale) => (
+              <SaleCard key={sale.id} sale={sale} />
+            ))}
+          </ul>
+          {/* De `sm` a tableta el ancho alcanza justo: que se desplace la tabla
+              antes que comprimir las columnas. */}
+          <div className="hidden overflow-x-auto sm:block">
+            <table className="w-full min-w-[42rem] text-sm">
+              <thead>
+                <tr className="text-xs uppercase text-muted-foreground">
+                  <th className="pb-2 pl-1 text-left font-semibold">#</th>
+                  <th className="pb-2 text-left font-semibold">Fecha</th>
+                  <th className="pb-2 text-left font-semibold">Tipo</th>
+                  <th className="pb-2 text-left font-semibold">Cliente</th>
+                  <th className="pb-2 text-left font-semibold">Método</th>
+                  <th className="pb-2 text-left font-semibold">Cajero</th>
+                  <th className="pb-2 pr-1 text-right font-semibold">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {visibles.map((sale) => (
+                  <SaleRow key={sale.id} sale={sale} />
+                ))}
+              </tbody>
+            </table>
+          </div>
           {conDomicilio ? (
             <p className="mt-2 text-xs text-muted-foreground">
               En los pedidos con domicilio, el total de la fila es lo que queda en el negocio; el

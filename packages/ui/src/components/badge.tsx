@@ -68,7 +68,11 @@ const badgeVariants = cva(
 
       // OUTLINE variants
       { tone: 'neutral', variant: 'outline', class: 'bg-transparent text-ink-700 border-ink-300' },
-      { tone: 'primary', variant: 'outline', class: 'bg-transparent text-primary border-primary/50' },
+      {
+        tone: 'primary',
+        variant: 'outline',
+        class: 'bg-transparent text-primary border-primary/50',
+      },
       {
         tone: 'success',
         variant: 'outline',
@@ -99,8 +103,7 @@ export type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>['varia
 export type BadgeSize = NonNullable<VariantProps<typeof badgeVariants>['size']>;
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof badgeVariants> {
+  extends React.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof badgeVariants> {
   /** Punto/dot decorativo a la izquierda */
   withDot?: boolean;
 }

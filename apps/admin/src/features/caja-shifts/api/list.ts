@@ -1,4 +1,9 @@
-import { ShiftSchema, ShiftSessionDetailSchema, type Shift, type ShiftSessionDetail } from '@pos-tercos/types';
+import {
+  ShiftSchema,
+  ShiftSessionDetailSchema,
+  type Shift,
+  type ShiftSessionDetail,
+} from '@pos-tercos/types';
 import { z } from 'zod';
 
 /** Cajas cerradas (historial de arqueos), más reciente primero. */

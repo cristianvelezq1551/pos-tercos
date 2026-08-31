@@ -123,8 +123,8 @@ export function OpenShiftForm() {
 
       {status === 'offline' ? (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-500">
-          Sin conexión: la caja se abre en este dispositivo y se sincroniza sola
-          cuando vuelva internet.
+          Sin conexión: la caja se abre en este dispositivo y se sincroniza sola cuando vuelva
+          internet.
         </p>
       ) : null}
 
@@ -161,7 +161,11 @@ export function OpenShiftForm() {
       ) : null}
 
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
-        {pending ? 'Abriendo turno…' : status === 'offline' ? 'Abrir turno (offline)' : 'Abrir turno'}
+        {pending
+          ? 'Abriendo turno…'
+          : status === 'offline'
+            ? 'Abrir turno (offline)'
+            : 'Abrir turno'}
       </Button>
     </form>
   );

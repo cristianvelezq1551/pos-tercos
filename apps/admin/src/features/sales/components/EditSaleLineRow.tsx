@@ -66,9 +66,7 @@ export function EditSaleLineRow({
           </p>
         ) : null}
         {line.notes ? (
-          <p className="truncate text-[0.6875rem] italic text-muted-foreground">
-            “{line.notes}”
-          </p>
+          <p className="truncate text-[0.6875rem] italic text-muted-foreground">“{line.notes}”</p>
         ) : null}
       </div>
 

@@ -49,8 +49,7 @@ export function EditSaleModal({
   // Solo cuando la cocina YA tiene el pedido se congelan las líneas de
   // preparación. PENDIENTE_PAGO y PAGADO (sin iniciar) se editan completos.
   const kitchenStarted =
-    sale !== null &&
-    (sale.status === 'EN_PREPARACION' || sale.status === 'LISTO_DESPACHO');
+    sale !== null && (sale.status === 'EN_PREPARACION' || sale.status === 'LISTO_DESPACHO');
   // Disponibilidad en vivo: lo agotado se ve y NO se puede agregar.
   const { byId: availability } = useAvailability();
   const isAvailable = (productId: string) => availability.get(productId)?.available !== false;
@@ -113,7 +112,11 @@ export function EditSaleModal({
     if (!isPricingFrozen(sale.status) || manual) return totals.total;
     const frozen = freezePaidLines(
       (sale.items ?? []).map((it) => ({
-        key: paidLineKey(it.productId, it.sizeId, it.modifiers.map((m) => m.modifierId)),
+        key: paidLineKey(
+          it.productId,
+          it.sizeId,
+          it.modifiers.map((m) => m.modifierId),
+        ),
         quantity: it.quantity,
         unitPrice: it.unitPrice,
         lineDiscount: it.lineDiscount,
@@ -144,8 +147,7 @@ export function EditSaleModal({
       // otorgó (el server los toma del payload, no de las filas viejas). Exigen
       // motivo — se reusa el de la venta (existe siempre que hubo descuento).
       const keepLineDiscounts = sale.discountReason != null;
-      const sendsLineDiscounts =
-        keepLineDiscounts && lines.some((l) => l.manualDiscount !== null);
+      const sendsLineDiscounts = keepLineDiscounts && lines.some((l) => l.manualDiscount !== null);
       const updated = await editSaleItems(sale.id, {
         items: lines.map((l) => ({
           productId: l.productId,
@@ -155,8 +157,7 @@ export function EditSaleModal({
             ? l.modifierIds.map((modifierId) => ({ modifierId }))
             : undefined,
           notes: l.notes ?? undefined,
-          manualDiscount:
-            keepLineDiscounts && l.manualDiscount ? l.manualDiscount : undefined,
+          manualDiscount: keepLineDiscounts && l.manualDiscount ? l.manualDiscount : undefined,
         })),
         discountReason: sendsLineDiscounts ? (sale.discountReason ?? undefined) : undefined,
       });
@@ -167,12 +168,20 @@ export function EditSaleModal({
       if (sale.isOpenTab && sale.status === 'PENDIENTE_PAGO') {
         void sendTabToKitchen(sale.id).catch((e) => {
           logError('print-comanda-edit', e, { saleId: sale.id });
-          notifyComandaFailed({ saleId: sale.id, receiptNumber: sale.receiptNumber, kind: 'tanda' });
+          notifyComandaFailed({
+            saleId: sale.id,
+            receiptNumber: sale.receiptNumber,
+            kind: 'tanda',
+          });
         });
       } else {
         void printComanda(sale.id, { corrected: true }).catch((e) => {
           logError('print-comanda-edit', e, { saleId: sale.id });
-          notifyComandaFailed({ saleId: sale.id, receiptNumber: sale.receiptNumber, kind: 'modificada' });
+          notifyComandaFailed({
+            saleId: sale.id,
+            receiptNumber: sale.receiptNumber,
+            kind: 'modificada',
+          });
         });
       }
       notifyCajaChanged();
@@ -251,12 +260,15 @@ export function EditSaleModal({
           <Money amount={estimatedTotal} weight="semibold" />
         </div>
         <p className="text-[0.6875rem] text-muted-foreground">
-          El sistema recalcula promociones y stock al guardar. Si el total cambia,
-          cobra o devuelve la diferencia al cliente — el pago registrado se ajusta solo.
+          El sistema recalcula promociones y stock al guardar. Si el total cambia, cobra o devuelve
+          la diferencia al cliente — el pago registrado se ajusta solo.
         </p>
 
         {error ? (
-          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
             {error}
           </p>
         ) : null}

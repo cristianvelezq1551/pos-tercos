@@ -8,12 +8,7 @@ import type {
 } from '@pos-tercos/types';
 import { useCallback, useEffect, useState } from 'react';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../../sales';
-import {
-  addCashMovement,
-  deleteCashMovement,
-  listCashMovements,
-  updateCashMovement,
-} from '../api';
+import { addCashMovement, deleteCashMovement, listCashMovements, updateCashMovement } from '../api';
 import { notifyCajaChanged } from '../../../lib/caja-events';
 import { CashMovementForm } from './CashMovementForm';
 import { CashMovementRow } from './CashMovementRow';

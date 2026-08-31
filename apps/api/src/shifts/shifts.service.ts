@@ -8,6 +8,7 @@ import {
 import {
   SHIFT_CLOSE_SYSTEM,
   buildDiscrepancyAlertLink,
+  buildDiscrepancyAlertMessage,
   buildOwnerAlert,
   buildShiftCloseUserPrompt,
   businessDayWindow,
@@ -845,7 +846,7 @@ export class ShiftsService {
           `Total: ${signedCop(total)}\n\n` +
           `Míralo en Turnos.`,
       }),
-      { shiftId, kind: 'combined' },
+      { shiftId, discrepancyKind: 'combined' },
     );
   }
 
@@ -953,13 +954,19 @@ export class ShiftsService {
   ): Promise<void> {
     // FASE 15.A: link wa.me en metadata para abrir desde /audit. Desde
     // 2026-06-10 además se ENVÍA directo al dueño vía WhatsApp (Kapso).
-    const alertLink = buildDiscrepancyAlertLink({
-      ownerPhone: process.env.OWNER_WHATSAPP_PHONE?.trim() ?? null,
+    const datos = {
       cashierName: closed.cashierName,
       difference,
-      shiftId,
       closedAt: closed.closedAt,
       businessName: businessName(),
+    };
+    const mensaje = buildDiscrepancyAlertMessage(datos);
+    // El link wa.me es OPCIONAL y solo existe si hay teléfono: sirve para
+    // abrir el chat desde /audit. El aviso NO depende de él.
+    const alertLink = buildDiscrepancyAlertLink({
+      ...datos,
+      ownerPhone: process.env.OWNER_WHATSAPP_PHONE?.trim() ?? null,
+      shiftId,
     });
     await this.audit.log({
       userId: cashierId,
@@ -970,16 +977,17 @@ export class ShiftsService {
         difference,
         threshold: DISCREPANCY_THRESHOLD_COP,
         whatsappAlertUrl: alertLink?.url ?? null,
-        whatsappAlertMessage: alertLink?.messagePlain ?? null,
+        whatsappAlertMessage: mensaje,
       },
     });
-    if (alertLink) {
-      // Fire-and-forget: el cierre de caja no depende de WhatsApp.
-      void this.ownerNotifications.alert('shift_discrepancy', alertLink.messagePlain, {
-        shiftId,
-        difference,
-      });
-    }
+    // Fire-and-forget, y SIEMPRE: antes esto colgaba de `if (alertLink)`, así
+    // que sin `OWNER_WHATSAPP_PHONE` un descuadre de efectivo no avisaba por
+    // ningún canal. Los caminos digital y combinado nunca tuvieron ese enganche.
+    void this.ownerNotifications.alert('shift_discrepancy', mensaje, {
+      shiftId,
+      difference,
+      discrepancyKind: 'cash',
+    });
   }
 
   /** Descuadre DIGITAL (lo que dice la app vs las ventas) >= umbral por método. */
@@ -1017,7 +1025,7 @@ export class ShiftsService {
         title: 'Descuadre en la cuenta al cerrar caja',
         body: `${detail}\n\nMíralo en Turnos.`,
       }),
-      { shiftId, kind: 'digital' },
+      { shiftId, discrepancyKind: 'digital' },
     );
     return true;
   }

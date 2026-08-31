@@ -106,6 +106,7 @@ export {
   groupDigits,
   type DateFormat,
 } from './lib/format';
+export { comprimirImagen } from './lib/image-compress';
 export { mensajeDeError, type OpcionesMensajeError } from './lib/error-message';
 export {
   crearFiltroDeErrores,

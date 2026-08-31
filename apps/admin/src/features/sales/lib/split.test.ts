@@ -114,7 +114,19 @@ describe('explodeUnits / amountsFromUnits', () => {
     const prev = explodeUnits(totals).map((u) => ({ ...u, assignedTo: 2 }));
     const withExtra: CartTotalsResult = {
       ...totals,
-      lines: [...totals.lines, { lineId: 'c', productName: 'Papas', quantity: 1, unitPrice: 6_000, lineSubtotal: 6_000, appliedPromotionId: null, lineDiscount: 0, lineTotal: 6_000 }],
+      lines: [
+        ...totals.lines,
+        {
+          lineId: 'c',
+          productName: 'Papas',
+          quantity: 1,
+          unitPrice: 6_000,
+          lineSubtotal: 6_000,
+          appliedPromotionId: null,
+          lineDiscount: 0,
+          lineTotal: 6_000,
+        },
+      ],
       total: 40_000,
     };
     const next = rederiveUnits(withExtra, prev);
@@ -125,7 +137,10 @@ describe('explodeUnits / amountsFromUnits', () => {
   it('unitsSignature cambia solo cuando cambia el contenido (no la referencia)', () => {
     const sig = unitsSignature(totals);
     expect(unitsSignature({ ...totals, lines: [...totals.lines] })).toBe(sig); // misma data → misma firma
-    const promoChanged = { ...totals, lines: [{ ...totals.lines[0]!, lineTotal: 28_000 }, totals.lines[1]!] };
+    const promoChanged = {
+      ...totals,
+      lines: [{ ...totals.lines[0]!, lineTotal: 28_000 }, totals.lines[1]!],
+    };
     expect(unitsSignature(promoChanged)).not.toBe(sig); // cambió el lineTotal → firma distinta
   });
 });

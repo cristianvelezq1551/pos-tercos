@@ -220,6 +220,8 @@ export const StockCountSchema = z.object({
   entityType: StockableTypeEnum,
   entityId: z.string().uuid(),
   name: z.string(),
+  /** Unidad de INVENTARIO del ítem (gr, unidad…). Sin ella, "700" no dice nada. */
+  unit: z.string(),
   countedQty: z.number(),
   ledgerQty: z.number(),
   difference: z.number(),

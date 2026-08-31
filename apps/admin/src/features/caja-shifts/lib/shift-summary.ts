@@ -55,11 +55,7 @@ export function computeShiftSummary(sales: Sale[]): ShiftSummary {
 
   for (const s of sales) {
     if (s.status === 'VOID') voidCount += 1;
-    if (
-      s.status === 'PENDIENTE_PAGO' ||
-      s.status === 'VOID' ||
-      s.status === 'CANCELADO_NO_PAGO'
-    ) {
+    if (s.status === 'PENDIENTE_PAGO' || s.status === 'VOID' || s.status === 'CANCELADO_NO_PAGO') {
       continue;
     }
     countSales += 1;

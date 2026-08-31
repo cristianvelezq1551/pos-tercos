@@ -22,7 +22,9 @@ export function BrandFooter({ brand, links, meta, className, ...rest }: BrandFoo
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
         {brand ? <div className="min-w-0">{brand}</div> : null}
-        {links ? <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">{links}</div> : null}
+        {links ? (
+          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">{links}</div>
+        ) : null}
         {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
       </div>
     </footer>
