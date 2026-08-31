@@ -11,6 +11,10 @@ import { getCurrentUserServer } from '../features/auth/server';
 export async function requireRole(allowed: readonly UserRole[]): Promise<void> {
   const user = await getCurrentUserServer();
   if (!user || !allowed.includes(user.role)) {
-    redirect('/unauthorized');
+    // `motivo=seccion` distingue esta negación de la del middleware (que sí es
+    // "tu rol no entra a esta app"). Sin el dato, a un administrador se le
+    // decía "solo ADMIN_OPERATIVO y DUEÑO pueden acceder" —siendo él
+    // administrador— y se le ofrecía volver al login con la sesión intacta.
+    redirect('/unauthorized?motivo=seccion');
   }
 }
