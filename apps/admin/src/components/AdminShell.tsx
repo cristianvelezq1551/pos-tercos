@@ -3,6 +3,7 @@
 import type { User } from '@pos-tercos/types';
 import { AppShell, Drawer } from '@pos-tercos/ui';
 import { useState } from 'react';
+import { GuiaAsistenteBurbuja } from '../features/guia';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminTopbar } from './AdminTopbar';
 import { MainSkeletonGate, NavProgressProvider } from './nav-progress';
@@ -42,6 +43,10 @@ export function AdminShell({ user, children }: AdminShellProps) {
       >
         <AdminSidebar role={user?.role} onNavigate={() => setNavOpen(false)} />
       </Drawer>
+
+      {/* La ayuda vive acá y no en cada página: la duda aparece mirando un
+          reporte, no entrando a la guía. */}
+      <GuiaAsistenteBurbuja />
     </NavProgressProvider>
   );
 }

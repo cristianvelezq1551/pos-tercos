@@ -192,3 +192,60 @@ describe('recibo de CORTESÍA', () => {
     expect(t).not.toContain('Valor regalado');
   });
 });
+
+/**
+ * El papel salía con la dirección partida a mitad de palabra:
+ *
+ *     Cra. 31 #37 sur-26, Zona 9, Envi
+ *     gado, Antioquia
+ *
+ * La causa: se imprimía como UNA línea y la corta la impresora, que corta
+ * donde llega al borde y no donde termina la palabra. Partirla acá por
+ * palabras es lo único que lo evita.
+ */
+describe('el encabezado del recibo se parte por PALABRAS', () => {
+  const DIRECCION = 'Cra. 31 #37 sur-26, Zona 9, Envigado, Antioquia';
+  const conNegocio = (over: Partial<ReceiptData['business']>): string[] =>
+    renderReceiptEscPos({ ...RECEIPT_BASE, business: { ...RECEIPT_BASE.business, ...over } })
+      .toString('latin1')
+      .split('\n');
+
+  it('ninguna línea del papel pasa los 32 caracteres', () => {
+    const lineas = conNegocio({ address: DIRECCION });
+    for (const l of lineas) {
+      // Se ignoran los bytes de control ESC/POS al medir.
+      const visible = [...l].filter((c) => c.charCodeAt(0) >= 0x20).join('');
+      expect(visible.length, visible).toBeLessThanOrEqual(32);
+    }
+  });
+
+  it('no parte "Envigado" a la mitad', () => {
+    const t = conNegocio({ address: DIRECCION }).join('\n');
+    expect(t).toContain('Envigado');
+    expect(t).not.toMatch(/Envi\s*\n\s*gado/);
+  });
+
+  it('una dirección corta sigue en una sola línea', () => {
+    const lineas = conNegocio({ address: 'Calle 10 #5-20' }).filter((l) =>
+      l.includes('Calle 10'),
+    );
+    expect(lineas).toHaveLength(1);
+  });
+
+  it('un nombre largo se parte a 16: va a DOBLE ancho', () => {
+    const t = conNegocio({ name: 'Restaurante Tercos Envigado' }).join('\n');
+    // Entero, en dos renglones, sin cortar ninguna palabra.
+    expect(t).toContain('Restaurante');
+    expect(t).toContain('Envigado');
+    expect(t).not.toMatch(/Restau\s*\n/);
+  });
+
+  it('el nombre del cajero tampoco se corta', () => {
+    const t = renderReceiptEscPos({
+      ...RECEIPT_BASE,
+      cashierName: 'Carolina Velez Quintero',
+    }).toString('latin1');
+    expect(t).toContain('Quintero');
+    expect(t).not.toMatch(/Quint\s*\n\s*ero/);
+  });
+});

@@ -1,4 +1,9 @@
 import { truncate, twoCol, wrap } from './escpos-text';
+
+/** Caracteres por línea del papel (58 mm a fuente A). */
+const ANCHO = 32;
+/** A doble ancho entra la mitad. */
+const ANCHO_DOBLE = 16;
 import type { ReceiptData } from './types';
 import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
 
@@ -32,12 +37,21 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   out.push(ALIGN_CENTER);
   out.push(SIZE_2H_2W);
   out.push(BOLD_ON);
-  out.push(latin1(receipt.business.name));
-  out.push(LF);
+  // El nombre va a DOBLE ancho: caben la mitad de caracteres que en el resto
+  // del papel, así que se parte a 16 y no a 32.
+  for (const linea of wrap(receipt.business.name, ANCHO_DOBLE)) {
+    out.push(latin1(linea));
+    out.push(LF);
+  }
   out.push(BOLD_OFF);
   out.push(SIZE_NORMAL);
-  out.push(latin1(receipt.business.address));
-  out.push(LF);
+  // La dirección se partía SOLA en la impresora, que corta donde llega y no
+  // donde termina la palabra: en el papel salía "…Zona 9, Envi / gado,
+  // Antioquia". Partirla acá por palabras es lo único que lo evita.
+  for (const linea of wrap(receipt.business.address, ANCHO)) {
+    out.push(latin1(linea));
+    out.push(LF);
+  }
   out.push(latin1(`NIT ${receipt.business.nit}`));
   out.push(LF);
   if (receipt.business.phone) {
@@ -90,12 +104,16 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
   out.push(latin1(formatDate(receipt.createdAt)));
   out.push(LF);
   if (receipt.cashierName) {
-    out.push(latin1(`Cajero: ${receipt.cashierName}`));
-    out.push(LF);
+    for (const linea of wrap(`Cajero: ${receipt.cashierName}`, ANCHO)) {
+      out.push(latin1(linea));
+      out.push(LF);
+    }
   }
   if (receipt.customerName) {
-    out.push(latin1(`Cliente: ${receipt.customerName}`));
-    out.push(LF);
+    for (const linea of wrap(`Cliente: ${receipt.customerName}`, ANCHO)) {
+      out.push(latin1(linea));
+      out.push(LF);
+    }
   }
   if (receipt.cortesia) {
     for (const linea of wrap(`Motivo: ${receipt.cortesia.motivo}`, 32)) {
