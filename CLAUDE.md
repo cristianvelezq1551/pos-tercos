@@ -3822,6 +3822,57 @@ iba sin comprobante. `POST /cortesias/print` devuelve los dos papeles en ESC/POS
   ventas — dos copias terminan diciendo cosas distintas en dos papeles del mismo
   mostrador.
 
+## 7.v53 Un permiso que solo sirve para subir (2026-08-31)
+
+> Corrige un bug introducido por §7.v52 y encontrado probando en PRODUCCIÓN.
+> Verificado: typecheck 13/13, lint 0, unit 12/12, **e2e 66 suites / 786**.
+> Sin migración.
+
+### El 413 se arregló mal
+§7.v52 mandó las subidas grandes DIRECTO al API para saltarse el proxy de la
+app (que corta el cuerpo cerca de 4,5 MB) usando el token del WebSocket. Ese
+token lleva `scope: 'ws'` y `JwtAuthGuard` lo rechaza **a propósito** — el
+comentario ya lo decía: *"si un XSS lo roba, no puede tocar la API"*.
+
+Resultado: **401 a los 261 KB**, que el navegador muestra como
+`ERR_HTTP2_PROTOCOL_ERROR` porque el servidor corta el cuerpo a medio subir.
+O sea que el 413 se cambió por un error peor de leer y la música seguía sin
+poder subirse. Se detectó subiendo un archivo de 6 MB **por la interfaz real
+de producción**: contra la API con una sesión normal habría pasado.
+
+### El alcance nuevo
+`scope: 'upload'` (2 minutos, `GET /auth/upload-ticket`) abre **solo** las
+rutas marcadas con `@AllowUploadTicket()`. Hoy: `POST /display/tracks`.
+
+- **Regla dura:** un token de alcance acotado NUNCA vale como credencial
+  general. `ws` no sirve para HTTP; `upload` no sirve fuera de su ruta. Los dos
+  viven en el JS de la página, así que lo que hay que fijar no es que
+  funcionen sino que **no sirvan para nada más** — y eso es lo que prueban los
+  6 casos de `upload-ticket.e2e-spec.ts` (que no lea ventas, tesorería ni
+  usuarios; que no abra caja; que el token del WS siga sin poder subir; y que
+  la sesión normal suba igual).
+- Para agregar otra subida grande basta el decorador; no hay que tocar el guard.
+
+### El mensaje de acceso denegado le mentía a quien sí tiene acceso
+Dos negaciones distintas caían en la MISMA pantalla y el texto solo acertaba
+en una: el middleware bloquea a quien no entra al admin (un cocinero), pero
+`requireRole` bloquea una SECCIÓN del dueño a alguien que ya entró. A una
+ADMINISTRADORA le salía «solo los roles ADMIN_OPERATIVO y DUEÑO pueden
+acceder» —siendo ella administradora— con un botón «Volver al login» que es un
+callejón sin salida porque su sesión está bien.
+
+`requireRole` redirige con `?motivo=seccion` y la pantalla dice lo que pasa.
+De paso salen los nombres de enum, que van contra la regla de copy de §3.
+
+### Aprendizaje de método
+**Verificar por la interfaz real, no por la API.** Los dos bugs de esta tanda
+—la subida y el mensaje— solo aparecen operando la app como la opera una
+persona. El e2e y las llamadas con `curl` los dos daban verde.
+
+⚠️ Y el operativo: dos sesiones trabajando la MISMA rama comparten la base de
+datos de e2e, y ahí ninguna puede confiar en sus pruebas — mismo código, cuatro
+corridas, cuatro números de fallos (428/108/271/459). Una rama por sesión.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
