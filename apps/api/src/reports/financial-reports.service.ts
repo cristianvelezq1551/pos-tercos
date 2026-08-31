@@ -5,10 +5,13 @@ import {
   breakEvenFromCatalogMargin,
   computeBreakEven,
   computeCatalogMargin,
+  computeComboCost,
+  computeProductCost,
   nextWeekRef,
   payrollWeekFor,
   type CatalogMarginResult,
   type FinancialAnalysisInput,
+  type IngredientCostMap,
 } from '@pos-tercos/domain';
 import { NON_REVENUE_SALE_STATUSES } from '@pos-tercos/types';
 import type {
@@ -28,8 +31,18 @@ import { RecipesService } from '../recipes/recipes.service';
 import { CogsService } from './cogs.service';
 
 const MONTHS_ES = [
-  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
 ];
 
 /**
@@ -68,35 +81,92 @@ export class FinancialReportsService {
    * excluye: NUNCA se asume que es gratis.
    */
   private async catalogMargin(from: Date, to: Date): Promise<CatalogMarginResult> {
-    const [products, vendidos] = await Promise.all([
+    const [products, ingredients, graph, vendidos] = await Promise.all([
       this.prisma.product.findMany({
         where: { isActive: true },
-        select: { id: true, name: true, basePrice: true, comboPrice: true, isCombo: true },
+        select: {
+          id: true,
+          name: true,
+          basePrice: true,
+          comboPrice: true,
+          isCombo: true,
+          directResale: true,
+          lastUnitCost: true,
+          conversionFactor: true,
+          comboComponents: { select: { productId: true, quantity: true } },
+        },
       }),
+      this.prisma.ingredient.findMany({
+        select: { id: true, lastUnitCost: true, conversionFactor: true },
+      }),
+      // UN grafo para toda la carta. `expandedCost` haría lo mismo pero por
+      // producto, releyendo la tabla de insumos entera en cada llamada: con 60
+      // productos son 180 consultas en paralelo cada vez que se abre esta
+      // pantalla. Los cálculos son los MISMOS (`computeProductCost` puro), así
+      // que no hay dos costeos que puedan separarse.
+      this.recipes.loadFullGraph(),
       this.prisma.saleItem.groupBy({
         by: ['productId'],
         _sum: { quantity: true },
         where: {
-          sale: { paidAt: { gte: from, lte: to }, status: { notIn: [...NON_REVENUE_SALE_STATUSES] } },
+          sale: {
+            paidAt: { gte: from, lte: to },
+            status: { notIn: [...NON_REVENUE_SALE_STATUSES] },
+          },
         },
       }),
     ]);
+
+    const costoInsumo: IngredientCostMap = new Map(
+      ingredients.map((i) => [
+        i.id,
+        i.lastUnitCost !== null && Number(i.conversionFactor) > 0
+          ? Number(i.lastUnitCost) / Number(i.conversionFactor)
+          : null,
+      ]),
+    );
     const unidades = new Map(vendidos.map((v) => [v.productId, Number(v._sum.quantity ?? 0)]));
 
-    const filas = await Promise.all(
-      products.map(async (p) => ({
+    const costoUnitario = (p: (typeof products)[number]): number | null =>
+      computeProductCost({
+        product: {
+          id: p.id,
+          name: p.name,
+          directResale: p.directResale,
+          lastUnitCost: p.lastUnitCost === null ? null : Number(p.lastUnitCost),
+          conversionFactor: p.conversionFactor === null ? null : Number(p.conversionFactor),
+          isCombo: false,
+        },
+        recipe: p.directResale ? null : { graph, root: { kind: 'product', id: p.id } },
+        ingredientCosts: costoInsumo,
+      }).totalCost;
+
+    const porId = new Map(products.map((p) => [p.id, p]));
+
+    return computeCatalogMargin(
+      products.map((p) => ({
         productId: p.id,
         name: p.name,
-        price:
-          p.isCombo && p.comboPrice !== null ? Number(p.comboPrice) : Number(p.basePrice ?? 0),
-        cost: await this.recipes
-          .expandedCost(p.id)
-          .then((r) => r.totalCost)
-          .catch(() => null),
+        price: p.isCombo && p.comboPrice !== null ? Number(p.comboPrice) : Number(p.basePrice ?? 0),
+        // Un combo cuesta lo que cuestan sus componentes (un componente que ya
+        // no existe deja el combo sin costo, no con costo de menos).
+        cost: p.isCombo
+          ? computeComboCost({
+              components: p.comboComponents.map((c) => {
+                const comp = porId.get(c.productId);
+                return {
+                  productId: c.productId,
+                  productName: comp?.name ?? '(eliminado)',
+                  quantity: c.quantity,
+                  unitCost: comp ? costoUnitario(comp) : null,
+                  missingReason: comp ? null : 'Componente eliminado del catálogo',
+                };
+              }),
+            }).totalCost
+          : costoUnitario(p),
         unitsSold: unidades.get(p.id) ?? 0,
       })),
     );
-    return computeCatalogMargin(filas);
   }
 
   /** Estado financiero del mes `(year, month1)` (month1: 1-12). */
@@ -104,8 +174,10 @@ export class FinancialReportsService {
     const month0 = month1 - 1;
     // Ventana del "mes del negocio" en hora local (fuente única, ver
     // BusinessConfigService.getBusinessMonthWindow). startDay=1 ⇒ mes calendario.
-    const { from: monthStart, to: monthEnd } =
-      await this.businessConfig.getBusinessMonthWindow(year, month1);
+    const { from: monthStart, to: monthEnd } = await this.businessConfig.getBusinessMonthWindow(
+      year,
+      month1,
+    );
 
     // P&G base del CogsService — ingresos + COGS real FIFO.
     const pnl = await this.cogs.getPnl(monthStart, monthEnd);
@@ -275,8 +347,7 @@ export class FinancialReportsService {
       contributionMarginPct:
         be.contributionMarginPct === null ? null : round4(be.contributionMarginPct),
       breakEven: be.breakEven === null ? null : round(be.breakEven),
-      breakEvenCoverage:
-        be.breakEvenCoverage === null ? null : round4(be.breakEvenCoverage),
+      breakEvenCoverage: be.breakEvenCoverage === null ? null : round4(be.breakEvenCoverage),
       catalogBreakEven: {
         target: catalogTarget === null ? null : round(catalogTarget),
         marginPct: catalogo.marginPct === null ? null : round4(catalogo.marginPct),
@@ -301,12 +372,13 @@ export class FinancialReportsService {
   async getMonthlyTrend(n: number, refYear?: number, refMonth1?: number): Promise<MonthlyTrend> {
     // Hora local (TZ del server = Bogotá en prod): el "mes actual" debe ser el de
     // Bogotá, no UTC (a las 22:00 del 31 UTC ya sería el mes siguiente).
-    const ref = refYear !== undefined && refMonth1 !== undefined
-      ? { year: refYear, month0: refMonth1 - 1 }
-      : (() => {
-          const now = new Date();
-          return { year: now.getFullYear(), month0: now.getMonth() };
-        })();
+    const ref =
+      refYear !== undefined && refMonth1 !== undefined
+        ? { year: refYear, month0: refMonth1 - 1 }
+        : (() => {
+            const now = new Date();
+            return { year: now.getFullYear(), month0: now.getMonth() };
+          })();
 
     const months: Array<{ year: number; month1: number }> = [];
     for (let i = n - 1; i >= 0; i--) {
@@ -361,7 +433,10 @@ export class FinancialReportsService {
       // no cerraba con esos números, así que explicaba el bajón inventando.
       otherLosses: [
         { label: 'Merma (insumo tirado, a costo)', amount: statement.wasteCost },
-        { label: 'Faltantes (lo que apareció de menos al contar)', amount: statement.shrinkageCost },
+        {
+          label: 'Faltantes (lo que apareció de menos al contar)',
+          amount: statement.shrinkageCost,
+        },
         { label: 'Cortesías (producto regalado, a costo)', amount: statement.cortesiasCost },
         { label: 'Reembolsos (comida preparada, a costo)', amount: statement.refundCost },
         { label: 'Domicilios de compra (fletes de proveedor)', amount: statement.freightCost },
@@ -570,7 +645,10 @@ function parseFinancialAnalysisJson(raw: string, modelUsed: string): FinancialAn
         const bo = (b ?? {}) as Record<string, unknown>;
         const tipo = String(bo.tipo ?? 'vigilar');
         return {
-          tipo: (['positivo', 'vigilar', 'accion'].includes(tipo) ? tipo : 'vigilar') as 'positivo' | 'vigilar' | 'accion',
+          tipo: (['positivo', 'vigilar', 'accion'].includes(tipo) ? tipo : 'vigilar') as
+            | 'positivo'
+            | 'vigilar'
+            | 'accion',
           texto: String(bo.texto ?? ''),
         };
       })

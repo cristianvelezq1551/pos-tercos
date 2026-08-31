@@ -38,6 +38,16 @@ describe('Reportes financieros del dueño E2E', () => {
       netResult: number; wasteCost: number; cortesiasCost: number; refundCost: number;
       totalFixed: number; oneTimeCost: number; breakEven: number | null;
       breakEvenCoverage: number | null;
+      catalogBreakEven: {
+        target: number | null;
+        marginPct: number | null;
+        weightedBySales: boolean;
+        productsConsidered: number;
+        productsWithoutCost: number;
+        worst: { name: string; marginPct: number } | null;
+        best: { name: string; marginPct: number } | null;
+        coverage: number | null;
+      };
       contributionMargin: number; contributionMarginPct: number | null;
       deliveryCollected: number; deliveryOrderCount: number;
       freightCost: number; freightInvoiceCount: number; purchasedTotal: number;
@@ -500,6 +510,82 @@ describe('Reportes financieros del dueño E2E', () => {
         .get('/reports/sales-summary?from=2026/07/01')
         .set(auth())
         .expect(400);
+    });
+  });
+
+  /**
+   * El equilibrio que ve el dueño sale del margen de la CARTA, no del realizado
+   * del mes (§7.v52): el realizado es correcto pero con poco volumen salta —
+   * $92.000 vendidos con $34.000 de flete se llevan 37 puntos.
+   *
+   * Y verifica lo que NO se puede dar por sentado: el costo se calcula ahora
+   * con UN grafo para toda la carta en vez de una llamada a `expandedCost` por
+   * producto. Son las mismas funciones puras, pero si alguna vez se separan,
+   * el equilibrio y la ficha del producto dirían costos distintos.
+   */
+  describe('punto de equilibrio con el margen de la carta', () => {
+    it('coincide con el costo que muestra la ficha del producto', async () => {
+      const m = await monthly();
+      const ficha = (
+        await request.get(`/products/${productId}/expanded-cost`).set(auth()).expect(200)
+      ).body as { totalCost: number | null };
+
+      // No se afirma un costo absoluto: lo que importa es que las DOS pantallas
+      // digan lo mismo. El precio de Coca FR es $5.000 y su costo sale del
+      // catálogo, así que el margen del equilibrio tiene que ser exactamente el
+      // que se deduce de la ficha.
+      expect(ficha.totalCost).not.toBeNull();
+      expect(m.catalogBreakEven.marginPct).toBeCloseTo((5000 - ficha.totalCost!) / 5000, 4);
+      expect(m.catalogBreakEven.productsConsidered).toBe(1);
+      expect(m.catalogBreakEven.productsWithoutCost).toBe(0);
+    });
+
+    it('vendiendo el equilibrio, el margen de la carta cubre exactamente lo fijo', async () => {
+      await request
+        .post('/fixed-costs')
+        .set(auth())
+        .send({ name: 'Arriendo test', category: 'Alquiler', amount: 700_000, frequency: 'MONTHLY' })
+        .expect(201);
+
+      const m = await monthly();
+      expect(m.totalFixed).toBeGreaterThanOrEqual(700_000);
+      expect(m.catalogBreakEven.target).not.toBeNull();
+      // La ley: target × margen = costos fijos. Con 70 % de margen, $700.000
+      // fijos se cubren vendiendo $1.000.000.
+      expect(m.catalogBreakEven.target! * m.catalogBreakEven.marginPct!).toBeCloseTo(
+        m.totalFixed,
+        0,
+      );
+      // Y siempre por encima de los fijos: los productos cuestan.
+      expect(m.catalogBreakEven.target!).toBeGreaterThan(m.totalFixed);
+    });
+
+    it('un producto sin costo conocido queda FUERA del promedio, nunca entra como gratis', async () => {
+      const antes = await monthly();
+      await request
+        .post('/products')
+        .set(auth())
+        .send({
+          category: 'Test',
+          name: 'Postre sin costear',
+          basePrice: 9000,
+          directResale: true,
+          unitPurchase: 'unit',
+          unitStock: 'unit',
+          conversionFactor: 1,
+          modifiersEnabled: false,
+        })
+        .expect(201);
+
+      const despues = await monthly();
+      expect(despues.catalogBreakEven.productsWithoutCost).toBe(
+        antes.catalogBreakEven.productsWithoutCost + 1,
+      );
+      // El margen NO se movió: si hubiera entrado con costo 0 saltaría al 100 %.
+      expect(despues.catalogBreakEven.marginPct).toBeCloseTo(
+        antes.catalogBreakEven.marginPct!,
+        4,
+      );
     });
   });
 });
