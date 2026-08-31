@@ -7,6 +7,7 @@ import { listSales } from '../api/list';
 import { printComanda } from '../api/print';
 import { notifyComandaFailed } from '../lib/comanda-events';
 import { refundSale, voidSale } from '../api/void';
+import { useEnabledPaymentMethods } from '../hooks/useEnabledPaymentMethods';
 import { endpointForOutcome, outcomeVerb, type VoidOutcome } from '../lib/void-outcome';
 import { VoidOutcomePicker } from './VoidOutcomePicker';
 import { VoidableSalesList } from './VoidableSalesList';
@@ -34,6 +35,9 @@ export function VoidModal({
   const [reason, setReason] = useState('');
   const [pin, setPin] = useState('');
   const [outcome, setOutcome] = useState<VoidOutcome | null>(null);
+  // Para nombrar el medio como lo llama el dueño y no por su code ("CASH").
+  const metodos = useEnabledPaymentMethods(open, false);
+  const nombresDeMedios = Object.fromEntries(metodos.map((m) => [m.code, m.name]));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState(false);
@@ -130,6 +134,7 @@ export function VoidModal({
           loading={loading}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          nombresDeMedios={nombresDeMedios}
         />
 
         {selectedId ? (
@@ -138,7 +143,7 @@ export function VoidModal({
 
         <FormField
           label="Motivo (5-200 caracteres)"
-          hint={`${reason.trim().length}/200 · queda en audit log`}
+          hint={`${reason.trim().length}/200 · queda registrado`}
         >
           <Input
             type="text"

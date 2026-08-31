@@ -15,6 +15,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { esperarHasta } from './helpers/esperar-hasta';
 
 describe('Descuadre de efectivo sin WhatsApp E2E', () => {
   let app: INestApplication;
@@ -127,12 +128,19 @@ describe('Descuadre de efectivo sin WhatsApp E2E', () => {
 
     // Y se intentó avisar de verdad: queda el registro con su canal y su
     // resultado. Antes de este arreglo no había NINGUNA fila.
-    const enviados = await prisma.auditLog.findMany({
-      where: { action: 'OWNER_ALERT_SENT' },
-      orderBy: { createdAt: 'desc' },
-      take: 1,
-    });
-    expect(enviados).toHaveLength(1);
-    expect((enviados[0].metadata as { kind?: string }).kind).toBe('shift_discrepancy');
+    //
+    // Se ESPERA a que aparezca: el aviso sale fire-and-forget (`void
+    // this.ownerNotifications.alert(...)`) para que un fallo del canal nunca
+    // revierta el cierre, así que la fila se escribe DESPUÉS de que la
+    // petición respondió. Leerla de inmediato ganaba la carrera en local y la
+    // perdía en CI — el fallo real de la corrida 33424680824.
+    const enviado = await esperarHasta(() =>
+      prisma.auditLog.findFirst({
+        where: { action: 'OWNER_ALERT_SENT' },
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
+    expect(enviado).not.toBeNull();
+    expect((enviado!.metadata as { kind?: string }).kind).toBe('shift_discrepancy');
   });
 });
