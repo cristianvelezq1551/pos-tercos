@@ -16,7 +16,7 @@ export function CategoryTab({
       type="button"
       onClick={onClick}
       className={cn(
-        'shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors duration-150',
+        'shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors duration-150 xl:px-3 xl:py-1.5 xl:text-sm',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         active
           ? 'bg-primary text-primary-foreground'

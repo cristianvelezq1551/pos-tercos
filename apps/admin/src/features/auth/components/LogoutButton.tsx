@@ -22,8 +22,9 @@ export function LogoutButton() {
   };
 
   return (
-    // En un teléfono la barra de caja no da para el texto: abajo de `sm` queda
-    // solo el ícono (con su etiqueta accesible) y así entra sin desbordar.
+    // Abajo de `xl` queda solo el ícono (con su etiqueta accesible): el texto
+    // se llevaba 90 px que la navegación necesita en el monitor del local, y en
+    // un teléfono directamente no cabe.
     <Button
       variant="outline"
       size="sm"
@@ -32,8 +33,8 @@ export function LogoutButton() {
       aria-label="Cerrar sesión"
       title="Cerrar sesión"
     >
-      <LogOut className="h-4 w-4 sm:hidden" strokeWidth={2} aria-hidden />
-      <span className="hidden sm:inline">{pending ? 'Saliendo…' : 'Cerrar sesión'}</span>
+      <LogOut className="h-4 w-4 xl:hidden" strokeWidth={2} aria-hidden />
+      <span className="hidden xl:inline">{pending ? 'Saliendo…' : 'Cerrar sesión'}</span>
     </Button>
   );
 }

@@ -1,3 +1,4 @@
+import { lineasVisibles } from './lineas-visibles.test-util';
 /**
  * Tests del renderer ESC/POS (FASE 15.C). El output es bytes binarios,
  * así que validamos:
@@ -212,9 +213,7 @@ describe('el encabezado del recibo se parte por PALABRAS', () => {
 
   it('ninguna línea del papel pasa los 32 caracteres', () => {
     const lineas = conNegocio({ address: DIRECCION });
-    for (const l of lineas) {
-      // Se ignoran los bytes de control ESC/POS al medir.
-      const visible = [...l].filter((c) => c.charCodeAt(0) >= 0x20).join('');
+    for (const visible of lineasVisibles(lineas.join('\n'))) {
       expect(visible.length, visible).toBeLessThanOrEqual(32);
     }
   });

@@ -13,6 +13,20 @@ export const PromotionTypeEnum = z.enum([
 export type PromotionType = z.infer<typeof PromotionTypeEnum>;
 
 /**
+ * Los tipos que el dueño PUEDE crear hoy.
+ *
+ * El 2x1 quedó fuera (decisión del dueño, 2026-08-31): el motor lo calcula por
+ * línea y una unidad con indicación va en su propia línea, así que el descuento
+ * no se aplicaría y el cliente pagaría de más sin que nadie lo note. Sigue en
+ * el enum para poder LEER un histórico, y `CreatePromotionSchema` lo rechaza.
+ *
+ * El formulario del admin lee de acá: así la pantalla y la validación no pueden
+ * discrepar.
+ */
+export const CREATABLE_PROMOTION_TYPES = ['PERCENT_OFF', 'FIXED_OFF', 'COMBO_OFF'] as const;
+
+
+/**
  * Dónde aplica la promoción (espejo de Prisma PromotionChannel):
  * `BOTH` = caja y web (default), `POS` = solo caja, `WEB` = solo pedidos web.
  */
@@ -130,22 +144,23 @@ export const CreatePromotionSchema = z
         break;
       }
       case 'BOGO': {
-        if (data.bogoBuyQty === undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Falta cuántas unidades se llevan.',
-            path: ['bogoBuyQty'],
-          });
-        }
-        if (data.bogoGetQty === undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Falta cuántas unidades se pagan.',
-            path: ['bogoGetQty'],
-          });
-        }
-        rejectField(ctx, data, 'discountPct', 'BOGO');
-        rejectField(ctx, data, 'discountFixed', 'BOGO');
+        // El 2x1 NO se puede crear (decisión del dueño, 2026-08-31).
+        //
+        // El motor lo calcula POR LÍNEA, y una unidad con indicación —"sin
+        // cebolla"— va en su propia línea: el descuento no se aplicaría y el
+        // cliente pagaría de más, sin que nadie lo note. Arreglarlo exige que
+        // el motor agrupe por producto antes de calcular, en la caja, el
+        // servidor y la web.
+        //
+        // El valor sigue en el enum a propósito: si algún día hubo una promo
+        // así, su histórico tiene que seguir leyéndose. Lo que se bloquea es
+        // CREAR una nueva.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'Las promociones de "lleva X paga Y" están deshabilitadas. Usa un descuento en porcentaje o en pesos.',
+          path: ['type'],
+        });
         break;
       }
       case 'COMBO_OFF': {

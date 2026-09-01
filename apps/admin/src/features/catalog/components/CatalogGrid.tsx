@@ -120,6 +120,11 @@ export function CatalogGrid({ products }: { products: Product[] }) {
         totalCount={products.length}
       />
 
+      {/* La grilla de abajo le pone MÁXIMO a la columna, no solo mínimo. Con
+          `1fr` suelto, en una pantalla angosta el ancho sobrante se repartía
+          entre pocas columnas y cada tarjeta crecía de 164 a 191 px: en el
+          monitor del local se veía enorme y entraban la mitad de los
+          productos. Medido a 1242 px. */}
       {visible.length === 0 ? (
         <div className="flex flex-1 items-center justify-center p-8">
           <EmptyState
@@ -133,7 +138,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
           />
         </div>
       ) : (
-        <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(min(150px,100%),1fr))] gap-3 overflow-y-auto p-3 sm:p-4">
+        <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(min(120px,100%),160px))] justify-center gap-3 overflow-y-auto p-3 sm:p-4">
           {visible.map((p) => {
             const avail = byId.get(p.id);
             const manualSoldOut = soldOutOverride.get(p.id) ?? p.soldOut;
