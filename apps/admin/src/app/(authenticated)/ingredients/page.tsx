@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
-import { IngredientsTable } from '../../../features/ingredients';
+import { IngredientsList } from '../../../features/ingredients';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import { getCurrentUserServer } from '../../../features/auth/server';
@@ -34,7 +34,7 @@ export default async function IngredientsPage() {
 
       <Container size="7xl" padY="md">
         {Array.isArray(result) ? (
-          <IngredientsTable ingredients={result} userRole={user?.role} />
+          <IngredientsList ingredients={result} userRole={user?.role} />
         ) : (
           <p
             role="alert"

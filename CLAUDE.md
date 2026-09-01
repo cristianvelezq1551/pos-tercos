@@ -4133,6 +4133,51 @@ hundía las demás columnas.
 - **Incidencias quedó fuera a propósito**: sus tarjetas ya son compactas y
   llevan un botón "Resolver" adentro; envolver la fila pelearía con esa acción.
 
+
+## 7.v57 El catálogo se busca, y la tabla dice qué frena la venta (2026-09-01)
+
+> Dos pedidos del dueño operando el admin en producción: ver de un vistazo si un
+> insumo o subproducto frena la venta, y poder buscar en las tres listas del
+> catálogo sin recorrer la tabla entera. Solo UI: no se tocó el API, ni el
+> esquema, ni una regla de negocio. Verificado: typecheck 13/13, lint 0,
+> unit admin 302 (+18), build del admin OK, más el navegador real a 1440 y a
+> 390 px. Sin migración.
+
+### La columna "Frena venta"
+`blocksAvailability` existía desde que se separaron los CONSUMIBLES (servilletas,
+sal: se descuentan y se costean igual, pero no bloquean la venta ni aparecen en
+Deudas), y solo se veía **abriendo la ficha** de cada insumo. Ahora está en la
+tabla de insumos y en la de subproductos, antes de "Estado": **Sí** en tono tenue
+—es lo normal— y **No** como chip, porque la excepción es la que hay que poder
+cazar de un vistazo. El detalle completo va en el `title` de cada celda.
+
+### El buscador de las tres listas
+- **Un solo criterio para todo el admin.** La normalización y la coincidencia se
+  mudaron a `apps/admin/src/lib/buscar.ts` y de ahí las lee **también** el
+  catálogo de la caja (`features/catalog/lib/product-search.ts`, que antes tenía
+  su propia copia): sin tildes, sin mayúsculas, todos los términos deben
+  aparecer ("coca 400" no trae toda la gaseosa) y sin separadores ("cocacola"
+  encuentra "Coca-Cola"). Productos busca además por **categoría** — la carta se
+  piensa así.
+- **Se filtra en el navegador** (la lista completa ya llegó del servidor):
+  teclear no espera una request. Por eso cada lista es un envoltorio cliente
+  (`IngredientsList` / `SubproductsList` / `ProductsList`) y la tabla sigue
+  siendo el componente de presentación de siempre — así `ProductsTable` (292
+  líneas, congelada en el baseline de `max-lines`) no creció.
+- **Conserva el orden** que traía la lista. Reordenar mientras se escribe hace
+  saltar de lugar la fila que se está mirando.
+- **El vacío de una búsqueda NO es el vacío de una lista sin datos.** Sin
+  coincidencias la tabla habría dicho "Aún no tienes insumos cargados" —con 80
+  insumos cargados— y ofrecido "Crear primer insumo". Ahora sale un vacío propio
+  que nombra lo tecleado. Hay regresión y se verificó que falla sin el arreglo.
+- El contador ("6 de 8 insumos") es parte del arreglo: filtrar sin decir cuántos
+  quedaron se lee como que la lista se vació.
+
+⚠️ El objetivo táctil del campo medía **36 px**: `h-11` estira el marco del
+`SearchInput`, pero el toque aterriza en el `<input>`, que queda centrado
+adentro con su altura natural. Se corrige con `[&_input]:h-full` — vale para
+cualquier otro consumidor de ese componente.
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)
