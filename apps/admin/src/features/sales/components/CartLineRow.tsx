@@ -26,7 +26,7 @@ export function CartLineRow({
   lineTotal,
   hasPromo,
   onQty,
-  onDuplicate,
+  onSeparar,
   onRemove,
   onNotes,
 }: {
@@ -36,7 +36,7 @@ export function CartLineRow({
   lineTotal: number;
   hasPromo: boolean;
   onQty: (qty: number) => void;
-  onDuplicate: () => void;
+  onSeparar: () => void;
   onRemove: () => void;
   onNotes: (notes: string) => void;
 }) {
@@ -139,7 +139,7 @@ export function CartLineRow({
           onClose={() => setEditando(false)}
           onQty={onQty}
           onNotes={onNotes}
-          onDuplicate={onDuplicate}
+          onSeparar={onSeparar}
           onRemove={onRemove}
         />
       ) : null}

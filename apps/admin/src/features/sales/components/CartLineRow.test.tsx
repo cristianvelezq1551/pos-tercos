@@ -33,7 +33,7 @@ const props = {
   lineTotal: 18000,
   hasPromo: false,
   onQty: vi.fn(),
-  onDuplicate: vi.fn(),
+  onSeparar: vi.fn(),
   onRemove: vi.fn(),
   onNotes: vi.fn(),
 };
@@ -64,13 +64,19 @@ describe('línea del carrito', () => {
     expect(screen.getByPlaceholderText(/sin cebolla/)).toBeDefined();
   });
 
-  it('"otro aparte" crea línea nueva, NO sube la cantidad', () => {
-    const onDuplicate = vi.fn();
-    const onQty = vi.fn();
-    render(<CartLineRow line={linea()} {...props} onDuplicate={onDuplicate} onQty={onQty} />);
+  it('con una sola unidad NO ofrece separar: no hay nada que repartir', () => {
+    render(<CartLineRow line={linea()} {...props} />);
     fireEvent.click(screen.getByRole('button', { name: /Editar Hamburguesa/ }));
-    fireEvent.click(screen.getByRole('button', { name: /en línea aparte/ }));
-    expect(onDuplicate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /Separar en/ })).toBeNull();
+  });
+
+  it('con varias unidades juntas ofrece separarlas, sin agregar ninguna', () => {
+    const onSeparar = vi.fn();
+    const onQty = vi.fn();
+    render(<CartLineRow line={linea({ quantity: 2 })} {...props} onSeparar={onSeparar} onQty={onQty} />);
+    fireEvent.click(screen.getByRole('button', { name: /Editar Hamburguesa/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Separar en 2 líneas/ }));
+    expect(onSeparar).toHaveBeenCalledTimes(1);
     expect(onQty).not.toHaveBeenCalled();
   });
 
