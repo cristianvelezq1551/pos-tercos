@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
-import { SubproductsTable } from '../../../features/subproducts';
+import { SubproductsList } from '../../../features/subproducts';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import { getCurrentUserServer } from '../../../features/auth/server';
@@ -51,7 +51,7 @@ export default async function SubproductsPage() {
       />
       <Container size="7xl" padY="md">
         {!('error' in result) ? (
-          <SubproductsTable
+          <SubproductsList
             subproducts={result.subproducts}
             costById={result.costById}
             stockById={result.stockById}

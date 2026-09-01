@@ -91,6 +91,27 @@ export function SubproductsTable({
       },
     },
     {
+      key: 'blocks',
+      header: 'Frena venta',
+      cell: (s) =>
+        s.blocksAvailability ? (
+          <span
+            className="text-sm text-muted-foreground"
+            title="Si se queda sin stock, no se puede vender el producto que lo usa."
+          >
+            Sí
+          </span>
+        ) : (
+          <Badge
+            tone="info"
+            size="sm"
+            title="Consumible: se descuenta y se costea igual, pero nunca frena la venta ni aparece en Deudas de inventario."
+          >
+            No
+          </Badge>
+        ),
+    },
+    {
       key: 'status',
       header: 'Estado',
       hideOnMobile: true,

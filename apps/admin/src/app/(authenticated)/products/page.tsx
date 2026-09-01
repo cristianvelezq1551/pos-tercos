@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
-import { ProductsTable, type RealCost } from '../../../features/products';
+import { ProductsList, type RealCost } from '../../../features/products';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import { getCurrentUserServer } from '../../../features/auth/server';
@@ -71,7 +71,7 @@ export default async function ProductsPage() {
 
       <Container size="7xl" padY="md">
         {Array.isArray(result) ? (
-          <ProductsTable
+          <ProductsList
             products={result}
             costsById={costsById}
             realCostById={realCostById}

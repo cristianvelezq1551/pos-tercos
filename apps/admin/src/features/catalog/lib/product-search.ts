@@ -1,22 +1,9 @@
 import type { Product } from '@pos-tercos/types';
+import { matchesQuery, normalizeForSearch } from '../../../lib/buscar';
 
-/**
- * Normaliza para comparar: minúsculas y sin tildes. El cajero teclea rápido y
- * sin acentos ("pina" tiene que encontrar "Piña").
- */
-export function normalizeForSearch(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Sin separadores: "cocacola" encuentra "Coca-Cola" y "7up" encuentra "7 Up". */
-function squash(value: string): string {
-  return value.replace(/[^a-z0-9]/g, '');
-}
+// La normalización y el criterio de coincidencia son transversales (los usan
+// también las tablas de catálogo del admin): viven en `lib/buscar`.
+export { normalizeForSearch };
 
 /** Lo buscable de un producto: su nombre y su categoría. */
 function haystackOf(product: Product): string {
@@ -24,12 +11,7 @@ function haystackOf(product: Product): string {
 }
 
 export function matchesProductQuery(product: Product, query: string): boolean {
-  const tokens = normalizeForSearch(query).split(' ').filter(Boolean);
-  if (tokens.length === 0) return true;
-  const text = haystackOf(product);
-  const squashed = squash(text);
-  // Todos los términos deben aparecer: "coca 400" no trae toda la gaseosa.
-  return tokens.every((t) => text.includes(t) || squashed.includes(squash(t)));
+  return matchesQuery(haystackOf(product), query);
 }
 
 /**
