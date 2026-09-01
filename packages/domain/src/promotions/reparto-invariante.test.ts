@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { manualDiscountAmount, type ManualDiscountSpec } from '../common/manual-discount';
 import { applyPromotion } from './apply-promotions';
 import type { PromotionDef } from './types';
 
@@ -101,5 +102,35 @@ describe('el descuento no cambia según cómo se repartan las líneas', () => {
     } as PromotionDef;
     expect(descuentoTotal(promo, [2])).toBe(PRECIO);
     expect(descuentoTotal(promo, [1, 1])).toBe(0);
+  });
+});
+
+/**
+ * El descuento manual de la caja tenía el MISMO problema que las promociones, y
+ * se arregló después: hasta el 2026-08-31 el monto fijo se aplicaba una vez por
+ * línea, así que "$500 sobre tres bebidas" cobraba $14.500 junto y $13.500
+ * separado. Medido contra el servidor de producción durante la auditoría.
+ */
+describe('el descuento manual tampoco cambia según el reparto', () => {
+  const manual = (spec: ManualDiscountSpec, lineas: number[]): number =>
+    lineas.reduce((acc, cantidad) => acc + manualDiscountAmount(PRECIO * cantidad, spec, cantidad), 0);
+
+  const repartos = [[3], [1, 1, 1], [2, 1]];
+
+  it('MONTO FIJO: mismo total en los tres repartos', () => {
+    const totales = repartos.map((r) => manual({ kind: 'FIXED', value: 2_000 }, r));
+    expect(new Set(totales).size).toBe(1);
+    expect(totales[0]).toBe(6_000);
+  });
+
+  it('PORCENTAJE: mismo total en los tres repartos', () => {
+    const totales = repartos.map((r) => manual({ kind: 'PERCENT', value: 20 }, r));
+    expect(new Set(totales).size).toBe(1);
+    expect(totales[0]).toBe(PRECIO * 3 * 0.2);
+  });
+
+  it('el descuento manual da lo mismo que la promoción de monto fijo equivalente', () => {
+    const promo = { id: 'p', type: 'FIXED_OFF', discountFixed: 2_000, ...base } as PromotionDef;
+    expect(manual({ kind: 'FIXED', value: 2_000 }, [3])).toBe(descuentoTotal(promo, [3]));
   });
 });

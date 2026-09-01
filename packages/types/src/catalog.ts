@@ -48,7 +48,7 @@ export const IngredientSchema = z.object({
 export type Ingredient = z.infer<typeof IngredientSchema>;
 
 export const CreateIngredientSchema = z.object({
-  name: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120),
   unitPurchase: unitLabel(),
   unitRecipe: unitLabel(),
   conversionFactor: z.number().positive(),
@@ -90,7 +90,7 @@ export type Subproduct = z.infer<typeof SubproductSchema>;
 export const PreparationStepsSchema = z.array(z.string().trim().min(1).max(500)).max(50);
 
 export const CreateSubproductSchema = z.object({
-  name: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120),
   yield: z.number().positive(),
   unit: unitLabel().optional(),
   thresholdMin: z.number().nonnegative().optional(),
@@ -348,7 +348,7 @@ const ProductEmojiSchema = z.string().max(24);
 
 export const CreateProductSchema = z
   .object({
-    name: z.string().min(1).max(120),
+    name: z.string().trim().min(1).max(120),
     description: z.string().max(500).nullable().optional(),
     preparationSteps: PreparationStepsSchema.optional(),
     basePrice: z.number().nonnegative(),
@@ -429,7 +429,7 @@ export type CreateProduct = z.infer<typeof CreateProductSchema>;
 
 export const UpdateProductSchema = z
   .object({
-    name: z.string().min(1).max(120).optional(),
+    name: z.string().trim().min(1).max(120).optional(),
     description: z.string().max(500).nullable().optional(),
     preparationSteps: PreparationStepsSchema.optional(),
     basePrice: z.number().nonnegative().optional(),

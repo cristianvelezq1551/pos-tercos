@@ -97,7 +97,7 @@ export function computeCartTotals(
     let lineDiscount = 0;
     if (hasManual) {
       const spec = manual!.lineDiscounts[it.lineId];
-      lineDiscount = spec ? manualDiscountAmount(lineSubtotal, spec) : 0;
+      lineDiscount = spec ? manualDiscountAmount(lineSubtotal, spec, it.quantity) : 0;
     } else {
       const promo = applyPromotion(
         {

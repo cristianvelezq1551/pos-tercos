@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CreateSubproduct, Subproduct, UpdateSubproduct } from '@pos-tercos/types';
 import type { Subproduct as DbSubproduct, Prisma } from '@prisma/client';
+import { assertNombreDisponible, conNombreUnico } from '../common/nombre-unico';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -22,40 +23,66 @@ export class SubproductsService {
     return toSubproductDto(row);
   }
 
-  async create(input: CreateSubproduct): Promise<Subproduct> {
-    const row = await this.prisma.subproduct.create({
-      data: {
-        name: input.name,
-        yield: input.yield,
-        unit: input.unit ?? 'unidad',
-        thresholdMin: input.thresholdMin ?? 0,
-        portionSize: input.portionSize ?? null,
-        ...(input.blocksAvailability !== undefined && {
-          blocksAvailability: input.blocksAvailability,
-        }),
-        preparationSteps: input.preparationSteps ?? [],
-      },
+  /** Busca un subproducto ACTIVO con ese nombre, sin distinguir mayúsculas. */
+  private buscarActivoPorNombre = (nombre: string) =>
+    this.prisma.subproduct.findFirst({
+      where: { name: { equals: nombre, mode: 'insensitive' as const }, isActive: true },
+      select: { id: true },
     });
+
+  async create(input: CreateSubproduct): Promise<Subproduct> {
+    await assertNombreDisponible(this.buscarActivoPorNombre, input.name, 'subproducto');
+    const row = await conNombreUnico('subproducto', input.name, () =>
+      this.prisma.subproduct.create({
+        data: {
+          name: input.name,
+          yield: input.yield,
+          unit: input.unit ?? 'unidad',
+          thresholdMin: input.thresholdMin ?? 0,
+          portionSize: input.portionSize ?? null,
+          ...(input.blocksAvailability !== undefined && {
+            blocksAvailability: input.blocksAvailability,
+          }),
+          preparationSteps: input.preparationSteps ?? [],
+        },
+      }),
+    );
     return toSubproductDto(row);
   }
 
   async update(id: string, input: UpdateSubproduct): Promise<Subproduct> {
     await this.assertExists(id);
-    const row = await this.prisma.subproduct.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.yield !== undefined && { yield: input.yield }),
-        ...(input.unit !== undefined && { unit: input.unit }),
-        ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
-        ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
-        ...(input.blocksAvailability !== undefined && {
-          blocksAvailability: input.blocksAvailability,
-        }),
-        ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
-        ...(input.isActive !== undefined && { isActive: input.isActive }),
-      },
-    });
+    // Reactivar también compite por el nombre: uno dormido no estorba, pero al
+    // volver a la vida choca con el que ocupó su lugar.
+    if (input.name !== undefined || input.isActive === true) {
+      const existing = await this.prisma.subproduct.findUnique({
+        where: { id },
+        select: { name: true },
+      });
+      await assertNombreDisponible(
+        this.buscarActivoPorNombre,
+        input.name ?? existing?.name ?? '',
+        'subproducto',
+        id,
+      );
+    }
+    const row = await conNombreUnico('subproducto', input.name ?? '', () =>
+      this.prisma.subproduct.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.yield !== undefined && { yield: input.yield }),
+          ...(input.unit !== undefined && { unit: input.unit }),
+          ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
+          ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
+          ...(input.blocksAvailability !== undefined && {
+            blocksAvailability: input.blocksAvailability,
+          }),
+          ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
+          ...(input.isActive !== undefined && { isActive: input.isActive }),
+        },
+      }),
+    );
     return toSubproductDto(row);
   }
 

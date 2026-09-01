@@ -1684,7 +1684,7 @@ export function computeLine(
   // Descuento MANUAL de línea (#5b): excluyente con promos — el caller ya
   // desactivó el motor (activePromotions=[]) si la venta trae descuento manual.
   if (input.manualDiscount) {
-    const lineDiscount = manualDiscountAmount(lineSubtotal, input.manualDiscount);
+    const lineDiscount = manualDiscountAmount(lineSubtotal, input.manualDiscount, input.quantity);
     return {
       productId: product.id,
       sizeId,

@@ -3975,6 +3975,92 @@ Queda como mejora pendiente el "Ignored Build Step" por proyecto.
 ⚠️ `main` y `prod` en el MISMO commit generan **dos** despliegues por app; el
 dominio no cambia hasta que termina el segundo.
 
+## 7.v55 Auditoría en producción: nombres repetidos y el descuento que dependía del reparto (2026-08-31)
+
+> Auditoría completa del sistema real (no de QA): 520 comprobaciones contra
+> `api.tercos.co` con operaciones de verdad —compras, ventas, promociones,
+> descuentos, cuentas divididas, anulaciones, reembolsos, cortesías, mermas,
+> producción, conteos, cierre— más la interfaz en un navegador y la batería local
+> entera. **El motor financiero no falló en ningún cálculo**: cada peso del P&G se
+> movió lo que debía y la conservación cerró (100 compradas − 55 consumidas = 45,
+> valorizadas a su costo real). Lo que salió fueron tres fallas de producto.
+> Verificado: typecheck 13/13, lint 0, domain 578, admin 274, api unit +8,
+> e2e +12. Migración: `20260901000000_nombre_unico_por_activo`.
+
+### El catálogo aceptaba dos cosas activas con el mismo nombre
+No había restricción de unicidad en productos, insumos ni subproductos. Probado
+en producción: el mismo nombre dos veces, 201 y 201. En la caja quedaban **dos
+fichas idénticas** —una vendible y otra "AGOTADO"— y nada las distinguía: el
+cajero toca la equivocada y descuenta el stock del gemelo. Además parte un
+producto en dos filas del top (ninguna dice la verdad) y desvía el emparejamiento
+de facturas, que es por parecido de nombre.
+
+- **Índice único PARCIAL sobre `lower(btrim(name))` donde `is_active`.** Parcial
+  para que desactivar libere el nombre (si no, renombrar un producto viejo para
+  reusar el nombre bueno sería imposible); sobre la expresión porque "Gaseosa",
+  "gaseosa" y "Gaseosa " son el mismo nombre para quien lo lee. Es un índice de
+  expresión + parcial: **Prisma no lo puede declarar**, va en SQL como los CHECK
+  del repo y no aparece en `schema.prisma`.
+- La migración **desempata primero lo que ya esté repetido** (` (duplicado 2)`,
+  visible a propósito) o fallaría en cualquier base con duplicados.
+- `common/nombre-unico.ts` es la capa amable: chequea antes para dar un mensaje
+  que se entienda, y traduce el choque del índice cuando dos peticiones ganan la
+  carrera. **Reactivar también compite por el nombre** — uno dormido no estorba,
+  pero al volver a la vida choca con el que ocupó su lugar.
+- ⚠️ Para un índice de EXPRESIÓN, Prisma **no** devuelve el nombre del índice sino
+  la expresión: `target: ["lower(btrim(name))"]`. Reconocerlo por el nombre del
+  índice no funciona — se verificó contra Postgres y el mapeo estaba mudo, o sea
+  que la carrera habría salido como 500 (y un 500 abre Issue de alerta).
+- Los nombres se recortan (`.trim()`) en los cuatro schemas de Zod: sin eso
+  "Gaseosa " pasaba como un nombre distinto y la unicidad no significaba nada.
+
+### El descuento manual de monto fijo era por LÍNEA
+§7.v54 arregló que el monto fijo de una **promoción** es por unidad. El descuento
+manual de la **caja** se quedó atrás: cobrado por el servidor de producción,
+"$500 sobre tres bebidas" daba **$14.500 junto y $13.500 separado**. Es el mismo
+"la misma compra a dos precios" que ya se había cerrado, por el otro camino.
+
+- `manualDiscountAmount(base, spec, units = 1)`: el monto FIJO se multiplica por
+  las unidades de la LÍNEA, con el mismo tope de siempre (nunca más que la base).
+  El PORCENTAJE no se toca — ya escala con la base.
+- **El descuento sobre el TOTAL sigue siendo uno solo** (`units = 1`): es una
+  cosa sola del pedido, y es la herramienta para "$X de todo el pedido".
+- El diálogo de la caja **ahora lo dice**: "El monto en $ se descuenta por cada
+  unidad: $500 sobre 3 bebidas son $1.500". Antes ofrecía un botón `$` sin
+  explicar nada, mientras el formulario de promociones ya decía "POR CADA UNIDAD"
+  — quien leyó lo primero esperaba lo mismo de lo segundo.
+- La propiedad quedó fijada donde vive la de las promociones
+  (`reparto-invariante.test.ts`): el descuento manual da lo MISMO que la promoción
+  de monto fijo equivalente.
+- ⚠️ `packages/domain` compila a `dist`: cambiar la función y no reconstruir deja
+  al API cobrando con la regla vieja. Las primeras 5 pruebas fallaron por eso.
+
+### Lo que se decidió NO arreglar
+**Un admin operativo que no abrió la caja no puede cerrarla.** `CLOSE_ANY_ROLES`
+lo autoriza a cerrar cualquier caja pero `OVERSIGHT_ROLES` (solo `DUENO`) le niega
+`expected-cash` y `cash-movements`: la pantalla de cierre le muestra
+`listCashMovements failed: 403` —texto crudo, en inglés— y el badge dice "En caja:
+$100.000" cuando el servidor tiene $710.000. **Decisión del dueño: no importa,
+hay un solo cajero** y siempre abre su propia caja. ⚠️ Si algún día entra un
+segundo operativo, esto vuelve el primer día de relevo.
+
+### Verificado y sin novedad (para no re-auditarlo)
+Aritmética de las 24 ventas existentes; las identidades entre resumen de ventas,
+P&G, byMethod y byType; el domicilio fuera de todo ingreso y de todo arqueo;
+existencias = suma de movimientos (99); lotes = cantidad valorizada = existencias,
+item por item; faltante y merma diciendo lo mismo en "Uso y mermas" y en el
+estado; compras (periodos, proveedores, flete); tesorería (saldo = inicial +
+cobrado − pagado + traspasos + ajustes); arqueo (esperado = apertura + ventas en
+efectivo + entradas − salidas); FIFO tomando el lote viejo; la anulación de
+factura llevándose SU lote y no el más viejo; el token firmado del pedido web;
+la cocina sin ver costos; y las 6 validaciones que deben rechazar, todas con
+mensajes en lenguaje de persona.
+
+⚠️ **La caché de 60 s del motor de costos es más visible de lo que suena**: un
+producto recién comprado **no aparece** en la valuación ni en los lotes durante
+ese minuto —sale vacío, no desactualizado— y equivocó dos mediciones de la propia
+auditoría. Las existencias (`/inventory/stock`) sí son inmediatas siempre.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
