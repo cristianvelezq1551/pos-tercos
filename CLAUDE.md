@@ -3894,6 +3894,87 @@ persona. El e2e y las llamadas con `curl` los dos daban verde.
 datos de e2e, y ahí ninguna puede confiar en sus pruebas — mismo código, cuatro
 corridas, cuatro números de fallos (428/108/271/459). Una rama por sesión.
 
+## 7.v54 Lo que solo se ve abriendo la app (2026-08-31)
+
+> Tanda de ensayo en producción. Seis arreglos, y **cuatro de los seis eran
+> fallos mudos**: typecheck, lint, 1.900 tests unitarios, 789 e2e y el CI en
+> verde, y aun así estaban rotos en la pantalla. Verificado en la interfaz real
+> de prod (no por API): typecheck 13/13, lint 0, unit 12/12 paquetes,
+> e2e 789, builds 8/8. Sin migración.
+
+### El manual de operación viajaba al navegador del CLIENTE
+`packages/guia` **nunca estuvo en los `@source` de Tailwind de ninguna app**.
+Sus clases solo funcionaban cuando por casualidad coincidían con una que la app
+ya usaba en otro lado. Se destapó con la burbuja de ayuda: `fixed` y `p-4` se
+aplicaban, `bottom-0` no, y el botón quedaba **16 px por debajo del borde
+inferior** — invisible para el compilador y para los tests.
+
+> **Regla:** un paquete con componentes NO se estila solo por estar importado.
+> Va en `@source` de cada app que lo monte. Hoy: `ui`, `brand`, `guia`.
+
+⚠️ Y para comprobar si un despliegue entró, **no sirve buscar una clase en el
+CSS del login**: Next parte el CSS por ruta. Se abre la app.
+
+### El ticket de ANULACIÓN nunca se imprimió
+Se dispara justo DESPUÉS de anular, así que la venta ya está en `VOID`, y el
+gate de la comanda solo aceptaba estados vivos. El cajero veía "no se pudo
+imprimir" cada vez mientras el resto de los recibos salía bien. Ahora
+`CANCELLED_STATUSES` valen **solo con `cancel=true`**. 3 e2e; verificado que 2
+fallan sin el arreglo.
+
+### El recibo partía la dirección a mitad de palabra
+`Cra. 31 #37 sur-26, Zona 9, Envi / gado, Antioquia`: se imprimía como UNA línea
+de 47 caracteres y la partía la impresora, que corta donde llega al borde. Ahora
+usa el `wrap` por palabras de `escpos-text`. El **nombre del negocio se parte a
+16** (va a doble ancho, entra la mitad); cajero y cliente también se parten
+("Cajero: Carolina Velez Quintero" son 31 y entraba raspando).
+
+### El carrito ya NO agrupa productos iguales
+Con dos sándwiches en una línea, pedir "otra nota" dejaba TRES: el botón
+AGREGABA en vez de separar. Ahora **cada toque crea su propia línea**; la
+cantidad solo sube con «+», que es una decisión explícita (esas unidades
+comparten la nota a propósito). Para las ya juntas, el editor ofrece **"Separar
+en N líneas"** — reparte sin cambiar cantidad ni total.
+
+> ⚠️ **Antes de crear una promo 2x1 (BOGO)**: el motor la calcula POR LÍNEA
+> (`Math.floor(cantidad / tamaño)`), así que tres toques sueltos NO la disparan
+> y tres unidades en una línea sí. Hay que hacer que agrupe por producto en la
+> caja **y** en el servidor, que recalcula el total. Está escrito en el store.
+
+### Las notas se piden con palabras, no con íconos
+Eran tres íconos sin nombre (duplicar, papelito, equis). Ahora la fila tiene un
+botón **escrito** (`Editar` / `Nota`) que abre el editor, y la nota **se lee en
+la fila** en vez de esconderse dentro de un campo.
+
+### La barra de la caja no cabía en el monitor del local
+A 1366 px la navegación pedía 663 y tenía 634: "Gestión" salía cortado en
+"Gesti" con una barra de desplazamiento cruzando el encabezado. El bloque con
+nombre + rol se lleva ~190 px → `UserMenu compact` lo repliega al avatar abajo
+de 2xl (el nombre queda en su `title`). La tira usa `.sin-barra`.
+
+### Un ítem de CSS grid trae `min-width: auto`
+Por eso `/finanzas/estado` medía **502 px dentro de 390**: la columna no se
+encoge, y los montos salían cortados por el borde derecho. `min-w-0` en las dos
+columnas → 390/390 exactos. En las filas, la etiqueta se parte y el monto nunca
+(`shrink-0 whitespace-nowrap`).
+
+### El mes del reporte va en hora LOCAL
+`payroll-weekly` pedía /finanzas con `getUTCMonth()`. Esa diferencia solo existe
+**el último día del mes después de las 19:00** en Bogotá: el test pide el mes
+siguiente y no encuentra el pago que acaba de hacer. Pasa 364 días y revienta
+uno — el 2026-08-31 dejó el CI rojo. Helper `mesLocalQuery` junto a `hoyLocal`.
+Era el último caso del repo.
+
+### Vercel: el cupo del plan Hobby frenó dos veces los despliegues
+Cada push construye **las cuatro apps** aunque el cambio toque una sola, así que
+un PR gasta hasta 12 builds. Con Hobby eso agota el cupo diario y los
+despliegues de `main` y `prod` fallan con "Deployment rate limited — retry in
+24 hours" mientras el CI sigue verde. **El dueño pasó a Pro (2026-08-31.)**
+Queda como mejora pendiente el "Ignored Build Step" por proyecto.
+
+⚠️ `main` y `prod` en el MISMO commit generan **dos** despliegues por app; el
+dominio no cambia hasta que termina el segundo.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
