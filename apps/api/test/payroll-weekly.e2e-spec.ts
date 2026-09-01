@@ -9,7 +9,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 import type { WeeklyPayrollReport } from '@pos-tercos/types';
-import { hoyLocal } from './helpers/local-day';
+import { hoyLocal, mesLocalQuery } from './helpers/local-day';
 
 describe('Nómina semanal unificada E2E', () => {
   let app: INestApplication;
@@ -121,8 +121,9 @@ describe('Nómina semanal unificada E2E', () => {
     // quincenas. El abono se paga 100% por cuenta (sin caja abierta).
     const wk = await getWeek();
     // El abono cae con paidAt = ahora → consultamos /finanzas del mes actual.
-    const now = new Date();
-    const ym = `year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`;
+    // El mes va en hora LOCAL: el reporte usa la ventana local del negocio, y
+    // `getUTCMonth()` se adelanta un mes el último día, después de las 19:00.
+    const ym = mesLocalQuery();
     const pendingOf = (body: { pendingPayroll: Array<{ userId: string; total: number }> }): number =>
       body.pendingPayroll.filter((p) => p.userId === dailyId).reduce((a, p) => a + p.total, 0);
 

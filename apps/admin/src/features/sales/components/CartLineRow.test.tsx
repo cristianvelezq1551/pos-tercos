@@ -5,11 +5,14 @@ import type { CartLine } from '../lib/cart-types';
 import { CartLineRow } from './CartLineRow';
 
 /**
- * En la pantalla del mostrador no entraban más de tres productos: cada línea
- * ocupaba cinco renglones, y uno de ellos era un campo de nota SIEMPRE visible
- * de 44 px que casi nunca se usa. Estos casos fijan las dos cosas que dan el
- * espacio: la nota no ocupa lugar hasta que hace falta, y "otro más" crea una
- * línea aparte en vez de subir la cantidad.
+ * Dos cosas que esta fila tiene que cumplir:
+ *
+ * 1. **Cabe.** Antes ocupaba cinco renglones y en el mostrador no entraban más
+ *    de tres productos.
+ * 2. **Se entiende sin que nadie la explique.** Los tres íconos sin nombre
+ *    (duplicar, nota, quitar) no le decían a nadie dónde se escribe "sin
+ *    cebolla" — el dueño lo reportó así. Ahora hay un botón **Editar** escrito
+ *    y la nota se LEE en la fila.
  */
 const linea = (over: Partial<CartLine> = {}): CartLine =>
   ({
@@ -41,25 +44,41 @@ describe('línea del carrito', () => {
     expect(screen.queryByPlaceholderText(/Nota para cocina/)).toBeNull();
   });
 
-  it('con nota escrita, se muestra sola (no hay que ir a buscarla)', () => {
+  it('la nota escrita SE LEE en la fila, sin abrir nada', () => {
     render(<CartLineRow line={linea({ notes: 'sin cebolla' })} {...props} />);
-    const campo = screen.getByPlaceholderText(/Nota para cocina/) as HTMLInputElement;
-    expect(campo.value).toBe('sin cebolla');
+    expect(screen.getByText(/Nota: sin cebolla/)).toBeDefined();
   });
 
-  it('el botón de nota la abre cuando se necesita', () => {
+  it('el acceso a la nota está ESCRITO, no es un ícono a adivinar', () => {
     render(<CartLineRow line={linea()} {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: /Escribir una nota/ }));
-    expect(screen.getByPlaceholderText(/Nota para cocina/)).toBeDefined();
+    // Con nota dice "Nota"; sin nota, "Editar". En los dos casos, una palabra.
+    expect(screen.getByRole('button', { name: /Editar Hamburguesa/ }).textContent).toMatch(
+      /Editar/,
+    );
   });
 
-  it('"otro más" crea línea aparte, NO sube la cantidad', () => {
+  it('editar abre el campo de nota con su ejemplo dentro', () => {
+    render(<CartLineRow line={linea()} {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /Editar Hamburguesa/ }));
+    expect(screen.getByLabelText('Nota para cocina')).toBeDefined();
+    expect(screen.getByPlaceholderText(/sin cebolla/)).toBeDefined();
+  });
+
+  it('"otro aparte" crea línea nueva, NO sube la cantidad', () => {
     const onDuplicate = vi.fn();
     const onQty = vi.fn();
     render(<CartLineRow line={linea()} {...props} onDuplicate={onDuplicate} onQty={onQty} />);
+    fireEvent.click(screen.getByRole('button', { name: /Editar Hamburguesa/ }));
     fireEvent.click(screen.getByRole('button', { name: /en línea aparte/ }));
     expect(onDuplicate).toHaveBeenCalledTimes(1);
     expect(onQty).not.toHaveBeenCalled();
+  });
+
+  it('quitar se puede sin abrir el editor: es la acción más repetida', () => {
+    const onRemove = vi.fn();
+    render(<CartLineRow line={linea()} {...props} onRemove={onRemove} />);
+    fireEvent.click(screen.getByRole('button', { name: /Quitar Hamburguesa del pedido/ }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
   it('el precio unitario va junto a las opciones, no en su propio renglón', () => {

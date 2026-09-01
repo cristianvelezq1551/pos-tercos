@@ -13,6 +13,18 @@ import { ymdLocal } from '../../src/common/local-dates';
  */
 export const hoyLocal = (): string => ymdLocal(new Date());
 
+/**
+ * El mes calendario LOCAL de hoy, como query `year=YYYY&month=M`.
+ *
+ * Misma trampa que `hoyLocal`, pero peor de encontrar: `getUTCMonth()` solo
+ * difiere del mes local **el último día del mes después de las 19:00** en
+ * Bogotá. O sea que el test pasa todos los días del año menos uno, y ese día
+ * revienta pidiéndole al reporte el mes siguiente, donde el pago que acaba de
+ * hacer todavía no existe. Pasó el 2026-08-31 a las 19:35 en `payroll-weekly`.
+ */
+export const mesLocalQuery = (at: Date = new Date()): string =>
+  `year=${at.getFullYear()}&month=${at.getMonth() + 1}`;
+
 /** Igual que `hoyLocal` pero desplazado `n` días (negativo = atrás). */
 export const diaLocal = (n: number): string => {
   const d = new Date();
