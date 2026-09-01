@@ -497,7 +497,7 @@ describe('Simulación financiera aleatoria', () => {
         expect(despues.wasteCost).toBeCloseTo(antes.wasteCost, 2);
       });
 
-      it('L18 · los cuatro tipos de promoción se aplicaron y descontaron lo suyo', async () => {
+      it('L18 · los tres tipos de promoción que se pueden crear se aplicaron', async () => {
         const aplicadas = await mundo.prisma.saleItem.groupBy({
           by: ['appliedPromotionId'],
           where: { appliedPromotionId: { not: null } },
@@ -505,10 +505,11 @@ describe('Simulación financiera aleatoria', () => {
         });
         const usadas = new Set(aplicadas.map((a) => a.appliedPromotionId));
 
-        // Cada TIPO tiene que haberse disparado: un 2x1 solo aplica con 3
-        // unidades y un descuento de combo solo sobre una línea de combo, así
-        // que si la simulación no llegó a esos casos, esta ley estaría pasando
-        // sin haber probado nada.
+        // Cada TIPO tiene que haberse disparado: un descuento de combo solo
+        // aplica sobre una línea de combo, así que si la simulación no llegó a
+        // ese caso, esta ley estaría pasando sin haber probado nada.
+        //
+        // El 2x1 quedó fuera: el servidor ya no deja crearlo (2026-08-31).
         //
         // La exigencia va sobre las promociones SIN competencia: cada una tiene
         // su producto y no hay excusa para que no se aplique. Las que comparten
