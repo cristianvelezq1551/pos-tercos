@@ -134,7 +134,7 @@ function ReportLink({
       href={href}
       className="group flex items-start gap-3 rounded-2xl border border-border bg-card p-4 transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:border-ink-300 hover:bg-muted/40 hover:shadow-sm motion-reduce:hover:translate-y-0"
     >
-      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-ink-700 transition-colors group-hover:border-primary group-hover:text-primary">
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary">
         {icon}
       </span>
       <div className="min-w-0 flex-1">

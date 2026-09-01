@@ -104,7 +104,7 @@ export function InvoicesTable({ rows }: InvoicesTableProps) {
       key: 'uploadedBy',
       header: 'Subido por',
       hideOnMobile: true,
-      cell: (inv) => <span className="text-ink-600">{inv.uploadedByName ?? '—'}</span>,
+      cell: (inv) => <span className="text-muted-foreground">{inv.uploadedByName ?? '—'}</span>,
     },
     {
       key: 'actions',

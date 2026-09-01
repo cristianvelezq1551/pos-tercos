@@ -67,7 +67,7 @@ const badgeVariants = cva(
       { tone: 'info', variant: 'solid', class: 'bg-ink-600 text-ink-50 border-ink-600' },
 
       // OUTLINE variants
-      { tone: 'neutral', variant: 'outline', class: 'bg-transparent text-ink-700 border-ink-300' },
+      { tone: 'neutral', variant: 'outline', class: 'bg-transparent text-foreground border-ink-400' },
       {
         tone: 'primary',
         variant: 'outline',
@@ -88,7 +88,7 @@ const badgeVariants = cva(
         variant: 'outline',
         class: 'bg-transparent text-destructive border-destructive/50',
       },
-      { tone: 'info', variant: 'outline', class: 'bg-transparent text-ink-600 border-ink-400' },
+      { tone: 'info', variant: 'outline', class: 'bg-transparent text-muted-foreground border-ink-400' },
     ],
     defaultVariants: {
       tone: 'neutral',

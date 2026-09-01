@@ -75,7 +75,7 @@ export function ReverseWasteModal({ movement, open, onClose }: ReverseWasteModal
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="rounded-md border border-border bg-surface-2 p-3 text-sm text-ink-600">
+        <p className="rounded-md border border-border bg-surface-2 p-3 text-sm text-muted-foreground">
           El stock vuelve con su costo original y la pérdida sale del estado
           financiero. Queda registrada la anulación con tu motivo — el
           movimiento original no se borra.
@@ -98,7 +98,7 @@ export function ReverseWasteModal({ movement, open, onClose }: ReverseWasteModal
           ) : null}
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-ink-600">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
             checked={partial}
@@ -122,7 +122,7 @@ export function ReverseWasteModal({ movement, open, onClose }: ReverseWasteModal
               min={0}
               max={wasted}
             />
-            <span className="text-xs text-ink-500">
+            <span className="text-xs text-muted-foreground">
               Máximo {wasted}. Lo que no devuelvas queda como pérdida real.
             </span>
           </div>

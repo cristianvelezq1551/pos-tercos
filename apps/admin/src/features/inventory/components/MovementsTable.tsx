@@ -95,7 +95,7 @@ export function MovementsTable({ rows }: MovementsTableProps) {
       cell: (m) => (
         <span className="flex flex-wrap items-center gap-2">
           {m.notes ? (
-            <span className="text-ink-600">{m.notes}</span>
+            <span className="text-muted-foreground">{m.notes}</span>
           ) : (
             <span className="text-ink-300">—</span>
           )}
@@ -118,7 +118,7 @@ export function MovementsTable({ rows }: MovementsTableProps) {
       hideOnMobile: true,
       cell: (m) =>
         m.userFullName ? (
-          <span className="text-ink-600">{m.userFullName}</span>
+          <span className="text-muted-foreground">{m.userFullName}</span>
         ) : (
           <span className="text-ink-300">sistema</span>
         ),

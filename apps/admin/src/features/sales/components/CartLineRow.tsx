@@ -92,7 +92,7 @@ export function CartLineRow({
             type="button"
             onClick={() => onQty(line.quantity - 1)}
             disabled={line.quantity <= 1}
-            className="inline-flex h-8 w-8 items-center justify-center text-ink-600 transition-colors hover:bg-muted/40 disabled:opacity-30"
+            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-30"
             aria-label="Restar uno"
           >
             <Minus className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -103,7 +103,7 @@ export function CartLineRow({
           <button
             type="button"
             onClick={() => onQty(line.quantity + 1)}
-            className="inline-flex h-8 w-8 items-center justify-center text-ink-600 transition-colors hover:bg-muted/40"
+            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40"
             aria-label="Sumar uno"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
