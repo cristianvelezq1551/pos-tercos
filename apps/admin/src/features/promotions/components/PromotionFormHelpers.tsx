@@ -71,8 +71,10 @@ export function channelLabel(c: PromotionChannel): string {
 export function descriptionFor(t: PromotionType): string {
   return {
     PERCENT_OFF: 'Descuento porcentual sobre el producto (ej. 20% en la Hamburguesa).',
-    FIXED_OFF: 'Descuento de un monto fijo en pesos. No baja del subtotal del producto.',
-    COMBO_OFF: 'Porcentaje o monto fijo; aplica solo si el producto es un combo.',
+    FIXED_OFF:
+      'Monto fijo POR CADA UNIDAD: $2.000 en hamburguesas son $6.000 si el cliente lleva tres. Nunca baja del precio del producto. Para descontar del pedido completo, usa el descuento manual en la caja.',
+    COMBO_OFF:
+      'Porcentaje o monto fijo; aplica solo si el producto es un combo. El monto fijo también es por cada unidad.',
     BOGO: 'Lleva X y paga Y. Calcula los juegos completos según la cantidad comprada.',
   }[t];
 }

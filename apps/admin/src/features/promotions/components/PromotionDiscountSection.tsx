@@ -140,6 +140,19 @@ export function PromotionDiscountSection({ state, onUpdate, locked = false }: Pr
         </Field>
       )}
 
+      {/* Limitación real, dicha antes de crearla y no después de cobrar mal:
+          el 2x1 se calcula POR LÍNEA, y una unidad con nota va en su propia
+          línea. Arreglarlo exige que el motor agrupe por producto en la caja,
+          el servidor y la web (ver `reparto-invariante.test.ts`). */}
+      {state.type === 'BOGO' && (
+        <p className="mb-3 rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs leading-relaxed text-warning">
+          <strong>Antes de crearla:</strong> el 2x1 cuenta las unidades de una misma línea del
+          carrito. Si el cliente pide dos y a una le ponen nota (&laquo;sin cebolla&raquo;), quedan
+          en líneas distintas y <strong>el descuento no se aplica</strong> — el cliente pagaría las
+          dos. Avísale a quien programa antes de usarla.
+        </p>
+      )}
+
       {state.type === 'BOGO' && (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Compra (paga)" required>

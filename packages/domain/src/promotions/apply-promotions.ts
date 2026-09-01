@@ -76,8 +76,17 @@ function computeLineDiscount(
     }
     case 'FIXED_OFF': {
       if (promo.discountFixed === undefined || promo.discountFixed <= 0) return 0;
+      // POR UNIDAD, no por línea. Descontar una sola vez por línea hacía que el
+      // precio dependiera de cómo se tecleó el pedido: tres hamburguesas en una
+      // línea pagaban −$2.000 y en tres líneas —porque llevan notas distintas—
+      // pagaban −$6.000. Misma compra, dos precios.
+      //
+      // "$2.000 de descuento en hamburguesas" son $2.000 por cada hamburguesa
+      // (decisión del dueño, 2026-08-31). Para "$X del pedido" ya existe el
+      // descuento manual sobre el total.
+      //
       // Cap: nunca descontamos más que el subtotal (evita lineTotal negativo).
-      return Math.min(promo.discountFixed, input.lineSubtotal);
+      return Math.min(promo.discountFixed * input.quantity, input.lineSubtotal);
     }
     case 'BOGO': {
       if (
@@ -110,9 +119,11 @@ function computeLineDiscount(
         promo.discountPct !== undefined && promo.discountPct > 0
           ? input.lineSubtotal * promo.discountPct
           : 0;
+      // Mismo criterio que FIXED_OFF: por unidad, para que el total no cambie
+      // según en cuántas líneas quedó repartida la misma cantidad.
       const fixedDiscount =
         promo.discountFixed !== undefined && promo.discountFixed > 0
-          ? Math.min(promo.discountFixed, input.lineSubtotal)
+          ? Math.min(promo.discountFixed * input.quantity, input.lineSubtotal)
           : 0;
       return Math.max(pctDiscount, fixedDiscount);
     }
