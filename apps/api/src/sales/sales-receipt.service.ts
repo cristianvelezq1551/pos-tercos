@@ -33,6 +33,18 @@ const PRINTABLE_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTRE
 const COMANDA_STATUSES = ['PENDIENTE_PAGO', ...PRINTABLE_STATUSES] as const;
 
 /**
+ * Estados en los que TERMINA una venta anulada o cancelada.
+ *
+ * El ticket de ANULACIÓN se imprime justo DESPUÉS de anular, así que para
+ * entonces la venta ya está en uno de estos. Al no aceptarlos, el aviso a
+ * cocina —el que le dice que descarte un pedido que ya está en la plancha—
+ * fallaba SIEMPRE con "un pedido en estado «Anulado» no genera comanda".
+ * Solo valen con `cancel`: una comanda normal de una venta anulada sigue sin
+ * tener sentido.
+ */
+const CANCELLED_STATUSES = ['VOID', 'CANCELADO_NO_PAGO', 'CANCELADO_SIN_REEMBOLSO'] as const;
+
+/**
  * Recibos y cajón monedero. Separado de SalesService: no toca el ciclo de
  * vida de la venta, solo la imprime/reimprime y abre el cajón (con o sin
  * venta, esto último con PIN de aprobación).
@@ -104,7 +116,10 @@ export class SalesReceiptService {
       include: includeFull(),
     });
     if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
-    if (!COMANDA_STATUSES.includes(sale.status as (typeof COMANDA_STATUSES)[number])) {
+    const permitidos: readonly string[] = cancel
+      ? [...COMANDA_STATUSES, ...CANCELLED_STATUSES]
+      : COMANDA_STATUSES;
+    if (!permitidos.includes(sale.status)) {
       throw new BadRequestException(
         `Un pedido en estado "${saleStatusLabel(sale.status)}" no genera comanda.`,
       );

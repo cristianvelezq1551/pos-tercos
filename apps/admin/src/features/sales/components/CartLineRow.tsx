@@ -1,18 +1,23 @@
 'use client';
 
 import { IconButton, Money, cn } from '@pos-tercos/ui';
-import { CopyPlus, Minus, Plus, StickyNote, X } from 'lucide-react';
+import { Minus, Pencil, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { CartLine } from '../lib/cart-types';
+import { LineEditorModal } from './LineEditorModal';
 
 /**
  * Una línea del carrito, apretada a propósito.
  *
- * Antes ocupaba cinco renglones (nombre, precio unitario, cantidad, total y un
- * campo de nota SIEMPRE visible de 44 px), así que en la pantalla del mostrador
- * no entraban más de tres productos y había que desplazarse para cobrar. Ahora
- * el nombre y el total comparten renglón, las opciones y el precio unitario van
- * juntos en letra chica, y la nota aparece solo cuando existe o cuando se pide.
+ * Antes ocupaba cinco renglones y en la pantalla del mostrador no entraban más
+ * de tres productos. Ahora el nombre y el total comparten renglón, las
+ * opciones y el precio unitario van juntos en letra chica, y lo demás vive en
+ * el editor de la línea.
+ *
+ * Los tres íconos sin nombre (duplicar, nota, quitar) se fueron: un papelito
+ * no le dice a nadie que ahí se escribe "sin cebolla". Queda un botón
+ * **Editar** escrito, y la nota —cuando existe— se LEE en la fila en vez de
+ * esconderse dentro de un campo.
  */
 export function CartLineRow({
   line,
@@ -35,8 +40,8 @@ export function CartLineRow({
   onRemove: () => void;
   onNotes: (notes: string) => void;
 }) {
-  const tieneNota = Boolean(line.notes?.trim());
-  const [notaAbierta, setNotaAbierta] = useState(tieneNota);
+  const [editando, setEditando] = useState(false);
+  const nota = line.notes?.trim();
 
   const detalle = [
     ...[line.size?.name, ...line.modifiers.map((m) => m.name)].filter(Boolean),
@@ -73,6 +78,14 @@ export function CartLineRow({
         ) : null}
       </div>
 
+      {/* La nota se LEE en la fila: escondida dentro de un campo, el cajero no
+          podía repasar de un vistazo qué le pidió el cliente. */}
+      {nota ? (
+        <p className="mt-1 truncate text-[11px] font-medium text-primary" title={nota}>
+          Nota: {nota}
+        </p>
+      ) : null}
+
       <div className="mt-1.5 flex items-center gap-1">
         <div className="inline-flex items-center rounded-lg border border-border">
           <button
@@ -99,30 +112,17 @@ export function CartLineRow({
 
         <span className="flex-1" />
 
-        {/* Otra unidad EN SU PROPIA línea: es la única forma de que cada una
-            lleve su indicación ("una sin cebolla"). Sumar cantidad comparte
-            una sola nota entre todas. */}
-        <IconButton
-          aria-label={`Agregar otro ${line.productName} en línea aparte, para su propia nota`}
-          title="Agregar otro, en línea aparte (para ponerle su propia nota)"
-          variant="ghost"
-          size="sm"
-          onClick={onDuplicate}
+        <button
+          type="button"
+          onClick={() => setEditando(true)}
+          aria-label={`Editar ${line.productName}: nota, cantidad o quitar`}
+          className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
         >
-          <CopyPlus className="h-4 w-4" strokeWidth={1.75} />
-        </IconButton>
+          <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />
+          {nota ? 'Nota' : 'Editar'}
+        </button>
         <IconButton
-          aria-label={notaAbierta ? 'Ocultar la nota' : 'Escribir una nota para cocina'}
-          title="Nota para cocina"
-          variant="ghost"
-          size="sm"
-          onClick={() => setNotaAbierta((v) => !v)}
-          className={tieneNota ? 'text-primary' : undefined}
-        >
-          <StickyNote className="h-4 w-4" strokeWidth={1.75} />
-        </IconButton>
-        <IconButton
-          aria-label="Quitar línea"
+          aria-label={`Quitar ${line.productName} del pedido`}
           variant="ghost"
           size="sm"
           onClick={onRemove}
@@ -132,16 +132,15 @@ export function CartLineRow({
         </IconButton>
       </div>
 
-      {notaAbierta || tieneNota ? (
-        <input
-          type="text"
-          value={line.notes ?? ''}
-          onChange={(e) => onNotes(e.target.value)}
-          placeholder="Nota para cocina (ej. sin cebolla)"
-          aria-label={`Nota para cocina de ${line.productName}`}
-          maxLength={200}
-          autoFocus={notaAbierta && !tieneNota}
-          className="mt-1.5 min-h-9 w-full rounded-md border border-border bg-card px-2 py-1.5 text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none sm:text-xs pointer-coarse:min-h-11"
+      {editando ? (
+        <LineEditorModal
+          line={line}
+          open
+          onClose={() => setEditando(false)}
+          onQty={onQty}
+          onNotes={onNotes}
+          onDuplicate={onDuplicate}
+          onRemove={onRemove}
         />
       ) : null}
     </li>

@@ -45,7 +45,7 @@ export function CajaTopbar({
           cortado en "storial". Alineadas a la izquierda cada una ocupa su
           caja, y si no caben se desplazan en vez de salirse. El centrado vuelve
           en 2xl (1536 px) y no antes: a 1280 todavía mordía el logo por 7 px. */}
-      <div className="flex min-w-0 flex-1 items-stretch justify-start self-stretch overflow-x-auto py-1.5 2xl:justify-center">
+      <div className="flex min-w-0 flex-1 sin-barra items-stretch justify-start self-stretch overflow-x-auto py-1.5 2xl:justify-center">
         <CajaNav />
       </div>
 
@@ -57,6 +57,7 @@ export function CajaTopbar({
         {user ? (
           <UserMenu
             variant="dark"
+            compact
             user={{ email: user.email, name: user.fullName, role: roleLabel(user.role) }}
             trailing={<LogoutButton />}
           />
