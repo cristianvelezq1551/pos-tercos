@@ -1,11 +1,34 @@
+'use client';
+
 import type { ChecklistDay } from '@pos-tercos/types';
-import { Badge, BUSINESS_TIME_ZONE, EmptyState } from '@pos-tercos/ui';
+import { Badge, EmptyState } from '@pos-tercos/ui';
+import { useState } from 'react';
+import { ChecklistDetailModal } from './detail/ChecklistDetailModal';
 
 const ROUTINE_LABEL = { OPEN: 'Apertura', CLOSE: 'Cierre' } as const;
 
-/** Histórico del checklist: por día y rutina, qué se cumplió y qué faltó. */
+function EstadoDeRutina({ day }: { day: ChecklistDay }) {
+  if (day.completedAt) {
+    return <Badge tone="success">Cerrada{day.completedByName ? ` · ${day.completedByName}` : ''}</Badge>;
+  }
+  if (day.doneCount === 0) return <Badge tone="danger">No se hizo</Badge>;
+  return (
+    <Badge tone="warning">
+      {day.doneCount}/{day.totalCount}
+    </Badge>
+  );
+}
+
+/**
+ * Histórico del checklist: una línea por rutina con cómo terminó, y el detalle
+ * tarea por tarea a un toque. Antes cada día venía con su lista desplegada:
+ * un mes de rutinas era un muro de texto donde no se distinguía el día que
+ * había que revisar.
+ */
 export function ChecklistHistoryPanel({ days }: { days: ChecklistDay[] }) {
+  const [abierto, setAbierto] = useState<ChecklistDay | null>(null);
   const withTasks = days.filter((d) => d.totalCount > 0);
+
   if (withTasks.length === 0) {
     return (
       <EmptyState
@@ -17,57 +40,36 @@ export function ChecklistHistoryPanel({ days }: { days: ChecklistDay[] }) {
   }
 
   return (
-    <ul className="space-y-2">
-      {withTasks.map((d) => (
-        <li key={`${d.day}:${d.type}`} className="rounded-lg border border-border bg-card p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-medium text-foreground">
-              {d.day} · {ROUTINE_LABEL[d.type]}
-            </span>
-            <span className="flex items-center gap-2">
-              {d.legacy ? (
-                <span className="text-[0.6875rem] text-muted-foreground">
-                  registro viejo, sin autor por tarea
+    <>
+      <ul className="space-y-2">
+        {withTasks.map((d) => (
+          <li key={`${d.day}:${d.type}`} className="rounded-lg border border-border bg-card">
+            <button
+              type="button"
+              onClick={() => setAbierto(d)}
+              aria-label={`Ver las tareas de ${ROUTINE_LABEL[d.type]} del ${d.day}`}
+              className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg p-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="text-sm font-medium text-foreground">
+                  {d.day} · {ROUTINE_LABEL[d.type]}
                 </span>
-              ) : null}
-              {d.completedAt ? (
-                <Badge tone="success">
-                  Cerrada{d.completedByName ? ` · ${d.completedByName}` : ''}
-                </Badge>
-              ) : d.doneCount === 0 ? (
-                <Badge tone="danger">No se hizo</Badge>
-              ) : (
-                <Badge tone="warning">
-                  {d.doneCount}/{d.totalCount}
-                </Badge>
-              )}
-            </span>
-          </div>
-
-          <ul className="mt-2 space-y-1">
-            {d.items.map((item) => (
-              <li key={item.itemId} className="flex flex-wrap items-baseline gap-2 text-xs">
-                <span className={item.done ? 'text-success' : 'text-destructive'}>
-                  {item.done ? '✓' : '✗'}
+                <span className="text-xs text-muted-foreground">
+                  {d.doneCount} de {d.totalCount} tareas
                 </span>
-                <span className={item.done ? 'text-ink-600' : 'text-foreground'}>{item.label}</span>
-                {item.doneByName ? (
-                  <span className="text-muted-foreground">
-                    {item.doneByName}
-                    {item.doneAt
-                      ? ` · ${new Date(item.doneAt).toLocaleTimeString('es-CO', {
-                          timeZone: BUSINESS_TIME_ZONE,
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}`
-                      : ''}
+                {d.legacy ? (
+                  <span className="text-[0.6875rem] text-muted-foreground">
+                    · registro viejo, sin autor por tarea
                   </span>
                 ) : null}
-              </li>
-            ))}
-          </ul>
-        </li>
-      ))}
-    </ul>
+              </span>
+              <EstadoDeRutina day={d} />
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <ChecklistDetailModal day={abierto} onClose={() => setAbierto(null)} />
+    </>
   );
 }

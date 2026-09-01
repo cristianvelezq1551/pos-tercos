@@ -135,18 +135,18 @@ export function ProductPickerModal({
     <div
       role="presentation"
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-black/70 backdrop-blur-sm motion-safe:animate-[fadeIn_120ms_ease-out] sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden bg-black/70 backdrop-blur-sm motion-safe:animate-[fadeIn_120ms_ease-out] sm:items-center sm:p-4"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="picker-title"
         onClick={(e) => e.stopPropagation()}
-        className="relative flex min-h-full w-full max-w-none flex-col overflow-hidden bg-card shadow-xl motion-safe:animate-[scaleIn_150ms_ease-out] sm:my-8 sm:min-h-0 sm:max-w-[520px] sm:rounded-2xl"
+        className="relative flex h-full max-h-dvh w-full max-w-none flex-col overflow-hidden bg-card shadow-xl motion-safe:animate-[scaleIn_150ms_ease-out] sm:h-auto sm:max-h-[calc(100dvh-4rem)] sm:max-w-[520px] sm:rounded-2xl"
       >
         <PickerHeader name={product.name} imageUrl={product.imageUrl} onClose={onClose} />
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 sm:p-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 sm:p-6">
           {product.category ? (
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               {product.category}
@@ -202,7 +202,7 @@ export function ProductPickerModal({
           <PickerNotes notes={notes} onChange={setNotes} />
         </div>
 
-        <footer className="sticky bottom-0 border-t border-border bg-card p-4 pb-[max(env(safe-area-inset-bottom),1rem)] sm:static sm:border-t-0 sm:p-6 sm:pt-0">
+        <footer className="shrink-0 border-t border-border bg-card p-4 pb-[max(env(safe-area-inset-bottom),1rem)] sm:p-5">
           <button
             type="button"
             onClick={handleConfirm}

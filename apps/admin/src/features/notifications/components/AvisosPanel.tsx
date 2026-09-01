@@ -143,7 +143,7 @@ export function AvisosPanel() {
             <Button variant="secondary" disabled={trabajando} onClick={() => void probar()}>
               Enviar aviso de prueba
             </Button>
-            <span className="text-xs text-ink-500">
+            <span className="text-xs text-muted-foreground">
               Comprueba que de verdad llega. Un aviso que nadie probó no se sabe si suena.
             </span>
           </div>

@@ -77,7 +77,7 @@ export function LineEditorModal({
               onClick={() => onQty(line.quantity - 1)}
               disabled={line.quantity <= 1}
               aria-label="Restar uno"
-              className="inline-flex h-12 w-12 items-center justify-center text-ink-600 transition-colors hover:bg-muted/40 disabled:opacity-30"
+              className="inline-flex h-12 w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-30"
             >
               <Minus className="h-4 w-4" strokeWidth={1.75} />
             </button>
@@ -88,7 +88,7 @@ export function LineEditorModal({
               type="button"
               onClick={() => onQty(line.quantity + 1)}
               aria-label="Sumar uno"
-              className="inline-flex h-12 w-12 items-center justify-center text-ink-600 transition-colors hover:bg-muted/40"
+              className="inline-flex h-12 w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-muted/40"
             >
               <Plus className="h-4 w-4" strokeWidth={1.75} />
             </button>

@@ -18,13 +18,13 @@ export function DispositivosList({ devices }: { devices: PushDevice[] }) {
               {d.label}
               {d.isCurrent && <span className="ml-2 text-xs text-emerald-400">este</span>}
             </span>
-            <span className="text-xs text-ink-500">
+            <span className="text-xs text-muted-foreground">
               {d.lastSentAt ? `último aviso: ${formatDate(d.lastSentAt)}` : 'sin avisos todavía'}
             </span>
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-xs text-ink-500">
+      <p className="mt-3 text-xs text-muted-foreground">
         Para quitar uno, abre esta pantalla en ese dispositivo y apaga el interruptor.
       </p>
     </Card>

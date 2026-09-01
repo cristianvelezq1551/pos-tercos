@@ -4061,6 +4061,80 @@ producto recién comprado **no aparece** en la valuación ni en los lotes durant
 ese minuto —sale vacío, no desactualizado— y equivocó dos mediciones de la propia
 auditoría. Las existencias (`/inventory/stock`) sí son inmediatas siempre.
 
+## 7.v56 Tres cosas que solo se ven usando la app: contraste, un modal sin salida y filas que se estiraban (2026-09-01)
+
+> Novedades del ensayo en producción, las tres **visuales**: no se tocó el API,
+> ni el esquema, ni una regla de negocio. Verificado: typecheck 13/13, lint 0,
+> unit 12/12 paquetes (admin 284, ui 150), Playwright del modal 2/2, más el
+> navegador real sobre el modal de la web y las tres pestañas de cocina.
+> Sin migración.
+
+### La tinta oscura se usaba como color de LETRA
+El tema es oscuro permanente, así que la escala `ink` de 500 para arriba es
+**tinta** (fondos, bordes). Pintar texto con ella sobre una tarjeta da
+**1,1–2,7:1** de contraste, donde WCAG pide 4,5: la columna *Motivo* del hub de
+cocina (`text-ink-600`, **1,6:1**) se leía como un renglón en blanco, y era
+justo el campo que explica por qué se tiró la comida.
+
+- **Regla dura: para texto tenue va `text-muted-foreground`** (#94a0b0,
+  5,4–6,7:1 según la superficie). Es el mismo tono del encabezado de la columna,
+  o sea que el dato quedó tan legible como su rótulo.
+- Se corrigieron los **20 sitios** donde la tinta pintaba letras: motivo y nota
+  de cocina, notas y autor de movimientos, quién subió una factura, tareas
+  cumplidas del checklist, los botones +/− del carrito, el icono de las tarjetas
+  del inicio, el sello neutro y los badges `outline`.
+- **La excepción legítima NO se tocó**: tinta oscura sobre **chip claro**
+  (`bg-ink-100 text-ink-700`) invierte la relación y sobra contraste (7,7–10:1).
+- `contraste-de-tinta.test.ts` (packages/ui, junto a los tokens) recorre las
+  fuentes de las **5 apps** y falla si alguien vuelve a pintar letras con tinta
+  de 500 para arriba sin un fondo claro **en el mismo literal**. Chequea el
+  literal completo y no la línea, para que un `className` multilínea no dé un
+  falso positivo. Exceptúa `styleguide/page.tsx`, cuyo trabajo es exhibir la
+  paleta pintando color sobre color. Y fija el otro lado de la regla: que
+  `muted-foreground` siga cumpliendo AA sobre `background`, `card` y `muted` —
+  si alguien oscurece ESE token, el reemplazo dejaría de servir.
+
+### El modal de producto de la web no cabía en la pantalla
+El diálogo no tenía **tope de altura**, así que el `overflow-y-auto` interno
+nunca entraba en juego y quien scrolleaba era el **telón**. Consecuencia: la
+cabecera —con la ✕, que en teléfono es la ÚNICA salida— y el pie —con "Agregar
+al carrito"— se iban de la vista. El cliente veía un modal gigante que no podía
+cerrar ni usar.
+
+- El diálogo se topa a la ventana (`max-h-dvh` / `sm:max-h-[calc(100dvh-4rem)]`),
+  el contenido scrollea adentro (**`min-h-0` es lo que lo habilita** en un hijo
+  flex) y el pie deja de ser `sm:static`.
+- La foto se acota a **34dvh**: a 4:3 sobre el ancho de un teléfono ocupaba tres
+  cuartos de la pantalla ella sola.
+- La ✕ sube a **44px**, el piso táctil del proyecto (§7.v18/§7.v37).
+- ⚠️ `web-picker.spec.ts` usa **`toBeInViewport()`, no `toBeVisible()`**: con el
+  bug puesto el botón EXISTÍA —800px más abajo— así que `toBeVisible()` pasaba
+  en verde. Verificado fallando: en escritorio bajo daba `viewport ratio 0`.
+
+### Las tablas del hub de cocina resumen y abren el detalle
+`Consumió` apilaba un renglón por insumo: una tanda de diez estiraba la fila y
+hundía las demás columnas.
+
+| Tabla | Antes | Ahora |
+|---|---|---|
+| Producción | N renglones dentro de la celda | `Pan +3 más` → detalle con todos |
+| Merma | motivo largo desbordando | una línea → detalle con el motivo entero |
+| Checklist | las tareas de cada día desplegadas | una línea por rutina → detalle tarea por tarea |
+
+- **El nombre de la fila es el botón** (`RowNameButton`), para no sumarle una
+  columna "Ver" a tablas que ya venían anchas — y es la celda que identifica el
+  renglón, donde la mano va sola. Nombre accesible propio ("Ver detalle de la
+  merma de Pan"), así que la fila se abre también por teclado.
+- Sigue el patrón que ya existía en el repo (§7.v32, `CortesiaDetailModal`):
+  `Dialog` de `packages/ui` + `'use client'` + `useState`. Las tres tablas se
+  ven igual porque responden la misma pregunta.
+- **Resumir no puede perder el dato**: `kitchen-detail.test.tsx` comprueba, para
+  los tres casos, que lo que sale de la tabla aparece ENTERO en el detalle.
+- **Incidencias quedó fuera a propósito**: sus tarjetas ya son compactas y
+  llevan un botón "Resolver" adentro; envolver la fila pelearía con esa acción.
+
+---
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

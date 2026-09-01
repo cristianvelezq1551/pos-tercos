@@ -15,7 +15,7 @@ const TONE: Record<StampTone, string> = {
   success: 'text-success',
   warning: 'text-warning',
   danger: 'text-destructive',
-  neutral: 'text-ink-700',
+  neutral: 'text-muted-foreground',
   primary: 'text-primary',
 };
 
