@@ -25,4 +25,12 @@ export interface CartLine {
   /** Product.isCombo — habilita COMBO_OFF (el backend lo cobra; sin este flag
    *  el preview del carrito no lo mostraba → descuadre de caja en efectivo). */
   isCombo: boolean;
+  /**
+   * La línea nació de "Separar en N líneas": no vuelve a absorber toques del
+   * catálogo. Si alguien la partió a propósito para darle a cada unidad su
+   * indicación, juntarle una encima deshace justo lo que acababa de hacer.
+   *
+   * NO viaja al backend: solo gobierna cómo se agrupa dentro del carrito.
+   */
+  separada?: boolean;
 }
