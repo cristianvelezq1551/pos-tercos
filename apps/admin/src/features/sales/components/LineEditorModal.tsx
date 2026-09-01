@@ -12,10 +12,9 @@ import type { CartLine } from '../lib/cart-types';
  * nota, quitar). Un ícono de papelito no le dice a nadie que ahí se escribe
  * "sin cebolla" — y en una caja se aprende mirando, no explorando.
  *
- * Ya NO hay "agregar otro aparte": los productos no se agrupan, así que otra
- * nota distinta es tocar el producto de nuevo. Lo que sí queda es **separar**
- * una línea que alguien juntó con «+», que es justo lo que se esperaba de
- * aquel botón y no era lo que hacía (agregaba una unidad de más).
+ * Ya NO hay "agregar otro aparte": ese botón AGREGABA una unidad (con dos
+ * sándwiches dejaba tres). En su lugar está **separar**, que es lo que se
+ * esperaba de él: reparte las unidades que ya están juntas, sin tocar el total.
  */
 export function LineEditorModal({
   line,
@@ -115,8 +114,8 @@ export function LineEditorModal({
           <p className="mt-1 text-xs text-muted-foreground">
             Sale impresa en la comanda.{' '}
             {line.quantity > 1
-              ? `Vale para las ${line.quantity} unidades de esta línea.`
-              : '¿Otra con nota distinta? Toca el producto de nuevo en el catálogo.'}
+              ? `Vale para las ${line.quantity} unidades — si necesitas notas distintas, sepáralas abajo.`
+              : ''}
           </p>
         </div>
 

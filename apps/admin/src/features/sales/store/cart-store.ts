@@ -52,6 +52,22 @@ interface CartState {
   setLastSale: (sale: LastSaleSummary | null) => void;
 }
 
+/**
+ * Qué cuenta como "el mismo producto" para juntarlo en una línea.
+ *
+ * La nota entra en la firma a propósito: una "sin cebolla" NO se fusiona con
+ * una normal, que es lo único que hace falta para que cada indicación viaje
+ * sola a la comanda.
+ */
+function lineSignature(item: AddInput | CartLine): string {
+  const sizeId = item.size?.id ?? '';
+  const modIds = [...item.modifiers]
+    .map((m) => m.id)
+    .sort()
+    .join('|');
+  return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}`;
+}
+
 let lineCounter = 0;
 const nextLineId = () => `line-${Date.now().toString(36)}-${(lineCounter++).toString(36)}`;
 
@@ -63,26 +79,29 @@ export const useCartStore = create<CartState>((set) => ({
   orderDiscount: null,
   discountReason: '',
   /**
-   * Cada toque en el catálogo crea su PROPIA línea. Nunca se fusiona con una
-   * igual.
+   * Los productos iguales SIN nota se juntan; en cuanto uno lleva indicación,
+   * va por su cuenta.
    *
-   * Antes se agrupaban y eso obligaba a un botón aparte para "otro con nota
-   * distinta" — que además AGREGABA una unidad en vez de separar las que ya
-   * había: con dos sándwiches, pedir otra nota dejaba tres. El dueño lo dijo
-   * derecho: "no tiene sentido".
+   * Es la regla que menos sorprende: dos gaseosas son "2 gaseosas", pero
+   * "una sin cebolla" no se confunde con la normal. Y es la que mantiene sana
+   * la plata: una promo 2x1 se calcula POR LÍNEA
+   * (`Math.floor(cantidad / tamaño)`), así que si los iguales no se juntaran,
+   * dos toques sueltos NO dispararían el descuento y el cliente pagaría de más.
    *
-   * Sin agrupar, poner una nota distinta es simplemente tocar el producto otra
-   * vez. La cantidad de una línea solo sube si alguien aprieta «+», que es una
-   * decisión explícita: esas unidades comparten la nota a propósito.
-   *
-   * ⚠️ Una promo de tipo 2x1 (BOGO) se calcula POR LÍNEA
-   * (`Math.floor(cantidad / tamaño)`), así que tres toques sueltos no la
-   * disparan y tres unidades en una línea sí. Hoy no hay ninguna promo así
-   * cargada; antes de crear una hay que hacer que el motor agrupe por producto
-   * —en la caja Y en el servidor, que recalcula— o la promo no se aplicaría.
+   * Una línea marcada como separada NO absorbe toques nuevos: si alguien la
+   * partió a propósito —para ponerle a cada unidad su indicación— volver a
+   * juntarle una encima deshace justo lo que acababa de hacer.
    */
   addItem: (input) =>
     set((state) => {
+      const sig = lineSignature(input);
+      const i = state.items.findIndex((it) => !it.separada && lineSignature(it) === sig);
+      if (i >= 0) {
+        const next = state.items.slice();
+        const existente = next[i]!;
+        next[i] = { ...existente, quantity: existente.quantity + input.quantity };
+        return { items: next };
+      }
       return {
         items: [
           ...state.items,
@@ -123,6 +142,7 @@ export const useCartStore = create<CartState>((set) => ({
         lineId: n === 0 ? origen.lineId : nextLineId(),
         quantity: 1,
         notes: n === 0 ? origen.notes : undefined,
+        separada: true,
       }));
       const items = state.items.slice();
       items.splice(i, 1, ...nuevas);
