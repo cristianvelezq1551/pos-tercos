@@ -74,8 +74,8 @@ export function WebOrdersAction({
         />
         {/* En teléfono el texto largo desborda la barra: queda "Web" (el punto
             de estado y el contador siguen contando la historia completa). */}
-        <span className="hidden sm:inline">{pulse ? '🔔 ¡Nuevo pedido!' : 'Pedidos web'}</span>
-        <span className="sm:hidden">{pulse ? '🔔' : 'Web'}</span>
+        <span className="hidden xl:inline">{pulse ? '¡Nuevo pedido!' : 'Pedidos web'}</span>
+        <span className="xl:hidden">{pulse ? '¡Nuevo!' : 'Web'}</span>
         {total > 0 ? (
           <span
             aria-label={`${total} pedidos pendientes por confirmar pago`}

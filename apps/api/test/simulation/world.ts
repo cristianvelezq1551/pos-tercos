@@ -490,6 +490,8 @@ export async function construirMundo(rng: Rng): Promise<Mundo> {
     { tipo: 'PERCENT_OFF', productoId: enDisputa.id, pct: pctDisputa, disputada: true },
   );
   const fijoDisputa = rng.int(600, 2500);
+  /** Monto fijo de la segunda bebida — por UNIDAD, así que se deja bajo. */
+  const fijoDos = rng.int(300, 900);
   await crearPromo(
     {
       name: 'Promo fija en disputa Sim',
@@ -513,17 +515,22 @@ export async function construirMundo(rng: Rng): Promise<Mundo> {
     { tipo: 'COMBO_OFF', productoId: comboId, pct: comboPct },
   );
 
-  // Lleva 2 y llévate 1: solo cuentan los sets COMPLETOS, así que con 1 o 2
-  // unidades no descuenta nada y con 3 regala una.
+  // El 2x1 NO se simula: el servidor ya no deja crearlo (decisión del dueño,
+  // 2026-08-31 — el motor lo calcula por línea y una unidad con nota va en su
+  // propia línea, así que el descuento no se aplicaría y el cliente pagaría de
+  // más). La simulación tiene que reflejar lo que el producto PERMITE; la rama
+  // dormida del motor la cubre `reparto-invariante.test.ts` llamándola directo.
+  //
+  // Se pone un monto fijo en su lugar, que es lo que el dueño sí va a usar y
+  // el tipo que más cambió: se aplica POR UNIDAD.
   await crearPromo(
     {
-      name: 'Promo 2x1 Sim',
-      type: 'BOGO',
-      bogoBuyQty: 2,
-      bogoGetQty: 1,
+      name: 'Promo monto fijo Sim',
+      type: 'FIXED_OFF',
+      discountFixed: fijoDos,
       productIds: [bebidaDos.id],
     },
-    { tipo: 'BOGO', productoId: bebidaDos.id, comprar: 2, gratis: 1 },
+    { tipo: 'FIXED_OFF', productoId: bebidaDos.id, fijo: fijoDos },
   );
 
   const openingCash = rng.money(50_000, 200_000);

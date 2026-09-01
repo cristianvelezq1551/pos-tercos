@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderComandaEscPos } from './render-comanda';
 import type { ComandaData } from './render-comanda';
+import { lineasVisibles } from './lineas-visibles.test-util';
 
 const BASE: ComandaData = {
   receiptNumber: 42,
@@ -134,5 +135,45 @@ describe('comanda de CORTESÍA', () => {
 
   it('un pedido cobrado sigue mostrando su número', () => {
     expect(renderComandaEscPos(BASE).toString('latin1')).toContain('PEDIDO #42');
+  });
+});
+
+/**
+ * La indicación es lo único que la cocina no puede adivinar. Truncada, "sin
+ * cebolla, sin tomate, extra queso" llegaba a la plancha como "sin cebolla,
+ * sin tomate, ext" — y lo que no se lee, no se cumple.
+ */
+describe('la nota de cocina se parte por palabras, nunca se corta', () => {
+  const NOTA = 'sin cebolla, sin tomate, extra queso y la carne bien cocida';
+
+  it('llega completa aunque no quepa en un renglón', () => {
+    const papel = renderComandaEscPos({
+      ...BASE,
+      items: [{ productName: 'Hamburguesa', sizeName: null, quantity: 1, modifiers: [], notes: NOTA }],
+    }).toString('latin1');
+
+    for (const palabra of NOTA.split(/[\s,]+/)) {
+      expect(papel).toContain(palabra);
+    }
+  });
+
+  it('ninguna línea del papel pasa de 32 caracteres', () => {
+    const papel = renderComandaEscPos({
+      ...BASE,
+      items: [{ productName: 'Hamburguesa', sizeName: null, quantity: 1, modifiers: [], notes: NOTA }],
+    }).toString('latin1');
+
+    for (const visible of lineasVisibles(papel)) {
+      expect(visible.length, visible).toBeLessThanOrEqual(32);
+    }
+  });
+
+  it('no parte ninguna palabra a la mitad', () => {
+    const papel = renderComandaEscPos({
+      ...BASE,
+      items: [{ productName: 'Hamburguesa', sizeName: null, quantity: 1, modifiers: [], notes: NOTA }],
+    }).toString('latin1');
+    expect(papel).not.toMatch(/ceb\s*\n\s*olla/);
+    expect(papel).toContain('cebolla');
   });
 });

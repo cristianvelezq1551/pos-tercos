@@ -160,10 +160,15 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
       out.push(LF);
     }
     if (item.notes) {
+      // La indicación se parte por PALABRAS, no se corta: truncada a 32, un
+      // "sin cebolla, sin tomate, extra queso" llegaba a la plancha como "sin
+      // cebolla, sin tomate, ext" — y lo que no se lee, no se cumple.
       out.push(BOLD_ON);
-      out.push(latin1(truncate(`   * ${item.notes}`, 32)));
+      for (const linea of wrap(`   * ${item.notes}`, 32)) {
+        out.push(latin1(linea));
+        out.push(LF);
+      }
       out.push(BOLD_OFF);
-      out.push(LF);
     }
   }
   out.push(SEPARATOR);

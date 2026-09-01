@@ -55,21 +55,37 @@ describe('CreatePromotionSchema — cada tipo solo acepta SUS campos', () => {
     ).toBe(true);
   });
 
-  it('BOGO exige las DOS cantidades', () => {
-    expect(
-      CreatePromotionSchema.safeParse({ ...base, type: 'BOGO', bogoBuyQty: 2 }).success,
-    ).toBe(false);
-    expect(
-      CreatePromotionSchema.safeParse({ ...base, type: 'BOGO', bogoGetQty: 1 }).success,
-    ).toBe(false);
-    expect(
-      CreatePromotionSchema.safeParse({
-        ...base,
-        type: 'BOGO',
-        bogoBuyQty: 2,
-        bogoGetQty: 1,
-      }).success,
-    ).toBe(true);
+  /**
+   * El 2x1 NO se puede crear (decisión del dueño, 2026-08-31): el motor lo
+   * calcula por línea y una unidad con nota va en su propia línea, así que el
+   * descuento no se aplicaría y el cliente pagaría de más sin que nadie lo
+   * note. El valor sigue en el enum para poder LEER un histórico.
+   */
+  it('BOGO no se puede crear, ni completo ni a medias', () => {
+    for (const intento of [
+      { type: 'BOGO' as const },
+      { type: 'BOGO' as const, bogoBuyQty: 2 },
+      { type: 'BOGO' as const, bogoBuyQty: 2, bogoGetQty: 1 },
+    ]) {
+      const res = CreatePromotionSchema.safeParse({ ...base, ...intento });
+      expect(res.success).toBe(false);
+    }
+  });
+
+  it('el rechazo del 2x1 le habla a una persona, no al programador', () => {
+    const res = CreatePromotionSchema.safeParse({
+      ...base,
+      type: 'BOGO',
+      bogoBuyQty: 2,
+      bogoGetQty: 1,
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      const msg = res.error.issues[0]!.message;
+      expect(msg).toMatch(/deshabilitadas/);
+      // Nada de nombres de enum ni jerga en pantalla (regla de copy del repo).
+      expect(msg).not.toMatch(/BOGO/);
+    }
   });
 
   it('COMBO_OFF acepta descuento porcentual o fijo, no ambos vacíos', () => {
