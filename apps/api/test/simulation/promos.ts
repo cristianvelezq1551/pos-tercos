@@ -5,10 +5,15 @@
  *
  * Reglas que implementa:
  *  - PERCENT_OFF: el porcentaje sobre el subtotal de la línea.
- *  - FIXED_OFF:   un monto fijo, nunca más que el subtotal.
+ *  - FIXED_OFF:   un monto fijo POR CADA UNIDAD, nunca más que el subtotal.
+ *                 (Decisión del dueño 2026-08-31: "$2.000 de descuento en
+ *                 hamburguesas" son $2.000 por cada hamburguesa. Aplicarlo una
+ *                 vez por línea hacía que el precio dependiera de en cuántas
+ *                 líneas quedó repartida la misma cantidad.)
  *  - BOGO:        cada set de (comprar + gratis) regala `gratis` unidades;
  *                 solo cuentan los sets COMPLETOS.
- *  - COMBO_OFF:   igual que porcentaje o fijo, pero solo si la línea es un combo.
+ *  - COMBO_OFF:   igual que porcentaje o fijo (también por unidad), pero solo
+ *                 si la línea es un combo.
  *  - NO se acumulan: gana UNA, la de mayor descuento ABSOLUTO en pesos. Es la
  *    única forma justa de comparar un 20% contra $3.000. Si empatan, gana la
  *    de id menor (desempate estable, para que el resultado no dependa del orden).
@@ -48,7 +53,7 @@ function descuentoDe(
     case 'PERCENT_OFF':
       return Math.min(subtotalLinea * (promo.pct ?? 0), subtotalLinea);
     case 'FIXED_OFF':
-      return Math.min(promo.fijo ?? 0, subtotalLinea);
+      return Math.min((promo.fijo ?? 0) * cantidad, subtotalLinea);
     case 'BOGO': {
       const comprar = promo.comprar ?? 0;
       const gratis = promo.gratis ?? 0;
@@ -62,7 +67,8 @@ function descuentoDe(
       if (!esCombo) return 0;
       // Acepta porcentaje o monto fijo; con los dos definidos gana el mayor.
       const porPct = promo.pct ? subtotalLinea * promo.pct : 0;
-      const porFijo = promo.fijo ?? 0;
+      // El monto fijo también es por unidad, igual que FIXED_OFF.
+      const porFijo = (promo.fijo ?? 0) * cantidad;
       return Math.min(Math.max(porPct, porFijo), subtotalLinea);
     }
   }
