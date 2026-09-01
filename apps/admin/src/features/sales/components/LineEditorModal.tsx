@@ -1,21 +1,21 @@
 'use client';
 
 import { Button, Dialog, Textarea } from '@pos-tercos/ui';
-import { CopyPlus, Minus, Plus, Trash2 } from 'lucide-react';
+import { Minus, Plus, SplitSquareHorizontal, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { CartLine } from '../lib/cart-types';
 
 /**
- * Editor de UNA línea del carrito: cantidad, nota para cocina, otra unidad
- * aparte y quitar.
+ * Editor de UNA línea del carrito: cantidad, nota para cocina y quitar.
  *
  * Reemplaza a los tres íconos sin nombre que vivían en la fila (duplicar,
- * nota, quitar). El dueño lo dijo derecho: "no me parece intuitivo la forma de
- * agregar comentarios". Un ícono de papelito no le dice a nadie que ahí se
- * escribe "sin cebolla" — y en una caja se aprende mirando, no explorando.
+ * nota, quitar). Un ícono de papelito no le dice a nadie que ahí se escribe
+ * "sin cebolla" — y en una caja se aprende mirando, no explorando.
  *
- * Acá cada acción tiene su nombre escrito y la nota es un campo grande con un
- * ejemplo dentro, que es lo que se estaba buscando.
+ * Ya NO hay "agregar otro aparte": los productos no se agrupan, así que otra
+ * nota distinta es tocar el producto de nuevo. Lo que sí queda es **separar**
+ * una línea que alguien juntó con «+», que es justo lo que se esperaba de
+ * aquel botón y no era lo que hacía (agregaba una unidad de más).
  */
 export function LineEditorModal({
   line,
@@ -23,7 +23,7 @@ export function LineEditorModal({
   onClose,
   onQty,
   onNotes,
-  onDuplicate,
+  onSeparar,
   onRemove,
 }: {
   line: CartLine;
@@ -31,7 +31,7 @@ export function LineEditorModal({
   onClose: () => void;
   onQty: (qty: number) => void;
   onNotes: (notes: string) => void;
-  onDuplicate: () => void;
+  onSeparar: () => void;
   onRemove: () => void;
 }) {
   const [nota, setNota] = useState(line.notes ?? '');
@@ -116,32 +116,36 @@ export function LineEditorModal({
             Sale impresa en la comanda.{' '}
             {line.quantity > 1
               ? `Vale para las ${line.quantity} unidades de esta línea.`
-              : 'Si necesitas otra unidad con nota distinta, usa el botón de abajo.'}
+              : '¿Otra con nota distinta? Toca el producto de nuevo en el catálogo.'}
           </p>
         </div>
 
-        {/* La razón de existir del duplicado: dos unidades con indicaciones
-            distintas no caben en una sola línea. Escrito, se entiende; como
-            ícono, nadie lo encontraba. */}
-        <button
-          type="button"
-          onClick={() => {
-            onNotes(nota);
-            onDuplicate();
-            onClose();
-          }}
-          className="flex w-full items-start gap-3 rounded-xl border border-border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
-        >
-          <CopyPlus className="mt-0.5 h-5 w-5 shrink-0 text-primary" strokeWidth={1.75} />
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-foreground">
-              Agregar otro, en línea aparte
+        {/* Solo aparece si hay más de una unidad junta: separar es lo único
+            que no se resuelve tocando el producto otra vez. */}
+        {line.quantity > 1 ? (
+          <button
+            type="button"
+            onClick={() => {
+              onNotes(nota);
+              onSeparar();
+              onClose();
+            }}
+            className="flex w-full items-start gap-3 rounded-xl border border-border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
+          >
+            <SplitSquareHorizontal
+              className="mt-0.5 h-5 w-5 shrink-0 text-primary"
+              strokeWidth={1.75}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-foreground">
+                Separar en {line.quantity} líneas
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Para ponerle una nota distinta a cada una (ej. una con cebolla y otra sin).
+              </span>
             </span>
-            <span className="block text-xs text-muted-foreground">
-              Para ponerle una nota distinta (ej. una con cebolla y otra sin).
-            </span>
-          </span>
-        </button>
+          </button>
+        ) : null}
       </div>
     </Dialog>
   );
