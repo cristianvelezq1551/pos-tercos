@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CreateIngredient, Ingredient, UpdateIngredient } from '@pos-tercos/types';
 import type { Ingredient as DbIngredient, Prisma } from '@prisma/client';
+import { assertNombreDisponible, conNombreUnico } from '../common/nombre-unico';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -25,40 +26,66 @@ export class IngredientsService {
     return toIngredientDto(row);
   }
 
-  async create(input: CreateIngredient): Promise<Ingredient> {
-    const row = await this.prisma.ingredient.create({
-      data: {
-        name: input.name,
-        unitPurchase: input.unitPurchase,
-        unitRecipe: input.unitRecipe,
-        conversionFactor: input.conversionFactor,
-        thresholdMin: input.thresholdMin ?? 0,
-        portionSize: input.portionSize ?? null,
-        ...(input.blocksAvailability !== undefined && {
-          blocksAvailability: input.blocksAvailability,
-        }),
-      },
+  /** Busca un insumo ACTIVO con ese nombre, sin distinguir mayúsculas. */
+  private buscarActivoPorNombre = (nombre: string) =>
+    this.prisma.ingredient.findFirst({
+      where: { name: { equals: nombre, mode: 'insensitive' as const }, isActive: true },
+      select: { id: true },
     });
+
+  async create(input: CreateIngredient): Promise<Ingredient> {
+    await assertNombreDisponible(this.buscarActivoPorNombre, input.name, 'insumo');
+    const row = await conNombreUnico('insumo', input.name, () =>
+      this.prisma.ingredient.create({
+        data: {
+          name: input.name,
+          unitPurchase: input.unitPurchase,
+          unitRecipe: input.unitRecipe,
+          conversionFactor: input.conversionFactor,
+          thresholdMin: input.thresholdMin ?? 0,
+          portionSize: input.portionSize ?? null,
+          ...(input.blocksAvailability !== undefined && {
+            blocksAvailability: input.blocksAvailability,
+          }),
+        },
+      }),
+    );
     return toIngredientDto(row);
   }
 
   async update(id: string, input: UpdateIngredient): Promise<Ingredient> {
     await this.assertExists(id);
-    const row = await this.prisma.ingredient.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.unitPurchase !== undefined && { unitPurchase: input.unitPurchase }),
-        ...(input.unitRecipe !== undefined && { unitRecipe: input.unitRecipe }),
-        ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
-        ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
-        ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
-        ...(input.blocksAvailability !== undefined && {
-          blocksAvailability: input.blocksAvailability,
-        }),
-        ...(input.isActive !== undefined && { isActive: input.isActive }),
-      },
-    });
+    // Reactivar también compite por el nombre: un insumo dormido no estorba, pero
+    // al volver a la vida choca con el que ocupó su lugar.
+    if (input.name !== undefined || input.isActive === true) {
+      const existing = await this.prisma.ingredient.findUnique({
+        where: { id },
+        select: { name: true },
+      });
+      await assertNombreDisponible(
+        this.buscarActivoPorNombre,
+        input.name ?? existing?.name ?? '',
+        'insumo',
+        id,
+      );
+    }
+    const row = await conNombreUnico('insumo', input.name ?? '', () =>
+      this.prisma.ingredient.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.unitPurchase !== undefined && { unitPurchase: input.unitPurchase }),
+          ...(input.unitRecipe !== undefined && { unitRecipe: input.unitRecipe }),
+          ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
+          ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
+          ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
+          ...(input.blocksAvailability !== undefined && {
+            blocksAvailability: input.blocksAvailability,
+          }),
+          ...(input.isActive !== undefined && { isActive: input.isActive }),
+        },
+      }),
+    );
     return toIngredientDto(row);
   }
 

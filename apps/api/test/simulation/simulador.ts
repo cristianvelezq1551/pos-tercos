@@ -583,8 +583,17 @@ export class Simulacion {
         return {
           ...l,
           manual: l.manual,
+          // El monto FIJO de una línea se descuenta POR CADA UNIDAD, igual que la
+          // promoción de monto fijo: si no, el precio dependería de en cuántas
+          // líneas quedó repartida la misma cantidad (2026-08-31). El porcentaje
+          // no se multiplica — ya escala con el bruto, que incluye la cantidad.
           descuento: (bruto: number): number =>
-            redondearPeso(Math.min(kind === 'PERCENT' ? (bruto * value) / 100 : value, bruto)),
+            redondearPeso(
+              Math.min(
+                kind === 'PERCENT' ? (bruto * value) / 100 : value * l.cantidad,
+                bruto,
+              ),
+            ),
         };
       }
       return {

@@ -642,10 +642,11 @@ export class SalesEditService {
       if (c.manualDiscountKind !== null) {
         // Un descuento manual puesto AHORA es una instrucción nueva del cajero:
         // se aplica sobre el precio congelado.
-        c.lineDiscount = manualDiscountAmount(c.lineSubtotal, {
-          kind: c.manualDiscountKind,
-          value: c.manualDiscountValue ?? 0,
-        });
+        c.lineDiscount = manualDiscountAmount(
+          c.lineSubtotal,
+          { kind: c.manualDiscountKind, value: c.manualDiscountValue ?? 0 },
+          c.quantity,
+        );
         c.appliedPromotionId = null;
       } else {
         c.lineDiscount = f.lineDiscount;

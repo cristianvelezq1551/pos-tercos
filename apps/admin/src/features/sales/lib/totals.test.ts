@@ -152,13 +152,36 @@ describe('computeCartTotals — descuento manual (#5b)', () => {
       [],
       AT,
       {
+        // $5.000 POR CADA UNIDAD (igual que la promo de monto fijo): 2 × 5.000 = 10.000.
         lineDiscounts: { l1: { kind: 'FIXED', value: 5_000 } },
-        orderDiscount: { kind: 'PERCENT', value: 10 }, // 10% de 15.000 = 1.500
+        orderDiscount: { kind: 'PERCENT', value: 10 }, // 10% de los 10.000 que quedan
       },
     );
-    expect(r.orderDiscountAmount).toBe(1_500);
-    expect(r.discount).toBe(6_500);
-    expect(r.total).toBe(13_500);
+    expect(r.orderDiscountAmount).toBe(1_000);
+    expect(r.discount).toBe(11_000);
+    expect(r.total).toBe(9_000);
+  });
+
+  it('el monto fijo de línea es por unidad: el reparto no cambia el total', () => {
+    const juntas = computeCartTotals([line({ quantity: 3 })], [], AT, {
+      lineDiscounts: { l1: { kind: 'FIXED', value: 2_000 } },
+      orderDiscount: null,
+    });
+    const sueltas = computeCartTotals(
+      [line({ lineId: 'a' }), line({ lineId: 'b' }), line({ lineId: 'c' })],
+      [],
+      AT,
+      {
+        lineDiscounts: {
+          a: { kind: 'FIXED', value: 2_000 },
+          b: { kind: 'FIXED', value: 2_000 },
+          c: { kind: 'FIXED', value: 2_000 },
+        },
+        orderDiscount: null,
+      },
+    );
+    expect(juntas.discount).toBe(6_000);
+    expect(juntas.total).toBe(sueltas.total);
   });
 
   it('sin descuentos manuales las promos corren normal', () => {

@@ -28,6 +28,7 @@ import {
   type StorageProvider,
 } from '@pos-tercos/domain';
 import type { Prisma } from '@prisma/client';
+import { assertNombreDisponible, conNombreUnico } from '../common/nombre-unico';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 import { ProductCategoriesService } from '../product-categories/product-categories.service';
@@ -144,58 +145,68 @@ export class ProductsService {
     }
   }
 
+  /** Busca un producto ACTIVO con ese nombre, sin distinguir mayúsculas. */
+  private buscarActivoPorNombre = (nombre: string) =>
+    this.prisma.product.findFirst({
+      where: { name: { equals: nombre, mode: 'insensitive' as const }, isActive: true },
+      select: { id: true },
+    });
+
   async create(input: CreateProduct): Promise<Product> {
+    await assertNombreDisponible(this.buscarActivoPorNombre, input.name, 'producto');
     await this.assertModifierConsumptions(input.modifiers);
     if (input.isCombo) {
       await this.assertComboComponentsAreNonComboProducts(input.comboComponents ?? []);
     }
     const category = await this.categories.resolveCanonicalName(input.category);
-    const row = await this.prisma.product.create({
-      data: {
-        name: input.name,
-        description: input.description ?? null,
-        preparationSteps: input.preparationSteps ?? [],
-        basePrice: input.basePrice,
-        category,
-        imageUrl: input.imageUrl ?? null,
-        emoji: input.emoji?.trim() || null,
-        modifiersEnabled: input.modifiersEnabled ?? false,
-        isCombo: input.isCombo ?? false,
-        comboPrice: input.isCombo ? (input.comboPrice ?? null) : null,
-        directResale: input.directResale ?? false,
-        unitPurchase: input.directResale ? (input.unitPurchase ?? null) : null,
-        unitStock: input.directResale ? (input.unitStock ?? null) : null,
-        conversionFactor: input.directResale ? (input.conversionFactor ?? null) : null,
-        thresholdMin: input.thresholdMin ?? 0,
-        sizes: input.sizes
-          ? {
-              create: input.sizes.map((s) => ({
-                name: s.name,
-                priceModifier: s.priceModifier,
-                sortOrder: s.sortOrder ?? 0,
-              })),
-            }
-          : undefined,
-        modifiers: input.modifiers
-          ? {
-              create: input.modifiers.map((m) => ({
-                name: m.name,
-                priceDelta: m.priceDelta,
-                recipeDelta: (m.recipeDelta ?? []) as unknown as Prisma.InputJsonValue,
-              })),
-            }
-          : undefined,
-        comboComponents: input.isCombo && input.comboComponents
-          ? {
-              create: input.comboComponents.map((c) => ({
-                productId: c.productId,
-                quantity: c.quantity,
-              })),
-            }
-          : undefined,
-      },
-      include: { sizes: true, modifiers: true, comboComponents: true },
-    });
+    const row = await conNombreUnico('producto', input.name, () =>
+      this.prisma.product.create({
+        data: {
+          name: input.name,
+          description: input.description ?? null,
+          preparationSteps: input.preparationSteps ?? [],
+          basePrice: input.basePrice,
+          category,
+          imageUrl: input.imageUrl ?? null,
+          emoji: input.emoji?.trim() || null,
+          modifiersEnabled: input.modifiersEnabled ?? false,
+          isCombo: input.isCombo ?? false,
+          comboPrice: input.isCombo ? (input.comboPrice ?? null) : null,
+          directResale: input.directResale ?? false,
+          unitPurchase: input.directResale ? (input.unitPurchase ?? null) : null,
+          unitStock: input.directResale ? (input.unitStock ?? null) : null,
+          conversionFactor: input.directResale ? (input.conversionFactor ?? null) : null,
+          thresholdMin: input.thresholdMin ?? 0,
+          sizes: input.sizes
+            ? {
+                create: input.sizes.map((s) => ({
+                  name: s.name,
+                  priceModifier: s.priceModifier,
+                  sortOrder: s.sortOrder ?? 0,
+                })),
+              }
+            : undefined,
+          modifiers: input.modifiers
+            ? {
+                create: input.modifiers.map((m) => ({
+                  name: m.name,
+                  priceDelta: m.priceDelta,
+                  recipeDelta: (m.recipeDelta ?? []) as unknown as Prisma.InputJsonValue,
+                })),
+              }
+            : undefined,
+          comboComponents: input.isCombo && input.comboComponents
+            ? {
+                create: input.comboComponents.map((c) => ({
+                  productId: c.productId,
+                  quantity: c.quantity,
+                })),
+              }
+            : undefined,
+        },
+        include: { sizes: true, modifiers: true, comboComponents: true },
+      }),
+    );
     return toProductDto(row);
   }
 
@@ -221,28 +232,40 @@ export class ProductsService {
         ? await this.categories.resolveCanonicalName(input.category)
         : undefined;
 
-    const row = await this.prisma.product.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.description !== undefined && { description: input.description }),
-        ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
-        ...(input.basePrice !== undefined && { basePrice: input.basePrice }),
-        ...(category !== undefined && { category }),
-        ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
-        ...(input.emoji !== undefined && { emoji: input.emoji?.trim() || null }),
-        ...(input.modifiersEnabled !== undefined && { modifiersEnabled: input.modifiersEnabled }),
-        ...(input.isCombo !== undefined && { isCombo: input.isCombo }),
-        ...(input.comboPrice !== undefined && { comboPrice: input.comboPrice }),
-        ...(input.isActive !== undefined && { isActive: input.isActive }),
-        ...(input.directResale !== undefined && { directResale: input.directResale }),
-        ...(input.unitPurchase !== undefined && { unitPurchase: input.unitPurchase }),
-        ...(input.unitStock !== undefined && { unitStock: input.unitStock }),
-        ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
-        ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
-      },
-      include: { sizes: true, modifiers: true, comboComponents: true },
-    });
+    // Reactivar también compite por el nombre: uno dormido no estorba, pero al
+    // volver a la vida choca con el que ocupó su lugar.
+    if (input.name !== undefined || input.isActive === true) {
+      await assertNombreDisponible(
+        this.buscarActivoPorNombre,
+        input.name ?? existing.name,
+        'producto',
+        id,
+      );
+    }
+    const row = await conNombreUnico('producto', input.name ?? existing.name, () =>
+      this.prisma.product.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.description !== undefined && { description: input.description }),
+          ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
+          ...(input.basePrice !== undefined && { basePrice: input.basePrice }),
+          ...(category !== undefined && { category }),
+          ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
+          ...(input.emoji !== undefined && { emoji: input.emoji?.trim() || null }),
+          ...(input.modifiersEnabled !== undefined && { modifiersEnabled: input.modifiersEnabled }),
+          ...(input.isCombo !== undefined && { isCombo: input.isCombo }),
+          ...(input.comboPrice !== undefined && { comboPrice: input.comboPrice }),
+          ...(input.isActive !== undefined && { isActive: input.isActive }),
+          ...(input.directResale !== undefined && { directResale: input.directResale }),
+          ...(input.unitPurchase !== undefined && { unitPurchase: input.unitPurchase }),
+          ...(input.unitStock !== undefined && { unitStock: input.unitStock }),
+          ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
+          ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
+        },
+        include: { sizes: true, modifiers: true, comboComponents: true },
+      }),
+    );
     return toProductDto(row);
   }
 

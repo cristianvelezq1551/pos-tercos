@@ -92,7 +92,7 @@ export function DiscountModal({ open, onClose }: { open: boolean; onClose: () =>
       open={open}
       onClose={onClose}
       title="Descuento manual"
-      description="Excluyente con promociones: si aplicás descuento, las promos no corren. El dueño recibe el aviso."
+      description="Excluyente con promociones: si aplicas descuento, las promos no corren. El dueño recibe el aviso."
       maxWidth="max-w-lg"
       footer={
         <>
@@ -110,6 +110,14 @@ export function DiscountModal({ open, onClose }: { open: boolean; onClose: () =>
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Por línea
+            </p>
+            {/* El $ por línea es POR CADA UNIDAD, igual que la promoción de monto
+                fijo. Sin decirlo, quien puso "$500" sobre tres bebidas no sabe si
+                está regalando $500 o $1.500. */}
+            <p className="text-sm text-muted-foreground sm:text-xs">
+              El monto en <span className="font-semibold">$</span> se descuenta por cada unidad:
+              $500 sobre 3 bebidas son $1.500. Para descontar del pedido completo, usa
+              «Sobre el total».
             </p>
             {items.map((it) => (
               <SpecInputs
