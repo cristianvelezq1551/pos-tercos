@@ -84,3 +84,37 @@ describe('un 2x1 sigue aplicando con el agrupado de vuelta', () => {
     expect(totalDelCarrito()).toBe(PRECIO * 2);
   });
 });
+
+/**
+ * El monto fijo, visto desde el carrito de la caja (no desde el motor suelto):
+ * el total tiene que ser el mismo esté la cantidad junta o repartida.
+ */
+describe('un descuento de monto fijo no cambia según el reparto', () => {
+  const dosMilMenos: Promotion = {
+    ...dosPorUno,
+    id: 'promo-fija',
+    name: '$2.000 en gaseosas',
+    type: 'FIXED_OFF',
+    bogoBuyQty: null,
+    bogoGetQty: null,
+    discountFixed: 2_000,
+  } as unknown as Promotion;
+
+  const total = (): number => {
+    const { items, lineDiscounts, orderDiscount } = useCartStore.getState();
+    return computeCartTotals(items, [dosMilMenos], MEDIODIA, { lineDiscounts, orderDiscount })
+      .total;
+  };
+
+  it('tres juntas y tres separadas cuestan lo mismo', () => {
+    useCartStore.setState({ items: [], lineDiscounts: {}, orderDiscount: null });
+    for (let i = 0; i < 3; i++) useCartStore.getState().addItem(bebida);
+    const juntas = total();
+
+    useCartStore.getState().separarLinea(useCartStore.getState().items[0]!.lineId);
+    expect(useCartStore.getState().items).toHaveLength(3);
+    expect(total()).toBe(juntas);
+    // $5.000 cada una menos $2.000 por unidad = $3.000 × 3.
+    expect(juntas).toBe(9_000);
+  });
+});
