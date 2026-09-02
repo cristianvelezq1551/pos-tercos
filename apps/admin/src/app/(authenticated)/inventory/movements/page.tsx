@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button, Container, FormField, PageHeader, Select } from '@pos-tercos/ui';
 import { PackageOpen } from 'lucide-react';
-import { MovementsTable } from '../../../../features/inventory';
+import { MovementsList } from '../../../../features/inventory';
 import { serverFetchJson } from '../../../../lib/api-server';
 import { friendlyApiError } from '../../../../lib/error-copy';
 import type {
@@ -117,7 +117,7 @@ export default async function MovementsPage({ searchParams }: PageProps) {
 
         <div className="mt-5">
           {!('error' in result) ? (
-            <MovementsTable rows={result.movements} />
+            <MovementsList rows={result.movements} />
           ) : (
             <p
               role="alert"

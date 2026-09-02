@@ -14,6 +14,10 @@ import { ReverseWasteAction } from './ReverseWasteAction';
 
 interface MovementsTableProps {
   rows: InventoryMovement[];
+  /** De dónde se cuenta lo ya devuelto de cada merma. Default: las filas
+   *  visibles. Con la lista filtrada hay que pasar la COMPLETA: si no, una
+   *  merma cuya reversa quedó fuera del filtro vuelve a ofrecer "Anular". */
+  reversalSource?: InventoryMovement[];
 }
 
 const TYPE_LABEL: Record<InventoryMovementType, string> = {
@@ -34,10 +38,10 @@ const TYPE_TONE: Record<InventoryMovementType, BadgeTone> = {
   PRODUCTION: 'info',
 };
 
-export function MovementsTable({ rows }: MovementsTableProps) {
-  // Cuánto se devolvió ya de cada merma, según las filas visibles.
+export function MovementsTable({ rows, reversalSource }: MovementsTableProps) {
+  // Cuánto se devolvió ya de cada merma, según las filas cargadas.
   const reversedByWaste = new Map<string, number>();
-  for (const m of rows) {
+  for (const m of reversalSource ?? rows) {
     if (m.sourceType === 'waste_reversal' && m.sourceId) {
       reversedByWaste.set(m.sourceId, (reversedByWaste.get(m.sourceId) ?? 0) + m.delta);
     }
