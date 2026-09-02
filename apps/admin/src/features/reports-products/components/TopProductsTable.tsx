@@ -95,8 +95,10 @@ export function TopProductsTable({ report }: TopProductsTableProps) {
         </table>
       </div>
       <div className="border-t border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-        Costo <strong>estimado</strong> con el último precio de compra (lastUnitCost), desglosando
-        recetas y subproductos. Es una referencia rápida — para el costo real por lote consulta{' '}
+        Costo <strong>estimado</strong> con el último precio de compra de cada insumo,
+        desglosando recetas y subproductos, y costeando la variante que se vendió (un plato con
+        variantes se vende siempre con una elegida). Es una referencia rápida — para el costo real
+        por lote consulta{' '}
         <a href="/reports/costos" className="underline hover:text-foreground">
           Costos y margen real
         </a>{' '}

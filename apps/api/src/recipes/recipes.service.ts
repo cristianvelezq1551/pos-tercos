@@ -29,6 +29,13 @@ import { PrismaService } from '../prisma/prisma.service';
 type DbRecipeEdge = Prisma.RecipeEdgeGetPayload<Record<string, never>>;
 type DbProductSize = Prisma.ProductSizeGetPayload<Record<string, never>>;
 
+/** Consulta de costos ya resuelta: producto o producto+variante. */
+export interface CatalogCostLookup {
+  unitCost(productId: string, sizeId?: string | null): number | null;
+}
+
+const variantKey = (productId: string, sizeId: string): string => `${productId}:${sizeId}`;
+
 type ParentKind = 'product' | 'subproduct';
 
 @Injectable()
@@ -472,6 +479,33 @@ export class RecipesService {
    */
   async listProductCostsWithVariants(): Promise<ProductCostWithVariants[]> {
     return this.catalogCosts(true);
+  }
+
+  /**
+   * Costo por unidad de cada producto Y de cada variante, listo para consultar.
+   *
+   * Lo usan los reportes que costean lo que se VENDIÓ: una venta lleva su
+   * `sizeId`, y costearla con la receta base cobra de menos exactamente lo que
+   * vale la variante (la proteína, casi siempre lo más caro del plato).
+   */
+  async buildCostLookup(): Promise<CatalogCostLookup> {
+    const costs = await this.catalogCosts(true);
+    const base = new Map(costs.map((c) => [c.productId, c.totalCost]));
+    const byVariant = new Map<string, number | null>();
+    for (const c of costs) {
+      for (const v of c.variants) byVariant.set(variantKey(c.productId, v.sizeId), v.totalCost);
+    }
+    return {
+      unitCost(productId, sizeId) {
+        if (sizeId) {
+          const conVariante = byVariant.get(variantKey(productId, sizeId));
+          // Una variante borrada del catálogo no vuelve desconocido el costo:
+          // se cae a la base, que es lo que se sabe.
+          if (conVariante !== undefined) return conVariante;
+        }
+        return base.get(productId) ?? null;
+      },
+    };
   }
 
   /**

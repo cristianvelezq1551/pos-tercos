@@ -263,8 +263,11 @@ function OrderDetail({ order }: { order: ShiftSessionOrder }) {
               {formatCop(order.marginTotal)} ({formatPct(order.marginPct)})
             </span>
           </span>
-          <span className="text-[0.6875rem] text-muted-foreground">
-            aprox. — costo base de catálogo, sin variante de tamaño
+          <span
+            className="text-[0.6875rem] text-muted-foreground"
+            title="Se costea la variante que se vendió, con el último precio de compra de cada insumo. Lo que costó DE VERDAD sale por FIFO (del lote del que salió) y puede diferir si todavía se vende de un lote comprado a otro precio."
+          >
+            aprox. — receta de la variante, al último precio de compra
           </span>
         </div>
       ) : null}

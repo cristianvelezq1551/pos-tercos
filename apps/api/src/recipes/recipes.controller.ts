@@ -63,8 +63,9 @@ export class RecipesController {
     return this.recipes.setSizeRecipe(id, sizeId, body.edges);
   }
 
-  // Costo de TODOS los productos en una request (batch) — reemplaza el N+1 de
-  // pedir `expanded-cost` por producto en la tabla del admin.
+  // Costo de TODOS los productos en una request (batch), SOLO de la receta base.
+  // ⚠️ No usar para mostrar el costo de un producto con variantes: ahí la base
+  // describe un plato que nadie puede comprar. Para eso está `/with-variants`.
   @Get('product-costs')
   productCosts(): Promise<ProductCostSummary[]> {
     return this.recipes.listProductCosts();

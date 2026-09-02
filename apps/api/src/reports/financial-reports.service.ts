@@ -5,6 +5,7 @@ import {
   breakEvenFromCatalogMargin,
   computeBreakEven,
   computeCatalogMargin,
+  type CatalogProductMargin,
   computeComboCost,
   computeProductCost,
   nextWeekRef,
@@ -81,7 +82,7 @@ export class FinancialReportsService {
    * excluye: NUNCA se asume que es gratis.
    */
   private async catalogMargin(from: Date, to: Date): Promise<CatalogMarginResult> {
-    const [products, ingredients, graph, vendidos] = await Promise.all([
+    const [products, ingredients, graph, vendidos, costosDeVariante] = await Promise.all([
       this.prisma.product.findMany({
         where: { isActive: true },
         select: {
@@ -94,6 +95,10 @@ export class FinancialReportsService {
           lastUnitCost: true,
           conversionFactor: true,
           comboComponents: { select: { productId: true, quantity: true } },
+          sizes: {
+            select: { id: true, name: true, priceModifier: true },
+            orderBy: { sortOrder: 'asc' },
+          },
         },
       }),
       this.prisma.ingredient.findMany({
@@ -106,7 +111,9 @@ export class FinancialReportsService {
       // que no hay dos costeos que puedan separarse.
       this.recipes.loadFullGraph(),
       this.prisma.saleItem.groupBy({
-        by: ['productId'],
+        // Por VARIANTE: un plato con variantes se vende siempre con una
+        // elegida, y cada una tiene su precio y su costo.
+        by: ['productId', 'sizeId'],
         _sum: { quantity: true },
         where: {
           sale: {
@@ -115,6 +122,7 @@ export class FinancialReportsService {
           },
         },
       }),
+      this.recipes.buildCostLookup(),
     ]);
 
     const costoInsumo: IngredientCostMap = new Map(
@@ -125,7 +133,14 @@ export class FinancialReportsService {
           : null,
       ]),
     );
-    const unidades = new Map(vendidos.map((v) => [v.productId, Number(v._sum.quantity ?? 0)]));
+    const unidades = new Map<string, number>();
+    const unidadesPorVariante = new Map<string, number>();
+    for (const v of vendidos) {
+      const qty = Number(v._sum.quantity ?? 0);
+      unidades.set(v.productId, (unidades.get(v.productId) ?? 0) + qty);
+      const clave = `${v.productId}:${v.sizeId ?? ''}`;
+      unidadesPorVariante.set(clave, (unidadesPorVariante.get(clave) ?? 0) + qty);
+    }
 
     const costoUnitario = (p: (typeof products)[number]): number | null =>
       computeProductCost({
@@ -143,8 +158,45 @@ export class FinancialReportsService {
 
     const porId = new Map(products.map((p) => [p.id, p]));
 
+    /**
+     * Las líneas de la CARTA, que no son lo mismo que los productos: un plato
+     * con variantes se vende siempre con una elegida, así que la receta base
+     * describe algo que nadie puede comprar. Cada variante entra con su precio
+     * (base + recargo) y su costo; el producto sin variantes entra tal cual.
+     *
+     * La línea base de un producto CON variantes solo aparece si de verdad se
+     * vendió sin elegir ninguna — inventarla movería el promedio con un plato
+     * que no existe en la carta.
+     */
+    const lineasDeVariante = (p: (typeof products)[number]): CatalogProductMargin[] => {
+      const salidas: CatalogProductMargin[] = p.sizes.map((size) => ({
+        productId: `${p.id}:${size.id}`,
+        name: `${p.name} · ${size.name}`,
+        price: Number(p.basePrice ?? 0) + Number(size.priceModifier),
+        cost: costosDeVariante.unitCost(p.id, size.id),
+        unitsSold: unidadesPorVariante.get(`${p.id}:${size.id}`) ?? 0,
+      }));
+      const sinVariante = unidadesPorVariante.get(`${p.id}:`) ?? 0;
+      if (sinVariante > 0) {
+        salidas.push({
+          productId: p.id,
+          name: p.name,
+          price: Number(p.basePrice ?? 0),
+          cost: costoUnitario(p),
+          unitsSold: sinVariante,
+        });
+      }
+      return salidas;
+    };
+
     return computeCatalogMargin(
-      products.map((p) => ({
+      products.flatMap((p) =>
+        !p.isCombo && p.sizes.length > 0 ? lineasDeVariante(p) : [baseLine(p)],
+      ),
+    );
+
+    function baseLine(p: (typeof products)[number]): CatalogProductMargin {
+      return {
         productId: p.id,
         name: p.name,
         price: p.isCombo && p.comboPrice !== null ? Number(p.comboPrice) : Number(p.basePrice ?? 0),
@@ -165,8 +217,8 @@ export class FinancialReportsService {
             }).totalCost
           : costoUnitario(p),
         unitsSold: unidades.get(p.id) ?? 0,
-      })),
-    );
+      };
+    }
   }
 
   /** Estado financiero del mes `(year, month1)` (month1: 1-12). */

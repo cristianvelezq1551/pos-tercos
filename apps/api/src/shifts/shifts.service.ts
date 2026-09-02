@@ -520,6 +520,7 @@ export class ShiftsService {
         items: {
           select: {
             productId: true,
+            sizeId: true,
             quantity: true,
             unitPrice: true,
             lineDiscount: true,
@@ -534,13 +535,10 @@ export class ShiftsService {
     });
 
     // Ganancia (costos) SOLO para roles con visibilidad de costos — nunca al cajero.
-    // Costo BASE por unidad (sin variante de tamaño), en una sola pasada; misma
-    // aproximación que la lista de productos del admin. null si el costo es desconocido.
-    const costByProduct = new Map<string, number | null>();
-    if (includeMargin) {
-      const costs = await this.recipes.listProductCosts();
-      for (const c of costs) costByProduct.set(c.productId, c.totalCost);
-    }
+    // Cada línea se costea con SU variante: costear con la receta base cobraba
+    // de menos justo lo que vale la proteína, que suele ser lo más caro del
+    // plato. Una sola pasada por todo el catálogo; null si el costo se desconoce.
+    const costs = includeMargin ? await this.recipes.buildCostLookup() : null;
 
     const orders = rows.map((r) => {
       // La ganancia solo tiene sentido en ventas que generaron ingreso. Un pedido
@@ -548,7 +546,7 @@ export class ShiftsService {
       // el arqueo, `isRevenueSale`), para no mostrar "ganancia" en algo que no vendió.
       const earnsRevenue = includeMargin && isRevenueSale(r.status);
       const items = r.items.map((it) => {
-        const unitCost = earnsRevenue ? costByProduct.get(it.productId) ?? null : null;
+        const unitCost = earnsRevenue ? (costs?.unitCost(it.productId, it.sizeId) ?? null) : null;
         const lineTotal = Number(it.lineTotal);
         const lineCost = unitCost !== null ? Math.round(unitCost * it.quantity) : null;
         const lineMargin = lineCost !== null ? lineTotal - lineCost : null;
