@@ -85,7 +85,10 @@ describe('Visibilidad en cocina y foto de preparación (E2E)', () => {
         basePrice: 20000,
         category: 'Burgers',
         imageUrl: '/api/products/images/carta.png',
-        prepImageUrl: '/api/products/images/armado.png',
+        prepImages: [
+          { url: '/api/products/images/sencilla.png', label: 'Sencilla' },
+          { url: '/api/products/images/doble.png', label: 'Doble' },
+        ],
       })
       .expect(201);
     productId = prod.body.id as string;
@@ -133,12 +136,47 @@ describe('Visibilidad en cocina y foto de preparación (E2E)', () => {
     expect(componentes).not.toContain(recipienteId);
   });
 
-  it('la Biblia manda la foto de la preparación, no la de la carta', async () => {
+  // Un plato se arma distinto según la variante: la biblia tiene que poder
+  // mostrar una foto por cada una, y el rótulo es lo que las distingue.
+  it('la Biblia manda las fotos de la preparación, no la de la carta', async () => {
     const res = await request.get('/recipe-book').set(auth(cocineroToken)).expect(200);
-    const entry = (res.body.products as Array<{ id: string; prepImageUrl: string | null; imageUrl: string | null }>)
-      .find((p) => p.id === productId);
-    expect(entry!.prepImageUrl).toBe('/api/products/images/armado.png');
+    const entry = (
+      res.body.products as Array<{
+        id: string;
+        prepImages: Array<{ url: string; label: string | null }>;
+        imageUrl: string | null;
+      }>
+    ).find((p) => p.id === productId);
+    expect(entry!.prepImages).toEqual([
+      { url: '/api/products/images/sencilla.png', label: 'Sencilla' },
+      { url: '/api/products/images/doble.png', label: 'Doble' },
+    ]);
     expect(entry!.imageUrl).toBe('/api/products/images/carta.png');
+  });
+
+  it('un subproducto también lleva sus fotos, con rótulo', async () => {
+    await request
+      .patch(`/subproducts/${salsaId}`)
+      .set(auth(duenoToken))
+      .send({ prepImages: [{ url: '/api/products/images/tanda.png', label: 'Tanda lista' }] })
+      .expect(200);
+    const res = await request.get('/recipe-book').set(auth(cocineroToken)).expect(200);
+    const sub = (
+      res.body.subproducts as Array<{ id: string; prepImages: Array<{ label: string | null }> }>
+    ).find((x) => x.id === salsaId);
+    expect(sub!.prepImages).toHaveLength(1);
+    expect(sub!.prepImages[0]!.label).toBe('Tanda lista');
+  });
+
+  // El rótulo vacío se guarda como null: "" y null son el mismo "sin nombre" y
+  // dos representaciones para lo mismo se separan con el tiempo.
+  it('el rótulo en blanco se guarda como sin rótulo', async () => {
+    const res = await request
+      .patch(`/subproducts/${salsaId}`)
+      .set(auth(duenoToken))
+      .send({ prepImages: [{ url: '/api/products/images/tanda.png', label: '   ' }] })
+      .expect(200);
+    expect(res.body.prepImages).toEqual([{ url: '/api/products/images/tanda.png', label: null }]);
   });
 
   it('ocultar un subproducto lo saca de la Biblia y del inventario de cocina', async () => {

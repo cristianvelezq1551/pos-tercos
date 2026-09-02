@@ -2,7 +2,7 @@
 
 import type { RecipeBookEntry } from '@pos-tercos/types';
 import { Dialog, pluralizeUnit } from '@pos-tercos/ui';
-import { fotoDeReceta } from './foto-de-receta';
+import { fotosDeReceta } from './foto-de-receta';
 
 /** Detalle de una receta: composición (qué lleva) + paso a paso. */
 export function RecipeDetail({
@@ -15,18 +15,50 @@ export function RecipeDetail({
   onClose: () => void;
 }) {
   if (!entry) return null;
+  const fotos = fotosDeReceta(entry);
   return (
     <Dialog open={open} onClose={onClose} title={entry.name} maxWidth="max-w-lg">
       <div className="space-y-5">
-        {/* La foto de la PREPARACIÓN es la que sirve para armar el plato; la
-            de la carta queda de respaldo cuando nadie subió una propia. */}
-        {fotoDeReceta(entry) ? (
-          <img
-            src={fotoDeReceta(entry)!}
-            alt={`Así se ve ${entry.name}`}
-            className="max-h-56 w-full rounded-lg border border-border object-cover"
-            loading="lazy"
-          />
+        {/* Las fotos de la PREPARACIÓN son las que sirven para armar el
+            plato —una por variante— y la de la carta queda de respaldo cuando
+            nadie subió ninguna propia.
+
+            Con varias van en una tira que se desliza: apiladas empujaban la
+            receta y el paso a paso fuera de la pantalla, y son justo lo que el
+            cocinero abrió a ver. De paso quedan lado a lado, que es como se
+            comparan dos variantes.
+
+            El rótulo va SOBRE la foto: leerlo abajo obliga a ir y volver con
+            la vista para saber cuál es cuál. */}
+        {fotos.length > 0 ? (
+          <ul
+            className={
+              fotos.length === 1
+                ? 'space-y-2'
+                : '-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1'
+            }
+          >
+            {fotos.map((foto) => (
+              <li
+                key={foto.url}
+                className={fotos.length === 1 ? 'relative' : 'relative w-[78%] shrink-0 snap-start'}
+              >
+                <img
+                  src={foto.url}
+                  alt={foto.label ? `${entry.name} — ${foto.label}` : `Así se ve ${entry.name}`}
+                  className={`w-full rounded-lg border border-border object-cover ${
+                    fotos.length === 1 ? 'max-h-56' : 'h-40'
+                  }`}
+                  loading="lazy"
+                />
+                {foto.label ? (
+                  <span className="absolute left-2 top-2 rounded-md bg-ink-950/80 px-2 py-1 text-xs font-semibold text-foreground">
+                    {foto.label}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         ) : null}
         {entry.kind === 'SUBPRODUCT' && entry.yield ? (
           <p className="text-xs text-muted-foreground">

@@ -34,6 +34,7 @@ import { RecipesService } from '../recipes/recipes.service';
 import { ProductCategoriesService } from '../product-categories/product-categories.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { mimeForExtension } from '../common/image-mime';
+import { normalizePrepImages, toPrepImages } from '../common/prep-images';
 
 type ProductWithChildren = Prisma.ProductGetPayload<{
   include: {
@@ -168,7 +169,7 @@ export class ProductsService {
           basePrice: input.basePrice,
           category,
           imageUrl: input.imageUrl ?? null,
-          prepImageUrl: input.prepImageUrl ?? null,
+          prepImages: normalizePrepImages(input.prepImages ?? []),
           emoji: input.emoji?.trim() || null,
           modifiersEnabled: input.modifiersEnabled ?? false,
           isCombo: input.isCombo ?? false,
@@ -253,7 +254,9 @@ export class ProductsService {
           ...(input.basePrice !== undefined && { basePrice: input.basePrice }),
           ...(category !== undefined && { category }),
           ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
-          ...(input.prepImageUrl !== undefined && { prepImageUrl: input.prepImageUrl }),
+          ...(input.prepImages !== undefined && {
+            prepImages: normalizePrepImages(input.prepImages),
+          }),
           ...(input.emoji !== undefined && { emoji: input.emoji?.trim() || null }),
           ...(input.modifiersEnabled !== undefined && { modifiersEnabled: input.modifiersEnabled }),
           ...(input.isCombo !== undefined && { isCombo: input.isCombo }),
@@ -615,7 +618,7 @@ function toProductDto(row: ProductWithChildren): Product {
     basePrice: Number(row.basePrice),
     category: row.category,
     imageUrl: row.imageUrl,
-    prepImageUrl: row.prepImageUrl,
+    prepImages: toPrepImages(row.prepImages),
     emoji: row.emoji,
     modifiersEnabled: row.modifiersEnabled,
     isCombo: row.isCombo,

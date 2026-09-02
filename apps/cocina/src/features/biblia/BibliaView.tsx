@@ -7,7 +7,7 @@ import { getErrorMessage } from '../../lib/errors';
 import { logError } from '../../lib/client-log';
 import { fetchRecipeBook } from './api';
 import { RecipeDetail } from './RecipeDetail';
-import { fotoDeReceta } from './foto-de-receta';
+import { fotoPrincipal } from './foto-de-receta';
 
 type Tab = 'PRODUCT' | 'SUBPRODUCT';
 
@@ -82,9 +82,9 @@ export function BibliaView() {
                   className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
                 >
                   <span className="flex min-w-0 items-center gap-3">
-                    {fotoDeReceta(e) ? (
+                    {fotoPrincipal(e) ? (
                       <img
-                        src={fotoDeReceta(e)!}
+                        src={fotoPrincipal(e)!}
                         alt=""
                         aria-hidden
                         className="h-10 w-10 shrink-0 rounded-md border border-border object-cover"

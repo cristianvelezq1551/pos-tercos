@@ -25,6 +25,7 @@ import {
 import { ProductTypeSelector } from './ProductTypeSelector';
 import { ProductFormBasicFields } from './ProductFormBasicFields';
 import { ImageUploadField } from '../../../components/ImageUploadField';
+import { PrepImagesField } from '../../../components/PrepImagesField';
 import { ProductFormEmojiField } from './ProductFormEmojiField';
 import { ProductFormDirectResaleSection } from './ProductFormDirectResaleSection';
 import { ProductFormVariantsSection } from './ProductFormVariantsSection';
@@ -52,7 +53,7 @@ function initFormState(initial?: Product): FormState {
     basePrice: initial ? String(initial.basePrice) : '',
     category: initial?.category ?? '',
     imageUrl: initial?.imageUrl ?? '',
-    prepImageUrl: initial?.prepImageUrl ?? '',
+    prepImages: initial?.prepImages ?? [],
     emoji: initial?.emoji ?? '',
     modifiersEnabled: initial?.modifiersEnabled ?? false,
     isCombo: initial?.isCombo ?? false,
@@ -213,11 +214,10 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
           disabled={pending}
         />
 
-        <ImageUploadField
-          label="Foto de la preparación (cocina)"
-          hint="La ve el cocinero en la Biblia. Es cómo se arma o cómo queda el plato — si no cargas una, la Biblia muestra la foto de la carta."
-          imageUrl={form.prepImageUrl}
-          onChange={(url) => setForm((f) => ({ ...f, prepImageUrl: url }))}
+        <PrepImagesField
+          hint="Las ve el cocinero en la Biblia: cómo se arma o cómo queda el plato. Si no cargas ninguna, la Biblia muestra la foto de la carta."
+          images={form.prepImages}
+          onChange={(prepImages) => setForm((f) => ({ ...f, prepImages }))}
           disabled={pending}
         />
 

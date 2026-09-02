@@ -7,6 +7,7 @@ import type {
 } from '@pos-tercos/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
+import { toPrepImages } from '../common/prep-images';
 
 /**
  * Biblia de productos para el cocinero (KDS): cada producto y subproducto con
@@ -68,7 +69,7 @@ export class RecipeBookService {
         name: p.name,
         category: p.category,
         imageUrl: p.imageUrl,
-        prepImageUrl: p.prepImageUrl,
+        prepImages: toPrepImages(p.prepImages),
         description: p.description,
         isCombo: p.isCombo,
         yield: null,
@@ -89,7 +90,7 @@ export class RecipeBookService {
         name: s.name,
         category: null,
         imageUrl: null,
-        prepImageUrl: s.prepImageUrl,
+        prepImages: toPrepImages(s.prepImages),
         description: null,
         isCombo: false,
         yield: Number(s.yield),

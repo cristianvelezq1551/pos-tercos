@@ -4329,6 +4329,45 @@ pagó y es lo que usa el costeo (`invoices.service.ts` ya usa `lineTotal`, NO
   enteros. El total sí los conserva — es el número con el que se cuadra la
   factura.
 
+
+## 7.v61 La preparación se muestra con VARIAS fotos, una por variante (2026-09-02)
+
+> Pedido del dueño sobre §7.v59: un plato se arma distinto según la variante y
+> con una sola foto no hay cómo mostrarlo. Verificado: typecheck 13/13, lint 0,
+> unit 12/12 paquetes, **e2e 71 suites / 815** sobre una base creada desde cero,
+> más el navegador con tres fotos reales.
+> Migración: `20260902150000_fotos_de_preparacion_multiples`.
+
+### El rótulo es la mitad de la función
+`prep_image_url` (texto) pasa a **`prep_images`** (JSONB) con `[{url, label}]` en
+productos y subproductos. El rótulo no es decoración: dos fotos del mismo plato
+sin nombre no le dicen al cocinero cuál es cuál, que es justo lo que se quería
+resolver. Vacío se guarda como `null` — `''` y `null` para "sin nombre" son dos
+representaciones de lo mismo y se separan con el tiempo.
+
+- Tope de **8 fotos** por ficha (`MAX_PREP_IMAGES`): más no se navegan en una
+  pantalla de cocina.
+- El admin sube **varias de una vez** (el input es `multiple`) y rotula cada una.
+- Sigue el respaldo de §7.v59: sin fotos propias, la biblia usa la de la carta.
+
+### Con varias, la ficha no puede volverse un muro de fotos
+Apiladas empujaban "Lleva" y "Preparación" ~700 px fuera de la pantalla — y esa
+es la información por la que el cocinero abrió la ficha. Con **una** foto va
+grande, como antes; con **dos o más** van en una tira que se desliza
+(`snap-x`, cada una al 78 % del ancho para que la siguiente asome). De paso
+quedan lado a lado, que es como se comparan dos variantes. Verificado en 390 px:
+la receta queda visible sin scrollear.
+
+### La migración conserva lo ya cargado
+Aditiva primero, destructiva después y **en ese orden**: crea `prep_images`,
+copia dentro cada `prep_image_url` que existiera (como lista de uno) y recién
+entonces borra la columna vieja. Ninguna foto se pierde.
+
+⚠️ Al ser un `DROP COLUMN`, un rollback del código al commit anterior **no**
+funcionaría solo: el API viejo pediría `prep_image_url`. Se aceptó porque la
+columna tenía un día de vida (§7.v59, del 2026-09-01) y el negocio está en
+ensayo; con datos reales, esto va en dos despliegues.
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)

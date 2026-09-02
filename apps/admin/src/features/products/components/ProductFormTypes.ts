@@ -1,3 +1,4 @@
+import type { PrepImage } from '@pos-tercos/types';
 /** Tipo de producto elegido al inicio del wizard. Deriva los flags. */
 export type ProductKind = 'simple' | 'variants' | 'drink' | 'combo';
 
@@ -58,8 +59,8 @@ export interface FormState {
   basePrice: string;
   category: string;
   imageUrl: string;
-  /** Foto de la preparación para la biblia de cocina. '' = sin foto propia. */
-  prepImageUrl: string;
+  /** Fotos de la preparación para la biblia de cocina (una por variante). */
+  prepImages: PrepImage[];
   emoji: string;
   modifiersEnabled: boolean;
   isCombo: boolean;

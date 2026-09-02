@@ -1,5 +1,7 @@
 'use client';
 
+import type { PrepImage } from '@pos-tercos/types';
+
 import {
   Button,
   Checkbox,
@@ -13,7 +15,7 @@ import { useState, useTransition } from 'react';
 import { UNIT_LABEL_ERROR, isValidUnitLabel, type Subproduct } from '@pos-tercos/types';
 import { createSubproduct, deactivateSubproduct, updateSubproduct } from '../api/client';
 import { PreparationStepsField } from '../../../components/PreparationStepsField';
-import { ImageUploadField } from '../../../components/ImageUploadField';
+import { PrepImagesField } from '../../../components/PrepImagesField';
 import { getErrorMessage } from '../../../lib/errors';
 
 interface SubproductFormProps {
@@ -29,7 +31,7 @@ interface FormState {
   preparationSteps: string[];
   blocksAvailability: boolean;
   showInKitchen: boolean;
-  prepImageUrl: string;
+  prepImages: PrepImage[];
   isActive: boolean;
 }
 
@@ -52,7 +54,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     preparationSteps: initial?.preparationSteps ?? [],
     blocksAvailability: initial?.blocksAvailability ?? true,
     showInKitchen: initial?.showInKitchen ?? true,
-    prepImageUrl: initial?.prepImageUrl ?? '',
+    prepImages: initial?.prepImages ?? [],
     isActive: initial?.isActive ?? true,
   }));
 
@@ -88,7 +90,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           preparationSteps: form.preparationSteps,
           blocksAvailability: form.blocksAvailability,
           showInKitchen: form.showInKitchen,
-          prepImageUrl: form.prepImageUrl || null,
+          prepImages: form.prepImages,
           isActive: form.isActive,
         });
       } else {
@@ -101,7 +103,7 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           preparationSteps: form.preparationSteps,
           blocksAvailability: form.blocksAvailability,
           showInKitchen: form.showInKitchen,
-          prepImageUrl: form.prepImageUrl || null,
+          prepImages: form.prepImages,
         });
       }
       startTransition(() => {
@@ -213,11 +215,10 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           onChange={(steps) => setForm((f) => ({ ...f, preparationSteps: steps }))}
         />
 
-        <ImageUploadField
-          label="Foto de la preparación (cocina)"
-          hint="La ve el cocinero en la Biblia: cómo queda la tanda o un paso clave."
-          imageUrl={form.prepImageUrl}
-          onChange={(url) => setForm((f) => ({ ...f, prepImageUrl: url }))}
+        <PrepImagesField
+          hint="Las ve el cocinero en la Biblia: cómo queda la tanda o un paso clave."
+          images={form.prepImages}
+          onChange={(prepImages) => setForm((f) => ({ ...f, prepImages }))}
           disabled={pending}
         />
 
