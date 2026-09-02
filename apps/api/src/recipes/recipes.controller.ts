@@ -3,6 +3,7 @@ import {
   SetRecipeRequestSchema,
   type ExpandedCostResponse,
   type ProductCostSummary,
+  type ProductCostWithVariants,
   type RecipeResponse,
   type SetRecipeRequest,
   type SubproductCostSummary,
@@ -62,11 +63,19 @@ export class RecipesController {
     return this.recipes.setSizeRecipe(id, sizeId, body.edges);
   }
 
-  // Costo de TODOS los productos en una request (batch) — reemplaza el N+1 de
-  // pedir `expanded-cost` por producto en la tabla del admin.
+  // Costo de TODOS los productos en una request (batch), SOLO de la receta base.
+  // ⚠️ No usar para mostrar el costo de un producto con variantes: ahí la base
+  // describe un plato que nadie puede comprar. Para eso está `/with-variants`.
   @Get('product-costs')
   productCosts(): Promise<ProductCostSummary[]> {
     return this.recipes.listProductCosts();
+  }
+
+  // El mismo costo, más el de cada variante. Va en una ruta aparte para no
+  // cambiarle la forma a `/product-costs`, que consumen los reportes.
+  @Get('product-costs/with-variants')
+  productCostsWithVariants(): Promise<ProductCostWithVariants[]> {
+    return this.recipes.listProductCostsWithVariants();
   }
 
   @Get('products/:id/expanded-cost')

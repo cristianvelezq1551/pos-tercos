@@ -5,7 +5,7 @@ import { ProductsList, type RealCost } from '../../../features/products';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import { getCurrentUserServer } from '../../../features/auth/server';
-import type { Product, ProductCostSummary, ProductMarginReport } from '@pos-tercos/types';
+import type { Product, ProductCostWithVariants, ProductMarginReport } from '@pos-tercos/types';
 
 async function loadProducts(): Promise<Product[] | { error: string }> {
   try {
@@ -17,9 +17,11 @@ async function loadProducts(): Promise<Product[] | { error: string }> {
 
 // Costos de TODOS los productos en una sola request (batch) — antes era un N+1
 // que pedía `/products/:id/expanded-cost` por cada producto y demoraba la página.
-async function loadCostsByProductId(): Promise<Map<string, ProductCostSummary>> {
+// Con variantes: en un producto con tamaños, el costo de la receta base es el de
+// un plato que no se puede comprar (elegir variante es obligatorio para vender).
+async function loadCostsByProductId(): Promise<Map<string, ProductCostWithVariants>> {
   try {
-    const costs = await serverFetchJson<ProductCostSummary[]>('/product-costs');
+    const costs = await serverFetchJson<ProductCostWithVariants[]>('/product-costs/with-variants');
     return new Map(costs.map((c) => [c.productId, c]));
   } catch {
     return new Map(); // sin costos → la tabla cae a su fallback

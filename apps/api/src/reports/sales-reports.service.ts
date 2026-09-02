@@ -323,15 +323,42 @@ export class SalesReportsService {
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // Costo unitario recursivo real (incluye subproducts/combos). Antes se
-    // llamaba `expandedCost(id)` por producto → cada llamada recargaba el grafo
-    // completo (N+1 de grafos). `listProductCosts()` carga el grafo UNA vez y
-    // computa todos los costos en memoria con la MISMA función pura
-    // (computeProductCost/computeComboCost) → costo idéntico por producto
-    // (verificado número-a-número sobre el catálogo). Cero cambio de costeo.
-    const costByProduct = new Map(
-      (await this.recipes.listProductCosts()).map((c) => [c.productId, c.totalCost]),
-    );
+    // Costo unitario recursivo real (incluye subproducts/combos). El grafo se
+    // carga UNA vez (antes era un N+1 de `expandedCost(id)` por producto) y se
+    // computa todo en memoria con las MISMAS funciones puras.
+    //
+    // Se costea POR VARIANTE, no por producto: un plato con variantes se vende
+    // siempre con una elegida, y costear con la receta base descuenta de menos
+    // justo la proteína. Por eso hace falta cuántas unidades se vendieron de
+    // cada variante, no solo del producto.
+    const costs = await this.recipes.buildCostLookup();
+    const soldByVariant = await this.prisma.saleItem.groupBy({
+      by: ['productId', 'sizeId'],
+      where: { sale: paidSalesWhere(from, to), productId: { in: productIds } },
+      _sum: { quantity: true },
+    });
+    const variantesPorProducto = new Map<string, Array<{ sizeId: string | null; qty: number }>>();
+    for (const v of soldByVariant) {
+      const list = variantesPorProducto.get(v.productId) ?? [];
+      list.push({ sizeId: v.sizeId, qty: Number(v._sum.quantity ?? 0) });
+      variantesPorProducto.set(v.productId, list);
+    }
+
+    /**
+     * Lo que costó todo lo vendido de ese producto, variante por variante.
+     * Si de alguna no se sabe el costo, el total es null: media verdad
+     * presentada como total sería peor que decir "no sé" (§7.v32).
+     */
+    const costOfSold = (productId: string): number | null => {
+      const vendidas = variantesPorProducto.get(productId) ?? [];
+      let total = 0;
+      for (const v of vendidas) {
+        const unitario = costs.unitCost(productId, v.sizeId);
+        if (unitario === null) return null;
+        total += unitario * v.qty;
+      }
+      return total;
+    };
 
     const result = grouped.map((g) => {
       const product = productMap.get(g.productId);
@@ -340,9 +367,7 @@ export class SalesReportsService {
       const revenue =
         Number(g._sum.lineTotal ?? 0) - (orderDiscountByProduct.get(g.productId) ?? 0);
 
-      const estCostPerUnit = product ? (costByProduct.get(g.productId) ?? null) : null;
-      const estCost =
-        estCostPerUnit !== null ? estCostPerUnit * quantity : null;
+      const estCost = product ? costOfSold(g.productId) : null;
       const estMargin = estCost !== null ? revenue - estCost : null;
       const estMarginPct =
         estMargin !== null && revenue > 0 ? estMargin / revenue : null;

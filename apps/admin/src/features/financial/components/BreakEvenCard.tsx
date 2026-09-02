@@ -148,10 +148,12 @@ function ComoSeCalculo({
       <ul className="mt-2 space-y-1.5">
         <li>
           Promedio de <strong>{c.productsConsidered}</strong>{' '}
-          {c.productsConsidered === 1 ? 'producto' : 'productos'}
+          {c.productsConsidered === 1 ? 'opción de la carta' : 'opciones de la carta'}
           {c.weightedBySales
             ? ', pesado por lo que se vendió este mes (vender mucho de lo que menos deja baja el promedio).'
-            : ', pareja entre toda la carta porque todavía no hay ventas del mes.'}
+            : ', pareja entre toda la carta porque todavía no hay ventas del mes.'}{' '}
+          Un plato con variantes cuenta una opción por variante: cada una tiene su precio y su
+          receta, y nadie compra la receta base sola.
         </li>
         {c.best && c.worst && c.productsConsidered > 1 ? (
           <li>
@@ -163,8 +165,8 @@ function ComoSeCalculo({
           <li className="text-warning">
             {c.productsWithoutCost}{' '}
             {c.productsWithoutCost === 1
-              ? 'producto quedó fuera porque no se sabe cuánto cuesta'
-              : 'productos quedaron fuera porque no se sabe cuánto cuestan'}
+              ? 'opción quedó fuera porque no se sabe cuánto cuesta'
+              : 'opciones quedaron fuera porque no se sabe cuánto cuestan'}
             . Completa su receta o el precio de compra de sus insumos para que el promedio los tenga
             en cuenta.
           </li>

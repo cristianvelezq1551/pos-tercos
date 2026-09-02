@@ -696,3 +696,29 @@ export const ProductCostSummarySchema = z.object({
   missingReasons: z.array(z.string()),
 });
 export type ProductCostSummary = z.infer<typeof ProductCostSummarySchema>;
+
+/** Costo por unidad de UNA variante (tamaño) del producto. */
+export const ProductVariantCostSchema = z.object({
+  sizeId: z.string().uuid(),
+  name: z.string(),
+  /** Lo que la variante suma al precio base. */
+  priceModifier: z.number(),
+  /** Costo de 1 unidad CON esta variante: la receta base MÁS la de la variante. */
+  totalCost: z.number().nullable(),
+  missingReasons: z.array(z.string()),
+});
+export type ProductVariantCost = z.infer<typeof ProductVariantCostSchema>;
+
+/**
+ * Lo mismo que `ProductCostSummary` más el costo de cada variante.
+ *
+ * `totalCost` sigue siendo el de la RECETA BASE, que en un producto con
+ * variantes describe un plato que no se puede comprar (elegir variante es
+ * obligatorio para vender). Por eso viaja `variants`: quien muestre el costo
+ * de un producto con variantes tiene que mostrar también el de lo que de
+ * verdad sale por la ventana.
+ */
+export const ProductCostWithVariantsSchema = ProductCostSummarySchema.extend({
+  variants: z.array(ProductVariantCostSchema),
+});
+export type ProductCostWithVariants = z.infer<typeof ProductCostWithVariantsSchema>;
