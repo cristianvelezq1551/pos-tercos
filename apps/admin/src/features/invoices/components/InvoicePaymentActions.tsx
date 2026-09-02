@@ -117,7 +117,12 @@ export function InvoicePaymentActions({
         <InvoiceUnmarkDialog invoice={invoice} onClose={close} onSuccess={refreshAndClose} />
       )}
       {modal === 'proof' && (
-        <InvoiceProofDialog invoice={invoice} onClose={close} />
+        <InvoiceProofDialog
+          invoice={invoice}
+          onClose={close}
+          onChanged={onChanged}
+          canManage={canManage}
+        />
       )}
     </div>
   );

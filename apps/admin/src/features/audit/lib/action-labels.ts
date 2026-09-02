@@ -76,6 +76,14 @@ const ACTION_LABELS: Record<string, string> = {
   INVOICE_DRAFT_SAVED: 'Guardó factura como borrador',
   INVOICE_DRAFT_UPDATED: 'Editó un borrador de factura',
   INVOICE_VOIDED: 'Anuló una factura confirmada',
+  INVOICE_PAYMENT_PROOFS_ADDED: 'Agregó comprobantes al pago de una factura',
+  INVOICE_PAYMENT_PROOF_REMOVED: 'Quitó un comprobante del pago de una factura',
+  FIXED_COST_PAYMENT_PROOFS_ADDED: 'Agregó comprobantes al pago de un costo fijo',
+  FIXED_COST_PAYMENT_PROOF_REMOVED: 'Quitó un comprobante del pago de un costo fijo',
+  PAYABLE_PROOFS_ADDED: 'Agregó comprobantes al pago de un compromiso',
+  PAYABLE_PROOF_REMOVED: 'Quitó un comprobante del pago de un compromiso',
+  PAYROLL_WEEK_PROOFS_ADDED: 'Agregó comprobantes a un abono de nómina',
+  PAYROLL_WEEK_PROOF_REMOVED: 'Quitó un comprobante de un abono de nómina',
 
   // Sugerencias de compra
   PURCHASE_SUGGESTION_CREATED: 'Sugerencia de compra creada',

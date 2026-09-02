@@ -23,6 +23,24 @@ export const FinanceMoneyFlowSchema = z.object({
 });
 export type FinanceMoneyFlow = z.infer<typeof FinanceMoneyFlowSchema>;
 
+/**
+ * Un pago puede llevar VARIOS comprobantes (una transferencia partida en dos,
+ * el soporte del banco más la foto del recibo). El tope evita que un pago
+ * acumule imágenes que después nadie revisa.
+ */
+export const MAX_PROOFS_POR_PAGO = 8;
+
+/**
+ * Cuántos comprobantes tiene un pago, tolerando respuestas de una API vieja.
+ * `proofsCount` es opcional porque la API y el admin se despliegan por separado.
+ */
+export function comprobantesDe(pago: {
+  proofsCount?: number;
+  hasProof: boolean;
+}): number {
+  return pago.proofsCount ?? (pago.hasProof ? 1 : 0);
+}
+
 /** Compromiso por pagar pendiente (deuda a un tercero). */
 export const FinancePendingPayableSchema = z.object({
   id: z.string().uuid(),
@@ -40,6 +58,9 @@ export const FinancePaidPayableSchema = z.object({
   amount: z.number(),
   paidAt: z.string().datetime(),
   hasProof: z.boolean(),
+  /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
+   *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
+  proofsCount: z.number().int().nonnegative().optional(),
 });
 export type FinancePaidPayable = z.infer<typeof FinancePaidPayableSchema>;
 
@@ -79,6 +100,9 @@ export const FinancePaidPayrollSchema = z.object({
   amount: z.number(),
   paidAt: z.string().datetime(),
   hasProof: z.boolean(),
+  /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
+   *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
+  proofsCount: z.number().int().nonnegative().optional(),
 });
 export type FinancePaidPayroll = z.infer<typeof FinancePaidPayrollSchema>;
 
@@ -90,6 +114,9 @@ export const FinancePaidInvoiceSchema = z.object({
   total: z.number(),
   paidAt: z.string().datetime(),
   hasProof: z.boolean(),
+  /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
+   *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
+  proofsCount: z.number().int().nonnegative().optional(),
 });
 export type FinancePaidInvoice = z.infer<typeof FinancePaidInvoiceSchema>;
 
@@ -119,6 +146,9 @@ export const FinancePaidFixedCostSchema = z.object({
   amount: z.number(),
   paidAt: z.string().datetime(),
   hasProof: z.boolean(),
+  /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
+   *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
+  proofsCount: z.number().int().nonnegative().optional(),
 });
 export type FinancePaidFixedCost = z.infer<typeof FinancePaidFixedCostSchema>;
 

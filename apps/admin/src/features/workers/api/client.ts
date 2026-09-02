@@ -12,6 +12,7 @@ import {
 } from '@pos-tercos/types';
 import { request } from '../../../lib/api-client';
 import { prepararFoto } from '../../../lib/subir-archivo';
+import { quitarComprobante, subirComprobantes } from '../../../lib/comprobantes';
 
 async function requestVoid(path: string, init: RequestInit): Promise<void> {
   const res = await fetch(`/api${path}`, { credentials: 'include', ...init });
@@ -39,10 +40,10 @@ export async function payWeekDays(
     bankAmount: number;
     note?: string;
   },
-  proof: File | null,
+  proofs: File[],
 ): Promise<PayrollWeekPayment> {
   const fd = new FormData();
-  if (proof) fd.append('proof', await prepararFoto(proof, 'payroll-proof'));
+  for (const f of proofs) fd.append('proof', await prepararFoto(f, 'payroll-proof'));
   fd.append('payload', JSON.stringify(input));
   const res = await fetch('/api/workers/weekly/pay', {
     method: 'POST',
@@ -80,8 +81,33 @@ export function deleteWeeklyAdjustment(adjustmentId: string): Promise<void> {
 }
 
 /** URL del comprobante de un abono semanal (binario). */
-export function weekPaymentProofUrl(paymentId: string): string {
-  return `/api/workers/weekly/payment/${paymentId}/proof`;
+export function weekPaymentProofUrl(paymentId: string, index = 0): string {
+  // El primero conserva la ruta de siempre (ver invoicePaymentProofUrl).
+  return index === 0
+    ? `/api/workers/weekly/payment/${paymentId}/proof`
+    : `/api/workers/weekly/payment/${paymentId}/proof/${index}`;
+}
+
+/** Suma comprobantes a un abono ya registrado. */
+export function addWeekPaymentProofs(
+  paymentId: string,
+  files: File[],
+): Promise<PayrollWeekPayment> {
+  return subirComprobantes(
+    `/workers/weekly/payment/${paymentId}/proofs`,
+    files,
+    PayrollWeekPaymentSchema,
+  );
+}
+
+export function removeWeekPaymentProof(
+  paymentId: string,
+  index: number,
+): Promise<PayrollWeekPayment> {
+  return quitarComprobante(
+    `/workers/weekly/payment/${paymentId}/proofs/${index}`,
+    PayrollWeekPaymentSchema,
+  );
 }
 
 // --- Excepciones de día (DIARIO): llegada tarde, ausencia, monto distinto ---

@@ -1,5 +1,6 @@
 export { FixedCostsManager } from './components/FixedCostsManager';
 export { FixedCostPaymentDialog } from './components/FixedCostPaymentDialog';
+export { FixedCostProofsDialog } from './components/FixedCostProofsDialog';
 export {
   createFixedCost,
   deleteFixedCost,

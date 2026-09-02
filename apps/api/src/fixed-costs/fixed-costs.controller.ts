@@ -12,10 +12,10 @@ import {
   Post,
   Query,
   Res,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   CreateFixedCostSchema,
@@ -31,6 +31,7 @@ import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMimeLoose } from '../common/image-mime';
+import { MAX_PROOFS_POR_PAGO, parseProofUploads } from '../common/proof-images';
 import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { FixedCostsService } from './fixed-costs.service';
@@ -93,7 +94,9 @@ export class FixedCostsController {
   /** Marca pagado un costo fijo para (año, mes) con comprobante. */
   @Post(':id/payment')
   @UseInterceptors(
-    FileInterceptor('proof', { limits: { fileSize: MAX_PROOF_BYTES } }),
+    FilesInterceptor('proof', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: MAX_PROOF_BYTES },
+    }),
   )
   async markPaid(
     @Param('id', ParseUUIDPipe) id: string,
@@ -105,13 +108,9 @@ export class FixedCostsController {
     @Body('note') note: string | undefined,
     @Body('cashAmount') cashAmount: string | undefined,
     @Body('bankAmount') bankAmount: string | undefined,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
   ): Promise<FinancePaidFixedCost> {
-    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
-    const detected = detectImageMimeLoose(file.buffer);
-    if (!detected) {
-      throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
-    }
+    const proofs = parseProofUploads(files, detectImageMimeLoose);
     if (paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(paidAt)) {
       throw new BadRequestException('La fecha de pago debe tener el formato AAAA-MM-DD.');
     }
@@ -127,7 +126,7 @@ export class FixedCostsController {
       periodYear,
       periodMonth,
       user.sub,
-      { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
+      proofs,
       {
         paidAtYmd: paidAt,
         amount: amountNum,
@@ -155,7 +154,7 @@ export class FixedCostsController {
     return { ok: true };
   }
 
-  /** Comprobante (binario). */
+  /** Comprobante (binario). Sin índice = el primero. */
   @Get('payment/:paymentId/proof')
   async getPaymentProof(
     @Param('paymentId', ParseUUIDPipe) paymentId: string,
@@ -165,5 +164,49 @@ export class FixedCostsController {
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);
+  }
+
+  /** Comprobante N del pago (0 = el primero). */
+  @Get('payment/:paymentId/proof/:index')
+  async getPaymentProofAt(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, mime } = await this.costs.getPaymentProof(paymentId, index);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
+  }
+
+  /** Suma comprobantes a un pago ya registrado. */
+  @Post('payment/:paymentId/proofs')
+  @UseInterceptors(
+    FilesInterceptor('proofs', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: MAX_PROOF_BYTES },
+    }),
+  )
+  async addPaymentProofs(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @CurrentUser() user: JwtAccessPayload,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
+  ): Promise<{ proofsCount: number }> {
+    const proofsCount = await this.costs.addPaymentProofs(
+      paymentId,
+      user.sub,
+      parseProofUploads(files, detectImageMimeLoose),
+    );
+    return { proofsCount };
+  }
+
+  /** Quita un comprobante. Un costo fijo pagado nunca queda sin soporte. */
+  @Delete('payment/:paymentId/proofs/:index')
+  async removePaymentProof(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Param('index', ParseIntPipe) index: number,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<{ proofsCount: number }> {
+    const proofsCount = await this.costs.removePaymentProof(paymentId, index, user.sub);
+    return { proofsCount };
   }
 }

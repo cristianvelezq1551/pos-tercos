@@ -15,6 +15,17 @@ import { mimeForExtension } from '../common/image-mime';
 import { utcDateOfLocalDay } from '../common/local-dates';
 import { resolvePocketSplit } from '../common/pocket-split';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  appendProofs,
+  assertCabenProofs,
+  primaryObligatoria,
+  proofCount,
+  proofKeyAt,
+  proofKeys,
+  removeProofAt,
+  toSlots,
+  type ProofUpload,
+} from '../common/proof-images';
 
 const MONTHS_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -162,7 +173,7 @@ export class FixedCostsService {
     periodYear: number,
     periodMonth: number,
     actorId: string,
-    proof: { buffer: Buffer; mime: string; ext: string },
+    proofs: ProofUpload[],
     opts: { paidAtYmd?: string; amount?: number; note?: string; cashAmount?: number; bankAmount?: number },
   ): Promise<FinancePaidFixedCost> {
     const cost = await this.prisma.fixedCost.findUnique({ where: { id: fixedCostId } });
@@ -180,20 +191,20 @@ export class FixedCostsService {
       ? new Date(`${opts.paidAtYmd}T12:00:00.000Z`)
       : new Date();
 
-    // Upload + cleanup del previo si la key cambió.
-    const stored = await this.storage.put(
-      `fixed-costs/${fixedCostId}`,
-      proof.buffer,
-      proof.mime,
-      proof.ext,
-    );
+    // Upload + cleanup de los previos (un re-marcado reemplaza el soporte).
+    const nuevas = await this.subirProofs(fixedCostId, proofs);
+    const slots = toSlots(nuevas);
     const existing = await this.prisma.fixedCostPayment.findUnique({
       where: {
         fixedCostId_periodYear_periodMonth: { fixedCostId, periodYear, periodMonth },
       },
     });
-    if (existing?.proofImageKey && existing.proofImageKey !== stored.key) {
-      await this.storage.delete(existing.proofImageKey).catch(() => undefined);
+    if (existing) {
+      for (const vieja of proofKeys(existing.proofImageKey, existing.proofExtraKeys)) {
+        if (!nuevas.includes(vieja)) {
+          await this.storage.delete(vieja).catch(() => undefined);
+        }
+      }
     }
 
     const row = await this.prisma.fixedCostPayment.upsert({
@@ -206,7 +217,8 @@ export class FixedCostsService {
         periodMonth,
         amount,
         paidAt,
-        proofImageKey: stored.key,
+        proofImageKey: primaryObligatoria(slots),
+        proofExtraKeys: slots.extras,
         actorId,
         note: opts.note ?? null,
         paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
@@ -216,7 +228,8 @@ export class FixedCostsService {
       update: {
         amount,
         paidAt,
-        proofImageKey: stored.key,
+        proofImageKey: primaryObligatoria(slots),
+        proofExtraKeys: slots.extras,
         actorId,
         note: opts.note ?? null,
         paymentPocket: split.cash > 0 && split.bank === 0 ? 'EFECTIVO' : split.cash === 0 ? 'CUENTA' : 'MIXTO',
@@ -236,7 +249,8 @@ export class FixedCostsService {
         periodMonth,
         amount,
         paidAt: paidAt.toISOString(),
-        proofImageKey: stored.key,
+        proofImageKey: slots.primary,
+        proofsCount: nuevas.length,
       },
     });
     return {
@@ -250,6 +264,7 @@ export class FixedCostsService {
       amount: Number(row.amount),
       paidAt: row.paidAt.toISOString(),
       hasProof: true,
+      proofsCount: proofCount(row.proofImageKey, row.proofExtraKeys),
     };
   }
 
@@ -266,8 +281,8 @@ export class FixedCostsService {
       },
     });
     if (!existing) return; // idempotente
-    if (existing.proofImageKey) {
-      await this.storage.delete(existing.proofImageKey).catch(() => undefined);
+    for (const key of proofKeys(existing.proofImageKey, existing.proofExtraKeys)) {
+      await this.storage.delete(key).catch(() => undefined);
     }
     await this.prisma.fixedCostPayment.delete({ where: { id: existing.id } });
     await this.audit.log({
@@ -279,12 +294,81 @@ export class FixedCostsService {
     });
   }
 
-  async getPaymentProof(paymentId: string): Promise<{ buffer: Buffer; mime: string }> {
+  async getPaymentProof(
+    paymentId: string,
+    index = 0,
+  ): Promise<{ buffer: Buffer; mime: string }> {
     const row = await this.prisma.fixedCostPayment.findUnique({ where: { id: paymentId } });
-    if (!row) throw new NotFoundException('Comprobante no encontrado.');
-    const buffer = await this.storage.get(row.proofImageKey);
-    const ext = row.proofImageKey.split('.').pop() ?? '';
+    const key = row ? proofKeyAt(row.proofImageKey, row.proofExtraKeys, index) : null;
+    if (!key) throw new NotFoundException('Comprobante no encontrado.');
+    const buffer = await this.storage.get(key);
+    const ext = key.split('.').pop() ?? '';
     return { buffer, mime: mimeForExtension(ext) };
+  }
+
+  /** Suma comprobantes a un pago ya registrado (no mueve plata). */
+  async addPaymentProofs(
+    paymentId: string,
+    actorId: string,
+    proofs: ProofUpload[],
+  ): Promise<number> {
+    const row = await this.prisma.fixedCostPayment.findUnique({ where: { id: paymentId } });
+    if (!row) throw new NotFoundException('Pago no encontrado.');
+    assertCabenProofs(row.proofImageKey, row.proofExtraKeys, proofs.length);
+    const nuevas = await this.subirProofs(row.fixedCostId, proofs);
+    const slots = appendProofs(row.proofImageKey, row.proofExtraKeys, nuevas);
+    await this.prisma.fixedCostPayment.update({
+      where: { id: paymentId },
+      data: { proofImageKey: primaryObligatoria(slots), proofExtraKeys: slots.extras },
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'FIXED_COST_PAYMENT_PROOFS_ADDED',
+      entityType: 'fixed_cost_payment',
+      entityId: paymentId,
+      metadata: { added: nuevas.length },
+    });
+    return proofCount(slots.primary, slots.extras);
+  }
+
+  /** Quita un comprobante. El costo fijo exige al menos uno. */
+  async removePaymentProof(
+    paymentId: string,
+    index: number,
+    actorId: string,
+  ): Promise<number> {
+    const row = await this.prisma.fixedCostPayment.findUnique({ where: { id: paymentId } });
+    if (!row) throw new NotFoundException('Pago no encontrado.');
+    const { slots, removed } = removeProofAt(row.proofImageKey, row.proofExtraKeys, index, {
+      minimo: 1,
+    });
+    await this.prisma.fixedCostPayment.update({
+      where: { id: paymentId },
+      data: { proofImageKey: primaryObligatoria(slots), proofExtraKeys: slots.extras },
+    });
+    await this.storage.delete(removed).catch(() => undefined);
+    await this.audit.log({
+      userId: actorId,
+      action: 'FIXED_COST_PAYMENT_PROOF_REMOVED',
+      entityType: 'fixed_cost_payment',
+      entityId: paymentId,
+      metadata: { index, removedKey: removed },
+    });
+    return proofCount(slots.primary, slots.extras);
+  }
+
+  private async subirProofs(fixedCostId: string, proofs: ProofUpload[]): Promise<string[]> {
+    const keys: string[] = [];
+    for (const p of proofs) {
+      const stored = await this.storage.put(
+        `fixed-costs/${fixedCostId}`,
+        p.buffer,
+        p.mime,
+        p.ext,
+      );
+      keys.push(stored.key);
+    }
+    return keys;
   }
 
   // ==================================================================
@@ -385,6 +469,7 @@ export class FixedCostsService {
       amount: Number(r.amount),
       paidAt: r.paidAt.toISOString(),
       hasProof: true,
+      proofsCount: proofCount(r.proofImageKey, r.proofExtraKeys),
     }));
   }
 }

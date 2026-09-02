@@ -27,6 +27,15 @@ import { isSerializationFailure } from '../common/tx';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseYmd, round2, todayUtc, ymd } from './payroll-period';
 import { WorkersService } from './workers.service';
+import {
+  appendProofs,
+  assertCabenProofs,
+  proofCount,
+  proofKeyAt,
+  removeProofAt,
+  toSlots,
+  type ProofUpload,
+} from '../common/proof-images';
 
 /**
  * Nómina SEMANAL para empleados DIARIO (v6). La "semana" es la corrida de días
@@ -184,6 +193,7 @@ export class WorkersWeeklyService {
         amount: Number(r.amount),
         paidAt: r.paidAt.toISOString(),
         hasProof: r.proofImageKey !== null,
+        proofsCount: proofCount(r.proofImageKey, r.proofExtraKeys),
       };
     });
   }
@@ -329,7 +339,7 @@ export class WorkersWeeklyService {
   /** Registra un abono de días seleccionados de la semana (con comprobante). */
   async payWeekDays(
     input: PayWeekDays,
-    proof: { buffer: Buffer; mime: string; ext: string } | null,
+    proofs: ProofUpload[],
     actorId: string,
   ): Promise<PayrollWeekPayment> {
     const week = payrollWeekFor(parseYmd(input.weekStart));
@@ -382,11 +392,9 @@ export class WorkersWeeklyService {
       );
     }
 
-    // Comprobante (opcional): subir ANTES de la tx (sin side-effect de DB; si la
-    // tx falla, nada queda commiteado y la key es determinística por usuario → se pisa).
-    const stored = proof
-      ? await this.storage.put(`payroll-week/${user.id}`, proof.buffer, proof.mime, proof.ext)
-      : null;
+    // Comprobantes (opcionales): subir ANTES de la tx (sin side-effect de DB; si
+    // la tx falla, nada queda commiteado).
+    const slots = toSlots(await this.subirProofs(user.id, proofs));
 
     // Tx SERIALIZABLE con retry: recomputa lo ya abonado de la semana DENTRO de
     // la tx (anti doble-abono concurrente — antes el check usaba un `remaining`
@@ -417,7 +425,8 @@ export class WorkersWeeklyService {
                 cashAmount,
                 bankAmount,
                 status: 'PAID',
-                proofImageKey: stored?.key ?? null,
+                proofImageKey: slots.primary,
+                proofExtraKeys: slots.extras,
                 actorId,
                 note: input.note ?? null,
                 paidAt: new Date(),
@@ -631,13 +640,86 @@ export class WorkersWeeklyService {
     });
   }
 
-  async getWeekPaymentProof(paymentId: string): Promise<{ buffer: Buffer; mime: string }> {
+  async getWeekPaymentProof(
+    paymentId: string,
+    index = 0,
+  ): Promise<{ buffer: Buffer; mime: string }> {
     const row = await this.prisma.payrollWeekPayment.findUnique({ where: { id: paymentId } });
-    if (!row) throw new NotFoundException('Comprobante no encontrado.');
-    if (!row.proofImageKey) throw new NotFoundException('Este abono no tiene comprobante.');
-    const buffer = await this.storage.get(row.proofImageKey);
-    const ext = row.proofImageKey.split('.').pop() ?? '';
+    const key = row ? proofKeyAt(row.proofImageKey, row.proofExtraKeys, index) : null;
+    if (!key) throw new NotFoundException('Este abono no tiene ese comprobante.');
+    const buffer = await this.storage.get(key);
+    const ext = key.split('.').pop() ?? '';
     return { buffer, mime: mimeForExtension(ext) };
+  }
+
+  /** Suma comprobantes a un abono ya registrado (no mueve plata). */
+  async addWeekPaymentProofs(
+    paymentId: string,
+    actorId: string,
+    proofs: ProofUpload[],
+  ): Promise<PayrollWeekPayment> {
+    const row = await this.prisma.payrollWeekPayment.findUnique({ where: { id: paymentId } });
+    if (!row) throw new NotFoundException('Abono no encontrado.');
+    if (row.status !== 'PAID') {
+      throw new BadRequestException('Este abono está anulado: no admite comprobantes.');
+    }
+    assertCabenProofs(row.proofImageKey, row.proofExtraKeys, proofs.length);
+    const nuevas = await this.subirProofs(row.userId, proofs);
+    const slots = appendProofs(row.proofImageKey, row.proofExtraKeys, nuevas);
+    const updated = await this.prisma.payrollWeekPayment.update({
+      where: { id: paymentId },
+      data: { proofImageKey: slots.primary, proofExtraKeys: slots.extras },
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'PAYROLL_WEEK_PROOFS_ADDED',
+      entityType: 'payroll_week_payment',
+      entityId: paymentId,
+      metadata: { added: nuevas.length },
+    });
+    const actorName = (await this.workers.fetchActorNames([actorId])).get(actorId) ?? null;
+    return this.toWeekPaymentDto(updated, actorName);
+  }
+
+  /** Quita un comprobante (acá es opcional: puede quedar en cero). */
+  async removeWeekPaymentProof(
+    paymentId: string,
+    index: number,
+    actorId: string,
+  ): Promise<PayrollWeekPayment> {
+    const row = await this.prisma.payrollWeekPayment.findUnique({ where: { id: paymentId } });
+    if (!row) throw new NotFoundException('Abono no encontrado.');
+    const { slots, removed } = removeProofAt(row.proofImageKey, row.proofExtraKeys, index, {
+      minimo: 0,
+    });
+    const updated = await this.prisma.payrollWeekPayment.update({
+      where: { id: paymentId },
+      data: { proofImageKey: slots.primary, proofExtraKeys: slots.extras },
+    });
+    await this.storage.delete(removed).catch(() => undefined);
+    await this.audit.log({
+      userId: actorId,
+      action: 'PAYROLL_WEEK_PROOF_REMOVED',
+      entityType: 'payroll_week_payment',
+      entityId: paymentId,
+      metadata: { index, removedKey: removed },
+    });
+    const actorName = (await this.workers.fetchActorNames([actorId])).get(actorId) ?? null;
+    return this.toWeekPaymentDto(updated, actorName);
+  }
+
+  private async subirProofs(userId: string, proofs: ProofUpload[]): Promise<string[]> {
+    const keys: string[] = [];
+    for (const p of proofs) {
+      const stored = await this.storage.put(
+        `payroll-week/${userId}`,
+        p.buffer,
+        p.mime,
+        p.ext,
+      );
+      keys.push(stored.key);
+    }
+    return keys;
   }
 
   private toWeekPaymentDto(
@@ -651,6 +733,7 @@ export class WorkersWeeklyService {
       bankAmount: { toString(): string };
       status: string;
       proofImageKey: string | null;
+      proofExtraKeys: string[];
       note: string | null;
       paidAt: Date;
     },
@@ -666,6 +749,7 @@ export class WorkersWeeklyService {
       bankAmount: Number(row.bankAmount),
       status: row.status as 'PAID' | 'VOIDED',
       hasProof: row.proofImageKey !== null,
+      proofsCount: proofCount(row.proofImageKey, row.proofExtraKeys),
       note: row.note,
       paidAt: row.paidAt.toISOString(),
       actorName,

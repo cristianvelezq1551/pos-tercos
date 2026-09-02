@@ -1,4 +1,4 @@
-import type { FinancePaidPayable } from '@pos-tercos/types';
+import { comprobantesDe, type FinancePaidPayable } from '@pos-tercos/types';
 import { Badge, Money } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { EmptyHint } from './EmptyHint';
@@ -26,7 +26,11 @@ export function PaidPayablesCard({ rows }: { rows: FinancePaidPayable[] }) {
               </Link>
               <div className="flex shrink-0 items-center gap-2">
                 <Money amount={r.amount} weight="semibold" />
-                {r.hasProof ? <Badge tone="success" size="sm">Comprobante</Badge> : null}
+                {r.hasProof ? (
+                  <Badge tone="success" size="sm">
+                    {comprobantesDe(r) > 1 ? `${comprobantesDe(r)} comprobantes` : 'Comprobante'}
+                  </Badge>
+                ) : null}
               </div>
             </li>
           ))}

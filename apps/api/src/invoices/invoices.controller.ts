@@ -8,6 +8,7 @@ import {
   HttpCode,
   NotFoundException,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -15,9 +16,10 @@ import {
   Query,
   Res,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   CloneInvoiceRequestSchema,
@@ -47,6 +49,7 @@ import type { Express } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMime, detectImageMimeLoose } from '../common/image-mime';
+import { MAX_PROOFS_POR_PAGO, parseProofUploads } from '../common/proof-images';
 import { parseOptionalDateRange } from '../common/local-dates';
 import { parseOptionalAmount } from '../common/pocket-split';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -362,7 +365,9 @@ export class InvoicesController {
   @AdminAccess()
   @Post(':id/payment/paid')
   @UseInterceptors(
-    FileInterceptor('proof', { limits: { fileSize: MAX_FILE_SIZE_BYTES } }),
+    FilesInterceptor('proof', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: MAX_FILE_SIZE_BYTES },
+    }),
   )
   async markPaid(
     @Param('id', ParseUUIDPipe) id: string,
@@ -372,13 +377,9 @@ export class InvoicesController {
     @Body('note') note: string | undefined,
     @Body('cashAmount') cashAmount: string | undefined,
     @Body('bankAmount') bankAmount: string | undefined,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
   ): Promise<Invoice> {
-    if (!file) throw new BadRequestException('Falta el comprobante (imagen).');
-    const detected = detectImageMimeLoose(file.buffer);
-    if (!detected) {
-      throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
-    }
+    const proofs = parseProofUploads(files, detectImageMimeLoose);
     if (paidAt && !/^\d{4}-\d{2}-\d{2}$/.test(paidAt)) {
       throw new BadRequestException('La fecha de pago debe tener el formato AAAA-MM-DD.');
     }
@@ -387,7 +388,7 @@ export class InvoicesController {
       requirePin(pin),
       user.sub,
       user.role,
-      { buffer: file.buffer, mime: detected.mime, ext: detected.ext },
+      proofs,
       {
         paidAtYmd: paidAt,
         note: note?.trim() || undefined,
@@ -420,6 +421,52 @@ export class InvoicesController {
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);
+  }
+
+  /** Comprobante N de la factura (0 = el primero, el de la ruta de arriba). */
+  @AdminAccess()
+  @Get(':id/payment-proof/:index')
+  async getPaymentProofAt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, mime } = await this.invoicePayments.getPaymentProof(id, index);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
+  }
+
+  /** Suma comprobantes a una factura ya pagada. No mueve plata ni estado. */
+  @AdminAccess()
+  @Post(':id/payment/proofs')
+  @UseInterceptors(
+    FilesInterceptor('proofs', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: MAX_FILE_SIZE_BYTES },
+    }),
+  )
+  async addPaymentProofs(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtAccessPayload,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
+  ): Promise<Invoice> {
+    return this.invoicePayments.addPaymentProofs(
+      id,
+      user.sub,
+      user.role,
+      parseProofUploads(files, detectImageMimeLoose),
+    );
+  }
+
+  /** Quita un comprobante. Nunca deja sin soporte una factura pagada. */
+  @AdminAccess()
+  @Delete(':id/payment/proofs/:index')
+  removePaymentProof(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<Invoice> {
+    return this.invoicePayments.removePaymentProof(id, index, user.sub, user.role);
   }
 }
 

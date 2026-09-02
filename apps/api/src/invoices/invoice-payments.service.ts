@@ -11,6 +11,15 @@ import { assertPuedeGestionarPago } from './invoice-rules';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
+import {
+  appendProofs,
+  assertCabenProofs,
+  proofKeyAt,
+  proofKeys,
+  removeProofAt,
+  toSlots,
+  type ProofUpload,
+} from '../common/proof-images';
 import { ymdLocal } from '../common/local-dates';
 import { pocketOf, resolvePocketSplit } from '../common/pocket-split';
 import { PrismaService } from '../prisma/prisma.service';
@@ -36,7 +45,7 @@ export class InvoicePaymentsService {
     pin: string,
     actorId: string,
     actorRole: UserRole,
-    proof: { buffer: Buffer; mime: string; ext: string },
+    proofs: ProofUpload[],
     opts: { paidAtYmd?: string; note?: string; cashAmount?: number; bankAmount?: number },
   ): Promise<Invoice> {
     const existing = await this.prisma.invoice.findUnique({
@@ -47,6 +56,7 @@ export class InvoicePaymentsService {
         total: true,
         paymentStatus: true,
         paymentProofKey: true,
+        paymentProofExtraKeys: true,
         uploadedById: true,
       },
     });
@@ -72,15 +82,13 @@ export class InvoicePaymentsService {
     const total = existing.total !== null ? Number(existing.total) : 0;
     const split = resolvePocketSplit(opts.cashAmount, opts.bankAmount, total);
 
-    // Sube comprobante; si ya había uno, lo borramos cuando termine el upsert.
-    const stored = await this.storage.put(
-      `invoice-payments/${invoiceId}`,
-      proof.buffer,
-      proof.mime,
-      proof.ext,
-    );
-    if (existing.paymentProofKey && existing.paymentProofKey !== stored.key) {
-      await this.storage.delete(existing.paymentProofKey).catch(() => undefined);
+    // Sube los comprobantes; los previos (si los había) se borran después.
+    const nuevas = await this.subir(invoiceId, proofs);
+    const slots = toSlots(nuevas);
+    for (const vieja of proofKeys(existing.paymentProofKey, existing.paymentProofExtraKeys)) {
+      if (!nuevas.includes(vieja)) {
+        await this.storage.delete(vieja).catch(() => undefined);
+      }
     }
 
     // Claim atómico condicionado al estado: si un re-POST concurrente (doble-click
@@ -92,7 +100,8 @@ export class InvoicePaymentsService {
       data: {
         paymentStatus: 'PAID',
         paidAt,
-        paymentProofKey: stored.key,
+        paymentProofKey: slots.primary,
+        paymentProofExtraKeys: slots.extras,
         paymentActorId: actorId,
         paymentNote: opts.note ?? null,
         paymentPocket: pocketOf(split),
@@ -117,7 +126,8 @@ export class InvoicePaymentsService {
         approverId,
         total: existing.total !== null ? Number(existing.total) : null,
         paidAt: paidAt.toISOString(),
-        proofImageKey: stored.key,
+        proofImageKey: slots.primary,
+        proofsCount: nuevas.length,
       },
     });
     return toInvoiceDto(updated);
@@ -137,6 +147,7 @@ export class InvoicePaymentsService {
         status: true,
         paymentStatus: true,
         paymentProofKey: true,
+        paymentProofExtraKeys: true,
         uploadedById: true,
       },
     });
@@ -147,8 +158,8 @@ export class InvoicePaymentsService {
     if (existing.status !== 'CONFIRMED') {
       throw new BadRequestException('Solo aplica a facturas confirmadas.');
     }
-    if (existing.paymentProofKey) {
-      await this.storage.delete(existing.paymentProofKey).catch(() => undefined);
+    for (const key of proofKeys(existing.paymentProofKey, existing.paymentProofExtraKeys)) {
+      await this.storage.delete(key).catch(() => undefined);
     }
     const updated = await this.prisma.invoice.update({
       where: { id: invoiceId },
@@ -156,6 +167,7 @@ export class InvoicePaymentsService {
         paymentStatus: 'PENDING',
         paidAt: null,
         paymentProofKey: null,
+        paymentProofExtraKeys: [],
         paymentActorId: null,
         paymentNote: null,
         // Limpia el reparto por bolsillo — dejarlo residual confunde un
@@ -181,17 +193,117 @@ export class InvoicePaymentsService {
    * de las que él mismo creó (evita que otro usuario toque su compra). La
    * lectura del comprobante NO pasa por acá — cualquier admin puede verlo.
    */
-  /** Lee el comprobante de pago al proveedor. */
-  async getPaymentProof(invoiceId: string): Promise<{ buffer: Buffer; mime: string }> {
+  /** Lee un comprobante de pago al proveedor (índice 0 = el primero). */
+  async getPaymentProof(
+    invoiceId: string,
+    index = 0,
+  ): Promise<{ buffer: Buffer; mime: string }> {
     const row = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      select: { paymentProofKey: true },
+      select: { paymentProofKey: true, paymentProofExtraKeys: true },
     });
-    if (!row?.paymentProofKey) {
-      throw new NotFoundException('Comprobante no encontrado.');
-    }
-    const buffer = await this.storage.get(row.paymentProofKey);
-    const ext = row.paymentProofKey.split('.').pop() ?? '';
+    const key = row
+      ? proofKeyAt(row.paymentProofKey, row.paymentProofExtraKeys, index)
+      : null;
+    if (!key) throw new NotFoundException('Comprobante no encontrado.');
+    const buffer = await this.storage.get(key);
+    const ext = key.split('.').pop() ?? '';
     return { buffer, mime: mimeForExtension(ext) };
+  }
+
+  /** Suma comprobantes a una factura ya pagada (no cambia plata ni estado). */
+  async addPaymentProofs(
+    invoiceId: string,
+    actorId: string,
+    actorRole: UserRole,
+    proofs: ProofUpload[],
+  ): Promise<Invoice> {
+    const existing = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        paymentStatus: true,
+        paymentProofKey: true,
+        paymentProofExtraKeys: true,
+        uploadedById: true,
+      },
+    });
+    if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+    assertPuedeGestionarPago(actorRole, actorId, existing.uploadedById);
+    if (existing.paymentStatus !== 'PAID') {
+      throw new BadRequestException('Solo se agregan comprobantes a una factura ya pagada.');
+    }
+    assertCabenProofs(existing.paymentProofKey, existing.paymentProofExtraKeys, proofs.length);
+    const nuevas = await this.subir(invoiceId, proofs);
+    const slots = appendProofs(
+      existing.paymentProofKey,
+      existing.paymentProofExtraKeys,
+      nuevas,
+    );
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { paymentProofKey: slots.primary, paymentProofExtraKeys: slots.extras },
+      include: includeFull(),
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'INVOICE_PAYMENT_PROOFS_ADDED',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      metadata: { added: nuevas.length, total: slots.extras.length + 1 },
+    });
+    return toInvoiceDto(updated);
+  }
+
+  /** Quita un comprobante. Nunca deja sin soporte una factura pagada. */
+  async removePaymentProof(
+    invoiceId: string,
+    index: number,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<Invoice> {
+    const existing = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        paymentProofKey: true,
+        paymentProofExtraKeys: true,
+        uploadedById: true,
+      },
+    });
+    if (!existing) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+    assertPuedeGestionarPago(actorRole, actorId, existing.uploadedById);
+    const { slots, removed } = removeProofAt(
+      existing.paymentProofKey,
+      existing.paymentProofExtraKeys,
+      index,
+      { minimo: 1 },
+    );
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { paymentProofKey: slots.primary, paymentProofExtraKeys: slots.extras },
+      include: includeFull(),
+    });
+    await this.storage.delete(removed).catch(() => undefined);
+    await this.audit.log({
+      userId: actorId,
+      action: 'INVOICE_PAYMENT_PROOF_REMOVED',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      metadata: { index, removedKey: removed },
+    });
+    return toInvoiceDto(updated);
+  }
+
+  private async subir(invoiceId: string, proofs: ProofUpload[]): Promise<string[]> {
+    const keys: string[] = [];
+    for (const p of proofs) {
+      const stored = await this.storage.put(
+        `invoice-payments/${invoiceId}`,
+        p.buffer,
+        p.mime,
+        p.ext,
+      );
+      keys.push(stored.key);
+    }
+    return keys;
   }
 }

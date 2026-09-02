@@ -1,9 +1,10 @@
 'use client';
 
 import { Button, Dialog, FormField, Input, MoneyInput, Select, formatCop } from '@pos-tercos/ui';
-import { useState, type ChangeEvent } from 'react';
+import { useState } from 'react';
 import { payWeekDays } from '../api/client';
 import { getErrorMessage } from '../../../lib/errors';
+import { ProofFilesField } from '../../../components/ProofFilesField';
 
 type PayMode = 'EFECTIVO' | 'CUENTA' | 'MIXTO';
 
@@ -32,8 +33,7 @@ export function PayWeekModal({
   const [mode, setMode] = useState<PayMode>('EFECTIVO');
   const [amountInput, setAmountInput] = useState(String(Math.round(suggested)));
   const [cashInput, setCashInput] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -46,18 +46,11 @@ export function PayWeekModal({
     mode === 'EFECTIVO' ? total : mode === 'CUENTA' ? 0 : Math.min(Number(cashInput) || 0, total);
   const bankAmount = Math.round((total - cashAmount) * 100) / 100;
 
-  const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
-    const f = e.target.files?.[0] ?? null;
-    setFile(f);
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(f ? URL.createObjectURL(f) : null);
-  };
-
   const submit = async (): Promise<void> => {
     setError(null);
     setPending(true);
     try {
-      await payWeekDays({ userId, weekStart, days, cashAmount, bankAmount, note: note.trim() || undefined }, file);
+      await payWeekDays({ userId, weekStart, days, cashAmount, bankAmount, note: note.trim() || undefined }, files);
       onSuccess();
     } catch (e) {
       setError(getErrorMessage(e, 'No se pudo registrar el pago.'));
@@ -142,18 +135,12 @@ export function PayWeekModal({
           </p>
         ) : null}
 
-        <FormField label="Comprobante (imagen)" hint="Opcional">
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={onFile}
-            disabled={pending}
-            className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-primary"
-          />
-        </FormField>
-        {preview ? (
-          <img src={preview} alt="Comprobante" className="max-h-40 rounded-md border border-border object-contain" />
-        ) : null}
+        <ProofFilesField
+          label="Comprobante (opcional)"
+          files={files}
+          onChange={setFiles}
+          disabled={pending}
+        />
 
         <FormField label="Nota" hint="Opcional">
           <Input value={note} onChange={(e) => setNote(e.target.value)} disabled={pending} maxLength={300} />

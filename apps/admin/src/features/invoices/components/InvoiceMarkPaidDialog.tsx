@@ -2,9 +2,9 @@
 
 import type { Invoice } from '@pos-tercos/types';
 import { Button, Dialog, FormField, Input, PinField, formatCop, isValidPin } from '@pos-tercos/ui';
-import { FileImage } from 'lucide-react';
-import { useState, type ChangeEvent } from 'react';
+import { useState } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
+import { ProofFilesField } from '../../../components/ProofFilesField';
 import { ymdLocalToday } from '../../../lib/dates';
 import { markInvoicePaid } from '../api/client';
 import { getErrorMessage } from '../../../lib/errors';
@@ -18,8 +18,7 @@ export function InvoiceMarkPaidDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   // ymdLocalToday, NO toISOString: de noche en Bogotá daría mañana (el
   // backend rechaza fecha de pago futura).
   const [paidAt, setPaidAt] = useState(ymdLocalToday());
@@ -30,22 +29,15 @@ export function InvoiceMarkPaidDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
-    const f = e.target.files?.[0] ?? null;
-    setFile(f);
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(f ? URL.createObjectURL(f) : null);
-  };
-
   const submit = async (): Promise<void> => {
-    if (!file) {
+    if (files.length === 0) {
       setError('Selecciona el comprobante (imagen).');
       return;
     }
     setError(null);
     setPending(true);
     try {
-      await markInvoicePaid(invoice.id, file, pin, {
+      await markInvoicePaid(invoice.id, files, pin, {
         paidAt,
         note: note.trim() || undefined,
         cashAmount: split.cashAmount,
@@ -59,7 +51,7 @@ export function InvoiceMarkPaidDialog({
     }
   };
 
-  const valid = file !== null && isValidPin(pin);
+  const valid = files.length > 0 && isValidPin(pin);
   const supplierLabel = invoice.supplierName ?? 'Proveedor sin nombre';
 
   return (
@@ -81,27 +73,13 @@ export function InvoiceMarkPaidDialog({
       }
     >
       <div className="space-y-4">
-        <FormField
+        <ProofFilesField
           label="Comprobante (foto de transferencia/recibo)"
           required
-          hint="JPEG, PNG o WebP. Máx 10 MB."
-        >
-          <Input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={onFile}
-            disabled={pending}
-          />
-        </FormField>
-        {preview ? (
-          <div className="flex justify-center rounded-lg border border-border bg-muted/40 p-2">
-            <img src={preview} alt="Comprobante" className="max-h-56 w-auto rounded" />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-6 text-xs text-muted-foreground">
-            <FileImage className="h-4 w-4" /> Sin imagen seleccionada
-          </div>
-        )}
+          files={files}
+          onChange={setFiles}
+          disabled={pending}
+        />
         <FormField label="Fecha del pago" hint="Por defecto hoy.">
           <Input
             type="date"

@@ -1,13 +1,14 @@
 'use client';
 
-import type { PayrollWeekPayment } from '@pos-tercos/types';
+import { comprobantesDe, type PayrollWeekPayment } from '@pos-tercos/types';
 import { Money, cn, formatCop, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
-import { weekPaymentProofUrl } from '../api/client';
+import { WeekPaymentProofsDialog } from './WeekPaymentProofsDialog';
 import { VoidWeekPaymentDialog } from './VoidWeekPaymentDialog';
 
 export function WeekPaymentsList({ payments }: { payments: PayrollWeekPayment[] }) {
   const [voiding, setVoiding] = useState<PayrollWeekPayment | null>(null);
+  const [viendo, setViendo] = useState<PayrollWeekPayment | null>(null);
 
   return (
     <div className="mt-4 border-t border-border pt-3">
@@ -39,16 +40,17 @@ export function WeekPaymentsList({ payments }: { payments: PayrollWeekPayment[] 
               <span className="text-muted-foreground">{formatDate(p.paidAt, 'datetime')}</span>
               {voided ? <span className="font-semibold text-destructive">ANULADO</span> : null}
               <span className="flex-1" />
-              {p.hasProof ? (
-                <a
-                  href={weekPaymentProofUrl(p.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  Ver comprobante
-                </a>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => setViendo(p)}
+                className="text-primary hover:underline"
+              >
+                {comprobantesDe(p) > 1
+                  ? `Ver ${comprobantesDe(p)} comprobantes`
+                  : p.hasProof
+                    ? 'Ver comprobante'
+                    : 'Agregar comprobante'}
+              </button>
               {!voided ? (
                 <button
                   type="button"
@@ -62,6 +64,10 @@ export function WeekPaymentsList({ payments }: { payments: PayrollWeekPayment[] 
           );
         })}
       </ul>
+
+      {viendo ? (
+        <WeekPaymentProofsDialog payment={viendo} onClose={() => setViendo(null)} />
+      ) : null}
 
       {voiding ? (
         <VoidWeekPaymentDialog payment={voiding} onClose={() => setVoiding(null)} />

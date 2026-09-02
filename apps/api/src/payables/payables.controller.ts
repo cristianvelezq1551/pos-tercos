@@ -2,17 +2,19 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Query,
   Res,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   CreatePayableSchema,
@@ -28,6 +30,11 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMimeLoose } from '../common/image-mime';
+import {
+  MAX_PROOFS_POR_PAGO,
+  parseProofUploads,
+  parseProofUploadsOptional,
+} from '../common/proof-images';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PayablesService } from './payables.service';
 
@@ -52,12 +59,16 @@ export class PayablesController {
   }
 
   @Post(':id/pay')
-  @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FilesInterceptor('proof', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
   async pay(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtAccessPayload,
     @Body('payload') payloadRaw: string | undefined,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
     @Headers(IDEMPOTENCY_HEADER) idemKey?: string,
   ): Promise<PayableCommitment> {
     if (!payloadRaw) throw new BadRequestException('Faltan los datos del pago.');
@@ -68,14 +79,10 @@ export class PayablesController {
       throw new BadRequestException('Payload inválido.');
     }
     const input = PayPayableSchema.parse(parsed);
-    let proof: { buffer: Buffer; mime: string; ext: string } | null = null;
-    if (file) {
-      const detected = detectImageMimeLoose(file.buffer);
-      if (!detected) throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
-      proof = { buffer: file.buffer, mime: detected.mime, ext: detected.ext };
-    }
+    // El comprobante acá es OPCIONAL: un compromiso se puede saldar sin foto.
+    const proofs = parseProofUploadsOptional(files, detectImageMimeLoose);
     const idempotencyKey = idemKey && IdempotencyKeySchema.safeParse(idemKey).success ? idemKey : undefined;
-    return this.payables.pay(id, input, proof, user.sub, idempotencyKey);
+    return this.payables.pay(id, input, proofs, user.sub, idempotencyKey);
   }
 
   @Post(':id/cancel')
@@ -92,5 +99,47 @@ export class PayablesController {
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);
+  }
+
+  /** Comprobante N del compromiso (0 = el primero). */
+  @Get(':id/proof/:index')
+  async getProofAt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, mime } = await this.payables.getProof(id, index);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
+  }
+
+  /** Suma comprobantes a un compromiso ya pagado. */
+  @Post(':id/proofs')
+  @UseInterceptors(
+    FilesInterceptor('proofs', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  addProofs(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtAccessPayload,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
+  ): Promise<PayableCommitment> {
+    return this.payables.addProofs(
+      id,
+      user.sub,
+      parseProofUploads(files, detectImageMimeLoose),
+    );
+  }
+
+  /** Quita un comprobante (acá puede quedar en cero: es opcional). */
+  @Delete(':id/proofs/:index')
+  removeProof(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<PayableCommitment> {
+    return this.payables.removeProof(id, index, user.sub);
   }
 }

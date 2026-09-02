@@ -1,5 +1,6 @@
 import type { Invoice, InvoiceItem } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { proofCount } from '../common/proof-images';
 
 /**
  * Mappers compartidos del dominio de facturas: el `include` canónico y la
@@ -85,6 +86,7 @@ export function toInvoiceDto(row: DbInvoiceWithDetail): Invoice {
     paymentStatus,
     paidAt: row.paidAt?.toISOString() ?? null,
     hasPaymentProof: row.paymentProofKey !== null,
+    paymentProofsCount: proofCount(row.paymentProofKey, row.paymentProofExtraKeys),
     paymentActorId: row.paymentActorId,
     paymentActorName: row.paymentActor?.fullName ?? null,
     paymentNote: row.paymentNote,

@@ -120,6 +120,11 @@ export const InvoiceSchema = z.object({
   paidAt: z.string().datetime().nullable(),
   /** True si existe comprobante en storage (no se expone la key cruda al wire). */
   hasPaymentProof: z.boolean(),
+  /** Cuántos comprobantes tiene el pago (un pago puede llevar varios).
+   *  Opcional a propósito: la API (Railway) y el admin (Vercel) se despliegan
+   *  por separado, así que durante unos minutos el navegador nuevo puede pegarle
+   *  a la API vieja. Sin comprobante, cae a `hasPaymentProof ? 1 : 0`. */
+  paymentProofsCount: z.number().int().nonnegative().optional(),
   paymentActorId: z.string().uuid().nullable(),
   paymentActorName: z.string().nullable().optional(),
   paymentNote: z.string().nullable(),

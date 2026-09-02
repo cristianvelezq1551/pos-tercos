@@ -5,14 +5,15 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Query,
   Res,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   AddWeeklyAdjustmentSchema,
@@ -29,6 +30,11 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMimeLoose } from '../common/image-mime';
+import {
+  MAX_PROOFS_POR_PAGO,
+  parseProofUploads,
+  parseProofUploadsOptional,
+} from '../common/proof-images';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { WorkersWeeklyService } from './workers-weekly.service';
 import { WorkersService } from './workers.service';
@@ -87,11 +93,15 @@ export class WorkersController {
   /** Paga días seleccionados de la semana. Solo Dueño. Comprobante opcional. */
   @OnlyDueno()
   @Post('weekly/pay')
-  @UseInterceptors(FileInterceptor('proof', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FilesInterceptor('proof', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
   async payWeek(
     @CurrentUser() user: JwtAccessPayload,
     @Body('payload') payloadRaw: string | undefined,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
   ): Promise<PayrollWeekPayment> {
     if (!payloadRaw) throw new BadRequestException('Faltan los datos del pago.');
     let parsed: unknown;
@@ -101,13 +111,9 @@ export class WorkersController {
       throw new BadRequestException('Payload inválido.');
     }
     const input = PayWeekDaysSchema.parse(parsed);
-    let proof: { buffer: Buffer; mime: string; ext: string } | null = null;
-    if (file) {
-      const detected = detectImageMimeLoose(file.buffer);
-      if (!detected) throw new BadRequestException('La imagen debe ser JPEG, PNG o WebP.');
-      proof = { buffer: file.buffer, mime: detected.mime, ext: detected.ext };
-    }
-    return this.weekly.payWeekDays(input, proof, user.sub);
+    // El comprobante acá es OPCIONAL: un abono se puede registrar sin foto.
+    const proofs = parseProofUploadsOptional(files, detectImageMimeLoose);
+    return this.weekly.payWeekDays(input, proofs, user.sub);
   }
 
   /** Anula un abono semanal (reversa la caja si fue efectivo). Solo Dueño. */
@@ -131,6 +137,51 @@ export class WorkersController {
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=60');
     res.send(buffer);
+  }
+
+  /** Comprobante N del abono (0 = el primero). */
+  @OnlyDueno()
+  @Get('weekly/payment/:id/proof/:index')
+  async getWeekProofAt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, mime } = await this.weekly.getWeekPaymentProof(id, index);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
+  }
+
+  /** Suma comprobantes a un abono ya registrado. */
+  @OnlyDueno()
+  @Post('weekly/payment/:id/proofs')
+  @UseInterceptors(
+    FilesInterceptor('proofs', MAX_PROOFS_POR_PAGO, {
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  addWeekProofs(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtAccessPayload,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
+  ): Promise<PayrollWeekPayment> {
+    return this.weekly.addWeekPaymentProofs(
+      id,
+      user.sub,
+      parseProofUploads(files, detectImageMimeLoose),
+    );
+  }
+
+  /** Quita un comprobante del abono (acá puede quedar en cero: es opcional). */
+  @OnlyDueno()
+  @Delete('weekly/payment/:id/proofs/:index')
+  removeWeekProof(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<PayrollWeekPayment> {
+    return this.weekly.removeWeekPaymentProof(id, index, user.sub);
   }
 
   // ----------------------------------------------------------------

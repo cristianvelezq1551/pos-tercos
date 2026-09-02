@@ -20,6 +20,7 @@ import {
 } from '@pos-tercos/types';
 import { z } from 'zod';
 import { prepararFoto } from '../../../lib/subir-archivo';
+import { quitarComprobante, subirComprobantes } from '../../../lib/comprobantes';
 
 const InvoiceListSchema = z.array(InvoiceSchema);
 
@@ -239,12 +240,12 @@ export function voidInvoice(id: string, reason: string, pin: string): Promise<In
 /** Marca pagada con comprobante (multipart). */
 export async function markInvoicePaid(
   invoiceId: string,
-  proof: File,
+  proofs: File[],
   pin: string,
   opts: { paidAt?: string; note?: string; cashAmount?: number; bankAmount?: number },
 ): Promise<Invoice> {
   const fd = new FormData();
-  fd.append('proof', await prepararFoto(proof, 'invoice-proof'));
+  for (const f of proofs) fd.append('proof', await prepararFoto(f, 'invoice-proof'));
   if (opts.paidAt) fd.append('paidAt', opts.paidAt);
   if (opts.note) fd.append('note', opts.note);
   if (opts.cashAmount !== undefined) fd.append('cashAmount', String(opts.cashAmount));
@@ -270,7 +271,21 @@ export function unmarkInvoicePayment(invoiceId: string, pin: string): Promise<In
   );
 }
 
-/** URL del comprobante para mostrar en <img src=...>. */
-export function invoicePaymentProofUrl(invoiceId: string): string {
-  return `/api/invoices/${invoiceId}/payment-proof`;
+/** URL del comprobante N para mostrar en <img src=...>. */
+export function invoicePaymentProofUrl(invoiceId: string, index = 0): string {
+  // El primero sigue en la ruta de siempre: la API y el admin se despliegan por
+  // separado, y una imagen que ya existía no puede dejar de verse durante ese
+  // rato. Los índices >0 solo existen con la API nueva.
+  return index === 0
+    ? `/api/invoices/${invoiceId}/payment-proof`
+    : `/api/invoices/${invoiceId}/payment-proof/${index}`;
+}
+
+/** Suma comprobantes a una factura ya pagada. No mueve plata ni estado. */
+export function addInvoicePaymentProofs(invoiceId: string, files: File[]): Promise<Invoice> {
+  return subirComprobantes(`/invoices/${invoiceId}/payment/proofs`, files, InvoiceSchema);
+}
+
+export function removeInvoicePaymentProof(invoiceId: string, index: number): Promise<Invoice> {
+  return quitarComprobante(`/invoices/${invoiceId}/payment/proofs/${index}`, InvoiceSchema);
 }
