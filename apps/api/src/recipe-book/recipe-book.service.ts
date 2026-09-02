@@ -4,9 +4,10 @@ import type {
   RecipeBookEntry,
   RecipeBookResponse,
   RecipeComponent,
+  RecipeVariant,
 } from '@pos-tercos/types';
 import { PrismaService } from '../prisma/prisma.service';
-import { RecipesService } from '../recipes/recipes.service';
+import { RecipesService, variantEdgesAsProductChildren } from '../recipes/recipes.service';
 import { toPrepImages } from '../common/prep-images';
 
 /**
@@ -23,7 +24,7 @@ export class RecipeBookService {
   ) {}
 
   async getRecipeBook(): Promise<RecipeBookResponse> {
-    const [graph, products, subproducts, comboComponents, ingredientesOcultos] =
+    const [graph, products, subproducts, comboComponents, ingredientesOcultos, sizes, sizeEdges] =
       await Promise.all([
       this.recipes.loadFullGraph(),
       this.prisma.product.findMany({
@@ -43,6 +44,12 @@ export class RecipeBookService {
         where: { showInKitchen: false },
         select: { id: true },
       }),
+      // La receta de cada variante: `loadFullGraph` no la trae (excluye las
+      // aristas de variante a propósito) y sin ella la biblia le mostraba al
+      // cocinero un plato que nadie pide — las papas y las salsas, sin ninguna
+      // de las tres proteínas.
+      this.prisma.productSize.findMany({ orderBy: { sortOrder: 'asc' } }),
+      this.prisma.recipeEdge.findMany({ where: { parentSizeId: { not: null } } }),
     ]);
     const ocultos = new Set<string>([
       ...ingredientesOcultos.map((i) => `i:${i.id}`),
@@ -51,6 +58,31 @@ export class RecipeBookService {
 
     // Unidad por subproducto (el grafo solo trae name+yield).
     const unitBySub = new Map(subproducts.map((s) => [s.id, s.unit]));
+
+    const aristasPorVariante = new Map<string, typeof sizeEdges>();
+    for (const e of sizeEdges) {
+      const k = e.parentSizeId as string;
+      aristasPorVariante.set(k, [...(aristasPorVariante.get(k) ?? []), e]);
+    }
+    const variantesPorProducto = new Map<string, RecipeVariant[]>();
+    for (const size of sizes) {
+      const propias = aristasPorVariante.get(size.id) ?? [];
+      // Una variante sin receta propia no aporta nada que mostrar: repetir la
+      // base debajo de su nombre solo agrega ruido a una pantalla de cocina.
+      if (propias.length === 0) continue;
+      const lista = variantesPorProducto.get(size.productId) ?? [];
+      lista.push({
+        sizeId: size.id,
+        name: size.name,
+        components: this.visibles(
+          variantEdgesAsProductChildren(propias, size.productId),
+          graph,
+          unitBySub,
+          ocultos,
+        ),
+      });
+      variantesPorProducto.set(size.productId, lista);
+    }
 
     const productEntries: RecipeBookEntry[] = products.map((p) => {
       const edges = graph.edgesByParent.get(`p:${p.id}`) ?? [];
@@ -76,6 +108,7 @@ export class RecipeBookService {
         unit: null,
         components: this.visibles(edges, graph, unitBySub, ocultos),
         comboItems,
+        variants: variantesPorProducto.get(p.id) ?? [],
         preparationSteps: p.preparationSteps,
       };
     });
@@ -97,6 +130,7 @@ export class RecipeBookService {
         unit: s.unit,
         components: this.visibles(edges, graph, unitBySub, ocultos),
         comboItems: [],
+        variants: [],
         preparationSteps: s.preparationSteps,
       };
     });

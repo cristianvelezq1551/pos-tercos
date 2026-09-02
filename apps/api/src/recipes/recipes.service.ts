@@ -1019,7 +1019,7 @@ function groupEdgesByParent(
  * lugar, porque la usan dos caminos —la ficha de una variante y el costo del
  * catálogo— y dos copias de una regla de plata se separan siempre.
  */
-function variantEdgesAsProductChildren(
+export function variantEdgesAsProductChildren(
   rows: DbRecipeEdge[],
   productId: string,
 ): RecipeEdgeNode[] {
