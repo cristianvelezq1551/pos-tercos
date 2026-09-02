@@ -106,6 +106,8 @@ export const AuditActionEnum = z.enum([
   'INVOICE_FREIGHT_UPDATED',
   'INVOICE_PAYMENT_MARKED',
   'INVOICE_PAYMENT_UNMARKED',
+  'INVOICE_PAYMENT_PROOFS_ADDED',
+  'INVOICE_PAYMENT_PROOF_REMOVED',
 
   // Purchase suggestions (FASE 12.C)
   'PURCHASE_SUGGESTION_CREATED',
@@ -154,6 +156,8 @@ export const AuditActionEnum = z.enum([
   'FIXED_COST_UPDATED',
   'FIXED_COST_DELETED',
   'FIXED_COST_PAYMENT_MARKED',
+  'FIXED_COST_PAYMENT_PROOFS_ADDED',
+  'FIXED_COST_PAYMENT_PROOF_REMOVED',
   'FIXED_COST_PAYMENT_UNMARKED',
 
   // Producción de subproductos (cocinero o admin registra una tanda).
@@ -184,6 +188,8 @@ export const AuditActionEnum = z.enum([
   'BUSINESS_CONFIG_UPDATED',
   // Pago semanal de nómina (DIARIO) por días seleccionados, con comprobante.
   'PAYROLL_WEEK_PAID',
+  'PAYROLL_WEEK_PROOFS_ADDED',
+  'PAYROLL_WEEK_PROOF_REMOVED',
   // Reverso/anulación de un pago semanal de nómina.
   'PAYROLL_WEEK_PAYMENT_VOIDED',
   // Tesorería: saldos iniciales / fecha de corte.
@@ -197,6 +203,8 @@ export const AuditActionEnum = z.enum([
   // Compromisos / cuentas por pagar a personas.
   'PAYABLE_CREATED',
   'PAYABLE_PAID',
+  'PAYABLE_PROOFS_ADDED',
+  'PAYABLE_PROOF_REMOVED',
   'PAYABLE_CANCELLED',
   // Cocina (app del cocinero): incidencias + checklist apertura/cierre.
   'KITCHEN_INCIDENT_LOGGED',

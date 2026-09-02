@@ -13,6 +13,7 @@ import { ymdLocal } from '../common/local-dates';
 import { FixedCostsService } from '../fixed-costs/fixed-costs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkersWeeklyService } from '../workers/workers-weekly.service';
+import { proofCount } from '../common/proof-images';
 
 const MONTHS_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -99,6 +100,7 @@ export class FinanceSummaryService {
           total: true,
           paidAt: true,
           paymentProofKey: true,
+          paymentProofExtraKeys: true,
           supplier: { select: { name: true } },
         },
         orderBy: [{ paidAt: 'desc' }],
@@ -114,7 +116,15 @@ export class FinanceSummaryService {
       }),
       this.prisma.payableCommitment.findMany({
         where: { status: 'PAID', paidAt: { gte: monthStart, lte: monthEnd } },
-        select: { id: true, beneficiary: true, description: true, amount: true, paidAt: true, proofImageKey: true },
+        select: {
+          id: true,
+          beneficiary: true,
+          description: true,
+          amount: true,
+          paidAt: true,
+          proofImageKey: true,
+          proofExtraKeys: true,
+        },
         orderBy: [{ paidAt: 'desc' }],
       }),
     ]);
@@ -138,6 +148,7 @@ export class FinanceSummaryService {
       total: r.total !== null ? Number(r.total) : 0,
       paidAt: (r.paidAt as Date).toISOString(),
       hasProof: r.paymentProofKey !== null,
+      proofsCount: proofCount(r.paymentProofKey, r.paymentProofExtraKeys),
     }));
 
     const pendingPayables: FinancePendingPayable[] = pendingPayableRows.map((r) => ({
@@ -153,6 +164,7 @@ export class FinanceSummaryService {
       amount: Number(r.amount),
       paidAt: (r.paidAt as Date).toISOString(),
       hasProof: r.proofImageKey !== null,
+      proofsCount: proofCount(r.proofImageKey, r.proofExtraKeys),
     }));
 
     const pendingPayrollTotal = round(pendingPayroll.reduce((a, p) => a + p.total, 0));

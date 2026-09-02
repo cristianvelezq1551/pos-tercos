@@ -94,18 +94,18 @@ model RefreshToken {
 /// 410 la fila se borra (el navegador se desinstaló o revocó el permiso); sin
 /// eso las muertas se acumulan para siempre y cada aviso las reintenta.
 model PushSubscription {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  endpoint  String   @unique
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  endpoint   String    @unique
   /// Llave pública del cliente (P-256, base64url) — RFC 8291.
-  p256dh    String
+  p256dh     String
   /// Secreto de autenticación del cliente (16 bytes, base64url).
-  auth      String
+  auth       String
   /// Para que el dueño reconozca cuál dispositivo está desconectando.
-  userAgent String?  @map("user_agent")
-  createdAt DateTime @default(now()) @map("created_at")
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at")
   lastSentAt DateTime? @map("last_sent_at")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("push_subscriptions")
@@ -434,11 +434,11 @@ model SupplierProduct {
 }
 
 model Invoice {
-  id                String        @id @default(uuid())
-  supplierId        String?       @map("supplier_id")
-  invoiceNumber     String?       @map("invoice_number")
-  total             Decimal?      @db.Decimal(14, 2)
-  iva               Decimal?      @db.Decimal(14, 2)
+  id                    String        @id @default(uuid())
+  supplierId            String?       @map("supplier_id")
+  invoiceNumber         String?       @map("invoice_number")
+  total                 Decimal?      @db.Decimal(14, 2)
+  iva                   Decimal?      @db.Decimal(14, 2)
   /// Domicilio / flete que cobró el proveedor por traer la mercancía.
   ///
   /// NO entra al costeo de productos: el COGS sale de `invoice_items` (costo
@@ -449,50 +449,54 @@ model Invoice {
   ///
   /// `total` SÍ lo incluye: es lo que se pagó. Por eso la coherencia al
   /// confirmar es `total ≈ suma(items) + freight_amount`.
-  freightAmount     Decimal       @default(0) @map("freight_amount") @db.Decimal(14, 2)
-  photoStorageKey   String?       @map("photo_storage_key")
-  aiExtractionJson  Json?         @map("ai_extraction_json")
-  aiModelUsed       String?       @map("ai_model_used")
-  status            InvoiceStatus @default(PENDING_REVIEW)
-  uploadedById      String?       @map("uploaded_by_id")
-  confirmedById     String?       @map("confirmed_by_id")
-  confirmedAt       DateTime?     @map("confirmed_at")
-  notes             String?
+  freightAmount         Decimal       @default(0) @map("freight_amount") @db.Decimal(14, 2)
+  photoStorageKey       String?       @map("photo_storage_key")
+  aiExtractionJson      Json?         @map("ai_extraction_json")
+  aiModelUsed           String?       @map("ai_model_used")
+  status                InvoiceStatus @default(PENDING_REVIEW)
+  uploadedById          String?       @map("uploaded_by_id")
+  confirmedById         String?       @map("confirmed_by_id")
+  confirmedAt           DateTime?     @map("confirmed_at")
+  notes                 String?
   /// Control de pago al proveedor (independiente de `status` que es solo
   /// sobre la validación IA). NULL = aún no aplicable (factura sin confirmar);
   /// 'PENDING' = confirmada pero no transferida; 'PAID' = ya pagada con
   /// comprobante. Solo Dueño + PIN. CHECK al nivel DB.
-  paymentStatus     String?       @map("payment_status")
-  paidAt            DateTime?     @map("paid_at")
+  paymentStatus         String?       @map("payment_status")
+  paidAt                DateTime?     @map("paid_at")
   /// Storage key de la foto del comprobante de transferencia. Obligatorio
   /// si paymentStatus='PAID'.
-  paymentProofKey   String?       @map("payment_proof_key")
-  paymentActorId    String?       @map("payment_actor_id")
-  paymentNote       String?       @map("payment_note")
+  paymentProofKey       String?       @map("payment_proof_key")
+  /// Comprobantes ADICIONALES. La lista completa es
+  /// [paymentProofKey, ...paymentProofExtraKeys]; la columna de arriba sigue
+  /// siendo la primera para no romper a nadie que ya la lea.
+  paymentProofExtraKeys String[]      @default([]) @map("payment_proof_extra_keys")
+  paymentActorId        String?       @map("payment_actor_id")
+  paymentNote           String?       @map("payment_note")
   /// Bolsillo de tesorería del que salió el pago: 'EFECTIVO' | 'CUENTA'.
   /// (legacy; hoy el reparto real vive en payment_cash_amount/bank_amount).
-  paymentPocket     String        @default("CUENTA") @map("payment_pocket")
+  paymentPocket         String        @default("CUENTA") @map("payment_pocket")
   /// Reparto del pago por bolsillo (permite mixto). Suman el total.
-  paymentCashAmount Decimal       @default(0) @map("payment_cash_amount") @db.Decimal(14, 2)
-  paymentBankAmount Decimal       @default(0) @map("payment_bank_amount") @db.Decimal(14, 2)
+  paymentCashAmount     Decimal       @default(0) @map("payment_cash_amount") @db.Decimal(14, 2)
+  paymentBankAmount     Decimal       @default(0) @map("payment_bank_amount") @db.Decimal(14, 2)
   /// Responsable que asume este gasto (ej. Cristian / Pablo) — para el
   /// desglose de compromisos en Tesorería. NULL = sin asignar.
-  responsible       String?
+  responsible           String?
   /// Anulación de una factura confirmada (ventana corta, solo Dueño con PIN).
   /// El estado pasa a VOIDED y se escriben movimientos compensatorios que
   /// deshacen la entrada de mercancía; la fila se conserva porque el documento
   /// existió y movió plata.
-  voidedAt          DateTime?     @map("voided_at")
-  voidedById        String?       @map("voided_by_id")
-  voidReason        String?       @map("void_reason")
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
-  items             InvoiceItem[]
-  confirmedBy       User?         @relation("InvoiceConfirmedBy", fields: [confirmedById], references: [id])
-  paymentActor      User?         @relation("InvoicePaymentActor", fields: [paymentActorId], references: [id])
-  voidedBy          User?         @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
-  supplier          Supplier?     @relation(fields: [supplierId], references: [id])
-  uploadedBy        User?         @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
+  voidedAt              DateTime?     @map("voided_at")
+  voidedById            String?       @map("voided_by_id")
+  voidReason            String?       @map("void_reason")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  items                 InvoiceItem[]
+  confirmedBy           User?         @relation("InvoiceConfirmedBy", fields: [confirmedById], references: [id])
+  paymentActor          User?         @relation("InvoicePaymentActor", fields: [paymentActorId], references: [id])
+  voidedBy              User?         @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
+  supplier              Supplier?     @relation(fields: [supplierId], references: [id])
+  uploadedBy            User?         @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
 
   @@index([status, createdAt(sort: Desc)])
   @@index([supplierId, createdAt(sort: Desc)])
@@ -1157,23 +1161,25 @@ enum CortesiaStatus {
 /// `amount` es snapshot de lo realmente pagado (puede diferir del
 /// `fixed_costs.amount` actual). `proof_image_key` es obligatorio.
 model FixedCostPayment {
-  id            String    @id @default(uuid())
-  fixedCostId   String    @map("fixed_cost_id")
-  periodYear    Int       @map("period_year")
-  periodMonth   Int       @map("period_month")
-  amount        Decimal   @db.Decimal(14, 2)
-  paidAt        DateTime  @map("paid_at")
-  proofImageKey String    @map("proof_image_key")
-  actorId       String?   @map("actor_id")
+  id             String    @id @default(uuid())
+  fixedCostId    String    @map("fixed_cost_id")
+  periodYear     Int       @map("period_year")
+  periodMonth    Int       @map("period_month")
+  amount         Decimal   @db.Decimal(14, 2)
+  paidAt         DateTime  @map("paid_at")
+  proofImageKey  String    @map("proof_image_key")
+  /// Comprobantes ADICIONALES ([proofImageKey, ...proofExtraKeys]).
+  proofExtraKeys String[]  @default([]) @map("proof_extra_keys")
+  actorId        String?   @map("actor_id")
   /// Bolsillo del que salió: 'EFECTIVO' | 'CUENTA' (legacy).
-  paymentPocket String    @default("CUENTA") @map("payment_pocket")
+  paymentPocket  String    @default("CUENTA") @map("payment_pocket")
   /// Reparto del pago por bolsillo (permite mixto). Suman amount.
-  cashAmount    Decimal   @default(0) @map("cash_amount") @db.Decimal(14, 2)
-  bankAmount    Decimal   @default(0) @map("bank_amount") @db.Decimal(14, 2)
-  note          String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  fixedCost     FixedCost @relation(fields: [fixedCostId], references: [id], onDelete: Cascade)
-  actor         User?     @relation("FixedCostPaymentActor", fields: [actorId], references: [id])
+  cashAmount     Decimal   @default(0) @map("cash_amount") @db.Decimal(14, 2)
+  bankAmount     Decimal   @default(0) @map("bank_amount") @db.Decimal(14, 2)
+  note           String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  fixedCost      FixedCost @relation(fields: [fixedCostId], references: [id], onDelete: Cascade)
+  actor          User?     @relation("FixedCostPaymentActor", fields: [actorId], references: [id])
 
   @@unique([fixedCostId, periodYear, periodMonth])
   @@index([paidAt])
@@ -1345,6 +1351,8 @@ model PayrollWeekPayment {
   status         String   @default("PAID")
   /// Comprobante (opcional): imagen del abono. Puede ir sin comprobante.
   proofImageKey  String?  @map("proof_image_key")
+  /// Comprobantes ADICIONALES ([proofImageKey, ...proofExtraKeys]).
+  proofExtraKeys String[] @default([]) @map("proof_extra_keys")
   actorId        String?  @map("actor_id")
   /// Legacy (§7.v17): la nómina en efectivo generaba un CashMovement OUT en el
   /// turno abierto, lo que descuadraba el arqueo (el bolsillo EFECTIVO de
@@ -1366,27 +1374,29 @@ model PayrollWeekPayment {
 /// debe a alguien, fuera de facturas/costos fijos/nómina. Al pagarlo se reparte
 /// por bolsillo (efectivo/cuenta/mixto) y alimenta la Tesorería.
 model PayableCommitment {
-  id            String        @id @default(uuid())
+  id             String        @id @default(uuid())
   /// A quién se le debe (texto libre: Cristian, Pablo, …).
-  beneficiary   String
-  description   String
-  amount        Decimal       @db.Decimal(14, 2)
+  beneficiary    String
+  description    String
+  amount         Decimal       @db.Decimal(14, 2)
   /// ¿Es un GASTO del negocio (un arreglo, un servicio, una compra suelta) o
   /// un movimiento financiero (devolver un préstamo que te hicieron)?
   ///
   /// Solo los gastos bajan el resultado del mes. Devolver plata que te
   /// prestaron NO es una pérdida —ya la habías recibido— y contarlo como tal
   /// mostraría un bajón que no existe. Default true: el caso común es gasto.
-  isExpense     Boolean       @default(true) @map("is_expense")
-  status        PayableStatus @default(PENDING)
-  cashAmount    Decimal       @default(0) @map("cash_amount") @db.Decimal(14, 2)
-  bankAmount    Decimal       @default(0) @map("bank_amount") @db.Decimal(14, 2)
-  proofImageKey String?       @map("proof_image_key")
-  paidAt        DateTime?     @map("paid_at")
-  actorId       String?       @map("actor_id")
-  createdById   String?       @map("created_by_id")
-  note          String?
-  createdAt     DateTime      @default(now()) @map("created_at")
+  isExpense      Boolean       @default(true) @map("is_expense")
+  status         PayableStatus @default(PENDING)
+  cashAmount     Decimal       @default(0) @map("cash_amount") @db.Decimal(14, 2)
+  bankAmount     Decimal       @default(0) @map("bank_amount") @db.Decimal(14, 2)
+  proofImageKey  String?       @map("proof_image_key")
+  /// Comprobantes ADICIONALES ([proofImageKey, ...proofExtraKeys]).
+  proofExtraKeys String[]      @default([]) @map("proof_extra_keys")
+  paidAt         DateTime?     @map("paid_at")
+  actorId        String?       @map("actor_id")
+  createdById    String?       @map("created_by_id")
+  note           String?
+  createdAt      DateTime      @default(now()) @map("created_at")
 
   @@index([status])
   @@map("payable_commitments")

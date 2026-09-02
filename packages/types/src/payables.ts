@@ -21,6 +21,9 @@ export const PayableCommitmentSchema = z.object({
   cashAmount: z.number(),
   bankAmount: z.number(),
   hasProof: z.boolean(),
+  /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
+   *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
+  proofsCount: z.number().int().nonnegative().optional(),
   paidAt: z.string().datetime().nullable(),
   note: z.string().nullable(),
   createdAt: z.string().datetime(),

@@ -80,6 +80,9 @@ export const PayrollWeekPaymentSchema = z.object({
   bankAmount: z.number().nonnegative(),
   status: z.enum(['PAID', 'VOIDED']),
   hasProof: z.boolean(),
+  /** Cuántos comprobantes hay (un abono puede llevar varios). Opcional: la API
+   *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
+  proofsCount: z.number().int().nonnegative().optional(),
   note: z.string().nullable(),
   paidAt: z.string().datetime(),
   actorName: z.string().nullable(),

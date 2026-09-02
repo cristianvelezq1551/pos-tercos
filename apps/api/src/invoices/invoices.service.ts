@@ -701,6 +701,7 @@ export class InvoicesService {
               paymentStatus: 'PENDING',
               paidAt: null,
               paymentProofKey: null,
+              paymentProofExtraKeys: [],
               paymentActorId: null,
               paymentNote: null,
             }),

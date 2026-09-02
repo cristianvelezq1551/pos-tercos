@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { request, validateInput } from '../../../lib/api-client';
 import { randomUUID } from '../../../lib/uuid';
 import { prepararFoto } from '../../../lib/subir-archivo';
+import { quitarComprobante, subirComprobantes } from '../../../lib/comprobantes';
 
 const PayableListSchema = z.array(PayableCommitmentSchema);
 
@@ -23,11 +24,11 @@ export function createPayable(input: CreatePayable): Promise<PayableCommitment> 
 export async function payPayable(
   id: string,
   input: { cashAmount: number; bankAmount: number; note?: string },
-  proof: File | null,
+  proofs: File[],
 ): Promise<PayableCommitment> {
   const fd = new FormData();
   fd.append('payload', JSON.stringify(input));
-  if (proof) fd.append('proof', await prepararFoto(proof, 'payable-proof'));
+  for (const f of proofs) fd.append('proof', await prepararFoto(f, 'payable-proof'));
   const res = await fetch(`/api/payables/${id}/pay`, {
     method: 'POST',
     credentials: 'include',
@@ -49,6 +50,16 @@ export async function cancelPayable(id: string): Promise<void> {
   }
 }
 
-export function payableProofUrl(id: string): string {
-  return `/api/payables/${id}/proof`;
+export function payableProofUrl(id: string, index = 0): string {
+  // El primero conserva la ruta de siempre (ver invoicePaymentProofUrl).
+  return index === 0 ? `/api/payables/${id}/proof` : `/api/payables/${id}/proof/${index}`;
+}
+
+/** Suma comprobantes a un compromiso ya pagado. */
+export function addPayableProofs(id: string, files: File[]): Promise<PayableCommitment> {
+  return subirComprobantes(`/payables/${id}/proofs`, files, PayableCommitmentSchema);
+}
+
+export function removePayableProof(id: string, index: number): Promise<PayableCommitment> {
+  return quitarComprobante(`/payables/${id}/proofs/${index}`, PayableCommitmentSchema);
 }

@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 import { request } from '../../../lib/api-client';
 import { prepararFoto } from '../../../lib/subir-archivo';
+import { quitarComprobante, subirComprobantes } from '../../../lib/comprobantes';
 
 const FixedCostListSchema = z.array(FixedCostSchema);
 const FixedCostPendingListSchema = z.array(FinancePendingFixedCostSchema);
@@ -60,7 +61,7 @@ export async function deleteFixedCost(id: string): Promise<void> {
 /** Marca pagado un costo fijo para (año, mes) con comprobante. */
 export async function markFixedCostPaid(
   fixedCostId: string,
-  proof: File,
+  proofs: File[],
   body: {
     periodYear: number;
     periodMonth: number;
@@ -72,7 +73,7 @@ export async function markFixedCostPaid(
   },
 ): Promise<FinancePaidFixedCost> {
   const fd = new FormData();
-  fd.append('proof', await prepararFoto(proof, 'fixed-cost-proof'));
+  for (const f of proofs) fd.append('proof', await prepararFoto(f, 'fixed-cost-proof'));
   fd.append('periodYear', String(body.periodYear));
   fd.append('periodMonth', String(body.periodMonth));
   if (body.paidAt) fd.append('paidAt', body.paidAt);
@@ -104,6 +105,29 @@ export function unmarkFixedCostPayment(
   );
 }
 
-export function fixedCostProofUrl(paymentId: string): string {
-  return `/api/fixed-costs/payment/${paymentId}/proof`;
+export function fixedCostProofUrl(paymentId: string, index = 0): string {
+  // El primero conserva la ruta de siempre (ver invoicePaymentProofUrl).
+  return index === 0
+    ? `/api/fixed-costs/payment/${paymentId}/proof`
+    : `/api/fixed-costs/payment/${paymentId}/proof/${index}`;
+}
+
+const ProofsCountSchema = z.object({ proofsCount: z.number().int().nonnegative() });
+
+/** Suma comprobantes a un pago de costo fijo ya registrado. */
+export async function addFixedCostProofs(paymentId: string, files: File[]): Promise<number> {
+  const r = await subirComprobantes(
+    `/fixed-costs/payment/${paymentId}/proofs`,
+    files,
+    ProofsCountSchema,
+  );
+  return r.proofsCount;
+}
+
+export async function removeFixedCostProof(paymentId: string, index: number): Promise<number> {
+  const r = await quitarComprobante(
+    `/fixed-costs/payment/${paymentId}/proofs/${index}`,
+    ProofsCountSchema,
+  );
+  return r.proofsCount;
 }

@@ -1,11 +1,12 @@
 'use client';
 
-import type { PayableCommitment } from '@pos-tercos/types';
+import { comprobantesDe, type PayableCommitment } from '@pos-tercos/types';
 import {
   Badge, Button, Card, EmptyState, Input, Money, MoneyInput, Section, cn, formatDate } from '@pos-tercos/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { cancelPayable, createPayable, payableProofUrl } from '../api/client';
+import { cancelPayable, createPayable } from '../api/client';
+import { PayableProofsDialog } from './PayableProofsDialog';
 import { PayPayableModal } from './PayPayableModal';
 import { getErrorMessage } from '../../../lib/errors';
 
@@ -14,6 +15,7 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
   const pending = payables.filter((p) => p.status === 'PENDING');
   const history = payables.filter((p) => p.status !== 'PENDING');
   const [paying, setPaying] = useState<PayableCommitment | null>(null);
+  const [viendo, setViendo] = useState<PayableCommitment | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,16 +100,32 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
                     <span className="text-xs font-semibold text-destructive">CANCELADO</span>
                   )}
                   <span className="flex-1" />
-                  {p.hasProof ? (
-                    <a href={payableProofUrl(p.id)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
-                      Comprobante
-                    </a>
+                  {p.status === 'PAID' ? (
+                    <button
+                      type="button"
+                      onClick={() => setViendo(p)}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      {comprobantesDe(p) > 1
+                        ? `${comprobantesDe(p)} comprobantes`
+                        : p.hasProof
+                          ? 'Comprobante'
+                          : 'Agregar comprobante'}
+                    </button>
                   ) : null}
                 </li>
               ))}
             </ul>
           </Card>
         </Section>
+      ) : null}
+
+      {viendo ? (
+        <PayableProofsDialog
+          payable={viendo}
+          onClose={() => setViendo(null)}
+          onChanged={() => router.refresh()}
+        />
       ) : null}
 
       {paying ? (

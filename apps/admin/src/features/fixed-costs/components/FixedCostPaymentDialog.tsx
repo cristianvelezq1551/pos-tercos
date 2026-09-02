@@ -1,9 +1,9 @@
 'use client';
 
 import { Button, Dialog, FormField, Input, MoneyInput, formatCop } from '@pos-tercos/ui';
-import { FileImage } from 'lucide-react';
-import { useState, type ChangeEvent } from 'react';
+import { useState } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
+import { ProofFilesField } from '../../../components/ProofFilesField';
 import { ymdLocalToday } from '../../../lib/dates';
 import { markFixedCostPaid } from '../api/client';
 import { getErrorMessage } from '../../../lib/errors';
@@ -29,8 +29,7 @@ export function FixedCostPaymentDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   // ymdLocalToday, NO toISOString: de noche en Bogotá daría mañana.
   const [paidAt, setPaidAt] = useState(ymdLocalToday());
   const [amount, setAmount] = useState<string>(String(expectedAmount));
@@ -39,15 +38,8 @@ export function FixedCostPaymentDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
-    const f = e.target.files?.[0] ?? null;
-    setFile(f);
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(f ? URL.createObjectURL(f) : null);
-  };
-
   const submit = async (): Promise<void> => {
-    if (!file) {
+    if (files.length === 0) {
       setError('Selecciona el comprobante (imagen).');
       return;
     }
@@ -59,7 +51,7 @@ export function FixedCostPaymentDialog({
     setError(null);
     setPending(true);
     try {
-      await markFixedCostPaid(fixedCostId, file, {
+      await markFixedCostPaid(fixedCostId, files, {
         periodYear,
         periodMonth,
         paidAt,
@@ -76,7 +68,7 @@ export function FixedCostPaymentDialog({
     }
   };
 
-  const valid = file !== null && Number.isFinite(Number(amount));
+  const valid = files.length > 0 && Number.isFinite(Number(amount));
 
   return (
     <Dialog
@@ -97,23 +89,7 @@ export function FixedCostPaymentDialog({
       }
     >
       <div className="space-y-4">
-        <FormField label="Comprobante" required hint="JPEG, PNG o WebP. Máx 10 MB.">
-          <Input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={onFile}
-            disabled={pending}
-          />
-        </FormField>
-        {preview ? (
-          <div className="flex justify-center rounded-lg border border-border bg-muted/40 p-2">
-            <img src={preview} alt="Comprobante" className="max-h-56 w-auto rounded" />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-6 text-xs text-muted-foreground">
-            <FileImage className="h-4 w-4" /> Sin imagen seleccionada
-          </div>
-        )}
+        <ProofFilesField required files={files} onChange={setFiles} disabled={pending} />
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Fecha del pago">
             <Input

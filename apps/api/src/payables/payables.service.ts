@@ -6,6 +6,15 @@ import { AuditService } from '../audit/audit.service';
 import { mimeForExtension } from '../common/image-mime';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  appendProofs,
+  assertCabenProofs,
+  proofCount,
+  proofKeyAt,
+  removeProofAt,
+  toSlots,
+  type ProofUpload,
+} from '../common/proof-images';
 
 /**
  * Compromisos / cuentas por pagar a personas (ad-hoc). Lo que el negocio le
@@ -58,7 +67,7 @@ export class PayablesService {
   async pay(
     id: string,
     input: PayPayable,
-    proof: { buffer: Buffer; mime: string; ext: string } | null,
+    proofs: ProofUpload[],
     actorId: string,
     idempotencyKey?: string,
   ): Promise<PayableCommitment> {
@@ -83,11 +92,7 @@ export class PayablesService {
       );
     }
 
-    let proofImageKey: string | null = null;
-    if (proof) {
-      const stored = await this.storage.put(`payables/${id}`, proof.buffer, proof.mime, proof.ext);
-      proofImageKey = stored.key;
-    }
+    const slots = toSlots(await this.subirProofs(id, proofs));
 
     // Claim atómico condicionado al estado: dos pagos concurrentes (doble-click /
     // retry) NO pueden ambos desembolsar — el status va en el WHERE, solo uno
@@ -98,7 +103,8 @@ export class PayablesService {
         status: 'PAID',
         cashAmount: cash,
         bankAmount: bank,
-        proofImageKey,
+        proofImageKey: slots.primary,
+        proofExtraKeys: slots.extras,
         paidAt: new Date(),
         actorId,
         note: input.note ?? row.note,
@@ -145,12 +151,72 @@ export class PayablesService {
     });
   }
 
-  async getProof(id: string): Promise<{ buffer: Buffer; mime: string }> {
+  async getProof(id: string, index = 0): Promise<{ buffer: Buffer; mime: string }> {
     const row = await this.prisma.payableCommitment.findUnique({ where: { id } });
-    if (!row || !row.proofImageKey) throw new NotFoundException('Comprobante no encontrado.');
-    const buffer = await this.storage.get(row.proofImageKey);
-    const ext = row.proofImageKey.split('.').pop() ?? '';
+    const key = row ? proofKeyAt(row.proofImageKey, row.proofExtraKeys, index) : null;
+    if (!key) throw new NotFoundException('Comprobante no encontrado.');
+    const buffer = await this.storage.get(key);
+    const ext = key.split('.').pop() ?? '';
     return { buffer, mime: mimeForExtension(ext) };
+  }
+
+  /** Suma comprobantes a un compromiso ya pagado (no mueve plata). */
+  async addProofs(
+    id: string,
+    actorId: string,
+    proofs: ProofUpload[],
+  ): Promise<PayableCommitment> {
+    const row = await this.prisma.payableCommitment.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Compromiso no encontrado.');
+    if (row.status !== 'PAID') {
+      throw new BadRequestException('Solo se agregan comprobantes a un compromiso pagado.');
+    }
+    assertCabenProofs(row.proofImageKey, row.proofExtraKeys, proofs.length);
+    const nuevas = await this.subirProofs(id, proofs);
+    const slots = appendProofs(row.proofImageKey, row.proofExtraKeys, nuevas);
+    const updated = await this.prisma.payableCommitment.update({
+      where: { id },
+      data: { proofImageKey: slots.primary, proofExtraKeys: slots.extras },
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: 'PAYABLE_PROOFS_ADDED',
+      entityType: 'payable_commitment',
+      entityId: id,
+      metadata: { added: nuevas.length },
+    });
+    return this.toDto(updated);
+  }
+
+  /** Quita un comprobante. Acá el soporte es opcional: puede quedar en cero. */
+  async removeProof(id: string, index: number, actorId: string): Promise<PayableCommitment> {
+    const row = await this.prisma.payableCommitment.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Compromiso no encontrado.');
+    const { slots, removed } = removeProofAt(row.proofImageKey, row.proofExtraKeys, index, {
+      minimo: 0,
+    });
+    const updated = await this.prisma.payableCommitment.update({
+      where: { id },
+      data: { proofImageKey: slots.primary, proofExtraKeys: slots.extras },
+    });
+    await this.storage.delete(removed).catch(() => undefined);
+    await this.audit.log({
+      userId: actorId,
+      action: 'PAYABLE_PROOF_REMOVED',
+      entityType: 'payable_commitment',
+      entityId: id,
+      metadata: { index, removedKey: removed },
+    });
+    return this.toDto(updated);
+  }
+
+  private async subirProofs(id: string, proofs: ProofUpload[]): Promise<string[]> {
+    const keys: string[] = [];
+    for (const p of proofs) {
+      const stored = await this.storage.put(`payables/${id}`, p.buffer, p.mime, p.ext);
+      keys.push(stored.key);
+    }
+    return keys;
   }
 
   private toDto(row: {
@@ -163,6 +229,7 @@ export class PayablesService {
     cashAmount: { toString(): string };
     bankAmount: { toString(): string };
     proofImageKey: string | null;
+    proofExtraKeys: string[];
     paidAt: Date | null;
     note: string | null;
     createdAt: Date;
@@ -177,6 +244,7 @@ export class PayablesService {
       cashAmount: Number(row.cashAmount),
       bankAmount: Number(row.bankAmount),
       hasProof: row.proofImageKey !== null,
+      proofsCount: proofCount(row.proofImageKey, row.proofExtraKeys),
       paidAt: row.paidAt ? row.paidAt.toISOString() : null,
       note: row.note,
       createdAt: row.createdAt.toISOString(),

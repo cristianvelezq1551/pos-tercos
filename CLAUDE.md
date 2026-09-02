@@ -4368,6 +4368,76 @@ funcionaría solo: el API viejo pediría `prep_image_url`. Se aceptó porque la
 columna tenía un día de vida (§7.v59, del 2026-09-01) y el negocio está en
 ensayo; con datos reales, esto va en dos despliegues.
 
+## 7.v62 Un pago admite VARIOS comprobantes (2026-09-02)
+
+> Pedido del dueño: poder asociar más de una imagen a **cualquier** pago —una
+> transferencia partida en dos, el soporte del banco aparte de la foto del
+> recibo, la consignación y el extracto—. Hasta hoy cabía una sola y la segunda
+> se perdía. Condición dura del pedido: **no comprometer lo que ya funciona en
+> producción**. Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes
+> (api 194), **e2e 74 suites / 868** sobre una base creada desde cero, builds
+> 8/8, y **5 pruebas de navegador** contra la interfaz real.
+> Migración: `20260902190000_comprobantes_multiples`.
+
+### La forma de guardarlo es lo que lo hace seguro
+La **columna vieja no se toca**: sigue guardando la PRIMERA imagen. Las demás
+van a una columna nueva de extras (`TEXT[] NOT NULL DEFAULT '{}'`), y la lista
+completa es `[primaria, ...extras]`. Así, todo lo que ya leía la columna vieja
+—`hasProof`, el endpoint del comprobante, tesorería, el estado financiero, los
+reportes— sigue viendo exactamente lo mismo sin enterarse del cambio.
+
+La migración es **puramente aditiva**: `ADD COLUMN` con default no volátil es
+O(1) desde Postgres 11 (no reescribe una sola fila) y deja `{}` en todo lo ya
+cargado. Verificado sobre una tabla CON datos, no solo sobre una vacía.
+
+| Pago | Tabla | ¿El comprobante es obligatorio? |
+|---|---|---|
+| Factura de proveedor | `invoices.payment_proof_extra_keys` | **Sí** (pagada ⇒ al menos uno) |
+| Costo fijo | `fixed_cost_payments.proof_extra_keys` | **Sí** (la columna es NOT NULL) |
+| Compromiso / gasto | `payable_commitments.proof_extra_keys` | No |
+| Abono de nómina | `payroll_week_payments.proof_extra_keys` | No |
+
+### Reglas duras
+- **Si hay alguna imagen, la columna vieja NUNCA queda vacía.** Quitar la
+  primera **promueve** a la siguiente; si no, `hasProof` diría "sin
+  comprobante" con imágenes cargadas.
+- **Un pago que exige comprobante no se puede quedar en cero**: el botón de
+  quitar desaparece con uno solo y el server lo rechaza igual (400, no 500).
+  Donde es opcional (compromisos, nómina) sí se puede vaciar.
+- **El tope (8) se valida ANTES de subir a storage** — dejar allí lo que
+  después no cabe llena el bucket con basura.
+- **Agregar un comprobante no mueve plata ni estado**: no cambia `paidAt`, ni
+  el reparto por bolsillo, ni el `paymentStatus`. Es solo soporte.
+- **Desmarcar un pago borra TODAS las imágenes**, no solo la primera.
+- **El índice 0 conserva la ruta de siempre** (`/payment-proof`, no
+  `/payment-proof/0`): la API (Railway) y el admin (Vercel) se despliegan por
+  separado, y una imagen que ya existía no puede dejar de verse en ese rato.
+  Por lo mismo `proofsCount` viaja **opcional** en los DTO y cae a
+  `hasProof ? 1 : 0` (`comprobantesDe` en `packages/types`).
+
+### Dónde
+- **API**: `common/proof-images.ts` (puro, 14 tests) es la única fuente del
+  reparto primaria/extras; lo usan los 4 dominios. Endpoints nuevos por
+  dominio: `GET .../proof/:index`, `POST .../proofs`, `DELETE .../proofs/:index`.
+  Los diálogos de "marcar pagado" ahora aceptan varias imágenes de una vez.
+- **Admin**: `components/PaymentProofsGallery` (miniaturas + ampliar + agregar +
+  quitar) dentro de `PaymentProofsDialog`, y `components/ProofFilesField` para
+  elegir varias al pagar. Cada feature pone un envoltorio de 20 líneas con SUS
+  llamadas a la API — la pantalla es la misma porque la pregunta es la misma.
+- Las listas de pagos muestran el conteo ("2 comprobantes") en vez de un sí/no.
+
+### La prueba que importa: que se VEAN
+`apps/admin/e2e/comprobantes-multiples.spec.ts` (5 casos, navegador real) mide
+`naturalWidth` de cada miniatura, no `toBeVisible()`: la galería pide las
+imágenes por índice y una ruta mal armada devuelve un `<img>` roto que
+`toBeVisible()` da por bueno (§7.v56). Cubre factura, costo fijo, compromiso y
+abono de nómina, incluyendo agregar y quitar sin cerrar el diálogo.
+
+⚠️ Ese suite es **local** (no corre en CI, como el resto de `apps/admin/e2e`).
+Lo que sí corre en CI es `apps/api/test/comprobantes-multiples.e2e-spec.ts`
+(15 casos): los guardas, los roles y —sobre todo— que la columna vieja siga
+comportándose igual.
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)
