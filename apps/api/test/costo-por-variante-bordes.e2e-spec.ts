@@ -40,6 +40,8 @@ describe('Costo por variante: los bordes E2E', () => {
   let platoId: string;
   let conPolloId: string;
   let sinCostoId: string;
+  let conMermaId: string;
+  let conSalsaId: string;
   let comboId: string;
   let shiftId: string;
 
@@ -122,6 +124,8 @@ describe('Costo por variante: los bordes E2E', () => {
         sizes: [
           { name: 'Con pollo', priceModifier: RECARGO_POLLO, sortOrder: 0 },
           { name: 'Con misterio', priceModifier: 4000, sortOrder: 1 },
+          { name: 'Con merma', priceModifier: 1000, sortOrder: 2 },
+          { name: 'Con salsa', priceModifier: 2000, sortOrder: 3 },
         ],
       })
       .expect(201);
@@ -129,6 +133,8 @@ describe('Costo por variante: los bordes E2E', () => {
     const tamanos = creado.body.sizes as Array<{ id: string; name: string }>;
     conPolloId = tamanos.find((t) => t.name === 'Con pollo')!.id;
     sinCostoId = tamanos.find((t) => t.name === 'Con misterio')!.id;
+    conMermaId = tamanos.find((t) => t.name === 'Con merma')!.id;
+    conSalsaId = tamanos.find((t) => t.name === 'Con salsa')!.id;
 
     await request
       .put(`/products/${platoId}/recipe`)
@@ -146,6 +152,33 @@ describe('Costo por variante: los bordes E2E', () => {
       .send({
         edges: [{ childType: 'ingredient', childId: misterio, quantityNeta: 50, mermaPct: 0 }],
       })
+      .expect(200);
+
+    // Un subproducto para probar que una variante puede llevar uno.
+    const sub = await request
+      .post('/subproducts')
+      .set(auth())
+      .send({ name: 'Salsa Borde', yield: 10, unit: 'porción' })
+      .expect(201);
+    const salsa = sub.body.id as string;
+    await request
+      .put(`/subproducts/${salsa}/recipe`)
+      .set(auth())
+      .send({ edges: [{ childType: 'ingredient', childId: papa, quantityNeta: 100, mermaPct: 0 }] })
+      .expect(200);
+    // 100 g de papa ($1.000) por 10 porciones ⇒ $100 la porción.
+
+    // Variante con MERMA: 100 g netos al 20 % son 125 g brutos ⇒ $1.250.
+    await request
+      .put(`/products/${platoId}/sizes/${conMermaId}/recipe`)
+      .set(auth())
+      .send({ edges: [{ childType: 'ingredient', childId: papa, quantityNeta: 100, mermaPct: 0.2 }] })
+      .expect(200);
+    // Variante con SUBPRODUCTO: 2 porciones de salsa ⇒ $200.
+    await request
+      .put(`/products/${platoId}/sizes/${conSalsaId}/recipe`)
+      .set(auth())
+      .send({ edges: [{ childType: 'subproduct', childId: salsa, quantityNeta: 2, mermaPct: 0 }] })
       .expect(200);
 
     const combo = await request
@@ -218,9 +251,11 @@ describe('Costo por variante: los bordes E2E', () => {
 
     it('el equilibrio agrega la línea base SOLO porque hubo una venta así', async () => {
       const c = (await monthly()).catalogBreakEven;
-      // «Con pollo» + el combo + la línea base del plato = 3 con costo conocido.
-      // «Con misterio» queda fuera (no se sabe su costo) y se reporta aparte.
-      expect(c.productsConsidered).toBe(3);
+      // Con costo conocido: «Con pollo», «Con merma», «Con salsa», la línea
+      // base del plato y el combo = 5. «Con misterio» queda fuera (no se sabe
+      // su costo) y se reporta aparte. Las que no se vendieron pesan 0 en el
+      // promedio, así que la cuenta de abajo no cambia.
+      expect(c.productsConsidered).toBe(5);
       expect(c.productsWithoutCost).toBe(1);
 
       // Que la línea base ENTRÓ se prueba con la aritmética, no con el nombre
@@ -274,6 +309,41 @@ describe('Costo por variante: los bordes E2E', () => {
       ).products.find((p) => p.productId === platoId)!;
       expect(fila.estCost).toBeNull();
       expect(fila.estMargin).toBeNull();
+    });
+  });
+
+  describe('la receta de una variante es una receta completa', () => {
+    const costoDeVariante = async (sizeId: string): Promise<number | null> => {
+      const res = await request.get('/product-costs/with-variants').set(auth()).expect(200);
+      const fila = (
+        res.body as Array<{ productId: string; variants: Array<{ sizeId: string; totalCost: number | null }> }>
+      ).find((p) => p.productId === platoId)!;
+      return fila.variants.find((v) => v.sizeId === sizeId)!.totalCost;
+    };
+
+    it('aplica la MERMA de la variante, no solo la cantidad neta', async () => {
+      // Base $1.000 + 100 g netos al 20 % = 125 g brutos × $10 = $1.250.
+      expect(await costoDeVariante(conMermaId)).toBeCloseTo(COSTO_BASE + 1250, 2);
+      // Y coincide con la ficha, que es la referencia.
+      const ficha = (
+        await request
+          .get(`/products/${platoId}/sizes/${conMermaId}/expanded-cost`)
+          .set(auth())
+          .expect(200)
+      ).body as { totalCost: number | null };
+      expect(await costoDeVariante(conMermaId)).toBeCloseTo(ficha.totalCost!, 2);
+    });
+
+    it('expande un SUBPRODUCTO dentro de la variante, no solo insumos', async () => {
+      // Base $1.000 + 2 porciones de salsa a $100 = $1.200.
+      expect(await costoDeVariante(conSalsaId)).toBeCloseTo(COSTO_BASE + 200, 2);
+      const ficha = (
+        await request
+          .get(`/products/${platoId}/sizes/${conSalsaId}/expanded-cost`)
+          .set(auth())
+          .expect(200)
+      ).body as { totalCost: number | null };
+      expect(await costoDeVariante(conSalsaId)).toBeCloseTo(ficha.totalCost!, 2);
     });
   });
 
