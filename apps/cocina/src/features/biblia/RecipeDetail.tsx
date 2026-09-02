@@ -1,6 +1,6 @@
 'use client';
 
-import type { RecipeBookEntry } from '@pos-tercos/types';
+import type { RecipeBookEntry, RecipeComponent } from '@pos-tercos/types';
 import { Dialog, pluralizeUnit } from '@pos-tercos/ui';
 import { fotosDeReceta } from './foto-de-receta';
 
@@ -16,6 +16,9 @@ export function RecipeDetail({
 }) {
   if (!entry) return null;
   const fotos = fotosDeReceta(entry);
+  // El API puede no mandarlo todavía (ventana de despliegue): sin variantes se
+  // ve como siempre, nunca roto.
+  const variantes = entry.variants ?? [];
   return (
     <Dialog open={open} onClose={onClose} title={entry.name} maxWidth="max-w-lg">
       <div className="space-y-5">
@@ -80,24 +83,22 @@ export function RecipeDetail({
               ))}
             </ul>
           </Section>
-        ) : entry.components.length > 0 ? (
-          <Section title="Lleva">
-            <ul className="space-y-1 text-sm">
-              {entry.components.map((c) => (
-                <li key={`${c.type}-${c.id}`} className="flex items-baseline justify-between gap-2">
-                  <span className="text-foreground">{c.name}</span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {fmt(c.quantity)} {pluralizeUnit(c.unit, c.quantity)}
-                    {c.mermaPct > 0 ? (
-                      <span className="ml-1 text-[0.625rem] text-warning">
-                        +{Math.round(c.mermaPct * 100)}% merma
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Section>
+        ) : entry.components.length > 0 || variantes.length > 0 ? (
+          <>
+            {entry.components.length > 0 ? (
+              <Section title={variantes.length > 0 ? 'Lleva siempre' : 'Lleva'}>
+                <Items items={entry.components} />
+              </Section>
+            ) : null}
+            {/* Cada variante SUMA lo suyo encima de la base. Sin esto, la ficha
+                de un plato con variantes mostraba las papas y las salsas y
+                ninguna de las tres proteínas: la receta de algo que nadie pide. */}
+            {variantes.map((v) => (
+              <Section key={v.sizeId} title={`Además, si es ${v.name}`}>
+                <Items items={v.components} />
+              </Section>
+            ))}
+          </>
         ) : null}
 
         {/* Paso a paso */}
@@ -119,6 +120,26 @@ export function RecipeDetail({
         </Section>
       </div>
     </Dialog>
+  );
+}
+
+function Items({ items }: { items: RecipeComponent[] }) {
+  return (
+    <ul className="space-y-1 text-sm">
+      {items.map((c) => (
+        <li key={`${c.type}-${c.id}`} className="flex items-baseline justify-between gap-2">
+          <span className="text-foreground">{c.name}</span>
+          <span className="shrink-0 tabular-nums text-muted-foreground">
+            {fmt(c.quantity)} {pluralizeUnit(c.unit, c.quantity)}
+            {c.mermaPct > 0 ? (
+              <span className="ml-1 text-[0.625rem] text-warning">
+                +{Math.round(c.mermaPct * 100)}% merma
+              </span>
+            ) : null}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

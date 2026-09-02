@@ -204,6 +204,21 @@ export const ComboItemSchema = z.object({
 });
 export type ComboItem = z.infer<typeof ComboItemSchema>;
 
+/**
+ * Lo que SUMA una variante sobre la receta base.
+ *
+ * Un plato con variantes se vende siempre con una elegida, así que la receta
+ * base describe algo que nadie pide: sin esto, la biblia le mostraba al
+ * cocinero las papas y las salsas, y ninguna de las tres proteínas.
+ */
+export const RecipeVariantSchema = z.object({
+  sizeId: z.string().uuid(),
+  name: z.string(),
+  /** Solo lo propio de la variante; la base va en `components`. */
+  components: z.array(RecipeComponentSchema),
+});
+export type RecipeVariant = z.infer<typeof RecipeVariantSchema>;
+
 /** Una entrada de la biblia: un producto o subproducto con su receta + pasos. */
 export const RecipeBookEntrySchema = z.object({
   kind: z.enum(['PRODUCT', 'SUBPRODUCT']),
@@ -230,6 +245,17 @@ export const RecipeBookEntrySchema = z.object({
   components: z.array(RecipeComponentSchema),
   /** Solo combos: productos que lo integran. */
   comboItems: z.array(ComboItemSchema),
+  /**
+   * Lo que suma cada variante encima de `components`. Ausente si no tiene.
+   *
+   * Opcional a propósito, no `.default([])`: con default, el tipo de ENTRADA y
+   * el de SALIDA difieren y el parseo deja de encajar donde se consume (ya pasó
+   * con `productIds` de promociones). Y opcional además protege la ventana del
+   * despliegue: la app de cocina suele publicarse antes que el API, y con el
+   * campo obligatorio el parseo fallaría —la biblia rota— hasta que el API
+   * alcance.
+   */
+  variants: z.array(RecipeVariantSchema).optional(),
   preparationSteps: z.array(z.string()),
 });
 export type RecipeBookEntry = z.infer<typeof RecipeBookEntrySchema>;

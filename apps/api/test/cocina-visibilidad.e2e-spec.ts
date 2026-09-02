@@ -25,6 +25,10 @@ describe('Visibilidad en cocina y foto de preparación (E2E)', () => {
   let cocineroToken: string;
   let panId: string;
   let recipienteId: string;
+  let polloId: string;
+  let conVariantesId: string;
+  let sencillaId: string;
+  let conPolloId: string;
   let salsaId: string;
   let productId: string;
 
@@ -105,6 +109,43 @@ describe('Visibilidad en cocina y foto de preparación (E2E)', () => {
         ],
       })
       .expect(200);
+
+    // Un plato CON variantes: cada una suma su proteína. Antes la biblia le
+    // mostraba al cocinero solo la base y ninguna de las proteínas.
+    polloId = await ing(`Pollo ${randomUUID().slice(0, 6)}`, true);
+    const conVariantes = await request
+      .post('/products')
+      .set(auth(duenoToken))
+      .send({
+        name: `Papas con proteína ${randomUUID().slice(0, 6)}`,
+        basePrice: 25000,
+        category: 'Burgers',
+        sizes: [
+          { name: 'Sencilla', priceModifier: 0, sortOrder: 0 },
+          { name: 'Con pollo', priceModifier: 5000, sortOrder: 1 },
+        ],
+      })
+      .expect(201);
+    conVariantesId = conVariantes.body.id as string;
+    const tamanos = conVariantes.body.sizes as Array<{ id: string; name: string }>;
+    sencillaId = tamanos.find((t) => t.name === 'Sencilla')!.id;
+    conPolloId = tamanos.find((t) => t.name === 'Con pollo')!.id;
+    await request
+      .put(`/products/${conVariantesId}/recipe`)
+      .set(auth(duenoToken))
+      .send({ edges: [{ childType: 'ingredient', childId: panId, quantityNeta: 2 }] })
+      .expect(200);
+    // La variante lleva el pollo Y un recipiente que solo existe para costear.
+    await request
+      .put(`/products/${conVariantesId}/sizes/${conPolloId}/recipe`)
+      .set(auth(duenoToken))
+      .send({
+        edges: [
+          { childType: 'ingredient', childId: polloId, quantityNeta: 1 },
+          { childType: 'ingredient', childId: recipienteId, quantityNeta: 1 },
+        ],
+      })
+      .expect(200);
   });
 
   afterAll(async () => {
@@ -122,6 +163,47 @@ describe('Visibilidad en cocina y foto de preparación (E2E)', () => {
     const ids = (res.body as Array<{ id: string }>).map((s) => s.id);
     expect(ids).toContain(panId);
     expect(ids).not.toContain(recipienteId);
+  });
+
+  describe('la Biblia muestra lo que suma cada variante', () => {
+    const fichaConVariantes = async () => {
+      const res = await request.get('/recipe-book').set(auth(cocineroToken)).expect(200);
+      const entry = (
+        res.body.products as Array<{
+          id: string;
+          components: Array<{ id: string }>;
+          variants?: Array<{ sizeId: string; name: string; components: Array<{ id: string }> }>;
+        }>
+      ).find((p) => p.id === conVariantesId);
+      expect(entry).toBeDefined();
+      return entry!;
+    };
+
+    it('la variante trae su proteína, que la receta base no tiene', async () => {
+      const entry = await fichaConVariantes();
+      expect(entry.components.map((c) => c.id)).toEqual([panId]);
+      const conPollo = entry.variants?.find((v) => v.sizeId === conPolloId);
+      expect(conPollo?.name).toBe('Con pollo');
+      expect(conPollo?.components.map((c) => c.id)).toContain(polloId);
+    });
+
+    it('dentro de la variante tampoco se le muestra lo que es solo para costear', async () => {
+      const conPollo = (await fichaConVariantes()).variants?.find((v) => v.sizeId === conPolloId);
+      expect(conPollo?.components.map((c) => c.id)).not.toContain(recipienteId);
+    });
+
+    it('una variante sin receta propia no aparece: no hay nada que sumar', async () => {
+      const entry = await fichaConVariantes();
+      expect(entry.variants?.some((v) => v.sizeId === sencillaId)).toBe(false);
+    });
+
+    it('un producto sin variantes no inventa ninguna', async () => {
+      const res = await request.get('/recipe-book').set(auth(cocineroToken)).expect(200);
+      const entry = (
+        res.body.products as Array<{ id: string; variants?: unknown[] }>
+      ).find((p) => p.id === productId);
+      expect(entry?.variants ?? []).toEqual([]);
+    });
   });
 
   it('la Biblia no lista el recipiente dentro de "Lleva"', async () => {
