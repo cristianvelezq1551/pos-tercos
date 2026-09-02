@@ -1,6 +1,28 @@
 import { z } from 'zod';
 
 /**
+ * Una foto de la preparación para la biblia de cocina. El `label` es lo que
+ * distingue una variante de otra ("Sencilla", "Doble"): sin él, dos fotos del
+ * mismo plato son indistinguibles.
+ */
+export const PrepImageSchema = z.object({
+  url: z.string().min(1).max(500),
+  label: z.string().max(60).nullable(),
+});
+export type PrepImage = z.infer<typeof PrepImageSchema>;
+
+/** Lo que se acepta al guardar: el rótulo es opcional. */
+export const PrepImageInputSchema = z.object({
+  url: z.string().min(1).max(500),
+  label: z.string().trim().max(60).nullable().optional(),
+});
+
+/** Tope por ficha: más de esto no se navega en una pantalla de cocina. */
+export const MAX_PREP_IMAGES = 8;
+export const PrepImagesInputSchema = z.array(PrepImageInputSchema).max(MAX_PREP_IMAGES);
+
+
+/**
  * Etiqueta de unidad (de compra, receta, stock…): una palabra como "g", "ml",
  * "unidad", "porción". NUNCA un número puro ("1", "2"): un número como unidad se
  * renderiza pegado a la cantidad ("2 1") y es ilegible. Debe tener al menos una
@@ -89,8 +111,8 @@ export const SubproductSchema = z.object({
   blocksAvailability: z.boolean(),
   /** Ver `Ingredient.showInKitchen`. false = no se le muestra al cocinero. */
   showInKitchen: z.boolean(),
-  /** Foto de la preparación para la biblia. Null = sin foto. */
-  prepImageUrl: z.string().nullable(),
+  /** Fotos de la preparación para la biblia. Vacío = sin fotos. */
+  prepImages: z.array(PrepImageSchema),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -109,7 +131,7 @@ export const CreateSubproductSchema = z.object({
   preparationSteps: PreparationStepsSchema.optional(),
   blocksAvailability: z.boolean().optional(),
   showInKitchen: z.boolean().optional(),
-  prepImageUrl: z.string().max(500).nullable().optional(),
+  prepImages: PrepImagesInputSchema.optional(),
 });
 export type CreateSubproduct = z.infer<typeof CreateSubproductSchema>;
 
@@ -192,11 +214,11 @@ export const RecipeBookEntrySchema = z.object({
   /** Imagen (productos). null en subproductos / sin foto. */
   imageUrl: z.string().nullable(),
   /**
-   * Foto de la PREPARACIÓN (productos y subproductos). Es la que manda en la
-   * biblia; `imageUrl` (la foto de la carta) queda como respaldo cuando no hay
-   * una propia.
+   * Fotos de la PREPARACIÓN (productos y subproductos). Son las que mandan en
+   * la biblia; `imageUrl` (la foto de la carta) queda como respaldo cuando no
+   * hay ninguna propia.
    */
-  prepImageUrl: z.string().nullable(),
+  prepImages: z.array(PrepImageSchema),
   description: z.string().nullable(),
   /** Solo productos: true si es combo (su composición va en `comboItems`). */
   isCombo: z.boolean(),
@@ -321,11 +343,11 @@ export const ProductSchema = z.object({
   category: z.string().nullable(),
   imageUrl: z.string().nullable(),
   /**
-   * Foto de la PREPARACIÓN para la biblia de cocina (el armado, el corte, el
-   * emplatado). Distinta de `imageUrl`, que es la foto de la carta. Null = la
-   * biblia cae a `imageUrl`.
+   * Fotos de la PREPARACIÓN para la biblia de cocina (el armado, el corte, una
+   * por variante). Distintas de `imageUrl`, que es la foto de la carta. Vacío =
+   * la biblia cae a `imageUrl`.
    */
-  prepImageUrl: z.string().nullable(),
+  prepImages: z.array(PrepImageSchema),
   /** Emoji representativo (🍔🍟🥤). Fallback visual cuando no hay imageUrl. */
   emoji: z.string().nullable(),
   modifiersEnabled: z.boolean(),
@@ -389,7 +411,7 @@ export const CreateProductSchema = z
      */
     category: z.string().trim().min(1, 'Elige una categoría para el producto.').max(60),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
-    prepImageUrl: ProductImageUrlSchema.nullable().optional(),
+    prepImages: PrepImagesInputSchema.optional(),
     emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),
@@ -461,7 +483,7 @@ export const UpdateProductSchema = z
     basePrice: z.number().nonnegative().optional(),
     category: z.string().max(60).nullable().optional(),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
-    prepImageUrl: ProductImageUrlSchema.nullable().optional(),
+    prepImages: PrepImagesInputSchema.optional(),
     emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),

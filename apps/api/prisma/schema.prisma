@@ -121,10 +121,12 @@ model Product {
   basePrice             Decimal              @map("base_price") @db.Decimal(12, 2)
   category              String?
   imageUrl              String?              @map("image_url")
-  /// Foto de la PREPARACIÓN para la biblia de cocina: el armado, el corte, el
-  /// emplatado. Distinta de imageUrl, que es la foto de la carta. null = la
-  /// biblia cae a imageUrl.
-  prepImageUrl          String?              @map("prep_image_url")
+  /// Fotos de la PREPARACIÓN para la biblia de cocina: el armado, el corte, el
+  /// emplatado, y una por variante cuando el plato se arma distinto. Cada una
+  /// es `{url, label}`; el rótulo es lo que distingue una variante de otra.
+  /// Distintas de imageUrl, que es la foto de la carta. Vacío = la biblia cae
+  /// a imageUrl.
+  prepImages            Json                 @default("[]") @map("prep_images")
   /// Emoji representativo del producto (🍔🍟🥤). Alternativa ligera a la foto:
   /// se muestra en el menú web cuando no hay imageUrl. null = sin emoji.
   emoji                 String?
@@ -244,9 +246,9 @@ model Subproduct {
   /// Si se le muestra al cocinero (biblia e inventario de cocina). false = solo
   /// existe para costear. Se sigue descontando, costeando y produciendo igual.
   showInKitchen      Boolean             @default(true) @map("show_in_kitchen")
-  /// Foto de la preparación para la biblia (los subproductos no tienen foto de
-  /// carta). null = sin foto.
-  prepImageUrl       String?             @map("prep_image_url")
+  /// Fotos de la preparación para la biblia (los subproductos no tienen foto de
+  /// carta). Cada una es `{url, label}`. Vacío = sin fotos.
+  prepImages         Json                @default("[]") @map("prep_images")
   isActive           Boolean             @default(true) @map("is_active")
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")

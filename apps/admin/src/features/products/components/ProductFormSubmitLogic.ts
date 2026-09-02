@@ -153,7 +153,7 @@ export function buildCreatePayload(
     // producto solo aparecería bajo "Todo" en la caja y en la web.
     category: form.category,
     imageUrl: form.imageUrl || null,
-    prepImageUrl: form.prepImageUrl || null,
+    prepImages: form.prepImages,
     emoji: form.emoji || null,
     modifiersEnabled: parsed.modifiers.length > 0,
     isCombo,
@@ -189,7 +189,7 @@ export function buildUpdatePayload(
     basePrice: parsed.basePrice,
     category: form.category || null,
     imageUrl: form.imageUrl || null,
-    prepImageUrl: form.prepImageUrl || null,
+    prepImages: form.prepImages,
     emoji: form.emoji || null,
     modifiersEnabled: parsed.modifiers.length > 0,
     isCombo,

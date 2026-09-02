@@ -1,10 +1,21 @@
-import type { RecipeBookEntry } from '@pos-tercos/types';
+import type { PrepImage, RecipeBookEntry } from '@pos-tercos/types';
 
 /**
- * Qué foto muestra la biblia. Manda la de la PREPARACIÓN —cómo se arma— y la
- * de la carta queda de respaldo: quien ya tenía fotos de producto las sigue
- * viendo sin cargar nada nuevo. Null = no hay ninguna.
+ * Qué fotos muestra la biblia. Mandan las de la PREPARACIÓN —cómo se arma, y
+ * una por variante cuando el plato cambia— y la de la carta queda de respaldo:
+ * quien ya tenía fotos de producto las sigue viendo sin cargar nada nuevo.
+ * Lista vacía = no hay ninguna.
  */
-export function fotoDeReceta(entry: Pick<RecipeBookEntry, 'prepImageUrl' | 'imageUrl'>): string | null {
-  return entry.prepImageUrl ?? entry.imageUrl ?? null;
+export function fotosDeReceta(
+  entry: Pick<RecipeBookEntry, 'prepImages' | 'imageUrl'>,
+): PrepImage[] {
+  if (entry.prepImages.length > 0) return entry.prepImages;
+  return entry.imageUrl ? [{ url: entry.imageUrl, label: null }] : [];
+}
+
+/** La que representa la ficha en la lista: la primera. */
+export function fotoPrincipal(
+  entry: Pick<RecipeBookEntry, 'prepImages' | 'imageUrl'>,
+): string | null {
+  return fotosDeReceta(entry)[0]?.url ?? null;
 }

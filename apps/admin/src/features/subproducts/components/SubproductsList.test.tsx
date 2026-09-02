@@ -11,7 +11,7 @@ const base: Omit<Subproduct, 'id' | 'name' | 'blocksAvailability'> = {
   portionSize: null,
   preparationSteps: [],
   showInKitchen: true,
-  prepImageUrl: null,
+  prepImages: [],
   isActive: true,
   createdAt: '2026-09-01T12:00:00.000Z',
   updatedAt: '2026-09-01T12:00:00.000Z',

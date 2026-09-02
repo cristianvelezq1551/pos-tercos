@@ -3,6 +3,7 @@ import type { CreateSubproduct, Subproduct, UpdateSubproduct } from '@pos-tercos
 import type { Subproduct as DbSubproduct, Prisma } from '@prisma/client';
 import { assertNombreDisponible, conNombreUnico } from '../common/nombre-unico';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizePrepImages, toPrepImages } from '../common/prep-images';
 
 @Injectable()
 export class SubproductsService {
@@ -46,8 +47,8 @@ export class SubproductsService {
           ...(input.showInKitchen !== undefined && {
             showInKitchen: input.showInKitchen,
           }),
-          ...(input.prepImageUrl !== undefined && {
-            prepImageUrl: input.prepImageUrl || null,
+          ...(input.prepImages !== undefined && {
+            prepImages: normalizePrepImages(input.prepImages),
           }),
           preparationSteps: input.preparationSteps ?? [],
         },
@@ -87,8 +88,8 @@ export class SubproductsService {
           ...(input.showInKitchen !== undefined && {
             showInKitchen: input.showInKitchen,
           }),
-          ...(input.prepImageUrl !== undefined && {
-            prepImageUrl: input.prepImageUrl || null,
+          ...(input.prepImages !== undefined && {
+            prepImages: normalizePrepImages(input.prepImages),
           }),
           ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
           ...(input.isActive !== undefined && { isActive: input.isActive }),
@@ -153,7 +154,7 @@ function toSubproductDto(row: DbSubproduct): Subproduct {
     portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
     blocksAvailability: row.blocksAvailability,
     showInKitchen: row.showInKitchen,
-    prepImageUrl: row.prepImageUrl,
+    prepImages: toPrepImages(row.prepImages),
     preparationSteps: row.preparationSteps,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
