@@ -19,8 +19,7 @@ import {
   type VoidInvoicePreview,
 } from '@pos-tercos/types';
 import { z } from 'zod';
-import { comprimirImagen } from '@pos-tercos/ui';
-import { logError } from '../../../lib/client-log';
+import { prepararFoto } from '../../../lib/subir-archivo';
 
 const InvoiceListSchema = z.array(InvoiceSchema);
 
@@ -53,7 +52,7 @@ export async function uploadInvoicePhoto(file: File): Promise<ExtractInvoiceResp
   // Achicada antes de salir: una factura fotografiada de frente pesa 3-8 MB y
   // el proxy de la app corta el cuerpo cerca de 4,5 MB — moría con un 413 sin
   // llegar nunca a la IA. A 1600 px la letra de una factura se lee de sobra.
-  fd.append('photo', await comprimirImagen(file, (e) => logError('invoice-photo', e)));
+  fd.append('photo', await prepararFoto(file, 'invoice-photo'));
   return request(
     '/invoices/upload-photo',
     { method: 'POST', body: fd },
@@ -93,9 +92,11 @@ export async function discardPhoto(photoStorageKey: string): Promise<void> {
  * Pre-sube el comprobante de pago para "nace pagada" (carga manual). El
  * confirm asocia la key devuelta; si el usuario abandona, `discardPaymentProof`.
  */
-export function uploadPaymentProof(file: File): Promise<UploadPaymentProofResponse> {
+export async function uploadPaymentProof(file: File): Promise<UploadPaymentProofResponse> {
   const fd = new FormData();
-  fd.append('proof', file);
+  // Mismo motivo que la foto de la factura: una captura de pantalla del pago
+  // puede pesar más de lo que acepta el proxy y moría con un 413.
+  fd.append('proof', await prepararFoto(file, 'payment-proof'));
   return request(
     '/invoices/upload-payment-proof',
     { method: 'POST', body: fd },
@@ -243,7 +244,7 @@ export async function markInvoicePaid(
   opts: { paidAt?: string; note?: string; cashAmount?: number; bankAmount?: number },
 ): Promise<Invoice> {
   const fd = new FormData();
-  fd.append('proof', proof);
+  fd.append('proof', await prepararFoto(proof, 'invoice-proof'));
   if (opts.paidAt) fd.append('paidAt', opts.paidAt);
   if (opts.note) fd.append('note', opts.note);
   if (opts.cashAmount !== undefined) fd.append('cashAmount', String(opts.cashAmount));

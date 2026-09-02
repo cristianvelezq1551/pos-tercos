@@ -94,3 +94,21 @@ describe('mensajeDeError', () => {
     );
   });
 });
+
+describe('el archivo que no pasó por el proxy', () => {
+  // Lo que el dueño vio en pantalla al subir una factura pesada. Ninguno de los
+  // tres le dice qué hacer, y el 413 SÍ se resuelve desde la pantalla.
+  it.each([
+    'Request Entity Too Large',
+    'FUNCTION_PAYLOAD_TOO_LARGE',
+    'Request failed (413)',
+  ])('traduce %s', (crudo) => {
+    const m = mensajeDeError(new Error(crudo));
+    expect(m).toContain('demasiado grande');
+    expect(m).not.toContain('413');
+  });
+
+  it('también cuando llega solo el código de estado', () => {
+    expect(mensajeDeError(new Error(''), { status: 413 })).toContain('demasiado grande');
+  });
+});

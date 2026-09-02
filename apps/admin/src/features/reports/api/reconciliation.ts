@@ -1,4 +1,5 @@
 import type { ReconciliationReport, ReconciliationSource } from '@pos-tercos/types';
+import { verificarTamano } from '../../../lib/subir-archivo';
 
 /**
  * Sube un CSV de extracto (Nequi/Bancolombia) y devuelve el reporte de
@@ -10,6 +11,7 @@ export async function importReconciliation(
   save: boolean,
 ): Promise<ReconciliationReport> {
   const fd = new FormData();
+  verificarTamano(file);
   fd.append('file', file);
   const qs = new URLSearchParams({ source });
   if (save) qs.set('save', 'true');

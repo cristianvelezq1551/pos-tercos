@@ -33,6 +33,14 @@ const TECNICO: readonly RegExp[] = [
   /^API \d{3}$/, //                 el fallback de ApiError: "API 500" en pantalla
 ];
 
+/**
+ * El archivo no pasó por el proxy de la app. Llega como texto crudo del
+ * servidor ("Request Entity Too Large", "FUNCTION_PAYLOAD_TOO_LARGE") o como el
+ * fallback del cliente ("Request failed (413)"): ninguno le dice a la persona
+ * qué hacer, y el 413 es un error que SÍ se puede resolver desde la pantalla.
+ */
+const DEMASIADO_GRANDE = /request entity too large|payload_too_large|\(413\)|\b413\b/i;
+
 /** Mensajes por código HTTP, cuando el backend no mandó uno propio. */
 const POR_ESTADO: Record<number, string> = {
   400: 'Revisa los datos: hay algo que no está bien.',
@@ -40,7 +48,7 @@ const POR_ESTADO: Record<number, string> = {
   403: 'No tienes permiso para hacer esto.',
   404: 'No encontramos lo que buscabas.',
   409: 'Alguien más cambió esto mientras lo editabas. Recarga y vuelve a intentar.',
-  413: 'El archivo es demasiado grande.',
+  413: 'El archivo es demasiado grande. Sube una foto más liviana o una captura de pantalla.',
   422: 'Revisa los datos: hay algo que no está bien.',
   429: 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentar.',
   503: 'El servicio no está disponible en este momento.',
@@ -93,6 +101,10 @@ export function mensajeDeError(err: unknown, opciones: OpcionesMensajeError = {}
   if (texto && SIN_CONEXION.test(texto)) {
     return 'Sin conexión. Revisa tu internet y vuelve a intentar.';
   }
+
+  // Antes de dejar pasar el texto: el 413 llega crudo del proxy y la persona
+  // sí puede resolverlo, pero no con "Request Entity Too Large".
+  if ((texto && DEMASIADO_GRANDE.test(texto)) || status === 413) return POR_ESTADO[413]!;
 
   // Un mensaje del negocio pasa tal cual: explica mejor su caso.
   if (texto && !pareceTecnico(texto)) return texto;
