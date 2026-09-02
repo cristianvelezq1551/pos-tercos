@@ -30,7 +30,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { assertNombreDisponible, conNombreUnico } from '../common/nombre-unico';
 import { PrismaService } from '../prisma/prisma.service';
-import { RecipesService } from '../recipes/recipes.service';
+import { RecipesService, variantEdgesAsProductChildren } from '../recipes/recipes.service';
 import { ProductCategoriesService } from '../product-categories/product-categories.service';
 import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { mimeForExtension } from '../common/image-mime';
@@ -447,7 +447,8 @@ export class ProductsService {
     ingredientStock: Map<string, number>;
     subproductStock: Map<string, number>;
   }> {
-    const [allProducts, prodStockRows, ingStockRows, subStockRows, graph] = await Promise.all([
+    const [allProducts, prodStockRows, ingStockRows, subStockRows, graph, sizeEdges] =
+      await Promise.all([
       this.prisma.product.findMany({
         select: {
           id: true,
@@ -458,6 +459,7 @@ export class ProductsService {
           soldOut: true,
           forceAvailable: true,
           comboComponents: { select: { productId: true, quantity: true } },
+          sizes: { select: { id: true, name: true }, orderBy: { sortOrder: 'asc' } },
         },
       }),
       this.prisma.inventoryMovement.groupBy({
@@ -476,7 +478,16 @@ export class ProductsService {
         _sum: { delta: true },
       }),
       this.recipes.loadFullGraph(),
+      // La receta de cada variante: `loadFullGraph` no la trae. Sin ella, el
+      // día que se acaba una proteína el plato se sigue ofreciendo y el cobro
+      // falla con el cliente enfrente.
+      this.prisma.recipeEdge.findMany({ where: { parentSizeId: { not: null } } }),
     ]);
+    const aristasPorVariante = new Map<string, typeof sizeEdges>();
+    for (const e of sizeEdges) {
+      const k = e.parentSizeId as string;
+      aristasPorVariante.set(k, [...(aristasPorVariante.get(k) ?? []), e]);
+    }
 
     const productStock = new Map<string, number>();
     for (const r of prodStockRows) {
@@ -490,7 +501,17 @@ export class ProductsService {
     for (const r of subStockRows) {
       if (r.subproductId) subproductStock.set(r.subproductId, Number(r._sum.delta ?? 0));
     }
-    return { products: allProducts, graph, productStock, ingredientStock, subproductStock };
+    // Un producto SIN variantes viaja igual que antes (lista vacía): su
+    // disponibilidad se calcula exactamente como hasta ahora.
+    const products: AvailabilityProduct[] = allProducts.map((p) => ({
+      ...p,
+      variants: p.sizes.map((size) => ({
+        sizeId: size.id,
+        name: size.name,
+        edges: variantEdgesAsProductChildren(aristasPorVariante.get(size.id) ?? [], p.id),
+      })),
+    }));
+    return { products, graph, productStock, ingredientStock, subproductStock };
   }
 
   /** Snapshot serializable para calcular disponibilidad OFFLINE (B.2.2). */

@@ -87,7 +87,7 @@ describe('evaluateAvailability · reventa directa', () => {
       products: [product('coca', { directResale: true })],
       productStock: { coca: 5 },
     });
-    expect(r).toEqual({ productId: 'coca', available: true, stock: 5, reason: null });
+    expect(r).toEqual({ productId: 'coca', available: true, stock: 5, reason: null, variants: [] });
   });
 
   it('sin stock → "Sin stock"', () => {
@@ -363,5 +363,127 @@ describe('evaluateAvailability · combos', () => {
     const [r] = evaluate({ products: [roto], graph: EMPTY_GRAPH });
     expect(r.available).toBe(false);
     expect(r.reason).toBe('Combo mal configurado');
+  });
+});
+
+describe('evaluateAvailability · variantes', () => {
+  /** Aristas propias de una variante, colgadas del producto. */
+  const aristas = (
+    productId: string,
+    items: Array<{ ingredientId: string; qty: number }>,
+  ): RecipeEdgeNode[] =>
+    items.map((i) => ({
+      parent: { kind: 'product' as const, id: productId },
+      child: { kind: 'ingredient' as const, id: i.ingredientId },
+      quantityNeta: i.qty,
+      mermaPct: 0,
+      blocksAvailability: true,
+    }));
+
+  /** Plato con base (papa) y dos variantes (pollo / carne). */
+  const plato = (variantes: Array<{ sizeId: string; name: string; ing: string }>) =>
+    product('plato', {
+      variants: variantes.map((v) => ({
+        sizeId: v.sizeId,
+        name: v.name,
+        edges: aristas('plato', [{ ingredientId: v.ing, qty: 100 }]),
+      })),
+    });
+
+  const grafo = buildGraph({
+    ingredients: [
+      { id: 'papa', name: 'Papa' },
+      { id: 'pollo', name: 'Pollo' },
+      { id: 'carne', name: 'Carne' },
+    ],
+    edges: [
+      { parentId: 'plato', childKind: 'ingredient', childId: 'papa', qty: 100, blocksAvailability: true },
+    ],
+  });
+
+  const evaluar = (ingredientStock: Record<string, number>, p = plato([
+    { sizeId: 's1', name: 'Con pollo', ing: 'pollo' },
+    { sizeId: 's2', name: 'Con carne', ing: 'carne' },
+  ])) =>
+    evaluateAvailability({
+      products: [p],
+      graph: grafo,
+      productStock: new Map(),
+      ingredientStock: new Map(Object.entries(ingredientStock)),
+      subproductStock: new Map(),
+    })[0];
+
+  it('el plato se ofrece si AL MENOS UNA variante se puede hacer', () => {
+    const r = evaluar({ papa: 500, pollo: 500, carne: 0 });
+    expect(r.available).toBe(true);
+    expect(r.reason).toBeNull();
+  });
+
+  it('la variante sin insumo queda deshabilitada, con su motivo', () => {
+    const r = evaluar({ papa: 500, pollo: 500, carne: 0 });
+    const porNombre = new Map(r.variants.map((v) => [v.name, v]));
+    expect(porNombre.get('Con pollo')).toMatchObject({ available: true, reason: null });
+    expect(porNombre.get('Con carne')).toMatchObject({ available: false, reason: 'Sin Carne' });
+  });
+
+  it('sin ninguna proteína el plato se cae, y el motivo dice TODO lo que falta', () => {
+    const r = evaluar({ papa: 500, pollo: 0, carne: 0 });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Sin Pollo, Carne');
+    expect(r.variants.every((v) => !v.available)).toBe(true);
+  });
+
+  it('si falta la base, no hay variante que lo salve', () => {
+    const r = evaluar({ papa: 0, pollo: 500, carne: 500 });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Sin Papa');
+  });
+
+  it('una variante SIN receta propia se puede hacer siempre que alcance la base', () => {
+    const conVacia = product('plato', {
+      variants: [
+        { sizeId: 's1', name: 'Sencilla', edges: [] },
+        { sizeId: 's2', name: 'Con carne', edges: aristas('plato', [{ ingredientId: 'carne', qty: 100 }]) },
+      ],
+    });
+    const r = evaluar({ papa: 500, carne: 0 }, conVacia);
+    expect(r.available).toBe(true);
+    expect(r.variants.find((v) => v.name === 'Sencilla')?.available).toBe(true);
+    expect(r.variants.find((v) => v.name === 'Con carne')?.available).toBe(false);
+  });
+
+  it('un producto sin variantes se comporta igual que antes', () => {
+    const r = evaluar({ papa: 500 }, product('plato'));
+    expect(r.available).toBe(true);
+    expect(r.variants).toEqual([]);
+  });
+
+  it('el "86" manual gana sobre las variantes', () => {
+    const r = evaluar({ papa: 500, pollo: 500, carne: 500 }, plato([
+      { sizeId: 's1', name: 'Con pollo', ing: 'pollo' },
+    ]));
+    expect(r.available).toBe(true);
+    const apagado = evaluar({ papa: 500, pollo: 500 }, product('plato', {
+      soldOut: true,
+      variants: [{ sizeId: 's1', name: 'Con pollo', edges: aristas('plato', [{ ingredientId: 'pollo', qty: 100 }]) }],
+    }));
+    expect(apagado.available).toBe(false);
+    expect(apagado.reason).toBe('Agotado (manual)');
+  });
+
+  it('"forzar disponible" también gana: el dueño lo vende igual', () => {
+    const r = evaluar({ papa: 0, pollo: 0, carne: 0 }, product('plato', {
+      forceAvailable: true,
+      variants: [{ sizeId: 's1', name: 'Con pollo', edges: aristas('plato', [{ ingredientId: 'pollo', qty: 100 }]) }],
+    }));
+    expect(r.available).toBe(true);
+    expect(r.reason).toBeNull();
+  });
+
+  it('evaluar una variante no contamina a la siguiente', () => {
+    // Si el grafo se mutara al inyectar las aristas, la segunda variante
+    // pediría también el pollo de la primera y saldría no disponible.
+    const r = evaluar({ papa: 500, pollo: 0, carne: 500 });
+    expect(r.variants.find((v) => v.name === 'Con carne')?.available).toBe(true);
   });
 });

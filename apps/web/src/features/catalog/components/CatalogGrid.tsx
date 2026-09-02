@@ -131,6 +131,15 @@ export function CatalogGrid({
 
       <ProductPickerModal
         product={selected}
+        agotadas={
+          selected
+            ? new Set(
+                (availability.get(selected.id)?.variants ?? [])
+                  .filter((v) => !v.available)
+                  .map((v) => v.sizeId),
+              )
+            : undefined
+        }
         open={open}
         onClose={() => setOpen(false)}
         onConfirm={handleConfirm}

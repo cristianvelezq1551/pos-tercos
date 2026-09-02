@@ -92,6 +92,15 @@ export class ProductsController {
       available: r.available,
       stock: null,
       reason: null,
+      // La disponibilidad POR VARIANTE sí viaja —si no, la web ofrecería una
+      // opción que no se puede preparar—, pero SIN el motivo: "Sin Pechuga de
+      // pollo cruda" es información del negocio. El cliente ve "Agotado".
+      variants: (r.variants ?? []).map((v) => ({
+        sizeId: v.sizeId,
+        name: v.name,
+        available: v.available,
+        reason: null,
+      })),
     }));
   }
 

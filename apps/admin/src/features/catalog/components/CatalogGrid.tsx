@@ -173,6 +173,7 @@ export function CatalogGrid({ products }: { products: Product[] }) {
       <ProductPickerModal
         product={selected}
         promos={promos}
+        availability={selected ? byId.get(selected.id) : undefined}
         open={open}
         onClose={() => setOpen(false)}
         onConfirm={handleConfirm}
