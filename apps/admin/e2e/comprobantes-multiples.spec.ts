@@ -21,6 +21,14 @@ const BASE = 'http://localhost:3004';
  */
 
 const PIN = '123456';
+/**
+ * El default de 30 s se queda corto en CI: el runner tiene la API y cuatro
+ * apps Next compitiendo por CPU, y estos casos hacen preparación por API,
+ * navegación, subida de imágenes y un `router.refresh()` que re-renderiza la
+ * página en el servidor. No es lentitud del producto: es presupuesto.
+ */
+test.describe.configure({ timeout: 90_000 });
+
 const fixture = (n: number) => path.join(__dirname, 'fixtures', `comprobante-${n}.png`);
 
 /**
@@ -138,7 +146,12 @@ test.describe('Comprobantes múltiples por pago', () => {
     await expect(modal).toBeHidden({ timeout: 20_000 });
 
     // --- Verlos: dos miniaturas, las dos decodificadas ---
-    await page.getByRole('button', { name: /ver comprobante/i }).first().click();
+    // El botón aparece cuando `router.refresh()` re-renderiza la página en el
+    // servidor. Se espera explícito para que un fallo diga "nunca apareció" y
+    // no "el clic se pasó de tiempo".
+    const verComprobante = page.getByRole('button', { name: /ver comprobante/i }).first();
+    await expect(verComprobante).toBeVisible({ timeout: 30_000 });
+    await verComprobante.click();
     const galeria = page.getByRole('dialog');
     await expect(galeria).toBeVisible();
     await expect(galeria.getByRole('heading', { name: /Comprobantes de pago \(2\)/ })).toBeVisible();
