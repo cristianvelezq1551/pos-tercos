@@ -1,6 +1,6 @@
 'use client';
 
-import type { Product, ProductCostSummary, UserRole } from '@pos-tercos/types';
+import type { Product, ProductCostWithVariants, UserRole } from '@pos-tercos/types';
 import { EmptyState } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { ListSearch, noResultsCopy } from '../../../components/ListSearch';
@@ -18,7 +18,7 @@ export function ProductsList({
   userRole,
 }: {
   products: Product[];
-  costsById?: Map<string, ProductCostSummary>;
+  costsById?: Map<string, ProductCostWithVariants>;
   realCostById?: Map<string, RealCost>;
   userRole?: UserRole;
 }) {

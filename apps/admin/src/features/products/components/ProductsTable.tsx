@@ -1,4 +1,4 @@
-import type { Product, ProductCostSummary, UserRole } from '@pos-tercos/types';
+import type { Product, ProductCostWithVariants, UserRole } from '@pos-tercos/types';
 import {
   Badge,
   Button,
@@ -11,6 +11,12 @@ import { LineArtIllustration } from '@pos-tercos/brand';
 import Link from 'next/link';
 import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
 import { DeleteProductAction } from './DeleteProductAction';
+import {
+  VariantCostLine,
+  VariantMarginLine,
+  variantesCosteadas,
+  type VariantesResumen,
+} from './VariantCostLines';
 
 /** Lo que costó de verdad cada unidad vendida y el margen que dejó. */
 export interface RealCost {
@@ -21,9 +27,9 @@ export interface RealCost {
 
 interface ProductsTableProps {
   products: Product[];
-  /** Costos pre-calculados por productId (batch `/product-costs`). Si no
-   *  está, fallback a lastUnitCost para direct-resale. */
-  costsById?: Map<string, ProductCostSummary>;
+  /** Costos pre-calculados por productId (batch `/product-costs/with-variants`).
+   *  Si no está, fallback a lastUnitCost para direct-resale. */
+  costsById?: Map<string, ProductCostWithVariants>;
   /** Costo REAL por producto (FIFO, últimos 30 días). Va al lado del estimado
    *  para poder contrastarlos sin cambiar de pantalla: el estimado dice cuánto
    *  costaría hacerlo hoy, el real cuánto costó lo que ya saliste. Vacío para
@@ -42,6 +48,8 @@ interface ProductRow {
   costMissing: boolean;
   missingHint?: string;
   real: RealCost | null;
+  /** Costo y margen de las variantes, cuando cuestan distinto de la base. */
+  variantes: VariantesResumen | null;
 }
 
 export function ProductsTable({
@@ -69,6 +77,7 @@ export function ProductsTable({
       costMissing,
       missingHint: costMissing ? expanded.missingReasons.join(' · ') : undefined,
       real: realCostById?.get(p.id) ?? null,
+      variantes: variantesCosteadas(expanded?.variants, salePrice, costPerStock),
     };
   });
 
@@ -181,14 +190,18 @@ export function ProductsTable({
       align: 'right',
       numeric: true,
       hideOnMobile: true,
-      cell: ({ costPerStock, missingHint }) =>
-        costPerStock !== null ? (
-          <Money amount={costPerStock} weight="medium" />
-        ) : (
-          <span className="text-ink-300" title={missingHint ?? 'Sin información de costo'}>
-            —
-          </span>
-        ),
+      cell: ({ costPerStock, missingHint, variantes }) => (
+        <>
+          {costPerStock !== null ? (
+            <Money amount={costPerStock} weight="medium" />
+          ) : (
+            <span className="text-ink-300" title={missingHint ?? 'Sin información de costo'}>
+              —
+            </span>
+          )}
+          {variantes ? <VariantCostLine resumen={variantes} /> : null}
+        </>
+      ),
     },
     {
       key: 'margin',
@@ -200,12 +213,16 @@ export function ProductsTable({
       align: 'right',
       numeric: true,
       hideOnMobile: true,
-      cell: ({ margin }) =>
-        margin !== null ? (
-          <MarginBadge value={margin} />
-        ) : (
-          <span className="text-ink-300">—</span>
-        ),
+      cell: ({ margin, variantes }) => (
+        <>
+          {margin !== null ? (
+            <MarginBadge value={margin} />
+          ) : (
+            <span className="text-ink-300">—</span>
+          )}
+          {variantes ? <VariantMarginLine resumen={variantes} /> : null}
+        </>
+      ),
     },
     {
       key: 'status',

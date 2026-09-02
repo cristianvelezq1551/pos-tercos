@@ -17,6 +17,8 @@ import type {
   DirectRecipeComponent,
   ExpandedCostResponse,
   ProductCostSummary,
+  ProductCostWithVariants,
+  ProductVariantCost,
   RecipeEdge,
   RecipeEdgeInput,
   RecipeResponse,
@@ -25,6 +27,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type DbRecipeEdge = Prisma.RecipeEdgeGetPayload<Record<string, never>>;
+type DbProductSize = Prisma.ProductSizeGetPayload<Record<string, never>>;
 
 type ParentKind = 'product' | 'subproduct';
 
@@ -174,18 +177,10 @@ export class RecipesService {
     // del producto en el grafo, así expandRecipe los suma a la receta base sin
     // que el dominio (ParentRef product|subproduct) tenga que conocer "size".
     const sizeNodes: RecipeEdgeNode[] = sizeId
-      ? (
-          await this.prisma.recipeEdge.findMany({ where: { parentSizeId: sizeId } })
-        ).map((e) => ({
-          parent: { kind: 'product', id: productId },
-          child:
-            e.childIngredientId !== null
-              ? { kind: 'ingredient', id: e.childIngredientId }
-              : { kind: 'subproduct', id: e.childSubproductId as string },
-          quantityNeta: Number(e.quantityNeta),
-          mermaPct: Number(e.mermaPct),
-          blocksAvailability: e.blocksAvailability ?? undefined,
-        }))
+      ? variantEdgesAsProductChildren(
+          await this.prisma.recipeEdge.findMany({ where: { parentSizeId: sizeId } }),
+          productId,
+        )
       : [];
 
     const subproducts = await this.prisma.subproduct.findMany();
@@ -454,18 +449,51 @@ export class RecipesService {
   }
 
   /**
-   * Costo por unidad de TODOS los productos en una sola pasada: carga el grafo
-   * completo + los costos de insumos UNA vez y computa cada producto en memoria.
-   * Reemplaza el N+1 de pedir `expanded-cost` por producto en la tabla del admin.
-   * Sólo costo base (sin variantes de tamaño), que es lo que muestra la lista.
+   * Costo por unidad de TODOS los productos, SOLO de la receta base.
+   *
+   * En un producto con variantes ese número describe un plato que no se puede
+   * comprar (elegir variante es obligatorio para vender). Se conserva tal cual
+   * porque es lo que hoy consumen los reportes; quien tenga que mostrarlo en
+   * pantalla debe usar `listProductCostsWithVariants`, que agrega lo que de
+   * verdad sale por la ventana.
    */
   async listProductCosts(): Promise<ProductCostSummary[]> {
-    const [products, allIngredients, graph] = await Promise.all([
+    return (await this.catalogCosts(false)).map(({ productId, totalCost, missingReasons }) => ({
+      productId,
+      totalCost,
+      missingReasons,
+    }));
+  }
+
+  /**
+   * Lo mismo, más el costo de cada variante (receta base + la de la variante).
+   * Aditivo: `totalCost` sigue siendo el de la base, bit por bit igual al de
+   * `listProductCosts` — los dos salen del mismo cálculo.
+   */
+  async listProductCostsWithVariants(): Promise<ProductCostWithVariants[]> {
+    return this.catalogCosts(true);
+  }
+
+  /**
+   * El costo de toda la carta en una sola pasada: carga el grafo completo + los
+   * costos de insumos UNA vez y computa cada producto en memoria (reemplaza el
+   * N+1 de pedir `expanded-cost` por producto).
+   */
+  private async catalogCosts(withVariants: boolean): Promise<ProductCostWithVariants[]> {
+    const [products, allIngredients, graph, sizes, sizeEdges] = await Promise.all([
       this.prisma.product.findMany({ include: { comboComponents: true } }),
       this.prisma.ingredient.findMany({
         select: { id: true, lastUnitCost: true, conversionFactor: true },
       }),
       this.loadFullGraph(),
+      withVariants
+        ? this.prisma.productSize.findMany({
+            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          })
+        : Promise.resolve([] as DbProductSize[]),
+      withVariants
+        ? this.prisma.recipeEdge.findMany({ where: { parentSizeId: { not: null } } })
+        : Promise.resolve([] as DbRecipeEdge[]),
     ]);
     const ingredientCosts: IngredientCostMap = new Map(
       allIngredients.map((i) => [
@@ -493,6 +521,73 @@ export class RecipesService {
           ? null
           : { graph, root: { kind: 'product' as const, id: p.id } },
         ingredientCosts,
+      });
+
+    const sizesByProduct = new Map<string, typeof sizes>();
+    for (const size of sizes) {
+      const list = sizesByProduct.get(size.productId);
+      if (list) list.push(size);
+      else sizesByProduct.set(size.productId, [size]);
+    }
+    const edgesBySize = new Map<string, typeof sizeEdges>();
+    for (const edge of sizeEdges) {
+      const key = edge.parentSizeId as string;
+      const list = edgesBySize.get(key);
+      if (list) list.push(edge);
+      else edgesBySize.set(key, [edge]);
+    }
+
+    /**
+     * El costo del producto CON una variante: se le cuelgan al producto, solo
+     * durante este cálculo, las aristas de esa variante, y se deja el grafo
+     * exactamente como estaba. `expandRecipe` es síncrono y puro, así que nadie
+     * más puede ver el grafo a medio camino.
+     */
+    const costWithVariant = (
+      p: (typeof products)[number],
+      edges: typeof sizeEdges,
+    ): ReturnType<typeof costOf> => {
+      if (edges.length === 0) return costOf(p);
+      const key = `p:${p.id}`;
+      const previo = graph.edgesByParent.get(key);
+      graph.edgesByParent.set(key, [
+        ...(previo ?? []),
+        ...variantEdgesAsProductChildren(edges, p.id),
+      ]);
+      try {
+        return costOf(p);
+      } finally {
+        // Restaurar EXACTO: si la clave no existía, tiene que volver a no existir.
+        if (previo === undefined) graph.edgesByParent.delete(key);
+        else graph.edgesByParent.set(key, previo);
+      }
+    };
+
+    const variantsOf = (product: (typeof products)[number]): ProductVariantCost[] =>
+      (sizesByProduct.get(product.id) ?? []).map((size) => {
+        try {
+          // Un combo o una reventa no costean por receta: su variante cuesta lo
+          // mismo que el producto (una receta de variante ahí no se consume).
+          const r =
+            product.isCombo || product.directResale
+              ? null
+              : costWithVariant(product, edgesBySize.get(size.id) ?? []);
+          return {
+            sizeId: size.id,
+            name: size.name,
+            priceModifier: Number(size.priceModifier),
+            totalCost: r?.totalCost ?? null,
+            missingReasons: r?.missingReasons ?? [],
+          };
+        } catch {
+          return {
+            sizeId: size.id,
+            name: size.name,
+            priceModifier: Number(size.priceModifier),
+            totalCost: null,
+            missingReasons: ['No se pudo calcular el costo'],
+          };
+        }
       });
 
     return products.map((product) => {
@@ -524,6 +619,7 @@ export class RecipesService {
             productId: product.id,
             totalCost: combo.totalCost,
             missingReasons: combo.missingReasons,
+            variants: variantsOf(product),
           };
         }
         const r = costOf(product);
@@ -531,6 +627,7 @@ export class RecipesService {
           productId: product.id,
           totalCost: r.totalCost,
           missingReasons: r.missingReasons,
+          variants: variantsOf(product),
         };
       } catch (err) {
         return {
@@ -541,6 +638,7 @@ export class RecipesService {
               ? 'La receta tiene un ciclo'
               : 'No se pudo calcular el costo',
           ],
+          variants: [],
         };
       }
     });
@@ -876,6 +974,31 @@ function groupEdgesByParent(
     }
   }
   return map;
+}
+
+/**
+ * Las aristas de una variante colgadas del PRODUCTO.
+ *
+ * La receta de una variante es aditiva: se inyecta como hijos directos del
+ * producto para que `expandRecipe` la sume a la base sin que el dominio
+ * (ParentRef product|subproduct) tenga que conocer "size". Vive acá, en un solo
+ * lugar, porque la usan dos caminos —la ficha de una variante y el costo del
+ * catálogo— y dos copias de una regla de plata se separan siempre.
+ */
+function variantEdgesAsProductChildren(
+  rows: DbRecipeEdge[],
+  productId: string,
+): RecipeEdgeNode[] {
+  return rows.map((e) => ({
+    parent: { kind: 'product', id: productId },
+    child:
+      e.childIngredientId !== null
+        ? { kind: 'ingredient', id: e.childIngredientId }
+        : { kind: 'subproduct', id: e.childSubproductId as string },
+    quantityNeta: Number(e.quantityNeta),
+    mermaPct: Number(e.mermaPct),
+    blocksAvailability: e.blocksAvailability ?? undefined,
+  }));
 }
 
 function isDbEdge(e: DbRecipeEdge | RecipeEdgeNode): e is DbRecipeEdge {

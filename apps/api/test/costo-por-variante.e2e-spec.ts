@@ -110,6 +110,20 @@ describe('Costo estimado de un producto CON variantes E2E', () => {
     return fila!.totalCost;
   };
 
+  /** El costo del catálogo CON variantes (`/product-costs/with-variants`). */
+  const catalogoConVariantes = async () => {
+    const res = await request.get('/product-costs/with-variants').set(auth()).expect(200);
+    const fila = (
+      res.body as Array<{
+        productId: string;
+        totalCost: number | null;
+        variants: Array<{ sizeId: string; name: string; priceModifier: number; totalCost: number | null }>;
+      }>
+    ).find((p) => p.productId === productoId);
+    expect(fila).toBeDefined();
+    return fila!;
+  };
+
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
     // Auto-aislada: lee agregados GLOBALES (equilibrio de la carta, P&G del
@@ -276,6 +290,50 @@ describe('Costo estimado de un producto CON variantes E2E', () => {
       for (const sizeId of [sencillaId, conPolloId, conChicharronId]) {
         expect((await ficha(sizeId))!).toBeGreaterThanOrEqual(base);
       }
+    });
+  });
+
+  describe('el costo con variantes que consume la pantalla', () => {
+    it('trae una variante por tamaño, con el costo que dice su ficha', async () => {
+      const fila = await catalogoConVariantes();
+      expect(fila.variants).toHaveLength(3);
+      for (const v of fila.variants) {
+        // LA ley de esta etapa: el batch y la ficha son el MISMO número. Si se
+        // separan, hay dos costeos y uno de los dos miente.
+        expect(v.totalCost).toBeCloseTo((await ficha(v.sizeId))!, 2);
+      }
+    });
+
+    it('la variante sin receta propia cuesta la base, y cada una lleva su recargo', async () => {
+      const porNombre = new Map((await catalogoConVariantes()).variants.map((v) => [v.name, v]));
+      expect(porNombre.get('Sencilla')!.totalCost).toBeCloseTo(COSTO_BASE, 2);
+      expect(porNombre.get('Con pollo')!.totalCost).toBeCloseTo(COSTO_CON_POLLO, 2);
+      expect(porNombre.get('Con chicharrón')!.totalCost).toBeCloseTo(COSTO_CON_CHICHARRON, 2);
+      expect(porNombre.get('Con pollo')!.priceModifier).toBe(RECARGO_POLLO);
+    });
+
+    it('el costo base que informa es el MISMO que el del endpoint de siempre', async () => {
+      // Aditivo de verdad: la ruta nueva no puede costear distinto que la vieja,
+      // o la tabla y los reportes empezarían a decir cosas distintas.
+      expect((await catalogoConVariantes()).totalCost).toBeCloseTo((await catalogo())!, 4);
+    });
+
+    it('una variante NO contamina a la de al lado ni a la receta base', async () => {
+      // El cálculo cuelga las aristas de la variante del producto y las quita
+      // después: si la limpieza fallara, la segunda variante saldría con la
+      // proteína de la primera y la base con las dos.
+      const fila = await catalogoConVariantes();
+      const suma = fila.variants.reduce((a, v) => a + (v.totalCost ?? 0), 0);
+      expect(suma).toBeCloseTo(COSTO_BASE + COSTO_CON_POLLO + COSTO_CON_CHICHARRON, 2);
+      expect(fila.totalCost).toBeCloseTo(COSTO_BASE, 2);
+    });
+
+    it('un producto sin variantes viene con la lista vacía, no con una inventada', async () => {
+      const res = await request.get('/product-costs/with-variants').set(auth()).expect(200);
+      const otros = (res.body as Array<{ productId: string; variants: unknown[] }>).filter(
+        (p) => p.productId !== productoId,
+      );
+      for (const p of otros) expect(p.variants).toEqual([]);
     });
   });
 

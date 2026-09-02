@@ -3,6 +3,7 @@ import {
   SetRecipeRequestSchema,
   type ExpandedCostResponse,
   type ProductCostSummary,
+  type ProductCostWithVariants,
   type RecipeResponse,
   type SetRecipeRequest,
   type SubproductCostSummary,
@@ -67,6 +68,13 @@ export class RecipesController {
   @Get('product-costs')
   productCosts(): Promise<ProductCostSummary[]> {
     return this.recipes.listProductCosts();
+  }
+
+  // El mismo costo, más el de cada variante. Va en una ruta aparte para no
+  // cambiarle la forma a `/product-costs`, que consumen los reportes.
+  @Get('product-costs/with-variants')
+  productCostsWithVariants(): Promise<ProductCostWithVariants[]> {
+    return this.recipes.listProductCostsWithVariants();
   }
 
   @Get('products/:id/expanded-cost')

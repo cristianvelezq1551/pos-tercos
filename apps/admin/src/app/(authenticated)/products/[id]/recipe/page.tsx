@@ -1,9 +1,14 @@
 import { notFound } from 'next/navigation';
 import { Container, PageHeader } from '@pos-tercos/ui';
-import { ProductRecipeTabs, RecipeEditor } from '../../../../../features/recipes';
+import {
+  ProductRecipeTabs,
+  RecipeEditor,
+  VariantCostSummary,
+} from '../../../../../features/recipes';
 import { ApiError, serverFetchJson } from '../../../../../lib/api-server';
 import { requireRole } from '../../../../../lib/guards';
 import type {
+  ExpandedCostResponse,
   Ingredient,
   Product,
   ProductSize,
@@ -50,6 +55,27 @@ export default async function ProductRecipePage({ params }: PageProps) {
     })),
   );
 
+  // El costo de cada variante, para el aviso de arriba: la pestaña «Receta
+  // base» muestra el costo de un plato que nadie puede comprar. Un costo que
+  // no se pudo calcular queda en null — nunca en cero.
+  const costoDe = async (path: string): Promise<number | null> => {
+    try {
+      return (await serverFetchJson<ExpandedCostResponse>(path)).totalCost;
+    } catch {
+      return null;
+    }
+  };
+  const [baseCost, variantCosts] = await Promise.all([
+    sizes.length > 0 ? costoDe(`/products/${id}/expanded-cost`) : Promise.resolve(null),
+    Promise.all(
+      sizes.map(async (size) => ({
+        name: size.name,
+        price: product.basePrice + size.priceModifier,
+        cost: await costoDe(`/products/${id}/sizes/${size.id}/expanded-cost`),
+      })),
+    ),
+  ]);
+
   return (
     <>
       <PageHeader
@@ -64,14 +90,21 @@ export default async function ProductRecipePage({ params }: PageProps) {
       />
       <Container size="6xl" padY="md">
         {variants.length > 0 ? (
-          <ProductRecipeTabs
-            productId={id}
-            productName={product.name}
-            ingredients={ingredients}
-            subproducts={subproducts}
-            baseRecipe={recipe}
-            variants={variants}
-          />
+          <div className="space-y-5">
+            <VariantCostSummary
+              baseCost={baseCost}
+              basePrice={product.basePrice}
+              variants={variantCosts}
+            />
+            <ProductRecipeTabs
+              productId={id}
+              productName={product.name}
+              ingredients={ingredients}
+              subproducts={subproducts}
+              baseRecipe={recipe}
+              variants={variants}
+            />
+          </div>
         ) : (
           <RecipeEditor
             parentType="product"
