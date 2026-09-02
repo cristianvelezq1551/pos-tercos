@@ -4433,10 +4433,17 @@ imágenes por índice y una ruta mal armada devuelve un `<img>` roto que
 `toBeVisible()` da por bueno (§7.v56). Cubre factura, costo fijo, compromiso y
 abono de nómina, incluyendo agregar y quitar sin cerrar el diálogo.
 
-⚠️ Ese suite es **local** (no corre en CI, como el resto de `apps/admin/e2e`).
-Lo que sí corre en CI es `apps/api/test/comprobantes-multiples.e2e-spec.ts`
-(15 casos): los guardas, los roles y —sobre todo— que la columna vieja siga
-comportándose igual.
+Corre en CI (job `browser-e2e`), igual que el resto de `apps/admin/e2e`. Y en
+CI lo acompaña `apps/api/test/comprobantes-multiples.e2e-spec.ts` (15 casos):
+los guardas, los roles y —sobre todo— que la columna vieja siga comportándose
+igual.
+
+⚠️ **`POST /auth/login` admite 10 por minuto y por IP** (anti fuerza bruta), y
+todo el job `browser-e2e` comparte esa cuota. Un spec con login por caso agota
+el cupo él solo y tumba con 429 **a las suites que corren después** — pasó al
+escribir este, que se llevó por delante `web-order` y `web-picker`. La sesión y
+las cookies se sacan UNA vez en `beforeAll` y cada caso abre su pestaña con
+`browser.newContext({ storageState })`.
 
 ---
 

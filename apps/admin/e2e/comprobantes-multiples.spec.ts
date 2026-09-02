@@ -1,6 +1,15 @@
 import path from 'node:path';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import {
+  expect,
+  request as playwrightRequest,
+  test,
+  type APIRequestContext,
+  type Browser,
+  type Page,
+} from '@playwright/test';
 import { API, DUENO_EMAIL, PASSWORD, authHeaders, login, type Session } from './helpers';
+
+const BASE = 'http://localhost:3004';
 
 /**
  * Un pago con VARIOS comprobantes, en la interfaz real.
@@ -13,6 +22,42 @@ import { API, DUENO_EMAIL, PASSWORD, authHeaders, login, type Session } from './
 
 const PIN = '123456';
 const fixture = (n: number) => path.join(__dirname, 'fixtures', `comprobante-${n}.png`);
+
+/**
+ * Sesión, PIN y cookies del navegador se preparan UNA vez para todo el archivo.
+ * `POST /auth/login` admite 10 por minuto y por IP (anti fuerza bruta): un
+ * login por caso agotaba el cupo y tumbaba con 429 no solo a estos casos sino
+ * a las suites que corren después.
+ */
+let dueno: Session;
+let cookies: Awaited<ReturnType<Awaited<ReturnType<Browser['newContext']>>['storageState']>>;
+
+test.beforeAll(async ({ browser }) => {
+  const api = await playwrightRequest.newContext();
+  dueno = await login(api, DUENO_EMAIL);
+  // El seed no trae PIN de aprobación y marcar una factura pagada lo exige.
+  await api.post(`${API}/approvals/pin`, {
+    headers: { ...authHeaders(dueno), 'Content-Type': 'application/json' },
+    data: { pin: PIN, password: PASSWORD },
+  });
+  await api.dispose();
+
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}/login`);
+  await page.getByLabel(/correo|email/i).fill(DUENO_EMAIL);
+  await page.getByLabel(/contraseña/i).fill(PASSWORD);
+  await page.getByRole('button', { name: /entrar|ingresar|iniciar/i }).click();
+  await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 20_000 });
+  cookies = await ctx.storageState();
+  await ctx.close();
+});
+
+/** Una pestaña ya autenticada, sin gastar otro login. */
+async function pestanaAutenticada(browser: Browser): Promise<Page> {
+  const ctx = await browser.newContext({ storageState: cookies, baseURL: BASE });
+  return ctx.newPage();
+}
 
 /** Deja una factura CONFIRMED sin pagar y devuelve su id. */
 async function facturaPorPagar(api: APIRequestContext, s: Session): Promise<string> {
@@ -56,14 +101,6 @@ async function facturaPorPagar(api: APIRequestContext, s: Session): Promise<stri
   return id;
 }
 
-async function entrarComoDueno(page: Page): Promise<void> {
-  await page.goto('/login');
-  await page.getByLabel(/correo|email/i).fill(DUENO_EMAIL);
-  await page.getByLabel(/contraseña/i).fill(PASSWORD);
-  await page.getByRole('button', { name: /entrar|ingresar|iniciar/i }).click();
-  await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 15_000 });
-}
-
 /** Las miniaturas de la galería, ya decodificadas por el navegador. */
 async function anchosDeLasImagenes(page: Page): Promise<number[]> {
   const imgs = page.getByRole('img', { name: /^Comprobante \d+$/ });
@@ -81,13 +118,12 @@ async function anchosDeLasImagenes(page: Page): Promise<number[]> {
 
 test.describe('Comprobantes múltiples por pago', () => {
   test('una factura se paga con dos comprobantes, se agrega un tercero y se quita uno', async ({
-    page,
+    browser,
     request,
   }) => {
-    const dueno = await login(request, DUENO_EMAIL);
     const invoiceId = await facturaPorPagar(request, dueno);
+    const page = await pestanaAutenticada(browser);
 
-    await entrarComoDueno(page);
     await page.goto(`/invoices/${invoiceId}`);
 
     // --- Marcar pagada con DOS comprobantes de una sola vez ---
@@ -133,8 +169,7 @@ test.describe('Comprobantes múltiples por pago', () => {
     expect(inv.paymentProofsCount).toBe(2);
   });
 
-  test('una factura pagada nunca se queda sin comprobante', async ({ page, request }) => {
-    const dueno = await login(request, DUENO_EMAIL);
+  test('una factura pagada nunca se queda sin comprobante', async ({ browser, request }) => {
     const invoiceId = await facturaPorPagar(request, dueno);
 
     // Pagada con UNO solo, por API (el camino de UI ya está cubierto arriba).
@@ -148,7 +183,7 @@ test.describe('Comprobantes múltiples por pago', () => {
     });
     expect(paid.ok(), `pagar → ${paid.status()} ${await paid.text()}`).toBeTruthy();
 
-    await entrarComoDueno(page);
+    const page = await pestanaAutenticada(browser);
     await page.goto(`/invoices/${invoiceId}`);
     await page.getByRole('button', { name: /ver comprobante/i }).first().click();
     const galeria = page.getByRole('dialog');
@@ -167,10 +202,9 @@ async function readFixture(n: number): Promise<Buffer> {
 
 test.describe('Costos y gastos con varios comprobantes', () => {
   test('un costo fijo se paga con dos comprobantes y se ven desde Pagos', async ({
-    page,
+    browser,
     request,
   }) => {
-    const dueno = await login(request, DUENO_EMAIL);
     const H = { ...authHeaders(dueno), 'Content-Type': 'application/json' };
     const nombre = `Arriendo prueba ${Date.now()}`;
     // Arranca este mes: sin fecha de inicio el panel genera 24 períodos vencidos
@@ -189,7 +223,7 @@ test.describe('Costos y gastos con varios comprobantes', () => {
     });
     expect(creado.ok(), `crear costo fijo → ${creado.status()}`).toBeTruthy();
 
-    await entrarComoDueno(page);
+    const page = await pestanaAutenticada(browser);
     await page.goto('/finanzas/costos-fijos');
 
     // Los períodos por pagar viven en su propio panel, agrupados por costo. El
@@ -224,10 +258,9 @@ test.describe('Costos y gastos con varios comprobantes', () => {
   });
 
   test('un compromiso se paga con dos comprobantes y admite un tercero después', async ({
-    page,
+    browser,
     request,
   }) => {
-    const dueno = await login(request, DUENO_EMAIL);
     const H = { ...authHeaders(dueno), 'Content-Type': 'application/json' };
     const descripcion = `Arreglo nevera ${Date.now()}`;
     const creado = await request.post(`${API}/payables`, {
@@ -236,7 +269,7 @@ test.describe('Costos y gastos con varios comprobantes', () => {
     });
     expect(creado.ok(), `crear compromiso → ${creado.status()}`).toBeTruthy();
 
-    await entrarComoDueno(page);
+    const page = await pestanaAutenticada(browser);
     await page.goto('/finanzas/compromisos');
 
     const fila = page.locator('li', { hasText: descripcion }).first();
@@ -270,10 +303,9 @@ test.describe('Costos y gastos con varios comprobantes', () => {
 
 test.describe('Nómina con varios comprobantes', () => {
   test('un abono de la semana se paga con dos comprobantes y se ven en la semana', async ({
-    page,
+    browser,
     request,
   }) => {
-    const dueno = await login(request, DUENO_EMAIL);
     const semana = await request.get(`${API}/workers/weekly`, { headers: authHeaders(dueno) });
     expect(semana.ok(), `semana → ${semana.status()}`).toBeTruthy();
     const data = (await semana.json()) as {
@@ -283,7 +315,7 @@ test.describe('Nómina con varios comprobantes', () => {
     const empleado = data.entries.find((e) => e.remaining > 0);
     test.skip(!empleado, 'no hay nadie con nómina configurada en esta base');
 
-    await entrarComoDueno(page);
+    const page = await pestanaAutenticada(browser);
     await page.goto('/workers/semana');
 
     const tarjeta = page.locator('section, article, div').filter({
