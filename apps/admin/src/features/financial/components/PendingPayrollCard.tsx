@@ -5,14 +5,28 @@ import Link from 'next/link';
 import { AgingBadge } from './AgingBadge';
 import { EmptyHint } from './EmptyHint';
 
+/**
+ * Una fecha-solo anclada al MEDIODÍA UTC.
+ *
+ * `new Date(y, m-1, d)` es la medianoche del runtime: esta tarjeta se pinta en
+ * el servidor (Vercel, UTC) y otra vez en el navegador (Bogotá, UTC−5), así que
+ * el servidor mostraba el día ANTERIOR y los dos lados no coincidían — el error
+ * de hidratación de React #418 que quedaba en /finanzas/pagos. El mediodía cae
+ * en el mismo día calendario en cualquier zona razonable. Mismo anclaje que
+ * `formatDate` de @pos-tercos/ui.
+ */
+export function diaSoloAlMediodiaUtc(ymd: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12));
+}
+
 /** "2026-07-09" → "9 jul" (local, sin año — va inline en el sublabel). */
 function shortDay(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
   return new Intl.DateTimeFormat('es-CO', {
     timeZone: BUSINESS_TIME_ZONE,
     day: 'numeric',
     month: 'short',
-  }).format(new Date(y, m - 1, d));
+  }).format(diaSoloAlMediodiaUtc(ymd));
 }
 
 /** Semana en curso: devengado a la fecha, todavía no es deuda vencida. */
