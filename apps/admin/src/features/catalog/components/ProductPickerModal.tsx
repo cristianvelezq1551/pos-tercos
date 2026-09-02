@@ -1,6 +1,12 @@
 'use client';
 
-import type { Product, ProductModifier, ProductSize, Promotion } from '@pos-tercos/types';
+import type {
+  Product,
+  ProductAvailability,
+  ProductModifier,
+  ProductSize,
+  Promotion,
+} from '@pos-tercos/types';
 import {
   Button,
   Dialog,
@@ -28,11 +34,14 @@ export type PickerSelection = {
 export function ProductPickerModal({
   product,
   promos = [],
+  availability,
   open,
   onClose,
   onConfirm,
 }: {
   product: Product | null;
+  /** Disponibilidad del producto, con el detalle por variante. */
+  availability?: ProductAvailability;
   /** Promos activas del canal caja — para previsualizar el precio con descuento. */
   promos?: readonly Promotion[];
   open: boolean;
@@ -43,6 +52,16 @@ export function ProductPickerModal({
   const modifiers = useMemo(() => product?.modifiers ?? [], [product]);
   const modifiersEnabled = product?.modifiersEnabled ?? false;
   const requiresSize = sizes.length > 0;
+  // Una variante sin insumos se muestra pero no se puede elegir: esconder el
+  // plato entero perdería también las ventas de las otras.
+  const variantState = useMemo(() => {
+    const m = new Map<string, { available: boolean; reason: string | null }>();
+    for (const v of availability?.variants ?? []) {
+      m.set(v.sizeId, { available: v.available, reason: v.reason });
+    }
+    return m;
+  }, [availability]);
+  const sizeBlocked = (id: string): boolean => variantState.get(id)?.available === false;
 
   const [sizeId, setSizeId] = useState<string | null>(null);
   const [modifierIds, setModifierIds] = useState<Set<string>>(new Set());
@@ -51,7 +70,10 @@ export function ProductPickerModal({
   useEffect(() => {
     if (open && product) {
       const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
-      setSizeId(sortedSizes[0]?.id ?? null);
+      // Preselecciona la primera que SÍ se pueda hacer: dejar marcada una sin
+      // insumos obligaría al cajero a descubrir por qué no lo deja confirmar.
+      const primeraPosible = sortedSizes.find((sz) => !sizeBlocked(sz.id)) ?? sortedSizes[0];
+      setSizeId(primeraPosible?.id ?? null);
       setModifierIds(new Set());
       setQuantity(1);
     }
@@ -85,7 +107,8 @@ export function ProductPickerModal({
 
   if (!product) return null;
 
-  const canConfirm = (!requiresSize || sizeId !== null) && qty > 0;
+  const canConfirm =
+    (!requiresSize || (sizeId !== null && !sizeBlocked(sizeId))) && qty > 0;
   const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
   const lineTotal = unitPrice * qty;
   const discountedTotal = lineTotal - lineDiscount;
@@ -143,6 +166,8 @@ export function ProductPickerModal({
                   name="size"
                   label={s.name}
                   delta={s.priceModifier}
+                  disabled={sizeBlocked(s.id)}
+                  disabledReason={variantState.get(s.id)?.reason ?? null}
                 />
               ))}
             </div>

@@ -8,6 +8,7 @@
  *   - producto sin receta → no se invalida (fallback conservador)
  */
 
+import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
 import supertest from 'supertest';
@@ -220,4 +221,188 @@ describe('Availability E2E', () => {
     const map2 = await fetchAvailability();
     expect(map2.get(burgerId)?.available).toBe(true);
   });
+
+  describe('un plato con variantes se ofrece si al menos una se puede hacer', () => {
+    let platoId: string;
+    let conPolloId: string;
+    let conCarneId: string;
+    let polloId: string;
+    let carneId: string;
+
+    const disponibilidad = async () => {
+      const res = await request
+        .get('/products/availability/internal')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .expect(200);
+      const fila = (
+        res.body as Array<{
+          productId: string;
+          available: boolean;
+          reason: string | null;
+          variants?: Array<{ sizeId: string; name: string; available: boolean; reason: string | null }>;
+        }>
+      ).find((r) => r.productId === platoId);
+      expect(fila).toBeDefined();
+      return fila!;
+    };
+    // Reponer suma; sacar se hace como en la vida real, con una merma.
+    const mover = async (ingredientId: string, delta: number) => {
+      await request
+        .post('/inventory/movements')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({
+          entityType: 'INGREDIENT',
+          ingredientId,
+          delta,
+          type: delta >= 0 ? 'MANUAL_ADJUSTMENT' : 'WASTE',
+          notes: delta >= 0 ? 'reposición de prueba' : 'se acabó',
+        })
+        .expect(201);
+    };
+
+    beforeAll(async () => {
+      const ing = async (name: string) =>
+        (
+          await request
+            .post('/ingredients')
+            .set({ Authorization: `Bearer ${adminToken}` })
+            .send({ name: `${name} ${randomUUID().slice(0, 6)}`, unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000 })
+            .expect(201)
+        ).body.id as string;
+      polloId = await ing('Pollo AV');
+      carneId = await ing('Carne AV');
+
+      const creado = await request
+        .post('/products')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({
+          category: 'Test',
+          name: `Plato variantes ${randomUUID().slice(0, 6)}`,
+          basePrice: 25000,
+          directResale: false,
+          isCombo: false,
+          modifiersEnabled: false,
+          sizes: [
+            { name: 'Con pollo', priceModifier: 0, sortOrder: 0 },
+            { name: 'Con carne', priceModifier: 3000, sortOrder: 1 },
+          ],
+        })
+        .expect(201);
+      platoId = creado.body.id as string;
+      const tam = creado.body.sizes as Array<{ id: string; name: string }>;
+      conPolloId = tam.find((t) => t.name === 'Con pollo')!.id;
+      conCarneId = tam.find((t) => t.name === 'Con carne')!.id;
+
+      // Base: el mismo pan de la suite. Cada variante suma su proteína.
+      await request
+        .put(`/products/${platoId}/recipe`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ edges: [{ childType: 'ingredient', childId: panId, quantityNeta: 1 }] })
+        .expect(200);
+      for (const [sizeId, ingredientId] of [
+        [conPolloId, polloId],
+        [conCarneId, carneId],
+      ] as const) {
+        await request
+          .put(`/products/${platoId}/sizes/${sizeId}/recipe`)
+          .set({ Authorization: `Bearer ${adminToken}` })
+          .send({ edges: [{ childType: 'ingredient', childId: ingredientId, quantityNeta: 100 }] })
+          .expect(200);
+      }
+      // Hay pollo, NO hay carne.
+      await mover(polloId, 1000);
+      // Vender exige caja abierta; puede haberla ya de otra parte de la suite.
+      const actual = await request
+        .get('/shifts/current')
+        .set({ Authorization: `Bearer ${adminToken}` });
+      if (actual.status !== 200 || !actual.body?.id) {
+        await request
+          .post('/shifts/open')
+          .set({ Authorization: `Bearer ${adminToken}` })
+          .send({ openingCash: 0 })
+          .expect(201);
+      }
+    });
+
+    it('con una sola proteína, el plato se ofrece y la otra opción queda bloqueada', async () => {
+      const fila = await disponibilidad();
+      expect(fila.available).toBe(true);
+      const porId = new Map((fila.variants ?? []).map((v) => [v.sizeId, v]));
+      expect(porId.get(conPolloId)?.available).toBe(true);
+      expect(porId.get(conCarneId)?.available).toBe(false);
+      expect(porId.get(conCarneId)?.reason).toContain('Carne');
+    });
+
+    it('el cobro de la variante que SÍ hay funciona', async () => {
+      const venta = await request
+        .post('/sales')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId: platoId, sizeId: conPolloId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${venta.body.id}/confirm-payment`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ method: 'CASH', amountReceived: venta.body.total })
+        .expect(201);
+    });
+
+    it('el de la que NO hay lo sigue rechazando el guard, que es la red final', async () => {
+      const venta = await request
+        .post('/sales')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId: platoId, sizeId: conCarneId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${venta.body.id}/confirm-payment`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ method: 'CASH', amountReceived: venta.body.total })
+        .expect(409);
+    });
+
+    it('sin ninguna proteína el plato deja de ofrecerse, y dice TODO lo que falta', async () => {
+      await mover(polloId, -1000);
+      const fila = await disponibilidad();
+      expect(fila.available).toBe(false);
+      expect(fila.reason).toContain('Pollo');
+      expect(fila.reason).toContain('Carne');
+    });
+
+    it('al reponer una proteína, el plato vuelve — no hay que reponer las dos', async () => {
+      await mover(carneId, 1000);
+      const fila = await disponibilidad();
+      expect(fila.available).toBe(true);
+      const porId = new Map((fila.variants ?? []).map((v) => [v.sizeId, v]));
+      expect(porId.get(conCarneId)?.available).toBe(true);
+      expect(porId.get(conPolloId)?.available).toBe(false);
+    });
+
+    it('el endpoint PÚBLICO dice qué variante no se puede, pero NO por qué', async () => {
+      const res = await request.get('/products/availability').expect(200);
+      const fila = (
+        res.body as Array<{
+          productId: string;
+          variants?: Array<{ sizeId: string; available: boolean; reason: string | null }>;
+        }>
+      ).find((r) => r.productId === platoId);
+      const porId = new Map((fila?.variants ?? []).map((v) => [v.sizeId, v]));
+      // Al cliente le sirve saber que no se puede elegir; qué insumo falta, no.
+      expect(porId.get(conPolloId)?.available).toBe(false);
+      expect(porId.get(conPolloId)?.reason).toBeNull();
+      expect(porId.get(conCarneId)?.available).toBe(true);
+    });
+
+    it('un producto sin variantes no trae ninguna', async () => {
+      const res = await request
+        .get('/products/availability/internal')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .expect(200);
+      const burger = (res.body as Array<{ productId: string; variants?: unknown[] }>).find(
+        (r) => r.productId === burgerId,
+      );
+      expect(burger?.variants ?? []).toEqual([]);
+    });
+  });
+
 });

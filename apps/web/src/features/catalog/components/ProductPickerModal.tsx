@@ -26,11 +26,14 @@ export interface PickerSelection {
 
 export function ProductPickerModal({
   product,
+  agotadas,
   open,
   onClose,
   onConfirm,
 }: {
   product: PublicMenuProduct | null;
+  /** Opciones que hoy no se pueden preparar: se muestran, no se pueden elegir. */
+  agotadas?: ReadonlySet<string>;
   open: boolean;
   onClose: () => void;
   onConfirm: (sel: PickerSelection) => void;
@@ -48,7 +51,10 @@ export function ProductPickerModal({
 
   useEffect(() => {
     if (open && product) {
-      setSizeId(sortedSizes[0]?.id ?? null);
+      // Se preselecciona una que SÍ se pueda: si no, el botón de agregar
+      // aparece bloqueado sin que se entienda por qué.
+      const primera = sortedSizes.find((sz) => !agotadas?.has(sz.id)) ?? sortedSizes[0];
+      setSizeId(primera?.id ?? null);
       setModifierIds(new Set());
       setQuantity(1);
       setNotes('');
@@ -101,7 +107,8 @@ export function ProductPickerModal({
 
   if (!open || !product) return null;
 
-  const canConfirm = (!requiresSize || sizeId !== null) && quantity > 0;
+  const canConfirm =
+    (!requiresSize || (sizeId !== null && !agotadas?.has(sizeId))) && quantity > 0;
   const totalPrice = unitPrice * quantity;
   const discountedTotal = totalPrice - promoPreview.lineDiscount;
   const unitDiscountedPrice = promoPreview.badge?.discountedPrice ?? null;
@@ -185,7 +192,12 @@ export function ProductPickerModal({
           <div className="h-px w-full bg-border" />
 
           {requiresSize ? (
-            <PickerSizes sizes={sortedSizes} sizeId={sizeId} onSelect={setSizeId} />
+            <PickerSizes
+              sizes={sortedSizes}
+              sizeId={sizeId}
+              onSelect={setSizeId}
+              agotadas={agotadas}
+            />
           ) : null}
 
           <PickerQuantity quantity={quantity} onChange={setQuantity} />

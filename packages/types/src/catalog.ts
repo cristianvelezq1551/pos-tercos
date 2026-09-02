@@ -567,6 +567,24 @@ export const ProductAvailabilitySchema = z.object({
    * No se expone al cliente final (web muestra solo "Agotado").
    */
   reason: z.string().nullable(),
+  /**
+   * Disponibilidad de cada variante. El plato se ofrece si al menos una se
+   * puede hacer, y las que no se deshabilitan en el selector.
+   *
+   * Opcional a propósito (no `.default([])`): las apps se publican antes que el
+   * API y con el campo obligatorio el parseo fallaría durante el despliegue —
+   * la caja y el menú se quedarían sin catálogo. Ausente = como antes.
+   */
+  variants: z
+    .array(
+      z.object({
+        sizeId: z.string().uuid(),
+        name: z.string(),
+        available: z.boolean(),
+        reason: z.string().nullable(),
+      }),
+    )
+    .optional(),
 });
 export type ProductAvailability = z.infer<typeof ProductAvailabilitySchema>;
 

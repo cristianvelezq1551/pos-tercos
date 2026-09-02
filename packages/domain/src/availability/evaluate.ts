@@ -1,8 +1,22 @@
 import { expandRecipeOneLevel } from '../recipe/expand-recipe-one-level';
-import type { RecipeGraph } from '../recipe/types';
+import type { RecipeEdgeNode, RecipeGraph } from '../recipe/types';
 
 /** Tolerancia de punto flotante al comparar stock vs receta. */
 const STOCK_EPSILON = 1e-6;
+
+/**
+ * Una variante del producto, con la receta que SUMA sobre la base.
+ *
+ * Sin esto, la disponibilidad miraba solo la receta base: el día que se acaba
+ * la proteína, la caja y la web siguen ofreciendo el plato y el cobro falla
+ * con el cliente enfrente. `edges` vacío = esa variante no agrega nada, así que
+ * se puede hacer siempre que la base alcance.
+ */
+export interface AvailabilityVariant {
+  sizeId: string;
+  name: string;
+  edges: RecipeEdgeNode[];
+}
 
 export interface AvailabilityProduct {
   id: string;
@@ -14,6 +28,15 @@ export interface AvailabilityProduct {
   /** Forzado disponible por el dueño: pisa el cómputo de stock. */
   forceAvailable: boolean;
   comboComponents: Array<{ productId: string; quantity: number }>;
+  /** Variantes del producto. Ausente o vacío = no tiene. */
+  variants?: AvailabilityVariant[];
+}
+
+export interface AvailabilityVariantResult {
+  sizeId: string;
+  name: string;
+  available: boolean;
+  reason: string | null;
 }
 
 export interface AvailabilityResult {
@@ -21,6 +44,12 @@ export interface AvailabilityResult {
   available: boolean;
   stock: number | null;
   reason: string | null;
+  /**
+   * Disponibilidad de cada variante. Vacío si el producto no tiene.
+   * El plato se ofrece si AL MENOS UNA se puede hacer; las que no, se
+   * deshabilitan en el selector en vez de esconder el plato entero.
+   */
+  variants: AvailabilityVariantResult[];
 }
 
 export interface AvailabilityInput {
@@ -59,6 +88,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           available: false,
           stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
           reason: 'Agotado (manual)',
+          variants: [],
         };
       }
 
@@ -70,6 +100,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           available: true,
           stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
           reason: null,
+          variants: [],
         };
       }
 
@@ -80,6 +111,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           available: stock > 0,
           stock,
           reason: stock > 0 ? null : 'Sin stock',
+          variants: [],
         };
       }
 
@@ -92,13 +124,64 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           subproductStock,
           productStock,
         );
-        return { productId: p.id, available: reason === null, stock: null, reason };
+        return { productId: p.id, available: reason === null, stock: null, reason, variants: [] };
       }
 
-      // Preparado: chequear primer nivel de su receta.
-      const reason = evalRecipeShortages(p.id, graph, ingredientStock, subproductStock);
-      return { productId: p.id, available: reason === null, stock: null, reason };
+      // Preparado. Sin variantes es el chequeo de siempre; con variantes, cada
+      // una se evalúa con la receta base MÁS la suya, y el plato se ofrece si
+      // al menos una se puede hacer.
+      const variantes = p.variants ?? [];
+      if (variantes.length === 0) {
+        const reason = evalRecipeShortages(p.id, graph, ingredientStock, subproductStock);
+        return { productId: p.id, available: reason === null, stock: null, reason, variants: [] };
+      }
+
+      const evaluadas: AvailabilityVariantResult[] = variantes.map((v) => {
+        const reason = evalRecipeShortages(
+          p.id,
+          v.edges.length === 0 ? graph : withVariantEdges(graph, p.id, v.edges),
+          ingredientStock,
+          subproductStock,
+        );
+        return { sizeId: v.sizeId, name: v.name, available: reason === null, reason };
+      });
+      const alguna = evaluadas.some((v) => v.available);
+      return {
+        productId: p.id,
+        available: alguna,
+        stock: null,
+        // Si ninguna se puede hacer, el motivo es todo lo que falta —
+        // decir solo lo de la primera dejaría al dueño reponiendo a ciegas.
+        reason: alguna ? null : unirMotivos(evaluadas),
+        variants: evaluadas,
+      };
     });
+}
+
+/**
+ * El grafo con las aristas de la variante colgadas del producto, SIN tocar el
+ * original: `evaluateAvailability` es pura y la usan a la vez el backend y la
+ * caja sin conexión.
+ */
+function withVariantEdges(
+  graph: RecipeGraph,
+  productId: string,
+  edges: RecipeEdgeNode[],
+): RecipeGraph {
+  const clave = `p:${productId}`;
+  const copia = new Map(graph.edgesByParent);
+  copia.set(clave, [...(graph.edgesByParent.get(clave) ?? []), ...edges]);
+  return { ...graph, edgesByParent: copia };
+}
+
+/** «Sin X, Y» con lo que falta en TODAS las variantes, sin repetir. */
+function unirMotivos(variantes: readonly AvailabilityVariantResult[]): string | null {
+  const faltantes = new Set<string>();
+  for (const v of variantes) {
+    if (!v.reason) continue;
+    for (const nombre of v.reason.replace(/^Sin /, '').split(', ')) faltantes.add(nombre);
+  }
+  return faltantes.size > 0 ? `Sin ${[...faltantes].join(', ')}` : null;
 }
 
 /**
