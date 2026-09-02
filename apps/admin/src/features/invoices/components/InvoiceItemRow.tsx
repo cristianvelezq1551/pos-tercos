@@ -5,6 +5,7 @@ import { Trash2 } from 'lucide-react';
 import type { Stockable, StockableType } from '@pos-tercos/types';
 import { ItemAssociation } from './ItemAssociation';
 import { NumField } from './NumField';
+import { derivarLinea, type ImporteQueManda } from './derivar-linea';
 
 export interface DraftRow {
   localId: string;
@@ -22,6 +23,9 @@ export interface DraftRow {
   /** Conversión verificada a la unidad base del insumo (unidades base por 1 de
    *  la línea). Se siembra al asociar; el panel la deja editar. */
   baseFactor?: number | null;
+  /** Cuál de los dos importes escribió la persona por última vez: al cambiar la
+   *  cantidad se recalcula el OTRO. Solo vive en el formulario. */
+  manda?: ImporteQueManda;
 }
 
 interface InvoiceItemRowProps {
@@ -44,6 +48,14 @@ export function InvoiceItemRow({
   onStockableCreated,
 }: InvoiceItemRowProps) {
   const isMatched = row.selection !== null;
+
+  // Escribiendo dos de los tres, el tercero sale solo: el proveedor cobra por
+  // kilo, el bulto trae 5,2 kg y en el papel viene el total de la línea.
+  const editar = (campo: 'cantidad' | 'unitario' | 'total') => (valor: number) => {
+    const { quantity, unitPrice, total, manda } = derivarLinea(row, campo, valor);
+    onChange({ quantity, unitPrice, total, manda });
+  };
+  const derivado = row.manda === 'total' ? 'unitario' : 'total';
 
   return (
     <div
@@ -90,7 +102,7 @@ export function InvoiceItemRow({
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <NumField id={`qty-${row.localId}`} label="Cantidad" value={row.quantity} onChange={(v) => onChange({ quantity: v })} disabled={disabled} />
+            <NumField id={`qty-${row.localId}`} label="Cantidad" value={row.quantity} onChange={editar('cantidad')} disabled={disabled} />
             <div className="space-y-1.5">
               <Label htmlFor={`unit-${row.localId}`}>Unidad</Label>
               <Input
@@ -101,9 +113,30 @@ export function InvoiceItemRow({
                 placeholder="kg, lt, unidad, caja"
               />
             </div>
-            <NumField id={`price-${row.localId}`} label="Costo unit." value={row.unitPrice} onChange={(v) => onChange({ unitPrice: v })} money disabled={disabled} />
-            <NumField id={`total-${row.localId}`} label="Total costo" value={row.total} onChange={(v) => onChange({ total: v })} money disabled={disabled} />
+            <NumField
+              id={`price-${row.localId}`}
+              label="Costo unit."
+              value={row.unitPrice}
+              onChange={editar('unitario')}
+              money
+              decimals={2}
+              hint={derivado === 'unitario' ? 'calculado' : undefined}
+              disabled={disabled}
+            />
+            <NumField
+              id={`total-${row.localId}`}
+              label="Total costo"
+              value={row.total}
+              onChange={editar('total')}
+              money
+              hint={derivado === 'total' ? 'calculado' : undefined}
+              disabled={disabled}
+            />
           </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Escribe la cantidad y uno de los dos costos: el otro se calcula solo.
+          </p>
 
           {row.packUnits && !isMatched ? (
             <p className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-1 text-[11px] font-medium text-blue-400 ring-1 ring-inset ring-blue-500/20">

@@ -11,6 +11,7 @@ import {
   type WeeklyPayrollReport,
 } from '@pos-tercos/types';
 import { request } from '../../../lib/api-client';
+import { prepararFoto } from '../../../lib/subir-archivo';
 
 async function requestVoid(path: string, init: RequestInit): Promise<void> {
   const res = await fetch(`/api${path}`, { credentials: 'include', ...init });
@@ -41,7 +42,7 @@ export async function payWeekDays(
   proof: File | null,
 ): Promise<PayrollWeekPayment> {
   const fd = new FormData();
-  if (proof) fd.append('proof', proof);
+  if (proof) fd.append('proof', await prepararFoto(proof, 'payroll-proof'));
   fd.append('payload', JSON.stringify(input));
   const res = await fetch('/api/workers/weekly/pay', {
     method: 'POST',

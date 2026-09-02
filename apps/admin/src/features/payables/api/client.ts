@@ -7,6 +7,7 @@ import {
 import { z } from 'zod';
 import { request, validateInput } from '../../../lib/api-client';
 import { randomUUID } from '../../../lib/uuid';
+import { prepararFoto } from '../../../lib/subir-archivo';
 
 const PayableListSchema = z.array(PayableCommitmentSchema);
 
@@ -26,7 +27,7 @@ export async function payPayable(
 ): Promise<PayableCommitment> {
   const fd = new FormData();
   fd.append('payload', JSON.stringify(input));
-  if (proof) fd.append('proof', proof);
+  if (proof) fd.append('proof', await prepararFoto(proof, 'payable-proof'));
   const res = await fetch(`/api/payables/${id}/pay`, {
     method: 'POST',
     credentials: 'include',

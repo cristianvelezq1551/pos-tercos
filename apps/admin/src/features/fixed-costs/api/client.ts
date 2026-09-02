@@ -12,6 +12,7 @@ import {
 } from '@pos-tercos/types';
 import { z } from 'zod';
 import { request } from '../../../lib/api-client';
+import { prepararFoto } from '../../../lib/subir-archivo';
 
 const FixedCostListSchema = z.array(FixedCostSchema);
 const FixedCostPendingListSchema = z.array(FinancePendingFixedCostSchema);
@@ -71,7 +72,7 @@ export async function markFixedCostPaid(
   },
 ): Promise<FinancePaidFixedCost> {
   const fd = new FormData();
-  fd.append('proof', proof);
+  fd.append('proof', await prepararFoto(proof, 'fixed-cost-proof'));
   fd.append('periodYear', String(body.periodYear));
   fd.append('periodMonth', String(body.periodMonth));
   if (body.paidAt) fd.append('paidAt', body.paidAt);

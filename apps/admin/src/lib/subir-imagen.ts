@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { prepararFoto } from './subir-archivo';
 
 const RespuestaSchema = z.object({
   imageUrl: z.string(),
@@ -13,7 +14,7 @@ const RespuestaSchema = z.object({
  */
 export async function subirImagen(file: File): Promise<{ imageUrl: string; key: string }> {
   const fd = new FormData();
-  fd.append('image', file);
+  fd.append('image', await prepararFoto(file, 'product-image'));
   const res = await fetch('/api/products/upload-image', {
     method: 'POST',
     credentials: 'include',

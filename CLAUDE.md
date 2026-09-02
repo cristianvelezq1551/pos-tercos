@@ -4277,6 +4277,58 @@ Tres columnas nuevas: `ingredients.show_in_kitchen` y
 una fila, y los defaults dejan el comportamiento exactamente como estaba hasta
 que alguien desmarque una casilla o suba una foto.
 
+
+## 7.v60 La foto pesada ya no tumba la factura, y el costo unitario se calcula solo (2026-09-01)
+
+> El dueño reportó un `413 · FUNCTION_PAYLOAD_TOO_LARGE` al crear una factura, y
+> pidió no tener que dividir a mano el total entre los kilos. Verificado:
+> typecheck 13/13, lint 0, unit 12/12 paquetes (admin 322, ui 154), más el
+> navegador real con una foto de 13,8 MB y los cinco casos de la aritmética.
+> Sin migración.
+
+### El 413: se comprimía UNA de las nueve subidas
+La foto de la factura se achica desde que se implementó (`comprimirImagen`,
+1600 px), pero **el comprobante de pago no** — y una factura que "nace pagada"
+lleva los dos. Una captura o foto del pago de 5-8 MB no pasa el proxy de la app,
+que corta cerca de 4,5 MB, y el navegador mostraba `Request Entity Too Large`:
+inglés, sin decir qué hacer, contra §3.
+
+- **`lib/subir-archivo.ts` es el único camino**: `prepararFoto` achica y, si aun
+  así no cabe, lanza un mensaje que dice cuánto pesa, cuánto cabe y qué hacer
+  (el caso real es el HEIC del iPhone, que algunos navegadores no decodifican y
+  `comprimirImagen` devuelve tal cual). `verificarTamano` cubre lo que no es
+  foto (el CSV del banco).
+- Comprimen ahora: comprobante al crear la factura, al marcarla pagada, de un
+  compromiso, de la nómina, de un costo fijo, imagen de producto/subproducto y
+  las dos de las diapositivas del TV.
+- **`mensajeDeError` traduce el 413** venga como venga (`Request Entity Too
+  Large`, `FUNCTION_PAYLOAD_TOO_LARGE`, `Request failed (413)`): es un error que
+  la persona SÍ puede resolver desde la pantalla.
+- **Un test recorre las fuentes del admin y falla si aparece un `.append` de
+  archivo que se salte el helper.** No es ceremonia: al escribirlo encontró dos
+  caminos que la revisión a mano no vio — la foto de la factura comprimía pero
+  **sin la guarda de tamaño**, y `uploadProductImage` había quedado huérfana
+  (sin comprimir) al mover el campo de imagen a `components/`.
+
+### Costo unitario ↔ total: escribiendo dos, el tercero sale solo
+El proveedor cobra por kilo, el bulto trae 5,2 kg y el papel dice el total:
+hacer esa división en cada renglón es donde se cuela el error de dedo, y ese
+número termina en el costo de la receta.
+
+`derivarLinea` (puro, 10 tests) resuelve las dos direcciones. La regla de qué se
+recalcula al cambiar la cantidad **no se adivina**: se recuerda el último
+importe que la persona escribió. Si tecleó el total, corregir la cantidad ajusta
+el unitario y **el total del papel no se toca**; si tecleó el unitario, ajusta el
+total. Una fila que llega de la IA arranca con el total mandando — es lo que se
+pagó y es lo que usa el costeo (`invoices.service.ts` ya usa `lineTotal`, NO
+`quantity × unitPrice`, porque una línea puede traer descuento).
+
+- El campo derivado se rotula **"calculado"** junto a su etiqueta.
+- El unitario admite **2 decimales** (3 unidades por $50.000 son $16.666,67);
+  eso desactiva sus separadores de miles, que `NumberInput` solo hace en
+  enteros. El total sí los conserva — es el número con el que se cuadra la
+  factura.
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)

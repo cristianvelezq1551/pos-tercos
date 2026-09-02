@@ -7,6 +7,7 @@ import {
 } from '@pos-tercos/types';
 import { z } from 'zod';
 import { subirArchivoGrande } from '../../../lib/upload-directo';
+import { prepararFoto } from '../../../lib/subir-archivo';
 
 const SlideList = z.array(DisplaySlideSchema);
 const TrackList = z.array(DisplayTrackSchema);
@@ -37,7 +38,7 @@ export async function createSlide(input: {
   fd.append('tag', input.tag);
   fd.append('price', input.price);
   fd.append('description', input.description);
-  fd.append('image', input.image);
+  fd.append('image', await prepararFoto(input.image, 'slide-image'));
   const res = await fetch('/api/display/slides', {
     method: 'POST',
     body: fd,
@@ -58,7 +59,7 @@ export async function updateSlide(id: string, body: UpdateDisplaySlide): Promise
 
 export async function replaceSlideImage(id: string, image: File): Promise<DisplaySlide> {
   const fd = new FormData();
-  fd.append('image', image);
+  fd.append('image', await prepararFoto(image, 'slide-image'));
   const res = await fetch(`/api/display/slides/${id}/image`, {
     method: 'POST',
     body: fd,
