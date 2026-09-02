@@ -26,6 +26,7 @@ interface FormState {
   thresholdMin: number | null;
   portionSize: number | null;
   blocksAvailability: boolean;
+  showInKitchen: boolean;
   isActive: boolean;
 }
 
@@ -47,6 +48,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
     thresholdMin: initial?.thresholdMin ?? 0,
     portionSize: initial?.portionSize ?? null,
     blocksAvailability: initial?.blocksAvailability ?? true,
+    showInKitchen: initial?.showInKitchen ?? true,
     isActive: initial?.isActive ?? true,
   }));
 
@@ -85,6 +87,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           thresholdMin: form.thresholdMin,
           portionSize: form.portionSize,
           blocksAvailability: form.blocksAvailability,
+          showInKitchen: form.showInKitchen,
           isActive: form.isActive,
         });
       } else {
@@ -96,6 +99,7 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           thresholdMin: form.thresholdMin,
           portionSize: form.portionSize,
           blocksAvailability: form.blocksAvailability,
+          showInKitchen: form.showInKitchen,
         });
       }
       startTransition(() => {
@@ -230,6 +234,14 @@ export function IngredientForm({ initial }: IngredientFormProps) {
           disabled={pending}
           checked={form.blocksAvailability}
           onChange={(e) => setForm((f) => ({ ...f, blocksAvailability: e.target.checked }))}
+        />
+
+        <Checkbox
+          label="Se ve en la cocina"
+          description="Desmárcalo para lo que está en el catálogo SOLO para costear (empaques, recipientes, bolsas): desaparece de la Biblia y del inventario de la app de cocina. Se sigue descontando y costeando igual."
+          disabled={pending}
+          checked={form.showInKitchen}
+          onChange={(e) => setForm((f) => ({ ...f, showInKitchen: e.target.checked }))}
         />
 
         {isEdit ? (

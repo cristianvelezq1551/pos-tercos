@@ -13,6 +13,7 @@ import { useState, useTransition } from 'react';
 import { UNIT_LABEL_ERROR, isValidUnitLabel, type Subproduct } from '@pos-tercos/types';
 import { createSubproduct, deactivateSubproduct, updateSubproduct } from '../api/client';
 import { PreparationStepsField } from '../../../components/PreparationStepsField';
+import { ImageUploadField } from '../../../components/ImageUploadField';
 import { getErrorMessage } from '../../../lib/errors';
 
 interface SubproductFormProps {
@@ -27,6 +28,8 @@ interface FormState {
   portionSize: number | null;
   preparationSteps: string[];
   blocksAvailability: boolean;
+  showInKitchen: boolean;
+  prepImageUrl: string;
   isActive: boolean;
 }
 
@@ -48,6 +51,8 @@ export function SubproductForm({ initial }: SubproductFormProps) {
     portionSize: initial?.portionSize ?? null,
     preparationSteps: initial?.preparationSteps ?? [],
     blocksAvailability: initial?.blocksAvailability ?? true,
+    showInKitchen: initial?.showInKitchen ?? true,
+    prepImageUrl: initial?.prepImageUrl ?? '',
     isActive: initial?.isActive ?? true,
   }));
 
@@ -82,6 +87,8 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           portionSize: form.portionSize,
           preparationSteps: form.preparationSteps,
           blocksAvailability: form.blocksAvailability,
+          showInKitchen: form.showInKitchen,
+          prepImageUrl: form.prepImageUrl || null,
           isActive: form.isActive,
         });
       } else {
@@ -93,6 +100,8 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           portionSize: form.portionSize,
           preparationSteps: form.preparationSteps,
           blocksAvailability: form.blocksAvailability,
+          showInKitchen: form.showInKitchen,
+          prepImageUrl: form.prepImageUrl || null,
         });
       }
       startTransition(() => {
@@ -204,12 +213,28 @@ export function SubproductForm({ initial }: SubproductFormProps) {
           onChange={(steps) => setForm((f) => ({ ...f, preparationSteps: steps }))}
         />
 
+        <ImageUploadField
+          label="Foto de la preparación (cocina)"
+          hint="La ve el cocinero en la Biblia: cómo queda la tanda o un paso clave."
+          imageUrl={form.prepImageUrl}
+          onChange={(url) => setForm((f) => ({ ...f, prepImageUrl: url }))}
+          disabled={pending}
+        />
+
         <Checkbox
           label="Frena la venta si no hay stock"
           description="Desmarca esto si es opcional (ej. una salsa de acompañamiento): no frena la venta de los productos que lo usan y no aparece en Deudas de inventario. Se sigue descontando y costeando igual."
           disabled={pending}
           checked={form.blocksAvailability}
           onChange={(e) => setForm((f) => ({ ...f, blocksAvailability: e.target.checked }))}
+        />
+
+        <Checkbox
+          label="Se ve en la cocina"
+          description="Desmárcalo para lo que está en el catálogo SOLO para costear (empaques, recipientes, bolsas): desaparece de la Biblia y del inventario de la app de cocina. Se sigue descontando y costeando igual."
+          disabled={pending}
+          checked={form.showInKitchen}
+          onChange={(e) => setForm((f) => ({ ...f, showInKitchen: e.target.checked }))}
         />
 
         {isEdit ? (

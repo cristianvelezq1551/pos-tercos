@@ -2,16 +2,27 @@
 
 import { Button, Label } from '@pos-tercos/ui';
 import { useRef, useState } from 'react';
-import { uploadProductImage } from '../api/client';
-import { getErrorMessage } from '../../../lib/errors';
+import { subirImagen } from '../lib/subir-imagen';
+import { getErrorMessage } from '../lib/errors';
 
-interface ProductFormImageFieldProps {
+interface ImageUploadFieldProps {
   imageUrl: string;
   onChange: (url: string) => void;
   disabled?: boolean;
+  /** Qué foto es. Default: la del producto. */
+  label?: string;
+  /** Una línea bajo el campo explicando para qué sirve esta foto. */
+  hint?: string;
 }
 
-export function ProductFormImageField({ imageUrl, onChange, disabled }: ProductFormImageFieldProps) {
+/** Campo de foto: sube, muestra la actual y permite reemplazarla o quitarla. */
+export function ImageUploadField({
+  imageUrl,
+  onChange,
+  disabled,
+  label = 'Imagen del producto',
+  hint,
+}: ImageUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +31,7 @@ export function ProductFormImageField({ imageUrl, onChange, disabled }: ProductF
     setError(null);
     setUploading(true);
     try {
-      const result = await uploadProductImage(file);
+      const result = await subirImagen(file);
       onChange(result.imageUrl);
     } catch (e) {
       setError(getErrorMessage(e, 'Error al subir imagen.'));
@@ -32,7 +43,7 @@ export function ProductFormImageField({ imageUrl, onChange, disabled }: ProductF
 
   return (
     <div className="space-y-2">
-      <Label>Imagen del producto</Label>
+      <Label>{label}</Label>
       {imageUrl ? (
         <div className="flex items-start gap-3">
           <img
@@ -80,7 +91,7 @@ export function ProductFormImageField({ imageUrl, onChange, disabled }: ProductF
         }}
       />
       <p className="text-xs text-muted-foreground">
-        Formatos: PNG, JPG, WebP, GIF, BMP, TIFF, HEIC, AVIF. Máx 5 MB.
+        {hint ? `${hint} ` : ''}Formatos: PNG, JPG, WebP, GIF, BMP, TIFF, HEIC, AVIF. Máx 5 MB.
       </p>
       {error && (
         <p role="alert" className="text-sm text-destructive">

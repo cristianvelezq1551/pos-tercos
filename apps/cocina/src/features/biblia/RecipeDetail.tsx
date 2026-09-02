@@ -2,6 +2,7 @@
 
 import type { RecipeBookEntry } from '@pos-tercos/types';
 import { Dialog, pluralizeUnit } from '@pos-tercos/ui';
+import { fotoDeReceta } from './foto-de-receta';
 
 /** Detalle de una receta: composición (qué lleva) + paso a paso. */
 export function RecipeDetail({
@@ -17,12 +18,11 @@ export function RecipeDetail({
   return (
     <Dialog open={open} onClose={onClose} title={entry.name} maxWidth="max-w-lg">
       <div className="space-y-5">
-        {/* La foto del producto (la misma de la carta) es la referencia de
-            armado: cómo se ve el plato terminado. Ya venía en el DTO y no se
-            pintaba en ningún lado de la cocina. */}
-        {entry.imageUrl ? (
+        {/* La foto de la PREPARACIÓN es la que sirve para armar el plato; la
+            de la carta queda de respaldo cuando nadie subió una propia. */}
+        {fotoDeReceta(entry) ? (
           <img
-            src={entry.imageUrl}
+            src={fotoDeReceta(entry)!}
             alt={`Así se ve ${entry.name}`}
             className="max-h-56 w-full rounded-lg border border-border object-cover"
             loading="lazy"

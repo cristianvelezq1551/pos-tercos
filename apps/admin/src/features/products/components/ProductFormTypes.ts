@@ -58,6 +58,8 @@ export interface FormState {
   basePrice: string;
   category: string;
   imageUrl: string;
+  /** Foto de la preparación para la biblia de cocina. '' = sin foto propia. */
+  prepImageUrl: string;
   emoji: string;
   modifiersEnabled: boolean;
   isCombo: boolean;

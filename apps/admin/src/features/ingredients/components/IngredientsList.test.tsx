@@ -17,6 +17,7 @@ const base: Omit<Ingredient, 'id' | 'name' | 'blocksAvailability'> = {
   portionSize: null,
   lastUnitCost: null,
   lastUnitCostDate: null,
+  showInKitchen: true,
   isActive: true,
   createdAt: '2026-09-01T12:00:00.000Z',
   updatedAt: '2026-09-01T12:00:00.000Z',
