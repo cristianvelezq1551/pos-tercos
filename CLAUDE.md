@@ -4223,6 +4223,60 @@ solo para costear (recipientes, empaques)—. No hay ningún campo que distinga
 (`show_in_kitchen`, aditivo con default `true`, que no toca ningún dato ya
 cargado). Queda a decisión del dueño.
 
+
+## 7.v59 Lo que existe solo para costear deja de aparecer en la cocina (2026-09-01)
+
+> Pedido del dueño: hay insumos en el catálogo —empaques, recipientes, bolsas—
+> que están ahí para que el costo salga bien, y el cocinero los veía como si
+> tuviera que prepararlos o contarlos. Y una foto de la PREPARACIÓN, distinta de
+> la de la carta. Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes
+> (cocina 46 · admin 307), **e2e 71 suites / 813** sobre una base creada desde
+> cero (la migración corrió limpia de arranque), más el navegador real de punta
+> a punta. Migración: `20260902020000_cocina_visibilidad_y_foto_preparacion`.
+
+### "Se ve en la cocina" (`show_in_kitchen`)
+Casilla por **insumo** y por **subproducto**, en su ficha del admin, marcada por
+defecto. Desmarcarla lo saca de la app de cocina y de nada más:
+
+| Dónde | Marcado | Desmarcado |
+|---|---|---|
+| Biblia (ficha y lista de "Lleva") | aparece | **no aparece** |
+| Inventario de cocina (stock, merma, conteo) | aparece | **no aparece** |
+| Existencias y movimientos del admin | aparece | aparece |
+| Receta, costo del producto, FIFO, P&G | cuenta | **cuenta igual** |
+| Descuento de stock al vender | descuenta | **descuenta igual** |
+
+La regla dura, y hay un e2e que la fija: **esconderlo de la cocina no puede
+cambiar un peso del costeo ni una unidad del inventario.** Es visibilidad, no
+contabilidad — a diferencia de `blocksAvailability`, que sí cambia si la venta
+se frena. Son dos ejes distintos y a propósito: un recipiente puede frenar la
+venta (si no hay con qué despachar) y aun así no interesarle al cocinero.
+
+⚠️ **Producción NO se filtra**: `/subproducts/production-status` sigue listando
+todo. Un subproducto oculto de la biblia se debe poder seguir produciendo — si
+no, ocultarlo lo volvería imposible de reponer.
+
+### Foto de la preparación
+Campo nuevo `prep_image_url` en **productos y subproductos**. La biblia la
+prefiere y cae a la foto de la carta cuando no hay una propia
+(`fotoDeReceta`, pura, 3 tests) — así quien ya tenía fotos de producto las
+sigue viendo sin cargar nada. Los subproductos, que nunca tuvieron imagen,
+ahora pueden tener la suya.
+
+- Reusa el endpoint de subida que ya existía (`POST /products/upload-image`,
+  Dueño-only): el bucket no distingue para qué es la foto y un segundo endpoint
+  solo habría duplicado el manejo de errores.
+- `ProductFormImageField` pasó a ser **`components/ImageUploadField`** (label y
+  aviso parametrizables) y su fetch a `lib/subir-imagen.ts` — lo usan el form de
+  productos y el de subproductos, que son features distintos.
+
+### Lo que la migración hace (y lo que no)
+Tres columnas nuevas: `ingredients.show_in_kitchen` y
+`subproducts.show_in_kitchen` (NOT NULL DEFAULT true) y `prep_image_url` en
+`products` y `subproducts` (nullable). **Es puramente aditiva**: no reescribe ni
+una fila, y los defaults dejan el comportamiento exactamente como estaba hasta
+que alguien desmarque una casilla o suba una foto.
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)

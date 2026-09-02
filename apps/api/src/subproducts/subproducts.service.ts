@@ -43,6 +43,12 @@ export class SubproductsService {
           ...(input.blocksAvailability !== undefined && {
             blocksAvailability: input.blocksAvailability,
           }),
+          ...(input.showInKitchen !== undefined && {
+            showInKitchen: input.showInKitchen,
+          }),
+          ...(input.prepImageUrl !== undefined && {
+            prepImageUrl: input.prepImageUrl || null,
+          }),
           preparationSteps: input.preparationSteps ?? [],
         },
       }),
@@ -77,6 +83,12 @@ export class SubproductsService {
           ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
           ...(input.blocksAvailability !== undefined && {
             blocksAvailability: input.blocksAvailability,
+          }),
+          ...(input.showInKitchen !== undefined && {
+            showInKitchen: input.showInKitchen,
+          }),
+          ...(input.prepImageUrl !== undefined && {
+            prepImageUrl: input.prepImageUrl || null,
           }),
           ...(input.preparationSteps !== undefined && { preparationSteps: input.preparationSteps }),
           ...(input.isActive !== undefined && { isActive: input.isActive }),
@@ -140,6 +152,8 @@ function toSubproductDto(row: DbSubproduct): Subproduct {
     thresholdMin: Number(row.thresholdMin),
     portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
     blocksAvailability: row.blocksAvailability,
+    showInKitchen: row.showInKitchen,
+    prepImageUrl: row.prepImageUrl,
     preparationSteps: row.preparationSteps,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),

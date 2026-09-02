@@ -47,6 +47,9 @@ export class IngredientsService {
           ...(input.blocksAvailability !== undefined && {
             blocksAvailability: input.blocksAvailability,
           }),
+          ...(input.showInKitchen !== undefined && {
+            showInKitchen: input.showInKitchen,
+          }),
         },
       }),
     );
@@ -81,6 +84,9 @@ export class IngredientsService {
           ...(input.portionSize !== undefined && { portionSize: input.portionSize }),
           ...(input.blocksAvailability !== undefined && {
             blocksAvailability: input.blocksAvailability,
+          }),
+          ...(input.showInKitchen !== undefined && {
+            showInKitchen: input.showInKitchen,
           }),
           ...(input.isActive !== undefined && { isActive: input.isActive }),
         },
@@ -141,6 +147,7 @@ function toIngredientDto(row: DbIngredient): Ingredient {
     thresholdMin: Number(row.thresholdMin),
     portionSize: row.portionSize !== null ? Number(row.portionSize) : null,
     blocksAvailability: row.blocksAvailability,
+    showInKitchen: row.showInKitchen,
     lastUnitCost: row.lastUnitCost !== null ? Number(row.lastUnitCost) : null,
     lastUnitCostDate: row.lastUnitCostDate?.toISOString() ?? null,
     isActive: row.isActive,

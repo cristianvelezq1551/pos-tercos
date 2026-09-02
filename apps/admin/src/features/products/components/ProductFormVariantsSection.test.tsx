@@ -32,6 +32,7 @@ function Host({ inicial }: { inicial: FormState['sizes'] }) {
         basePrice: '',
         category: '',
         imageUrl: '',
+  prepImageUrl: '',
         emoji: '',
         modifiersEnabled: false,
         isCombo: false,

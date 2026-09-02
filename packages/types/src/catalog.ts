@@ -41,6 +41,12 @@ export const IngredientSchema = z.object({
    * cada receta puede pisarlo (`RecipeEdge.blocksAvailability`).
    */
   blocksAvailability: z.boolean(),
+  /**
+   * Si se le muestra al cocinero (biblia e inventario de cocina). false = está
+   * solo para costear (empaques, recipientes): se sigue descontando y
+   * costeando igual, pero desaparece de la app de cocina.
+   */
+  showInKitchen: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -55,6 +61,7 @@ export const CreateIngredientSchema = z.object({
   thresholdMin: z.number().nonnegative().optional(),
   portionSize: z.number().positive().nullable().optional(),
   blocksAvailability: z.boolean().optional(),
+  showInKitchen: z.boolean().optional(),
 });
 export type CreateIngredient = z.infer<typeof CreateIngredientSchema>;
 
@@ -80,6 +87,10 @@ export const SubproductSchema = z.object({
   preparationSteps: z.array(z.string()),
   /** Ver `Ingredient.blocksAvailability`. false = no frena la venta. */
   blocksAvailability: z.boolean(),
+  /** Ver `Ingredient.showInKitchen`. false = no se le muestra al cocinero. */
+  showInKitchen: z.boolean(),
+  /** Foto de la preparación para la biblia. Null = sin foto. */
+  prepImageUrl: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -97,6 +108,8 @@ export const CreateSubproductSchema = z.object({
   portionSize: z.number().positive().nullable().optional(),
   preparationSteps: PreparationStepsSchema.optional(),
   blocksAvailability: z.boolean().optional(),
+  showInKitchen: z.boolean().optional(),
+  prepImageUrl: z.string().max(500).nullable().optional(),
 });
 export type CreateSubproduct = z.infer<typeof CreateSubproductSchema>;
 
@@ -178,6 +191,12 @@ export const RecipeBookEntrySchema = z.object({
   category: z.string().nullable(),
   /** Imagen (productos). null en subproductos / sin foto. */
   imageUrl: z.string().nullable(),
+  /**
+   * Foto de la PREPARACIÓN (productos y subproductos). Es la que manda en la
+   * biblia; `imageUrl` (la foto de la carta) queda como respaldo cuando no hay
+   * una propia.
+   */
+  prepImageUrl: z.string().nullable(),
   description: z.string().nullable(),
   /** Solo productos: true si es combo (su composición va en `comboItems`). */
   isCombo: z.boolean(),
@@ -301,6 +320,12 @@ export const ProductSchema = z.object({
   basePrice: z.number().nonnegative(),
   category: z.string().nullable(),
   imageUrl: z.string().nullable(),
+  /**
+   * Foto de la PREPARACIÓN para la biblia de cocina (el armado, el corte, el
+   * emplatado). Distinta de `imageUrl`, que es la foto de la carta. Null = la
+   * biblia cae a `imageUrl`.
+   */
+  prepImageUrl: z.string().nullable(),
   /** Emoji representativo (🍔🍟🥤). Fallback visual cuando no hay imageUrl. */
   emoji: z.string().nullable(),
   modifiersEnabled: z.boolean(),
@@ -364,6 +389,7 @@ export const CreateProductSchema = z
      */
     category: z.string().trim().min(1, 'Elige una categoría para el producto.').max(60),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
+    prepImageUrl: ProductImageUrlSchema.nullable().optional(),
     emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),
@@ -435,6 +461,7 @@ export const UpdateProductSchema = z
     basePrice: z.number().nonnegative().optional(),
     category: z.string().max(60).nullable().optional(),
     imageUrl: ProductImageUrlSchema.nullable().optional(),
+    prepImageUrl: ProductImageUrlSchema.nullable().optional(),
     emoji: ProductEmojiSchema.nullable().optional(),
     modifiersEnabled: z.boolean().optional(),
     isCombo: z.boolean().optional(),

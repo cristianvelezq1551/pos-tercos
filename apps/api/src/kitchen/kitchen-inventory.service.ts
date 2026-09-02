@@ -28,9 +28,13 @@ export class KitchenInventoryService {
    * Stock de cocina: insumos + subproductos + productos de reventa, activos.
    * `Stockable` NO expone costos (lastUnitCost) — solo cantidades. Se mantiene
    * `basePrice` (precio de venta, no sensible) por si la UI lo quiere mostrar.
+   *
+   * Deja fuera lo marcado como "no se ve en cocina": lo que está en el catálogo
+   * solo para costear (empaques, recipientes) no es algo que el cocinero cuente
+   * ni merme, y estorbaba en la lista.
    */
   listStock(): Promise<Stockable[]> {
-    return this.inventory.listStockables({ onlyActive: true });
+    return this.inventory.listStockables({ onlyActive: true, onlyKitchen: true });
   }
 
   /**

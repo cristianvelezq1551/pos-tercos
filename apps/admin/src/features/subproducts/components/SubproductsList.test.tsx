@@ -10,6 +10,8 @@ const base: Omit<Subproduct, 'id' | 'name' | 'blocksAvailability'> = {
   thresholdMin: 5,
   portionSize: null,
   preparationSteps: [],
+  showInKitchen: true,
+  prepImageUrl: null,
   isActive: true,
   createdAt: '2026-09-01T12:00:00.000Z',
   updatedAt: '2026-09-01T12:00:00.000Z',

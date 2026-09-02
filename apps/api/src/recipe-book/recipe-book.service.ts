@@ -22,7 +22,8 @@ export class RecipeBookService {
   ) {}
 
   async getRecipeBook(): Promise<RecipeBookResponse> {
-    const [graph, products, subproducts, comboComponents] = await Promise.all([
+    const [graph, products, subproducts, comboComponents, ingredientesOcultos] =
+      await Promise.all([
       this.recipes.loadFullGraph(),
       this.prisma.product.findMany({
         where: { isActive: true },
@@ -35,6 +36,16 @@ export class RecipeBookService {
       this.prisma.comboComponent.findMany({
         include: { product: { select: { id: true, name: true } } },
       }),
+      // Lo que existe SOLO para costear (empaques, recipientes): no se le
+      // muestra al cocinero, ni como ficha ni dentro de un "Lleva".
+      this.prisma.ingredient.findMany({
+        where: { showInKitchen: false },
+        select: { id: true },
+      }),
+    ]);
+    const ocultos = new Set<string>([
+      ...ingredientesOcultos.map((i) => `i:${i.id}`),
+      ...subproducts.filter((s) => !s.showInKitchen).map((s) => `s:${s.id}`),
     ]);
 
     // Unidad por subproducto (el grafo solo trae name+yield).
@@ -57,17 +68,20 @@ export class RecipeBookService {
         name: p.name,
         category: p.category,
         imageUrl: p.imageUrl,
+        prepImageUrl: p.prepImageUrl,
         description: p.description,
         isCombo: p.isCombo,
         yield: null,
         unit: null,
-        components: edges.map((e) => this.toComponent(e, graph, unitBySub)),
+        components: this.visibles(edges, graph, unitBySub, ocultos),
         comboItems,
         preparationSteps: p.preparationSteps,
       };
     });
 
-    const subproductEntries: RecipeBookEntry[] = subproducts.map((s) => {
+    const subproductEntries: RecipeBookEntry[] = subproducts
+      .filter((s) => s.showInKitchen)
+      .map((s) => {
       const edges = graph.edgesByParent.get(`s:${s.id}`) ?? [];
       return {
         kind: 'SUBPRODUCT',
@@ -75,11 +89,12 @@ export class RecipeBookService {
         name: s.name,
         category: null,
         imageUrl: null,
+        prepImageUrl: s.prepImageUrl,
         description: null,
         isCombo: false,
         yield: Number(s.yield),
         unit: s.unit,
-        components: edges.map((e) => this.toComponent(e, graph, unitBySub)),
+        components: this.visibles(edges, graph, unitBySub, ocultos),
         comboItems: [],
         preparationSteps: s.preparationSteps,
       };
@@ -99,6 +114,22 @@ export class RecipeBookService {
       subproducts: subproductEntries,
       asOf: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Los componentes que el cocinero SÍ tiene que ver. Un empaque o un
+   * recipiente está en la receta para costear, no para prepararse: en la ficha
+   * de la biblia solo agrega ruido a la lista de "Lleva".
+   */
+  private visibles(
+    edges: RecipeEdgeNode[],
+    graph: RecipeGraph,
+    unitBySub: Map<string, string>,
+    ocultos: ReadonlySet<string>,
+  ): RecipeComponent[] {
+    return edges
+      .filter((e) => !ocultos.has(`${e.child.kind === 'ingredient' ? 'i' : 's'}:${e.child.id}`))
+      .map((e) => this.toComponent(e, graph, unitBySub));
   }
 
   private toComponent(

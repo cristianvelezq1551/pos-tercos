@@ -9,6 +9,7 @@ const base: Omit<Product, 'id' | 'name' | 'category'> = {
   preparationSteps: [],
   basePrice: 12000,
   imageUrl: null,
+  prepImageUrl: null,
   emoji: null,
   modifiersEnabled: false,
   isCombo: false,

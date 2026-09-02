@@ -104,15 +104,28 @@ export class InventoryService {
    *   comportamiento de siempre: se calcula acá.
    */
   async listStockables(
-    opts: { onlyActive?: boolean; lowStock?: boolean; negative?: boolean } = {},
+    opts: {
+      onlyActive?: boolean;
+      lowStock?: boolean;
+      negative?: boolean;
+      /** Solo lo que el cocinero tiene que ver: deja fuera lo que existe únicamente
+       *  para costear (empaques, recipientes) y la reventa, que no se prepara. */
+      onlyKitchen?: boolean;
+    } = {},
     preloadedStock?: ReadonlyMap<string, number>,
   ): Promise<Stockable[]> {
-    const ingredientWhere: Prisma.IngredientWhereInput = opts.onlyActive ? { isActive: true } : {};
+    const ingredientWhere: Prisma.IngredientWhereInput = {
+      ...(opts.onlyActive ? { isActive: true } : {}),
+      ...(opts.onlyKitchen ? { showInKitchen: true } : {}),
+    };
     const productWhere: Prisma.ProductWhereInput = {
       directResale: true,
       ...(opts.onlyActive ? { isActive: true } : {}),
     };
-    const subproductWhere: Prisma.SubproductWhereInput = opts.onlyActive ? { isActive: true } : {};
+    const subproductWhere: Prisma.SubproductWhereInput = {
+      ...(opts.onlyActive ? { isActive: true } : {}),
+      ...(opts.onlyKitchen ? { showInKitchen: true } : {}),
+    };
 
     const [ingredients, products, subproducts, stockMap] = await Promise.all([
       this.prisma.ingredient.findMany({ where: ingredientWhere, orderBy: { name: 'asc' } }),
