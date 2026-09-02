@@ -4178,6 +4178,51 @@ cazar de un vistazo. El detalle completo va en el `title` de cada celda.
 adentro con su altura natural. Se corrige con `[&_input]:h-full` — vale para
 cualquier otro consumidor de ese componente.
 
+
+## 7.v58 La biblia muestra la foto, y se busca en existencias y movimientos (2026-09-01)
+
+> Tres pedidos del ensayo; dos entraron acá y los dos son de render (sin API,
+> sin esquema, sin migración). Verificado: typecheck 13/13, lint 0, unit admin
+> 307 (+5), y el navegador real — admin a 1440 px y cocina a 390 px, con una
+> foto de verdad descargada (320×200, no un `<img>` roto).
+
+### La foto ya viajaba y nadie la pintaba
+`RecipeBookEntry.imageUrl` sale del backend desde que existe la biblia, pero ni
+la lista ni el detalle de `apps/cocina` la renderizaban: el cocinero leía "qué
+lleva" sin poder ver **cómo se ve armado**. Ahora va la miniatura en la fila y
+la foto grande arriba del detalle. Es la MISMA foto de la carta —no un campo
+nuevo—, así que quien ya subió imágenes de producto no tiene que hacer nada.
+
+⚠️ Lo que NO cubre, y sería campo nuevo (migración): una foto de la
+**preparación** distinta de la del producto, una foto **por paso**, y la foto de
+un **subproducto** (`imageUrl` es siempre `null` para ellos en el DTO). El
+**texto** sí está resuelto desde antes: `preparationSteps` (el "Paso a paso" que
+el admin edita en la ficha del producto y del subproducto).
+
+### Buscador en Existencias y en Movimientos
+Mismo criterio que §7.v57 (`lib/buscar`) y el mismo envoltorio cliente. Dos
+cosas propias de estas pantallas:
+
+- **Movimientos busca en el ítem, la nota y la persona** — es como se busca un
+  movimiento ("la merma de pan", "lo que ajustó Rony"). Y **busca solo dentro
+  de lo cargado**: la página trae las últimas 200 del filtro elegido, así que el
+  contador dice "7 de 19 movimientos cargados". Creer que recorrió toda la
+  historia y no encontrar nada es peor que no buscar.
+- **`MovementsTable` recibe `reversalSource`**: el cómputo de "cuánto se
+  devolvió ya de cada merma" tiene que mirar la lista COMPLETA. Con las filas
+  filtradas, una merma cuya reversa quedó fuera del filtro volvía a ofrecer
+  "Anular" — y anular dos veces devuelve el stock dos veces sobre una tabla
+  insert-only. Hay regresión y se verificó que falla sin el arreglo.
+
+### Pendiente que NO se puede hacer sin tocar la base
+Elegir **qué insumos ve la cocina**: hoy `/kitchen/stock` devuelve todos los
+insumos, todos los subproductos y toda la reventa activa, y la biblia lista como
+componente cualquier cosa que esté en la receta —incluidos los que están ahí
+solo para costear (recipientes, empaques)—. No hay ningún campo que distinga
+"esto es de cocina" de "esto es de costeo": haría falta uno nuevo
+(`show_in_kitchen`, aditivo con default `true`, que no toca ningún dato ya
+cargado). Queda a decisión del dueño.
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)

@@ -80,7 +80,18 @@ export function BibliaView() {
                   onClick={() => setSelected(e)}
                   className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
                 >
-                  <span className="font-medium text-foreground">{e.name}</span>
+                  <span className="flex min-w-0 items-center gap-3">
+                    {e.imageUrl ? (
+                      <img
+                        src={e.imageUrl}
+                        alt=""
+                        aria-hidden
+                        className="h-10 w-10 shrink-0 rounded-md border border-border object-cover"
+                        loading="lazy"
+                      />
+                    ) : null}
+                    <span className="truncate font-medium text-foreground">{e.name}</span>
+                  </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {e.preparationSteps.length > 0
                       ? `${e.preparationSteps.length} paso${e.preparationSteps.length === 1 ? '' : 's'}`

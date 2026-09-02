@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { Box } from 'lucide-react';
-import { StockTable } from '../../../features/inventory';
+import { StockList } from '../../../features/inventory';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import type { Stockable } from '@pos-tercos/types';
@@ -50,7 +50,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       />
       <Container size="7xl" padY="md">
         {Array.isArray(result) ? (
-          <StockTable rows={result} />
+          <StockList rows={result} />
         ) : (
           <p
             role="alert"

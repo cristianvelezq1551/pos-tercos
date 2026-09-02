@@ -17,6 +17,17 @@ export function RecipeDetail({
   return (
     <Dialog open={open} onClose={onClose} title={entry.name} maxWidth="max-w-lg">
       <div className="space-y-5">
+        {/* La foto del producto (la misma de la carta) es la referencia de
+            armado: cómo se ve el plato terminado. Ya venía en el DTO y no se
+            pintaba en ningún lado de la cocina. */}
+        {entry.imageUrl ? (
+          <img
+            src={entry.imageUrl}
+            alt={`Así se ve ${entry.name}`}
+            className="max-h-56 w-full rounded-lg border border-border object-cover"
+            loading="lazy"
+          />
+        ) : null}
         {entry.kind === 'SUBPRODUCT' && entry.yield ? (
           <p className="text-xs text-muted-foreground">
             Rinde <b className="text-foreground">{fmt(entry.yield)}</b>{' '}
