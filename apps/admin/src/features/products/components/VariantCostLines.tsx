@@ -71,10 +71,10 @@ export function VariantCostLine({ resumen }: { resumen: VariantesResumen }) {
   const costos = resumen.items.map((v) => v.cost);
   return (
     <span
-      className="mt-0.5 block text-[11px] font-normal text-muted-foreground"
+      className="mt-0.5 block text-[11px] font-normal leading-tight text-muted-foreground"
       title={detalle(resumen)}
     >
-      con variante {rango(costos, formatCop)}
+      con variante <span className="whitespace-nowrap">{rango(costos, formatCop)}</span>
     </span>
   );
 }
@@ -86,11 +86,18 @@ export function VariantMarginLine({ resumen }: { resumen: VariantesResumen }) {
     .filter((m): m is number => m !== null);
   if (margenes.length === 0) return null;
   const peor = Math.min(...margenes);
+  const mejor = Math.max(...margenes);
   const tone = MARGIN_TONE_CLASS[marginTone(peor)];
+  // Un solo «%» al final: con uno por extremo el rango se parte en tres líneas
+  // dentro de una columna angosta y la fila crece al doble.
+  const texto =
+    Math.abs(mejor - peor) < 0.05
+      ? `${peor.toFixed(1)}%`
+      : `${peor.toFixed(1)} – ${mejor.toFixed(1)}%`;
   return (
-    <span className="mt-0.5 block text-[11px] font-normal" title={detalle(resumen)}>
+    <span className="mt-0.5 block text-[11px] font-normal leading-tight" title={detalle(resumen)}>
       <span className="text-muted-foreground">con variante </span>
-      <span className={tone}>{rango(margenes, (n) => `${n.toFixed(1)}%`)}</span>
+      <span className={`${tone} whitespace-nowrap`}>{texto}</span>
     </span>
   );
 }
