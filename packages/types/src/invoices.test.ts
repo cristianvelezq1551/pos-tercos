@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_PROOFS_POR_PAGO } from './finance';
 import {
   ConfirmInvoiceItemSchema,
   ConfirmInvoicePaymentSchema,
   PendingPaymentProofKeySchema,
+  confirmProofKeys,
 } from './invoices';
 
 /**
@@ -103,14 +105,46 @@ describe('ConfirmInvoicePaymentSchema — el comprobante es obligatorio', () => 
     expect(reasons(r)).toMatch(/Falta el comprobante/);
   });
 
-  it('rechaza mandar los DOS comprobantes', () => {
+  it('acepta la foto de la factura JUNTO con capturas subidas', () => {
+    // Antes era excluyente, pero solo porque cabía UNA imagen. La foto de la
+    // factura como respaldo y la captura de la transferencia como comprobante
+    // del pago es un par corriente.
+    expect(
+      ConfirmInvoicePaymentSchema.safeParse({
+        ...pago,
+        proofStorageKeys: [proofKey],
+        useInvoicePhotoAsProof: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('acepta varias imágenes subidas', () => {
+    const otra = proofKey.replace(/[0-9a-f]{4}\./, 'abcd.');
+    expect(
+      ConfirmInvoicePaymentSchema.safeParse({
+        ...pago,
+        proofStorageKeys: [proofKey, otra],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rechaza pasarse del tope contando la foto de la factura', () => {
+    const claves = Array.from({ length: MAX_PROOFS_POR_PAGO }, (_, i) =>
+      proofKey.replace(/[0-9a-f]{4}\./, `a${String(i).padStart(3, '0')}.`),
+    );
     const r = ConfirmInvoicePaymentSchema.safeParse({
       ...pago,
-      proofStorageKey: proofKey,
+      proofStorageKeys: claves,
       useInvoicePhotoAsProof: true,
     });
     expect(r.success).toBe(false);
-    expect(reasons(r)).toMatch(/no ambas/);
+    expect(reasons(r)).toMatch(/hasta 8 comprobantes/);
+  });
+
+  it('confirmProofKeys normaliza la clave suelta legacy', () => {
+    expect(confirmProofKeys({ proofStorageKey: proofKey })).toEqual([proofKey]);
+    expect(confirmProofKeys({ proofStorageKeys: [proofKey] })).toEqual([proofKey]);
+    expect(confirmProofKeys({})).toEqual([]);
   });
 
   it('acepta el comprobante subido a mano', () => {

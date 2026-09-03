@@ -1,8 +1,10 @@
 'use client';
 
+import { MAX_PROOFS_POR_PAGO } from '@pos-tercos/types';
 import { FormField, Input } from '@pos-tercos/ui';
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { PocketPaymentField } from '../../../components/PocketPaymentField';
+import { ProofFilesField } from '../../../components/ProofFilesField';
 import { ymdLocalToday } from '../../../lib/dates';
 import { getTreasuryAnchorDate } from '../api/client';
 
@@ -15,7 +17,7 @@ export interface ConfirmPaymentState {
   /** YYYY-MM-DD, default hoy. */
   paidAt: string;
   note: string;
-  proofFile: File | null;
+  proofFiles: File[];
   /** Flujo con foto: usar la foto de la factura como comprobante. */
   useInvoicePhoto: boolean;
 }
@@ -27,7 +29,7 @@ export function initialConfirmPaymentState(hasInvoicePhoto: boolean): ConfirmPay
     bankAmount: 0,
     paidAt: ymdLocalToday(),
     note: '',
-    proofFile: null,
+    proofFiles: [],
     useInvoicePhoto: hasInvoicePhoto,
   };
 }
@@ -57,10 +59,7 @@ export function PaymentAtConfirmSection({
 
   const set = (patch: Partial<ConfirmPaymentState>): void => onChange({ ...state, ...patch });
 
-  const onFile = (e: ChangeEvent<HTMLInputElement>): void =>
-    set({ proofFile: e.target.files?.[0] ?? null });
-
-  const usesInvoicePhoto = hasInvoicePhoto && state.useInvoicePhoto;
+  const usaFotoDeLaFactura = hasInvoicePhoto && state.useInvoicePhoto;
   const beforeAnchor = anchorDate !== null && state.paidAt < anchorDate;
 
   return (
@@ -130,26 +129,25 @@ export function PaymentAtConfirmSection({
               <span className="text-sm text-foreground">
                 Usar la foto de la factura como comprobante
                 <span className="block text-xs text-muted-foreground">
-                  Si el pago fue por transferencia, desmarca y sube la captura del comprobante.
+                  Puedes dejarla marcada y sumar además la captura de la transferencia.
                 </span>
               </span>
             </label>
           )}
 
-          {!usesInvoicePhoto && (
-            <FormField
-              label="Comprobante del pago"
-              required
-              hint="Obligatorio. JPEG, PNG o WebP, máx 10 MB."
-            >
-              <Input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={onFile}
-                disabled={disabled}
-              />
-            </FormField>
-          )}
+          <ProofFilesField
+            label={
+              usaFotoDeLaFactura
+                ? 'Otros comprobantes del pago (opcional)'
+                : 'Comprobante del pago'
+            }
+            required={!usaFotoDeLaFactura}
+            // La foto de la factura ocupa un lugar del tope.
+            max={MAX_PROOFS_POR_PAGO - (usaFotoDeLaFactura ? 1 : 0)}
+            files={state.proofFiles}
+            onChange={(proofFiles) => set({ proofFiles })}
+            disabled={disabled}
+          />
         </div>
       )}
     </section>

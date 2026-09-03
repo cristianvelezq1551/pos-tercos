@@ -4426,6 +4426,16 @@ cargado. Verificado sobre una tabla CON datos, no solo sobre una vacía.
   llamadas a la API — la pantalla es la misma porque la pregunta es la misma.
 - Las listas de pagos muestran el conteo ("2 comprobantes") en vez de un sí/no.
 
+### La factura que NACE pagada también admite varias
+El bloque `payment` del confirm acepta `proofStorageKeys[]` (la clave suelta
+`proofStorageKey` se sigue aceptando: la API y el admin se despliegan por
+separado). Y **se relajó el XOR**: la foto de la factura y las capturas del
+pago ahora se pueden **combinar** — la regla es "al menos una fuente", no
+"exactamente una". Era excluyente solo porque cabía una imagen, y "la foto del
+papel + la captura de la transferencia" es un par corriente. El confirm copia
+cada fuente a `invoice-payments/{id}` (la foto original nunca se aliasa) y
+reparte el resultado entre la columna vieja y la de extras.
+
 ### La prueba que importa: que se VEAN
 `apps/admin/e2e/comprobantes-multiples.spec.ts` (5 casos, navegador real) mide
 `naturalWidth` de cada miniatura, no `toBeVisible()`: la galería pide las

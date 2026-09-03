@@ -96,6 +96,18 @@ describe('Comprobantes múltiples por pago E2E', () => {
     return id;
   };
 
+  /** Deja una foto de factura en storage y devuelve su key (para copiarla
+   *  como comprobante). Se sube por el endpoint de comprobante pendiente y se
+   *  reusa la key: al service solo le importa que exista en storage. */
+  const guardarFotoDeFactura = async (): Promise<string> => {
+    const up = await request
+      .post('/invoices/upload-payment-proof')
+      .set(auth())
+      .attach('proof', PNG_1PX, { filename: 'foto.png', contentType: 'image/png' })
+      .expect(201);
+    return up.body.proofStorageKey as string;
+  };
+
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());
     await cleanDb(prisma);
@@ -342,6 +354,126 @@ describe('Comprobantes múltiples por pago E2E', () => {
       const res = await request.delete(`/payables/${id}/proofs/0`).set(auth()).expect(200);
       expect(res.body.hasProof).toBe(false);
       expect(res.body.proofsCount).toBe(0);
+    });
+  });
+
+  describe('la factura que NACE pagada', () => {
+    /** Sube un comprobante pendiente y devuelve su key. */
+    const preSubir = async (): Promise<string> => {
+      const up = await request
+        .post('/invoices/upload-payment-proof')
+        .set(auth())
+        .attach('proof', PNG_1PX, { filename: 'c.png', contentType: 'image/png' })
+        .expect(201);
+      return up.body.proofStorageKey as string;
+    };
+
+    const confirmar = async (payment: Record<string, unknown>): Promise<string> => {
+      const draft = await prisma.invoice.create({
+        data: {
+          status: 'PENDING_REVIEW',
+          aiModelUsed: 'test-mock',
+          aiExtractionJson: {},
+          uploadedById: duenoId,
+          photoStorageKey: await guardarFotoDeFactura(),
+        },
+      });
+      await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set(auth())
+        .send({
+          supplierNit: '900111222-3',
+          supplierName: 'Proveedor Comprobantes',
+          total: MERCANCIA,
+          items: [
+            {
+              entityType: 'INGREDIENT',
+              ingredientId,
+              descriptionRaw: 'Insumo',
+              quantity: 10,
+              unit: 'kg',
+              unitPrice: MERCANCIA / 10,
+              total: MERCANCIA,
+            },
+          ],
+          payment,
+        })
+        .expect(201);
+      return draft.id;
+    };
+
+    it('nace con VARIOS comprobantes subidos', async () => {
+      const id = await confirmar({
+        proofStorageKeys: [await preSubir(), await preSubir()],
+        cashAmount: 0,
+        bankAmount: MERCANCIA,
+      });
+      const inv = await prisma.invoice.findUniqueOrThrow({ where: { id } });
+      expect(inv.paymentStatus).toBe('PAID');
+      expect(inv.paymentProofKey).not.toBeNull();
+      expect(inv.paymentProofExtraKeys).toHaveLength(1);
+      // Son COPIAS en invoice-payments/{id}, no las pendientes.
+      for (const k of [inv.paymentProofKey!, ...inv.paymentProofExtraKeys]) {
+        expect(k).toContain(`invoice-payments/${id}`);
+      }
+    });
+
+    it('la foto de la factura y las capturas se COMBINAN', async () => {
+      const id = await confirmar({
+        useInvoicePhotoAsProof: true,
+        proofStorageKeys: [await preSubir()],
+        cashAmount: 0,
+        bankAmount: MERCANCIA,
+      });
+      const res = await request.get(`/invoices/${id}`).set(auth()).expect(200);
+      expect(res.body.paymentProofsCount).toBe(2);
+      // Las dos se pueden abrir.
+      await request.get(`/invoices/${id}/payment-proof/0`).set(auth()).expect(200);
+      await request.get(`/invoices/${id}/payment-proof/1`).set(auth()).expect(200);
+    });
+
+    it('la clave suelta legacy sigue funcionando (admin viejo, API nueva)', async () => {
+      const id = await confirmar({
+        proofStorageKey: await preSubir(),
+        cashAmount: 0,
+        bankAmount: MERCANCIA,
+      });
+      const inv = await prisma.invoice.findUniqueOrThrow({ where: { id } });
+      expect(inv.paymentProofKey).not.toBeNull();
+      expect(inv.paymentProofExtraKeys).toEqual([]);
+    });
+
+    it('sin ninguna fuente de comprobante es 400', async () => {
+      const draft = await prisma.invoice.create({
+        data: {
+          status: 'PENDING_REVIEW',
+          aiModelUsed: 'test-mock',
+          aiExtractionJson: {},
+          uploadedById: duenoId,
+        },
+      });
+      const res = await request
+        .post(`/invoices/${draft.id}/confirm`)
+        .set(auth())
+        .send({
+          supplierNit: '900111222-3',
+          supplierName: 'Proveedor Comprobantes',
+          total: MERCANCIA,
+          items: [
+            {
+              entityType: 'INGREDIENT',
+              ingredientId,
+              descriptionRaw: 'Insumo',
+              quantity: 10,
+              unit: 'kg',
+              unitPrice: MERCANCIA / 10,
+              total: MERCANCIA,
+            },
+          ],
+          payment: { cashAmount: 0, bankAmount: MERCANCIA },
+        })
+        .expect(400);
+      expect(JSON.stringify(res.body)).toMatch(/Falta el comprobante/);
     });
   });
 });

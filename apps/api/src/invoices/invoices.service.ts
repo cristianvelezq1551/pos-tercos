@@ -10,6 +10,7 @@ import {
   type CostIncreaseItem,
 } from '@pos-tercos/domain';
 import {
+  confirmProofKeys,
   INVOICE_STATUS_LABELS,
   ExtractedInvoiceSchema,
   type ConfirmInvoice,
@@ -34,6 +35,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SuppliersService } from '../suppliers/suppliers.service';
 import { assertPuedeGestionarPago, assertTotalCoherente } from './invoice-rules';
 import { includeFull, toInvoiceDto } from './invoices.mappers';
+import { toSlots } from '../common/proof-images';
 
 /** Suba de costo (vs último conocido) que dispara alerta WhatsApp al dueño. */
 const COST_INCREASE_ALERT_PCT = 0.15;
@@ -65,15 +67,17 @@ interface ConfirmProduct {
 
 /** Pago resuelto para escribir en el header al confirmar (factura nace pagada). */
 interface PreparedPayment {
-  proofKey: string;
+  /** Copias en `invoice-payments/{id}`, en orden. La primera va a la columna
+   *  de siempre y el resto a la de extras. */
+  proofKeys: string[];
   paidAt: Date;
   cash: number;
   bank: number;
   pocket: 'EFECTIVO' | 'CUENTA' | 'MIXTO';
   note: string | null;
-  /** Key pre-subida a borrar recién cuando la tx confirme (no antes: si la tx
-   *  falla el usuario reintenta sin re-subir). */
-  pendingKeyToCleanup: string | null;
+  /** Keys pre-subidas a borrar recién cuando la tx confirme (no antes: si la
+   *  tx falla el usuario reintenta sin re-subir). */
+  pendingKeysToCleanup: string[];
 }
 
 /**
@@ -459,11 +463,13 @@ export class InvoicesService {
     } catch (err) {
       // La copia del comprobante quedó huérfana — limpiarla. El pre-subido
       // original NO se toca (el usuario reintenta sin re-subir).
-      if (payment) await this.storage.delete(payment.proofKey).catch(() => {});
+      for (const key of payment?.proofKeys ?? []) {
+        await this.storage.delete(key).catch(() => {});
+      }
       throw err;
     }
-    if (payment?.pendingKeyToCleanup) {
-      await this.storage.delete(payment.pendingKeyToCleanup).catch(() => {});
+    for (const key of payment?.pendingKeysToCleanup ?? []) {
+      await this.storage.delete(key).catch(() => {});
     }
 
     await this.audit.log({
@@ -488,7 +494,8 @@ export class InvoicesService {
         metadata: {
           total: input.total,
           paidAt: payment.paidAt.toISOString(),
-          proofImageKey: payment.proofKey,
+          proofImageKey: toSlots(payment.proofKeys).primary,
+          proofsCount: payment.proofKeys.length,
           pocket: payment.pocket,
           cashAmount: payment.cash,
           bankAmount: payment.bank,
@@ -614,33 +621,47 @@ export class InvoicesService {
     }
     const split = resolvePocketSplit(p.cashAmount, p.bankAmount, input.total);
 
-    const sourceKey = p.useInvoicePhotoAsProof ? photoStorageKey : (p.proofStorageKey as string);
-    if (!sourceKey) {
-      throw new BadRequestException(
-        'Esta factura no tiene foto para usar como comprobante — sube una imagen del comprobante.',
-      );
+    // La foto de la factura va primero (es el documento) y después las
+    // capturas del pago, en el mismo orden en que se ven en el formulario.
+    const subidas = confirmProofKeys(p);
+    const fuentes: string[] = [];
+    if (p.useInvoicePhotoAsProof) {
+      if (!photoStorageKey) {
+        throw new BadRequestException(
+          'Esta factura no tiene foto para usar como comprobante — sube una imagen del comprobante.',
+        );
+      }
+      fuentes.push(photoStorageKey);
     }
-    const buffer = await this.storage.get(sourceKey).catch(() => null);
-    if (!buffer) {
-      throw new BadRequestException(
-        p.useInvoicePhotoAsProof
-          ? 'La foto de la factura ya no está disponible. Vuelve a subirla.'
-          : 'El comprobante ya no está disponible. Vuelve a subirlo.',
-      );
+    fuentes.push(...subidas);
+
+    const proofKeys: string[] = [];
+    for (const sourceKey of fuentes) {
+      const buffer = await this.storage.get(sourceKey).catch(() => null);
+      if (!buffer) {
+        throw new BadRequestException(
+          sourceKey === photoStorageKey
+            ? 'La foto de la factura ya no está disponible. Vuelve a subirla.'
+            : 'Uno de los comprobantes ya no está disponible. Vuelve a subirlo.',
+        );
+      }
+      const ext = sourceKey.split('.').pop() ?? 'jpg';
+      const mime = detectImageMime(buffer) ?? mimeForExtension(ext);
+      const stored = await this.storage.put(`invoice-payments/${invoiceId}`, buffer, mime, ext);
+      proofKeys.push(stored.key);
     }
-    const ext = sourceKey.split('.').pop() ?? 'jpg';
-    const mime = detectImageMime(buffer) ?? mimeForExtension(ext);
-    const stored = await this.storage.put(`invoice-payments/${invoiceId}`, buffer, mime, ext);
 
     const paidAt = p.paidAt ? new Date(`${p.paidAt}T12:00:00.000Z`) : new Date();
     return {
-      proofKey: stored.key,
+      proofKeys,
       paidAt,
       cash: split.cash,
       bank: split.bank,
       pocket: pocketOf(split),
       note: p.note?.trim() || null,
-      pendingKeyToCleanup: p.useInvoicePhotoAsProof ? null : (p.proofStorageKey as string),
+      // La foto de la factura NO se borra: se copió, y la original es el
+      // documento. Las pre-subidas del pago sí (ya cumplieron su función).
+      pendingKeysToCleanup: subidas,
     };
   }
 
@@ -690,7 +711,8 @@ export class InvoicesService {
           ? {
               paymentStatus: 'PAID',
               paidAt: payment.paidAt,
-              paymentProofKey: payment.proofKey,
+              paymentProofKey: toSlots(payment.proofKeys).primary,
+              paymentProofExtraKeys: toSlots(payment.proofKeys).extras,
               paymentActorId: userId,
               paymentNote: payment.note,
               paymentPocket: payment.pocket,
