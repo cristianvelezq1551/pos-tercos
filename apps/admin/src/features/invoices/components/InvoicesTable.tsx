@@ -3,10 +3,10 @@ import {
   Badge,
   Button,
   DataTable,
+  DateTimeCell,
   EmptyState,
   Money,
   StatusBadge,
-  formatDate,
   type DataTableColumn,
   type StatusMapping,
 } from '@pos-tercos/ui';
@@ -31,9 +31,7 @@ export function InvoicesTable({ rows }: InvoicesTableProps) {
       key: 'date',
       header: 'Fecha',
       cell: (inv) => (
-        <time className="tabular text-xs text-muted-foreground" dateTime={inv.createdAt}>
-          {formatDate(inv.createdAt, 'datetime')}
-        </time>
+        <DateTimeCell value={inv.createdAt} />
       ),
     },
     {

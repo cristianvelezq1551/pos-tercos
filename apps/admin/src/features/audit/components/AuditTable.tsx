@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   DataTable,
+  DateTimeCell,
   Dialog,
   EmptyState,
   formatDate,
@@ -38,9 +39,7 @@ export function AuditTable({ rows }: AuditTableProps) {
       key: 'date',
       header: 'Fecha',
       cell: (entry) => (
-        <time className="tabular text-xs text-muted-foreground" dateTime={entry.createdAt}>
-          {formatDate(entry.createdAt, 'datetime')}
-        </time>
+        <DateTimeCell value={entry.createdAt} />
       ),
     },
     {

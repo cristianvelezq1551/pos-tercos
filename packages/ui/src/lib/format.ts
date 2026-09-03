@@ -164,7 +164,14 @@ export function pluralizeUnit(unit: string | null | undefined, quantity: number)
   return KNOWN_PLURALS[u.toLowerCase()] ?? u;
 }
 
-export type DateFormat = 'short' | 'long' | 'datetime' | 'time' | 'time-short' | 'relative';
+export type DateFormat =
+  | 'short'
+  | 'long'
+  | 'datetime'
+  | 'datetime-compact'
+  | 'time'
+  | 'time-short'
+  | 'relative';
 
 /**
  * Formatea fechas. Acepta Date o string ISO.
@@ -172,6 +179,8 @@ export type DateFormat = 'short' | 'long' | 'datetime' | 'time' | 'time-short' |
  * - `short`: 04 may 2026
  * - `long`: lunes 04 de mayo 2026
  * - `datetime`: 04 may 2026 14:32
+ * - `datetime-compact`: 04 may, 14:32 — sin año, para que quepa en una línea
+ *   en pantalla de teléfono. El año lo da el contexto de la pantalla.
  * - `time`: 14:32:18
  * - `time-short`: 14:32
  * - `relative`: "hace 5 min" / "en 2 h"
@@ -222,6 +231,26 @@ export function formatDate(
         minute: '2-digit',
         hour12: false,
       }).format(d);
+    case 'datetime-compact': {
+      // Armado por partes a propósito: el patrón de es-CO intercala "de"
+      // ("2 de sept, 16:05") y en un teléfono cada carácter cuenta — el
+      // objetivo es que la fecha quepa en UNA línea al lado de su etiqueta.
+      const parts = new Intl.DateTimeFormat('es-CO', {
+        timeZone: BUSINESS_TIME_ZONE,
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(d);
+      const get = (type: Intl.DateTimeFormatPartTypes): string =>
+        parts.find((x) => x.type === type)?.value ?? '';
+      const mes = get('month').replace(/\.$/, '');
+      // `day: '2-digit'` no garantiza el cero a la izquierda en es-CO cuando se
+      // pide por partes; se fuerza para que la columna quede alineada.
+      const dia = get('day').padStart(2, '0');
+      return `${dia} ${mes}, ${get('hour')}:${get('minute')}`;
+    }
     case 'time':
       return new Intl.DateTimeFormat('es-CO', {
         timeZone: BUSINESS_TIME_ZONE,

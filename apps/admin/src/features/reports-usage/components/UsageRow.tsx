@@ -2,45 +2,38 @@ import type { InventoryUsageRow } from '@pos-tercos/types';
 import { StockableTypeBadge } from '../../../components/StockableTypeBadge';
 import { formatCop, formatNumber } from '../../../lib/format';
 
-export function UsageRow({ row }: { row: InventoryUsageRow }) {
-  return (
-    <tr className="transition-colors hover:bg-muted/40">
-      <Td>
-        <StockableTypeBadge type={row.entityType} size="sm" iconOnly />
-      </Td>
-      <Td>
-        <span className="font-medium text-foreground">{row.name}</span>{' '}
-        <span className="text-xs text-muted-foreground">({row.unit})</span>
-      </Td>
-      <Td mono align="right">{formatQty(row.sales)}</Td>
-      <Td mono align="right">{formatQty(row.productionOut)}</Td>
-      <Td mono align="right">
-        <span className={row.waste > 0 ? 'text-amber-400' : undefined}>{formatQty(row.waste)}</span>
-      </Td>
-      <Td mono align="right">
-        <span className={row.adjustments < 0 ? 'text-destructive' : undefined}>
-          {row.adjustments > 0 ? '+' : ''}
-          {formatQty(row.adjustments)}
-        </span>
-      </Td>
-      <Td mono align="right">
-        {row.wastePct === null ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          <span className={wastePctClass(row.wastePct)} title={explicaPct(row)}>
-            {formatNumber(row.wastePct * 100, { decimals: 1 })}%
-          </span>
-        )}
-      </Td>
-      <Td mono align="right">
-        <WasteCost row={row} />
-      </Td>
-      <Td mono align="right">
-        <ShortageCost row={row} />
-      </Td>
-    </tr>
-  );
-}
+/** Las celdas de una fila, para que las arme el DataTable (que en teléfono
+ *  las rinde como tarjeta en vez de una tabla de nueve columnas). */
+export const usageCells = {
+  type: (row: InventoryUsageRow) => <StockableTypeBadge type={row.entityType} size="sm" iconOnly />,
+  name: (row: InventoryUsageRow) => (
+    <>
+      <span className="font-medium text-foreground">{row.name}</span>{' '}
+      <span className="text-xs text-muted-foreground">({row.unit})</span>
+    </>
+  ),
+  sales: (row: InventoryUsageRow) => formatQty(row.sales),
+  production: (row: InventoryUsageRow) => formatQty(row.productionOut),
+  waste: (row: InventoryUsageRow) => (
+    <span className={row.waste > 0 ? 'text-amber-400' : undefined}>{formatQty(row.waste)}</span>
+  ),
+  adjustments: (row: InventoryUsageRow) => (
+    <span className={row.adjustments < 0 ? 'text-destructive' : undefined}>
+      {row.adjustments > 0 ? '+' : ''}
+      {formatQty(row.adjustments)}
+    </span>
+  ),
+  wastePct: (row: InventoryUsageRow) =>
+    row.wastePct === null ? (
+      <span className="text-muted-foreground">—</span>
+    ) : (
+      <span className={wastePctClass(row.wastePct)} title={explicaPct(row)}>
+        {formatNumber(row.wastePct * 100, { decimals: 1 })}%
+      </span>
+    ),
+  wasteCost: (row: InventoryUsageRow) => <WasteCost row={row} />,
+  shortageCost: (row: InventoryUsageRow) => <ShortageCost row={row} />,
+};
 
 function WasteCost({ row }: { row: InventoryUsageRow }) {
   if (row.wasteCost === null) {
@@ -110,26 +103,6 @@ function wastePctClass(pct: number): string {
 
 function formatQty(n: number): string {
   return formatNumber(n, { decimals: Number.isInteger(n) ? 0 : 2 });
-}
-
-function Td({
-  children,
-  align = 'left',
-  mono = false,
-}: {
-  children: React.ReactNode;
-  align?: 'left' | 'right';
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-3 py-2.5 ${align === 'right' ? 'text-right' : 'text-left'} ${
-        mono ? 'tabular-nums' : ''
-      }`}
-    >
-      {children}
-    </td>
-  );
 }
 
 /**

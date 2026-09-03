@@ -45,6 +45,7 @@ export {
   type SkeletonShape,
 } from './components/loading-skeleton';
 export { DataTable, type DataTableProps, type DataTableColumn } from './components/data-table';
+export { DateTimeCell, type DateTimeCellProps } from './components/date-time-cell';
 
 // ─── Forms ──────────────────────────────────────────────────────
 export { FormField, type FormFieldProps } from './components/form-field';

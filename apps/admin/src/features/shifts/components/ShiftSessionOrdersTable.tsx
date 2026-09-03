@@ -32,7 +32,11 @@ const SALE_STATUS_TONE: Record<string, string> = {
 
 const NON_REVENUE_SET = new Set<string>(NON_REVENUE_SALE_STATUSES);
 
+// Cuántas columnas cubre la fila de detalle. En teléfono se esconden cuatro
+// (tipo, cliente, método y hora), así que el detalle abarca las cuatro que
+// quedan; un colSpan de más deja una celda fantasma que corre la tabla.
 const COLSPAN = 8;
+const COLSPAN_MOVIL = 4;
 
 function StatusBadge({ status }: { status: string }) {
   const tone = SALE_STATUS_TONE[status] ?? 'bg-muted text-muted-foreground ring-border';
@@ -84,12 +88,12 @@ export function ShiftSessionOrdersTable({ orders }: { orders: ShiftSessionOrder[
           <tr>
             <Th aria-label="Expandir" />
             <Th>Recibo</Th>
-            <Th>Tipo</Th>
-            <Th>Cliente</Th>
-            <Th>Método</Th>
+            <Th soloAncho>Tipo</Th>
+            <Th soloAncho>Cliente</Th>
+            <Th soloAncho>Método</Th>
             <Th align="right">Total</Th>
             <Th>Estado</Th>
-            <Th>Hora</Th>
+            <Th soloAncho>Hora</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -119,9 +123,9 @@ export function ShiftSessionOrdersTable({ orders }: { orders: ShiftSessionOrder[
                       #{o.receiptNumber}
                     </span>
                   </Td>
-                  <Td>{TYPE_LABEL[o.type] ?? o.type}</Td>
-                  <Td>{o.customerName ?? '—'}</Td>
-                  <Td>
+                  <Td soloAncho>{TYPE_LABEL[o.type] ?? o.type}</Td>
+                  <Td soloAncho>{o.customerName ?? '—'}</Td>
+                  <Td soloAncho>
                     {o.payments.length > 1
                       ? 'Dividido'
                       : o.paymentMethod
@@ -153,11 +157,14 @@ export function ShiftSessionOrdersTable({ orders }: { orders: ShiftSessionOrder[
                   <Td>
                     <StatusBadge status={o.status} />
                   </Td>
-                  <Td>{formatDate(o.createdAt, 'datetime')}</Td>
+                  <Td soloAncho>{formatDate(o.createdAt, 'datetime')}</Td>
                 </tr>
                 {isOpen ? (
                   <tr className="bg-muted/20">
-                    <td colSpan={COLSPAN} className="px-4 py-4">
+                    <td colSpan={COLSPAN_MOVIL} className="px-4 py-4 sm:hidden">
+                      <OrderDetail order={o} />
+                    </td>
+                    <td colSpan={COLSPAN} className="hidden px-4 py-4 sm:table-cell">
                       <OrderDetail order={o} />
                     </td>
                   </tr>
@@ -314,17 +321,20 @@ function OrderDetail({ order }: { order: ShiftSessionOrder }) {
 function Th({
   children,
   align,
+  soloAncho,
   ...rest
 }: {
   children?: React.ReactNode;
   align?: 'right';
+  /** Se esconde en teléfono: el dato vive igual en el detalle de la fila. */
+  soloAncho?: boolean;
 } & React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
       scope="col"
       className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
         align === 'right' ? 'text-right' : 'text-left'
-      }`}
+      } ${soloAncho ? 'hidden sm:table-cell' : ''}`}
       {...rest}
     >
       {children}
@@ -349,16 +359,19 @@ function Td({
   children,
   align,
   mono,
+  soloAncho,
 }: {
   children: React.ReactNode;
   align?: 'right';
   mono?: boolean;
+  /** Par de su `Th soloAncho`: se esconde en teléfono. */
+  soloAncho?: boolean;
 }) {
   return (
     <td
       className={`px-4 py-3 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
         mono ? 'tabular-nums' : ''
-      }`}
+      } ${soloAncho ? 'hidden sm:table-cell' : ''}`}
     >
       {children}
     </td>

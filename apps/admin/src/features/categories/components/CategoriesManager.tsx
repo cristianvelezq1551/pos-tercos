@@ -121,7 +121,7 @@ export function CategoriesManager({ initial }: { initial: ProductCategory[] }) {
 
       <p className="text-xs text-muted-foreground">
         Al renombrar una categoría, todos sus productos se actualizan solos. No se puede borrar una
-        categoría que tenga productos: reasignálos o desactivala.
+        categoría que tenga productos: reasígnalos o desactívala.
       </p>
 
       <ConfirmDialog

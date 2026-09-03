@@ -1,6 +1,14 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Container, PageHeader, Section, formatCop, formatDate } from '@pos-tercos/ui';
+import {
+  Container,
+  DataTable,
+  PageHeader,
+  Section,
+  formatCop,
+  formatDate,
+  type DataTableColumn,
+} from '@pos-tercos/ui';
 import { SupplierForm, SupplierProductsTable } from '../../../../features/suppliers';
 import { ApiError, serverFetchJson } from '../../../../lib/api-server';
 import type { Invoice, Supplier, SupplierProduct } from '@pos-tercos/types';
@@ -56,59 +64,54 @@ export default async function EditSupplierPage({ params }: PageProps) {
                 Aún no hay facturas registradas para este proveedor.
               </div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-border bg-card">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-border text-sm">
-                    <thead className="bg-muted/40">
-                      <tr>
-                        <th className="caps px-4 py-2.5 text-left text-[0.6875rem] text-muted-foreground">
-                          Fecha
-                        </th>
-                        <th className="caps px-4 py-2.5 text-left text-[0.6875rem] text-muted-foreground">
-                          Número
-                        </th>
-                        <th className="caps px-4 py-2.5 text-left text-[0.6875rem] text-muted-foreground">
-                          Estado
-                        </th>
-                        <th className="caps px-4 py-2.5 text-right text-[0.6875rem] text-muted-foreground">
-                          Total
-                        </th>
-                        <th className="caps px-4 py-2.5 text-right text-[0.6875rem] text-muted-foreground">
-                          Acción
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {invoices.map((inv) => (
-                        <tr key={inv.id} className="transition-colors hover:bg-muted/40">
-                          <td className="px-4 py-3 text-foreground">
-                            {formatDate(inv.createdAt, 'short')}
-                          </td>
-                          <td className="px-4 py-3 text-foreground">
-                            {inv.invoiceNumber ?? <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-foreground">{STATUS_LABEL[inv.status]}</td>
-                          <td className="px-4 py-3 text-right tabular text-foreground">
-                            {inv.total !== null ? formatCop(inv.total) : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <Link
-                              href={`/invoices/${inv.id}`}
-                              className="text-sm font-semibold text-primary hover:underline"
-                            >
-                              Ver
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <SupplierInvoicesTable invoices={invoices} />
             )}
           </Section>
         </div>
       </Container>
     </>
   );
+}
+
+/** Las facturas del proveedor. En teléfono cada una es una tarjeta: cinco
+ *  columnas no caben en 390 px y las últimas quedaban fuera de la pantalla. */
+function SupplierInvoicesTable({ invoices }: { invoices: Invoice[] }) {
+  const columns: DataTableColumn<Invoice>[] = [
+    {
+      key: 'date',
+      header: 'Fecha',
+      primary: true,
+      cell: (inv) => (
+        <span className="font-medium text-foreground">{formatDate(inv.createdAt, 'short')}</span>
+      ),
+    },
+    {
+      key: 'number',
+      header: 'Número',
+      cell: (inv) => inv.invoiceNumber ?? <span className="text-muted-foreground">—</span>,
+    },
+    { key: 'status', header: 'Estado', cell: (inv) => STATUS_LABEL[inv.status] },
+    {
+      key: 'total',
+      header: 'Total',
+      align: 'right',
+      numeric: true,
+      cell: (inv) => (inv.total !== null ? formatCop(inv.total) : '—'),
+    },
+    {
+      key: 'action',
+      header: '',
+      align: 'right',
+      cell: (inv) => (
+        <Link
+          href={`/invoices/${inv.id}`}
+          className="text-sm font-semibold text-primary hover:underline"
+        >
+          Ver
+        </Link>
+      ),
+    },
+  ];
+
+  return <DataTable rows={invoices} columns={columns} rowKey={(inv) => inv.id} />;
 }

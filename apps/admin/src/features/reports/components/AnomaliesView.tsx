@@ -1,5 +1,6 @@
 import type { CashierAnomalies, ShiftAnomalyFlag } from '@pos-tercos/types';
-import { formatCop, formatDate } from '../../../lib/format';
+import { DataTable, DateTimeCell, type DataTableColumn } from '@pos-tercos/ui';
+import { formatCop } from '../../../lib/format';
 
 const FLAG_LABEL: Record<ShiftAnomalyFlag, string> = {
   diff_high: 'Descuadre fuera de norma',
@@ -79,68 +80,7 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
         </div>
       ) : null}
 
-      <div className="mt-4 overflow-hidden rounded-md border border-border">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <Th>Turno (apertura)</Th>
-                <Th align="right">Descuadre</Th>
-                <Th align="right">Anulaciones</Th>
-                <Th align="right">Cajón sin venta</Th>
-                <Th>Alertas</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {c.shifts.map((s, idx) => (
-                <tr
-                  key={s.shiftId}
-                  className={idx === 0 && s.flags.length > 0 ? 'bg-destructive/10' : ''}
-                >
-                  <Td>{formatDate(s.openedAt, 'datetime')}</Td>
-                  <Td align="right" mono>
-                    {s.difference !== null ? (
-                      <span
-                        className={
-                          Math.abs(s.difference) >= 5000 ? 'font-bold text-destructive' : ''
-                        }
-                      >
-                        {s.difference > 0 ? '+' : ''}
-                        {formatCop(s.difference)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </Td>
-                  <Td align="right" mono>
-                    {s.voidCount > 0 ? (
-                      <span className="font-medium text-warning">{s.voidCount}</span>
-                    ) : (
-                      s.voidCount
-                    )}
-                  </Td>
-                  <Td align="right" mono>
-                    {s.noSaleCount > 0 ? (
-                      <span className="font-medium text-warning">{s.noSaleCount}</span>
-                    ) : (
-                      s.noSaleCount
-                    )}
-                  </Td>
-                  <Td>
-                    {s.flags.length > 0 ? (
-                      <span className="text-xs text-destructive">
-                        {s.flags.map((f) => FLAG_LABEL[f]).join(' · ')}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ShiftsAnomalyTable shifts={c.shifts} />
     </section>
   );
 }
@@ -157,35 +97,68 @@ function BaselineCard({ label, value, hint }: { label: string; value: string; hi
   );
 }
 
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
-  return (
-    <th
-      scope="col"
-      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
+/** El histórico de turnos de un cajero. En teléfono cada turno es una
+ *  tarjeta: cinco columnas de números no caben en 390 px. */
+function ShiftsAnomalyTable({ shifts }: { shifts: CashierAnomalies['shifts'] }) {
+  const num = { align: 'right', numeric: true } as const;
+  const columns: DataTableColumn<CashierAnomalies['shifts'][number]>[] = [
+    {
+      key: 'opened',
+      header: 'Turno (apertura)',
+      primary: true,
+      cell: (s) => <DateTimeCell value={s.openedAt} className="text-sm text-foreground" />,
+    },
+    {
+      key: 'difference',
+      header: 'Descuadre',
+      ...num,
+      cell: (s) =>
+        s.difference !== null ? (
+          <span className={Math.abs(s.difference) >= 5000 ? 'font-bold text-destructive' : ''}>
+            {s.difference > 0 ? '+' : ''}
+            {formatCop(s.difference)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: 'voids',
+      header: 'Anulaciones',
+      ...num,
+      cell: (s) =>
+        s.voidCount > 0 ? (
+          <span className="font-medium text-warning">{s.voidCount}</span>
+        ) : (
+          s.voidCount
+        ),
+    },
+    {
+      key: 'noSale',
+      header: 'Cajón sin venta',
+      ...num,
+      cell: (s) =>
+        s.noSaleCount > 0 ? (
+          <span className="font-medium text-warning">{s.noSaleCount}</span>
+        ) : (
+          s.noSaleCount
+        ),
+    },
+    {
+      key: 'flags',
+      header: 'Alertas',
+      cell: (s) =>
+        s.flags.length > 0 ? (
+          <span className="text-xs text-destructive">
+            {s.flags.map((f) => FLAG_LABEL[f]).join(' · ')}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+  ];
 
-function Td({
-  children,
-  align,
-  mono,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-  mono?: boolean;
-}) {
   return (
-    <td
-      className={`px-3 py-2 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
-        mono ? 'tabular-nums' : ''
-      }`}
-    >
-      {children}
-    </td>
+    <DataTable rows={shifts} columns={columns} rowKey={(s) => s.shiftId} className="mt-4 rounded-md" />
   );
 }

@@ -216,6 +216,20 @@ describe('formatDate', () => {
     expect(out).toMatch(/14:32/);
   });
 
+  it('datetime-compact cabe en una línea de teléfono: sin año y sin "de"', () => {
+    const out = formatDate(new Date(2026, 4, 4, 14, 32), 'datetime-compact');
+    expect(out).toBe('04 may, 14:32');
+    // El largo importa: es lo que decide si la fecha se parte en dos renglones
+    // al lado de su etiqueta dentro de una tarjeta de 390 px.
+    expect(out.length).toBeLessThanOrEqual(15);
+    expect(out).not.toMatch(/2026/);
+  });
+
+  it('datetime-compact respeta la hora de Bogotá', () => {
+    // 03:00 UTC del 31 es todavía el 30 a las 10 pm en Bogotá.
+    expect(formatDate('2026-08-31T03:00:00.000Z', 'datetime-compact')).toBe('30 ago, 22:00');
+  });
+
   it('acepta un Date igual que un string', () => {
     expect(formatDate(new Date(2026, 4, 4), 'short')).toBe(formatDate('2026-05-04', 'short'));
   });

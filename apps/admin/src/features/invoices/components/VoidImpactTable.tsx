@@ -1,5 +1,8 @@
 import type { VoidInvoicePreview } from '@pos-tercos/types';
+import { DataTable, type DataTableColumn } from '@pos-tercos/ui';
 import { AlertTriangle } from 'lucide-react';
+
+type Linea = VoidInvoicePreview['lines'][number];
 
 /**
  * Qué le pasa al inventario si se anula.
@@ -9,6 +12,35 @@ import { AlertTriangle } from 'lucide-react';
  * negativo hace que la caja rechace el cobro de todo producto que lo use.
  */
 export function VoidImpactTable({ preview }: { preview: VoidInvoicePreview }) {
+  const columns: DataTableColumn<Linea>[] = [
+    { key: 'name', header: 'Ítem', primary: true, cell: (l) => l.name },
+    {
+      key: 'current',
+      header: 'Ahora',
+      align: 'right',
+      numeric: true,
+      cell: (l) => `${formatear(l.currentStock)} ${l.unit}`,
+    },
+    {
+      key: 'delta',
+      header: 'Se devuelve',
+      align: 'right',
+      numeric: true,
+      cell: (l) => <span className="text-destructive">{formatear(l.delta)}</span>,
+    },
+    {
+      key: 'resulting',
+      header: 'Queda en',
+      align: 'right',
+      numeric: true,
+      cell: (l) => (
+        <span className={l.resultingStock < 0 ? 'font-semibold text-destructive' : ''}>
+          {formatear(l.resultingStock)} {l.unit}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-3">
       {preview.goesNegative.length > 0 && (
@@ -26,75 +58,16 @@ export function VoidImpactTable({ preview }: { preview: VoidInvoicePreview }) {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-border">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <Th>Ítem</Th>
-                <Th align="right">Ahora</Th>
-                <Th align="right">Se devuelve</Th>
-                <Th align="right">Queda en</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {preview.lines.map((l) => (
-                <tr key={`${l.entityType}-${l.entityId}`}>
-                  <Td>{l.name}</Td>
-                  <Td align="right" mono>
-                    {formatear(l.currentStock)} {l.unit}
-                  </Td>
-                  <Td align="right" mono>
-                    <span className="text-destructive">{formatear(l.delta)}</span>
-                  </Td>
-                  <Td align="right" mono>
-                    <span className={l.resultingStock < 0 ? 'font-semibold text-destructive' : ''}>
-                      {formatear(l.resultingStock)} {l.unit}
-                    </span>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable
+        rows={preview.lines}
+        columns={columns}
+        rowKey={(l) => `${l.entityType}-${l.entityId}`}
+        className="rounded-lg"
+      />
     </div>
   );
 }
 
 function formatear(n: number): string {
   return n.toLocaleString('es-CO', { maximumFractionDigits: 4 });
-}
-
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
-  return (
-    <th
-      scope="col"
-      className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align,
-  mono,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-3 py-2 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
-        mono ? 'tabular-nums' : ''
-      }`}
-    >
-      {children}
-    </td>
-  );
 }

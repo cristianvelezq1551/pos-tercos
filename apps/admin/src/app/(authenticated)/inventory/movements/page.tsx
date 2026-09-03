@@ -151,8 +151,10 @@ function FiltersBar({
   type: string;
   filterName?: string;
 }) {
+  // En teléfono cada filtro va a lo ancho: dimensionados por su contenido
+  // quedaban de anchos distintos, uno debajo del otro, como una escalera.
   return (
-    <form className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-4">
+    <form className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:flex sm:flex-wrap sm:items-end [&_select]:w-full sm:[&_select]:w-auto">
       <FormField label="Insumo">
         <Select id="ingredient_id" name="ingredient_id" defaultValue={ingredientId}>
           <option value="">Todos los insumos</option>
@@ -192,7 +194,9 @@ function FiltersBar({
           ))}
         </Select>
       </FormField>
-      <Button type="submit">Aplicar</Button>
+      <Button type="submit" className="max-sm:w-full">
+        Aplicar
+      </Button>
       {ingredientId || productId || subproductId || type ? (
         <Link
           href="/inventory/movements"
