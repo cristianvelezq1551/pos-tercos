@@ -67,29 +67,37 @@ export function CatalogToolbar({
   // renglón de catálogo justo en la pantalla que menos alto tiene.
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5 sm:px-4">
-      <CategoryTab
-        label="Todo"
-        active={activeCategory === ALL_CATEGORIES && !searching}
-        onClick={() => onSelectCategory(ALL_CATEGORIES)}
-      />
-      {categories.map((c) => (
+      {/* Los chips se DESLIZAN en su fila. Envolviéndose, el último caía a un
+          segundo renglón y quedaba pegado al contador, como si fuera otra
+          cosa. Con muchas categorías esto no empeora: se arrastra. */}
+      <div className="sin-barra flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
         <CategoryTab
-          key={c}
-          label={c}
-          active={activeCategory === c && !searching}
-          onClick={() => onSelectCategory(c)}
+          label="Todo"
+          active={activeCategory === ALL_CATEGORIES && !searching}
+          onClick={() => onSelectCategory(ALL_CATEGORIES)}
         />
-      ))}
+        {categories.map((c) => (
+          <CategoryTab
+            key={c}
+            label={c}
+            active={activeCategory === c && !searching}
+            onClick={() => onSelectCategory(c)}
+          />
+        ))}
+      </div>
 
       {/* Grupo derecho. Con la búsqueda abierta ocupa su propia línea en
           teléfono (el campo necesita ancho) y se acopla a la derecha en ≥sm. */}
       <div
         className={cn(
-          'ml-auto flex min-w-0 items-center gap-2 pl-2',
+          'flex shrink-0 items-center gap-2 pl-2',
           searchOpen && 'max-sm:w-full max-sm:pl-0 max-sm:pt-1',
         )}
       >
-        <span className="caps shrink-0 text-[0.625rem] text-muted-foreground">
+        {/* El contador se esconde en pantalla angosta: con los chips ya
+            deslizándose en su fila, "17 de 17" les comía el poco ancho que
+            queda y no se veía ni la primera categoría. */}
+        <span className="caps hidden shrink-0 text-[0.625rem] text-muted-foreground sm:inline">
           {searching ? (
             <>
               {visibleCount} {visibleCount === 1 ? 'resultado' : 'resultados'}

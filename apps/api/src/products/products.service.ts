@@ -90,11 +90,19 @@ export class ProductsService {
     const where: Prisma.ProductWhereInput = {};
     if (opts.onlyActive) where.isActive = true;
     if (opts.category) where.category = opts.category;
-    const rows = await this.prisma.product.findMany({
-      where,
-      include: { sizes: true, modifiers: true, comboComponents: true },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
-    });
+    const [rows, orden] = await Promise.all([
+      this.prisma.product.findMany({
+        where,
+        include: { sizes: true, modifiers: true, comboComponents: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.categories.orderIndex(),
+    ]);
+    // El orden de las categorías es el que el dueño arma en `/categories`, no
+    // el alfabético: es lo que decide qué ve primero el cajero al abrir la
+    // caja. Sin esto, "Bebidas" salía siempre de primera.
+    const puesto = (c: string | null) => (c ? (orden.get(c) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER);
+    rows.sort((a, b) => puesto(a.category) - puesto(b.category) || a.name.localeCompare(b.name, 'es'));
     // Una categoría desactivada oculta sus productos de los listados de VENTA
     // (only_active = caja/web). El admin sin only_active los sigue viendo.
     const hidden = opts.onlyActive ? await this.categories.inactiveNames() : null;

@@ -14,9 +14,10 @@ import { useAvailability } from '../hooks/useAvailability';
 import { displayBasePrice } from '../lib/display-price';
 import { useSoldOutToggle } from '../hooks/useSoldOutToggle';
 import { filterProductsByQuery } from '../lib/product-search';
+import { categoriesInOrder, groupByCategory } from '../lib/group-by-category';
 import { ALL_CATEGORIES, CatalogToolbar } from './CatalogToolbar';
+import { CatalogTiles } from './CatalogTiles';
 import { ProductPickerModal, type PickerSelection } from './ProductPickerModal';
-import { ProductTile } from './ProductTile';
 
 /** Re-fetch de promos cada 60s: refleja cambios rápido desde admin. */
 const PROMO_REFRESH_MS = 60_000;
@@ -43,13 +44,10 @@ export function CatalogGrid({ products }: { products: Product[] }) {
   const { soldOutOverride, forceAvailableOverride, togglingId, toggleSoldOut, toggleForceAvailable } =
     useSoldOutToggle(refresh);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of products) {
-      if (p.category) set.add(p.category);
-    }
-    return Array.from(set).sort();
-  }, [products]);
+  // El orden de los chips es el ORDEN EN QUE LLEGAN los productos: el server
+  // los manda según `/categories`. Ordenarlos por nombre acá ponía "Bebidas"
+  // de primera —gana por la B— que es justo el problema que se corrigió.
+  const categories = useMemo(() => categoriesInOrder(products), [products]);
 
   // Buscar manda sobre la categoría: el alcance es TODO el menú.
   const searching = query.trim().length > 0;
@@ -63,6 +61,14 @@ export function CatalogGrid({ products }: { products: Product[] }) {
   // cada render: `getActivePromoBadge` refiltra y remapea todas las promos por
   // producto, y teclear re-renderiza la grilla entera. Se refresca solo cuando
   // entra una tanda nueva de promos (cada 60s).
+  // En "Todos" la grilla va en bloques por categoría: revuelta, las bebidas
+  // —más de la mitad del catálogo— tapaban los platos. Con una categoría
+  // elegida o buscando, el bloque sobra: ya está todo acotado.
+  const grupos = useMemo(
+    () => (searching || activeCategory !== ALL_CATEGORIES ? null : groupByCategory(visible)),
+    [activeCategory, searching, visible],
+  );
+
   const promoById = useMemo(() => {
     const at = new Date();
     const map = new Map<string, ProductPromoBadge | null>();
@@ -106,6 +112,17 @@ export function CatalogGrid({ products }: { products: Product[] }) {
     });
   };
 
+  const tileProps = {
+    byId,
+    soldOutOverride,
+    forceAvailableOverride,
+    togglingId,
+    promoById,
+    onOpen: openPicker,
+    onToggleSoldOut: (p: Product, next: boolean) => void toggleSoldOut(p, next),
+    onToggleForceAvailable: (p: Product, next: boolean) => void toggleForceAvailable(p, next),
+  };
+
   return (
     <div className="flex h-full flex-col bg-background">
       <CatalogToolbar
@@ -120,11 +137,6 @@ export function CatalogGrid({ products }: { products: Product[] }) {
         totalCount={products.length}
       />
 
-      {/* La grilla de abajo le pone MÁXIMO a la columna, no solo mínimo. Con
-          `1fr` suelto, en una pantalla angosta el ancho sobrante se repartía
-          entre pocas columnas y cada tarjeta crecía de 164 a 191 px: en el
-          monitor del local se veía enorme y entraban la mitad de los
-          productos. Medido a 1242 px. */}
       {visible.length === 0 ? (
         <div className="flex flex-1 items-center justify-center p-8">
           <EmptyState
@@ -137,36 +149,22 @@ export function CatalogGrid({ products }: { products: Product[] }) {
             size="sm"
           />
         </div>
+      ) : grupos ? (
+        <div className="flex-1 overflow-y-auto">
+          {grupos.map((g) => (
+            <section key={g.category ?? '(sin categoría)'}>
+              {/* Pegajoso: en un catálogo largo, al bajar hay que seguir
+                  sabiendo qué se está mirando. */}
+              <h2 className="caps sticky top-0 z-10 bg-background/95 px-4 pb-1 pt-3 text-[0.6875rem] font-semibold text-muted-foreground backdrop-blur-sm">
+                {g.category ?? 'Sin categoría'}
+              </h2>
+              <CatalogTiles products={g.products} hideCategory {...tileProps} />
+            </section>
+          ))}
+        </div>
       ) : (
-        <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(min(120px,100%),160px))] justify-center gap-3 overflow-y-auto p-3 sm:p-4">
-          {visible.map((p) => {
-            const avail = byId.get(p.id);
-            const manualSoldOut = soldOutOverride.get(p.id) ?? p.soldOut;
-            const forced = forceAvailableOverride.get(p.id) ?? p.forceAvailable;
-            // Sin stock por cómputo del backend (insumo/subproducto no alcanza).
-            const computedUnavailable = avail ? !avail.available : false;
-            // 86 manual pisa todo; forzar disponible pisa la falta de stock.
-            const unavailable = manualSoldOut || (!forced && computedUnavailable);
-            const reason = manualSoldOut ? null : forced ? null : (avail?.reason ?? null);
-            const promoBadge = promoById.get(p.id) ?? null;
-            return (
-              <ProductTile
-                key={p.id}
-                product={p}
-                availability={avail}
-                manualSoldOut={manualSoldOut}
-                forced={forced}
-                computedUnavailable={computedUnavailable}
-                unavailable={unavailable}
-                reason={reason}
-                toggling={togglingId === p.id}
-                promo={promoBadge}
-                onClick={() => openPicker(p)}
-                onToggleSoldOut={() => void toggleSoldOut(p, !manualSoldOut)}
-                onToggleForceAvailable={(next) => void toggleForceAvailable(p, next)}
-              />
-            );
-          })}
+        <div className="flex-1 overflow-y-auto">
+          <CatalogTiles products={visible} {...tileProps} />
         </div>
       )}
 

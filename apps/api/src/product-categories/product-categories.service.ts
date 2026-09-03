@@ -29,6 +29,21 @@ export class ProductCategoriesService {
     return rows.map((r) => toDto(r, counts.get(r.name) ?? 0));
   }
 
+  /**
+   * El puesto de cada categoría según el orden que el dueño arma en
+   * `/categories` con las flechas. Lo pide el catálogo de la caja: ordenar por
+   * nombre ponía "Bebidas" primero —gana por la B— y en este local son 12 de
+   * 22 productos, así que la pantalla de venta abría llena de gaseosas y los
+   * platos quedaban abajo. Una categoría que no esté en la tabla va al final.
+   */
+  async orderIndex(): Promise<Map<string, number>> {
+    const rows = await this.prisma.productCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { name: true },
+    });
+    return new Map(rows.map((r, i) => [r.name, i]));
+  }
+
   async create(input: CreateProductCategory, actorId: string): Promise<ProductCategory> {
     const name = input.name.trim();
     await this.assertNameFree(name, null);
