@@ -46,7 +46,7 @@ export const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
           onChange={(e) => onChange(onlyDigits(e.target.value))}
           disabled={disabled}
           className={cn(
-            'tabular-nums flex-1 bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground',
+            'tabular-nums flex-1 bg-transparent px-3 py-2 text-base sm:text-sm text-foreground outline-none placeholder:text-muted-foreground',
             prefix == null && 'pl-3',
           )}
           {...rest}

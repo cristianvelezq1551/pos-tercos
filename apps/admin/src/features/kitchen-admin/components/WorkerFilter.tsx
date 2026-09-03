@@ -30,7 +30,7 @@ export function WorkerFilter({ options }: { options: WorkerOption[] }) {
       <select
         value={current}
         onChange={(e) => apply(e.target.value)}
-        className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+        className="rounded-md border border-border bg-background px-2 py-1.5 text-base sm:text-sm text-foreground focus:border-primary focus:outline-none"
       >
         <option value="">Todos</option>
         {options.map((o) => (

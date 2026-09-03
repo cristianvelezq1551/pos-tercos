@@ -103,7 +103,7 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           onChange={handleChange}
           disabled={disabled}
           className={cn(
-            'tabular flex-1 bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground',
+            'tabular flex-1 bg-transparent px-3 py-2 text-base sm:text-sm text-foreground outline-none placeholder:text-muted-foreground',
             '[&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
             '[&[type=number]]:[-moz-appearance:textfield]',
             !prefix && 'pl-3',

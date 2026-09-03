@@ -2,7 +2,9 @@
 
 import type { RecipeBookEntry, RecipeComponent } from '@pos-tercos/types';
 import { Dialog, pluralizeUnit } from '@pos-tercos/ui';
+import { useState } from 'react';
 import { fotosDeReceta } from './foto-de-receta';
+import { VisorDeFoto } from './VisorDeFoto';
 
 /** Detalle de una receta: composición (qué lleva) + paso a paso. */
 export function RecipeDetail({
@@ -14,6 +16,7 @@ export function RecipeDetail({
   open: boolean;
   onClose: () => void;
 }) {
+  const [ampliada, setAmpliada] = useState<{ url: string; label?: string | null } | null>(null);
   if (!entry) return null;
   const fotos = fotosDeReceta(entry);
   // El API puede no mandarlo todavía (ventana de despliegue): sin variantes se
@@ -46,14 +49,23 @@ export function RecipeDetail({
                 key={foto.url}
                 className={fotos.length === 1 ? 'relative' : 'relative w-[78%] shrink-0 snap-start'}
               >
-                <img
-                  src={foto.url}
-                  alt={foto.label ? `${entry.name} — ${foto.label}` : `Así se ve ${entry.name}`}
-                  className={`w-full rounded-lg border border-border object-cover ${
-                    fotos.length === 1 ? 'max-h-56' : 'h-40'
-                  }`}
-                  loading="lazy"
-                />
+                {/* Varias fotos traen el despiece con el gramaje en letra
+                    diminuta: a este tamaño no se lee. Un toque la abre grande. */}
+                <button
+                  type="button"
+                  onClick={() => setAmpliada({ url: foto.url, label: foto.label })}
+                  aria-label={`Ver en grande${foto.label ? ` la variante ${foto.label}` : ''}`}
+                  className="block w-full"
+                >
+                  <img
+                    src={foto.url}
+                    alt={foto.label ? `${entry.name} — ${foto.label}` : `Así se ve ${entry.name}`}
+                    className={`w-full rounded-lg border border-border object-cover ${
+                      fotos.length === 1 ? 'max-h-56' : 'h-40'
+                    }`}
+                    loading="lazy"
+                  />
+                </button>
                 {foto.label ? (
                   <span className="absolute left-2 top-2 rounded-md bg-ink-950/80 px-2 py-1 text-xs font-semibold text-foreground">
                     {foto.label}
@@ -119,6 +131,12 @@ export function RecipeDetail({
           )}
         </Section>
       </div>
+      <VisorDeFoto
+        url={ampliada?.url ?? null}
+        label={ampliada?.label}
+        alt={`Así se ve ${entry.name}`}
+        onClose={() => setAmpliada(null)}
+      />
     </Dialog>
   );
 }
