@@ -7,6 +7,7 @@ import { displayBasePrice } from '../lib/display-price';
 
 export function ProductTile({
   product,
+  hideCategory = false,
   availability,
   manualSoldOut,
   forced,
@@ -20,6 +21,9 @@ export function ProductTile({
   onToggleForceAvailable,
 }: {
   product: Product;
+  /** En la vista agrupada el bloque ya dice la categoría: repetirla en cada
+   *  tarjeta es ruido, y encima se truncaba ("PAPAS Y…"). */
+  hideCategory?: boolean;
   availability: ProductAvailability | undefined;
   manualSoldOut: boolean;
   /** Forzado disponible por el dueño (pisa la falta de stock). */
@@ -92,9 +96,11 @@ export function ProductTile({
           'motion-reduce:transition-none',
         )}
       >
-        {/* Categoría — deja hueco a la derecha para el botón 86. */}
+        {/* Categoría — deja hueco a la derecha para el botón 86. Cuando la
+            grilla va en bloques, el encabezado ya la dice: acá queda el hueco
+            para que el botón no se monte sobre el ícono. */}
         <span className="caps line-clamp-1 pr-9 text-[0.625rem] text-muted-foreground">
-          {product.category ?? ''}
+          {hideCategory ? '\u00a0' : (product.category ?? '')}
         </span>
 
         {/* Ícono para identificar el producto de un vistazo — arriba, tamaño

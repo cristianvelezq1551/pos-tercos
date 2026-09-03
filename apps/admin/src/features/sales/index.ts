@@ -30,3 +30,4 @@ export { useEnabledPaymentMethods } from './hooks/useEnabledPaymentMethods';
 export { getSale } from './api/get';
 export { notifyComandaFailed } from './lib/comanda-events';
 export { printCortesia, sendTabToKitchen } from './api/print';
+export type { ProductPromoBadge } from './lib/promo-preview';
