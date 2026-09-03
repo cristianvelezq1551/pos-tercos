@@ -92,7 +92,11 @@ const Dialog: React.FC<DialogProps> = ({
         <div className="overflow-y-auto px-6 py-5">{children}</div>
 
         {footer ? (
-          <footer className="flex justify-end gap-2 border-t border-border bg-muted/40 px-6 py-4">
+          <footer className="flex justify-end gap-2 border-t border-border bg-muted/40 px-6 py-4 max-sm:flex-col max-sm:items-stretch max-sm:[&>button]:min-h-11">
+            {/* En teléfono las acciones se apilan a lo ancho. En una sola fila
+                no caben —el modal de factura tiene cuatro— y se salían por los
+                dos lados: "Guardar para revisar" quedaba cortado por la
+                izquierda. La principal queda abajo, donde llega el pulgar. */}
             {footer}
           </footer>
         ) : null}

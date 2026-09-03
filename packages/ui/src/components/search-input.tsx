@@ -47,7 +47,7 @@ export const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
           type="search"
           value={value}
           className={cn(
-            'flex-1 bg-transparent px-3 py-2 pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground outline-none',
+            'flex-1 bg-transparent px-3 py-2 pl-10 pr-3 text-base sm:text-sm text-foreground placeholder:text-muted-foreground outline-none',
             '[&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden',
           )}
           {...rest}

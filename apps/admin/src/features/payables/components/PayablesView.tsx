@@ -177,7 +177,7 @@ function CreateForm({ onDone }: { onDone: () => void }) {
       <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_2fr_1fr_auto] sm:items-end">
         <label className="text-xs text-muted-foreground">
           A quién (responsable)
-          <Input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} disabled={pending} placeholder="Cristian / Pablo / …" className="mt-1" />
+          <Input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} disabled={pending} placeholder="Cristian / Pablo / Víctor / …" className="mt-1" />
         </label>
         <label className="text-xs text-muted-foreground">
           Concepto

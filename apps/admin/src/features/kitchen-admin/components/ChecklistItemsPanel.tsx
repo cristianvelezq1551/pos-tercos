@@ -71,7 +71,7 @@ export function ChecklistItemsPanel() {
         <select
           value={type}
           onChange={(e) => setType(e.target.value as ChecklistType)}
-          className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+          className="h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm text-foreground"
         >
           <option value="OPEN">Apertura</option>
           <option value="CLOSE">Cierre</option>

@@ -83,6 +83,10 @@ export function ProductsTable({
 
   const mostrarReal = (realCostById?.size ?? 0) > 0;
 
+  // Costo y margen NO se esconden en teléfono aunque sean cuatro columnas
+  // más: son el dato por el que se abre esta pantalla. Cada una lleva
+  // `mobileLabel` porque su `header` es un `<span title>` explicativo, que como
+  // rótulo de una fila de tarjeta sería demasiado largo.
   const columns: DataTableColumn<ProductRow>[] = [
     {
       key: 'name',
@@ -138,7 +142,7 @@ export function ProductsTable({
             ),
             align: 'right',
             numeric: true,
-            hideOnMobile: true,
+            mobileLabel: 'Costo real / u',
             cell: ({ real }: ProductRow) =>
               real?.unitCost != null ? (
                 <span className="inline-flex items-center gap-1">
@@ -164,7 +168,7 @@ export function ProductsTable({
             ),
             align: 'right',
             numeric: true,
-            hideOnMobile: true,
+            mobileLabel: 'Margen real',
             cell: ({ real }: ProductRow) =>
               real?.marginPct != null ? (
                 <MarginBadge value={real.marginPct} />
@@ -189,7 +193,7 @@ export function ProductsTable({
       ),
       align: 'right',
       numeric: true,
-      hideOnMobile: true,
+      mobileLabel: 'Costo hoy / u',
       cell: ({ costPerStock, missingHint, variantes }) => (
         <>
           {costPerStock !== null ? (
@@ -212,7 +216,7 @@ export function ProductsTable({
       ),
       align: 'right',
       numeric: true,
-      hideOnMobile: true,
+      mobileLabel: 'Margen hoy',
       cell: ({ margin, variantes }) => (
         <>
           {margin !== null ? (

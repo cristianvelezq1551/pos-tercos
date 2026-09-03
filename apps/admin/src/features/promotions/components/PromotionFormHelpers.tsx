@@ -8,7 +8,7 @@ import type {
 } from '@pos-tercos/types';
 
 export const inputClass =
-  'block h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring';
+  'block h-10 w-full rounded-md border border-input bg-card px-3 text-base sm:text-sm text-foreground shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring';
 
 export function Section({
   title,
