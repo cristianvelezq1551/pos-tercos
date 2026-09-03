@@ -37,10 +37,10 @@ export class WebMenuService {
   }
 
   private async loadMenu(): Promise<PublicMenuResponse> {
-    const [allRows, hiddenCategories] = await Promise.all([
+    const [allRows, hiddenCategories, orden] = await Promise.all([
       this.prisma.product.findMany({
         where: { isActive: true },
-        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        orderBy: { name: 'asc' },
         include: {
           sizes: { orderBy: { sortOrder: 'asc' } },
           modifiers: { orderBy: { name: 'asc' } },
@@ -49,8 +49,15 @@ export class WebMenuService {
       // Una categoría desactivada oculta sus productos del menú público
       // (misma regla que el catálogo de la caja).
       this.categories.inactiveNames(),
+      this.categories.orderIndex(),
     ]);
     const rows = allRows.filter((p) => !p.category || !hiddenCategories.has(p.category));
+    // El orden de la carta es el que el dueño arma en `/categories`, igual que
+    // en la caja. Por nombre, "Bebidas" abría el menú y los platos quedaban
+    // abajo: es la primera pantalla que ve un cliente.
+    const puesto = (c: string | null) =>
+      c ? (orden.get(c) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+    rows.sort((a, b) => puesto(a.category) - puesto(b.category) || a.name.localeCompare(b.name, 'es'));
     const products = rows.map(toPublicMenuProduct);
 
     const seen = new Set<string>();
