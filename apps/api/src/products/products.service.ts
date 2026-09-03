@@ -447,7 +447,7 @@ export class ProductsService {
     ingredientStock: Map<string, number>;
     subproductStock: Map<string, number>;
   }> {
-    const [allProducts, prodStockRows, ingStockRows, subStockRows, graph, sizeEdges] =
+    const [allProducts, prodStockRows, ingStockRows, subStockRows, recetario, sizeEdges] =
       await Promise.all([
       this.prisma.product.findMany({
         select: {
@@ -477,12 +477,16 @@ export class ProductsService {
         where: { entityType: 'SUBPRODUCT' },
         _sum: { delta: true },
       }),
-      this.recipes.loadFullGraph(),
+      // El grafo Y los defaults de "frena la venta" salen de la misma lectura:
+      // las aristas de un tamaño no pasan por `groupEdgesByParent`, así que el
+      // flag hay que resolverlo acá o un consumible bloquearía la venta.
+      this.recipes.loadGraphWithBlocks(),
       // La receta de cada variante: `loadFullGraph` no la trae. Sin ella, el
       // día que se acaba una proteína el plato se sigue ofreciendo y el cobro
       // falla con el cliente enfrente.
       this.prisma.recipeEdge.findMany({ where: { parentSizeId: { not: null } } }),
     ]);
+    const { graph, blocksDefaults } = recetario;
     const aristasPorVariante = new Map<string, typeof sizeEdges>();
     for (const e of sizeEdges) {
       const k = e.parentSizeId as string;
@@ -508,7 +512,11 @@ export class ProductsService {
       variants: p.sizes.map((size) => ({
         sizeId: size.id,
         name: size.name,
-        edges: variantEdgesAsProductChildren(aristasPorVariante.get(size.id) ?? [], p.id),
+        edges: variantEdgesAsProductChildren(
+          aristasPorVariante.get(size.id) ?? [],
+          p.id,
+          blocksDefaults,
+        ),
       })),
     }));
     return { products, graph, productStock, ingredientStock, subproductStock };

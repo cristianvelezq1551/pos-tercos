@@ -4447,6 +4447,60 @@ las cookies se sacan UNA vez en `beforeAll` y cada caso abre su pestaña con
 
 ---
 
+## 7.v63 El "no frena la venta" no llegaba a las recetas de TAMAÑO (2026-09-02)
+
+> El dueño reportó que en producción no podía vender el Burro de pollo: el
+> selector mostraba el tamaño deshabilitado con el motivo **"Sin Marinado"**,
+> con el subproducto Marinado marcado `blocksAvailability: false` en su ficha.
+> Verificado contra la base real: typecheck 13/13, lint 0, api unit 199 (+5),
+> e2e 65 suites / 780. Sin migración.
+
+### Un flag con un solo lugar de resolución, y un camino que lo esquivaba
+`blocksAvailability` efectivo (`arista ?? ficha del insumo/subproducto ?? true`)
+se resuelve en **`groupEdgesByParent`**. La receta de un TAMAÑO no pasa por ahí:
+la disponibilidad la carga aparte (`parentSizeId != null`) y la inyecta cruda en
+el grafo con `withVariantEdges`. Como `variantEdgesAsProductChildren` dejaba la
+línea heredada en `undefined`, y el dominio lee `undefined` como **bloquea**
+(«solo un `false` explícito libera»), un consumible frenaba la venta del tamaño
+aunque su ficha dijera lo contrario. La pantalla del editor de recetas decía
+"Hereda (no frena)" y el sistema hacía lo opuesto.
+
+**El cobro NO tenía el bug**: `loadGraphForProduct` sí pasa las aristas del
+tamaño por `groupEdgesByParent`. O sea que la caja deshabilitaba lo que el
+backend habría dejado cobrar — la divergencia UI/servidor que `tolerableKeys`
+existe para evitar.
+
+### La regla que queda
+- **Aristas que se inyectan crudas en un grafo llevan el flag YA resuelto.**
+  `variantEdgesAsProductChildren` exige ahora los defaults como parámetro
+  **sin valor por omisión** (`Map | null`): los tres llamadores que sí pasan por
+  `groupEdgesByParent` pasan `null` explícito. Olvidarlo es un error de
+  compilación, no un bug mudo — así se coló este.
+- **El grafo y los defaults salen de la MISMA lectura** (`loadGraphWithBlocks`):
+  pedirlos por separado leería dos veces las mismas dos tablas en cada consulta
+  de disponibilidad del cajero, que no tiene caché.
+- El cambio es **monótono**: `raw ?? default ?? undefined` solo puede convertir
+  un "bloquea" en "no bloquea", nunca al revés. Ninguna venta que hoy pasa puede
+  empezar a frenarse.
+
+### Medido sobre los datos reales de producción
+Corriendo `evaluateAvailability` con el snapshot de prod, antes y después:
+**8 cambios, los 8 desbloqueos, los 8 por "Sin Marinado"**; cero productos que
+pasen a agotado. Las 59 aristas de variante del catálogo estaban en "Hereda"
+—o sea, las 59 bloqueaban—; tras el arreglo siguen frenando las que deben:
+Pechuga de pollo cruda, Tender crudo, Carne hamburguesa, Queso cheddar tajado y
+Coleslaw. En prod, 46 de 51 insumos y 10 de 13 subproductos están marcados "no
+frena": la carta entera dependía de que este flag se respetara.
+
+### Deuda encontrada al auditar (NO se tocó)
+`applyConsumptionForSale` (ledger offline del admin) descuenta por
+`line.productId` e **ignora `line.sizeId`**, y el grafo del snapshot no trae las
+aristas del tamaño colgadas del producto. Durante un corte de red, la caja no ve
+caer los insumos exclusivos de un tamaño y puede seguir ofreciendo uno cuyo
+insumo bloqueante ya se agotó. Al sincronizar, el servidor descuenta bien (el
+payload lleva `sizeId`): lo que queda mal es la disponibilidad mostrada offline,
+no el inventario.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
