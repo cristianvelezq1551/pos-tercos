@@ -405,4 +405,118 @@ describe('Availability E2E', () => {
     });
   });
 
+  /**
+   * Caso reportado en producción (2026-09-02): "Burros" no dejaba vender los
+   * tamaños Pollo ni Terco con el motivo "Sin Marinado", con el subproducto
+   * Marinado marcado `blocksAvailability: false` en su ficha. La receta de un
+   * tamaño no pasa por `groupEdgesByParent`, así que el flag efectivo llegaba
+   * sin resolver y el dominio lo leía como bloqueante.
+   */
+  describe('un consumible de la receta del TAMAÑO no frena la venta', () => {
+    let platoId: string;
+    let conSalsaId: string;
+    let salsaId: string;
+
+    const variante = async () => {
+      const res = await request
+        .get('/products/availability/internal')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .expect(200);
+      const fila = (
+        res.body as Array<{
+          productId: string;
+          variants?: Array<{ sizeId: string; available: boolean; reason: string | null }>;
+        }>
+      ).find((r) => r.productId === platoId);
+      return (fila?.variants ?? []).find((v) => v.sizeId === conSalsaId);
+    };
+
+    beforeAll(async () => {
+      // Consumible: se descuenta y se costea, pero no debe frenar la venta.
+      salsaId = (
+        await request
+          .post('/ingredients')
+          .set({ Authorization: `Bearer ${adminToken}` })
+          .send({
+            name: `Salsa consumible ${randomUUID().slice(0, 6)}`,
+            unitPurchase: 'l',
+            unitRecipe: 'ml',
+            conversionFactor: 1000,
+            blocksAvailability: false,
+          })
+          .expect(201)
+      ).body.id as string;
+
+      const creado = await request
+        .post('/products')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({
+          category: 'Test',
+          name: `Plato con salsa ${randomUUID().slice(0, 6)}`,
+          basePrice: 18000,
+          directResale: false,
+          isCombo: false,
+          modifiersEnabled: false,
+          sizes: [{ name: 'Con salsa', priceModifier: 0, sortOrder: 0 }],
+        })
+        .expect(201);
+      platoId = creado.body.id as string;
+      conSalsaId = (creado.body.sizes as Array<{ id: string }>)[0].id;
+
+      await request
+        .put(`/products/${platoId}/recipe`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ edges: [{ childType: 'ingredient', childId: panId, quantityNeta: 1 }] })
+        .expect(200);
+      // La línea NO trae override: hereda el flag de la ficha del insumo.
+      await request
+        .put(`/products/${platoId}/sizes/${conSalsaId}/recipe`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ edges: [{ childType: 'ingredient', childId: salsaId, quantityNeta: 30 }] })
+        .expect(200);
+      // Pan sí, salsa NO (queda en 0, como el marinado de producción).
+      await request
+        .post('/inventory/movements')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ entityType: 'INGREDIENT', ingredientId: panId, delta: 50, type: 'MANUAL_ADJUSTMENT', notes: 'reposición' })
+        .expect(201);
+    });
+
+    it('el tamaño se ofrece aunque el consumible esté en cero', async () => {
+      expect(await variante()).toMatchObject({ available: true, reason: null });
+    });
+
+    it('y se puede cobrar: el guard tampoco frena por un consumible', async () => {
+      const venta = await request
+        .post('/sales')
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId: platoId, sizeId: conSalsaId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${venta.body.id}/confirm-payment`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ method: 'CASH', amountReceived: venta.body.total })
+        .expect(201);
+    });
+
+    it('pero el consumible SÍ se descuenta: queda en negativo, no en cero', async () => {
+      const res = await request
+        .get(`/inventory/stock/ingredient/${salsaId}`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .expect(200);
+      expect(Number((res.body as { currentStock: number }).currentStock)).toBeLessThan(0);
+    });
+
+    it('si el mismo insumo del tamaño SÍ bloquea, la variante se sigue frenando', async () => {
+      await request
+        .patch(`/ingredients/${salsaId}`)
+        .set({ Authorization: `Bearer ${adminToken}` })
+        .send({ blocksAvailability: true })
+        .expect(200);
+      expect(await variante()).toMatchObject({ available: false });
+      expect((await variante())?.reason).toContain('Salsa');
+    });
+  });
+
 });

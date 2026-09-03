@@ -75,7 +75,8 @@ export class RecipeBookService {
         sizeId: size.id,
         name: size.name,
         components: this.visibles(
-          variantEdgesAsProductChildren(propias, size.productId),
+          // La biblia lista componentes: el flag no cambia lo que se muestra.
+          variantEdgesAsProductChildren(propias, size.productId, null),
           graph,
           unitBySub,
           ocultos,

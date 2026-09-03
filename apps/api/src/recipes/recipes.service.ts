@@ -7,6 +7,7 @@ import {
   roundCost,
   RecipeCycleError,
   RecipeMissingNodeError,
+  type ChildRef,
   type IngredientCostMap,
   type ParentRef,
   type RecipeEdgeNode,
@@ -187,6 +188,7 @@ export class RecipesService {
       ? variantEdgesAsProductChildren(
           await this.prisma.recipeEdge.findMany({ where: { parentSizeId: sizeId } }),
           productId,
+          null, // se resuelve abajo, en groupEdgesByParent
         )
       : [];
 
@@ -196,6 +198,7 @@ export class RecipesService {
     });
     const ingredients = await this.prisma.ingredient.findMany();
 
+    const blocksDefaults = buildBlocksDefaults(ingredients, subproducts);
     const graph: RecipeGraph = {
       products: new Map([[product.id, { id: product.id, name: product.name }]]),
       subproducts: new Map(
@@ -209,7 +212,7 @@ export class RecipesService {
       ),
       edgesByParent: groupEdgesByParent(
         [...productEdges, ...sizeNodes, ...subproductEdges],
-        buildBlocksDefaults(ingredients, subproducts),
+        blocksDefaults,
       ),
     };
 
@@ -224,6 +227,21 @@ export class RecipesService {
    * disponibilidad se evalúa sobre la receta base.
    */
   async loadFullGraph(): Promise<RecipeGraph> {
+    return (await this.loadGraphWithBlocks()).graph;
+  }
+
+  /**
+   * El grafo completo MÁS los defaults de `blocksAvailability` por child.
+   *
+   * Los necesita quien arma aristas que NO pasan por `groupEdgesByParent` —hoy
+   * la disponibilidad, que inyecta la receta de cada tamaño en el grafo—. Van
+   * juntos porque salen de las MISMAS filas: pedirlos por separado leería dos
+   * veces las mismas dos tablas en cada consulta del cajero.
+   */
+  async loadGraphWithBlocks(): Promise<{
+    graph: RecipeGraph;
+    blocksDefaults: Map<string, boolean>;
+  }> {
     const [products, subproducts, ingredients, edges] = await Promise.all([
       this.prisma.product.findMany({ select: { id: true, name: true } }),
       this.prisma.subproduct.findMany(),
@@ -238,7 +256,8 @@ export class RecipesService {
       }),
     ]);
 
-    return {
+    const blocksDefaults = buildBlocksDefaults(ingredients, subproducts);
+    const graph: RecipeGraph = {
       products: new Map(products.map((p) => [p.id, { id: p.id, name: p.name }])),
       subproducts: new Map(
         subproducts.map((s) => [
@@ -252,8 +271,9 @@ export class RecipesService {
           { id: i.id, name: i.name, unitRecipe: i.unitRecipe },
         ]),
       ),
-      edgesByParent: groupEdgesByParent(edges, buildBlocksDefaults(ingredients, subproducts)),
+      edgesByParent: groupEdgesByParent(edges, blocksDefaults),
     };
+    return { graph, blocksDefaults };
   }
 
   /** Componentes DIRECTOS (un nivel) de una receta — insumos + subproductos que
@@ -586,7 +606,8 @@ export class RecipesService {
       const previo = graph.edgesByParent.get(key);
       graph.edgesByParent.set(key, [
         ...(previo ?? []),
-        ...variantEdgesAsProductChildren(edges, p.id),
+        // Costo: el flag no participa del cálculo.
+        ...variantEdgesAsProductChildren(edges, p.id, null),
       ]);
       try {
         return costOf(p);
@@ -992,7 +1013,7 @@ function groupEdgesByParent(
   const map = new Map<string, RecipeEdgeNode[]>();
   for (const e of edges) {
     const raw: RecipeEdgeNode = isDbEdge(e) ? dbEdgeToNode(e) : e;
-    const childKey = `${raw.child.kind === 'ingredient' ? 'i' : 's'}:${raw.child.id}`;
+    const childKey = childBlocksKey(raw.child);
     const node: RecipeEdgeNode = {
       ...raw,
       blocksAvailability:
@@ -1022,17 +1043,41 @@ function groupEdgesByParent(
 export function variantEdgesAsProductChildren(
   rows: DbRecipeEdge[],
   productId: string,
+  /**
+   * Defaults por child para resolver el `blocksAvailability` EFECTIVO acá
+   * mismo, o `null` si estas aristas van a pasar por `groupEdgesByParent`
+   * (que lo resuelve él).
+   *
+   * Sin opción por defecto A PROPÓSITO: quien inyecta estas aristas crudas en
+   * un grafo —la disponibilidad y su snapshot offline— y olvida los defaults
+   * hace que una línea en "Hereda (no frena)" viaje como `undefined`, que el
+   * dominio lee como bloquea; el tamaño queda agotado por un consumible y la
+   * pantalla dice lo contrario de lo que hace el sistema. Olvidarlo tiene que
+   * ser un error de compilación, no un bug mudo.
+   */
+  blocksDefaults: Map<string, boolean> | null,
 ): RecipeEdgeNode[] {
-  return rows.map((e) => ({
-    parent: { kind: 'product', id: productId },
-    child:
+  return rows.map((e) => {
+    const child: ChildRef =
       e.childIngredientId !== null
         ? { kind: 'ingredient', id: e.childIngredientId }
-        : { kind: 'subproduct', id: e.childSubproductId as string },
-    quantityNeta: Number(e.quantityNeta),
-    mermaPct: Number(e.mermaPct),
-    blocksAvailability: e.blocksAvailability ?? undefined,
-  }));
+        : { kind: 'subproduct', id: e.childSubproductId as string };
+    return {
+      parent: { kind: 'product', id: productId },
+      child,
+      quantityNeta: Number(e.quantityNeta),
+      mermaPct: Number(e.mermaPct),
+      // Sin defaults queda `undefined` a propósito: el llamador que sí pasa por
+      // `groupEdgesByParent` lo resuelve ahí (único lugar de la regla).
+      blocksAvailability:
+        e.blocksAvailability ?? blocksDefaults?.get(childBlocksKey(child)) ?? undefined,
+    };
+  });
+}
+
+/** Clave de `blocksDefaults` para un child (`i:<id>` / `s:<id>`). */
+function childBlocksKey(child: ChildRef): string {
+  return `${child.kind === 'ingredient' ? 'i' : 's'}:${child.id}`;
 }
 
 function isDbEdge(e: DbRecipeEdge | RecipeEdgeNode): e is DbRecipeEdge {
