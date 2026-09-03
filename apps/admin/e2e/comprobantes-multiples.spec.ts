@@ -296,9 +296,17 @@ test.describe('Costos y gastos con varios comprobantes', () => {
     await modal.getByRole('button', { name: /^Pagar/ }).click();
     await expect(modal).toBeHidden({ timeout: 20_000 });
 
-    const pagada = page.locator('li', { hasText: descripcion }).first();
+    // El compromiso pagado se MUEVE a la sección de historial. Buscarlo por
+    // descripción a secas encontraba la fila vieja —la de "por pagar"— mientras
+    // `router.refresh()` seguía en vuelo, y esa fila no ofrece comprobantes.
+    const historial = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: /Pagados \/ cancelados/ }) })
+      .last();
+    const pagada = historial.locator('li', { hasText: descripcion }).first();
+    await expect(pagada).toBeVisible({ timeout: 30_000 });
     const verlos = pagada.getByRole('button', { name: /2 comprobantes/ });
-    await expect(verlos).toBeVisible({ timeout: 20_000 });
+    await expect(verlos).toBeVisible({ timeout: 30_000 });
     await verlos.click();
 
     const galeria = page.getByRole('dialog');
