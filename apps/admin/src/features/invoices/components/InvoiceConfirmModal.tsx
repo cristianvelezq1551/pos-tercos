@@ -100,10 +100,10 @@ export function InvoiceConfirmModal({
     const v = validateInvoice({ supplierMode, supplierId, newSupplierNit, newSupplierName, suppliers, rows, total, iva, freight, invoiceNumber, notes });
     if (!v.valid) { setError(v.reason); return; }
     setSubmitting(true);
-    let uploadedProofKey: string | undefined;
+    let uploadedProofKeys: string[] = [];
     try {
       const paymentBlock = await buildPaymentBlock(payment, hasInvoicePhoto);
-      uploadedProofKey = paymentBlock?.proofStorageKey;
+      uploadedProofKeys = paymentBlock?.proofStorageKeys ?? [];
       const payload = paymentBlock ? { ...v.payload, payment: paymentBlock } : v.payload;
       if (iaContext) {
         // IA: crea+confirma en un solo paso, asociando la foto previa.
@@ -118,8 +118,8 @@ export function InvoiceConfirmModal({
       onConfirmed();
       startTransition(() => { router.push('/invoices'); router.refresh(); });
     } catch (e) {
-      // El comprobante pre-subido quedó huérfano — limpiarlo (best-effort).
-      if (uploadedProofKey) void discardPaymentProof(uploadedProofKey);
+      // Los comprobantes pre-subidos quedaron huérfanos — limpiarlos (best-effort).
+      for (const key of uploadedProofKeys) void discardPaymentProof(key);
       setError(getErrorMessage(e, 'Error al confirmar'));
     } finally {
       setSubmitting(false);

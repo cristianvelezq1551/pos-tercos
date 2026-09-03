@@ -376,3 +376,42 @@ test.describe('Nómina con varios comprobantes', () => {
     ).toBeVisible({ timeout: 20_000 });
   });
 });
+
+test.describe('Factura que nace pagada', () => {
+  test('el formulario de crear factura acepta varias imágenes', async ({ browser, request }) => {
+    // Insumo para poder cargar una línea a mano.
+    const stamp = Date.now();
+    const nombreInsumo = `Insumo nace-pagada ${stamp}`;
+    const ing = await request.post(`${API}/ingredients`, {
+      headers: { ...authHeaders(dueno), 'Content-Type': 'application/json' },
+      data: {
+        name: nombreInsumo,
+        unitPurchase: 'kg',
+        unitRecipe: 'g',
+        conversionFactor: 1000,
+        thresholdMin: 0,
+      },
+    });
+    expect(ing.ok(), `crear insumo → ${ing.status()}`).toBeTruthy();
+
+    const page = await pestanaAutenticada(browser);
+    await page.goto('/invoices/new');
+    // Sin foto: se carga a mano, que es donde el dueño vio el campo de a uno.
+    await page.getByRole('button', { name: /cargar manualmente/i }).click();
+    await expect(page.getByText(/Ya está pagada/)).toBeVisible({ timeout: 20_000 });
+
+    // El campo de comprobante acepta VARIAS: es lo que faltaba en esta pantalla.
+    const comprobantes = page.locator('input[type="file"]').last();
+    await expect(comprobantes).toHaveAttribute('multiple', '');
+    await comprobantes.setInputFiles([fixture(1), fixture(2)]);
+    await expect(page.getByText(/Comprobante del pago \(2\)/)).toBeVisible();
+
+    // Y las dos se previsualizan de verdad (no un <img> roto).
+    const previews = page.getByRole('img', { name: /^Comprobante \d+$/ });
+    await expect(previews).toHaveCount(2);
+    const anchos = await previews.evaluateAll((els) =>
+      (els as HTMLImageElement[]).map((e) => e.naturalWidth),
+    );
+    expect(Math.min(...anchos)).toBeGreaterThan(0);
+  });
+});

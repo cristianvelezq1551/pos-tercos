@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_PROOFS_POR_PAGO } from './finance';
 
 export const InvoiceStatusEnum = z.enum(['PENDING_REVIEW', 'CONFIRMED', 'REJECTED', 'VOIDED']);
 export type InvoiceStatus = z.infer<typeof InvoiceStatusEnum>;
@@ -278,13 +279,24 @@ export const PendingPaymentProofKeySchema = z
 
 /**
  * Pago al proveedor declarado EN la confirmación (la factura nace pagada).
- * El comprobante es OBLIGATORIO: o una imagen pre-subida vía
- * `upload-payment-proof` (carga manual), o la propia foto de la factura
- * (flujo IA — el backend la copia como comprobante). Exactamente uno.
+ * El comprobante es OBLIGATORIO y puede ser MÁS DE UNO: imágenes pre-subidas
+ * vía `upload-payment-proof` (carga manual) y/o la propia foto de la factura
+ * (flujo IA — el backend la copia como comprobante). Al menos una fuente.
+ *
+ * Las dos se pueden combinar: la foto de la factura como respaldo y la captura
+ * de la transferencia como comprobante del pago es un par corriente. Antes era
+ * excluyente solo porque cabía una sola imagen.
  */
 export const ConfirmInvoicePaymentSchema = z
   .object({
+    /** Legacy: una sola imagen. Se sigue aceptando porque la API y el admin se
+     *  despliegan por separado. Equivale a `proofStorageKeys: [key]`. */
     proofStorageKey: PendingPaymentProofKeySchema.optional(),
+    proofStorageKeys: z
+      .array(PendingPaymentProofKeySchema)
+      .min(1)
+      .max(MAX_PROOFS_POR_PAGO)
+      .optional(),
     /** Usar la foto de la factura como comprobante (solo flujo con foto). */
     useInvoicePhotoAsProof: z.boolean().optional(),
     cashAmount: z.number().nonnegative(),
@@ -297,18 +309,39 @@ export const ConfirmInvoicePaymentSchema = z
     note: z.string().max(500).optional(),
   })
   .superRefine((data, ctx) => {
-    const hasKey = data.proofStorageKey !== undefined;
-    const usesPhoto = data.useInvoicePhotoAsProof === true;
-    if (hasKey === usesPhoto) {
+    const subidas = confirmProofKeys(data);
+    const usaFoto = data.useInvoicePhotoAsProof === true;
+    if (subidas.length === 0 && !usaFoto) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'Falta el comprobante: sube una imagen o marca que se use la foto de la factura (una de las dos, no ambas).',
-        path: ['proofStorageKey'],
+          'Falta el comprobante: sube al menos una imagen o marca que se use la foto de la factura.',
+        path: ['proofStorageKeys'],
+      });
+    }
+    if (subidas.length + (usaFoto ? 1 : 0) > MAX_PROOFS_POR_PAGO) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Un pago admite hasta ${MAX_PROOFS_POR_PAGO} comprobantes.`,
+        path: ['proofStorageKeys'],
       });
     }
   });
 export type ConfirmInvoicePayment = z.infer<typeof ConfirmInvoicePaymentSchema>;
+
+/**
+ * Las imágenes pre-subidas del pago, en una sola lista. Normaliza el campo
+ * legacy de una sola clave para que nadie tenga que mirar los dos.
+ */
+export function confirmProofKeys(payment: {
+  proofStorageKey?: string;
+  proofStorageKeys?: string[];
+}): string[] {
+  if (payment.proofStorageKeys && payment.proofStorageKeys.length > 0) {
+    return payment.proofStorageKeys;
+  }
+  return payment.proofStorageKey ? [payment.proofStorageKey] : [];
+}
 
 export const ConfirmInvoiceSchema = z.object({
   supplierNit: z.string().min(1).max(40),

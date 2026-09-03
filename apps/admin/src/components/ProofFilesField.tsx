@@ -16,12 +16,16 @@ export function ProofFilesField({
   disabled,
   required = false,
   label = 'Comprobante',
+  max = MAX_PROOFS_POR_PAGO,
 }: {
   files: File[];
   onChange: (files: File[]) => void;
   disabled?: boolean;
   required?: boolean;
   label?: string;
+  /** Cuántas caben acá. Baja del tope cuando el pago ya suma otra imagen
+   *  aparte (ej. la foto de la factura marcada como comprobante). */
+  max?: number;
 }) {
   const [previews, setPreviews] = useState<string[]>([]);
 
@@ -33,12 +37,12 @@ export function ProofFilesField({
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [files]);
 
-  const lleno = files.length >= MAX_PROOFS_POR_PAGO;
+  const lleno = files.length >= max;
 
   const agregar = (e: ChangeEvent<HTMLInputElement>): void => {
     const elegidos = Array.from(e.target.files ?? []);
     if (elegidos.length > 0) {
-      onChange([...files, ...elegidos].slice(0, MAX_PROOFS_POR_PAGO));
+      onChange([...files, ...elegidos].slice(0, max));
     }
     e.target.value = '';
   };
@@ -50,7 +54,7 @@ export function ProofFilesField({
         required={required}
         hint={
           lleno
-            ? `Llegaste al máximo de ${MAX_PROOFS_POR_PAGO}.`
+            ? `Llegaste al máximo de ${max}.`
             : 'JPEG, PNG o WebP. Puedes elegir varias a la vez.'
         }
       >
