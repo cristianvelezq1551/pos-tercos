@@ -9,7 +9,15 @@ import {
   VoidInvoiceAction,
 } from '../../../../features/invoices';
 import { getCurrentUserServer } from '../../../../features/auth/server';
-import { BUSINESS_TIME_ZONE, Button, Container, formatCop, PageHeader } from '@pos-tercos/ui';
+import {
+  BUSINESS_TIME_ZONE,
+  Button,
+  Container,
+  DataTable,
+  formatCop,
+  PageHeader,
+  type DataTableColumn,
+} from '@pos-tercos/ui';
 import type { Invoice, InventoryMovement } from '@pos-tercos/types';
 import { StockableTypeBadge } from '../../../../components/StockableTypeBadge';
 
@@ -180,56 +188,7 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               Ítems ({invoice.items?.length ?? 0})
             </h2>
             {invoice.items && invoice.items.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-border text-sm">
-                    <thead className="bg-muted/40">
-                      <tr>
-                        <Th>Insumo</Th>
-                        <Th>Descripción</Th>
-                        <Th align="right">Cantidad</Th>
-                        <Th>Unidad</Th>
-                        <Th align="right">Precio unit.</Th>
-                        <Th align="right">Total</Th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {invoice.items.map((item) => (
-                        <tr key={item.id} className="hover:bg-muted/40">
-                          <Td>
-                            <div className="flex flex-col leading-tight">
-                              <span className="font-medium text-foreground">
-                                {item.itemName ?? <span className="text-muted-foreground">—</span>}
-                              </span>
-                              {item.entityType && (
-                                <StockableTypeBadge
-                                  type={item.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
-                                  size="sm"
-                                />
-                              )}
-                            </div>
-                          </Td>
-                          <Td>
-                            <span className="text-xs text-muted-foreground">
-                              {item.descriptionRaw}
-                            </span>
-                          </Td>
-                          <Td align="right" mono>
-                            {formatNumber(item.quantity)}
-                          </Td>
-                          <Td>{item.unit}</Td>
-                          <Td align="right" mono>
-                            {formatCop(item.unitPrice)}
-                          </Td>
-                          <Td align="right" mono>
-                            {formatCop(item.total)}
-                          </Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <InvoiceItemsTable items={invoice.items} />
             ) : (
               <p className="rounded-md border border-dashed border-input bg-card p-6 text-center text-sm text-muted-foreground">
                 La factura no tiene ítems registrados.
@@ -258,68 +217,7 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                   Sin movimientos registrados (algo inesperado para una factura confirmada).
                 </p>
               ) : (
-                <div className="overflow-hidden rounded-lg border border-border bg-card">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-border text-sm">
-                      <thead className="bg-muted/40">
-                        <tr>
-                          <Th>Producto</Th>
-                          <Th>Tipo</Th>
-                          <Th align="right">Cambio</Th>
-                          <Th>Notas</Th>
-                          <Th align="right">Acción</Th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {movements.map((m) => {
-                          const itemId =
-                            m.entityType === 'INGREDIENT' ? m.ingredientId : m.productId;
-                          const itemName = m.itemName;
-                          return (
-                            <tr key={m.id} className="hover:bg-muted/40">
-                              <Td>
-                                <span className="font-medium text-foreground">
-                                  {itemName ?? '(eliminado)'}
-                                </span>
-                              </Td>
-                              <Td>
-                                <StockableTypeBadge
-                                  type={m.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
-                                  size="sm"
-                                />
-                              </Td>
-                              <Td align="right" mono>
-                                <span
-                                  className={
-                                    m.delta > 0 ? 'font-medium text-success' : 'text-destructive'
-                                  }
-                                >
-                                  {m.delta > 0 ? '+' : ''}
-                                  {formatNumber(m.delta)}
-                                </span>
-                              </Td>
-                              <Td>
-                                <span className="text-xs text-muted-foreground">
-                                  {m.notes ?? '—'}
-                                </span>
-                              </Td>
-                              <Td align="right">
-                                {itemId ? (
-                                  <Link
-                                    href={`/inventory/${m.entityType.toLowerCase()}/${itemId}/adjust`}
-                                    className="font-medium text-primary hover:underline"
-                                  >
-                                    Ver stock
-                                  </Link>
-                                ) : null}
-                              </Td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <InvoiceMovementsTable movements={movements} />
               )}
             </section>
           )}
@@ -390,41 +288,117 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
-  return (
-    <th
-      scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
+/** Los ítems de la factura. En teléfono cada uno es una tarjeta — seis
+ *  columnas de números no caben en 390 px. */
+function InvoiceItemsTable({ items }: { items: NonNullable<Invoice['items']> }) {
+  const columns: DataTableColumn<NonNullable<Invoice['items']>[number]>[] = [
+    {
+      key: 'item',
+      header: 'Insumo',
+      primary: true,
+      cell: (item) => (
+        <span className="flex flex-wrap items-center gap-2 leading-tight">
+          <span className="font-medium text-foreground">
+            {item.itemName ?? <span className="text-muted-foreground">—</span>}
+          </span>
+          {item.entityType && (
+            <StockableTypeBadge
+              type={item.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
+              size="sm"
+            />
+          )}
+        </span>
+      ),
+    },
+    {
+      key: 'description',
+      header: 'Descripción',
+      cell: (item) => <span className="text-xs text-muted-foreground">{item.descriptionRaw}</span>,
+    },
+    {
+      key: 'quantity',
+      header: 'Cantidad',
+      align: 'right',
+      numeric: true,
+      cell: (item) => formatNumber(item.quantity),
+    },
+    { key: 'unit', header: 'Unidad', cell: (item) => item.unit },
+    {
+      key: 'unitPrice',
+      header: 'Precio unit.',
+      align: 'right',
+      numeric: true,
+      cell: (item) => formatCop(item.unitPrice),
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      align: 'right',
+      numeric: true,
+      cell: (item) => formatCop(item.total),
+    },
+  ];
+
+  return <DataTable rows={items} columns={columns} rowKey={(item) => item.id} />;
 }
 
-function Td({
-  children,
-  align,
-  mono,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-4 py-3 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
-        mono ? 'tabular-nums' : ''
-      }`}
-    >
-      {children}
-    </td>
-  );
-}
+/** Los movimientos de inventario que creó la factura al confirmarse. */
+function InvoiceMovementsTable({ movements }: { movements: InventoryMovement[] }) {
+  const columns: DataTableColumn<InventoryMovement>[] = [
+    {
+      key: 'item',
+      header: 'Producto',
+      primary: true,
+      cell: (m) => (
+        <span className="font-medium text-foreground">{m.itemName ?? '(eliminado)'}</span>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'Tipo',
+      cell: (m) => (
+        <StockableTypeBadge
+          type={m.entityType === 'INGREDIENT' ? 'INGREDIENT' : 'PRODUCT'}
+          size="sm"
+        />
+      ),
+    },
+    {
+      key: 'delta',
+      header: 'Cambio',
+      align: 'right',
+      numeric: true,
+      cell: (m) => (
+        <span className={m.delta > 0 ? 'font-medium text-success' : 'text-destructive'}>
+          {m.delta > 0 ? '+' : ''}
+          {formatNumber(m.delta)}
+        </span>
+      ),
+    },
+    {
+      key: 'notes',
+      header: 'Notas',
+      cell: (m) => <span className="text-xs text-muted-foreground">{m.notes ?? '—'}</span>,
+    },
+    {
+      key: 'action',
+      header: '',
+      align: 'right',
+      cell: (m) => {
+        const itemId = m.entityType === 'INGREDIENT' ? m.ingredientId : m.productId;
+        return itemId ? (
+          <Link
+            href={`/inventory/${m.entityType.toLowerCase()}/${itemId}/adjust`}
+            className="font-medium text-primary hover:underline"
+          >
+            Ver stock
+          </Link>
+        ) : null;
+      },
+    },
+  ];
 
-function formatNumber(n: number): string {
-  return n.toLocaleString('es-CO', { maximumFractionDigits: 4 });
+  return <DataTable rows={movements} columns={columns} rowKey={(m) => m.id} />;
 }
 
 function formatDate(iso: string): string {
@@ -436,4 +410,8 @@ function formatDate(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString('es-CO', { maximumFractionDigits: 4 });
 }

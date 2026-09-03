@@ -1,7 +1,14 @@
 import type { ProductMarginReport } from '@pos-tercos/types';
+import { DataTable, type DataTableColumn } from '@pos-tercos/ui';
 import { AlertTriangle } from 'lucide-react';
 import { formatCop, formatNumber } from '../../../lib/format';
 import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
+
+type Fila = ProductMarginReport['products'][number];
+
+function claseDeMargen(marginPct: number | null): string {
+  return marginPct === null ? 'text-foreground' : MARGIN_TONE_CLASS[marginTone(marginPct * 100)];
+}
 
 export function ProductMarginsTable({ report }: { report: ProductMarginReport }) {
   if (report.products.length === 0) {
@@ -12,84 +19,77 @@ export function ProductMarginsTable({ report }: { report: ProductMarginReport })
     );
   }
 
+  const num = { align: 'right', numeric: true } as const;
+  const columns: DataTableColumn<Fila>[] = [
+    {
+      key: 'name',
+      header: 'Producto',
+      primary: true,
+      cell: (p) => (
+        <span className="flex items-center gap-1.5 font-medium text-foreground">
+          {p.productName}
+          {p.cogsPartial ? (
+            <AlertTriangle
+              className="h-3.5 w-3.5 shrink-0 text-warning"
+              aria-label="Costo parcialmente desconocido (insumos sin costo registrado)"
+            />
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      key: 'units',
+      header: 'Unidades',
+      ...num,
+      cell: (p) => formatNumber(p.unitsSold, { decimals: 0 }),
+    },
+    { key: 'revenue', header: 'Ventas', ...num, cell: (p) => formatCop(p.revenue) },
+    { key: 'cogs', header: 'Costo real', ...num, cell: (p) => formatCop(p.cogs) },
+    {
+      key: 'margin',
+      header: 'Ganancia',
+      ...num,
+      cell: (p) => <span className={claseDeMargen(p.marginPct)}>{formatCop(p.margin)}</span>,
+    },
+    {
+      key: 'marginPct',
+      header: '% margen',
+      ...num,
+      cell: (p) =>
+        p.marginPct === null ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          <span className={`font-medium ${claseDeMargen(p.marginPct)}`}>
+            {formatNumber(p.marginPct * 100, { decimals: 1 })}%
+          </span>
+        ),
+    },
+  ];
+
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-border text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <Th>Producto</Th>
-              <Th align="right">Unidades</Th>
-              <Th align="right">Ventas</Th>
-              <Th align="right">Costo real</Th>
-              <Th align="right">Ganancia</Th>
-              <Th align="right">% margen</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {report.products.map((p) => {
-              const pct = p.marginPct === null ? null : p.marginPct * 100;
-              const cls = pct === null ? 'text-foreground' : MARGIN_TONE_CLASS[marginTone(pct)];
-              return (
-                <tr key={p.productId} className="hover:bg-muted/40">
-                  <Td>
-                    <span className="flex items-center gap-1.5 font-medium text-foreground">
-                      {p.productName}
-                      {p.cogsPartial ? (
-                        <AlertTriangle
-                          className="h-3.5 w-3.5 text-warning"
-                          aria-label="Costo parcialmente desconocido (insumos sin costo registrado)"
-                        />
-                      ) : null}
-                    </span>
-                  </Td>
-                  <Td align="right" mono>
-                    {formatNumber(p.unitsSold, { decimals: 0 })}
-                  </Td>
-                  <Td align="right" mono>
-                    {formatCop(p.revenue)}
-                  </Td>
-                  <Td align="right" mono>
-                    {formatCop(p.cogs)}
-                  </Td>
-                  <Td align="right" mono>
-                    <span className={cls}>{formatCop(p.margin)}</span>
-                  </Td>
-                  <Td align="right" mono>
-                    {pct === null ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      <span className={`font-medium ${cls}`}>
-                        {formatNumber(pct, { decimals: 1 })}%
-                      </span>
-                    )}
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot className="border-t-2 border-border bg-muted/40 font-semibold">
-            <tr>
-              <Td>Total</Td>
-              <Td align="right"> </Td>
-              <Td align="right" mono>
-                {formatCop(report.totals.revenue)}
-              </Td>
-              <Td align="right" mono>
-                {formatCop(report.totals.cogs)}
-              </Td>
-              <Td align="right" mono>
-                {formatCop(report.totals.margin)}
-              </Td>
-              <Td align="right" mono>
-                {report.totals.marginPct === null
-                  ? '—'
-                  : `${formatNumber(report.totals.marginPct * 100, { decimals: 1 })}%`}
-              </Td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+      <DataTable
+        rows={report.products}
+        columns={columns}
+        rowKey={(p) => p.productId}
+        className="rounded-none border-0"
+      />
+      {/* Los totales van como tira propia y no como pie de la tabla: en
+          teléfono las filas son tarjetas y un `tfoot` quedaría como una
+          tarjeta más, indistinguible de un producto. */}
+      <dl className="grid gap-x-6 gap-y-1 border-t-2 border-border bg-muted/40 px-4 py-3 text-sm font-semibold sm:grid-cols-4">
+        <Total label="Ventas" valor={formatCop(report.totals.revenue)} />
+        <Total label="Costo real" valor={formatCop(report.totals.cogs)} />
+        <Total label="Ganancia" valor={formatCop(report.totals.margin)} />
+        <Total
+          label="% margen"
+          valor={
+            report.totals.marginPct === null
+              ? '—'
+              : `${formatNumber(report.totals.marginPct * 100, { decimals: 1 })}%`
+          }
+        />
+      </dl>
       <div className="border-t border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
         Costo real por método FIFO (lote más viejo primero). ⚠ = parte del costo no se pudo
         determinar (insumos sin costo en facturas confirmadas).
@@ -98,35 +98,11 @@ export function ProductMarginsTable({ report }: { report: ProductMarginReport })
   );
 }
 
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
+function Total({ label, valor }: { label: string; valor: string }) {
   return (
-    <th
-      scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align,
-  mono,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-4 py-3 text-foreground ${align === 'right' ? 'text-right' : 'text-left'} ${
-        mono ? 'tabular-nums' : ''
-      }`}
-    >
-      {children}
-    </td>
+    <div className="flex items-baseline justify-between gap-3 sm:block">
+      <dt className="caps text-[0.6875rem] font-semibold text-muted-foreground">{label}</dt>
+      <dd className="tabular-nums text-foreground">{valor}</dd>
+    </div>
   );
 }

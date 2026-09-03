@@ -1,7 +1,9 @@
 import type { PurchasesReport } from '@pos-tercos/types';
 import { fleteEsAlto } from '@pos-tercos/domain';
-import { formatCop } from '@pos-tercos/ui';
+import { DataTable, formatCop, type DataTableColumn } from '@pos-tercos/ui';
 import { formatNumber } from '../../../lib/format';
+
+type FilaProveedor = PurchasesReport['bySupplier'][number];
 
 /**
  * Quién te cobra por traer, ordenado por lo que cobró.
@@ -14,6 +16,51 @@ import { formatNumber } from '../../../lib/format';
 export function PurchaseSuppliersTable({ report }: { report: PurchasesReport }) {
   const conFlete = report.bySupplier.filter((s) => s.freight > 0);
   const sinFlete = report.bySupplier.filter((s) => s.freight === 0);
+
+  const columns: DataTableColumn<FilaProveedor>[] = [
+    { key: 'supplier', header: 'Proveedor', primary: true, cell: (s) => s.supplierName },
+    {
+      key: 'purchased',
+      header: 'Mercancía',
+      align: 'right',
+      numeric: true,
+      cell: (s) => formatCop(s.purchased),
+    },
+    {
+      key: 'freight',
+      header: 'Domicilios',
+      align: 'right',
+      numeric: true,
+      cell: (s) =>
+        s.freight > 0 ? formatCop(s.freight) : <span className="text-muted-foreground">no cobra</span>,
+    },
+    {
+      key: 'pct',
+      header: 'Peso',
+      align: 'right',
+      numeric: true,
+      cell: (s) => (
+        <span
+          className={
+            fleteEsAlto(s.freightPct) ? 'font-semibold text-warning' : 'text-muted-foreground'
+          }
+        >
+          {s.freightPct === null ? '—' : `${formatNumber(s.freightPct * 100, { decimals: 1 })}%`}
+        </span>
+      ),
+    },
+    {
+      key: 'invoices',
+      header: 'Facturas',
+      align: 'right',
+      numeric: true,
+      cell: (s) => (
+        <span className="text-muted-foreground">
+          {s.invoicesWithFreight}/{s.invoiceCount}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <section className="rounded-xl border border-border bg-card">
@@ -29,51 +76,12 @@ export function PurchaseSuppliersTable({ report }: { report: PurchasesReport }) 
           No hay compras confirmadas en este período.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <th className="px-5 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Proveedor
-                </th>
-                <th className="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Mercancía
-                </th>
-                <th className="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Domicilios
-                </th>
-                <th className="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Peso
-                </th>
-                <th className="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Facturas
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {report.bySupplier.map((s) => {
-                const alto = fleteEsAlto(s.freightPct);
-                return (
-                  <tr key={s.supplierId ?? s.supplierName} className="hover:bg-muted/20">
-                    <td className="px-5 py-2.5 font-medium text-foreground">{s.supplierName}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums">{formatCop(s.purchased)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums">
-                      {s.freight > 0 ? formatCop(s.freight) : <span className="text-ink-400">no cobra</span>}
-                    </td>
-                    <td
-                      className={`px-5 py-2.5 text-right tabular-nums ${alto ? 'font-semibold text-warning' : 'text-muted-foreground'}`}
-                    >
-                      {s.freightPct === null ? '—' : `${formatNumber(s.freightPct * 100, { decimals: 1 })}%`}
-                    </td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
-                      {s.invoicesWithFreight}/{s.invoiceCount}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          rows={report.bySupplier}
+          columns={columns}
+          rowKey={(s) => s.supplierId ?? s.supplierName}
+          className="rounded-none border-0"
+        />
       )}
 
       {conFlete.length > 0 && sinFlete.length > 0 && (

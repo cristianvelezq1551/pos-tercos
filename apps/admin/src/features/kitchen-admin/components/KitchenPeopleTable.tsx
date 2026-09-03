@@ -1,6 +1,5 @@
 import type { KitchenActivityDay, KitchenActivityUser } from '@pos-tercos/types';
-import { EmptyState, formatCop } from '@pos-tercos/ui';
-import { Th, Td } from './table-cells';
+import { DataTable, EmptyState, formatCop, type DataTableColumn } from '@pos-tercos/ui';
 
 /** Suma lo de cada persona a lo largo del rango. Es el dato con el que se
  *  decide: quién produce, quién tira y quién cumple la rutina. */
@@ -26,44 +25,53 @@ function aggregate(days: KitchenActivityDay[]): KitchenActivityUser[] {
 
 export function KitchenPeopleTable({ days }: { days: KitchenActivityDay[] }) {
   const people = aggregate(days);
-  if (people.length === 0) {
-    return (
-      <EmptyState
-        title="Nadie registró actividad"
-        description="En este rango no hay producción, merma ni tareas marcadas."
-        size="sm"
-      />
-    );
-  }
+
+  const columns: DataTableColumn<KitchenActivityUser>[] = [
+    {
+      key: 'person',
+      header: 'Persona',
+      primary: true,
+      cell: (u) => u.userName ?? 'Sin nombre',
+    },
+    { key: 'runs', header: 'Tandas', align: 'right', numeric: true, cell: (u) => u.productionRuns || '—' },
+    { key: 'units', header: 'Unidades', align: 'right', numeric: true, cell: (u) => u.producedUnits || '—' },
+    { key: 'waste', header: 'Mermas', align: 'right', numeric: true, cell: (u) => u.wasteEntries || '—' },
+    {
+      key: 'wasteCost',
+      header: '$ merma',
+      align: 'right',
+      numeric: true,
+      cell: (u) => (u.wasteCost > 0 ? formatCop(u.wasteCost) : '—'),
+    },
+    {
+      key: 'marks',
+      header: 'Tareas marcadas',
+      align: 'right',
+      numeric: true,
+      cell: (u) => u.checklistMarks || '—',
+    },
+    {
+      key: 'incidents',
+      header: 'Incidencias',
+      align: 'right',
+      numeric: true,
+      cell: (u) => u.incidentsLogged || '—',
+    },
+  ];
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <table className="min-w-full divide-y divide-border text-sm">
-        <thead className="bg-muted/40">
-          <tr>
-            <Th>Persona</Th>
-            <Th align="right">Tandas</Th>
-            <Th align="right">Unidades</Th>
-            <Th align="right">Mermas</Th>
-            <Th align="right">$ merma</Th>
-            <Th align="right">Tareas marcadas</Th>
-            <Th align="right">Incidencias</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {people.map((u) => (
-            <tr key={u.userId} className="hover:bg-muted/30">
-              <Td>{u.userName ?? 'Sin nombre'}</Td>
-              <Td mono align="right">{u.productionRuns || '—'}</Td>
-              <Td mono align="right">{u.producedUnits || '—'}</Td>
-              <Td mono align="right">{u.wasteEntries || '—'}</Td>
-              <Td mono align="right">{u.wasteCost > 0 ? formatCop(u.wasteCost) : '—'}</Td>
-              <Td mono align="right">{u.checklistMarks || '—'}</Td>
-              <Td mono align="right">{u.incidentsLogged || '—'}</Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      rows={people}
+      columns={columns}
+      rowKey={(u) => u.userId}
+      className="rounded-lg"
+      emptyState={
+        <EmptyState
+          title="Nadie registró actividad"
+          description="En este rango no hay producción, merma ni tareas marcadas."
+          size="sm"
+        />
+      }
+    />
   );
 }

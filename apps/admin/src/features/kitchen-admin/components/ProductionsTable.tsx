@@ -1,11 +1,15 @@
 'use client';
 
 import type { KitchenProductionInput, KitchenProductionRun } from '@pos-tercos/types';
-import { EmptyState, formatDate } from '@pos-tercos/ui';
+import {
+  DataTable,
+  DateTimeCell,
+  EmptyState,
+  type DataTableColumn,
+} from '@pos-tercos/ui';
 import { useState } from 'react';
 import { ProductionDetailModal } from './detail/ProductionDetailModal';
 import { RowNameButton } from './detail/DetailPieces';
-import { Th, Td } from './table-cells';
 
 /**
  * Una fila por TANDA. Los insumos consumidos se RESUMEN acá y se leen enteros
@@ -21,84 +25,92 @@ function resumenDeInsumos(inputs: KitchenProductionInput[]): string {
 export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
   const [abierta, setAbierta] = useState<KitchenProductionRun | null>(null);
 
-  if (runs.length === 0) {
-    return (
-      <EmptyState
-        title="Sin producción"
-        description="No se registraron tandas en este rango."
-        size="sm"
-      />
-    );
-  }
+  const columns: DataTableColumn<KitchenProductionRun>[] = [
+    {
+      key: 'subproduct',
+      header: 'Subproducto',
+      primary: true,
+      cell: (run) => (
+        <RowNameButton
+          onClick={() => setAbierta(run)}
+          label={`Ver detalle de la tanda de ${run.subproductName}`}
+        >
+          {run.subproductName}
+        </RowNameButton>
+      ),
+    },
+    {
+      key: 'when',
+      header: 'Cuándo',
+      cell: (run) => <DateTimeCell value={run.createdAt} />,
+    },
+    {
+      key: 'qty',
+      header: 'Cantidad',
+      align: 'right',
+      numeric: true,
+      cell: (run) => `${run.quantityProduced} ${run.unit}`,
+    },
+    {
+      key: 'who',
+      header: 'Quién',
+      cell: (run) => run.userName ?? <span className="text-muted-foreground">sistema</span>,
+    },
+    {
+      key: 'inputs',
+      header: 'Consumió',
+      cell: (run) => (
+        <span className="text-xs text-muted-foreground">{resumenDeInsumos(run.inputs)}</span>
+      ),
+    },
+    {
+      key: 'notes',
+      header: 'Nota',
+      hideOnMobile: true,
+      cell: (run) =>
+        run.notes ? (
+          <span className="line-clamp-1 max-w-[16rem] text-xs text-muted-foreground">
+            {run.notes}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: 'photo',
+      header: 'Foto',
+      hideOnMobile: true,
+      cell: (run) =>
+        run.evidenceUrl ? (
+          <a
+            href={run.evidenceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Ver
+          </a>
+        ) : (
+          <span className="text-muted-foreground">sin foto</span>
+        ),
+    },
+  ];
 
   return (
     <>
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="min-w-full divide-y divide-border text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <Th>Cuándo</Th>
-              <Th>Subproducto</Th>
-              <Th align="right">Cantidad</Th>
-              <Th>Quién</Th>
-              <Th>Consumió</Th>
-              <Th>Nota</Th>
-              <Th>Foto</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {runs.map((run) => (
-              <tr key={run.runId} className="hover:bg-muted/30">
-                <Td>
-                  <time className="text-xs text-muted-foreground" dateTime={run.createdAt}>
-                    {formatDate(run.createdAt, 'datetime')}
-                  </time>
-                </Td>
-                <Td>
-                  <RowNameButton
-                    onClick={() => setAbierta(run)}
-                    label={`Ver detalle de la tanda de ${run.subproductName}`}
-                  >
-                    {run.subproductName}
-                  </RowNameButton>
-                </Td>
-                <Td mono align="right">
-                  {run.quantityProduced} {run.unit}
-                </Td>
-                <Td>{run.userName ?? <span className="text-ink-300">sistema</span>}</Td>
-                <Td>
-                  <span className="text-xs text-muted-foreground">
-                    {resumenDeInsumos(run.inputs)}
-                  </span>
-                </Td>
-                <Td>
-                  {run.notes ? (
-                    <span className="line-clamp-1 max-w-[16rem] text-xs text-muted-foreground">
-                      {run.notes}
-                    </span>
-                  ) : (
-                    <span className="text-ink-300">—</span>
-                  )}
-                </Td>
-                <Td>
-                  {run.evidenceUrl ? (
-                    <a
-                      href={run.evidenceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Ver
-                    </a>
-                  ) : (
-                    <span className="text-ink-300">sin foto</span>
-                  )}
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        rows={runs}
+        columns={columns}
+        rowKey={(run) => run.runId}
+        className="rounded-lg"
+        emptyState={
+          <EmptyState
+            title="Sin producción"
+            description="No se registraron tandas en este rango."
+            size="sm"
+          />
+        }
+      />
 
       <ProductionDetailModal run={abierta} onClose={() => setAbierta(null)} />
     </>

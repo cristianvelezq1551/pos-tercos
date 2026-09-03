@@ -26,7 +26,10 @@ export function WeekDayGrid({
 
   return (
     <>
-      <div className="mt-4 grid grid-cols-7 gap-1.5">
+      {/* Siete columnas en un teléfono dan chips de 45 px y "$ 85.000" no cabe:
+          el monto se desbordaba y los días se leían pegados. En 4 columnas la
+          semana ocupa dos filas y cada día muestra su valor entero. */}
+      <div className="mt-4 grid grid-cols-4 gap-1.5 sm:grid-cols-7">
         {entry.days.map((d) => (
           <div key={d.date} className="relative">
             <DayChip day={d} selected={selected.has(d.date)} onToggle={() => onToggle(d.date)} />
@@ -94,7 +97,7 @@ function DayChip({
       onClick={selectable ? onToggle : undefined}
       disabled={!selectable}
       className={cn(
-        'flex w-full flex-col items-center rounded-lg border px-1 py-2 text-center transition-colors',
+        'flex min-h-11 w-full flex-col items-center justify-center rounded-lg border px-1 py-2 text-center transition-colors',
         tone,
         !selectable && 'cursor-default',
       )}
@@ -112,7 +115,7 @@ function DayChip({
           Editado
         </span>
       ) : null}
-      <span className="mt-0.5 text-[0.625rem] leading-tight">{bottom}</span>
+      <span className="mt-0.5 w-full truncate text-[0.625rem] leading-tight">{bottom}</span>
     </button>
   );
 }

@@ -8,7 +8,7 @@ import type { CloseLeg } from '../lib/shift-close-totals';
  */
 export function LegCell({ leg, strong }: { leg: CloseLeg; strong?: boolean }) {
   return (
-    <td className="border-l border-border px-4 py-3 text-right align-middle">
+    <div className="text-right">
       <p
         className={`tabular-nums ${strong ? 'text-base font-bold' : 'font-semibold'} ${
           leg.counted === null ? 'text-muted-foreground' : 'text-foreground'
@@ -25,7 +25,7 @@ export function LegCell({ leg, strong }: { leg: CloseLeg; strong?: boolean }) {
           </>
         ) : null}
       </p>
-    </td>
+    </div>
   );
 }
 
@@ -41,32 +41,5 @@ function DiffText({ value, partial }: { value: number | null; partial: boolean }
       {formatCop(value)}
       {partial ? ' (parcial)' : ''}
     </span>
-  );
-}
-
-export function Th({
-  children,
-  align,
-}: {
-  children: React.ReactNode;
-  align?: 'right';
-}) {
-  return (
-    <th
-      scope="col"
-      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${
-        align === 'right' ? 'border-l border-border text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-export function Td({ children, mono }: { children: React.ReactNode; mono?: boolean }) {
-  return (
-    <td className={`px-4 py-3 align-middle text-foreground ${mono ? 'tabular-nums' : ''}`}>
-      {children}
-    </td>
   );
 }

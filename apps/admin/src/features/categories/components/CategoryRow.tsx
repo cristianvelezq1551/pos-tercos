@@ -62,7 +62,9 @@ export function CategoryRow({
           </button>
         </div>
       </td>
-      <td className="py-2 pr-3">
+      {/* Un `<td>` no encoge solo: sin el tope, un nombre largo empuja la fila
+          fuera de la pantalla del teléfono en vez de recortarse. */}
+      <td className="max-w-[8rem] py-2 pr-3 sm:max-w-none">
         {editing ? (
           <div className="flex items-center gap-1.5">
             <Input
@@ -78,7 +80,7 @@ export function CategoryRow({
                   setEditing(false);
                 }
               }}
-              className="h-8 w-48"
+              className="h-8 w-full sm:w-48"
             />
             <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={commit}>
               <Check className="h-4 w-4" />
@@ -101,9 +103,11 @@ export function CategoryRow({
             type="button"
             disabled={busy}
             onClick={() => setEditing(true)}
-            className="group inline-flex items-center gap-2 text-left"
+            className="group flex w-full min-w-0 items-center gap-2 text-left"
           >
-            <span className={category.isActive ? 'font-medium' : 'text-muted-foreground line-through'}>
+            <span
+              className={`min-w-0 truncate ${category.isActive ? 'font-medium' : 'text-muted-foreground line-through'}`}
+            >
               {category.name}
             </span>
             <Pencil className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
@@ -111,7 +115,10 @@ export function CategoryRow({
         )}
       </td>
       <td className="py-2 pr-3 text-sm tabular-nums text-muted-foreground">
-        {count} {count === 1 ? 'producto' : 'productos'}
+        {count}
+        {/* La palabra sobra en teléfono: la columna ya se llama "En uso" y con
+            ella la fila no cabía en 390 px. */}
+        <span className="hidden sm:inline"> {count === 1 ? 'producto' : 'productos'}</span>
       </td>
       <td className="py-2 pr-3">
         <button

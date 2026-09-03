@@ -29,9 +29,11 @@ export function ListItemsTable({ items, editable, onChangeQty, onRemove }: Props
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[42rem] text-sm">
-        <thead>
+    /* Esta lista se usa DENTRO del mercado, con el teléfono en la mano: en vez
+       de arrastrar la tabla de lado a lado, cada renglón es una tarjeta. */
+    <div className="overflow-x-auto max-sm:overflow-x-visible">
+      <table className="w-full text-sm max-sm:block sm:min-w-[42rem]">
+        <thead className="max-sm:hidden">
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             <th className="pb-2">Insumo / producto</th>
             <th className="pb-2 text-right">Hay / mínimo</th>
@@ -41,7 +43,7 @@ export function ListItemsTable({ items, editable, onChangeQty, onRemove }: Props
             <th className="pb-2" />
           </tr>
         </thead>
-        <tbody>
+        <tbody className="max-sm:block">
           {items.map((it) => (
             <ItemRow
               key={it.id}
@@ -56,6 +58,11 @@ export function ListItemsTable({ items, editable, onChangeQty, onRemove }: Props
     </div>
   );
 }
+
+/** Celda que en teléfono se lee como `etiqueta ─── valor`. */
+const CELDA =
+  'py-2 text-right tabular-nums max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-0.5';
+const ROTULO = 'caps hidden text-[0.6875rem] font-semibold text-muted-foreground max-sm:block';
 
 function ItemRow({
   item,
@@ -98,8 +105,8 @@ function ItemRow({
   }
 
   return (
-    <tr className="border-b border-border/60">
-      <td className="py-2 pr-3">
+    <tr className="border-b border-border/60 max-sm:block max-sm:py-2">
+      <td className="py-2 pr-3 max-sm:block max-sm:py-0 max-sm:pb-1.5">
         <span className="font-medium text-foreground">{item.entityName}</span>
         {item.supplierName ? (
           <span className="block text-xs text-muted-foreground">{item.supplierName}</span>
@@ -107,7 +114,8 @@ function ItemRow({
           <span className="block text-xs text-warning">Sin proveedor asignado</span>
         )}
       </td>
-      <td className="py-2 text-right tabular-nums">
+      <td className={CELDA}>
+        <span className={ROTULO}>Hay / mínimo</span>
         <span className={item.currentStock < item.thresholdMin ? 'text-destructive' : ''}>
           <Quantity value={item.currentStock} maxDecimals={1} className="text-current" />
         </span>
@@ -117,7 +125,8 @@ function ItemRow({
           {` ${item.unitStock}`}
         </span>
       </td>
-      <td className="py-2 text-right">
+      <td className={CELDA}>
+        <span className={ROTULO}>Comprar</span>
         {editable ? (
           <span className="inline-flex items-center gap-1">
             <Input
@@ -140,7 +149,8 @@ function ItemRow({
           <Quantity value={item.quantity} unit={item.unitPurchase} maxDecimals={2} />
         )}
       </td>
-      <td className="py-2 text-right tabular-nums">
+      <td className={CELDA}>
+        <span className={ROTULO}>Queda en</span>
         <span className={alcanza ? 'text-foreground' : 'text-destructive'}>
           <Quantity value={queda} unit={item.unitStock} maxDecimals={1} className="text-current" />
         </span>
@@ -148,7 +158,8 @@ function ItemRow({
           <span className="block text-xs text-destructive">no alcanza el mínimo</span>
         ) : null}
       </td>
-      <td className="py-2 text-right">
+      <td className={CELDA}>
+        <span className={ROTULO}>Costo est.</span>
         {item.estTotal === null ? (
           <span className="text-xs text-muted-foreground" title="Nunca se ha comprado con factura">
             sin costo
@@ -157,7 +168,7 @@ function ItemRow({
           <Money amount={item.estTotal} />
         )}
       </td>
-      <td className="py-2 pl-2 text-right">
+      <td className="py-2 pl-2 text-right max-sm:block max-sm:pl-0 max-sm:pt-1">
         {editable ? (
           <Button
             size="sm"

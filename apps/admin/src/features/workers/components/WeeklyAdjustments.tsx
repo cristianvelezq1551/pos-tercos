@@ -99,20 +99,37 @@ export function WeeklyAdjustments({
 
       {open ? (
         <div className="mt-2 space-y-2">
-          <div className="flex gap-2">
-            <Select value={sign} onChange={(e) => setSign(e.target.value as '+' | '-')} disabled={busy} className="w-20">
-              <option value="+">Bono</option>
-              <option value="-">Descuento</option>
-            </Select>
+          {/* En una sola fila el concepto quedaba aplastado entre el selector y
+              el monto — en teléfono se veía como un recuadro de un centímetro
+              y no se podía escribir. Concepto arriba, a lo ancho; tipo y monto
+              debajo. */}
+          <div className="space-y-2 sm:flex sm:gap-2 sm:space-y-0">
             <Input
               value={concept}
               onChange={(e) => setConcept(e.target.value)}
               placeholder="Concepto (ej. horas extra, anticipo)"
               maxLength={120}
               disabled={busy}
-              className="flex-1"
+              className="w-full sm:order-2 sm:flex-1"
             />
-            <MoneyInput value={amountInput} onChange={setAmountInput} disabled={busy} placeholder="0" />
+            <div className="flex gap-2 sm:contents">
+              <Select
+                value={sign}
+                onChange={(e) => setSign(e.target.value as '+' | '-')}
+                disabled={busy}
+                className="w-28 shrink-0 sm:order-1 sm:w-24"
+              >
+                <option value="+">Bono</option>
+                <option value="-">Descuento</option>
+              </Select>
+              <MoneyInput
+                value={amountInput}
+                onChange={setAmountInput}
+                disabled={busy}
+                placeholder="0"
+                className="min-w-0 flex-1 sm:order-3 sm:flex-none"
+              />
+            </div>
           </div>
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
           <div className="flex justify-end gap-2">

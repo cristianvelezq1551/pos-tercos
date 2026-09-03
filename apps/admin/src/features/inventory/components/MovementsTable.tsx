@@ -2,9 +2,9 @@ import type { InventoryMovement, InventoryMovementType } from '@pos-tercos/types
 import {
   Badge,
   DataTable,
+  DateTimeCell,
   EmptyState,
   Quantity,
-  formatDate,
   type BadgeTone,
   type DataTableColumn,
 } from '@pos-tercos/ui';
@@ -52,9 +52,7 @@ export function MovementsTable({ rows, reversalSource }: MovementsTableProps) {
       key: 'date',
       header: 'Fecha',
       cell: (m) => (
-        <time className="tabular text-xs text-muted-foreground" dateTime={m.createdAt}>
-          {formatDate(m.createdAt, 'datetime')}
-        </time>
+        <DateTimeCell value={m.createdAt} />
       ),
     },
     {
