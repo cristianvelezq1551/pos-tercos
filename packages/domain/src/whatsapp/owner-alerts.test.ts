@@ -35,6 +35,52 @@ describe('buildVoidAlertMessage', () => {
     });
     expect(msg).toContain('desconocido');
   });
+
+  /**
+   * Anular tiene dos desenlaces y los elige el cajero. El dueño ve el aviso en
+   * el teléfono: lo primero que quiere saber es si costó plata, y "Reembolso"
+   * contra "Venta anulada" no se lo decía — se leían como lo mismo con otro
+   * nombre.
+   */
+  it('sin pérdida: lo dice en el título y explica que los insumos volvieron', () => {
+    const msg = buildVoidAlertMessage({
+      businessName: 'Tercos',
+      cashierName: 'Laura',
+      receiptNumber: 19,
+      total: 29000,
+      reason: 'se cobró por error',
+    });
+    expect(msg).toContain('sin pérdida');
+    expect(msg).toContain('volvieron al inventario');
+    expect(msg).not.toContain('NO vuelven');
+  });
+
+  it('con pérdida: lo dice en el título y explica que los insumos se gastaron', () => {
+    const msg = buildVoidAlertMessage({
+      businessName: 'Tercos',
+      cashierName: 'Laura',
+      receiptNumber: 19,
+      total: 29000,
+      reason: 'ya estaba servida',
+      kind: 'refund',
+    });
+    expect(msg).toContain('CON pérdida');
+    expect(msg).toContain('NO vuelven al inventario');
+    expect(msg).toContain('pérdida del mes');
+  });
+
+  it('los dos avisos no se leen igual', () => {
+    const base = {
+      businessName: 'Tercos',
+      cashierName: 'Laura',
+      receiptNumber: 19,
+      total: 29000,
+      reason: 'motivo',
+    } as const;
+    expect(buildVoidAlertMessage(base)).not.toBe(
+      buildVoidAlertMessage({ ...base, kind: 'refund' }),
+    );
+  });
 });
 
 describe('buildNoSaleDrawerAlertMessage', () => {
@@ -115,8 +161,9 @@ describe('formato común de las alertas al dueño', () => {
   });
 
   it('un reembolso no se lee igual que una anulación', () => {
-    expect(todas[0]).toContain('Venta anulada');
-    expect(todas[1]).toContain('Reembolso');
+    // Lo que las separa es si costó plata, y el título lo dice.
+    expect(todas[0]).toContain('Anulación sin pérdida');
+    expect(todas[1]).toContain('Anulación CON pérdida');
   });
 
   it('la cortesía dice quién la dio y cuánto costó', () => {
@@ -168,7 +215,7 @@ describe('splitOwnerAlert', () => {
         total: 28500, reason: 'Se arrepintió',
       }),
     );
-    expect(title).toBe('Tercos · Venta anulada');
+    expect(title).toBe('Tercos · Anulación sin pérdida');
     expect(body.startsWith('Recibo: #412')).toBe(true);
     expect(body).not.toContain('[Tercos]');
   });

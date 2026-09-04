@@ -35,14 +35,21 @@ export function buildVoidAlertMessage(input: {
    *  que anular uno que la cocina no tocó, y el dueño reacciona distinto. */
   kind?: 'void' | 'refund';
 }): string {
+  // El título dice si costó plata, que es lo primero que el dueño quiere
+  // saber al ver el aviso en el teléfono; el cuerpo explica por qué. Sin eso,
+  // "Reembolso" y "Venta anulada" se leían como lo mismo con otro nombre.
+  const conPerdida = input.kind === 'refund';
   return buildOwnerAlert({
     businessName: input.businessName,
-    title: input.kind === 'refund' ? 'Reembolso' : 'Venta anulada',
+    title: conPerdida ? 'Anulación CON pérdida' : 'Anulación sin pérdida',
     body:
       `Recibo: #${input.receiptNumber}\n` +
       `Monto: ${formatCop(input.total)}\n` +
       `Cajero: ${input.cashierName ?? 'desconocido'}\n` +
-      `Motivo: ${input.reason}`,
+      `Motivo: ${input.reason}\n` +
+      (conPerdida
+        ? 'La comida ya había salido: los insumos NO vuelven al inventario y su costo queda como pérdida del mes.'
+        : 'No había salido: los insumos volvieron al inventario y no costó nada.'),
   });
 }
 

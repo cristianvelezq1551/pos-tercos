@@ -21,6 +21,17 @@ export interface VoidOutcomeOption {
   label: string;
   /** Qué le pasa al inventario y a las cuentas. Se muestra junto a la opción. */
   consequence: string;
+  /**
+   * El aviso que aparece DESPUÉS de elegir, en grande. La consecuencia de al
+   * lado se lee mientras se compara; esto es la confirmación de lo que va a
+   * pasar, y una de las dos cuesta plata de verdad.
+   */
+  impact: {
+    titulo: string;
+    detalle: string;
+    /** `perdida` se pinta en rojo; `sin-costo`, en verde. */
+    tono: 'perdida' | 'sin-costo';
+  };
 }
 
 export const VOID_OUTCOMES: VoidOutcomeOption[] = [
@@ -28,12 +39,24 @@ export const VOID_OUTCOMES: VoidOutcomeOption[] = [
     value: 'no-salio',
     label: 'No, se cobró por error',
     consequence: 'Vuelve el inventario y no cuesta nada: los insumos siguen en la bodega.',
+    impact: {
+      titulo: 'El inventario se devuelve',
+      detalle:
+        'Los insumos de este pedido vuelven a la bodega, como si nunca se hubiera vendido. No queda ninguna pérdida.',
+      tono: 'sin-costo',
+    },
   },
   {
     value: 'si-salio',
     label: 'Sí, ya se había preparado',
     consequence:
       'El inventario NO vuelve porque los insumos ya se gastaron. Queda como pérdida del mes.',
+    impact: {
+      titulo: 'El inventario queda descontado',
+      detalle:
+        'Los insumos de este pedido NO vuelven a la bodega: ya se gastaron. Su costo entra como pérdida del mes y el inventario se queda con menos. Elige esto solo si la comida de verdad salió.',
+      tono: 'perdida',
+    },
   },
 ];
 
