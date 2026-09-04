@@ -30,8 +30,10 @@ const ACTION_LABELS: Record<string, string> = {
   // Ventas / caja
   SALE_CREATED: 'Creó venta',
   SALE_PAID: 'Cobró venta',
-  SALE_VOIDED: 'Anuló venta',
-  SALE_REFUNDED: 'Reembolsó venta',
+  // Las dos son anulaciones; lo que las separa es si los insumos volvieron a
+  // la bodega o se dieron por gastados, que es lo que decide el cajero.
+  SALE_VOIDED: 'Anuló venta (sin gastar insumos)',
+  SALE_REFUNDED: 'Devolvió la plata (insumos gastados)',
   CORTESIA_REQUESTED: 'Solicitó cortesía',
   CORTESIA_APPROVED: 'Registró cortesía',
   CORTESIA_REJECTED: 'Rechazó cortesía',

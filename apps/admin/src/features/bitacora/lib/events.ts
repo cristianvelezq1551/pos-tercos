@@ -125,16 +125,25 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
       };
     case 'SHIFT_DISCREPANCY_DETECTED':
       return { label: 'Descuadre de caja', detail: `Diferencia ${cop(m.difference)}`, tone: 'danger' };
-    case 'SALE_VOIDED':
+    // Anular tiene DOS desenlaces y el cajero elige cuál: si la comida no
+    // había salido, los insumos vuelven a la bodega y no cuesta nada; si ya se
+    // había preparado, no vuelven y quedan como pérdida del mes. Son dos
+    // acciones distintas en la bitácora, pero "Anuló" y "Reembolsó" no dicen
+    // eso: quien lee tiene que saberse la convención. El detalle lo dice.
+    case 'SALE_VOIDED': {
+      const movs = Number(m.movementsReversed ?? 0);
+      const volvio = movs > 0 ? `el inventario volvió (${movs} ${movs === 1 ? 'insumo' : 'insumos'})` : 'el inventario volvió';
       return {
-        label: 'Anuló venta',
-        detail: `${m.reason ? `Motivo: ${String(m.reason)}` : 'Sin motivo'}${m.oldStatus ? ` · estado previo: ${String(m.oldStatus)}` : ''}`,
-        tone: 'danger',
+        label: 'Anuló venta · sin gastar insumos',
+        detail: `${volvio} · ${m.reason ? `motivo: ${String(m.reason)}` : 'sin motivo'}`,
+        // Ámbar y no rojo: es una corrección, no hubo pérdida.
+        tone: 'warning',
       };
+    }
     case 'SALE_REFUNDED':
       return {
-        label: 'Reembolsó venta',
-        detail: `${m.reason ? `Motivo: ${String(m.reason)}` : 'Sin motivo'}${m.oldStatus ? ` · estado previo: ${String(m.oldStatus)}` : ''}`,
+        label: 'Devolvió la plata · insumos gastados',
+        detail: `el inventario NO vuelve, queda como pérdida del mes · ${m.reason ? `motivo: ${String(m.reason)}` : 'sin motivo'}`,
         tone: 'danger',
       };
     case 'SALE_FORCED_STOCK': {
