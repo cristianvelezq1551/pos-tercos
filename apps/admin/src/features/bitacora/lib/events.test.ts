@@ -89,3 +89,48 @@ describe('bitácora · cocina', () => {
     );
   });
 });
+
+describe('bitácora · anulaciones', () => {
+  /**
+   * Anular tiene dos desenlaces y los elige el cajero: si la comida no había
+   * salido, los insumos vuelven a la bodega; si ya se había preparado, no
+   * vuelven y quedan como pérdida del mes. El dueño no podía saber cuál fue
+   * mirando la bitácora — "Anuló venta" y "Reembolsó venta" se leían igual.
+   */
+  it('una anulación sin gasto dice que el inventario volvió, y cuántos insumos', () => {
+    const d = describeEvent(
+      entry('SALE_VOIDED', {
+        metadata: { reason: 'se cobró por error', oldStatus: 'PAGADO', movementsReversed: 14 },
+      }),
+    );
+    expect(d.label).toContain('sin gastar insumos');
+    expect(d.detail).toContain('el inventario volvió');
+    expect(d.detail).toContain('14');
+    expect(d.detail).toContain('se cobró por error');
+  });
+
+  it('una devolución con gasto dice que NO vuelve y que es pérdida', () => {
+    const d = describeEvent(
+      entry('SALE_REFUNDED', { metadata: { reason: 'ya estaba servida', oldStatus: 'PAGADO' } }),
+    );
+    expect(d.label).toContain('insumos gastados');
+    expect(d.detail).toContain('NO vuelve');
+    expect(d.detail).toContain('pérdida');
+  });
+
+  it('las dos se distinguen a simple vista, no solo por el verbo', () => {
+    const sinGasto = describeEvent(entry('SALE_VOIDED', { metadata: { movementsReversed: 3 } }));
+    const conGasto = describeEvent(entry('SALE_REFUNDED', { metadata: {} }));
+    expect(sinGasto.label).not.toBe(conGasto.label);
+    // Distinto tono: la que cuesta plata se ve como pérdida, la otra como
+    // corrección. Si las dos fueran rojas habría que leer el texto para saber.
+    expect(sinGasto.tone).not.toBe(conGasto.tone);
+    expect(conGasto.tone).toBe('danger');
+  });
+
+  it('sin motivo lo dice, no deja el detalle a medias', () => {
+    const d = describeEvent(entry('SALE_VOIDED', { metadata: { movementsReversed: 2 } }));
+    expect(d.detail).toContain('sin motivo');
+  });
+});
+
