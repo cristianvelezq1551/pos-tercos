@@ -136,8 +136,10 @@ export class KitchenController {
 
   @KitchenAccess()
   @Get('stock')
-  listStock(): Promise<Stockable[]> {
-    return this.inventory.listStock();
+  listStock(@Query('para') para?: string): Promise<Stockable[]> {
+    // `?para=conteo` trae TAMBIÉN lo que no se muestra en cocina (empaques,
+    // recipientes): en un conteo físico se cuenta la bodega entera.
+    return this.inventory.listStock({ paraConteo: para === 'conteo' });
   }
 
   @KitchenAccess()

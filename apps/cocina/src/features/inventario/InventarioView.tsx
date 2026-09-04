@@ -18,17 +18,25 @@ const TYPE_LABEL: Record<Stockable['type'], string> = {
 
 export function InventarioView() {
   const [stock, setStock] = useState<Stockable[]>([]);
+  const [stockParaConteo, setStockParaConteo] = useState<Stockable[]>([]);
   const [tab, setTab] = useState<'stock' | 'conteo'>('stock');
   const [q, setQ] = useState('');
   const [wasting, setWasting] = useState<Stockable | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Dos listas distintas a propósito: la del día a día esconde los empaques
+  // (§7.v59), pero el conteo físico cuenta la bodega ENTERA — los tenedores y
+  // los recipientes están ahí y hay que contarlos.
   const refresh = useCallback(async () => {
     try {
-      const data = await fetchKitchenStock();
-      data.sort((a, b) => a.name.localeCompare(b.name));
-      setStock(data);
+      const [delDia, paraConteo] = await Promise.all([
+        fetchKitchenStock(),
+        fetchKitchenStock({ paraConteo: true }),
+      ]);
+      const porNombre = (a: Stockable, b: Stockable) => a.name.localeCompare(b.name);
+      setStock([...delDia].sort(porNombre));
+      setStockParaConteo([...paraConteo].sort(porNombre));
       setError(null);
     } catch (e) {
       setError(getErrorMessage(e, 'No se pudo cargar el stock'));
@@ -113,7 +121,7 @@ export function InventarioView() {
         </>
       ) : (
         <div className="mt-4">
-          <CountForm stockables={stock} onDone={() => void refresh()} />
+          <CountForm stockables={stockParaConteo} onDone={() => void refresh()} />
         </div>
       )}
 

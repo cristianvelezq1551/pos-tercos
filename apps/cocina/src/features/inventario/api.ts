@@ -9,8 +9,14 @@ import {
 import { z } from 'zod';
 import { apiGet, apiSend } from '../../lib/api-client';
 
-export function fetchKitchenStock(): Promise<Stockable[]> {
-  return apiGet('/kitchen/stock', z.array(StockableSchema));
+/**
+ * El stock de cocina. `paraConteo` trae ADEMÁS lo que no se muestra en el día
+ * a día (empaques, recipientes, tenedores): en un conteo físico se cuenta la
+ * bodega entera y esos también están ahí.
+ */
+export function fetchKitchenStock(opts: { paraConteo?: boolean } = {}): Promise<Stockable[]> {
+  const ruta = opts.paraConteo ? '/kitchen/stock?para=conteo' : '/kitchen/stock';
+  return apiGet(ruta, z.array(StockableSchema));
 }
 
 export function registerWaste(body: RegisterWaste): Promise<Stockable> {

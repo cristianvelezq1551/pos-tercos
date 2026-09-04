@@ -30,11 +30,19 @@ export class KitchenInventoryService {
    * `basePrice` (precio de venta, no sensible) por si la UI lo quiere mostrar.
    *
    * Deja fuera lo marcado como "no se ve en cocina": lo que está en el catálogo
-   * solo para costear (empaques, recipientes) no es algo que el cocinero cuente
-   * ni merme, y estorbaba en la lista.
+   * solo para costear (empaques, recipientes) no es algo que el cocinero mire
+   * en el día a día, y estorbaba en la lista.
+   *
+   * ⚠️ `paraConteo` es la EXCEPCIÓN, y es deliberada: en un conteo físico se
+   * cuenta la bodega entera. Los tenedores y los recipientes están ahí y hay
+   * que contarlos; dejarlos fuera hacía que su existencia nunca se corrigiera
+   * y el conteo quedara a medias sin que nadie lo notara.
    */
-  listStock(): Promise<Stockable[]> {
-    return this.inventory.listStockables({ onlyActive: true, onlyKitchen: true });
+  listStock(opts: { paraConteo?: boolean } = {}): Promise<Stockable[]> {
+    return this.inventory.listStockables({
+      onlyActive: true,
+      onlyKitchen: !opts.paraConteo,
+    });
   }
 
   /**
