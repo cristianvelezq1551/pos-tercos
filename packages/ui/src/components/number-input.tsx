@@ -1,6 +1,12 @@
 import * as React from 'react';
 import { cn } from '../lib/utils';
 import { groupDigits, onlyDigits } from '../lib/format';
+import {
+  decimalANumero,
+  normalizarDecimal,
+  textoDeDecimal,
+  textoRepresenta,
+} from '../lib/decimal-input';
 
 export interface NumberInputProps extends Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
@@ -59,11 +65,33 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       return v;
     };
 
+    // Con decimales el campo guarda TEXTO mientras se escribe. Un
+    // `type="number"` controlado por un número parsea "6." a 6 y le borra el
+    // punto a la persona, y descarta la COMA —el separador del teclado en
+    // español—, así que "6,17" terminaba en 617. Lo reportó el dueño cargando
+    // una factura desde el celular.
+    const conDecimales = !grouped && decimals > 0;
+    const [texto, setTexto] = React.useState(() => textoDeDecimal(value));
+
+    // El valor puede llegar recalculado desde afuera. Solo se pisa cuando de
+    // verdad es otro número: si ya representa lo mismo, reemplazarlo borraría
+    // el separador recién tecleado.
+    React.useEffect(() => {
+      if (!conDecimales) return;
+      setTexto((actual) => (textoRepresenta(actual, value) ? actual : textoDeDecimal(value)));
+    }, [conDecimales, value]);
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
       if (grouped) {
         const digits = onlyDigits(raw);
         onChange(digits === '' ? null : clamp(Number(digits)));
+        return;
+      }
+      if (conDecimales) {
+        const limpio = normalizarDecimal(raw, decimals);
+        setTexto(limpio);
+        onChange(limpio === '' ? null : clamp(decimalANumero(limpio)));
         return;
       }
       if (raw === '' || raw === '-') {
@@ -72,8 +100,7 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       }
       const parsed = Number(raw);
       if (!Number.isFinite(parsed)) return;
-      const n = decimals === 0 ? Math.trunc(parsed) : Number(parsed.toFixed(decimals));
-      onChange(clamp(n));
+      onChange(clamp(Math.trunc(parsed)));
     };
 
     return (
@@ -94,12 +121,20 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
         ) : null}
         <input
           ref={ref}
-          type={grouped ? 'text' : 'number'}
-          inputMode={grouped ? 'numeric' : decimals > 0 ? 'decimal' : 'numeric'}
-          step={grouped ? undefined : decimals === 0 ? 1 : Math.pow(10, -decimals)}
-          min={grouped ? undefined : min}
-          max={grouped ? undefined : max}
-          value={grouped ? (value == null ? '' : groupDigits(String(value))) : (value ?? '')}
+          type={grouped || conDecimales ? 'text' : 'number'}
+          inputMode={grouped ? 'numeric' : conDecimales ? 'decimal' : 'numeric'}
+          step={grouped || conDecimales ? undefined : 1}
+          min={grouped || conDecimales ? undefined : min}
+          max={grouped || conDecimales ? undefined : max}
+          value={
+            grouped
+              ? value == null
+                ? ''
+                : groupDigits(String(value))
+              : conDecimales
+                ? texto
+                : (value ?? '')
+          }
           onChange={handleChange}
           disabled={disabled}
           className={cn(

@@ -74,11 +74,33 @@ describe('NumberInput — decimales', () => {
     expect(onChange).toHaveBeenCalledWith(1.55);
   });
 
-  it('redondea lo que exceda los decimales permitidos', () => {
+  it('CORTA lo que exceda los decimales permitidos, no lo redondea', () => {
+    // Redondeando, quien escribe "1,559" con dos decimales ve saltar el campo
+    // a "1,56" y no entiende qué pasó. El tercer decimal no entra y ya.
     const onChange = vi.fn();
     render(<NumberInput aria-label="cantidad" value={null} onChange={onChange} decimals={2} />);
     fireEvent.change(input(), { target: { value: '1.559' } });
-    expect(onChange).toHaveBeenCalledWith(1.56);
+    expect(onChange).toHaveBeenCalledWith(1.55);
+  });
+
+  it('acepta la COMA: es el separador del teclado en español', () => {
+    // Lo reportó el dueño cargando una factura desde el celular: "6,17"
+    // terminaba en 617 porque `type="number"` descarta la coma.
+    const onChange = vi.fn();
+    render(<NumberInput aria-label="cantidad" value={null} onChange={onChange} decimals={4} />);
+    fireEvent.change(input(), { target: { value: '6,17' } });
+    expect(onChange).toHaveBeenCalledWith(6.17);
+    expect(input().value).toBe('6.17');
+  });
+
+  it('deja escribir el separador suelto sin borrarlo', () => {
+    // Tecleando "6.17" se pasa por "6.": un input controlado por número lo
+    // parseaba a 6 y le borraba el punto a la persona.
+    const onChange = vi.fn();
+    render(<NumberInput aria-label="cantidad" value={null} onChange={onChange} decimals={2} />);
+    fireEvent.change(input(), { target: { value: '6.' } });
+    expect(input().value).toBe('6.');
+    expect(onChange).toHaveBeenCalledWith(6);
   });
 
   it('usa teclado decimal en móvil', () => {
@@ -135,7 +157,9 @@ describe('NumberInput — modo agrupado (montos en COP)', () => {
     render(
       <NumberInput aria-label="cantidad" value={1000} onChange={() => {}} grouping decimals={2} />,
     );
-    expect(input().type).toBe('number');
+    // Sin separadores de miles: "1000", no "1.000". Con decimales el punto ya
+    // significa otra cosa y mezclarlos haría ilegible el número.
+    expect(input().value).toBe('1000');
   });
 
   it('respeta min/max también agrupado', () => {
