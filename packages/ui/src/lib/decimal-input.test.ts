@@ -74,12 +74,22 @@ describe('textoRepresenta', () => {
     expect(textoRepresenta('', null)).toBe(true);
     expect(textoRepresenta('6', null)).toBe(false);
   });
+
+  it('vacío NO representa al cero: son cosas distintas', () => {
+    // `Number('') === 0`, así que sin guarda un campo en blanco "ya
+    // representaba" al 0 y no se actualizaba: al retomar un conteo, el ítem
+    // contado como cero se veía vacío y se perdía.
+    expect(textoRepresenta('', 0)).toBe(false);
+    expect(textoRepresenta('0', 0)).toBe(true);
+  });
 });
 
 describe('textoDeDecimal', () => {
-  it('el cero y el vacío se muestran vacíos para poder escribir directo', () => {
-    expect(textoDeDecimal(0)).toBe('');
+  it('el vacío es null; el CERO es un dato y se muestra', () => {
+    // En un conteo físico, 0 significa "no queda ninguno": pintarlo vacío lo
+    // perdía al recargar. Un campo que deba nacer en blanco pasa `null`.
     expect(textoDeDecimal(null)).toBe('');
+    expect(textoDeDecimal(0)).toBe('0');
   });
 
   it('cualquier otro valor se muestra tal cual', () => {

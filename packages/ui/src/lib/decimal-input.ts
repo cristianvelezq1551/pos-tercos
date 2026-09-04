@@ -39,13 +39,23 @@ export function decimalANumero(texto: string): number {
  *  persona está tecleando cuando el valor llega recalculado desde afuera:
  *  "6." y "6" son el mismo 6, y reemplazarlo le borraría el punto. */
 export function textoRepresenta(texto: string, valor: number | null): boolean {
-  if (valor === null) return texto === '';
+  // El VACÍO solo representa a `null`. Sin esta guarda, `Number('') === 0`
+  // hacía que un campo en blanco "ya representara" al cero y nunca se
+  // actualizara: al retomar un conteo, el ítem contado como 0 se veía vacío.
+  if (texto.trim() === '') return valor === null;
+  if (valor === null) return false;
   return decimalANumero(texto) === valor;
 }
 
-/** Cómo se muestra un valor que viene de afuera. `null` y 0 se muestran
- *  vacíos: es el valor con el que nace una fila y, si se pinta, hay que
- *  borrarlo antes de escribir — así quedaba "06.17". */
+/**
+ * Cómo se muestra un valor que viene de afuera.
+ *
+ * `null` es "sin dato" y se muestra vacío; el CERO se muestra como "0" porque
+ * es un dato de verdad: en un conteo físico significa "no queda ninguno", y
+ * pintarlo vacío lo borraba al recargar. Quien quiera que su campo nazca en
+ * blanco pasa `null`, no 0 — es lo que hace el de cantidad de una factura,
+ * donde el 0 inicial había que borrarlo antes de escribir.
+ */
 export function textoDeDecimal(valor: number | null): string {
-  return valor === null || valor === 0 ? '' : String(valor);
+  return valor === null ? '' : String(valor);
 }
