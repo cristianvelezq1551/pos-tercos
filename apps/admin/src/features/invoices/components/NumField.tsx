@@ -1,11 +1,6 @@
 'use client';
 
-import { Input, Label, NumberInput } from '@pos-tercos/ui';
-
-function parseNum(v: string): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
+import { Label, NumberInput } from '@pos-tercos/ui';
 
 interface NumFieldProps {
   id: string;
@@ -51,15 +46,15 @@ export function NumField({
           disabled={disabled}
         />
       ) : (
-        <Input
+        // La cantidad de una factura no es entera: "6,17 kg" es lo normal.
+        // 4 decimales es lo que guarda el inventario.
+        <NumberInput
           id={id}
-          type="number"
-          inputMode="decimal"
-          step="any"
-          min="0"
+          value={value || null}
+          onChange={(v) => onChange(v ?? 0)}
+          decimals={4}
+          min={0}
           disabled={disabled}
-          value={value}
-          onChange={(e) => onChange(parseNum(e.target.value))}
         />
       )}
     </div>
