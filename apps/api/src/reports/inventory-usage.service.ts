@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { roundCost, roundMoney } from '@pos-tercos/domain';
+import { PRODUCTION_REVERSAL_SOURCE_TYPE, roundCost, roundMoney } from '@pos-tercos/domain';
 import type { InventoryUsageReport, InventoryUsageRow } from '@pos-tercos/types';
 import { CogsService } from './cogs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,7 +9,6 @@ import { PrismaService } from '../prisma/prisma.service';
 const CORTESIA_SOURCE_TYPES = ['cortesia', 'cortesia_reversal'];
 /** Anulación de merma: netea la merma original en vez de ser un ajuste. */
 const WASTE_REVERSAL_SOURCE_TYPE = 'waste_reversal';
-const PRODUCTION_REVERSAL_SOURCE_TYPE = 'production_reversal';
 const STOCK_COUNT_SOURCE_TYPE = 'stock_count';
 
 interface UsageAcc {

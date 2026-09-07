@@ -1133,8 +1133,10 @@ export function runLedgerFifo(
           // replay completo — nunca un dato incorrecto, solo más lento.
           if (seed) out.needsFullReplay = true;
           // Las unidades igual salen: existen en la base de datos, y dejarlas
-          // sin aplicar haría que el replay reporte más stock del que hay.
-          consumeFifo(key, -delta);
+          // sin aplicar haría que el replay reporte más stock del que hay. Lo
+          // que no haya en la cola queda como deuda, por la misma razón.
+          const { shortfall } = consumeFifo(key, -delta);
+          registerShortfall(key, m, iso, shortfall, 'production', runId || m.id);
           continue;
         }
         let restante = quitarLoteDeCompra(key, producidoPor.id, -delta);
@@ -1144,9 +1146,13 @@ export function runLedgerFifo(
         if (restante > 1e-9) restante = deshacerSaldos(producidoPor.id, restante);
         // Inalcanzable mientras la anulación llegue pegada a su tanda (la API
         // lo garantiza con la fecha del original). Si aun así quedara algo, se
-        // descuenta por FIFO normal: las unidades quedan cuadradas con la base
-        // de datos y solo la base de costo sería aproximada.
-        if (restante > 1e-9) consumeFifo(key, restante);
+        // descuenta por FIFO normal y lo que ni así alcance queda como DEUDA:
+        // esas unidades salieron de la base de datos, y no anotarlas dejaría al
+        // replay reportando más stock del que hay.
+        if (restante > 1e-9) {
+          const { shortfall } = consumeFifo(key, restante);
+          registerShortfall(key, m, iso, shortfall, 'production', runId || m.id);
+        }
         continue;
       }
       // Insumo (o sub-subproducto) que vuelve: se devuelve con la base de costo
@@ -1164,6 +1170,14 @@ export function runLedgerFifo(
         : { qty: 0, cost: 0, unknownQty: 0, estimatedQty: 0 };
       flagIfCrossCutoff(returnedQty + cancelled.qty, delta);
       flagIfReversalTouchedDebt(cancelled.qty);
+      // Lo que no vino de un draw ni canceló deuda igual EXISTE en la base de
+      // datos: entra como lote sin costo para que el replay no reporte menos
+      // stock del que hay. Inalcanzable mientras la anulación llegue con su
+      // tanda (la API lo garantiza) — es la misma red que el `-subproducto`.
+      const sinRespaldo = delta - returnedQty - cancelled.qty;
+      if (sinRespaldo > 1e-9) {
+        addLot(key, { movementId: m.id, qty: sinRespaldo, unitCost: null, createdAt: iso });
+      }
       continue;
     }
 

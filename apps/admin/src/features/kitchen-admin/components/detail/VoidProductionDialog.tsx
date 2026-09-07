@@ -10,6 +10,16 @@ import { getErrorMessage } from '../../../../lib/errors';
 const MIN_MOTIVO = 5;
 
 /**
+ * 44px de alto en teléfono: es el piso táctil del proyecto (§7.v18) y este es
+ * el botón que decide una anulación. El `Button` compartido mide 40 y no se
+ * toca — lo usan las cinco apps.
+ *
+ * ⚠️ Va en píxeles y no `h-11`: en el admin el `rem` base no es 16px, así que
+ * `h-11` (2.75rem) mide 43,2 — por debajo del piso. Medido, no supuesto.
+ */
+const ALTO_TACTIL = 'min-h-[44px] sm:min-h-0';
+
+/**
  * Anula una tanda mal registrada: los insumos vuelven a su lote y el
  * subproducto deja de existir.
  *
@@ -84,10 +94,15 @@ export function VoidProductionDialog({
       maxWidth="max-w-lg"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="ghost" onClick={onClose} disabled={enviando}>
+          <Button variant="ghost" className={ALTO_TACTIL} onClick={onClose} disabled={enviando}>
             Cancelar
           </Button>
-          <Button variant="destructive" onClick={anular} disabled={!puedeAnular}>
+          <Button
+            variant="destructive"
+            className={ALTO_TACTIL}
+            onClick={anular}
+            disabled={!puedeAnular}
+          >
             {enviando ? 'Anulando…' : 'Anular tanda'}
           </Button>
         </div>

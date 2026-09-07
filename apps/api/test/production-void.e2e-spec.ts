@@ -283,6 +283,26 @@ describe('Producción — anular una tanda', () => {
     expect(reversas).toBe(2);
   });
 
+  it('reintentar la producción con la misma clave tras anular NO revive la tanda', async () => {
+    // El cliente perdió la respuesta y reintenta: si le devolviéramos la tanda
+    // anulada, el cocinero contaría con un stock que no está.
+    const clave = randomUUID();
+    const primera = await request
+      .post(`/subproducts/${salsaId}/produce`)
+      .set(auth(duenoToken))
+      .send({ quantityProduced: YIELD, idempotencyKey: clave })
+      .expect(201);
+
+    await anular(primera.body.runId as string).expect(204);
+
+    const reintento = await request
+      .post(`/subproducts/${salsaId}/produce`)
+      .set(auth(duenoToken))
+      .send({ quantityProduced: YIELD, idempotencyKey: clave })
+      .expect(409);
+    expect(String(reintento.body.message)).toContain('se anuló');
+  });
+
   it('una tanda que no existe da 404', async () => {
     await anular(randomUUID()).expect(404);
   });
