@@ -72,9 +72,17 @@ function evidenceUrlOf(movementId: string, evidenceKey: string | null): string |
   return evidenceKey ? `/api/inventory/movements/${movementId}/evidence` : null;
 }
 
+/** La anulación de una tanda: cuándo, por qué y quién. */
+export interface ProductionVoidRow {
+  createdAt: Date;
+  notes: string | null;
+  user: { fullName: string } | null;
+}
+
 export function toProductionRun(
   header: ProductionHeaderRow,
   inputs: ProductionInputRow[],
+  anulacion?: ProductionVoidRow | null,
 ): KitchenProductionRun {
   return {
     runId: header.sourceId ?? header.id,
@@ -94,7 +102,20 @@ export function toProductionRun(
       quantity: roundCost(Math.abs(Number(i.delta))),
       unit: unitOf(i, i.entityType),
     })),
+    // La anulación nace con la FECHA de la tanda (así el motor recalcula todo
+    // como si no hubiera existido), así que su `createdAt` no sirve para decir
+    // CUÁNDO se anuló. Lo que se muestra es que está anulada, con su motivo.
+    voidedAt: anulacion ? anulacion.createdAt.toISOString() : null,
+    voidedByName: anulacion?.user?.fullName ?? null,
+    voidReason: anulacion ? motivoDeAnulacion(anulacion.notes) : null,
   };
+}
+
+/** El motivo va dentro de la nota, con un prefijo fijo que acá se saca. */
+function motivoDeAnulacion(notes: string | null): string | null {
+  if (!notes) return null;
+  const prefijo = 'Anulación de tanda · ';
+  return notes.startsWith(prefijo) ? notes.slice(prefijo.length) : notes;
 }
 
 export function toWasteEntry(

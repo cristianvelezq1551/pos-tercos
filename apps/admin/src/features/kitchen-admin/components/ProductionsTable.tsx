@@ -9,6 +9,7 @@ import {
 } from '@pos-tercos/ui';
 import { useState } from 'react';
 import { ProductionDetailModal } from './detail/ProductionDetailModal';
+import { VoidProductionDialog } from './detail/VoidProductionDialog';
 import { RowNameButton } from './detail/DetailPieces';
 
 /**
@@ -24,6 +25,7 @@ function resumenDeInsumos(inputs: KitchenProductionInput[]): string {
 
 export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
   const [abierta, setAbierta] = useState<KitchenProductionRun | null>(null);
+  const [anulando, setAnulando] = useState<KitchenProductionRun | null>(null);
 
   const columns: DataTableColumn<KitchenProductionRun>[] = [
     {
@@ -31,12 +33,19 @@ export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
       header: 'Subproducto',
       primary: true,
       cell: (run) => (
-        <RowNameButton
-          onClick={() => setAbierta(run)}
-          label={`Ver detalle de la tanda de ${run.subproductName}`}
-        >
-          {run.subproductName}
-        </RowNameButton>
+        <div className="flex items-baseline gap-2">
+          <RowNameButton
+            onClick={() => setAbierta(run)}
+            label={`Ver detalle de la tanda de ${run.subproductName}`}
+          >
+            {run.subproductName}
+          </RowNameButton>
+          {run.voidedAt ? (
+            <span className="shrink-0 rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-destructive">
+              Anulada
+            </span>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -49,7 +58,14 @@ export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
       header: 'Cantidad',
       align: 'right',
       numeric: true,
-      cell: (run) => `${run.quantityProduced} ${run.unit}`,
+      cell: (run) =>
+        run.voidedAt ? (
+          <span className="text-muted-foreground line-through">
+            {run.quantityProduced} {run.unit}
+          </span>
+        ) : (
+          `${run.quantityProduced} ${run.unit}`
+        ),
     },
     {
       key: 'who',
@@ -112,7 +128,25 @@ export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
         }
       />
 
-      <ProductionDetailModal run={abierta} onClose={() => setAbierta(null)} />
+      <ProductionDetailModal
+        run={abierta}
+        onClose={() => setAbierta(null)}
+        onAnular={(run) => {
+          // Se cierra el detalle antes de abrir la anulación: dos diálogos
+          // encimados dejan al lector sin saber cuál está respondiendo.
+          setAbierta(null);
+          setAnulando(run);
+        }}
+      />
+
+      {anulando ? (
+        <VoidProductionDialog
+          run={anulando}
+          open
+          onClose={() => setAnulando(null)}
+          onVoided={() => setAnulando(null)}
+        />
+      ) : null}
     </>
   );
 }

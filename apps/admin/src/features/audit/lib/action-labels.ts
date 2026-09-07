@@ -123,6 +123,7 @@ const ACTION_LABELS: Record<string, string> = {
   // Cocina
   SUBPRODUCT_PRODUCED: 'Produjo una tanda',
   INVENTORY_MOVEMENT_WASTE_REVERSED: 'Anuló una merma',
+  SUBPRODUCT_PRODUCTION_VOIDED: 'Anuló una tanda de producción',
   KITCHEN_CHECKLIST_COMPLETED: 'Cerró una rutina de checklist',
   KITCHEN_INCIDENT_LOGGED: 'Reportó una incidencia de cocina',
   KITCHEN_INCIDENT_RESOLVED: 'Resolvió una incidencia de cocina',

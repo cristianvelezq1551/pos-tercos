@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PRODUCTION_REVERSAL_SOURCE_TYPE } from '@pos-tercos/domain';
 import type {
   KitchenActivityDay,
   KitchenProductionRun,
@@ -82,7 +83,28 @@ export class KitchenReportsService {
       if (bucket) bucket.push(row);
       else inputsByRun.set(row.sourceId ?? '', [row]);
     }
-    return headers.map((h) => toProductionRun(h, inputsByRun.get(h.sourceId ?? '') ?? []));
+
+    // Tandas anuladas: siguen en la lista —el registro existió— pero marcadas.
+    // Sin esto, una tanda deshecha se leería como vigente y el dueño sacaría
+    // conclusiones sobre producción que no ocurrió.
+    const anulaciones = await this.prisma.inventoryMovement.findMany({
+      where: {
+        sourceType: PRODUCTION_REVERSAL_SOURCE_TYPE,
+        sourceId: { in: runIds },
+        delta: { lt: 0 },
+        entityType: 'SUBPRODUCT',
+      },
+      select: { sourceId: true, createdAt: true, notes: true, user: { select: { fullName: true } } },
+    });
+    const anuladaPorRun = new Map(anulaciones.map((a) => [a.sourceId ?? '', a]));
+
+    return headers.map((h) =>
+      toProductionRun(
+        h,
+        inputsByRun.get(h.sourceId ?? '') ?? [],
+        anuladaPorRun.get(h.sourceId ?? '') ?? null,
+      ),
+    );
   }
 
   /** Mermas del rango con su costo real y cuánto se anuló de cada una. */
@@ -118,14 +140,34 @@ export class KitchenReportsService {
     return rows.map((r) => toWasteEntry(r, reversedById.get(r.id) ?? 0, costs.get(r.id) ?? null));
   }
 
+  /** Ids de las tandas anuladas cuyo movimiento cae en el rango. */
+  private async tandasAnuladasEn(range: { gte: Date; lte: Date }): Promise<string[]> {
+    const filas = await this.prisma.inventoryMovement.findMany({
+      where: { sourceType: PRODUCTION_REVERSAL_SOURCE_TYPE, createdAt: range },
+      select: { sourceId: true },
+      distinct: ['sourceId'],
+    });
+    return filas.map((f) => f.sourceId).filter((id): id is string => id !== null);
+  }
+
   /** Resumen por día: rutinas, producción, merma, incidencias y quién hizo qué. */
   async activity(from: string, to: string): Promise<KitchenActivityDay[]> {
     const days = listDaysDesc(from, to, MAX_ACTIVITY_DAYS);
     const range = { gte: startOfDay(days[days.length - 1]), lte: endOfDay(days[0]) };
 
+    // Las tandas anuladas quedan FUERA del resumen del día: contarlas diría que
+    // se produjo algo que se deshizo, e inflaría el trabajo de quien la
+    // registró. La tanda igual se ve, con su marca, en la pestaña de Producción.
+    const anuladas = await this.tandasAnuladasEn(range);
+
     const [productions, wastes, incidents, marks, checklistDays] = await Promise.all([
       this.prisma.inventoryMovement.findMany({
-        where: { sourceType: 'production', delta: { gt: 0 }, createdAt: range },
+        where: {
+          sourceType: 'production',
+          delta: { gt: 0 },
+          createdAt: range,
+          ...(anuladas.length > 0 ? { sourceId: { notIn: anuladas } } : {}),
+        },
         select: { userId: true, delta: true, createdAt: true },
       }),
       this.prisma.inventoryMovement.findMany({

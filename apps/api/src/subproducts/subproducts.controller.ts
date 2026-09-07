@@ -22,6 +22,7 @@ import {
   CreateSubproductSchema,
   RecordProductionSchema,
   UpdateSubproductSchema,
+  VoidProductionSchema,
   type CreateSubproduct,
   type JwtAccessPayload,
   type ProductionEvidenceUpload,
@@ -30,12 +31,15 @@ import {
   type Subproduct,
   type SubproductProductionStatus,
   type UpdateSubproduct,
+  type VoidProduction,
+  type VoidProductionPreview,
 } from '@pos-tercos/types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { KitchenAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
+import { AdminAccess, KitchenAccess, OnlyDueno } from '../auth/decorators/roles.decorator';
 import { detectImageMime } from '../common/image-mime';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ProductionService } from './production.service';
+import { ProductionVoidService } from './production-void.service';
 import { SubproductsService } from './subproducts.service';
 
 /** Límite de la foto de evidencia de producción (mismo criterio que facturas). */
@@ -46,6 +50,7 @@ export class SubproductsController {
   constructor(
     private readonly subproducts: SubproductsService,
     private readonly production: ProductionService,
+    private readonly productionVoid: ProductionVoidService,
   ) {}
 
   @Get()
@@ -89,6 +94,32 @@ export class SubproductsController {
     res.setHeader('Content-Type', detectImageMime(buffer) ?? 'application/octet-stream');
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.end(buffer);
+  }
+
+  /**
+   * Qué le pasaría al inventario si se anula esta tanda. Admin / Dueño.
+   *
+   * Va ANTES de `:id` para que la ruta estática no caiga en el param.
+   */
+  @AdminAccess()
+  @Get('production/:runId/void-preview')
+  voidPreview(@Param('runId', ParseUUIDPipe) runId: string): Promise<VoidProductionPreview> {
+    return this.productionVoid.preview(runId);
+  }
+
+  /**
+   * Anula una tanda mal registrada: devuelve los insumos a su lote y deshace
+   * el +N del subproducto. Admin / Dueño (el cocinero registra, no revierte).
+   */
+  @AdminAccess()
+  @HttpCode(204)
+  @Post('production/:runId/void')
+  async voidProduction(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @CurrentUser() user: JwtAccessPayload,
+    @Body(new ZodValidationPipe(VoidProductionSchema)) body: VoidProduction,
+  ): Promise<void> {
+    await this.productionVoid.void(runId, body, user.sub);
   }
 
   @Get(':id')

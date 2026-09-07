@@ -163,6 +163,8 @@ export const AuditActionEnum = z.enum([
   // Producción de subproductos (cocinero o admin registra una tanda).
   // El movimiento de inventario en sí se loggea como INVENTORY_MOVEMENT_*.
   'SUBPRODUCT_PRODUCED',
+  // Anular una tanda mal registrada: devuelve los insumos y deshace el +N.
+  'SUBPRODUCT_PRODUCTION_VOIDED',
   'FINANCIAL_ANALYSIS_GENERATED',
 
   // KDS (bitácora de cocina): tardanza de preparación. Login/logout de la

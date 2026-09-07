@@ -1,5 +1,6 @@
 export {
   buildLedgerSeed,
+  PRODUCTION_REVERSAL_SOURCE_TYPE,
   runLedgerFifo,
   type CostQty,
   type Debt,
