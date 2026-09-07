@@ -26,7 +26,7 @@ export type OwnerAlertKind =
   | 'negative_contribution_margin'
   /** Insumos que cruzaron el mínimo en el escaneo horario. */
   | 'low_stock'
-  /** Resumen del día escrito por la IA (cron 21:30). */
+  /** Resumen del día escrito por la IA (cron 00:00). */
   | 'daily_digest'
   /** Resumen de las sugerencias de compra abiertas (a pedido). */
   | 'purchase_summary';

@@ -952,7 +952,7 @@ Sesión de auditoría completa + hardening. Verificado: typecheck 12/12, lint 0,
 ### Features y hardening nuevos
 
 - **Reporte "Uso y mermas"**: `GET /reports/inventory-usage?from=&to=` (AdminAccess) + página `/reports/usage` + sidebar. Por stockable: consumo por ventas (neto de voids), producción in/out, compras, mermas WASTE, ajustes netos, % merma y **$ perdido** (merma + faltantes × lastUnitCost/conversionFactor; subproductos sin valorizar — su costo es FIFO).
-- **Resumen diario al dueño por WhatsApp**: `OwnerDigestService` (reports module), cron 21:30 hora local, reusa `getDailyAiSummary` + `WHATSAPP_PROVIDER`. Requiere `OWNER_WHATSAPP_PHONE`; sin la var no envía. Trigger manual `POST /reports/admin/send-daily-digest` (Dueño). Audit `OWNER_DAILY_DIGEST_SENT`.
+- **Resumen diario al dueño**: `OwnerDigestService` (reports module), cron **00:00 hora local** — resume el día calendario que ACABA de terminar (`diaQueTermino`), aunque la caja siga abierta. Reusa `getDailyAiSummary` y sale por `OwnerNotificationService` (notificación del navegador primero, WhatsApp de respaldo). Trigger manual `POST /reports/admin/send-daily-digest` (Dueño) → resume el día EN CURSO. Audit `OWNER_DAILY_DIGEST_SENT`.
 - **Validación de env al arranque**: `assertRequiredEnv()` en main.ts — `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` siempre; `WEB_ORDER_TOKEN_SECRET` en prod. Proceso muere temprano con mensaje claro.
 - **SSE pantalla pública**: backoff exponencial 3s→60s con techo. NUNCA deja de reintentar (kiosko sin operador) — solo deja de martillar.
 - **Sync offline POS**: `OfflineSale.attempts`; tras 3 fallos el drain automático salta la venta (rechazo permanente probable). El "Reintentar" de la bandeja usa `{ includeExhausted: true }`.
@@ -3512,11 +3512,12 @@ la dependencia.
   DESPUÉS de `bootstrapApp`: el `.env` se carga como efecto colateral de
   importar `@prisma/client` (§7.v35), así que borrarlo antes no sirve de nada.
 
-⚠️ **Queda abierto**: el resumen diario del dueño (`OwnerDigestService`, cron
-21:30) sigue exigiendo `OWNER_WHATSAPP_PHONE` y llama a `wa.sendText` directo,
-así que **nunca se envía**. Pasarlo a notificación obliga a decidir qué hacer
-con el texto largo del resumen de IA, que en una notificación se corta a 500
-caracteres. Es una decisión de producto, no un arreglo mecánico.
+✅ **Cerrado**: el resumen diario del dueño (`OwnerDigestService`) ya NO exige
+`OWNER_WHATSAPP_PHONE` ni llama a `wa.sendText` directo — sale por
+`ownerNotifications.alert('daily_digest', …)`, o sea notificación del navegador
+primero y WhatsApp de respaldo. El texto son máximo 5 frases (lo fija el
+prompt); si se pasara de los 500 caracteres de la notificación, se corta y el
+completo se lee en la tarjeta del inicio, que es a donde lleva el toque.
 
 ### Dos sesiones a la vez: usa TU propia base de tests
 Con otra sesión trabajando en el mismo repo, la suite e2e dio 37, 22, 44 y 50
@@ -4616,6 +4617,49 @@ tanda se deshace entera y sus líneas se agrupan por ahí):
 - ⚠️ Un comentario JSX dentro de un prop (`footer={ {/* … */} <div/> }`) son DOS
   hijos y rompe la compilación. El typecheck y los tests unitarios siguieron en
   verde; solo se vio abriendo la página.
+
+## 7.v66 El resumen del día se manda a medianoche (2026-09-06)
+
+> Decisión del dueño. El digest salía a las **21:30**, o sea a mitad de la noche
+> de venta: le faltaban las últimas horas del día y, como la ventana es el día
+> calendario, contaba además lo vendido entre las 00:00 y las 4 am —que
+> operativamente es la caja de ANOCHE—. El resumen mezclaba la cola de una
+> noche con la mitad de la siguiente. Verificado: api unit +5, typecheck 13/13,
+> lint 0. Sin migración.
+
+### La regla
+- **Cron `0 0 * * *`**, y el resumen es del día calendario que **acaba de
+  terminar**. Se manda **aunque la caja siga abierta** (acá se vende de
+  madrugada): la atribución contable de las ventas es por día calendario
+  (§7.v14), así que "el día" del resumen es el mismo que el del P&G y el del
+  reporte de ventas. Lo que entre de madrugada cuenta para el día siguiente y
+  sale en el resumen de mañana.
+- **El trigger manual sigue resumiendo el día EN CURSO**: quien toca
+  `POST /reports/admin/send-daily-digest` a media tarde quiere ver cómo va hoy.
+- El cron de margen de contribución negativo se queda en **21:45**: es un aviso
+  del MES y a esa hora el dueño está despierto para hacer algo con él.
+
+### El detalle que rompe esto en silencio
+A las 00:00 `new Date()` ya es el día siguiente y está **vacío**. Sin mirar
+hacia atrás, el resumen diría "no se vendió nada" todas las noches sin que nada
+falle: ni excepción, ni log, solo un texto en blanco. `diaQueTermino` deriva el
+día de la **medianoche de hoy menos 1 ms**, no restando N horas fijas — así
+sigue dando el día correcto aunque el cron arranque tarde (proceso ocupado,
+reinicio), que con un margen fijo se pasaba de largo. 5 tests, incluidos los
+cruces de mes y de año.
+
+⚠️ **Lo que NO cambia**: la diferencia de caja del resumen busca un turno
+**cerrado dentro de ese día calendario**. Si la caja se cierra a la 1 o 2 am,
+ese cierre cae en el día siguiente y el resumen dice "sin cierre" — igual que
+antes a las 21:30. Cerrarlo obligaría a mover esa consulta al día de negocio, y
+entonces el resumen mezclaría dos ejes temporales distintos en el mismo texto.
+
+⚠️ **`TZ` es solo una advertencia del arranque**, no bloquea el boot
+(`assert-env.ts`). Sin `TZ=America/Bogota` en Railway, este cron dispara a las
+**7 pm de Bogotá** y la ventana del día tampoco es la del local.
+
+---
+
 
 ## 8. Estado del proyecto (commits y FASES)
 

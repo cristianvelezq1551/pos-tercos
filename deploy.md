@@ -194,7 +194,7 @@ intentos "obvios" fallan y quedaron documentados para no repetirlos:
 
 **Runtime:**
 - `NODE_ENV=production`
-- `TZ=America/Bogota` — **obligatoria**: los crons (digest 21:30, purga
+- `TZ=America/Bogota` — **obligatoria**: los crons (digest 00:00, purga
   idempotency 3 AM, gap-check 4 AM, scan de sugerencias horario, sweep de
   ventas stale) usan hora local del server.
 - `CORS_ORIGINS=https://admin.tercos.co,https://tercos.co,https://display.tercos.co,https://cocina.tercos.co`
@@ -249,7 +249,7 @@ encender el envío automático. Implicaciones para el deploy:
   `WHATSAPP_REQUIRED` (ni `OPENWA_*`). El backend instancia el Mock, que declara
   `delivers:false` — no envía ni finge, y los botones de wa.me hacen el trabajo.
   Consecuencia a aceptar: las alertas automáticas al dueño (descuadres, 5xx,
-  digest 21:30) NO llegan → **UptimeRobot (§8) pasa de recomendado a ÚNICA red
+  digest de medianoche) NO llegan → **UptimeRobot (§8) pasa de recomendado a ÚNICA red
   de alertas.**
 - **Si/cuando se encienda Kapso**, ahí sí lo de abajo:
 
@@ -265,7 +265,7 @@ encender el envío automático. Implicaciones para el deploy:
   template de retiro en el local). Ver `kapso-setup.md`.
 - `WHATSAPP_TEMPLATE_LANG=es` — o `es_CO` según el language code aprobado
 - `OWNER_WHATSAPP_PHONE=+57XXXXXXXXXX` — E.164; recibe el **digest
-  diario 21:30** y las **alertas antifraude** (descuadre de caja, etc.)
+  diario de medianoche** y las **alertas antifraude** (descuadre de caja, etc.)
 
 **Avisos técnicos (Issue de GitHub) — gratis, sin servicios externos:**
 - `ALERT_GITHUB_REPO=cristianvelezq1551/pos-tercos`
@@ -555,7 +555,8 @@ falten. Bloques nuevos desde la v2 (los más recientes primero):
    `/inventory/movements`.
 10. **Digest del dueño**: `POST https://api.tercos.co/reports/admin/send-daily-digest`
     (Dueño) → llega el resumen al `OWNER_WHATSAPP_PHONE`. (El cron
-    automático corre 21:30 hora Bogotá — requiere `TZ=America/Bogota`.)
+    automático corre 00:00 hora Bogotá y resume el día que terminó — requiere
+    `TZ=America/Bogota`; sin ella dispara a las 7 pm de Bogotá.)
 
 ---
 

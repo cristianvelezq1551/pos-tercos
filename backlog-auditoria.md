@@ -161,7 +161,7 @@ Verificado: precio dinámico por lote (cada compra guarda su costo real; FIFO co
 
 ### ⚪ Hardening / single-instance
 - [ ] **Estado in-memory no escala a multi-instancia** (turnero, throttle de alertas, idempotencia de notificaciones) — OK para 1 instancia, documentar el límite.
-- [ ] **`TZ=America/Bogota` sin enforcement** — reset turnero / digest 21:30 / promos / buckets de reportes dependen de la hora local; validar en `assertRequiredEnv`.
+- [ ] **`TZ=America/Bogota` sin enforcement** — reset turnero / digest 00:00 / promos / buckets de reportes dependen de la hora local; validar en `assertRequiredEnv`.
 - [ ] **print-agent**: `dist/.env` committeado (verificar que no sea secreto real), `/drawer-open` sin auth por default, stub muerto `escpos-usb.d.ts`. **Puerto real 9120** (CLAUDE.md decía 9100 — corregido).
 
 ---

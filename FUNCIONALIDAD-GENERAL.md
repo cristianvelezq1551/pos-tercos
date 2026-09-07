@@ -217,7 +217,7 @@ agente de impresión local.
   crear el pedido web, "pago confirmado", "listo para retirar", "cancelado";
   y al dueño: descuadres de caja, anulaciones, descuentos manuales, cortesías,
   cajón sin venta, subas de costos, errores del sistema y el **digest diario
-  21:30** con el resumen del día generado por IA. Los envíos fallidos se
+  de medianoche** con el resumen del día generado por IA. Los envíos fallidos se
   reintentan solos.
 - **Crons**: barrido de cobros abandonados, detección de saltos de recibo,
   scan horario de bajo stock, purgas de retención (idempotencia, WhatsApp 90d,
