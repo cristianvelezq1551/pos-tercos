@@ -4511,6 +4511,77 @@ insumo bloqueante ya se agotó. Al sincronizar, el servidor descuenta bien (el
 payload lleva `sizeId`): lo que queda mal es la disponibilidad mostrada offline,
 no el inventario.
 
+## 7.v64 La producción mal registrada por fin se puede anular (2026-09-06)
+
+> Era la ÚLTIMA operación de inventario sin camino de vuelta. La merma se anula
+> desde §7.v18 y la factura desde §7.v47; una tanda mal registrada solo se podía
+> corregir con ajustes manuales tecleados a mano — con las cantidades de la
+> receta (yield + merma, gramajes con decimales) calculadas de cabeza, y el
+> costo perdido, porque el insumo volvía como **lote nuevo sin costo** en vez de
+> al lote del que salió. Verificado: prueba de oro de 300 historias sin un
+> decimal de cambio, 11 leyes × 20.000 historias con tandas anuladas, motor
+> 14/14, e2e 16/16, navegador 1/1, typecheck 13/13, lint 0, unit 12/12 paquetes.
+> Sin migración.
+
+### Cómo funciona
+`POST /subproducts/production/:runId/void` (**`@AdminAccess`** — el cocinero
+registra, no revierte) + `GET .../void-preview`. Escribe un compensatorio por
+cada línea de la tanda **con la FECHA del original**, igual que la anulación de
+factura: en el replay llega pegada a su producción, así que los insumos vuelven
+a **SU** lote con su costo y todo lo posterior se recalcula como si la tanda
+nunca hubiera existido.
+
+- **Ventana de 3 días**, la misma que la factura y por la misma razón: nace con
+  fecha vieja y reescribe la historia posterior. Pasado el plazo, ajuste manual.
+- **Sin PIN**, como la anulación de merma (la operación análoga). Motivo
+  obligatorio, audit `SUBPRODUCT_PRODUCTION_VOIDED`, y el motivo también en las
+  notas de cada movimiento.
+- **Anulación TOTAL, una sola vez**: nada de parciales. Si se registraron 100 en
+  vez de 10, se anula y se vuelve a registrar. Claim condicionado dentro de la
+  tx `Serializable` (el e2e de 6 peticiones simultáneas **falla sin él**).
+- **Borra los cortes del motor posteriores** a esa fecha, como el void de
+  factura: un corte calculado sin la reversa daría un error permanente y mudo.
+
+### El caso incómodo: el subproducto ya se vendió
+Esas ventas pasan a **faltante estimado con su deuda** y el subproducto queda en
+**NEGATIVO** (visible en Deudas de inventario). Es a propósito: se vendió algo
+que ahora decimos que no se produjo, y la contradicción tiene que verse. La
+próxima tanda real salda la deuda sin contar el insumo dos veces. La vista
+previa lo avisa en rojo ANTES de decidir — eso es lo que la caja va a frenar el
+mismo día.
+
+### Motor de costos
+`production_reversal` (`sourceId` = id de la TANDA, no de un movimiento: una
+tanda se deshace entera y sus líneas se agrupan por ahí):
+- El `-subproducto` quita **EXACTAMENTE el lote de esa tanda**
+  (`quitarLoteDeCompra`), no el más viejo de la cola. Con FIFO normal se comería
+  un lote anterior y el inventario quedaría valuado con lotes que ya no existen.
+- El `+insumo` lo devuelve por sus **draws** (que la tanda ahora registra, con
+  el mismo pre-scan acotado de ventas y mermas) y **cancela la deuda** si la
+  tanda produjo sin stock — o una compra futura saldaría una producción que ya
+  no existe.
+- ⚠️ **La anulación va en la FASE DE CONSUMOS** (`phaseOf` → 2). Si el
+  `+insumo` cayera en la de entradas, volvería a la cola ANTES de que la tanda
+  lo consumiera, la producción se comería lo devuelto y el costo se perdería:
+  **11 de los 14 casos del motor fallan sin esa línea**.
+
+### Lo que NO queda a medias
+- La tanda anulada **sigue en el hub** (`/cocina` → Producción) con su marca, su
+  motivo y la cantidad tachada; el detalle ya no ofrece volver a anularla.
+- El **reporte de uso NETEA** la anulación contra lo producido (`productionIn` /
+  `productionOut`), como ya hacía `waste_reversal`. Verificado en dev: las
+  tandas anuladas desaparecen de la fila y solo queda la viva.
+- El **resumen de actividad del día** ya no la cuenta como trabajo hecho.
+- ⚠️ La caché del ledger es de 60 s: tras anular, el P&G refleja el cambio
+  cuando vence (misma staleness deliberada de §7.v18 y §7.v47).
+
+### Deuda conocida
+- La app de **cocina no muestra historial de tandas**, así que el cocinero no se
+  entera de que se anuló la suya. Fuera de alcance (anulan admin y dueño).
+- En `/inventory/movements` la reversa se ve como "Producción" con el signo
+  invertido. El tipo `PRODUCTION` es deliberado —así el reporte de uso la
+  netea— y la nota del movimiento lo explica.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
