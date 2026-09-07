@@ -1,7 +1,7 @@
 'use client';
 
 import type { KitchenProductionRun } from '@pos-tercos/types';
-import { Dialog, EmptyState, formatDate } from '@pos-tercos/ui';
+import { Button, Dialog, EmptyState, formatDate } from '@pos-tercos/ui';
 import { DetailRow, DetailSection, EvidenceLink } from './DetailPieces';
 
 /**
@@ -12,11 +12,14 @@ import { DetailRow, DetailSection, EvidenceLink } from './DetailPieces';
 export function ProductionDetailModal({
   run,
   onClose,
+  onAnular,
 }: {
   run: KitchenProductionRun | null;
   onClose: () => void;
+  onAnular: (run: KitchenProductionRun) => void;
 }) {
   if (!run) return null;
+  const anulada = run.voidedAt !== null;
 
   return (
     <Dialog
@@ -25,8 +28,26 @@ export function ProductionDetailModal({
       title={run.subproductName}
       description={`Tanda del ${formatDate(run.createdAt, 'datetime')}`}
       maxWidth="max-w-lg"
+      footer={
+        anulada ? null : (
+          <div className="flex justify-end">
+            <Button variant="destructive" onClick={() => onAnular(run)}>
+              Anular tanda
+            </Button>
+          </div>
+        )
+      }
     >
       <div className="space-y-5">
+        {anulada ? (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-foreground">
+            <span className="font-medium">Tanda anulada.</span> Los insumos
+            volvieron al inventario y el subproducto dejó de contar.
+            {run.voidReason ? ` Motivo: ${run.voidReason}` : ''}
+            {run.voidedByName ? ` · La anuló ${run.voidedByName}.` : ''}
+          </p>
+        ) : null}
+
         <dl>
           <DetailRow label="Se produjo" className="tabular-nums">
             {run.quantityProduced} {run.unit}

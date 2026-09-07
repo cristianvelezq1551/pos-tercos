@@ -293,6 +293,46 @@ export const ProductionRunSchema = z.object({
 });
 export type ProductionRun = z.infer<typeof ProductionRunSchema>;
 
+/** Anular una tanda de producción mal registrada. */
+export const VoidProductionSchema = z.object({
+  /** Por qué se anula. Va a la bitácora y a las notas de los movimientos. */
+  reason: z
+    .string()
+    .min(5, 'Escribe por qué se anula la tanda (mínimo 5 caracteres).')
+    .max(300),
+});
+export type VoidProduction = z.infer<typeof VoidProductionSchema>;
+
+/** Una línea del efecto que tendría anular: qué ítem se mueve y en cuánto queda. */
+export const VoidProductionPreviewLineSchema = z.object({
+  // Una tanda solo mueve insumos y subproductos: el `+N` siempre es un
+  // subproducto y la receta se expande a insumos y sub-subproductos.
+  entityType: z.enum(['INGREDIENT', 'SUBPRODUCT']),
+  entityId: z.string().uuid(),
+  name: z.string(),
+  /** Unidad en la que se lleva el inventario de ese ítem. */
+  unit: z.string(),
+  /** Existencias de ahora. */
+  currentStock: z.number(),
+  /** Lo que se va a mover: negativo en el subproducto, positivo en los insumos. */
+  delta: z.number(),
+  /** En cuánto queda. Negativo = ya se vendió lo que la tanda produjo. */
+  resultingStock: z.number(),
+});
+export type VoidProductionPreviewLine = z.infer<typeof VoidProductionPreviewLineSchema>;
+
+/** Qué le va a pasar al inventario si se anula la tanda. Se consulta ANTES. */
+export const VoidProductionPreviewSchema = z.object({
+  /** Si no se puede anular, el motivo en palabras (y `lines` va vacío). */
+  blockedReason: z.string().nullable(),
+  /** Días que quedan de la ventana de anulación. */
+  daysLeft: z.number(),
+  lines: z.array(VoidProductionPreviewLineSchema),
+  /** Ítems que quedarían en negativo: la caja va a frenar su venta. */
+  goesNegative: z.array(z.string()),
+});
+export type VoidProductionPreview = z.infer<typeof VoidProductionPreviewSchema>;
+
 // ====================================================================
 // PRODUCTS (incluye sizes, modifiers, combo components)
 // ====================================================================

@@ -43,6 +43,17 @@ export interface HistoryOptions {
    * desatribuirle el costo al consumo que la debía.
    */
   includeVoidedPurchases?: boolean;
+  /**
+   * Emitir TANDAS DE PRODUCCIÓN ANULADAS: una tanda y, pegada a ella, los
+   * movimientos que la deshacen (el subproducto que deja de existir y cada
+   * insumo que vuelve). Es como las escribe la app —la anulación lleva la fecha
+   * del original— así que el replay la ve antes de que nadie consumiera el lote.
+   *
+   * Interesa sobre todo cuando la tanda produjo SIN stock de insumo: ahí dejó
+   * deuda, y anularla obliga a cancelarla en vez de que una compra futura salde
+   * una producción que ya no existe.
+   */
+  includeVoidedProductions?: boolean;
 }
 
 export interface GeneratedHistory {
@@ -127,6 +138,18 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
     productId: e.entityType === 'PRODUCT' ? e.id : null,
     subproductId: e.entityType === 'SUBPRODUCT' ? e.id : null,
   });
+
+  /** Apunta al mismo stockable que otro movimiento (para escribir su reversa). */
+  const refsDe = (m: LedgerMovement) => ({
+    entityType: m.entityType,
+    ingredientId: m.ingredientId,
+    productId: m.productId,
+    subproductId: m.subproductId,
+  });
+
+  const porClave = new Map<string, Entity>(
+    [...entities, subproduct].map((e) => [e.key, e]),
+  );
 
   /** Entrada de stock con (o sin) costo conocido. */
   const emitEntry = (e: Entity): void => {
@@ -309,11 +332,12 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
   /** Tanda: consume insumos y materializa N unidades del subproducto. Con
    *  `allowShortfall` puede consumir insumo que no estaba cargado (la cocina
    *  produjo con lo que había físicamente y la compra no se registró). */
-  const emitProduction = (): void => {
+  const emitProduction = (): LedgerMovement[] => {
+    const deLaTanda: LedgerMovement[] = [];
     const inputs = entities.filter(
       (e) => e.entityType === 'INGREDIENT' && (opts.allowShortfall || e.stock > 0),
     );
-    if (inputs.length === 0) return;
+    if (inputs.length === 0) return deLaTanda;
     const runId = `prod-${nextId()}`;
     const at = nextAt();
     for (const input of inputs) {
@@ -321,27 +345,52 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
       if (max <= 0) continue;
       const qty = rng.int(1, Math.max(1, Math.floor(max)));
       input.stock -= qty;
+      deLaTanda.push(
+        push({
+          createdAt: at,
+          delta: -qty,
+          type: 'PRODUCTION',
+          unitCost: null,
+          sourceType: 'production',
+          sourceId: runId,
+          ...refs(input),
+        }),
+      );
+    }
+    const produced = rng.int(1, 30);
+    subproduct.stock += produced;
+    deLaTanda.push(
       push({
         createdAt: at,
-        delta: -qty,
+        delta: produced,
         type: 'PRODUCTION',
         unitCost: null,
         sourceType: 'production',
         sourceId: runId,
-        ...refs(input),
+        ...refs(subproduct),
+      }),
+    );
+    return deLaTanda;
+  };
+
+  /** Tanda mal registrada y anulada: la reversa lleva la FECHA del original. */
+  const emitVoidedProduction = (): void => {
+    const deLaTanda = emitProduction();
+    if (deLaTanda.length === 0) return;
+    for (const m of deLaTanda) {
+      // El stock sombra vuelve a donde estaba antes de la tanda.
+      const e = porClave.get(`${m.entityType}:${m.ingredientId ?? m.productId ?? m.subproductId}`);
+      if (e) e.stock -= m.delta;
+      push({
+        createdAt: m.createdAt,
+        delta: -m.delta,
+        type: 'PRODUCTION',
+        unitCost: null,
+        sourceType: 'production_reversal',
+        sourceId: m.sourceId,
+        ...refsDe(m),
       });
     }
-    const produced = rng.int(1, 30);
-    subproduct.stock += produced;
-    push({
-      createdAt: at,
-      delta: produced,
-      type: 'PRODUCTION',
-      unitCost: null,
-      sourceType: 'production',
-      sourceId: runId,
-      ...refs(subproduct),
-    });
   };
 
   // Arrancar con stock para que los consumos tengan de dónde salir.
@@ -358,6 +407,7 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
     else if (roll < 0.8) emitSobra(target);
     else if (roll < 0.84 && opts.includeCorrections) emitCorreccion(target);
     else if (roll < 0.88 && opts.includeVoidedPurchases) emitVoidedPurchase(target);
+    else if (roll < 0.92 && opts.includeVoidedProductions) emitVoidedProduction();
     else if (roll < 0.94) emitReversal();
     else if (opts.includeProduction) emitProduction();
     else emitEntry(target);

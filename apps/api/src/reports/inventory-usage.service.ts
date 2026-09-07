@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const CORTESIA_SOURCE_TYPES = ['cortesia', 'cortesia_reversal'];
 /** Anulación de merma: netea la merma original en vez de ser un ajuste. */
 const WASTE_REVERSAL_SOURCE_TYPE = 'waste_reversal';
+const PRODUCTION_REVERSAL_SOURCE_TYPE = 'production_reversal';
 const STOCK_COUNT_SOURCE_TYPE = 'stock_count';
 
 interface UsageAcc {
@@ -216,6 +217,16 @@ export class InventoryUsageService {
       // positivo cancelaba faltantes reales de conteo físico del mismo período.
       if (g.sourceType === WASTE_REVERSAL_SOURCE_TYPE) {
         acc.waste -= delta;
+        continue;
+      }
+      // Anulación de una tanda de producción: es la tanda que se deshace, no
+      // producción nueva. Se NETEA contra la misma columna que llenó la tanda
+      // —el insumo que vuelve baja lo consumido, el subproducto deshecho baja
+      // lo producido— porque sumarla del otro lado dejaría "produjo 100 y
+      // consumió 100" en vez de la fila limpia que corresponde.
+      if (g.sourceType === PRODUCTION_REVERSAL_SOURCE_TYPE) {
+        if (delta > 0) acc.productionOut -= delta;
+        else acc.productionIn -= -delta;
         continue;
       }
       switch (g.type) {

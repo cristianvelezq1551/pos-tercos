@@ -1,11 +1,14 @@
 import {
   ChecklistItemSchema,
   KitchenIncidentSchema,
+  VoidProductionPreviewSchema,
   type ChecklistItem,
   type ChecklistType,
   type CreateChecklistItem,
   type KitchenIncident,
   type UpdateChecklistItem,
+  type VoidProduction,
+  type VoidProductionPreview,
 } from '@pos-tercos/types';
 import { z } from 'zod';
 
@@ -54,4 +57,20 @@ export function createChecklistItem(body: CreateChecklistItem): Promise<Checklis
 
 export function updateChecklistItem(id: string, body: UpdateChecklistItem): Promise<ChecklistItem> {
   return send(`/kitchen/checklist/items/${id}`, body, ChecklistItemSchema, 'PATCH');
+}
+
+/** Qué le pasaría al inventario si se anula esta tanda. */
+export function previewProductionVoid(runId: string): Promise<VoidProductionPreview> {
+  return get(`/subproducts/production/${runId}/void-preview`, VoidProductionPreviewSchema);
+}
+
+/** Anula la tanda. Responde 204: no hay cuerpo que parsear. */
+export async function voidProduction(runId: string, body: VoidProduction): Promise<void> {
+  const res = await fetch(`/api/subproducts/production/${runId}/void`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Client-App': 'admin' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await toError(res);
 }

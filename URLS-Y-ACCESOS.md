@@ -96,6 +96,19 @@ En Vercel, el scope es **`cristianvelezq1551s-projects`** y los proyectos son
 | Producción | `cristianvelez1551@gmail.com` | DUENO |
 | QA | `dueno-qa@tercos.co` | DUENO |
 
+**Los tres de QA para probar por rol** (2026-09-06). Comparten una misma clave,
+que está en tu gestor. Sirven para ver la app como la ve cada persona sin tener
+que crear usuarios cada vez:
+
+| Correo | Rol | Entra a |
+|---|---|---|
+| `dueno@qa.tercos.co` | DUENO | Gestión completa, finanzas y cocina |
+| `admin@qa.tercos.co` | ADMIN_OPERATIVO | Caja, cocina y la parte operativa |
+| `cocina@qa.tercos.co` | COCINERO | Solo la app de cocina |
+
+Ninguno pide cambiar la clave al entrar. **Solo existen en QA** — en producción
+no hay ni puede haber cuentas compartidas de este tipo.
+
 Cada uno tiene además un **PIN de 6 dígitos**, que es distinto de la contraseña:
 la clave sirve para entrar, el PIN para **autorizar** (anular una venta,
 reembolsar, abrir el cajón sin venta).

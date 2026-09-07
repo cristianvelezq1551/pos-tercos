@@ -242,6 +242,13 @@ export const KitchenProductionRunSchema = z.object({
   evidenceUrl: z.string().nullable(),
   createdAt: z.string().datetime(),
   inputs: z.array(KitchenProductionInputSchema),
+  /** Cuándo se anuló la tanda, o null si sigue vigente. Una tanda anulada se
+   *  sigue mostrando —el registro existió— pero con su marca y su motivo. */
+  voidedAt: z.string().datetime().nullable(),
+  /** Por qué se anuló. */
+  voidReason: z.string().nullable(),
+  /** Quién la anuló. */
+  voidedByName: z.string().nullable(),
 });
 export type KitchenProductionRun = z.infer<typeof KitchenProductionRunSchema>;
 

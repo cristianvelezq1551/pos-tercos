@@ -771,6 +771,7 @@ async function correr(sim: Simulacion, rng: Rng, n: number): Promise<void> {
       anulacion: 6,
       reembolso: 4,
       produccion: 6,
+      produccionAnulada: 4,
       compra: 6,
       factura: 8,
       facturaAnulada: 5,
@@ -822,6 +823,13 @@ async function correr(sim: Simulacion, rng: Rng, n: number): Promise<void> {
         // Múltiplo del rendimiento: producir media tanda es válido, pero acá
         // interesa el camino normal de cocina.
         await sim.producir(sub.id, sub.yield * rng.int(1, 3));
+        break;
+      }
+      // Registrar una tanda y deshacerla: la contabilidad sombra no registra
+      // nada, así que todas las leyes exigen que la app tampoco deje rastro.
+      case 'produccionAnulada': {
+        const sub = rng.pick(sim.m.subproductos);
+        await sim.producirYAnular(sub.id, sub.yield * rng.int(1, 3));
         break;
       }
       case 'webRecoger':

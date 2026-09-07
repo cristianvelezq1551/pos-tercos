@@ -306,6 +306,37 @@ export class Simulacion {
     this.cuenta('produccion');
   }
 
+  /**
+   * Una tanda mal registrada y anulada.
+   *
+   * La contabilidad sombra NO registra la tanda: solo la compra que hizo falta
+   * para tenerla. Esa es la ley — si la app dejara cualquier rastro (una unidad
+   * de subproducto, un insumo con el costo cambiado, una línea en el P&G),
+   * alguna de las leyes lo delata.
+   */
+  async producirYAnular(subproductId: string, cantidad: number): Promise<void> {
+    const sub = this.m.subproductos.find((s) => s.id === subproductId)!;
+    await this.garantizarStock(consumoDeProduccion(sub, cantidad));
+
+    const tanda = await esperar(
+      this.m.request
+        .post(`/subproducts/${subproductId}/produce`)
+        .set(this.m.auth())
+        .send({ quantityProduced: cantidad, idempotencyKey: randomUUID() }),
+      201,
+    );
+
+    await esperar(
+      this.m.request
+        .post(`/subproducts/production/${tanda.body.runId as string}/void`)
+        .set(this.m.auth())
+        .send({ reason: 'Simulación: la tanda se registró por error' }),
+      204,
+    );
+
+    this.cuenta('produccionAnulada');
+  }
+
   // ==================================================================
   // Venta
   // ==================================================================

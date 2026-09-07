@@ -28,6 +28,7 @@ const SESIONES: AuditAction[] = ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED', 'AUTH_LOGOUT
  */
 const COCINA: AuditAction[] = [
   'SUBPRODUCT_PRODUCED',
+  'SUBPRODUCT_PRODUCTION_VOIDED',
   'INVENTORY_MOVEMENT_WASTE',
   'INVENTORY_MOVEMENT_WASTE_REVERSED',
   'KITCHEN_CHECKLIST_COMPLETED',
@@ -261,6 +262,18 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
         tone: 'warning',
       };
     }
+    case 'SUBPRODUCT_PRODUCTION_VOIDED':
+      return {
+        label: 'Anuló una tanda de producción',
+        detail: [
+          m.subproductName ? `${String(m.subproductName)}` : null,
+          m.quantityProduced != null ? `${String(m.quantityProduced)} producidas` : null,
+          m.reason ? `Motivo: ${String(m.reason)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        tone: 'warning',
+      };
     case 'INVENTORY_MOVEMENT_WASTE_REVERSED':
       return {
         label: 'Anuló una merma',

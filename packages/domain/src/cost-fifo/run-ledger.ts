@@ -26,6 +26,15 @@ import { roundCost } from '../common/money';
  * un desempate causal: entradas → producciones → consumos (ver `phaseOf`).
  */
 
+/**
+ * `sourceType` del movimiento que deshace una TANDA de producción.
+ *
+ * A diferencia de la merma o la cortesía, su `sourceId` es el id de la TANDA
+ * (no el de un movimiento): una tanda se deshace entera —el subproducto que
+ * dejó de existir y cada insumo que vuelve— y las líneas se agrupan por ahí.
+ */
+export const PRODUCTION_REVERSAL_SOURCE_TYPE = 'production_reversal';
+
 export type LedgerEntityType = 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT';
 
 export interface LedgerMovement {
@@ -344,6 +353,13 @@ export function runLedgerFifo(
   // consumidora quedaría como unknownQty (nunca $0).
   const phaseOf = (e: Event): number => {
     if (e.kind === 'production') return 1;
+    // La anulación de una tanda comparte timestamp con la tanda (nace con la
+    // fecha del original, igual que la de una factura), así que TIENE que
+    // procesarse después: si el `+insumo` que devuelve cayera en la fase de
+    // entradas, volvería a la cola ANTES de que la tanda lo consumiera y la
+    // producción se comería las unidades devueltas — el insumo terminaría en la
+    // cola sin su costo real. Fase 2 la deja pegada detrás de su producción.
+    if (e.m.sourceType === PRODUCTION_REVERSAL_SOURCE_TYPE) return 2;
     return e.m.delta > 0 ? 0 : 2;
   };
   events.sort((a, b) => {
@@ -390,6 +406,17 @@ export function runLedgerFifo(
       reversedSources.add(m.sourceId);
     }
     if (m.sourceType === 'invoice_reversal') revertedPurchases.add(m.sourceId);
+    // Anulación de una TANDA de producción: `sourceId` es el id de la tanda
+    // (no el de un movimiento), porque una tanda deshace varias líneas a la vez.
+    //  - `reversedSources`: para que la tanda registre los draws de sus insumos
+    //    y la anulación pueda devolverlos con su costo ORIGINAL.
+    //  - `revertedPurchases`: el +N pudo saldar deudas del subproducto (se
+    //    vendió antes de producir); sin esto no habría cómo deshacer ese saldo.
+    if (m.sourceType === PRODUCTION_REVERSAL_SOURCE_TYPE) {
+      reversedSources.add(m.sourceId);
+      const producidoPor = productionBatches.get(m.sourceId)?.find((x) => x.delta > 0);
+      if (producidoPor) revertedPurchases.add(producidoPor.id);
+    }
   }
 
   /**
@@ -981,7 +1008,16 @@ export function runLedgerFifo(
       for (const c of e.consumes) {
         const cKey = keyOf(c);
         if (!cKey) continue;
-        const { cost, unknownQty, shortfall } = consumeFifo(cKey, Math.abs(c.delta));
+        const { cost, unknownQty, draws, shortfall } = consumeFifo(cKey, Math.abs(c.delta));
+        // Solo si esta tanda se anula (pre-scan acotado, igual que ventas y
+        // mermas): guardar los draws de TODAS las producciones históricas
+        // retendría un objeto por insumo consumido, para siempre.
+        if (reversedSources.has(runId)) {
+          const drawKey = `${runId}:${cKey}`;
+          const acc = drawsBySource.get(drawKey) ?? [];
+          for (const d of draws) acc.push(d);
+          drawsBySource.set(drawKey, acc);
+        }
         // Producir con un insumo que no estaba cargado NO lo vuelve gratis: se
         // estima igual que la venta, o el subproducto nacería barato y ese
         // descuento se arrastraría a todo lo que se venda con él.
@@ -1069,6 +1105,65 @@ export function runLedgerFifo(
         // costo sería aproximada — mucho mejor que un inventario que no cuadra.
         consumeFifo(key, restante);
       }
+      continue;
+    }
+
+    // ANULACIÓN DE UNA TANDA DE PRODUCCIÓN.
+    //
+    // Deshace las dos mitades de la tanda: el subproducto que dejó de existir y
+    // los insumos que vuelven al inventario con su costo ORIGINAL.
+    //
+    // Nace con la FECHA de la tanda —igual que la anulación de una factura— y
+    // eso es lo que la hace exacta: en el replay llega pegada a su producción,
+    // antes de que nadie hubiera vendido el subproducto. Todo lo posterior se
+    // recalcula como si la tanda nunca hubiera existido, así que una venta que
+    // ya se había comido esas porciones pasa a ser faltante estimado con su
+    // deuda, que la próxima producción salda.
+    if (m.sourceType === PRODUCTION_REVERSAL_SOURCE_TYPE) {
+      const runId = m.sourceId ?? '';
+      if (delta < 0) {
+        // El subproducto que la tanda materializó: se le quita EXACTAMENTE su
+        // lote, no las unidades más viejas de la cola. Con FIFO normal se
+        // comería un lote anterior y el inventario quedaría valuado con lotes
+        // que ya no existen.
+        const producidoPor = productionBatches.get(runId)?.find((x) => x.delta > 0);
+        if (!producidoPor) {
+          // La tanda quedó fuera de la ventana replayada (modo incremental):
+          // sin ella no hay lote que identificar. El servicio recomputa con
+          // replay completo — nunca un dato incorrecto, solo más lento.
+          if (seed) out.needsFullReplay = true;
+          // Las unidades igual salen: existen en la base de datos, y dejarlas
+          // sin aplicar haría que el replay reporte más stock del que hay.
+          consumeFifo(key, -delta);
+          continue;
+        }
+        let restante = quitarLoteDeCompra(key, producidoPor.id, -delta);
+        // Lo que no estaba en la cola es lo que ese +N usó para saldar deudas
+        // (se vendió el subproducto antes de producirlo): se devuelve la deuda
+        // y se le quita al consumo el costo que había recibido.
+        if (restante > 1e-9) restante = deshacerSaldos(producidoPor.id, restante);
+        // Inalcanzable mientras la anulación llegue pegada a su tanda (la API
+        // lo garantiza con la fecha del original). Si aun así quedara algo, se
+        // descuenta por FIFO normal: las unidades quedan cuadradas con la base
+        // de datos y solo la base de costo sería aproximada.
+        if (restante > 1e-9) consumeFifo(key, restante);
+        continue;
+      }
+      // Insumo (o sub-subproducto) que vuelve: se devuelve con la base de costo
+      // REAL de la tanda, no como lote nuevo sin costo.
+      const drawKey = `${runId}:${key}`;
+      const { returnedQty } = returnDraws(drawKey, key, delta);
+      // Lo que la tanda se llevó SIN lote quedó como deuda: al anularla se
+      // cancela, o una compra futura saldaría la deuda de una producción que ya
+      // no existe. La deuda de producción no atribuye costo a nada (no se
+      // re-costea), así que cancelarla solo saca las unidades fantasma.
+      const leftover = delta - returnedQty;
+      const cancelled =
+        leftover > 1e-9 && runId ?
+          cancelDebt(key, runId, leftover)
+        : { qty: 0, cost: 0, unknownQty: 0, estimatedQty: 0 };
+      flagIfCrossCutoff(returnedQty + cancelled.qty, delta);
+      flagIfReversalTouchedDebt(cancelled.qty);
       continue;
     }
 

@@ -62,6 +62,10 @@ const run = (opts: Partial<HistoryOptions> = {}) => {
     // Compras anuladas: las leyes tienen que valer igual cuando una entrada se
     // deshace, incluida la que había saldado deudas de inventario negativo.
     includeVoidedPurchases: true,
+    // Tandas de producción anuladas: el subproducto que deja de existir y los
+    // insumos que vuelven a su lote. Las leyes tienen que valer igual, incluido
+    // el caso en que la tanda había producido sin stock (y dejó deuda).
+    includeVoidedProductions: true,
     ...opts,
   };
   return (seed: number) => {
