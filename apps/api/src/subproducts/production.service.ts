@@ -1,5 +1,10 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { expandRecipeOneLevel, roundCost, roundsToZeroAt4 } from '@pos-tercos/domain';
+import {
+  expandRecipeOneLevel,
+  PRODUCTION_REVERSAL_SOURCE_TYPE,
+  roundCost,
+  roundsToZeroAt4,
+} from '@pos-tercos/domain';
 import type { StorageProvider } from '@pos-tercos/domain';
 import type {
   ProductionRun,
@@ -320,8 +325,23 @@ export class ProductionService {
     return shortages;
   }
 
-  /** Reconstruye la respuesta a partir de los movements de un runId. */
+  /**
+   * Reconstruye la respuesta a partir de los movements de un runId.
+   *
+   * Si esa tanda se ANULÓ, no se devuelve como si existiera: el reintento de un
+   * cliente que perdió la respuesta original recibiría "produjiste 10" sobre
+   * una tanda que ya se deshizo, y el cocinero contaría con un stock que no
+   * está. Es mejor decirle que vuelva a registrarla.
+   */
   private async assembleRunResponse(runId: string): Promise<ProductionRun> {
+    const anulada = await this.prisma.inventoryMovement.count({
+      where: { sourceType: PRODUCTION_REVERSAL_SOURCE_TYPE, sourceId: runId },
+    });
+    if (anulada > 0) {
+      throw new ConflictException(
+        'Esa tanda se anuló. Si de verdad la produjiste, vuelve a registrarla.',
+      );
+    }
     const rows = await this.prisma.inventoryMovement.findMany({
       where: { sourceId: runId, sourceType: 'production' },
       include: {
