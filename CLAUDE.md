@@ -4582,6 +4582,41 @@ tanda se deshace entera y sus líneas se agrupan por ahí):
   invertido. El tipo `PRODUCTION` es deliberado —así el reporte de uso la
   netea— y la nota del movimiento lo explica.
 
+## 7.v65 Auditoría del propio cambio: 4 huecos que ningún test veía (2026-09-06)
+
+> Pasada adversarial sobre §7.v64 antes de llevarlo a producción. **Ninguno de
+> los cuatro daba error ni salía en los 907 e2e**: salieron de escribir casos
+> límite y de MEDIR la pantalla. Verificado: prueba de oro sin cambios, 11 leyes
+> × 20.000 historias, e2e 907/907, simulación 168/168, navegador 2/2.
+
+1. **Asimetría en el motor.** Estaba cubierto el caso defensivo del subproducto
+   y NO el del insumo: una anulación sin su tanda perdía unidades (la base decía
+   136 y el replay 100) y rompía la ley de conservación. Es inalcanzable por la
+   API —la anulación se escribe siempre junto a su tanda— pero esa ley no admite
+   excepciones: si el replay reporta menos stock del que hay, el dueño ve un
+   inventario que no existe. Cerrado en los TRES caminos (lote no encontrado,
+   residuo tras deshacer saldos, devolución sin draws).
+2. **Reintentar `produce` tras anular revivía la tanda.** Un cliente que perdió
+   la respuesta y reintenta con la misma clave recibía "produjiste 10" sobre una
+   tanda ya deshecha. Ahora es 409 pidiendo que la registre de nuevo.
+3. **El reporte de uso tenía el string duplicado** en vez de importar
+   `PRODUCTION_REVERSAL_SOURCE_TYPE`. Cambiarlo en un lado dejaba de netear en
+   silencio.
+4. **El botón que decide la anulación medía 39,9 px en teléfono**, bajo el piso
+   de 44 (§7.v18).
+
+### Dos piedras nuevas que valen para todo el repo
+- ⚠️ **`h-11` NO da 44 px en el admin**: su `rem` base no es 16 y mide **43,2**.
+  El piso táctil va en píxeles explícitos (`min-h-[44px]`), no en la escala de
+  Tailwind. Medido, no supuesto.
+- ⚠️ **En un test de navegador, medir con `offsetHeight` y no `boundingBox`**
+  cuando el elemento vive en un diálogo: la animación de escala hace que el rect
+  de Playwright se mida a mitad de la transición y devuelva 43,6 sobre un
+  control que en el layout mide 44.
+- ⚠️ Un comentario JSX dentro de un prop (`footer={ {/* … */} <div/> }`) son DOS
+  hijos y rompe la compilación. El typecheck y los tests unitarios siguieron en
+  verde; solo se vio abriendo la página.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
