@@ -34,6 +34,17 @@ const RUN: KitchenProductionRun = {
     { entityType: 'INGREDIENT', entityId: 'a3', name: 'Repollo', quantity: 336, unit: 'gr' },
     { entityType: 'INGREDIENT', entityId: 'a4', name: 'Salsa de miel', quantity: 400, unit: 'ml' },
   ],
+  voidedAt: null,
+  voidedByName: null,
+  voidReason: null,
+};
+
+/** La misma tanda, anulada. */
+const RUN_ANULADA: KitchenProductionRun = {
+  ...RUN,
+  voidedAt: '2026-09-01T18:02:00.000Z',
+  voidedByName: 'Carolina',
+  voidReason: 'Se registraron 20 porciones en vez de 2',
 };
 
 const MOTIVO_LARGO =
@@ -90,6 +101,31 @@ describe('producción: la celda "Consumió" resume y el detalle los muestra todo
       expect(screen.getByText(i.name)).toBeDefined();
     }
     expect(screen.getByText(/Consumió \(4\)/)).toBeDefined();
+  });
+});
+
+describe('producción: una tanda anulada se ve como tal', () => {
+  it('la tabla la marca y tacha la cantidad', () => {
+    render(<ProductionsTable runs={[RUN_ANULADA]} />);
+    // Sin la marca, una tanda deshecha se lee como producción vigente y el
+    // dueño saca conclusiones sobre algo que no ocurrió.
+    expect(screen.getByText('Anulada')).toBeDefined();
+    expect(screen.getByText('20 porción').className).toContain('line-through');
+  });
+
+  it('el detalle explica el motivo y NO ofrece volver a anularla', () => {
+    render(<ProductionsTable runs={[RUN_ANULADA]} />);
+    fireEvent.click(screen.getByRole('button', { name: /Ver detalle de la tanda de Pollo apanado/ }));
+
+    expect(screen.getByText(/Se registraron 20 porciones en vez de 2/)).toBeDefined();
+    expect(screen.getByText(/La anuló Carolina/)).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Anular tanda' })).toBeNull();
+  });
+
+  it('una tanda vigente SÍ ofrece anularla', () => {
+    render(<ProductionsTable runs={[RUN]} />);
+    fireEvent.click(screen.getByRole('button', { name: /Ver detalle de la tanda de Pollo apanado/ }));
+    expect(screen.getByRole('button', { name: 'Anular tanda' })).toBeDefined();
   });
 });
 
