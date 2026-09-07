@@ -241,8 +241,9 @@ export class ReportsController {
   }
 
   /**
-   * Trigger manual del resumen diario por WhatsApp al dueño (el cron corre
-   * 21:30 hora local). Sirve para probar el flujo sin esperar la noche.
+   * Trigger manual del resumen diario al dueño. El cron corre a las 00:00 y
+   * resume el día que terminó; disparado a mano resume el día EN CURSO, que es
+   * lo que quiere ver quien lo toca a media tarde.
    */
   @OnlyDueno()
   @Post('admin/send-daily-digest')

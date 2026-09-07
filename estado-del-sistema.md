@@ -23,7 +23,7 @@
 | **promotions** | 4 tipos de descuento automático | PERCENT/FIXED/BOGO/COMBO con días+horario+vigencia; gana el mayor descuento absoluto; campos por tipo inmutables | ✅ |
 | **web-orders / web-menu** | Pedidos web públicos | Menú SAFE throttled; creación con token HMAC 24h + instrucciones de pago automáticas por WhatsApp; WS `/ws/pos` notifica al cajero | ✅ |
 | **public-display** | Turnero kiosko | SSE `@Public` con `{currentTurn, callSeq}`; cola de listos FIFO por `ready_at`; llamado manual del cajero (incl. número arbitrario) | ✅ |
-| **reports** | Analytics completo | Dashboard, series de ventas, top products, heatmap, **COGS FIFO real** (P&G/márgenes/valorización), **uso y mermas valorizado**, anomalías 2σ por cajero, reconciliación CSV con histórico, estado financiero mensual + break-even + IA, cockpit cash-based, resumen IA diario, **digest diario WhatsApp al dueño (cron 21:30)** | ✅ |
+| **reports** | Analytics completo | Dashboard, series de ventas, top products, heatmap, **COGS FIFO real** (P&G/márgenes/valorización), **uso y mermas valorizado**, anomalías 2σ por cajero, reconciliación CSV con histórico, estado financiero mensual + break-even + IA, cockpit cash-based, resumen IA diario, **digest diario al dueño (cron 00:00)** | ✅ |
 | **purchase-suggestions** | Auto-pedido con IA | Cron horario detecta low-stock; evaluación LLM on-demand; accept/reject; envío del pedido al proveedor por WhatsApp | ✅ |
 | **workers** | Nómina v2 | payType MONTHLY/DAILY + descansos cíclicos, días/ajustes con PIN, períodos quincenales (4 sub-pagos/mes), pagos con comprobante. (Las comisiones se eliminaron a propósito) | ✅ |
 | **fixed-costs** | Costos fijos del negocio | CRUD Dueño-only + pago mensual/anual con comprobante; alimenta el P&G | ✅ |

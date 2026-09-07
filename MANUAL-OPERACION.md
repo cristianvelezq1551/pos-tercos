@@ -311,7 +311,7 @@ vercel rollback <deployment-url>         # rollback de producción al deployment
 | `PRINT_AGENT_URL` / `PRINT_AGENT_SECRET` | — | URL del Pi (tunnel/Tailscale) |
 | `BUSINESS_NAME` / `BUSINESS_ADDRESS_SHORT` / `PAYMENT_INSTRUCTIONS_*` | de prueba | reales |
 
-> Los crons (digest 21:30, scan de sugerencias, sweeps, snapshot FIFO) corren en AMBOS
+> Los crons (digest 00:00, scan de sugerencias, sweeps, snapshot FIFO) corren en AMBOS
 > ambientes. QA sin vars de WhatsApp = los crons no molestan a nadie.
 
 Generar secrets nuevos:

@@ -23,9 +23,10 @@ const MIN_SALES_FOR_MARGIN_ALERT = 20;
  * el generador IA de `daily-ai-summary` y el WhatsAppProvider (Kapso real
  * en prod, mock en dev). El dueño "controla" el día sin abrir el admin.
  *
- * Requiere `OWNER_WHATSAPP_PHONE` (E.164). Sin la var, el cron no hace nada.
- * Hora local del server → setear TZ=America/Bogota en prod (igual que el
- * reset diario de turnos).
+ * Corre a la MEDIANOCHE, apenas termina el día, aunque la caja siga abierta
+ * (acá se vende de madrugada). Hora local del server → setear
+ * TZ=America/Bogota en prod; sin esa variable el cron dispara a las 7 pm de
+ * Bogotá y la ventana del día tampoco es la del local.
  */
 @Injectable()
 export class OwnerDigestService {
@@ -40,11 +41,18 @@ export class OwnerDigestService {
     @Inject(WHATSAPP_PROVIDER) private readonly wa: WhatsAppProvider,
   ) {}
 
-  /** 21:30 — después del cierre típico, antes de que el dueño se acueste. */
-  @Cron('30 21 * * *')
+  /**
+   * 00:00 — el resumen del día que ACABA de terminar.
+   *
+   * Se manda aunque la caja siga abierta: la atribución contable de las ventas
+   * es por día calendario (§7.v14), así que "el día" del resumen es el mismo
+   * que el del P&G y el del reporte de ventas. Lo que se venda de madrugada ya
+   * cuenta para el día siguiente y entra en el resumen de mañana.
+   */
+  @Cron('0 0 * * *')
   async sendDailyDigestCron(): Promise<void> {
     try {
-      await this.sendDailyDigest();
+      await this.sendDailyDigest(diaQueTermino());
     } catch (err) {
       // Cron non-throwing: un fallo del LLM o de WhatsApp no debe tumbar nada.
       this.logger.warn(`Digest diario falló: ${err instanceof Error ? err.message : err}`);
@@ -52,8 +60,9 @@ export class OwnerDigestService {
   }
 
   /**
-   * Genera y envía el resumen del día. Devuelve qué pasó (para el trigger
-   * manual del endpoint admin).
+   * Genera y envía el resumen del día calendario de `date`. Devuelve qué pasó
+   * (para el trigger manual del endpoint admin, que resume el día EN CURSO —
+   * quien lo dispara a mano quiere ver cómo va hoy, no cómo cerró ayer).
    */
   async sendDailyDigest(date = new Date()): Promise<{
     sent: boolean;
@@ -96,8 +105,9 @@ export class OwnerDigestService {
   // ==================================================================
 
   /**
-   * 21:45 — después del digest, con su propio cron para que un fallo del LLM
-   * (que el digest sí necesita) no se lleve puesto este aviso, que no usa IA.
+   * 21:45 — con el dueño despierto, que es cuando puede hacer algo con el
+   * aviso. Va en su propio cron, aparte del digest: este no usa IA, y un fallo
+   * del LLM (que el digest sí necesita) no puede llevárselo puesto.
    */
   @Cron('45 21 * * *')
   async checkContributionMarginCron(): Promise<void> {
@@ -197,4 +207,19 @@ export class OwnerDigestService {
     });
     return { sent: true, contributionMargin: st.contributionMargin };
   }
+}
+
+/**
+ * El día calendario que acaba de terminar.
+ *
+ * A las 00:00 `new Date()` ya es el día siguiente y está vacío, así que el
+ * resumen tiene que mirar hacia atrás. Se deriva de la medianoche de HOY y no
+ * restando N horas: así sigue devolviendo el día correcto aunque el cron
+ * arranque tarde (proceso ocupado, reinicio), que con un margen fijo se pasaba
+ * de largo y resumía el día equivocado.
+ */
+export function diaQueTermino(now = new Date()): Date {
+  const medianocheDeHoy = new Date(now);
+  medianocheDeHoy.setHours(0, 0, 0, 0);
+  return new Date(medianocheDeHoy.getTime() - 1);
 }
