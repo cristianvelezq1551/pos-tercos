@@ -4697,6 +4697,10 @@ descuenta los componentes"*.
   tamaños `assertSizeBelongsToProduct` ya devuelve 404.
 - `ComboRecipeView` reemplaza al editor: qué descuenta cada componente, si es
   preparado o bebida, enlace a la receta que sí se edita, y costo con margen.
+  La **reventa directa** muestra su propio aviso (`SinRecetaNotice`): el guard
+  la rechaza igual, así que ofrecerle el editor era una acción condenada a
+  fallar. Se detectó verificando prod después de desplegar — el guard entró
+  antes que la pantalla, y las 12 bebidas quedaron un rato con ese callejón.
 - **Un costo de $0 se declara faltante, no exacto.** En comida el cero siempre
   es dato ausente; darlo por bueno pintaba *"100% de margen"* en verde (misma
   regla que `computeCatalogMargin`, §7.v52).

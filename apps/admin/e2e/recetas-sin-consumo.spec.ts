@@ -6,12 +6,13 @@ import {
   type Browser,
   type Page,
 } from '@playwright/test';
-import { API, DUENO_EMAIL, PASSWORD, authHeaders, login, type Session } from './helpers';
+import { API, DUENO_EMAIL, authHeaders, login, type Session } from './helpers';
 
 const BASE = 'http://localhost:3004';
 
 /**
- * La receta de un COMBO, en la interfaz real.
+ * Las recetas que NUNCA se consumen, en la interfaz real: la de un combo y la
+ * de una reventa directa.
  *
  * Un combo no lleva receta propia: al venderlo se descuenta el stock de sus
  * componentes (`computeConsumptionSpecs` recorre `comboComponents`). La página
@@ -33,6 +34,7 @@ let dueno: Session;
 let cookies: Awaited<ReturnType<Awaited<ReturnType<Browser['newContext']>>['storageState']>>;
 let comboId: string;
 let preparadoId: string;
+let bebidaId: string;
 let insumoId: string;
 /** Una categoría que exista en ESTA base: `products.create` la exige. */
 let categoria: string;
@@ -87,7 +89,7 @@ test.beforeAll(async ({ browser }) => {
     data: { edges: [{ childType: 'ingredient', childId: insumoId, quantityNeta: 1, mermaPct: 0 }] },
   });
 
-  const bebidaId = await crearProducto(api, {
+  bebidaId = await crearProducto(api, {
     name: `Gaseosa combo ${s}`,
     category: categoria,
     basePrice: 4000,
@@ -166,7 +168,21 @@ test('el componente preparado enlaza a SU receta, que sí se edita', async ({ br
   await page.close();
 });
 
-test('el servidor rechaza guardarle una receta al combo', async () => {
+test('una bebida de reventa tampoco ofrece el editor: descuenta su propio stock', async ({
+  browser,
+}) => {
+  const page = await pestanaAutenticada(browser);
+  await page.goto(`/products/${bebidaId}/recipe`);
+
+  await expect(page.getByText(/no lleva receta/i)).toBeVisible();
+  await expect(page.getByText(/una unidad de su propio stock/i)).toBeVisible();
+  // Ofrecer el editor sería una acción que el servidor siempre rechaza.
+  await expect(page.getByText(/Agregar item a la receta/i)).toHaveCount(0);
+
+  await page.close();
+});
+
+test('el servidor rechaza guardarle una receta al combo y a la reventa', async () => {
   const api = await playwrightRequest.newContext();
   const res = await api.put(`${API}/products/${comboId}/recipe`, {
     headers: { ...authHeaders(dueno), 'Content-Type': 'application/json' },
@@ -175,5 +191,12 @@ test('el servidor rechaza guardarle una receta al combo', async () => {
   });
   expect(res.status()).toBe(400);
   expect(await res.text()).toContain('combo');
+
+  const bebida = await api.put(`${API}/products/${bebidaId}/recipe`, {
+    headers: { ...authHeaders(dueno), 'Content-Type': 'application/json' },
+    data: { edges: [{ childType: 'ingredient', childId: insumoId, quantityNeta: 1, mermaPct: 0 }] },
+  });
+  expect(bebida.status()).toBe(400);
+  expect(await bebida.text()).toContain('reventa directa');
   await api.dispose();
 });
