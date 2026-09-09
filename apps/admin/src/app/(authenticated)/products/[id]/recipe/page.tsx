@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Container, PageHeader } from '@pos-tercos/ui';
 import {
   ComboRecipeView,
+  SinRecetaNotice,
   ProductRecipeTabs,
   RecipeEditor,
   VariantCostSummary,
@@ -76,6 +77,29 @@ export default async function ProductRecipePage({ params }: PageProps) {
             missingReasons={costo?.missingReasons ?? []}
             comboPrice={product.comboPrice ?? product.basePrice}
           />
+        </Container>
+      </>
+    );
+  }
+
+  // Una reventa directa tampoco consume receta: descuenta su propio stock. El
+  // servidor ya rechaza guardarle líneas, así que ofrecer el editor sería una
+  // acción que siempre termina en error.
+  if (product.directResale) {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Catálogo"
+          title={`Receta de ${product.name}`}
+          description="Se compra hecho y se vende igual: al venderlo se descuenta su propio stock."
+          breadcrumbs={[
+            { label: 'Productos', href: '/products' },
+            { label: product.name, href: `/products/${id}` },
+            { label: 'Receta' },
+          ]}
+        />
+        <Container size="6xl" padY="md">
+          <SinRecetaNotice productName={product.name} />
         </Container>
       </>
     );
