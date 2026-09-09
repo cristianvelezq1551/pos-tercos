@@ -20,6 +20,11 @@ const BASE = 'http://localhost:3004';
  * el inventario. Peor: dejaba GUARDAR una receta que nadie iba a consumir.
  *
  * Esto no lo puede cubrir un e2e de API: lo que se rompe es qué se renderiza.
+ *
+ * ⚠️ UN SOLO `POST /auth/login` en todo el archivo: el endpoint admite 10 por
+ * minuto y por IP, y el job entero comparte esa cuota. La sesión del navegador
+ * se siembra plantando la cookie con el token de esa misma sesión de API, en
+ * vez de gastar un segundo login en el formulario.
  */
 
 test.describe.configure({ timeout: 90_000 });
@@ -106,12 +111,16 @@ test.beforeAll(async ({ browser }) => {
   await api.dispose();
 
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
-  await page.goto(`${BASE}/login`);
-  await page.getByLabel(/correo|email/i).fill(DUENO_EMAIL);
-  await page.getByLabel(/contraseña/i).fill(PASSWORD);
-  await page.getByRole('button', { name: /entrar|ingresar|iniciar/i }).click();
-  await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 20_000 });
+  await ctx.addCookies([
+    {
+      name: 'admin_access',
+      value: dueno.token,
+      domain: 'localhost',
+      path: '/',
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
+  ]);
   cookies = await ctx.storageState();
   await ctx.close();
 });
