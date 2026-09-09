@@ -65,6 +65,7 @@ export class RecipesService {
     edges: RecipeEdgeInput[],
   ): Promise<RecipeResponse> {
     await this.assertParentExists(kind, parentId);
+    await this.assertRecipeIsConsumed(kind, parentId, edges);
     await this.assertChildrenExist(edges);
     this.assertNoDirectSelfCycle(kind, parentId, edges);
 
@@ -829,6 +830,36 @@ export class RecipesService {
       result.push({ subproductId: sub.id, totalCost });
     }
     return result;
+  }
+
+  /**
+   * Hay productos cuya receta NUNCA se consume al vender: un combo descuenta el
+   * stock de sus componentes (`computeConsumptionSpecs`) y una reventa directa
+   * descuenta el suyo propio. Guardarles líneas dejaba una receta fantasma:
+   * se veía en el editor, no descontaba nada y tampoco entraba al costo. Se
+   * rechaza al escribir; vaciarla siempre se permite (así se limpia una vieja).
+   */
+  private async assertRecipeIsConsumed(
+    kind: ParentKind,
+    parentId: string,
+    edges: RecipeEdgeInput[],
+  ): Promise<void> {
+    if (kind !== 'product' || edges.length === 0) return;
+    const product = await this.prisma.product.findUnique({
+      where: { id: parentId },
+      select: { isCombo: true, directResale: true },
+    });
+    if (!product) return; // assertParentExists ya cubre el 404
+    if (product.isCombo) {
+      throw new BadRequestException(
+        'Un combo no lleva receta propia: al venderlo se descuenta el stock de cada producto que lo compone. Cambia sus componentes desde la ficha del combo.',
+      );
+    }
+    if (product.directResale) {
+      throw new BadRequestException(
+        'Un producto de reventa directa no lleva receta: al venderlo se descuenta su propio stock.',
+      );
+    }
   }
 
   private async assertParentExists(kind: ParentKind, id: string): Promise<void> {

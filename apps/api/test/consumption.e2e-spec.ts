@@ -270,6 +270,40 @@ describe('Consumo de stock E2E (online + offline)', () => {
     expect(movements).toHaveLength(4);
   });
 
+  it('no deja guardar receta en un combo ni en una reventa: nunca se consumiría', async () => {
+    // La receta de un combo la ignora computeConsumptionSpecs (recorre
+    // comboComponents) y la de una reventa también (descuenta su propio stock).
+    // Guardarla dejaba una receta fantasma: visible en el editor, sin efecto.
+    const linea = [{ childType: 'ingredient', childId: panId, quantityNeta: 1, mermaPct: 0 }];
+
+    const combo = await request
+      .put(`/products/${comboId}/recipe`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ edges: linea });
+    expect(combo.status).toBe(400);
+    expect(combo.body.message).toContain('combo');
+
+    const reventa = await request
+      .put(`/products/${cocaId}/recipe`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ edges: linea });
+    expect(reventa.status).toBe(400);
+
+    // Vaciarla sí se permite: es el camino para limpiar una receta vieja.
+    const vaciar = await request
+      .put(`/products/${comboId}/recipe`)
+      .set('Authorization', `Bearer ${duenoToken}`)
+      .send({ edges: [] });
+    expect(vaciar.status).toBe(200);
+
+    // Y el preparado sigue aceptando su receta normalmente.
+    const preparado = await request
+      .get(`/products/${burgerId}/recipe`)
+      .set('Authorization', `Bearer ${duenoToken}`);
+    expect(preparado.status).toBe(200);
+    expect(preparado.body.edges.length).toBeGreaterThan(0);
+  });
+
   it('syncOffline genera EXACTAMENTE el mismo consumo que la venta online equivalente', async () => {
     // Online: 1 burger
     const onlineSaleId = await createAndPay(burgerId, 1);
