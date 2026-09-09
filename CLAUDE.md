@@ -4660,6 +4660,60 @@ entonces el resumen mezclaría dos ejes temporales distintos en el mismo texto.
 
 ---
 
+## 7.v67 El combo SÍ descuenta: la pantalla de receta era la que mentía (2026-09-09)
+
+> El dueño creó un combo en prod (2 Double smash + 2 bebidas), abrió su receta,
+> la vio vacía y temió que la venta no descontara los insumos. **El descuento
+> estaba bien**: verificado contra los datos reales de prod. Lo que estaba mal
+> era la pantalla — y además dejaba caer en una trampa.
+> Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (admin 354, +6),
+> **e2e 77 suites / 908** (+1 caso), 3 casos de navegador nuevos, más la
+> simulación de una venta del combo en QA. Sin migración.
+
+### Un combo no lleva receta propia (y nunca la llevó)
+`computeConsumptionSpecs` recorre `comboComponents`, no las líneas de receta del
+combo: cada componente descuenta lo suyo — el preparado su receta, la bebida su
+propio stock. El costeo hace lo mismo (`computeComboCost`). O sea que la receta
+vacía de un combo es lo correcto, y ya estaba cubierto por el e2e *"combo
+descuenta los componentes"*.
+
+### Los dos defectos reales
+1. **La pantalla afirmaba lo contrario.** Para un combo el backend devuelve el
+   costo en `components[]` y deja `totals` vacío; `RecipeExpandedCostView` lee
+   solo `totals`, así que caía en *"La receta está vacía — sin insumos para
+   descontar al vender 1 unidad"*. Falso, y justo en la pantalla donde alguien
+   va a comprobar si su combo va a descontar.
+2. **Dejaba guardar una receta fantasma.** El editor estaba activo: las líneas
+   se guardaban, se veían y **no las consumía ni las costeaba nadie**. Lo mismo
+   por el lado de la reventa directa, que también ignora su receta.
+
+### Lo que queda
+- `setRecipe` **rechaza** líneas en un combo o en una reventa directa, diciendo
+  por qué. **Vaciarla siempre se permite**: es el camino para limpiar una vieja.
+  Sale por el único endpoint que escribe recetas de producto (`PUT
+  /products/:id/recipe`, Dueño); el formulario de producto no lo toca, así que
+  crear y editar combos no cambia. `setSizeRecipe` no necesita el guard: un
+  combo no puede tener variantes (el `kind` del formulario es excluyente) y sin
+  tamaños `assertSizeBelongsToProduct` ya devuelve 404.
+- `ComboRecipeView` reemplaza al editor: qué descuenta cada componente, si es
+  preparado o bebida, enlace a la receta que sí se edita, y costo con margen.
+- **Un costo de $0 se declara faltante, no exacto.** En comida el cero siempre
+  es dato ausente; darlo por bueno pintaba *"100% de margen"* en verde (misma
+  regla que `computeCatalogMargin`, §7.v52).
+- **Un combo sin componentes avisa fuerte**: ese es el único caso en que de
+  verdad no se descuenta nada, y no se confunde con "falta cargar un costo".
+
+### La piedra que costó media hora (otra vez §7.v38)
+El guard no disparaba contra el dev server y el `dist` tenía la definición del
+método **sin su llamada**. No era el código: había **15 `nest start --watch`
+vivos** —hasta de 8 días— peleando por el mismo `apps/api/dist`, y el que tenía
+el 3001 era un huérfano (`PPID 1`) corriendo `dist/main` sin watcher que lo
+reconstruyera. Con un solo watcher y el `dist` borrado, el guard responde bien.
+⚠️ Si el API de dev "responde cosas viejas", contar los watchers ANTES de dudar
+del código: `ps -eo pid,etime,command | grep "[n]est.js start --watch"`.
+
+---
+
 
 ## 8. Estado del proyecto (commits y FASES)
 

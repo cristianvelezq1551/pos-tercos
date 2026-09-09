@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { Container, PageHeader } from '@pos-tercos/ui';
 import {
+  ComboRecipeView,
   ProductRecipeTabs,
   RecipeEditor,
   VariantCostSummary,
@@ -40,6 +41,44 @@ export default async function ProductRecipePage({ params }: PageProps) {
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
+  }
+
+  // Un combo no tiene receta propia: se descuenta el stock de sus componentes.
+  // Se resuelve antes de las variantes — un combo no se vende por variante.
+  if (product.isCombo) {
+    const costo = await serverFetchJson<ExpandedCostResponse>(
+      `/products/${id}/expanded-cost`,
+    ).catch(() => null);
+    const componentes = await Promise.all(
+      (costo?.components ?? []).map(async (c) => ({
+        ...c,
+        directResale: await serverFetchJson<Product>(`/products/${c.productId}`)
+          .then((cp) => cp.directResale)
+          .catch(() => null),
+      })),
+    );
+    return (
+      <>
+        <PageHeader
+          eyebrow="Catálogo"
+          title={`Receta de ${product.name}`}
+          description="Un combo se arma con otros productos: el stock se descuenta de cada uno."
+          breadcrumbs={[
+            { label: 'Productos', href: '/products' },
+            { label: product.name, href: `/products/${id}` },
+            { label: 'Receta' },
+          ]}
+        />
+        <Container size="6xl" padY="md">
+          <ComboRecipeView
+            components={componentes}
+            totalCost={costo?.totalCost ?? null}
+            missingReasons={costo?.missingReasons ?? []}
+            comboPrice={product.comboPrice ?? product.basePrice}
+          />
+        </Container>
+      </>
+    );
   }
 
   // Si el producto tiene variantes, cargamos la receta de cada una para las pestañas.
