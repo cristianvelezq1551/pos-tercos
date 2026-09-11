@@ -4855,6 +4855,25 @@ el de la carta: dos lecturas del mismo mes. El prompt de sistema explica cada
 línea y **decide el tono con la cobertura del equilibrio de la carta**. Regla:
 si la pantalla gana una línea, el prompt la gana en el mismo cambio.
 
+### Lo que encontró la auditoría remota (y quedó corregido)
+`scripts/auditoria-estado-financiero.mjs` arma por HTTP, contra un API
+desplegado (QA o prod), un panorama completo del mes —catálogo, compra con
+flete, ventas con descuento, anulación con PIN, cortesía, merma, faltante de
+conteo, costos fijos en los cuatro sabores, compromisos— y verifica **70
+comprobaciones** por DELTA contra una contabilidad sombra, más el análisis de
+IA real. Dos cosas salieron de correrlo:
+- **El análisis de IA respondía 500 cuando el modelo no devolvía JSON puro**
+  (texto alrededor, o truncado: con el espejo del estado, 600 tokens de salida
+  se quedaban cortos). Un 500 además abre un Issue de alerta por algo que no es
+  un error del sistema. Ahora `extractJsonObject` (domain, puro, 5 tests) saca
+  el objeto tolerando cercas y prosa, hay **un reintento**, el tope subió a
+  1.200 tokens, y el fallo definitivo es un **502** con mensaje para la persona.
+- **El motor de costos cachea 60 s**: una auditoría que lee el estado justo
+  después de vender ve el COGS viejo. El script espera a que la caché venza
+  (`estadoCuando`); no es un bug, es la staleness deliberada de §7.v18.
+  ⚠️ Un conteo hecho por el DUEÑO se aplica en el acto; solo el del cocinero
+  queda pendiente de aprobación.
+
 ### Lo que sigue (mismo plan)
 Fase 2: nada entra al inventario a $0 (sobrantes de conteo y ajustes manuales
 sin precio se valoran al último costo conocido, marcados estimado; un

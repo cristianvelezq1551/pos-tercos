@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import {
   FINANCIAL_ANALYSIS_SYSTEM,
   buildFinancialAnalysisUserPrompt,
   breakEvenFromCatalogMargin,
   computeBreakEven,
   computeCatalogMargin,
+  extractJsonObject,
   type CatalogProductMargin,
   computeComboCost,
   computeProductCost,
@@ -552,13 +553,7 @@ export class FinancialReportsService {
       })),
     };
 
-    const result = await this.llm.complete({
-      systemPrompt: FINANCIAL_ANALYSIS_SYSTEM,
-      userPrompt: buildFinancialAnalysisUserPrompt(input),
-      maxTokens: 600,
-    });
-
-    const parsed = parseFinancialAnalysisJson(result.text, result.modelUsed);
+    const parsed = await this.pedirAnalisis(buildFinancialAnalysisUserPrompt(input));
 
     await this.audit.log({
       userId: actorId,
@@ -567,13 +562,41 @@ export class FinancialReportsService {
       metadata: {
         year,
         month: month1,
-        modelUsed: result.modelUsed,
+        modelUsed: parsed.modelUsed,
         tono: parsed.tono,
         netResult: statement.netResult,
       },
     });
 
     return parsed;
+  }
+
+  /**
+   * Una llamada al modelo, y UNA más si la primera no trajo un JSON usable
+   * (truncado por el tope, o con texto alrededor que el extractor no pudo
+   * salvar). El segundo fallo se devuelve como 502 con mensaje para la persona:
+   * no es un error del sistema y no debe abrir un Issue de alerta (el filtro
+   * global solo alerta los 500 crudos).
+   */
+  private async pedirAnalisis(userPrompt: string): Promise<FinancialAnalysis> {
+    const pedir = () =>
+      this.llm.complete({
+        systemPrompt: FINANCIAL_ANALYSIS_SYSTEM,
+        userPrompt,
+        // El espejo del estado es más largo que antes y la respuesta trae hasta
+        // 5 bullets en español: con 600 el JSON llegaba cortado a mitad de frase.
+        maxTokens: FINANCIAL_ANALYSIS_MAX_TOKENS,
+      });
+    const primero = await pedir();
+    const parsed = parseFinancialAnalysisJson(primero.text, primero.modelUsed);
+    if (parsed) return parsed;
+    this.logger.warn(`Análisis IA sin JSON usable (${primero.modelUsed}); reintentando una vez`);
+    const segundo = await pedir();
+    const reintento = parseFinancialAnalysisJson(segundo.text, segundo.modelUsed);
+    if (reintento) return reintento;
+    throw new BadGatewayException(
+      'La IA no devolvió un análisis usable. Vuelve a intentar en un momento.',
+    );
   }
 
   /**
@@ -709,30 +732,20 @@ function round(n: number): number {
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
 }
+const FINANCIAL_ANALYSIS_MAX_TOKENS = 1200;
+
 /**
- * Parseo defensivo del JSON que devuelve el LLM. Si viene con code fences,
- * los removemos. Si falta algún campo, lanzamos un error claro (no devolvemos
- * un objeto medio formado al UI).
+ * Lee el JSON del modelo con tolerancia (cercas, texto alrededor) y devuelve
+ * `null` si no hay un análisis usable: sin objeto, truncado, o con un tono
+ * fuera de los tres que la pantalla sabe pintar. El llamador decide si
+ * reintenta. Nunca devuelve un objeto a medio formar.
  */
-function parseFinancialAnalysisJson(raw: string, modelUsed: string): FinancialAnalysis {
-  const clean = raw
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-  let obj: unknown;
-  try {
-    obj = JSON.parse(clean);
-  } catch {
-    throw new Error('La IA no devolvió un JSON válido. Prueba de nuevo.');
-  }
-  if (typeof obj !== 'object' || obj === null) {
-    throw new Error('La IA devolvió un formato inesperado.');
-  }
+function parseFinancialAnalysisJson(raw: string, modelUsed: string): FinancialAnalysis | null {
+  const obj = extractJsonObject(raw);
+  if (typeof obj !== 'object' || obj === null) return null;
   const o = obj as Record<string, unknown>;
   const tono = String(o.tono ?? '');
-  if (!['saludable', 'atencion', 'critico'].includes(tono)) {
-    throw new Error(`Tono inválido devuelto por la IA: ${tono}`);
-  }
+  if (!['saludable', 'atencion', 'critico'].includes(tono)) return null;
   const bullets = Array.isArray(o.bullets) ? o.bullets : [];
   return {
     tono: tono as FinancialAnalysis['tono'],
