@@ -152,6 +152,14 @@ async function main() {
 
   // ---- Catálogo
   seccion('Catálogo: 3 insumos, una hamburguesa con receta y una gaseosa de reventa');
+  // Un producto exige que su categoría exista. En un entorno recién reseteado
+  // no hay ninguna: se crean las dos del escenario si faltan (crear la misma
+  // dos veces no es un error para esta auditoría).
+  const categorias = (await get('/product-categories')).body;
+  const nombres = new Set((Array.isArray(categorias) ? categorias : []).map((c) => String(c.name).toLowerCase()));
+  for (const nombre of ['Comidas', 'Bebidas']) {
+    if (!nombres.has(nombre.toLowerCase())) await post('/product-categories', { name: nombre });
+  }
   const pan = (await post('/ingredients', { name: N('Pan'), unitPurchase: 'unidad', unitRecipe: 'unidad', conversionFactor: 1, thresholdMin: 0, isActive: true })).body.id;
   const carne = (await post('/ingredients', { name: N('Carne'), unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000, thresholdMin: 0, isActive: true })).body.id;
   const queso = (await post('/ingredients', { name: N('Queso'), unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000, thresholdMin: 0, isActive: true })).body.id;
@@ -213,7 +221,14 @@ async function main() {
   check('COGS sube el costo FIFO de 5 hamburguesas y 2 gaseosas', delta(S1, S2, 'cogs'), 5 * COSTO_HAMB + 2 * COSTO_GAS);
   check('margen bruto = ingresos − COGS', delta(S1, S2, 'grossMargin'), 78_000 - (5 * COSTO_HAMB + 2 * COSTO_GAS));
   check('dos ventas más en el conteo', delta(S1, S2, 'salesCount'), 2);
-  checkTrue('el COGS no es estimado ni parcial (todo tenía lote)', !S2.cogsEstimated && !S2.cogsPartial, JSON.stringify({ e: S2.cogsEstimated, p: S2.cogsPartial }));
+  // Las marcas de estimado/parcial describen el MES entero: en un entorno con
+  // ventas previas sin lote ya vienen encendidas y no dicen nada de este
+  // escenario. Solo se afirma cuando la línea base estaba limpia.
+  if (!S0.cogsEstimated && !S0.cogsPartial) {
+    checkTrue('el COGS no es estimado ni parcial (todo tenía lote)', !S2.cogsEstimated && !S2.cogsPartial, JSON.stringify({ e: S2.cogsEstimated, p: S2.cogsPartial }));
+  } else {
+    console.log('  (el mes ya venía con COGS estimado/parcial por datos previos: la marca no se afirma)');
+  }
 
   const v3 = await vender([{ productId: hamb, quantity: 1 }, { productId: gaseosa, quantity: 1 }]);
   await post(`/sales/${v3.id}/void`, { reason: 'Auditoría: anulación' }, { headers: { 'x-approval-pin': PIN } });
