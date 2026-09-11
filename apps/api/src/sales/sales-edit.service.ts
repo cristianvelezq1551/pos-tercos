@@ -134,7 +134,7 @@ export class SalesEditService {
         const [products, activePromotions] = await Promise.all([
           this.prisma.product.findMany({
             where: { id: { in: allIds } },
-            include: { sizes: true, modifiers: true },
+            include: { sizes: true, modifiers: true, availabilityWindows: true },
           }),
           hasManualDiscount
             ? Promise.resolve([])

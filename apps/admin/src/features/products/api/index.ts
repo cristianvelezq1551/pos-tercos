@@ -4,4 +4,5 @@ export {
   createProduct,
   updateProduct,
   deactivateProduct,
+  setAvailabilityWindows,
 } from './client';

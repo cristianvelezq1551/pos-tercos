@@ -14,6 +14,7 @@ export function ProductTile({
   computedUnavailable,
   unavailable,
   reason,
+  unavailableLabel = 'Agotado',
   toggling,
   promo,
   onClick,
@@ -32,6 +33,8 @@ export function ProductTile({
   computedUnavailable: boolean;
   unavailable: boolean;
   reason: string | null;
+  /** Qué dice el sello. "Agotado" salvo cuando el motivo es el horario. */
+  unavailableLabel?: string;
   toggling: boolean;
   promo: ProductPromoBadge | null;
   onClick: () => void;
@@ -186,7 +189,7 @@ export function ProductTile({
           <span className="pointer-events-none absolute inset-0 rounded-2xl bg-background/45" />
           <span className="pointer-events-none absolute left-2 top-2 flex max-w-[62%] flex-col items-start gap-0.5">
             <span className="rounded-md bg-destructive px-1.5 py-0.5 text-[0.5625rem] font-bold uppercase tracking-wide text-destructive-foreground shadow">
-              Agotado
+              {unavailableLabel}
             </span>
             {reason ? (
               <span className="line-clamp-2 rounded bg-background/85 px-1 py-0.5 text-[0.5625rem] font-semibold leading-tight text-foreground">

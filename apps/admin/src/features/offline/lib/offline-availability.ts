@@ -3,7 +3,7 @@ import {
   evaluateAvailability,
   expandRecipeOneLevel,
 } from '@pos-tercos/domain';
-import type { ProductAvailability } from '@pos-tercos/types';
+import { businessWallClock, type ProductAvailability } from '@pos-tercos/types';
 import { offlineDb } from './db';
 import type { OfflineSalePayload } from './types';
 
@@ -33,6 +33,9 @@ export async function computeOfflineAvailability(): Promise<ProductAvailability[
   }
 
   return evaluateAvailability({
+    // El horario del producto viaja en el snapshot, así que sin conexión el
+    // catálogo también respeta "solo los miércoles".
+    at: businessWallClock(),
     products: snapshot.products,
     graph,
     productStock,

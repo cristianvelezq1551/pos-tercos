@@ -11,12 +11,19 @@ import { ProductImage } from './ProductImage';
 export function ProductCard({
   product,
   unavailable = false,
+  unavailableReason = null,
   closed = false,
   onClick,
 }: {
   product: PublicMenuProduct;
   /** Sin stock: el producto no se puede vender aunque el local esté abierto. */
   unavailable?: boolean;
+  /**
+   * Motivo publicable de que no se pueda pedir hoy ("Solo miércoles"). El
+   * motivo de STOCK nunca llega acá —es información del negocio— pero el del
+   * horario sí: al cliente le sirve, y de paso le hace publicidad al miércoles.
+   */
+  unavailableReason?: string | null;
   /**
    * El local no está tomando pedidos. Distinto de `unavailable`: el producto
    * existe y hay, pero ahora no se puede pedir. Por eso NO dice "Agotado" —
@@ -64,8 +71,8 @@ export function ProductCard({
           zoomOnHover
         />
         {unavailable ? (
-          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-destructive px-2 py-1 text-[0.625rem] font-bold uppercase tracking-wide text-destructive-foreground shadow">
-            Agotado
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-destructive px-2 py-1 text-center text-[0.625rem] font-bold uppercase tracking-wide text-destructive-foreground shadow">
+            {unavailableReason ?? 'Agotado'}
           </span>
         ) : null}
         {promo ? (
@@ -102,7 +109,7 @@ export function ProductCard({
           )}
           {unavailable ? (
             <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">
-              Agotado
+              {unavailableReason ?? 'Agotado'}
             </span>
           ) : closed ? (
             <span className="inline-flex h-8 items-center rounded-full bg-muted px-3 text-xs font-semibold text-muted-foreground sm:order-1 sm:h-9">

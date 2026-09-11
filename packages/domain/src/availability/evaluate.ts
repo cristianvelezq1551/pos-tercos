@@ -1,5 +1,10 @@
 import { expandRecipeOneLevel } from '../recipe/expand-recipe-one-level';
 import type { RecipeEdgeNode, RecipeGraph } from '../recipe/types';
+import {
+  motivoDeHorario,
+  productScheduleState,
+  type ProductAvailabilityWindow,
+} from './schedule';
 
 /** Tolerancia de punto flotante al comparar stock vs receta. */
 const STOCK_EPSILON = 1e-6;
@@ -30,6 +35,11 @@ export interface AvailabilityProduct {
   comboComponents: Array<{ productId: string; quantity: number }>;
   /** Variantes del producto. Ausente o vacío = no tiene. */
   variants?: AvailabilityVariant[];
+  /**
+   * Franjas en las que se vende. Ausente o vacío = siempre, que es como se
+   * comporta todo el catálogo que no tenga horario configurado.
+   */
+  availabilityWindows?: ProductAvailabilityWindow[];
 }
 
 export interface AvailabilityVariantResult {
@@ -45,6 +55,15 @@ export interface AvailabilityResult {
   stock: number | null;
   reason: string | null;
   /**
+   * El motivo que SÍ se le puede mostrar a un cliente anónimo.
+   *
+   * El motivo normal es información del negocio ("Sin Pechuga de pollo cruda")
+   * y por eso el endpoint público lo borra. El del horario es al revés: "Solo
+   * los miércoles" es exactamente lo que el cliente necesita saber, y de paso
+   * le hace publicidad al miércoles. Null = no hay nada publicable.
+   */
+  publicReason: string | null;
+  /**
    * Disponibilidad de cada variante. Vacío si el producto no tiene.
    * El plato se ofrece si AL MENOS UNA se puede hacer; las que no, se
    * deshabilitan en el selector en vez de esconder el plato entero.
@@ -59,6 +78,12 @@ export interface AvailabilityInput {
   ingredientStock: Map<string, number>;
   /** Inventario de producción: stock actual por subproducto. */
   subproductStock: Map<string, number>;
+  /**
+   * Momento contra el que se evalúa el HORARIO, en hora de pared del local
+   * (`businessWallClock`). Es obligatorio a propósito: un default silencioso
+   * se equivocaría en el runtime de Vercel, que corre en UTC (§7.v52).
+   */
+  at: Date;
 }
 
 /**
@@ -69,25 +94,44 @@ export interface AvailabilityInput {
  *  - preparado        → subproductos directos + insumos directos alcanzan
  *                        para ≥1 unidad (NO se expanden recetas anidadas)
  *  - combo            → todos sus componentes alcanzan para ≥1 combo
+ *  - fuera de su HORARIO → no se vende (motivo propio, nunca "Agotado")
  *  - "86" manual (soldOut) invalida cualquier producto
- *  - "forzar disponible" (forceAvailable) lo deja vendible pese al stock
+ *  - "forzar disponible" (forceAvailable) lo deja vendible pese al stock,
+ *    pero NO se salta el horario: existe para cuando falta cargar inventario,
+ *    que no tiene nada que ver con qué día es hoy
  *
  * Si falta un subproducto, el mensaje dice el nombre del subproducto
  * ("Sin Pollo Apanado") en vez de los insumos profundos ("Sin pollo crudo").
  */
 export function evaluateAvailability(input: AvailabilityInput): AvailabilityResult[] {
-  const { products, graph, productStock, ingredientStock, subproductStock } = input;
+  const { products, graph, productStock, ingredientStock, subproductStock, at } = input;
   const productById = new Map(products.map((p) => [p.id, p]));
 
   return products
     .filter((p) => p.isActive)
     .map((p) => {
+      // El horario va PRIMERO: un combo de miércoles, un martes, no está
+      // "agotado" — hoy no se vende. Decir "Agotado" mentiría sobre la causa
+      // y mandaría a alguien a buscar inventario que no falta.
+      const ventanas = p.availabilityWindows ?? [];
+      if (ventanas.length > 0 && !productScheduleState(ventanas, at).availableNow) {
+        return {
+          productId: p.id,
+          available: false,
+          stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
+          reason: motivoDeHorario(ventanas),
+          publicReason: motivoDeHorario(ventanas),
+          variants: [],
+        };
+      }
+
       if (p.soldOut) {
         return {
           productId: p.id,
           available: false,
           stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
           reason: 'Agotado (manual)',
+          publicReason: null,
           variants: [],
         };
       }
@@ -100,6 +144,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           available: true,
           stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
           reason: null,
+          publicReason: null,
           variants: [],
         };
       }
@@ -111,6 +156,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           available: stock > 0,
           stock,
           reason: stock > 0 ? null : 'Sin stock',
+          publicReason: null,
           variants: [],
         };
       }
@@ -124,7 +170,14 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           subproductStock,
           productStock,
         );
-        return { productId: p.id, available: reason === null, stock: null, reason, variants: [] };
+        return {
+          productId: p.id,
+          available: reason === null,
+          stock: null,
+          reason,
+          publicReason: null,
+          variants: [],
+        };
       }
 
       // Preparado. Sin variantes es el chequeo de siempre; con variantes, cada
@@ -133,7 +186,14 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
       const variantes = p.variants ?? [];
       if (variantes.length === 0) {
         const reason = evalRecipeShortages(p.id, graph, ingredientStock, subproductStock);
-        return { productId: p.id, available: reason === null, stock: null, reason, variants: [] };
+        return {
+          productId: p.id,
+          available: reason === null,
+          stock: null,
+          reason,
+          publicReason: null,
+          variants: [],
+        };
       }
 
       const evaluadas: AvailabilityVariantResult[] = variantes.map((v) => {
@@ -153,6 +213,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
         // Si ninguna se puede hacer, el motivo es todo lo que falta —
         // decir solo lo de la primera dejaría al dueño reponiendo a ciegas.
         reason: alguna ? null : unirMotivos(evaluadas),
+        publicReason: null,
         variants: evaluadas,
       };
     });

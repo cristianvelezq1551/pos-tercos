@@ -10,3 +10,10 @@ export {
   type SerializedRecipeGraph,
   type OfflineAvailabilitySnapshot,
 } from './snapshot';
+export {
+  productScheduleState,
+  motivoDeHorario,
+  nombreDeDias,
+  type ProductAvailabilityWindow,
+  type ProductScheduleState,
+} from './schedule';

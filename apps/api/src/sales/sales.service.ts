@@ -10,11 +10,14 @@ import {
   buildVoidAlertMessage,
   deliveryFeeShareOfPayment,
   manualDiscountAmount,
+  motivoDeHorario,
+  productScheduleState,
   roundMoney,
   roundsToZeroAt4,
   type PromotionDef,
 } from '@pos-tercos/domain';
 import {
+  businessWallClock,
   isWebSaleType,
   paymentMethodLabel,
   REFUND_VOID_REASON_PREFIX,
@@ -218,7 +221,7 @@ export class SalesService {
     const [products, activePromotions] = await Promise.all([
       this.prisma.product.findMany({
         where: { id: { in: productIds } },
-        include: { sizes: true, modifiers: true },
+        include: { sizes: true, modifiers: true, availabilityWindows: true },
       }),
       hasManualDiscount
         ? Promise.resolve([])
@@ -1613,7 +1616,7 @@ export interface ComputedSaleItem {
 }
 
 export type ProductWithRelations = Prisma.ProductGetPayload<{
-  include: { sizes: true; modifiers: true };
+  include: { sizes: true; modifiers: true; availabilityWindows: true };
 }>;
 
 export function computeLine(
@@ -1628,6 +1631,16 @@ export function computeLine(
   }
   if (!product.isActive) {
     throw new BadRequestException(`El producto "${product.name}" está desactivado.`);
+  }
+  // Horario del producto ("solo los miércoles"). Se valida al AGREGARLO al
+  // pedido —acá— y NO al cobrar: una cuenta abierta del miércoles se tiene que
+  // poder cobrar el jueves. `businessWallClock` porque decide con el
+  // calendario del local; es idempotente si el runtime ya está en Bogotá.
+  const ventanas = product.availabilityWindows ?? [];
+  if (ventanas.length > 0 && !productScheduleState(ventanas, businessWallClock(at)).availableNow) {
+    throw new BadRequestException(
+      `"${product.name}" hoy no se vende: ${motivoDeHorario(ventanas).toLowerCase()}.`,
+    );
   }
 
   let basePrice = Number(product.basePrice);

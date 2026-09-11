@@ -112,47 +112,48 @@ model PushSubscription {
 }
 
 model Product {
-  id                    String               @id @default(uuid())
+  id                    String                      @id @default(uuid())
   name                  String
   description           String?
   /// Paso a paso de preparación (la "biblia" del cocinero). Ordenado. Editable
   /// desde el admin; lo lee el KDS por GET /recipe-book.
-  preparationSteps      String[]             @default([]) @map("preparation_steps")
-  basePrice             Decimal              @map("base_price") @db.Decimal(12, 2)
+  preparationSteps      String[]                    @default([]) @map("preparation_steps")
+  basePrice             Decimal                     @map("base_price") @db.Decimal(12, 2)
   category              String?
-  imageUrl              String?              @map("image_url")
+  imageUrl              String?                     @map("image_url")
   /// Fotos de la PREPARACIÓN para la biblia de cocina: el armado, el corte, el
   /// emplatado, y una por variante cuando el plato se arma distinto. Cada una
   /// es `{url, label}`; el rótulo es lo que distingue una variante de otra.
   /// Distintas de imageUrl, que es la foto de la carta. Vacío = la biblia cae
   /// a imageUrl.
-  prepImages            Json                 @default("[]") @map("prep_images")
+  prepImages            Json                        @default("[]") @map("prep_images")
   /// Emoji representativo del producto (🍔🍟🥤). Alternativa ligera a la foto:
   /// se muestra en el menú web cuando no hay imageUrl. null = sin emoji.
   emoji                 String?
-  modifiersEnabled      Boolean              @default(false) @map("modifiers_enabled")
-  isCombo               Boolean              @default(false) @map("is_combo")
-  comboPrice            Decimal?             @map("combo_price") @db.Decimal(12, 2)
-  isActive              Boolean              @default(true) @map("is_active")
+  modifiersEnabled      Boolean                     @default(false) @map("modifiers_enabled")
+  isCombo               Boolean                     @default(false) @map("is_combo")
+  comboPrice            Decimal?                    @map("combo_price") @db.Decimal(12, 2)
+  isActive              Boolean                     @default(true) @map("is_active")
   /// "86" manual: el cajero/admin lo marca agotado y desaparece como vendible
   /// (cajero + web) sin tocar el catálogo. Independiente del stock de insumos.
-  soldOut               Boolean              @default(false) @map("sold_out")
+  soldOut               Boolean                     @default(false) @map("sold_out")
   /// "Forzar disponible": el dueño lo vende aunque el stock de sus insumos/
   /// subproductos NO alcance en el sistema (stock físico no registrado). Pisa
   /// el cómputo de disponibilidad Y salta el guard de stock al cobrar (el
   /// faltante queda en negativo + bitácora). Excluyente con soldOut.
-  forceAvailable        Boolean              @default(false) @map("force_available")
-  createdAt             DateTime             @default(now()) @map("created_at")
-  updatedAt             DateTime             @updatedAt @map("updated_at")
-  conversionFactor      Decimal?             @map("conversion_factor") @db.Decimal(14, 6)
-  directResale          Boolean              @default(false) @map("direct_resale")
-  thresholdMin          Decimal              @default(0) @map("threshold_min") @db.Decimal(14, 4)
-  unitPurchase          String?              @map("unit_purchase")
-  unitStock             String?              @map("unit_stock")
-  lastUnitCost          Decimal?             @map("last_unit_cost") @db.Decimal(14, 4)
-  lastUnitCostDate      DateTime?            @map("last_unit_cost_date")
-  comboComponents       ComboComponent[]     @relation("ComboParent")
-  partOfCombos          ComboComponent[]     @relation("ComboChild")
+  forceAvailable        Boolean                     @default(false) @map("force_available")
+  createdAt             DateTime                    @default(now()) @map("created_at")
+  updatedAt             DateTime                    @updatedAt @map("updated_at")
+  conversionFactor      Decimal?                    @map("conversion_factor") @db.Decimal(14, 6)
+  directResale          Boolean                     @default(false) @map("direct_resale")
+  thresholdMin          Decimal                     @default(0) @map("threshold_min") @db.Decimal(14, 4)
+  unitPurchase          String?                     @map("unit_purchase")
+  unitStock             String?                     @map("unit_stock")
+  lastUnitCost          Decimal?                    @map("last_unit_cost") @db.Decimal(14, 4)
+  lastUnitCostDate      DateTime?                   @map("last_unit_cost_date")
+  comboComponents       ComboComponent[]            @relation("ComboParent")
+  availabilityWindows   ProductAvailabilityWindow[]
+  partOfCombos          ComboComponent[]            @relation("ComboChild")
   movements             InventoryMovement[]
   invoiceItems          InvoiceItem[]
   stockCounts           StockCount[]
@@ -160,9 +161,9 @@ model Product {
   sizes                 ProductSize[]
   promotionProducts     PromotionProduct[]
   purchaseSuggestions   PurchaseSuggestion[]
-  recipeEdges           RecipeEdge[]         @relation("ProductRecipe")
+  recipeEdges           RecipeEdge[]                @relation("ProductRecipe")
   saleItems             SaleItem[]
-  supplierResaleHistory SupplierProduct[]    @relation("SupplierProductResale")
+  supplierResaleHistory SupplierProduct[]           @relation("SupplierProductResale")
   purchaseListItems     PurchaseListItem[]
 
   @@index([category, isActive])
@@ -184,6 +185,24 @@ model ProductCategory {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("product_categories")
+}
+
+/// Franjas en las que un producto SÍ se puede vender ("solo los miércoles").
+/// Sin filas = se vende siempre, que es como se comporta todo el catálogo.
+model ProductAvailabilityWindow {
+  id             String   @id @default(uuid())
+  productId      String   @map("product_id")
+  /// lunes=1, martes=2, miércoles=4, jueves=8, viernes=16, sábado=32, domingo=64
+  daysOfWeekMask Int      @map("days_of_week_mask")
+  /// null en ambas = todo el día (evita el `[inicio, fin)` que dejaría un
+  /// segundo diario fuera si se usara 23:59:59).
+  timeStart      String?  @map("time_start")
+  timeEnd        String?  @map("time_end")
+  createdAt      DateTime @default(now()) @map("created_at")
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_availability_windows")
 }
 
 model ProductSize {

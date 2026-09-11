@@ -61,6 +61,8 @@ describe('disponibilidad de un tamaño con un consumible sin stock', () => {
 
   const evaluar = (edges: ReturnType<typeof variantEdgesAsProductChildren>) =>
     evaluateAvailability({
+      // Un miércoles cualquiera: este caso no prueba horarios.
+      at: new Date(2026, 8, 9, 13, 0, 0),
       products: [
         {
           id: PRODUCTO,
