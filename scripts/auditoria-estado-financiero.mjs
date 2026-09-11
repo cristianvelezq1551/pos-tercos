@@ -252,6 +252,12 @@ async function main() {
   const S5 = await estadoCuando((s) => delta(S4, s, 'wasteCost') > 0);
   check('la merma vale 200 g de carne al costo del lote', delta(S4, S5, 'wasteCost'), 200 * 30);
 
+  // Fase 2 (§7.v70): una entrada sin precio se valora al último costo conocido
+  // y queda marcada; NUNCA entra a $0.
+  const ajuste = (await post('/inventory/movements', { entityType: 'INGREDIENT', ingredientId: pan, delta: 10, type: 'MANUAL_ADJUSTMENT', notes: 'Auditoría: ajuste sin costo' })).body;
+  check('un ajuste sin costo entra al último precio conocido (pan a $1.800)', Number(ajuste.unitCost), 1_800);
+  check('y queda marcado como estimado', ajuste.unitCostEstimated, true);
+
   const stockQueso = Number((await get(`/inventory/stock/ingredient/${queso}`)).body.currentStock);
   const conteo = (await post('/inventory/counts', { entityType: 'INGREDIENT', ingredientId: queso, countedQty: stockQueso - 100, notes: 'Auditoría: conteo' })).body;
   // Un conteo del dueño se aplica en el acto; el del cocinero queda PENDING y
