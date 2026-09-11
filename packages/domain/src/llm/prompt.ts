@@ -266,24 +266,53 @@ export function buildDailySummaryUserPrompt(i: DailySummaryInput): string {
 // FINANCIAL STATEMENT ANALYSIS — IA lee el estado financiero del mes
 // ====================================================================
 
-export const FINANCIAL_ANALYSIS_SYSTEM = `Eres el analista financiero del dueño de un restaurante de comida rápida en Colombia. Te dan el estado financiero del mes y la tendencia de los meses anteriores, y devuelves un análisis breve y accionable en español.
+export const FINANCIAL_ANALYSIS_SYSTEM = `Eres el analista financiero del dueño de un restaurante de comida rápida en Colombia. Te dan el estado financiero del mes TAL COMO LO VE EL DUEÑO EN PANTALLA, más la tendencia de los meses anteriores, y devuelves un análisis breve y accionable en español.
+
+CÓMO LEER EL ESTADO (son las mismas líneas que muestra la pantalla):
+- "Ingresos" ya vienen netos de descuentos y SIN el cobro de domicilios: esa plata es del repartidor y solo pasa por la caja. Nunca la cuentes como venta ni como ingreso.
+- "COGS" es el costo real de lo vendido, lote por lote (FIFO). "Margen bruto" = ingresos − COGS. Si el COGS viene marcado "estimado" o "parcial", el margen es provisional y lo dices con esa palabra.
+- Los costos fijos son RECURRENTES (nómina, arriendo, servicios) y son la base del punto de equilibrio. Una línea marcada "estimado" es el monto configurado porque ese mes todavía no tiene pago registrado: menciónala como estimado, nunca como dato cerrado.
+- Las "otras pérdidas" van debajo del margen bruto y NO entran al COGS: merma (alguien la declaró), faltantes (lo que apareció de menos al contar; nadie lo declaró), cortesías, reembolsos, fletes de compra, compromisos pagados y gastos únicos. Los gastos únicos y los compromisos NO entran al equilibrio: no se repiten.
+- "Margen de contribución" = ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes: lo que queda de cada venta para pagar lo fijo.
+- Hay DOS puntos de equilibrio y el dueño ve el de la CARTA: las ventas necesarias calculadas con lo que deja cada producto por precio y receta, que no se mueve por lo bueno o lo malo que haya estado el mes. El "realizado" usa el margen de contribución del mes: sirve solo para explicar la brecha entre lo que la carta promete y lo que de verdad quedó (merma, cortesías, faltantes, fletes).
+- Si el mes tiene pocas ventas, dilo antes de sacar conclusiones de porcentajes: cuatro tickets y una merma no son una tendencia.
 
 REGLAS DURAS:
 - Responde EXCLUSIVAMENTE con un JSON válido con esta forma exacta:
   {"tono":"saludable|atencion|critico","titular":"...","bullets":[{"tipo":"positivo|vigilar|accion","texto":"..."}],"siguiente_paso":"..."}
-- "tono": "saludable" si el neto es positivo y la cobertura del break-even >= 100%. "atencion" si está entre 80% y 99%. "critico" si está debajo de 80% o el neto es negativo.
-- "titular": UNA frase. Empieza con el resultado: cuánto ganó/perdió, contra el break-even. Incluye una cifra concreta en pesos.
+- "tono" se decide con la cobertura del equilibrio DE LA CARTA, que es la que ve el dueño: "saludable" si el neto es positivo y esa cobertura es >= 100%; "atencion" si la cobertura está entre 80% y 99%; "critico" si está debajo de 80% o el neto es negativo. Si no viene equilibrio de la carta, usa el realizado; si no viene ninguno, decide solo por el signo del neto.
+- "titular": UNA frase. Empieza con el resultado: cuánto ganó/perdió, contra el equilibrio de la carta. Incluye una cifra concreta en pesos.
 - "bullets": 3 a 5 puntos. Mix de positivos (qué va bien), vigilar (riesgos numéricos) y acción (qué hacer concreto). Cada bullet UNA frase, con número o porcentaje cuando aplique.
 - "siguiente_paso": UNA acción concreta para el próximo mes, basada solo en los datos. No moralices ni filosofes.
-- NO inventes datos. NO menciones cifras que no estén en el input.
+- NO inventes datos. NO menciones cifras que no estén en el input. Una cifra marcada "estimado" o "parcial" se cita como provisional.
 - Español neutro (no uses voseo: nunca "tenés", "podés", "revisá"; usa "tienes", "puedes", "revisa"). Tono directo, sin jerga financiera complicada.`;
 
+/**
+ * Lo que recibe el modelo. Es un ESPEJO de `MonthlyFinancialStatement`, la
+ * misma línea por línea que pinta la tarjeta del P&G, el equilibrio y las
+ * tarjetas de domicilios: si la pantalla muestra un número, el modelo lo
+ * recibe con el mismo rótulo y la misma marca de estimado. Antes veía
+ * `ingresos − COGS − fijos` y un neto que no se deducía de eso, y opinaba
+ * sobre un equilibrio (el realizado) distinto del que el dueño tiene en
+ * pantalla (el de la carta).
+ */
 export interface FinancialAnalysisInput {
   year: number;
   month: number; // 1-12
   monthLabel: string; // "mayo 2026"
+  /** Ventas cobradas en el mes: contexto para no leer porcentajes de 4 tickets. */
+  salesCount: number;
+  /** Lo que habría entrado sin descuentos (solo se muestra si hubo descuentos). */
+  grossRevenue: number;
+  /** Descuentos y promociones otorgados, ya restados de `revenue`. */
+  discountTotal: number;
+  /** Ingresos netos de descuentos y SIN el cobro de domicilios. */
   revenue: number;
   cogs: number;
+  /** Parte del COGS salió del último precio conocido (venta sin stock). */
+  cogsEstimated: boolean;
+  /** Parte del COGS no tiene costo (sin lote ni precio): está SUBESTIMADO. */
+  cogsPartial: boolean;
   grossMargin: number;
   grossMarginPct: number; // 0..1
   totalFixed: number;
@@ -297,16 +326,32 @@ export interface FinancialAnalysisInput {
   }>;
   /**
    * Pérdidas que van DEBAJO del margen bruto y explican el salto hasta el neto:
-   * merma, cortesías, reembolsos, fletes de compra y compromisos pagados.
-   *
-   * Sin ellas el modelo recibía `ingresos − COGS − fijos` y un `netResult` que
-   * no se deducía de esos números: cualquier explicación del bajón era una
-   * invención. Se pasan solo las que tienen monto.
+   * merma, faltantes, cortesías, reembolsos, fletes de compra, compromisos
+   * pagados y gastos únicos. Se pasan solo las que tienen monto; `estimated`
+   * marca las que la pantalla rotula como provisionales.
    */
-  otherLosses: ReadonlyArray<{ label: string; amount: number }>;
+  otherLosses: ReadonlyArray<{ label: string; amount: number; estimated?: boolean }>;
   netResult: number;
+  /** Ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes. */
+  contributionMargin: number;
+  contributionMarginPct: number | null;
+  /** Equilibrio REALIZADO (margen de contribución del mes). */
   breakEven: number | null;
   breakEvenCoverage: number | null; // 0..1+
+  /** Equilibrio DE LA CARTA: el que la pantalla muestra como meta. */
+  catalogBreakEven: {
+    target: number | null;
+    marginPct: number | null;
+    coverage: number | null;
+    weightedBySales: boolean;
+    productsConsidered: number;
+    productsWithoutCost: number;
+    best: { name: string; marginPct: number } | null;
+    worst: { name: string; marginPct: number } | null;
+  };
+  /** Domicilios cobrados a clientes: NO es ingreso, es plata del repartidor. */
+  deliveryCollected: number;
+  deliveryOrderCount: number;
   /** Últimos meses (incluido el actual al final), 3-6 puntos. */
   trend: ReadonlyArray<{
     monthLabel: string;
@@ -321,36 +366,22 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
   const cop = (n: number) => `$${formatNumber(n)}`;
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
   const lines: string[] = [
-    `Estado financiero del mes (${i.monthLabel}):`,
-    `- Ingresos: ${cop(i.revenue)}`,
-    `- COGS (costo real FIFO de lo vendido): ${cop(i.cogs)}`,
-    `- Margen bruto: ${cop(i.grossMargin)} (${pct(i.grossMarginPct)})`,
-    `- Costos fijos totales: ${cop(i.totalFixed)}`,
+    `Estado financiero del mes (${i.monthLabel}) — ${i.salesCount} ventas cobradas:`,
+    ...incomeAndCogsLines(i, cop, pct),
+    `- Costos fijos recurrentes (base del equilibrio): ${cop(i.totalFixed)}`,
+    ...fixedCostLines(i.fixedCosts, cop),
+    ...lossLines(i.otherLosses, cop),
+    `- Resultado neto: ${cop(i.netResult)}`,
+    i.contributionMarginPct === null
+      ? `- Margen de contribución: ${cop(i.contributionMargin)} (sin ingresos, no hay porcentaje)`
+      : `- Margen de contribución: ${cop(i.contributionMargin)} (${pct(i.contributionMarginPct)})`,
+    ...catalogBreakEvenLines(i.catalogBreakEven, cop, pct),
+    realizedBreakEvenLine(i, cop, pct),
   ];
-  if (i.fixedCosts.length > 0) {
-    lines.push('  Desglose de costos fijos:');
-    for (const c of i.fixedCosts) {
-      const tag = c.isPayroll
-        ? ' [auto desde Nómina]'
-        : c.isEstimated
-          ? ' [estimado: todavía sin pago registrado este mes]'
-          : '';
-      lines.push(`    · ${c.name} (${c.category}): ${cop(c.monthlyAmount)}${tag}`);
-    }
-  }
-  const perdidas = i.otherLosses.filter((l) => l.amount > 0);
-  if (perdidas.length > 0) {
-    lines.push('- Otras pérdidas del mes (no entran al COGS):');
-    for (const l of perdidas) {
-      lines.push(`    · ${l.label}: ${cop(l.amount)}`);
-    }
-  }
-  lines.push(`- Resultado neto: ${cop(i.netResult)}`);
-  if (i.breakEven !== null) {
-    lines.push(`- Punto de equilibrio (break-even): ${cop(i.breakEven)}`);
-  }
-  if (i.breakEvenCoverage !== null) {
-    lines.push(`- Cobertura del break-even: ${pct(Math.min(i.breakEvenCoverage, 2))}`);
+  if (i.deliveryOrderCount > 0) {
+    lines.push(
+      `- Domicilios cobrados a clientes: ${cop(i.deliveryCollected)} en ${i.deliveryOrderCount} pedidos (NO es ingreso: es plata del repartidor, no está en ninguna cifra de arriba)`,
+    );
   }
   if (i.trend.length > 1) {
     lines.push('', 'Tendencia de los últimos meses (más viejo → más nuevo):');
@@ -362,6 +393,95 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
   }
   lines.push('', 'Devuelve el análisis en JSON según las reglas.');
   return lines.join('\n');
+}
+
+type Cop = (n: number) => string;
+type Pct = (x: number) => string;
+
+/** Ingresos (con descuentos solo si los hubo), COGS con su marca y margen bruto. */
+function incomeAndCogsLines(i: FinancialAnalysisInput, cop: Cop, pct: Pct): string[] {
+  const out: string[] = [];
+  if (i.discountTotal > 0) {
+    out.push(
+      `- Ventas a precio de lista: ${cop(i.grossRevenue)}`,
+      `- Descuentos y promociones (ya restados): ${cop(i.discountTotal)}`,
+    );
+  }
+  const cogsTag = i.cogsPartial
+    ? ' [parcial: parte de lo vendido no tiene costo cargado → el COGS está SUBESTIMADO y la ganancia sobreestimada]'
+    : i.cogsEstimated
+      ? ' [estimado en parte: ventas sin stock costeadas al último precio; se corrige al subir la factura]'
+      : '';
+  out.push(
+    `- Ingresos del mes (netos de descuentos, sin domicilios): ${cop(i.revenue)}`,
+    `- COGS (costo real FIFO de lo vendido): ${cop(i.cogs)}${cogsTag}`,
+    `- Margen bruto: ${cop(i.grossMargin)} (${pct(i.grossMarginPct)})`,
+  );
+  return out;
+}
+
+function fixedCostLines(costs: FinancialAnalysisInput['fixedCosts'], cop: Cop): string[] {
+  if (costs.length === 0) return [];
+  const out = ['  Desglose de costos fijos:'];
+  for (const c of costs) {
+    const tag = c.isPayroll
+      ? ' [auto desde Nómina]'
+      : c.isEstimated
+        ? ' [estimado: todavía sin pago registrado este mes]'
+        : '';
+    out.push(`    · ${c.name} (${c.category}): ${cop(c.monthlyAmount)}${tag}`);
+  }
+  return out;
+}
+
+function lossLines(losses: FinancialAnalysisInput['otherLosses'], cop: Cop): string[] {
+  const perdidas = losses.filter((l) => l.amount > 0);
+  if (perdidas.length === 0) return [];
+  const out = ['- Otras pérdidas del mes (no entran al COGS):'];
+  for (const l of perdidas) {
+    out.push(`    · ${l.label}: ${cop(l.amount)}${l.estimated ? ' [estimado]' : ''}`);
+  }
+  return out;
+}
+
+function realizedBreakEvenLine(i: FinancialAnalysisInput, cop: Cop, pct: Pct): string {
+  if (i.breakEven === null) {
+    return '- Punto de equilibrio REALIZADO: no existe este mes (el margen de contribución no es positivo: cada venta pierde plata)';
+  }
+  const cob = i.breakEvenCoverage === null ? '' : ` · cobertura ${pct(Math.min(i.breakEvenCoverage, 2))}`;
+  return `- Punto de equilibrio REALIZADO (con la merma, cortesías, faltantes y fletes del mes): ${cop(i.breakEven)}${cob}`;
+}
+
+/** El bloque del equilibrio tal como lo ve el dueño: meta, cobertura y de dónde sale. */
+function catalogBreakEvenLines(
+  c: FinancialAnalysisInput['catalogBreakEven'],
+  cop: Cop,
+  pct: Pct,
+): string[] {
+  if (c.marginPct !== null && c.marginPct <= 0) {
+    return [
+      '- Punto de equilibrio DE LA CARTA (el que ve el dueño): no existe: con los precios y recetas de hoy los productos no dejan ganancia; vender más no acerca a cubrir lo fijo',
+    ];
+  }
+  if (c.target === null) {
+    return [
+      '- Punto de equilibrio DE LA CARTA (el que ve el dueño): todavía no se puede calcular (ningún producto tiene costo de receta)',
+    ];
+  }
+  const partes = [
+    `ventas necesarias ${cop(c.target)}`,
+    c.coverage === null ? 'sin costos fijos que cubrir' : `cobertura ${pct(Math.min(c.coverage, 2))}`,
+    c.marginPct === null ? '' : `de cada $100 vendidos quedan $${Math.round(c.marginPct * 100)}`,
+    `${c.productsConsidered} opciones de la carta ${c.weightedBySales ? 'ponderadas por lo vendido' : 'a promedio simple (aún sin ventas)'}`,
+  ].filter((p) => p.length > 0);
+  const out = [`- Punto de equilibrio DE LA CARTA (el que ve el dueño): ${partes.join(' · ')}`];
+  if (c.productsWithoutCost > 0) {
+    out.push(`    · ${c.productsWithoutCost} opciones quedaron fuera del promedio porque no se sabe cuánto cuestan`);
+  }
+  if (c.best && c.worst && c.productsConsidered > 1) {
+    out.push(`    · el que más deja: ${c.best.name} (${pct(c.best.marginPct)}); el que menos: ${c.worst.name} (${pct(c.worst.marginPct)})`);
+  }
+  return out;
 }
 
 // ====================================================================

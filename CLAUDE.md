@@ -4843,6 +4843,18 @@ anteriores**. La guía (`flows/costo-fijo.ts`) decía tres veces lo contrario:
 `FinancialAnalysisInput.fixedCosts[].isEstimated` (prompt). Guía: el flujo del
 costo fijo corregido y la fila "Faltantes" que faltaba en la tabla del estado.
 
+### El análisis de IA lee lo mismo que la pantalla (pedido del dueño)
+`FinancialAnalysisInput` es un **espejo de `MonthlyFinancialStatement`**: ventas
+a precio de lista y descuentos (solo si los hubo), ingresos netos sin domicilio,
+COGS con su marca de estimado/parcial, fijos con `isEstimated`, las 7 pérdidas
+con su marca, neto, margen de contribución, **los dos equilibrios** (el de la
+CARTA, que es el que ve el dueño, y el realizado), domicilios cobrados como
+plata de terceros, y cuántas ventas hubo. Antes el modelo veía `ingresos − COGS
+− fijos` y opinaba sobre el equilibrio realizado mientras la pantalla mostraba
+el de la carta: dos lecturas del mismo mes. El prompt de sistema explica cada
+línea y **decide el tono con la cobertura del equilibrio de la carta**. Regla:
+si la pantalla gana una línea, el prompt la gana en el mismo cambio.
+
 ### Lo que sigue (mismo plan)
 Fase 2: nada entra al inventario a $0 (sobrantes de conteo y ajustes manuales
 sin precio se valoran al último costo conocido, marcados estimado; un

@@ -472,12 +472,20 @@ export class FinancialReportsService {
       this.getMonthlyTrend(6, year, month1),
     ]);
 
+    // Espejo de `MonthlyFinancialStatement`: el modelo recibe exactamente las
+    // líneas que la pantalla muestra, con sus marcas de estimado, y opina
+    // sobre el MISMO equilibrio que ve el dueño (el de la carta).
     const input: FinancialAnalysisInput = {
       year: statement.year,
       month: statement.month,
       monthLabel: statement.monthLabel,
+      salesCount: statement.salesCount,
+      grossRevenue: statement.grossRevenue,
+      discountTotal: statement.discountTotal,
       revenue: statement.revenue,
       cogs: statement.cogs,
+      cogsEstimated: statement.cogsEstimated,
+      cogsPartial: statement.cogsPartial,
       grossMargin: statement.grossMargin,
       grossMarginPct: statement.grossMarginPct,
       totalFixed: statement.totalFixed,
@@ -488,23 +496,53 @@ export class FinancialReportsService {
         isPayroll: l.isPayroll,
         isEstimated: l.isEstimated,
       })),
-      // Sin estas líneas el modelo veía `ingresos − COGS − fijos` y un neto que
-      // no cerraba con esos números, así que explicaba el bajón inventando.
       otherLosses: [
-        { label: 'Merma (insumo tirado, a costo)', amount: statement.wasteCost },
         {
-          label: 'Faltantes (lo que apareció de menos al contar)',
-          amount: statement.shrinkageCost,
+          label: 'Merma (insumo tirado, a costo)',
+          amount: statement.wasteCost,
+          estimated: statement.wasteCostEstimated,
         },
-        { label: 'Cortesías (producto regalado, a costo)', amount: statement.cortesiasCost },
+        {
+          label: 'Faltantes (lo que apareció de menos al contar, nadie lo declaró)',
+          amount: statement.shrinkageCost,
+          estimated: statement.shrinkageCostEstimated,
+        },
+        {
+          label: 'Cortesías (producto regalado, a costo)',
+          amount: statement.cortesiasCost,
+          estimated: statement.cortesiasCostEstimated || statement.cortesiasCostPartial,
+        },
         { label: 'Reembolsos (comida preparada, a costo)', amount: statement.refundCost },
-        { label: 'Domicilios de compra (fletes de proveedor)', amount: statement.freightCost },
-        { label: 'Compromisos pagados (arreglos, servicios)', amount: statement.payablesPaidCost },
-        { label: 'Gastos únicos del mes', amount: statement.oneTimeCost },
+        {
+          label: `Domicilios de compra (fletes de proveedor, ${statement.freightInvoiceCount} facturas)`,
+          amount: statement.freightCost,
+        },
+        {
+          label: `Compromisos pagados (arreglos, servicios; ${statement.payablesPaidCount} pagos; no entran al equilibrio)`,
+          amount: statement.payablesPaidCost,
+        },
+        {
+          label: 'Gastos únicos del mes (no entran al equilibrio)',
+          amount: statement.oneTimeCost,
+        },
       ],
       netResult: statement.netResult,
+      contributionMargin: statement.contributionMargin,
+      contributionMarginPct: statement.contributionMarginPct,
       breakEven: statement.breakEven,
       breakEvenCoverage: statement.breakEvenCoverage,
+      catalogBreakEven: {
+        target: statement.catalogBreakEven.target,
+        marginPct: statement.catalogBreakEven.marginPct,
+        coverage: statement.catalogBreakEven.coverage,
+        weightedBySales: statement.catalogBreakEven.weightedBySales,
+        productsConsidered: statement.catalogBreakEven.productsConsidered,
+        productsWithoutCost: statement.catalogBreakEven.productsWithoutCost,
+        best: statement.catalogBreakEven.best,
+        worst: statement.catalogBreakEven.worst,
+      },
+      deliveryCollected: statement.deliveryCollected,
+      deliveryOrderCount: statement.deliveryOrderCount,
       trend: trend.points.map((p) => ({
         monthLabel: p.monthLabel,
         revenue: p.revenue,
