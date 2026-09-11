@@ -47,14 +47,35 @@ export function authHeaders(s: Session): Record<string, string> {
   return { Authorization: `Bearer ${s.token}` };
 }
 
+/**
+ * `POST /auth/login` admite 10 por minuto y por IP (anti fuerza bruta), y TODO
+ * el job comparte esa cuota: el runner es una sola IP. Con ~18 logins repartidos
+ * en una corrida de dos minutos, las últimas suites morían con 429 —y el fallo
+ * aparecía en specs que no tenían nada que ver con el cambio, que es lo que
+ * enseña a relanzar el CI en vez de mirar el error.
+ *
+ * Esperar a que se abra la ventana es más honesto que racionar logins spec por
+ * spec: cada vez que alguien agrega uno, el problema volvía. Solo espera cuando
+ * de verdad se topó el límite.
+ */
 export async function login(api: APIRequestContext, email: string): Promise<Session> {
-  const res = await api.post(`${API}/auth/login`, {
-    headers: { 'X-Client-App': 'admin' },
-    data: { email, password: PASSWORD },
-  });
-  expect(res.ok(), `login ${email} → ${res.status()}`).toBeTruthy();
-  const body = (await res.json()) as { accessToken: string; user: { id: string } };
-  return { token: body.accessToken, userId: body.user.id, email };
+  const esperas = [12_000, 25_000, 40_000];
+  for (let intento = 0; ; intento += 1) {
+    const res = await api.post(`${API}/auth/login`, {
+      headers: { 'X-Client-App': 'admin' },
+      data: { email, password: PASSWORD },
+    });
+    if (res.ok()) {
+      const body = (await res.json()) as { accessToken: string; user: { id: string } };
+      return { token: body.accessToken, userId: body.user.id, email };
+    }
+    const reintentable = res.status() === 429 && intento < esperas.length;
+    expect(
+      reintentable,
+      `login ${email} → ${res.status()}${res.status() === 429 ? ' (cuota agotada tras reintentos)' : ''}`,
+    ).toBeTruthy();
+    await new Promise((r) => setTimeout(r, esperas[intento]));
+  }
 }
 
 export async function getCurrentShift(
