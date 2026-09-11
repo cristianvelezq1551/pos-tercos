@@ -65,6 +65,7 @@ export async function cleanDb(prisma: PrismaService): Promise<void> {
     recipe_edges,
     product_modifiers,
     product_sizes,
+    product_availability_windows,
     combo_components,
     products,
     product_categories,

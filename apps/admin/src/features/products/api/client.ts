@@ -5,6 +5,7 @@ import {
   type CreateProduct,
   type Product,
   type SetComboComponents,
+  type SetProductAvailabilityWindows,
   type SetProductOptions,
   type UpdateProduct,
 } from '@pos-tercos/types';
@@ -56,6 +57,18 @@ export async function deleteProduct(id: string): Promise<void> {
 export function setProductOptions(id: string, input: SetProductOptions): Promise<Product> {
   return request(
     `/products/${id}/options`,
+    { method: 'PUT', body: JSON.stringify(input) },
+    ProductSchema,
+  );
+}
+
+/** Reemplaza las franjas en que el producto se puede vender. Vacío = siempre. */
+export function setAvailabilityWindows(
+  id: string,
+  input: SetProductAvailabilityWindows,
+): Promise<Product> {
+  return request(
+    `/products/${id}/availability-windows`,
     { method: 'PUT', body: JSON.stringify(input) },
     ProductSchema,
   );

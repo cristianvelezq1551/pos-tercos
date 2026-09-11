@@ -49,8 +49,13 @@ export function CatalogTiles({
         // Sin stock por cómputo del backend (insumo/subproducto no alcanza).
         const computedUnavailable = avail ? !avail.available : false;
         // 86 manual pisa todo; forzar disponible pisa la falta de stock.
-        const unavailable = manualSoldOut || (!forced && computedUnavailable);
-        const reason = manualSoldOut ? null : forced ? null : (avail?.reason ?? null);
+        // Fuera de horario: el backend lo rechaza aunque esté "forzado
+        // disponible" (forzar es para inventario, no para el calendario). Si
+        // acá lo dejáramos pasar, la caja ofrecería algo que el cobro rechaza.
+        const porHorario = avail?.publicReason ?? null;
+        const unavailable =
+          manualSoldOut || porHorario !== null || (!forced && computedUnavailable);
+        const reason = porHorario ?? (manualSoldOut ? null : forced ? null : (avail?.reason ?? null));
         return (
           <ProductTile
             key={p.id}
@@ -61,7 +66,8 @@ export function CatalogTiles({
             forced={forced}
             computedUnavailable={computedUnavailable}
             unavailable={unavailable}
-            reason={reason}
+            reason={porHorario ? null : reason}
+            unavailableLabel={porHorario ?? 'Agotado'}
             toggling={togglingId === p.id}
             promo={promoById.get(p.id) ?? null}
             onClick={() => onOpen(p)}

@@ -117,6 +117,7 @@ export function CatalogGrid({
                 key={p.id}
                 product={p}
                 unavailable={unavailable}
+                unavailableReason={avail?.reason ?? null}
                 closed={!acceptingOrders}
                 onClick={() => {
                   if (unavailable || !acceptingOrders) return;

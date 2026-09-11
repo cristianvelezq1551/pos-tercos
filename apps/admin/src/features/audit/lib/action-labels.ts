@@ -11,6 +11,7 @@ const ACTION_LABELS: Record<string, string> = {
   // Catálogo
   PRODUCT_CREATED: 'Creó producto',
   PRODUCT_UPDATED: 'Editó producto',
+  PRODUCT_AVAILABILITY_WINDOWS_SET: 'Cambió los días en que se vende un producto',
   PRODUCT_DEACTIVATED: 'Desactivó producto',
   SUBPRODUCT_CREATED: 'Creó subproducto',
   SUBPRODUCT_UPDATED: 'Editó subproducto',

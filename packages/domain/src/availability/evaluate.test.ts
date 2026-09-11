@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateAvailability, type AvailabilityProduct } from './evaluate';
+
+/** Un miércoles cualquiera. Estos casos no prueban horarios: fijan el instante
+ *  para que un producto SIN ventanas se comporte igual corra cuando corra. */
+const AHORA = new Date(2026, 8, 9, 13, 0, 0);
 import type { RecipeEdgeNode, RecipeGraph } from '../recipe/types';
 
 function product(id: string, overrides: Partial<AvailabilityProduct> = {}): AvailabilityProduct {
@@ -73,6 +77,7 @@ function evaluate(opts: {
   subproductStock?: Record<string, number>;
 }) {
   return evaluateAvailability({
+    at: AHORA,
     products: opts.products,
     graph: opts.graph ?? EMPTY_GRAPH,
     productStock: new Map(Object.entries(opts.productStock ?? {})),
@@ -87,7 +92,15 @@ describe('evaluateAvailability · reventa directa', () => {
       products: [product('coca', { directResale: true })],
       productStock: { coca: 5 },
     });
-    expect(r).toEqual({ productId: 'coca', available: true, stock: 5, reason: null, variants: [] });
+    expect(r).toEqual({
+      productId: 'coca',
+      available: true,
+      stock: 5,
+      reason: null,
+      // Motivo publicable: solo lo llena el horario (§ ventanas por producto).
+      publicReason: null,
+      variants: [],
+    });
   });
 
   it('sin stock → "Sin stock"', () => {
@@ -406,6 +419,7 @@ describe('evaluateAvailability · variantes', () => {
     { sizeId: 's2', name: 'Con carne', ing: 'carne' },
   ])) =>
     evaluateAvailability({
+      at: AHORA,
       products: [p],
       graph: grafo,
       productStock: new Map(),
@@ -485,5 +499,53 @@ describe('evaluateAvailability · variantes', () => {
     // pediría también el pollo de la primera y saldría no disponible.
     const r = evaluar({ papa: 500, pollo: 0, carne: 500 });
     expect(r.variants.find((v) => v.name === 'Con carne')?.available).toBe(true);
+  });
+});
+
+describe('evaluateAvailability · horario del producto', () => {
+  const MIERCOLES = 4;
+  const MARTES = new Date(2026, 8, 8, 13, 0, 0);
+  const MIERC = new Date(2026, 8, 9, 13, 0, 0);
+  const soloMiercoles = [{ daysOfWeekMask: MIERCOLES, timeStart: null, timeEnd: null }];
+
+  const evaluarBebida = (at: Date, overrides: Partial<AvailabilityProduct> = {}) =>
+    evaluateAvailability({
+      at,
+      products: [product('bebida', { directResale: true, ...overrides })],
+      graph: { edgesByParent: new Map(), nodesById: new Map() } as unknown as RecipeGraph,
+      productStock: new Map([['bebida', 10]]),
+      ingredientStock: new Map(),
+      subproductStock: new Map(),
+    })[0];
+
+  it('sin ventanas se vende cualquier día — el catálogo de hoy no cambia', () => {
+    expect(evaluarBebida(MARTES).available).toBe(true);
+  });
+
+  it('con "solo miércoles" no se vende el martes, y el motivo NO es "Agotado"', () => {
+    const r = evaluarBebida(MARTES, { availabilityWindows: soloMiercoles });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Solo miércoles');
+    expect(r.reason?.toLowerCase()).not.toContain('agotado');
+  });
+
+  it('el miércoles sí se vende', () => {
+    expect(evaluarBebida(MIERC, { availabilityWindows: soloMiercoles }).available).toBe(true);
+  });
+
+  it('"forzar disponible" NO se salta el horario: es para inventario, no para el calendario', () => {
+    const r = evaluarBebida(MARTES, { availabilityWindows: soloMiercoles, forceAvailable: true });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Solo miércoles');
+  });
+
+  it('el miércoles, un producto agotado dice "Agotado" — el horario no tapa el motivo real', () => {
+    const r = evaluarBebida(MIERC, { availabilityWindows: soloMiercoles, soldOut: true });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Agotado (manual)');
+  });
+
+  it('un producto desactivado sigue sin aparecer, tenga horario o no', () => {
+    expect(evaluarBebida(MIERC, { availabilityWindows: soloMiercoles, isActive: false })).toBeUndefined();
   });
 });

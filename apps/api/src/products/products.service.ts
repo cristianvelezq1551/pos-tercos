@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ModifierRecipeDeltaSchema } from '@pos-tercos/types';
+import { businessWallClock, ModifierRecipeDeltaSchema } from '@pos-tercos/types';
 import type {
   ComboComponent,
   CreateProduct,
@@ -14,8 +14,10 @@ import type {
   Product,
   ProductAvailability,
   ProductModifier,
+  ProductAvailabilityWindow,
   ProductSize,
   SetComboComponents,
+  SetProductAvailabilityWindows,
   SetProductOptions,
   UpdateProduct,
 } from '@pos-tercos/types';
@@ -29,6 +31,7 @@ import {
 } from '@pos-tercos/domain';
 import type { Prisma } from '@prisma/client';
 import { assertNombreDisponible, conNombreUnico } from '../common/nombre-unico';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService, variantEdgesAsProductChildren } from '../recipes/recipes.service';
 import { ProductCategoriesService } from '../product-categories/product-categories.service';
@@ -41,6 +44,7 @@ type ProductWithChildren = Prisma.ProductGetPayload<{
     sizes: true;
     modifiers: true;
     comboComponents: true;
+    availabilityWindows: true;
   };
 }>;
 
@@ -52,6 +56,7 @@ export class ProductsService {
     private readonly prisma: PrismaService,
     private readonly recipes: RecipesService,
     private readonly categories: ProductCategoriesService,
+    private readonly audit: AuditService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -93,7 +98,7 @@ export class ProductsService {
     const [rows, orden] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        include: { sizes: true, modifiers: true, comboComponents: true },
+        include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
         orderBy: { name: 'asc' },
       }),
       this.categories.orderIndex(),
@@ -113,7 +118,7 @@ export class ProductsService {
   async getById(id: string): Promise<Product> {
     const row = await this.prisma.product.findUnique({
       where: { id },
-      include: { sizes: true, modifiers: true, comboComponents: true },
+      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
     });
     if (!row) {
       throw new NotFoundException(`Product ${id} not found`);
@@ -214,7 +219,7 @@ export class ProductsService {
               }
             : undefined,
         },
-        include: { sizes: true, modifiers: true, comboComponents: true },
+        include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
       }),
     );
     return toProductDto(row);
@@ -276,7 +281,7 @@ export class ProductsService {
           ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
           ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
         },
-        include: { sizes: true, modifiers: true, comboComponents: true },
+        include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
       }),
     );
     return toProductDto(row);
@@ -369,6 +374,50 @@ export class ProductsService {
   }
 
   /** Reemplaza los componentes de un combo. */
+  /**
+   * Reemplaza TODAS las franjas en que el producto se puede vender.
+   * Lista vacía = vuelve a venderse siempre, que es la salida cuando hay que
+   * venderlo un día que no toca.
+   */
+  async setAvailabilityWindows(
+    productId: string,
+    input: SetProductAvailabilityWindows,
+  ): Promise<Product> {
+    const existing = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException(`Product ${productId} not found`);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productAvailabilityWindow.deleteMany({ where: { productId } });
+      if (input.windows.length > 0) {
+        await tx.productAvailabilityWindow.createMany({
+          data: input.windows.map((w) => ({
+            productId,
+            daysOfWeekMask: w.daysOfWeekMask,
+            timeStart: w.timeStart ?? null,
+            timeEnd: w.timeEnd ?? null,
+          })),
+        });
+      }
+    });
+
+    // El horario cambia QUÉ se puede vender ahora mismo: hay que invalidar la
+    // caché del endpoint público igual que lo hacen el "86" y el "forzado". Sin
+    // esto, la web sigue ofreciendo el producto hasta 15 s después.
+    this.invalidateAvailability();
+
+    await this.audit.log({
+      action: 'PRODUCT_AVAILABILITY_WINDOWS_SET',
+      entityType: 'product',
+      entityId: productId,
+      metadata: { windows: input.windows.length },
+    });
+
+    return this.getById(productId);
+  }
+
   async setCombo(productId: string, input: SetComboComponents): Promise<Product> {
     const existing = await this.prisma.product.findUnique({
       where: { id: productId },
@@ -412,7 +461,9 @@ export class ProductsService {
   /** SIEMPRE fresco. Lo usa el endpoint INTERNO (cajero) y el snapshot offline,
    *  donde reponer stock / agotar debe reflejarse al instante. */
   async getAvailability(): Promise<ProductAvailability[]> {
-    return evaluateAvailability(await this.loadAvailabilityData());
+    // `businessWallClock` y no `new Date()`: el horario decide con el
+    // calendario del local. Es idempotente si el runtime ya está en Bogotá.
+    return evaluateAvailability({ ...(await this.loadAvailabilityData()), at: businessWallClock() });
   }
 
   /**
@@ -468,6 +519,9 @@ export class ProductsService {
           forceAvailable: true,
           comboComponents: { select: { productId: true, quantity: true } },
           sizes: { select: { id: true, name: true }, orderBy: { sortOrder: 'asc' } },
+          availabilityWindows: {
+            select: { daysOfWeekMask: true, timeStart: true, timeEnd: true },
+          },
         },
       }),
       this.prisma.inventoryMovement.groupBy({
@@ -555,7 +609,7 @@ export class ProductsService {
       where: { id },
       // 86 y forzado son excluyentes: agotar a mano limpia el forzado.
       data: { soldOut, ...(soldOut ? { forceAvailable: false } : {}) },
-      include: { sizes: true, modifiers: true, comboComponents: true },
+      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
     });
     this.invalidateAvailability();
     return toProductDto(row);
@@ -575,7 +629,7 @@ export class ProductsService {
     const row = await this.prisma.product.update({
       where: { id },
       data: { forceAvailable, ...(forceAvailable ? { soldOut: false } : {}) },
-      include: { sizes: true, modifiers: true, comboComponents: true },
+      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
     });
     this.invalidateAvailability();
     return toProductDto(row);
@@ -589,7 +643,7 @@ export class ProductsService {
     const row = await this.prisma.product.update({
       where: { id },
       data: { isActive: false },
-      include: { sizes: true, modifiers: true, comboComponents: true },
+      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
     });
     return toProductDto(row);
   }
@@ -675,6 +729,23 @@ function toProductDto(row: ProductWithChildren): Product {
     sizes: row.sizes.map(toSizeDto),
     modifiers: row.modifiers.map(toModifierDto),
     comboComponents: row.comboComponents.map(toComboComponentDto),
+    availabilityWindows: row.availabilityWindows.map(toAvailabilityWindowDto),
+  };
+}
+
+function toAvailabilityWindowDto(row: {
+  id: string;
+  productId: string;
+  daysOfWeekMask: number;
+  timeStart: string | null;
+  timeEnd: string | null;
+}): ProductAvailabilityWindow {
+  return {
+    id: row.id,
+    productId: row.productId,
+    daysOfWeekMask: row.daysOfWeekMask,
+    timeStart: row.timeStart,
+    timeEnd: row.timeEnd,
   };
 }
 

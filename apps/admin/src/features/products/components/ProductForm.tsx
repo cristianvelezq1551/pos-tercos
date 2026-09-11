@@ -29,6 +29,7 @@ import { PrepImagesField } from '../../../components/PrepImagesField';
 import { ProductFormEmojiField } from './ProductFormEmojiField';
 import { ProductFormDirectResaleSection } from './ProductFormDirectResaleSection';
 import { ProductFormVariantsSection } from './ProductFormVariantsSection';
+import { ProductScheduleSection } from './ProductScheduleSection';
 import { ProductFormExtrasSection } from './ProductFormExtrasSection';
 import { ProductFormComboSection } from './ProductFormComboSection';
 import { ProductFormCostInfoPanel } from './ProductFormCostInfoPanel';
@@ -207,6 +208,10 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
         {isEdit && initial && !initial.directResale && !initial.isCombo && (
           <ProductFormPreparedCostPanel productId={initial.id} basePriceInput={form.basePrice} />
         )}
+
+        {/* El horario se guarda por su propio endpoint, como las variantes y
+            los componentes del combo: no viaja en el submit del formulario. */}
+        {isEdit && initial && <ProductScheduleSection product={initial} />}
 
         <ImageUploadField
           imageUrl={form.imageUrl}

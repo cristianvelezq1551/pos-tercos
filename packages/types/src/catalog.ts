@@ -399,6 +399,67 @@ export const ComboComponentInputSchema = z.object({
 });
 export type ComboComponentInput = z.infer<typeof ComboComponentInputSchema>;
 
+// ====================================================================
+// VENTANAS DE DISPONIBILIDAD (a qué hora / qué días se puede vender)
+// ====================================================================
+
+const VENTANA_TIME_REGEX = /^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
+const VentanaTimeSchema = z
+  .string()
+  .regex(VENTANA_TIME_REGEX, 'La hora debe tener el formato HH:MM:SS (24h).');
+
+/**
+ * Una franja en la que el producto SÍ se puede vender. Un producto sin
+ * ventanas se vende siempre — así se comportan todos los del catálogo hoy.
+ *
+ * `timeStart`/`timeEnd` en null = TODO EL DÍA. Se representa con null en vez
+ * de 00:00:00–23:59:59 porque la ventana horaria es `[inicio, fin)`: con
+ * 23:59:59 quedaría un segundo al día en que el producto no se puede vender
+ * (la misma trampa que documenta §7.v46 para las promociones).
+ */
+export const ProductAvailabilityWindowSchema = z.object({
+  id: z.string().uuid(),
+  productId: z.string().uuid(),
+  /** Bitmask: lunes=1, martes=2, miércoles=4, jueves=8, viernes=16, sábado=32, domingo=64. */
+  daysOfWeekMask: z.number().int().min(1).max(127),
+  timeStart: z.string().nullable(),
+  timeEnd: z.string().nullable(),
+});
+export type ProductAvailabilityWindow = z.infer<typeof ProductAvailabilityWindowSchema>;
+
+export const ProductAvailabilityWindowInputSchema = z
+  .object({
+    daysOfWeekMask: z.number().int().min(1).max(127),
+    timeStart: VentanaTimeSchema.nullish(),
+    timeEnd: VentanaTimeSchema.nullish(),
+  })
+  .superRefine((v, ctx) => {
+    const tieneInicio = v.timeStart != null;
+    const tieneFin = v.timeEnd != null;
+    if (tieneInicio !== tieneFin) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [tieneInicio ? 'timeEnd' : 'timeStart'],
+        message: 'Pon las dos horas, o ninguna para que valga todo el día.',
+      });
+    }
+    if (tieneInicio && tieneFin && v.timeStart === v.timeEnd) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['timeEnd'],
+        message: 'La hora de fin no puede ser igual a la de inicio. Deja las dos vacías para todo el día.',
+      });
+    }
+  });
+export type ProductAvailabilityWindowInput = z.infer<typeof ProductAvailabilityWindowInputSchema>;
+
+/** PUT /products/:id/availability-windows — reemplaza TODAS las ventanas. */
+export const SetProductAvailabilityWindowsSchema = z.object({
+  /** Lista vacía = el producto vuelve a venderse siempre. */
+  windows: z.array(ProductAvailabilityWindowInputSchema).max(14),
+});
+export type SetProductAvailabilityWindows = z.infer<typeof SetProductAvailabilityWindowsSchema>;
+
 export const ProductSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -444,6 +505,8 @@ export const ProductSchema = z.object({
   sizes: z.array(ProductSizeSchema).optional(),
   modifiers: z.array(ProductModifierSchema).optional(),
   comboComponents: z.array(ComboComponentSchema).optional(),
+  /** Franjas en las que se puede vender. Vacío o ausente = siempre. */
+  availabilityWindows: z.array(ProductAvailabilityWindowSchema).optional(),
 });
 export type Product = z.infer<typeof ProductSchema>;
 
@@ -625,6 +688,8 @@ export const ProductAvailabilitySchema = z.object({
       }),
     )
     .optional(),
+  /** Motivo que SÍ se le puede mostrar a un cliente anónimo (horario). */
+  publicReason: z.string().nullish(),
 });
 export type ProductAvailability = z.infer<typeof ProductAvailabilitySchema>;
 

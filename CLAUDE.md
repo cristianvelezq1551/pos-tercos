@@ -2457,6 +2457,12 @@ evaluación de sugerencias. La llave del `.env` local se probó contra la API re
 y funciona; `claude-haiku-4-5` es el modelo correcto y **no existe un "Haiku 5"**
 (el listado de la API lo confirma: Opus 5, Sonnet 5, Fable 5 y Haiku 4.5).
 
+> **Actualizado 2026-09-11:** la API ahora lista también **Claude Fable 5.1**
+> (`claude-fable-5-1`). Sigue sin existir un "Haiku 5", así que el adapter de
+> facturas y sugerencias NO cambia: `ANTHROPIC_MODEL` manda y su default sigue
+> siendo `claude-haiku-4-5` (es el barato con vision, que es lo que ese camino
+> necesita). Fable 5.1 es para trabajar EN el repo, no para que lo llame el POS.
+
 ⚠️ El `.env` llega al proceso **solo como efecto colateral de importar
 `@prisma/client`** — no hay carga explícita de variables en `main.ts`. En
 Railway no importa (las inyecta la plataforma), pero explica por qué "está en
@@ -4715,6 +4721,85 @@ el 3001 era un huérfano (`PPID 1`) corriendo `dist/main` sin watcher que lo
 reconstruyera. Con un solo watcher y el `dist` borrado, el guard responde bien.
 ⚠️ Si el API de dev "responde cosas viejas", contar los watchers ANTES de dudar
 del código: `ps -eo pid,etime,command | grep "[n]est.js start --watch"`.
+
+---
+
+## 7.v68 Un producto se puede vender solo ciertos días: ventanas de horario (2026-09-11)
+
+> Pedido del dueño: el Combo Double Smash es en realidad **una promo de
+> miércoles** y no debe poderse vender el resto de la semana. Decisiones suyas:
+> días completos, **varias franjas**, y validar **al agregar** el producto al
+> pedido (no al cobrar).
+> Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (domain 640, admin
+> 359), **e2e 78 suites / 919** (dos corridas completas seguidas), 2 casos de
+> navegador, más la validación en QA con ventas reales un día permitido y un día
+> no permitido. Migración: `20260911120000_product_availability_windows`.
+
+### Por qué NO se hizo con promociones
+Una promoción **descuenta, no esconde**: con "solo miércoles" el combo seguiría
+vendible los otros días a su precio. Y el descuento de un combo no vive en una
+promo, vive en `comboPrice` — sueltos son $66.000 y el combo $60.000, o sea que
+**el combo ya ES la promo**. Modelarlo como promo sobre ítems sueltos habría
+borrado el combo del menú como algo que el cliente puede pedir.
+
+### La forma
+- Tabla `product_availability_windows` (`daysOfWeekMask` + `timeStart`/`timeEnd`
+  **nulables**). **Sin filas = se vende siempre**, que es como está todo el
+  catálogo: la migración es puramente aditiva y nada cambia hasta que alguien
+  cree una franja. Basta que UNA franja calce.
+- `timeStart`/`timeEnd` en null significan **todo el día**, y no `00:00:00`–
+  `23:59:59`: la ventana es `[inicio, fin)`, así que con 23:59:59 quedaría **un
+  segundo al día** en que el producto no se vende — la misma trampa que §7.v46
+  documentó para las promociones.
+- **Reusa el motor de ventanas de las promociones** (`matchesDayOfWeek`,
+  `withinTimeWindow`, con su cruce de medianoche): es la misma pregunta y dos
+  implementaciones de la misma regla se separan siempre (§7.v31).
+- `productScheduleState` es puro y dice además **cuándo vuelve** a venderse.
+- Un solo enchufe en `evaluateAvailability` llega a las **tres** superficies
+  (catálogo de la caja, menú de la web y caché sin conexión), porque las tres
+  llaman a esa misma función. El horario del producto **viaja en el snapshot
+  offline**, así que sin red la caja también lo respeta.
+
+### Reglas duras
+- **El horario es su propio motivo, nunca "Agotado".** El producto no se acabó:
+  hoy no se vende. Reusar ese cartel mentiría sobre la causa y mandaría a
+  alguien a buscar inventario que no falta (mismo criterio que §7.v26 con el
+  local cerrado).
+- **`forceAvailable` NO se salta el calendario.** Existe para vender cuando
+  falta cargar inventario, que no tiene nada que ver con qué día es hoy. La
+  salida para vender un día que no toca es **quitar la franja** (dos clics).
+  El cliente espeja esta regla: si la caja lo ofreciera, el cobro lo rechazaría
+  con el cliente enfrente (§7.v63).
+- **Se valida al AGREGAR, no al cobrar.** `computeLine` —el único punto por el
+  que pasan crear y editar ítems— rechaza fuera de horario; `confirmPayment` no
+  recalcula líneas, así que **una cuenta abierta del miércoles se cobra el
+  jueves** sin problema. Hay un e2e que lo fija.
+- **`AvailabilityInput.at` es OBLIGATORIO.** Un default silencioso se
+  equivocaría en el runtime de Vercel, que corre en UTC (§7.v52); los dos
+  llamadores pasan `businessWallClock()`, que es idempotente en Bogotá. Al
+  hacerlo obligatorio el compilador encontró el caller que se me había pasado.
+- **`publicReason`**: el motivo de stock es información del negocio y el
+  endpoint público lo borra; el del horario es lo contrario —"Solo miércoles" es
+  justo lo que el cliente necesita— así que el dominio ahora declara cuál se
+  puede publicar. Sin eso la web mostraba "Agotado" y el arreglo quedaba a
+  medias.
+
+### Dos cosas que encontró la verificación y no el compilador
+- **El endpoint público cachea 15 s** y el "86"/"forzado" lo invalidan; mi
+  cambio de horario no. El dueño prendía "solo miércoles" y la web lo seguía
+  ofreciendo un rato. `setAvailabilityWindows` ahora invalida igual que los otros.
+- **`cleanDb` tiene lista EXPLÍCITA de tablas.** Al no estar la nueva, el
+  `TRUNCATE products` de cualquier otra suite fallaba por la FK y tumbaba
+  suites sin relación. Ya había pasado en §7.v11 — al agregar una tabla, se
+  agrega ahí.
+
+### Deuda conocida
+- `syncOffline` no pasa por `computeLine`, así que una venta hecha sin red con
+  un snapshot viejo podría sincronizar fuera de horario. Es deliberado en la
+  línea de "gana lo cobrado offline" (§7.v9): rechazarla dejaría al cajero con
+  una venta ya cobrada que el sistema no acepta.
+- Una sola franja no expresa horarios DISTINTOS por día en la misma fila; se
+  resuelve con varias franjas, que es justo lo que el modelo permite.
 
 ---
 

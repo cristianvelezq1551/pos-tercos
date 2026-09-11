@@ -24,6 +24,7 @@ import type { Response } from 'express';
 import {
   CreateProductSchema,
   SetComboComponentsSchema,
+  SetProductAvailabilityWindowsSchema,
   SetForceAvailableSchema,
   SetProductOptionsSchema,
   SetSoldOutSchema,
@@ -33,6 +34,7 @@ import {
   type Product,
   type ProductAvailability,
   type SetComboComponents,
+  type SetProductAvailabilityWindows,
   type SetForceAvailable,
   type SetProductOptions,
   type SetSoldOut,
@@ -91,7 +93,9 @@ export class ProductsController {
       productId: r.productId,
       available: r.available,
       stock: null,
-      reason: null,
+      // El motivo de stock NO viaja (es del negocio); el del horario SÍ: al
+      // cliente le sirve saber que el combo vuelve el miércoles.
+      reason: r.publicReason ?? null,
       // La disponibilidad POR VARIANTE sí viaja —si no, la web ofrecería una
       // opción que no se puede preparar—, pero SIN el motivo: "Sin Pechuga de
       // pollo cruda" es información del negocio. El cliente ve "Agotado".
@@ -182,6 +186,16 @@ export class ProductsController {
     @Body(new ZodValidationPipe(SetComboComponentsSchema)) body: SetComboComponents,
   ): Promise<Product> {
     return this.products.setCombo(id, body);
+  }
+
+  @OnlyDueno()
+  @Put(':id/availability-windows')
+  setAvailabilityWindows(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetProductAvailabilityWindowsSchema))
+    body: SetProductAvailabilityWindows,
+  ): Promise<Product> {
+    return this.products.setAvailabilityWindows(id, body);
   }
 
   @OnlyDueno()
