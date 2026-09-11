@@ -26,6 +26,7 @@ async function main(): Promise<void> {
     prisma,
     new LocalFilesystemStorageAdapter(),
     new LedgerFreshnessService(),
+    new RecipesService(prisma),
   );
   const cogs = new CogsService(
     prisma,

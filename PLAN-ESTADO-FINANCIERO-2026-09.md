@@ -112,7 +112,7 @@ registrado").
 
 ---
 
-## Fase 2 — Nada entra al inventario a $0
+## Fase 2 — Nada entra al inventario a $0 ✅ (rama `feat/fase2-nada-entra-a-cero`, 2026-09-11; la corrección 2d se aplicó en prod el mismo día)
 
 **Objetivo.** Que un sobrante de conteo o una entrada manual sin precio se
 valore al último costo conocido, marcado estimado, en vez de venderse gratis.

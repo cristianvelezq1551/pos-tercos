@@ -18,6 +18,7 @@ import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { runWithSerializationRetry } from '../common/tx';
 import { LedgerFreshnessService } from '../common/ledger-freshness/ledger-freshness.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RecipesService } from '../recipes/recipes.service';
 
 type DbInventoryMovement = Prisma.InventoryMovementGetPayload<{
   include: {
@@ -48,7 +49,50 @@ export class InventoryService {
     private readonly prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     private readonly freshness: LedgerFreshnessService,
+    private readonly recipes: RecipesService,
   ) {}
+
+  /**
+   * Costo por unidad de STOCK con el que se valora una entrada que llega sin
+   * precio (sobrante de conteo, ajuste manual sin costo). Regla del dueño
+   * (§7.v32, §7.v70): nada entra al inventario a $0 — un lote gratis se vende
+   * gratis y el margen queda inflado en silencio.
+   *
+   *  - Insumo / reventa: el último precio de compra de la ficha, pasado a
+   *    unidad de stock (mismo criterio que el respaldo del motor de costos).
+   *  - Subproducto: el costo de su receta por unidad — no tiene precio de
+   *    compra; el ledger lo costea por producción y acá no hay tanda.
+   *
+   * `null` cuando no hay NINGÚN precio con qué estimar: eso es "desconocido de
+   * verdad", que es distinto de cero, y el motor lo reporta como parcial.
+   */
+  async estimarCostoDeEntrada(
+    entityType: 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT',
+    id: string,
+  ): Promise<number | null> {
+    if (entityType === 'INGREDIENT') {
+      const i = await this.prisma.ingredient.findUnique({
+        where: { id },
+        select: { lastUnitCost: true, conversionFactor: true },
+      });
+      const factor = Number(i?.conversionFactor ?? 0);
+      return i?.lastUnitCost != null && factor > 0 ? roundCost(Number(i.lastUnitCost) / factor) : null;
+    }
+    if (entityType === 'PRODUCT') {
+      const p = await this.prisma.product.findUnique({
+        where: { id },
+        select: { lastUnitCost: true, conversionFactor: true },
+      });
+      const factor = p?.conversionFactor != null ? Number(p.conversionFactor) : 1;
+      return p?.lastUnitCost != null && factor > 0 ? roundCost(Number(p.lastUnitCost) / factor) : null;
+    }
+    try {
+      const cost = await this.recipes.expandedSubproductCost(id);
+      return cost.totalCost != null && cost.totalCost > 0 ? roundCost(cost.totalCost) : null;
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * Stock por entidad. Devuelve mapa con clave `${entityType}:${id}`.
@@ -254,6 +298,22 @@ export class InventoryService {
         : input.entityType === 'SUBPRODUCT'
           ? { subproductId: input.subproductId! }
           : { productId: input.productId! };
+    // Una entrada SIN precio se estima al último costo conocido y queda
+    // marcada: el motor propaga la marca a lo que salga de ese lote, y la
+    // pantalla lo rotula "estimado" en vez de cobrarlo a $0 (§7.v70).
+    const entradaSinPrecio = input.delta > 0 && (input.unitCost === undefined || input.unitCost === null);
+    const estimado = entradaSinPrecio
+      ? await this.estimarCostoDeEntrada(
+          input.entityType,
+          (input.entityType === 'INGREDIENT'
+            ? input.ingredientId
+            : input.entityType === 'PRODUCT'
+              ? input.productId
+              : input.subproductId) as string,
+        )
+      : null;
+    const notaEstimado =
+      estimado !== null ? `Costo estimado al último precio conocido: ${estimado}/u.` : null;
     const data = {
       entityType: input.entityType,
       ingredientId: input.entityType === 'INGREDIENT' ? input.ingredientId : null,
@@ -261,9 +321,10 @@ export class InventoryService {
       subproductId: input.entityType === 'SUBPRODUCT' ? input.subproductId : null,
       delta: input.delta,
       // El costo solo aplica a entradas (delta > 0); en consumos lo resuelve FIFO.
-      unitCost: input.delta > 0 ? (input.unitCost ?? null) : null,
+      unitCost: input.delta > 0 ? (input.unitCost ?? estimado) : null,
+      unitCostEstimated: estimado !== null,
       type: input.type,
-      notes: input.notes ?? null,
+      notes: [input.notes, notaEstimado].filter((n) => n).join(' · ').slice(0, 500) || null,
       // Sin esta línea la foto se sube al storage y la fila se guarda SIN su
       // clave: la merma queda sin evidencia y el endpoint que la sirve devuelve
       // null para siempre. La firma la aceptaba y el lector la esperaba; solo
@@ -550,6 +611,7 @@ function toMovementDto(row: DbInventoryMovement): InventoryMovement {
     itemName: itemName ?? undefined,
     delta: Number(row.delta),
     unitCost: row.unitCost !== null ? Number(row.unitCost) : null,
+    unitCostEstimated: row.unitCostEstimated,
     type: row.type as InventoryMovement['type'],
     sourceType: row.sourceType,
     sourceId: row.sourceId,

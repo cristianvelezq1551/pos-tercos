@@ -212,7 +212,7 @@ export function AdjustStockForm({ stockable }: AdjustStockFormProps) {
           label={`Costo por ${stockable.unitStock} (opcional)`}
           hint={
             unitCost === null || unitCost <= 0
-              ? 'Sin costo, este stock entra como "costo desconocido" y el COGS de lo que salga de él quedará parcial. Idealmente carga el stock por factura (captura el costo solo).'
+              ? 'Si lo dejas vacío, esta entrada se valora al último precio de compra conocido y queda marcada como estimada (nada entra a $0). Si el ítem nunca tuvo precio, entra sin valor. Lo exacto es cargarlo por factura.'
               : magnitude !== null && magnitude > 0
                 ? `Costo total de esta entrada: ${formatCop(unitCost * magnitude)}`
                 : 'Costo unitario de este lote para el cálculo FIFO.'

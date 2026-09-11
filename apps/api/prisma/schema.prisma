@@ -354,6 +354,10 @@ model InventoryMovement {
   /// INITIAL, ajuste+). NULL en consumos (el costo lo resuelve el motor FIFO)
   /// y en entradas sin costo conocido. Base del costeo real (COGS).
   unitCost       Decimal?              @map("unit_cost") @db.Decimal(14, 4)
+  /// El costo se ESTIMÓ al escribir (último precio conocido) porque la entrada
+  /// llegó sin precio: sobrante de conteo, ajuste manual sin costo. El motor lo
+  /// propaga a lo que salga de ese lote como "estimado" (§7.v70).
+  unitCostEstimated Boolean            @default(false) @map("unit_cost_estimated")
   sourceType     String?               @map("source_type")
   sourceId       String?               @map("source_id")
   userId         String?               @map("user_id")

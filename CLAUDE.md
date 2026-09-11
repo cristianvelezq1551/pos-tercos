@@ -4883,6 +4883,43 @@ aseo: varios pagos por mes, sin "pendiente"). Fase 4: insumos de operación
 porción ni como merma).
 
 
+## 7.v70 Nada entra al inventario a $0 (2026-09-11)
+
+> Fase 2 del `PLAN-ESTADO-FINANCIERO-2026-09.md`. Un sobrante de conteo o un
+> ajuste manual sin precio creaba un lote a **$0** y todo lo que salía de él
+> se vendía gratis: el margen bruto quedaba inflado en silencio (en prod,
+> septiembre mostraba 66,3 % con el real en 63,2 %; ver §7.v69). Regla del
+> dueño, la misma de §7.v32: *nada cuesta cero*.
+> Migración: `20260911210000_unit_cost_estimated` (aditiva, O(1)).
+
+### La regla
+- **Toda entrada que llega sin precio se valora al escribir** al último costo
+  conocido, y queda marcada `unit_cost_estimated`. Insumo y reventa: el último
+  precio de compra de la ficha pasado a unidad de stock; subproducto: el costo
+  de su receta por unidad (no tiene precio de compra). Aplica a ajustes
+  manuales, cargas iniciales y sobrantes de conteo (aprobados o del dueño).
+- **Sin ningún precio con qué estimar, entra sin valor** (no se bloquea): eso
+  es "desconocido de verdad", distinto de cero, y el estado lo reporta como
+  COGS parcial. Bloquear rompía la carga inicial de un catálogo nuevo.
+- **La marca viaja hasta la pantalla.** El motor (`Lot.estimated`, aditivo)
+  cuenta lo que sale de un lote estimado como `estimatedQty` en la venta y
+  `estimatedCost` en merma, cortesía y faltante; un subproducto producido con
+  insumo estimado nace estimado; el reverso de una venta y el sobrante de un
+  conteo devuelven el lote con su marca; el snapshot la serializa. Así
+  "COGS estimado" en el P&G significa lo mismo venga de una venta forzada o
+  de un sobrante.
+- La prueba de oro de 300 historias quedó **byte-idéntica** (ninguna fila
+  previa lleva la marca) y las leyes de propiedad corren con
+  `allowEstimatedEntries` (consume el RNG solo cuando está prendido).
+
+### Dónde
+`InventoryService.estimarCostoDeEntrada` (único lugar donde se estima; lo usan
+`createMovement` y los dos caminos de `StockCountsService`); `InventoryModule`
+importa `RecipesModule` por el costo de subproducto; `InventoryMovement.unitCostEstimated`
+en el DTO; el aviso de COGS del P&G y el hint del formulario de ajuste dicen
+la regla.
+
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

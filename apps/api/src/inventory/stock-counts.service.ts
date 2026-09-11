@@ -137,6 +137,18 @@ export class StockCountsService {
    * guardada —no recalcular contra el ledger actual— preserva las ventas y
    * producciones legítimas ocurridas entre el conteo y la aprobación.
    */
+  /** Costo con el que entra un sobrante de conteo (ver `estimarCostoDeEntrada`). */
+  private costoParaSobrante(c: {
+    entityType: 'INGREDIENT' | 'PRODUCT' | 'SUBPRODUCT';
+    ingredientId: string | null;
+    productId: string | null;
+    subproductId: string | null;
+  }): Promise<number | null> {
+    const id = c.ingredientId ?? c.productId ?? c.subproductId;
+    if (!id) return Promise.resolve(null);
+    return this.inventory.estimarCostoDeEntrada(c.entityType, id);
+  }
+
   async approve(id: string, adminId: string, note?: string): Promise<StockCount> {
     const existing = await this.prisma.stockCount.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Conteo no encontrado');
@@ -150,6 +162,9 @@ export class StockCountsService {
       });
       if (claim.count === 0) throw new BadRequestException('El conteo ya fue resuelto.');
       if (Math.abs(difference) > COUNT_EPSILON) {
+        // Un SOBRANTE entra costeado al último precio conocido y marcado
+        // estimado (§7.v70): antes entraba a $0 y se vendía gratis.
+        const estimado = difference > 0 ? await this.costoParaSobrante(existing) : null;
         await tx.inventoryMovement.create({
           data: {
             entityType: existing.entityType,
@@ -157,6 +172,8 @@ export class StockCountsService {
             productId: existing.productId,
             subproductId: existing.subproductId,
             delta: difference,
+            unitCost: estimado,
+            unitCostEstimated: estimado !== null,
             type: 'MANUAL_ADJUSTMENT',
             sourceType: 'stock_count',
             sourceId: id,
@@ -262,6 +279,15 @@ export class StockCountsService {
             });
 
             if (autoApprove && Math.abs(difference) > COUNT_EPSILON) {
+              const estimado =
+                difference > 0
+                  ? await this.costoParaSobrante({
+                      entityType: input.entityType,
+                      ingredientId: input.ingredientId ?? null,
+                      productId: input.productId ?? null,
+                      subproductId: input.subproductId ?? null,
+                    })
+                  : null;
               await tx.inventoryMovement.create({
                 data: {
                   entityType: input.entityType,
@@ -269,6 +295,8 @@ export class StockCountsService {
                   productId: input.productId ?? null,
                   subproductId: input.subproductId ?? null,
                   delta: difference,
+                  unitCost: estimado,
+                  unitCostEstimated: estimado !== null,
                   type: 'MANUAL_ADJUSTMENT',
                   sourceType: 'stock_count',
                   sourceId: count.id,

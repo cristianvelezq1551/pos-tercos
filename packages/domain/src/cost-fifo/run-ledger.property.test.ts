@@ -59,6 +59,10 @@ const run = (opts: Partial<HistoryOptions> = {}) => {
     allowShortfall: true,
     allowUnknownCost: true,
     includeProduction: true,
+    // Entradas con costo ESTIMADO (sobrante de conteo / ajuste sin precio,
+    // §7.v70): las leyes valen igual — el estimado cuenta como costo, solo
+    // viaja marcado.
+    allowEstimatedEntries: true,
     // Compras anuladas: las leyes tienen que valer igual cuando una entrada se
     // deshace, incluida la que había saldado deudas de inventario negativo.
     includeVoidedPurchases: true,

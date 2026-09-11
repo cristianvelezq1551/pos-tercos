@@ -134,6 +134,7 @@ export const INVENTARIO: GuideChapter = {
             'Inicial: la carga del primer día, cuando arrancas el sistema.',
             'Ajuste manual: una corrección con motivo.',
             'Merma: algo que se perdió.',
+            'Si una entrada la dejas sin costo, se valora al último precio de compra conocido y queda marcada como estimada: nada entra a $0. Un sobrante de conteo entra igual.',
           ],
         },
         {
