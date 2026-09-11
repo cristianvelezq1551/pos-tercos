@@ -36,7 +36,7 @@ describe('Reportes financieros del dueño E2E', () => {
       revenue: number; discountTotal: number; grossRevenue: number;
       cogs: number; grossMargin: number; grossMarginPct: number;
       netResult: number; wasteCost: number; cortesiasCost: number; refundCost: number;
-      totalFixed: number; oneTimeCost: number; breakEven: number | null;
+      totalFixed: number; oneTimeCost: number; breakEvenBase: number; breakEven: number | null;
       breakEvenCoverage: number | null;
       catalogBreakEven: {
         target: number | null;
@@ -210,7 +210,7 @@ describe('Reportes financieros del dueño E2E', () => {
     expect(after.netResult).toBe(before.netResult);
   });
 
-  it('un costo fijo recurrente baja el neto y entra al break-even; uno puntual NO', async () => {
+  it('un costo fijo recurrente baja el neto y entra al equilibrio; uno puntual también entra a la base', async () => {
     const before = await monthly();
     const ARRIENDO = 1_500_000;
     await request
@@ -223,8 +223,9 @@ describe('Reportes financieros del dueño E2E', () => {
     expect(conArriendo.totalFixed - before.totalFixed).toBe(ARRIENDO);
     expect(conArriendo.netResult - before.netResult).toBe(-ARRIENDO);
 
-    // Gasto puntual: pega al neto pero se reporta aparte y NO infla el
-    // break-even (que representa el piso RECURRENTE que hay que vender).
+    // Gasto puntual: pega al neto, se reporta aparte de lo recurrente, y desde
+    // 2026-09-11 SÍ entra a la base del equilibrio: también hay que pagarlo con
+    // las ventas de este mes (decisión del dueño).
     const COMPRA_HORNO = 800_000;
     const hoy = hoyLocal();
     await request
@@ -236,6 +237,8 @@ describe('Reportes financieros del dueño E2E', () => {
     const after = await monthly();
     expect(after.oneTimeCost - conArriendo.oneTimeCost).toBe(COMPRA_HORNO);
     expect(after.totalFixed).toBe(conArriendo.totalFixed); // el puntual NO es recurrente
+    expect(after.breakEvenBase - conArriendo.breakEvenBase).toBe(COMPRA_HORNO);
+    expect(after.breakEvenBase).toBeCloseTo(after.totalFixed + after.oneTimeCost + after.payablesPaidCost, 2);
     expect(after.netResult - conArriendo.netResult).toBe(-COMPRA_HORNO);
 
     // Break-even = costos recurrentes / margen de CONTRIBUCIÓN % (auditoría
@@ -248,10 +251,10 @@ describe('Reportes financieros del dueño E2E', () => {
       2,
     );
     if (after.contributionMarginPct !== null && after.contributionMarginPct > 0) {
-      expect(after.breakEven).toBeCloseTo(after.totalFixed / after.contributionMarginPct, 0);
+      expect(after.breakEven).toBeCloseTo(after.breakEvenBase / after.contributionMarginPct, 0);
       // Nunca es menor que el que salía del margen bruto.
       expect(after.breakEven!).toBeGreaterThanOrEqual(
-        after.totalFixed / after.grossMarginPct - 0.01,
+        after.breakEvenBase / after.grossMarginPct - 0.01,
       );
     } else {
       // Margen de contribución ≤ 0: NO hay volumen que cubra los fijos, y el
@@ -635,7 +638,7 @@ describe('Reportes financieros del dueño E2E', () => {
       expect(m.catalogBreakEven.productsWithoutCost).toBe(0);
     });
 
-    it('vendiendo el equilibrio, el margen de la carta cubre exactamente lo fijo', async () => {
+    it('vendiendo el equilibrio, el margen de la carta cubre exactamente la base (fijos + únicos + compromisos)', async () => {
       await request
         .post('/fixed-costs')
         .set(auth())
@@ -648,11 +651,11 @@ describe('Reportes financieros del dueño E2E', () => {
       // La ley: target × margen = costos fijos. Con 70 % de margen, $700.000
       // fijos se cubren vendiendo $1.000.000.
       expect(m.catalogBreakEven.target! * m.catalogBreakEven.marginPct!).toBeCloseTo(
-        m.totalFixed,
+        m.breakEvenBase,
         0,
       );
       // Y siempre por encima de los fijos: los productos cuestan.
-      expect(m.catalogBreakEven.target!).toBeGreaterThan(m.totalFixed);
+      expect(m.catalogBreakEven.target!).toBeGreaterThan(m.breakEvenBase);
     });
 
     it('un producto sin costo conocido queda FUERA del promedio, nunca entra como gratis', async () => {

@@ -346,10 +346,14 @@ export class FinancialReportsService {
     // testeada en domain). El margen BRUTO ignoraba merma, cortesías y
     // reembolsos —que suben con la venta— y por eso daba un equilibrio más
     // bajo que el real: parecía cubierto cuando todavía se perdía plata.
-    // Los gastos puntuales quedan fuera a propósito: no se repiten. Los
-    // compromisos pagados TAMPOCO entran, por la misma razón: un arreglo del
-    // horno no define el piso de operación del mes siguiente. Si un gasto se
-    // repite todos los meses, su lugar es Costos fijos, no Compromisos.
+    //
+    // La BASE es todo lo que el mes tiene que pagar: fijos recurrentes, gastos
+    // únicos y compromisos pagados. Hasta 2026-09-11 los dos últimos quedaban
+    // fuera ("no se repiten") y el dueño lo vio en pantalla: el aceite y el
+    // aseo bajaban el neto pero la meta de ventas seguía igual, como si no
+    // hubiera que pagarlos. Un gasto puntual sube la meta de ESE mes, y eso
+    // es lo que se quiere leer.
+    const breakEvenBase = round(totalFixed + oneTimeCost + payablesPaidCost);
     const be = computeBreakEven({
       revenue,
       cogs,
@@ -358,7 +362,7 @@ export class FinancialReportsService {
       cortesiaCost: cortesiasCost,
       refundCost,
       freightCost,
-      totalFixed,
+      totalFixed: breakEvenBase,
     });
 
     // El equilibrio que se MUESTRA sale del margen de la CARTA (ver
@@ -366,7 +370,7 @@ export class FinancialReportsService {
     // volumen, se mueve tanto que no sirve como meta. Los dos viajan; la
     // pantalla explica la diferencia en vez de esconderla.
     const catalogo = await this.catalogMargin(monthStart, monthEnd);
-    const catalogTarget = breakEvenFromCatalogMargin(totalFixed, catalogo.marginPct);
+    const catalogTarget = breakEvenFromCatalogMargin(breakEvenBase, catalogo.marginPct);
 
     return {
       year,
@@ -402,6 +406,7 @@ export class FinancialReportsService {
       deliveryOrderCount: pnl.deliveryOrderCount,
       salesCount: pnl.salesCount,
       netResult,
+      breakEvenBase,
       contributionMargin: round(be.contributionMargin),
       contributionMarginPct:
         be.contributionMarginPct === null ? null : round4(be.contributionMarginPct),
@@ -490,6 +495,7 @@ export class FinancialReportsService {
       grossMargin: statement.grossMargin,
       grossMarginPct: statement.grossMarginPct,
       totalFixed: statement.totalFixed,
+      breakEvenBase: statement.breakEvenBase,
       fixedCosts: statement.fixedCosts.map((l) => ({
         name: l.name,
         category: l.category,
@@ -519,11 +525,11 @@ export class FinancialReportsService {
           amount: statement.freightCost,
         },
         {
-          label: `Compromisos pagados (arreglos, servicios; ${statement.payablesPaidCount} pagos; no entran al equilibrio)`,
+          label: `Compromisos pagados (arreglos, servicios; ${statement.payablesPaidCount} pagos)`,
           amount: statement.payablesPaidCost,
         },
         {
-          label: 'Gastos únicos del mes (no entran al equilibrio)',
+          label: 'Gastos únicos del mes',
           amount: statement.oneTimeCost,
         },
       ],

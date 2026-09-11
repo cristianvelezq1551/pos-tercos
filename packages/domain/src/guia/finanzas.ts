@@ -64,7 +64,7 @@ export const FINANZAS: GuideChapter = {
         },
         {
           kind: 'note',
-          text: 'Un compromiso pesa cuando lo PAGAS, no cuando lo registras: mientras se debe es deuda, no pérdida. Y no mueve el punto de equilibrio, porque un arreglo puntual no define el piso de operación del mes siguiente. Si un gasto se repite todos los meses, su lugar es Costos fijos.',
+          text: 'Un compromiso pesa cuando lo PAGAS, no cuando lo registras: mientras se debe es deuda, no pérdida. Y al pagarlo entra a la base del punto de equilibrio de ese mes: también hay que cubrirlo con las ventas. Si un gasto se repite todos los meses, su lugar es Costos fijos.',
         },
         {
           kind: 'steps',

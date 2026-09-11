@@ -165,6 +165,7 @@ describe('buildFinancialAnalysisUserPrompt', () => {
     discountTotal: 0,
     cogsEstimated: false,
     cogsPartial: false,
+    breakEvenBase: 18_000_000,
     contributionMargin: 20_000_000,
     contributionMarginPct: 0.625,
     breakEven: 28_800_000,

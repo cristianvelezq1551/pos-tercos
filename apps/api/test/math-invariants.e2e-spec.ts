@@ -670,7 +670,7 @@ describe('Invariantes matemáticas entre reportes E2E', () => {
         .expect(200)
     ).body as {
       revenue: number; cogs: number; wasteCost: number; cortesiasCost: number; refundCost: number;
-      totalFixed: number; contributionMargin: number; contributionMarginPct: number | null;
+      totalFixed: number; breakEvenBase: number; contributionMargin: number; contributionMarginPct: number | null;
       breakEven: number | null; breakEvenCoverage: number | null;
       deliveryCollected: number; freightCost: number;
     };
@@ -688,11 +688,13 @@ describe('Invariantes matemáticas entre reportes E2E', () => {
     // LA propiedad: a ese nivel de ventas, los fijos quedan exactamente cubiertos.
     expect(st.breakEven).not.toBeNull();
     const ratio = st.contributionMargin / st.revenue;
-    const netoEnEquilibrio = st.breakEven! * ratio - st.totalFixed;
+    // La base es fijos + gastos únicos + compromisos pagados (sin gastos de
+    // esos en esta suite, coincide con totalFixed — y se afirma igual).
+    const netoEnEquilibrio = st.breakEven! * ratio - st.breakEvenBase;
     expect(netoEnEquilibrio).toBeCloseTo(0, 2);
 
     // El equilibrio honesto nunca es MENOR que el que salía del margen bruto.
-    const optimista = st.totalFixed / ((st.revenue - st.cogs) / st.revenue);
+    const optimista = st.breakEvenBase / ((st.revenue - st.cogs) / st.revenue);
     expect(st.breakEven!).toBeGreaterThanOrEqual(optimista - 0.01);
 
     // La cobertura es coherente con lo vendido.

@@ -192,8 +192,16 @@ export const MonthlyFinancialStatementSchema = z.object({
   contributionMargin: z.number(),
   /** contributionMargin / revenue. null si no hay ingresos. */
   contributionMarginPct: z.number().nullable(),
-  /** Ventas necesarias para cubrir los fijos recurrentes
-   *  (= totalFixed / contributionMarginPct). null si el margen de contribución
+  /**
+   * Lo que el mes tiene que cubrir para no perder plata: fijos recurrentes +
+   * gastos únicos del mes + compromisos pagados en el mes. Decisión del dueño
+   * (2026-09-11): el aceite, el aseo o un arreglo "son gastos del mes que
+   * requieren ser pagados", así que una meta que los ignore no es una meta.
+   * Es la base de los DOS equilibrios (realizado y de la carta).
+   */
+  breakEvenBase: z.number(),
+  /** Ventas necesarias para cubrir `breakEvenBase`
+   *  (= breakEvenBase / contributionMarginPct). null si el margen de contribución
    *  no es positivo: ahí NO hay volumen que alcance. */
   breakEven: z.number().nullable(),
   /** revenue / breakEven (0..1+). null si no se puede. */
