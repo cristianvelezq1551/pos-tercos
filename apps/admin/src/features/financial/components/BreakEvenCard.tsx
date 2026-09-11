@@ -53,10 +53,10 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
   return (
     <Marco>
       <p className="text-sm text-muted-foreground">
-        Es cuánto tienes que vender en el mes para cubrir los costos fijos —arriendo, nómina,
-        servicios—. Se calcula con lo que deja cada producto de tu carta (precio contra receta), así
-        que no se mueve por lo flojo o lo bueno que haya estado el mes. Los gastos puntuales quedan
-        fuera: no se repiten.
+        Es cuánto tienes que vender en el mes para cubrir todo lo que hay que pagar: los costos
+        fijos —arriendo, nómina, servicios— más los gastos únicos y los compromisos que se pagaron
+        este mes. Se calcula con lo que deja cada producto de tu carta (precio contra receta), así
+        que no se mueve por lo flojo o lo bueno que haya estado el mes.
       </p>
 
       <div className="space-y-2">
@@ -65,6 +65,10 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
           <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">
             ${c.marginPct !== null ? Math.round(c.marginPct * 100) : '—'}
           </span>
+        </div>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="min-w-0 text-muted-foreground">Hay que cubrir</span>
+          <span className="shrink-0 whitespace-nowrap tabular-nums">{formatCop(s.breakEvenBase)}</span>
         </div>
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="min-w-0 text-muted-foreground">Ventas necesarias del mes</span>
@@ -84,7 +88,7 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
         <p className="text-xs text-muted-foreground">
           {sinMeta ? (
             <>
-              No hay costos fijos recurrentes cargados, así que no hay meta que cubrir. Cárgalos en
+              No hay costos ni gastos cargados este mes, así que no hay meta que cubrir. Cárgalos en
               Finanzas → Costos y gastos y este número aparece solo.
             </>
           ) : (

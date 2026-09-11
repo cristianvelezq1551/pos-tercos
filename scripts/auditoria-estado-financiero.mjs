@@ -346,13 +346,14 @@ async function main() {
   if (s.contributionMarginPct !== null && s.contributionMarginPct > 0) {
     // El % viaja redondeado a 4 decimales: recomputar la meta desde él deja
     // una diferencia proporcional a la meta (unos $300 sobre $25 millones).
-    check('equilibrio realizado = fijos ÷ margen de contribución %', s.breakEven, s.totalFixed / s.contributionMarginPct, Math.max(1, s.breakEven * 0.001));
+    check('base del equilibrio = fijos + gastos únicos + compromisos pagados', s.breakEvenBase, s.totalFixed + s.oneTimeCost + s.payablesPaidCost);
+    check('equilibrio realizado = base ÷ margen de contribución %', s.breakEven, s.breakEvenBase / s.contributionMarginPct, Math.max(1, s.breakEven * 0.001));
   } else {
     checkTrue('sin margen de contribución positivo, el equilibrio realizado es null', s.breakEven === null);
   }
   const c = s.catalogBreakEven;
   if (c.target !== null && c.marginPct !== null && c.marginPct > 0) {
-    check('equilibrio de la carta = fijos ÷ margen de la carta %', c.target, s.totalFixed / c.marginPct, Math.max(1, c.target * 0.001));
+    check('equilibrio de la carta = base ÷ margen de la carta %', c.target, s.breakEvenBase / c.marginPct, Math.max(1, c.target * 0.001));
     check('cobertura de la carta = ingresos ÷ meta', c.coverage, s.revenue / c.target, 0.001);
     checkTrue('el margen de la carta está entre 0 y 100 %', c.marginPct > 0 && c.marginPct < 1, String(c.marginPct));
   }

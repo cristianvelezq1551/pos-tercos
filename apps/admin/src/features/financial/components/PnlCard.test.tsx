@@ -46,6 +46,7 @@ const statement = (fixedCosts: MonthlyFinancialStatement['fixedCosts']): Monthly
   netResult: 0,
   contributionMargin: 3_073_475,
   contributionMarginPct: 0.663,
+  breakEvenBase: fixedCosts.reduce((a, c) => a + c.monthlyAmount, 0),
   breakEven: null,
   breakEvenCoverage: null,
   catalogBreakEven: {

@@ -19,9 +19,10 @@
  * se vende. Dejarlo afuera repetiría el error del margen bruto en otra línea.
  * Si algún día apareciera un flete contratado mensual, ESE va en `totalFixed`.
  *
- * Los gastos PUNTUALES (una reparación, un horno nuevo) quedan fuera a
- * propósito: no se repiten, así que no definen el piso de operación del mes
- * siguiente. Se restan del neto, no del equilibrio.
+ * `totalFixed` es la BASE a cubrir, y quien llama decide qué entra. Desde
+ * 2026-09-11 (decisión del dueño) el estado financiero pasa fijos + gastos
+ * únicos + compromisos pagados: un gasto puntual también hay que pagarlo con
+ * las ventas de ese mes, y una meta que lo ignore se lee como si no existiera.
  *
  * Función pura, sin IO.
  */
@@ -43,7 +44,8 @@ export interface BreakEvenInput {
   /** Domicilios/fletes que cobraron los proveedores por traer la mercancía en
    *  el período. Variable: escala con las compras. */
   freightCost: number;
-  /** Costos fijos RECURRENTES (nómina + mensuales/anuales). Sin puntuales. */
+  /** Base a cubrir: en el estado financiero, fijos + gastos únicos +
+   *  compromisos pagados del mes. */
   totalFixed: number;
 }
 
@@ -52,7 +54,7 @@ export interface BreakEvenResult {
   contributionMargin: number;
   /** contributionMargin / revenue. null si no hay ingresos. */
   contributionMarginPct: number | null;
-  /** Ventas necesarias para cubrir los fijos recurrentes. null si el margen de
+  /** Ventas necesarias para cubrir la base. null si el margen de
    *  contribución no es positivo (con margen ≤ 0 no hay volumen que alcance). */
   breakEven: number | null;
   /** revenue / breakEven. >= 1 significa que el mes ya se cubrió. */
