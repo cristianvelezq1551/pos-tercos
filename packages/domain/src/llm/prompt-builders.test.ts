@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FINANCIAL_ANALYSIS_SYSTEM,
   buildDailySummaryUserPrompt,
   buildFinancialAnalysisUserPrompt,
   buildPurchaseSuggestionUserPrompt,
   buildShiftCloseUserPrompt,
+  type FinancialAnalysisInput,
 } from './prompt';
 
 /**
@@ -158,10 +160,29 @@ describe('buildFinancialAnalysisUserPrompt', () => {
     fixedCosts: [],
     otherLosses: [],
     netResult: 2_000_000,
+    salesCount: 640,
+    grossRevenue: 32_000_000,
+    discountTotal: 0,
+    cogsEstimated: false,
+    cogsPartial: false,
+    contributionMargin: 20_000_000,
+    contributionMarginPct: 0.625,
     breakEven: 28_800_000,
     breakEvenCoverage: 1.11,
+    catalogBreakEven: {
+      target: 27_000_000,
+      marginPct: 0.667,
+      coverage: 1.185,
+      weightedBySales: true,
+      productsConsidered: 18,
+      productsWithoutCost: 0,
+      best: { name: 'Limonada', marginPct: 0.82 },
+      worst: { name: 'Burro de pollo', marginPct: 0.51 },
+    },
+    deliveryCollected: 0,
+    deliveryOrderCount: 0,
     trend: [],
-  };
+  } satisfies FinancialAnalysisInput;
 
   it('incluye el P&G del mes con el margen en porcentaje', () => {
     const p = buildFinancialAnalysisUserPrompt(base);
@@ -176,12 +197,83 @@ describe('buildFinancialAnalysisUserPrompt', () => {
     const p = buildFinancialAnalysisUserPrompt({
       ...base,
       fixedCosts: [
-        { name: 'Arriendo', category: 'Local', monthlyAmount: 4_000_000, isPayroll: false },
-        { name: 'Sueldos', category: 'Personal', monthlyAmount: 9_000_000, isPayroll: true },
+        { name: 'Arriendo', category: 'Local', monthlyAmount: 4_000_000, isPayroll: false, isEstimated: false },
+        { name: 'Sueldos', category: 'Personal', monthlyAmount: 9_000_000, isPayroll: true, isEstimated: false },
       ],
     });
     expect(p).toContain('· Arriendo (Local): $4.000.000');
     expect(p).toContain('· Sueldos (Personal): $9.000.000 [auto desde Nómina]');
+  });
+
+  it('le muestra al modelo el MISMO equilibrio que ve el dueño (el de la carta), aparte del realizado', () => {
+    const p = buildFinancialAnalysisUserPrompt(base);
+    expect(p).toContain('Punto de equilibrio DE LA CARTA (el que ve el dueño): ventas necesarias $27.000.000 · cobertura 118.5% · de cada $100 vendidos quedan $67 · 18 opciones de la carta ponderadas por lo vendido');
+    expect(p).toContain('el que más deja: Limonada (82.0%); el que menos: Burro de pollo (51.0%)');
+    expect(p).toContain('Punto de equilibrio REALIZADO (con la merma, cortesías, faltantes y fletes del mes): $28.800.000 · cobertura 111.0%');
+    expect(p).toContain('640 ventas cobradas');
+    expect(FINANCIAL_ANALYSIS_SYSTEM).toContain('"tono" se decide con la cobertura del equilibrio DE LA CARTA');
+  });
+
+  it('solo muestra descuentos y domicilios cuando los hubo, y aclara que el domicilio no es ingreso', () => {
+    const sin = buildFinancialAnalysisUserPrompt(base);
+    expect(sin).not.toContain('Ventas a precio de lista');
+    expect(sin).not.toContain('Domicilios cobrados');
+    const con = buildFinancialAnalysisUserPrompt({
+      ...base,
+      grossRevenue: 33_000_000,
+      discountTotal: 1_000_000,
+      deliveryCollected: 350_000,
+      deliveryOrderCount: 50,
+    });
+    expect(con).toContain('- Ventas a precio de lista: $33.000.000');
+    expect(con).toContain('- Descuentos y promociones (ya restados): $1.000.000');
+    expect(con).toContain('- Domicilios cobrados a clientes: $350.000 en 50 pedidos (NO es ingreso');
+  });
+
+  it('rotula como provisional el COGS estimado o parcial y las pérdidas estimadas', () => {
+    const parcial = buildFinancialAnalysisUserPrompt({ ...base, cogsPartial: true, cogsEstimated: true });
+    expect(parcial).toContain('[parcial: parte de lo vendido no tiene costo cargado → el COGS está SUBESTIMADO');
+    const estimado = buildFinancialAnalysisUserPrompt({ ...base, cogsEstimated: true });
+    expect(estimado).toContain('[estimado en parte: ventas sin stock costeadas al último precio');
+    const perdidas = buildFinancialAnalysisUserPrompt({
+      ...base,
+      otherLosses: [
+        { label: 'Merma', amount: 50_000, estimated: true },
+        { label: 'Faltantes', amount: 20_000 },
+        { label: 'Reembolsos', amount: 0 },
+      ],
+    });
+    expect(perdidas).toContain('    · Merma: $50.000 [estimado]');
+    expect(perdidas).toContain('    · Faltantes: $20.000\n');
+    expect(perdidas).not.toContain('Reembolsos');
+  });
+
+  it('cuando la carta no deja ganancia o no se puede calcular, lo dice en vez de inventar una meta', () => {
+    const sinMargen = buildFinancialAnalysisUserPrompt({
+      ...base,
+      catalogBreakEven: { ...base.catalogBreakEven, marginPct: -0.1, target: null },
+    });
+    expect(sinMargen).toContain('los productos no dejan ganancia');
+    const sinCosto = buildFinancialAnalysisUserPrompt({
+      ...base,
+      catalogBreakEven: { ...base.catalogBreakEven, marginPct: null, target: null, coverage: null },
+    });
+    expect(sinCosto).toContain('todavía no se puede calcular');
+    const sinContribucion = buildFinancialAnalysisUserPrompt({ ...base, breakEven: null, breakEvenCoverage: null });
+    expect(sinContribucion).toContain('Punto de equilibrio REALIZADO: no existe este mes');
+  });
+
+  it('marca el costo fijo que todavía no tiene pago como estimado, para que el modelo no lo lea como dato', () => {
+    const p = buildFinancialAnalysisUserPrompt({
+      ...base,
+      fixedCosts: [
+        { name: 'Servicios', category: 'Servicios', monthlyAmount: 900_000, isPayroll: false, isEstimated: true },
+        { name: 'Arriendo', category: 'Local', monthlyAmount: 1_680_000, isPayroll: false, isEstimated: false },
+      ],
+    });
+    expect(p).toContain('· Servicios (Servicios): $900.000 [estimado: todavía sin pago registrado este mes]');
+    expect(p).toContain('· Arriendo (Local): $1.680.000\n');
+    expect(p).not.toContain('Arriendo (Local): $1.680.000 [estimado');
   });
 
   it('omite break-even y cobertura cuando no se pueden calcular', () => {
@@ -196,7 +288,7 @@ describe('buildFinancialAnalysisUserPrompt', () => {
 
   it('topa la cobertura al 200% (un mes atípico no debe distorsionar el análisis)', () => {
     const p = buildFinancialAnalysisUserPrompt({ ...base, breakEvenCoverage: 9.5 });
-    expect(p).toContain('Cobertura del break-even: 200.0%');
+    expect(p).toContain('$28.800.000 · cobertura 200.0%');
   });
 
   it('omite la tendencia con un solo punto y la incluye con varios', () => {

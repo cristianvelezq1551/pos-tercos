@@ -157,6 +157,7 @@ export const FINANZAS: GuideChapter = {
             ['− Cortesías', 'Lo regalado, a costo.'],
             ['− Reembolsos', 'Comida preparada y devuelta, a costo.'],
             ['− Merma', 'Lo que se tiró, a costo.'],
+            ['− Faltantes', 'Lo que apareció de menos al contar, a costo. Nadie lo declaró: salió del conteo físico.'],
             ['− Domicilios de compra', 'Lo que cobraron los proveedores por traerte la mercancía.'],
             ['− Compromisos pagados', 'Arreglos y servicios que pagaste este mes.'],
             ['Resultado neto', 'Lo que quedó.'],

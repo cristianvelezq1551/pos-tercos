@@ -4804,6 +4804,85 @@ borrado el combo del menú como algo que el cliente puede pedir.
 ---
 
 
+## 7.v68 El estado financiero muestra lo que se pagó, no lo que se configuró (2026-09-11)
+
+> Fase 1 del `PLAN-ESTADO-FINANCIERO-2026-09.md` (plan de 5 fases nacido de
+> una auditoría completa del módulo sobre los datos reales de prod). El dueño
+> pidió trabajar "muy estricto y cuidadoso": cada fase va sola, con su prueba
+> de que no cambió nada fuera de su alcance. Verificado: typecheck 13/13 sin
+> caché, lint 0, domain 629, admin 350 (+2), api unit 204, e2e de la fase
+> 4 suites / 47 (+3). Sin migración, sin tocar el motor de costos.
+
+### Qué estaba mal
+`getEffectiveForWindow` devolvía siempre `fixed_costs.amount`, el monto de la
+ficha. El recibo real de la luz **nunca llegaba al estado**, y como el monto no
+tiene historial, corregirlo en la ficha **reescribía todos los meses
+anteriores**. La guía (`flows/costo-fijo.ts`) decía tres veces lo contrario:
+"solo entra lo pagado". En prod, "Servicios" está en $900.000 redondo.
+
+### La regla
+- **Cada línea de costo fijo muestra el monto PAGADO del período si ya hay
+  pago registrado; si no, el configurado, marcado `isEstimated`.** Anual: el
+  pago de enero ÷ 12. Puntual: el pago de su propio mes.
+- **La clave del período es `(year, month1)` del estado**, la MISMA que usan
+  `markPaid` y el panel de pendientes. No se deriva de `paidAt`: la fecha en
+  que salió la plata no dice a qué mes corresponde el gasto. Un puntual busca
+  su pago bajo el mes de su fecha, porque con corte del mes de negocio ≠ 1
+  puede caer en una ventana rotulada con otro mes.
+- **Un mes ya pagado queda fijo aunque la ficha cambie después**: el historial
+  de montos sale de los pagos, no hace falta versionar la ficha.
+- La nómina auto nunca es estimada (sale de los días trabajados).
+- El rótulo "estimado" va en la tarjeta del P&G y en el prompt del análisis
+  IA, con el mismo criterio que el COGS estimado: un estimado presentado como
+  exacto es el mismo error que el $0.
+
+### Dónde
+`FixedCostsService.getEffectiveForWindow(windowStart, windowEnd, period)` +
+`loadPaidAmounts` + `paymentPeriodFor` (espeja `enumeratePeriodsForCost`);
+`FixedCostLine.isEstimated` (types); `PnlCard` (rótulo + nota al pie);
+`FinancialAnalysisInput.fixedCosts[].isEstimated` (prompt). Guía: el flujo del
+costo fijo corregido y la fila "Faltantes" que faltaba en la tabla del estado.
+
+### El análisis de IA lee lo mismo que la pantalla (pedido del dueño)
+`FinancialAnalysisInput` es un **espejo de `MonthlyFinancialStatement`**: ventas
+a precio de lista y descuentos (solo si los hubo), ingresos netos sin domicilio,
+COGS con su marca de estimado/parcial, fijos con `isEstimated`, las 7 pérdidas
+con su marca, neto, margen de contribución, **los dos equilibrios** (el de la
+CARTA, que es el que ve el dueño, y el realizado), domicilios cobrados como
+plata de terceros, y cuántas ventas hubo. Antes el modelo veía `ingresos − COGS
+− fijos` y opinaba sobre el equilibrio realizado mientras la pantalla mostraba
+el de la carta: dos lecturas del mismo mes. El prompt de sistema explica cada
+línea y **decide el tono con la cobertura del equilibrio de la carta**. Regla:
+si la pantalla gana una línea, el prompt la gana en el mismo cambio.
+
+### Lo que encontró la auditoría remota (y quedó corregido)
+`scripts/auditoria-estado-financiero.mjs` arma por HTTP, contra un API
+desplegado (QA o prod), un panorama completo del mes —catálogo, compra con
+flete, ventas con descuento, anulación con PIN, cortesía, merma, faltante de
+conteo, costos fijos en los cuatro sabores, compromisos— y verifica **70
+comprobaciones** por DELTA contra una contabilidad sombra, más el análisis de
+IA real. Dos cosas salieron de correrlo:
+- **El análisis de IA respondía 500 cuando el modelo no devolvía JSON puro**
+  (texto alrededor, o truncado: con el espejo del estado, 600 tokens de salida
+  se quedaban cortos). Un 500 además abre un Issue de alerta por algo que no es
+  un error del sistema. Ahora `extractJsonObject` (domain, puro, 5 tests) saca
+  el objeto tolerando cercas y prosa, hay **un reintento**, el tope subió a
+  1.200 tokens, y el fallo definitivo es un **502** con mensaje para la persona.
+- **El motor de costos cachea 60 s**: una auditoría que lee el estado justo
+  después de vender ve el COGS viejo. El script espera a que la caché venza
+  (`estadoCuando`); no es un bug, es la staleness deliberada de §7.v18.
+  ⚠️ Un conteo hecho por el DUEÑO se aplica en el acto; solo el del cocinero
+  queda pendiente de aprobación.
+
+### Lo que sigue (mismo plan)
+Fase 2: nada entra al inventario a $0 (sobrantes de conteo y ajustes manuales
+sin precio se valoran al último costo conocido, marcados estimado; un
+subproducto entra por Producir). Fase 3: frecuencia `VARIABLE` (publicidad,
+aseo: varios pagos por mes, sin "pendiente"). Fase 4: insumos de operación
+(el aceite se gasta cuando el cocinero registra el cambio del bidón, no por
+porción ni como merma).
+
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

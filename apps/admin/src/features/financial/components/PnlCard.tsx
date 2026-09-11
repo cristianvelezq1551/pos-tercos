@@ -62,7 +62,13 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         ) : (
           <ul className="space-y-1">
             {recurring.map((c, idx) => (
-              <CostLi key={`${c.fixedCostId ?? 'payroll'}-${idx}`} name={c.name} category={c.category} amount={c.monthlyAmount} />
+              <CostLi
+                key={`${c.fixedCostId ?? 'payroll'}-${idx}`}
+                name={c.name}
+                category={c.category}
+                amount={c.monthlyAmount}
+                estimated={c.isEstimated}
+              />
             ))}
           </ul>
         )}
@@ -71,10 +77,13 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         {/* La pregunta que aparece al leer esta lista: "¿pero si no lo pagué?".
             El resultado del mes cuenta lo que el mes CONSUMIÓ, se haya pagado o
             no — si no, un mes se vería barato solo por deber. Lo que falta por
-            pagar (incluidos meses anteriores) vive en Finanzas → Pagos. */}
+            pagar (incluidos meses anteriores) vive en Finanzas → Pagos. El MONTO
+            sí depende del pago: con pago registrado es lo que salió de verdad;
+            sin pago, el de la ficha, y se rotula "estimado". */}
         <p className="pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
           Cada costo pesa en el mes que corresponde, esté pagado o no: así el resultado dice si el
-          mes dio ganancia, no si alcanzaste a pagar. Lo que queda debiendo —de este mes o de
+          mes dio ganancia, no si alcanzaste a pagar. Si ya lo pagaste, muestra lo que pagaste; si
+          no, el monto de la ficha marcado como estimado. Lo que queda debiendo —de este mes o de
           anteriores— está en Finanzas → Pagos.
         </p>
       </div>
@@ -85,7 +94,13 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
           <p className="caps text-[0.625rem] text-muted-foreground">Gastos únicos del mes</p>
           <ul className="space-y-1">
             {oneTime.map((c, idx) => (
-              <CostLi key={`${c.fixedCostId ?? 'one'}-${idx}`} name={c.name} category={c.category} amount={c.monthlyAmount} />
+              <CostLi
+                key={`${c.fixedCostId ?? 'one'}-${idx}`}
+                name={c.name}
+                category={c.category}
+                amount={c.monthlyAmount}
+                estimated={c.isEstimated}
+              />
             ))}
           </ul>
           <div className="my-2 border-t border-border" />
@@ -119,12 +134,30 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
   );
 }
 
-function CostLi({ name, category, amount }: { name: string; category: string; amount: number }) {
+function CostLi({
+  name,
+  category,
+  amount,
+  estimated,
+}: {
+  name: string;
+  category: string;
+  amount: number;
+  estimated: boolean;
+}) {
   return (
     <li className="flex items-baseline justify-between gap-3 text-foreground">
       <span className="min-w-0 truncate">
         {name}
         <span className="ml-1 text-xs text-muted-foreground">· {category}</span>
+        {estimated ? (
+          <span
+            className="ml-1.5 rounded border border-warning-border bg-warning-bg/30 px-1.5 py-px text-[0.625rem] text-warning"
+            title="Todavía no registraste el pago de este mes: se muestra el monto de la ficha. Al marcarlo pagado, aparece lo que pagaste."
+          >
+            estimado
+          </span>
+        ) : null}
       </span>
       <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
         −{formatCop(amount)}

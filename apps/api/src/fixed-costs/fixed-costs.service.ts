@@ -133,17 +133,30 @@ export class FixedCostsService {
    * Costos fijos activos cuya vigencia (startedAt/endedAt) se cruza con la
    * ventana [windowStart, windowEnd]. Se usa con la ventana del "mes del
    * negocio" (21–20, etc.) del estado financiero — NO el mes calendario — para
-   * que la vigencia coincida con el período que muestra la pantalla. Mensual =
-   * monto tal cual; Anual = ÷12. El monto NO se prorratea: cuenta UNA vez por
-   * ventana.
+   * que la vigencia coincida con el período que muestra la pantalla. El monto
+   * NO se prorratea: cuenta UNA vez por ventana.
+   *
+   * El MONTO de cada línea es el que se PAGÓ para ese período si ya hay pago
+   * registrado (anual ÷ 12), y el configurado en la ficha —marcado
+   * `isEstimated`— si todavía no. Antes salía siempre el configurado: el recibo
+   * de la luz nunca llegaba al estado, y corregir el monto en la ficha
+   * reescribía todos los meses anteriores. Con el pago como fuente, un mes ya
+   * pagado queda fijo aunque la ficha cambie después.
+   *
+   * `period` es el (año, mes) con el que el estado financiero rotula la
+   * ventana — la MISMA clave que usa `markPaid` y el panel de pendientes—, no
+   * se deriva de `paidAt`: la fecha en que salió la plata no dice a qué mes
+   * corresponde el gasto.
    *
    * startedAt/endedAt son fecha-solo (medianoche UTC): la ventana local se
    * convierte a límites fecha-solo — sin esto, un gasto puntual fechado el
    * día 1 caía en el mes ANTERIOR y desaparecía del suyo.
    */
-  async getEffectiveForWindow(windowStart: Date, windowEnd: Date): Promise<
-    Array<{ id: string; name: string; category: string; monthlyAmount: number; isOneTime: boolean }>
-  > {
+  async getEffectiveForWindow(
+    windowStart: Date,
+    windowEnd: Date,
+    period: { year: number; month1: number },
+  ): Promise<EffectiveFixedCostLine[]> {
     const startDay = utcDateOfLocalDay(windowStart);
     const endDay = utcDateOfLocalDay(windowEnd);
     const rows = await this.prisma.fixedCost.findMany({
@@ -154,13 +167,51 @@ export class FixedCostsService {
       },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      monthlyAmount: r.frequency === 'ANNUAL' ? Number(r.amount) / 12 : Number(r.amount),
-      isOneTime: r.frequency === 'ONE_TIME',
-    }));
+    const paidByCost = await this.loadPaidAmounts(rows, period);
+    return rows.map((r) => {
+      const paid = paidByCost.get(r.id);
+      const base = paid ?? Number(r.amount);
+      return {
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        monthlyAmount: r.frequency === 'ANNUAL' ? base / 12 : base,
+        isOneTime: r.frequency === 'ONE_TIME',
+        isEstimated: paid === undefined,
+      };
+    });
+  }
+
+  /**
+   * Monto pagado por costo para SU período dentro de la ventana, o ausente si
+   * no hay pago. El período de cada costo espeja `enumeratePeriodsForCost`:
+   * mensual = el del estado; anual = enero de ese año (único período del
+   * año); puntual = el mes de su propia fecha (con corte del mes de negocio
+   * ≠ 1 puede caer en una ventana rotulada con otro mes, y el pago vive bajo
+   * el mes de la fecha).
+   */
+  private async loadPaidAmounts(
+    rows: DbFixedCost[],
+    period: { year: number; month1: number },
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (rows.length === 0) return out;
+    const wanted = new Map<string, string>();
+    const years = new Set<number>();
+    for (const r of rows) {
+      const p = paymentPeriodFor(r, period);
+      wanted.set(`${r.id}|${p.year}|${p.month}`, r.id);
+      years.add(p.year);
+    }
+    const payments = await this.prisma.fixedCostPayment.findMany({
+      where: { fixedCostId: { in: rows.map((r) => r.id) }, periodYear: { in: [...years] } },
+      select: { fixedCostId: true, periodYear: true, periodMonth: true, amount: true },
+    });
+    for (const p of payments) {
+      const costId = wanted.get(`${p.fixedCostId}|${p.periodYear}|${p.periodMonth}`);
+      if (costId !== undefined) out.set(costId, Number(p.amount));
+    }
+    return out;
   }
 
   // ==================================================================
@@ -514,6 +565,31 @@ function enumeratePeriodsForCost(
     result.push({ year: y, month: 1 });
   }
   return result;
+}
+
+/** Una línea del estado financiero: lo que pesa este costo en la ventana. */
+export interface EffectiveFixedCostLine {
+  id: string;
+  name: string;
+  category: string;
+  /** Pagado del período (anual ÷ 12) o, sin pago, el monto configurado. */
+  monthlyAmount: number;
+  isOneTime: boolean;
+  /** `true` = sin pago registrado para el período: el monto es el de la ficha. */
+  isEstimated: boolean;
+}
+
+/** (año, mes) bajo el que `markPaid` guarda el pago de este costo para la
+ *  ventana rotulada `period`. Espeja `enumeratePeriodsForCost`. */
+function paymentPeriodFor(
+  cost: DbFixedCost,
+  period: { year: number; month1: number },
+): { year: number; month: number } {
+  if (cost.frequency === 'ANNUAL') return { year: period.year, month: 1 };
+  if (cost.frequency === 'ONE_TIME' && cost.startedAt) {
+    return { year: cost.startedAt.getUTCFullYear(), month: cost.startedAt.getUTCMonth() + 1 };
+  }
+  return { year: period.year, month: period.month1 };
 }
 
 /** "Arriendo · mayo 2026" (MONTHLY/PUNTUAL) o "Tasa DIAN · 2026" (ANNUAL). */
