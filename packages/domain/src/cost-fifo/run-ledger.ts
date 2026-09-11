@@ -45,6 +45,15 @@ export interface LedgerMovement {
   type: string;
   /** Costo por unidad en entradas (PURCHASE/INITIAL/ajuste+). Null = desconocido. */
   unitCost: number | null;
+  /**
+   * El `unitCost` se ESTIMÓ al escribir (último precio conocido) porque la
+   * entrada llegó sin precio: sobrante de conteo, ajuste manual sin costo. El
+   * lote que crea queda marcado y todo lo que salga de él cuenta como
+   * `estimatedQty`, igual que una venta sin stock: la pantalla lo rotula
+   * "estimado" en vez de darlo por exacto. Opcional: las filas anteriores a
+   * §7.v70 no lo traen.
+   */
+  unitCostEstimated?: boolean;
   sourceType: string | null;
   sourceId: string | null;
   entityType: LedgerEntityType;
@@ -163,12 +172,16 @@ export interface Lot {
   qty: number;
   unitCost: number | null;
   createdAt: string;
+  /** Costo estimado al escribir la entrada (ver `LedgerMovement.unitCostEstimated`).
+   *  Solo se escribe cuando es `true` para no alterar snapshots ni la prueba de oro. */
+  estimated?: boolean;
 }
 interface Draw {
   qty: number;
   unitCost: number | null;
   movementId: string;
   createdAt: string;
+  estimated?: boolean;
 }
 
 /**
@@ -190,6 +203,7 @@ export interface ShrinkageDraw {
   unitCost: number | null;
   countId: string;
   consumedAt: string;
+  estimated?: boolean;
 }
 
 /**
@@ -630,22 +644,40 @@ export function runLedgerFifo(
   const consumeFifo = (
     key: string,
     qtyNeeded: number,
-  ): { cost: number; unknownQty: number; draws: Draw[]; shortfall: number } => {
+  ): {
+    cost: number;
+    unknownQty: number;
+    draws: Draw[];
+    shortfall: number;
+    /** Unidades que salieron de lotes con costo ESTIMADO (y su costo). El costo
+     *  ya está dentro de `cost`; esto solo dice cuánto de él es provisional. */
+    estimatedQty: number;
+    estimatedCost: number;
+  } => {
     const q = queues.get(key) ?? [];
     let remaining = qtyNeeded;
     let cost = 0;
     let unknownQty = 0;
+    let estimatedQty = 0;
+    let estimatedCost = 0;
     const draws: Draw[] = [];
     while (remaining > 0 && q.length > 0) {
       const lot = q[0]!;
       const take = Math.min(remaining, lot.qty);
       if (lot.unitCost === null) unknownQty += take;
-      else cost += take * lot.unitCost;
+      else {
+        cost += take * lot.unitCost;
+        if (lot.estimated) {
+          estimatedQty += take;
+          estimatedCost += take * lot.unitCost;
+        }
+      }
       draws.push({
         qty: take,
         unitCost: lot.unitCost,
         movementId: lot.movementId,
         createdAt: lot.createdAt,
+        ...(lot.estimated ? { estimated: true } : {}),
       });
       lot.qty -= take;
       remaining -= take;
@@ -658,6 +690,8 @@ export function runLedgerFifo(
       unknownQty: roundCost(unknownQty),
       draws,
       shortfall: roundCost(shortfall),
+      estimatedQty: roundCost(estimatedQty),
+      estimatedCost: roundCost(estimatedCost),
     };
   };
 
@@ -810,6 +844,7 @@ export function runLedgerFifo(
         qty: ret,
         unitCost: d.unitCost,
         createdAt: d.createdAt,
+        ...(d.estimated ? { estimated: true } : {}),
       });
       returnedQty += ret;
       if (d.unitCost === null) returnedUnknown += ret;
@@ -1003,12 +1038,16 @@ export function runLedgerFifo(
       let totalCost = 0;
       let totalUnknownQty = 0;
       let totalConsumedQty = 0;
+      // Si algún insumo salió de un lote ESTIMADO (entrada valorada al
+      // escribir), el subproducto nace estimado también.
+      let algunEstimado = false;
       // Id de la tanda: a él se le cuelgan las deudas de sus insumos.
       const runId = e.produces.sourceId ?? e.produces.id;
       for (const c of e.consumes) {
         const cKey = keyOf(c);
         if (!cKey) continue;
-        const { cost, unknownQty, draws, shortfall } = consumeFifo(cKey, Math.abs(c.delta));
+        const { cost, unknownQty, draws, shortfall, estimatedQty: lotEstQty } = consumeFifo(cKey, Math.abs(c.delta));
+        if (lotEstQty > 0) algunEstimado = true;
         // Solo si esta tanda se anula (pre-scan acotado, igual que ventas y
         // mermas): guardar los draws de TODAS las producciones históricas
         // retendría un objeto por insumo consumido, para siempre.
@@ -1021,6 +1060,9 @@ export function runLedgerFifo(
         // Producir con un insumo que no estaba cargado NO lo vuelve gratis: se
         // estima igual que la venta, o el subproducto nacería barato y ese
         // descuento se arrastraría a todo lo que se venda con él.
+        // El faltante estimado NO marca la tanda: esa estimación ya deja deuda
+        // que la compra corrige (§7.v32) y cambiar su lectura alteraría
+        // historias viejas. Solo hereda la marca de un lote estimado al escribir.
         const est = registerShortfall(cKey, c, e.produces.createdAt.toISOString(), shortfall, 'production', runId);
         totalCost += cost + est.estimatedCost;
         totalUnknownQty += unknownQty + est.extraUnknown;
@@ -1038,7 +1080,7 @@ export function runLedgerFifo(
           addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: null, createdAt: iso });
         } else if (totalUnknownQty <= 0) {
           // Todo el insumo tenía costo → lote con costo conocido.
-          addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: roundCost(totalCost / posQty), createdAt: iso });
+          addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: roundCost(totalCost / posQty), createdAt: iso, ...(algunEstimado ? { estimated: true } : {}) });
         } else if (totalCost <= 0) {
           // Ningún insumo tenía costo → lote desconocido (NUNCA asumimos $0).
           addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: null, createdAt: iso });
@@ -1053,9 +1095,9 @@ export function runLedgerFifo(
           const knownQ = roundCost(posQty - unknownQ);
           if (knownQ <= 0) {
             // Borde de redondeo: el costo conocido es marginal → repartir sobre todo.
-            addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: roundCost(totalCost / posQty), createdAt: iso });
+            addLot(posKey, { movementId: e.produces.id, qty: posQty, unitCost: roundCost(totalCost / posQty), createdAt: iso, ...(algunEstimado ? { estimated: true } : {}) });
           } else {
-            addLot(posKey, { movementId: e.produces.id, qty: knownQ, unitCost: roundCost(totalCost / knownQ), createdAt: iso });
+            addLot(posKey, { movementId: e.produces.id, qty: knownQ, unitCost: roundCost(totalCost / knownQ), createdAt: iso, ...(algunEstimado ? { estimated: true } : {}) });
             if (unknownQ > 0) {
               addLot(posKey, { movementId: e.produces.id, qty: unknownQ, unitCost: null, createdAt: iso });
             }
@@ -1317,7 +1359,7 @@ export function runLedgerFifo(
         while (restante > 1e-9 && pool.length > 0) {
           const ultimo = pool[pool.length - 1]!;
           const toma = Math.min(ultimo.qty, restante);
-          devueltos.push({ movementId: m.id, qty: toma, unitCost: ultimo.unitCost, createdAt: iso });
+          devueltos.push({ movementId: m.id, qty: toma, unitCost: ultimo.unitCost, createdAt: iso, ...(ultimo.estimated ? { estimated: true } : {}) });
           attributeToLoss(
             'faltante',
             ultimo.countId,
@@ -1344,13 +1386,16 @@ export function runLedgerFifo(
           qty: restante,
           unitCost: m.unitCost,
           createdAt: iso,
+          ...(m.unitCostEstimated && m.unitCost !== null ? { estimated: true } : {}),
         });
       }
       continue;
     }
 
-    // Consumo (SALE, WASTE, MANUAL_ADJUSTMENT-).
-    const { cost, unknownQty, draws, shortfall } = consumeFifo(key, -delta);
+    // Consumo (SALE, WASTE, MANUAL_ADJUSTMENT-). Lo que salga de un lote
+    // ESTIMADO se declara estimado en la venta o la pérdida que lo consume.
+    const { cost, unknownQty, draws, shortfall, estimatedQty: lotEstQty, estimatedCost: lotEstCost } =
+      consumeFifo(key, -delta);
     if (m.type === 'SALE' && m.sourceId) {
       const { estimatedCost, estimatedQty, extraUnknown } = registerShortfall(
         key,
@@ -1378,7 +1423,9 @@ export function runLedgerFifo(
         roundCost(cost + estimatedCost),
         -delta,
         roundCost(unknownQty + extraUnknown),
-        estimatedQty,
+        // Sin lote estimado el valor es EXACTAMENTE el de siempre (sin volver a
+        // redondear): la prueba de oro lo exige al decimal.
+        lotEstQty > 0 ? roundCost(estimatedQty + lotEstQty) : estimatedQty,
       );
     } else if (m.type === 'WASTE') {
       // Merma sobre inventario en negativo: estima igual que la venta. Tirar un
@@ -1400,7 +1447,7 @@ export function runLedgerFifo(
         iso,
         cost + est.estimatedCost,
         unknownQty + est.extraUnknown,
-        est.estimatedCost,
+        est.estimatedCost + lotEstCost,
       );
     } else if (m.sourceType === 'cortesia') {
       // Cortesía AUTORIZADA: producto regalado → costo FIFO real (no es venta
@@ -1427,7 +1474,7 @@ export function runLedgerFifo(
         iso,
         cost + est.estimatedCost,
         unknownQty + est.extraUnknown,
-        est.estimatedCost,
+        est.estimatedCost + lotEstCost,
       );
     } else if (m.sourceType === 'stock_count') {
       // FALTANTE de conteo: al contar físicamente apareció menos de lo que
@@ -1443,7 +1490,7 @@ export function runLedgerFifo(
       const pool = shrinkageDraws.get(key) ?? [];
       const countId = m.sourceId ?? m.id;
       for (const d of draws) {
-        pool.push({ qty: d.qty, unitCost: d.unitCost, countId, consumedAt: iso });
+        pool.push({ qty: d.qty, unitCost: d.unitCost, countId, consumedAt: iso, ...(d.estimated ? { estimated: true } : {}) });
       }
       shrinkageDraws.set(key, pool);
       attributeToLoss(
@@ -1452,7 +1499,7 @@ export function runLedgerFifo(
         iso,
         cost + est.estimatedCost,
         unknownQty + est.extraUnknown,
-        est.estimatedCost,
+        est.estimatedCost + lotEstCost,
       );
     }
     // Otro MANUAL_ADJUSTMENT- no se atribuye: ese lo teclea un admin para
@@ -1479,6 +1526,7 @@ export function runLedgerFifo(
         qty: roundCost(l.qty),
         unitCost: l.unitCost,
         createdAt: l.createdAt,
+        ...(l.estimated ? { estimated: true } : {}),
       });
     }
     out.remaining.set(key, {

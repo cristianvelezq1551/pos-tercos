@@ -39,6 +39,9 @@ export const InventoryMovementSchema = z.object({
   delta: z.number(),
   /** Costo por unidad de stock (solo entradas). Base del costeo FIFO. */
   unitCost: z.number().nullable().optional(),
+  /** `true` si `unitCost` se estimó al escribir (entrada sin precio). Opcional:
+   *  la API y el admin se despliegan por separado. */
+  unitCostEstimated: z.boolean().optional(),
   type: InventoryMovementTypeEnum,
   sourceType: z.string().nullable(),
   sourceId: z.string().nullable(),

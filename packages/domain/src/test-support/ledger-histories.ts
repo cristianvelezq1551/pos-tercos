@@ -23,6 +23,12 @@ export interface HistoryOptions {
   allowShortfall: boolean;
   /** Permitir entradas SIN costo conocido (cold start, producción sin costo). */
   allowUnknownCost: boolean;
+  /**
+   * Marcar algunas entradas costeadas como ESTIMADAS (`unitCostEstimated`,
+   * §7.v70). Apagado por defecto y consume el RNG solo cuando está prendido,
+   * para que la prueba de oro —generada sin esta opción— siga byte-idéntica.
+   */
+  allowEstimatedEntries?: boolean;
   /** Incluir tandas de producción (insumos → subproducto). */
   includeProduction: boolean;
   /**
@@ -158,10 +164,12 @@ export function generateHistory(rng: Rng, opts: HistoryOptions): GeneratedHistor
     e.stock += qty;
     if (unitCost !== null) valueIn += qty * unitCost;
     else unknownUnitsIn += qty;
+    const estimada = opts.allowEstimatedEntries === true && unitCost !== null && rng.chance(0.3);
     push({
       delta: qty,
       type: rng.chance(0.3) ? 'INITIAL' : 'PURCHASE',
       unitCost,
+      ...(estimada ? { unitCostEstimated: true } : {}),
       sourceType: null,
       sourceId: null,
       ...refs(e),

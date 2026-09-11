@@ -33,13 +33,15 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         <Row label="− COGS (costo real FIFO)" value={`−${formatCop(s.cogs)}`} muted />
         {s.cogsPartial ? (
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            Parte del costo se vendió sin lote costeado a FIFO (carga las facturas de compra). El
-            COGS está subestimado y la ganancia mostrada es mayor a la real.
+            Parte de lo vendido no tiene ningún precio con qué costearse: salió de inventario que
+            entró sin valor y sin precio de referencia (carga la factura de compra, o indica el
+            costo al ajustar). El COGS está subestimado y la ganancia mostrada es mayor a la real.
           </p>
         ) : s.cogsEstimated ? (
           <p className="rounded-md border border-warning-border bg-warning-bg/30 px-3 py-2 text-xs text-warning">
-            Parte del COGS se costeó con un <strong>estimado</strong> (ventas forzadas sin stock).
-            El margen es aproximado hasta que subas la factura de compra que confirma el precio.
+            Parte del COGS se costeó con un <strong>estimado</strong>: ventas sin stock, sobrantes
+            de conteo o ajustes que entraron sin precio y se valoraron al último costo conocido. El
+            margen es aproximado hasta que la factura de compra confirme el precio.
           </p>
         ) : null}
         <div className="my-2 border-t border-border" />
