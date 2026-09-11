@@ -272,7 +272,7 @@ CÓMO LEER EL ESTADO (son las mismas líneas que muestra la pantalla):
 - "Ingresos" ya vienen netos de descuentos y SIN el cobro de domicilios: esa plata es del repartidor y solo pasa por la caja. Nunca la cuentes como venta ni como ingreso.
 - "COGS" es el costo real de lo vendido, lote por lote (FIFO). "Margen bruto" = ingresos − COGS. Si el COGS viene marcado "estimado" o "parcial", el margen es provisional y lo dices con esa palabra.
 - Los costos fijos son RECURRENTES (nómina, arriendo, servicios) y son la base del punto de equilibrio. Una línea marcada "estimado" es el monto configurado porque ese mes todavía no tiene pago registrado: menciónala como estimado, nunca como dato cerrado.
-- Las "otras pérdidas" van debajo del margen bruto y NO entran al COGS: merma (alguien la declaró), faltantes (lo que apareció de menos al contar; nadie lo declaró), cortesías, reembolsos, fletes de compra, compromisos pagados y gastos únicos. Los gastos únicos y los compromisos NO entran al equilibrio: no se repiten.
+- Las "otras pérdidas" van debajo del margen bruto y NO entran al COGS: merma (alguien la declaró), faltantes (lo que apareció de menos al contar; nadie lo declaró), cortesías, reembolsos, fletes de compra, compromisos pagados y gastos únicos. Los gastos únicos y los compromisos pagados SÍ entran a la base del equilibrio: también hay que pagarlos con las ventas del mes.
 - "Margen de contribución" = ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes: lo que queda de cada venta para pagar lo fijo.
 - Hay DOS puntos de equilibrio y el dueño ve el de la CARTA: las ventas necesarias calculadas con lo que deja cada producto por precio y receta, que no se mueve por lo bueno o lo malo que haya estado el mes. El "realizado" usa el margen de contribución del mes: sirve solo para explicar la brecha entre lo que la carta promete y lo que de verdad quedó (merma, cortesías, faltantes, fletes).
 - Si el mes tiene pocas ventas, dilo antes de sacar conclusiones de porcentajes: cuatro tickets y una merma no son una tendencia.
@@ -332,6 +332,8 @@ export interface FinancialAnalysisInput {
    */
   otherLosses: ReadonlyArray<{ label: string; amount: number; estimated?: boolean }>;
   netResult: number;
+  /** Lo que el mes tiene que cubrir: fijos + gastos únicos + compromisos pagados. */
+  breakEvenBase: number;
   /** Ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes. */
   contributionMargin: number;
   contributionMarginPct: number | null;
@@ -368,13 +370,14 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
   const lines: string[] = [
     `Estado financiero del mes (${i.monthLabel}) — ${i.salesCount} ventas cobradas:`,
     ...incomeAndCogsLines(i, cop, pct),
-    `- Costos fijos recurrentes (base del equilibrio): ${cop(i.totalFixed)}`,
+    `- Costos fijos recurrentes: ${cop(i.totalFixed)}`,
     ...fixedCostLines(i.fixedCosts, cop),
     ...lossLines(i.otherLosses, cop),
     `- Resultado neto: ${cop(i.netResult)}`,
     i.contributionMarginPct === null
       ? `- Margen de contribución: ${cop(i.contributionMargin)} (sin ingresos, no hay porcentaje)`
       : `- Margen de contribución: ${cop(i.contributionMargin)} (${pct(i.contributionMarginPct)})`,
+    `- Base del equilibrio (fijos + gastos únicos + compromisos pagados del mes): ${cop(i.breakEvenBase)}`,
     ...catalogBreakEvenLines(i.catalogBreakEven, cop, pct),
     realizedBreakEvenLine(i, cop, pct),
   ];

@@ -4883,6 +4883,63 @@ aseo: varios pagos por mes, sin "pendiente"). Fase 4: insumos de operación
 porción ni como merma).
 
 
+## 7.v69 El equilibrio cubre todo lo que hay que pagar, y la corrección del 9 de septiembre (2026-09-11)
+
+> Dos decisiones del dueño mirando el estado financiero en prod. Verificado:
+> typecheck 13/13, lint 0, domain 638, admin 350, e2e financial-reports 21 +
+> math-invariants + devengado-vs-pagado. Sin migración.
+
+### La meta de ventas ignoraba lo que también hay que pagar
+El punto de equilibrio se calculaba solo con los fijos RECURRENTES; los gastos
+únicos y los compromisos quedaban fuera ("no se repiten"). El dueño lo vio:
+cargó el aceite y el aseo, el neto bajó, y la meta de ventas siguió igual "como
+si no tuviera en cuenta esos gastos". Su regla: *"al final el aceite y el aseo
+sí terminan siendo gastos del mes que requieren ser pagados"*.
+
+- **`breakEvenBase = totalFixed + oneTimeCost + payablesPaidCost`**, campo nuevo
+  del estado, y es la base de los DOS equilibrios (realizado y de la carta).
+  `computeBreakEven` no cambió: quien llama decide qué entra.
+- Un gasto puntual sube la meta de ESE mes y de ninguno más. Es lo que se
+  quiere leer: "cuánto tengo que vender este mes para pagar todo".
+- La tarjeta muestra "Hay que cubrir" con la base, y el prompt de la IA la
+  recibe y ya no dice que los únicos "no entran al equilibrio".
+- **REVIERTE** la regla de §7.v41/§7.v52 ("los gastos puntuales quedan fuera").
+
+### Corrección de datos en prod: los lotes a $0 de la noche del 8 al 9
+Con aprobación explícita del dueño. 18 ajustes manuales positivos SIN costo
+(admin, 19:41 a 20:10 hora local del 2026-09-08 — el "9 de septiembre" era la
+fecha en UTC) habían creado lotes a $0 que las ventas consumían gratis: **9.965
+unidades vendidas a $0** y el margen bruto de septiembre en 66,3 % en vez del
+real. Como `inventory_movements` es insert-only, la corrección son **36 INSERT**
+(SQL, no API — la API no permite fechar hacia atrás), un par por ajuste:
+1. a **+1 ms** del original: `MANUAL_ADJUSTMENT` con `source_type =
+   'invoice_reversal'` y `source_id` = id del ajuste. El motor quita
+   **exactamente ese lote** por `movementId` (rama de §7.v47), antes de que
+   ninguna venta lo tocara;
+2. a **+2 ms**: las mismas unidades con `unit_cost` = último costo conocido
+   **en ese instante del replay** (`endingLastKnownUnitCost` hasta ese punto).
+Idempotencia por `idempotency_key = fix-0909:{rev|cost}:<id>` (`ON CONFLICT DO
+NOTHING`), `user_id` del dueño, nota que remite a `PLAN-ESTADO-FINANCIERO
+§0.4`. Ensayado antes en una transacción con ROLLBACK verificando que cada par
+quede pegado a su original (0 filas entre medias), y simulado con el motor del
+repo sobre el volcado de prod. Resultado en prod, verificado con volcado fresco:
+COGS de septiembre **$1.563.525 → $1.707.379**, margen bruto **66,3 % → 63,2 %**,
+vendido a $0 **9.965 → 1.330 u** (lo que queda son sobrantes de conteo y un
+ajuste del día 2, fuera de la aprobación).
+
+⚠️ Piedras de esa cirugía, para la próxima:
+- `created_at` es `timestamp` SIN zona y Prisma escribe UTC. `at time zone
+  'America/Bogota'` sobre esa columna **corre la hora 5 h** (la interpreta como
+  local) y un `Date` de Node armado desde el texto sin `Z` la corre por la zona
+  de la máquina: las primeras filas generadas habrían caído **5 horas
+  después**, detrás de las ventas. Se lee como UTC explícito y se inserta
+  `'…'::timestamp` con la marca cruda del original más milisegundos.
+- El reporte de uso no se altera: `MANUAL_ADJUSTMENT` con ese `source_type`
+  cae en "ajustes" y el par se netea (+N, −N, +N).
+- La caché del motor es de 60 s y el snapshot corta el día 1: las filas del 8/9
+  entran en el replay incremental sin reconstruir nada.
+
+
 ## 7.v70 Nada entra al inventario a $0 (2026-09-11)
 
 > Fase 2 del `PLAN-ESTADO-FINANCIERO-2026-09.md`. Un sobrante de conteo o un
