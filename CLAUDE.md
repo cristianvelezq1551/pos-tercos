@@ -4804,6 +4804,54 @@ borrado el combo del menú como algo que el cliente puede pedir.
 ---
 
 
+## 7.v68 El estado financiero muestra lo que se pagó, no lo que se configuró (2026-09-11)
+
+> Fase 1 del `PLAN-ESTADO-FINANCIERO-2026-09.md` (plan de 5 fases nacido de
+> una auditoría completa del módulo sobre los datos reales de prod). El dueño
+> pidió trabajar "muy estricto y cuidadoso": cada fase va sola, con su prueba
+> de que no cambió nada fuera de su alcance. Verificado: typecheck 13/13 sin
+> caché, lint 0, domain 629, admin 350 (+2), api unit 204, e2e de la fase
+> 4 suites / 47 (+3). Sin migración, sin tocar el motor de costos.
+
+### Qué estaba mal
+`getEffectiveForWindow` devolvía siempre `fixed_costs.amount`, el monto de la
+ficha. El recibo real de la luz **nunca llegaba al estado**, y como el monto no
+tiene historial, corregirlo en la ficha **reescribía todos los meses
+anteriores**. La guía (`flows/costo-fijo.ts`) decía tres veces lo contrario:
+"solo entra lo pagado". En prod, "Servicios" está en $900.000 redondo.
+
+### La regla
+- **Cada línea de costo fijo muestra el monto PAGADO del período si ya hay
+  pago registrado; si no, el configurado, marcado `isEstimated`.** Anual: el
+  pago de enero ÷ 12. Puntual: el pago de su propio mes.
+- **La clave del período es `(year, month1)` del estado**, la MISMA que usan
+  `markPaid` y el panel de pendientes. No se deriva de `paidAt`: la fecha en
+  que salió la plata no dice a qué mes corresponde el gasto. Un puntual busca
+  su pago bajo el mes de su fecha, porque con corte del mes de negocio ≠ 1
+  puede caer en una ventana rotulada con otro mes.
+- **Un mes ya pagado queda fijo aunque la ficha cambie después**: el historial
+  de montos sale de los pagos, no hace falta versionar la ficha.
+- La nómina auto nunca es estimada (sale de los días trabajados).
+- El rótulo "estimado" va en la tarjeta del P&G y en el prompt del análisis
+  IA, con el mismo criterio que el COGS estimado: un estimado presentado como
+  exacto es el mismo error que el $0.
+
+### Dónde
+`FixedCostsService.getEffectiveForWindow(windowStart, windowEnd, period)` +
+`loadPaidAmounts` + `paymentPeriodFor` (espeja `enumeratePeriodsForCost`);
+`FixedCostLine.isEstimated` (types); `PnlCard` (rótulo + nota al pie);
+`FinancialAnalysisInput.fixedCosts[].isEstimated` (prompt). Guía: el flujo del
+costo fijo corregido y la fila "Faltantes" que faltaba en la tabla del estado.
+
+### Lo que sigue (mismo plan)
+Fase 2: nada entra al inventario a $0 (sobrantes de conteo y ajustes manuales
+sin precio se valoran al último costo conocido, marcados estimado; un
+subproducto entra por Producir). Fase 3: frecuencia `VARIABLE` (publicidad,
+aseo: varios pagos por mes, sin "pendiente"). Fase 4: insumos de operación
+(el aceite se gasta cuando el cocinero registra el cambio del bidón, no por
+porción ni como merma).
+
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

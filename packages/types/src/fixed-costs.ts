@@ -89,6 +89,14 @@ export const FixedCostLineSchema = z.object({
   isPayroll: z.boolean(),
   /** `true` si es un gasto PUNTUAL (no recurrente) → grupo aparte en el P&G. */
   isOneTime: z.boolean(),
+  /**
+   * `true` si el monto es el CONFIGURADO en la ficha porque el período todavía
+   * no tiene pago registrado. Con pago, `monthlyAmount` es lo que se pagó de
+   * verdad (anual ÷ 12). La nómina auto nunca es estimada: sale de los días
+   * trabajados. La pantalla lo rotula: un estimado leído como dato es el mismo
+   * error que un COGS estimado sin aviso.
+   */
+  isEstimated: z.boolean(),
 });
 export type FixedCostLine = z.infer<typeof FixedCostLineSchema>;
 

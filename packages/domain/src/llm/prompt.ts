@@ -292,6 +292,8 @@ export interface FinancialAnalysisInput {
     category: string;
     monthlyAmount: number;
     isPayroll: boolean;
+    /** Sin pago registrado: el monto es el configurado, no el real del mes. */
+    isEstimated: boolean;
   }>;
   /**
    * Pérdidas que van DEBAJO del margen bruto y explican el salto hasta el neto:
@@ -328,7 +330,11 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
   if (i.fixedCosts.length > 0) {
     lines.push('  Desglose de costos fijos:');
     for (const c of i.fixedCosts) {
-      const tag = c.isPayroll ? ' [auto desde Nómina]' : '';
+      const tag = c.isPayroll
+        ? ' [auto desde Nómina]'
+        : c.isEstimated
+          ? ' [estimado: todavía sin pago registrado este mes]'
+          : '';
       lines.push(`    · ${c.name} (${c.category}): ${cop(c.monthlyAmount)}${tag}`);
     }
   }

@@ -176,12 +176,25 @@ describe('buildFinancialAnalysisUserPrompt', () => {
     const p = buildFinancialAnalysisUserPrompt({
       ...base,
       fixedCosts: [
-        { name: 'Arriendo', category: 'Local', monthlyAmount: 4_000_000, isPayroll: false },
-        { name: 'Sueldos', category: 'Personal', monthlyAmount: 9_000_000, isPayroll: true },
+        { name: 'Arriendo', category: 'Local', monthlyAmount: 4_000_000, isPayroll: false, isEstimated: false },
+        { name: 'Sueldos', category: 'Personal', monthlyAmount: 9_000_000, isPayroll: true, isEstimated: false },
       ],
     });
     expect(p).toContain('· Arriendo (Local): $4.000.000');
     expect(p).toContain('· Sueldos (Personal): $9.000.000 [auto desde Nómina]');
+  });
+
+  it('marca el costo fijo que todavía no tiene pago como estimado, para que el modelo no lo lea como dato', () => {
+    const p = buildFinancialAnalysisUserPrompt({
+      ...base,
+      fixedCosts: [
+        { name: 'Servicios', category: 'Servicios', monthlyAmount: 900_000, isPayroll: false, isEstimated: true },
+        { name: 'Arriendo', category: 'Local', monthlyAmount: 1_680_000, isPayroll: false, isEstimated: false },
+      ],
+    });
+    expect(p).toContain('· Servicios (Servicios): $900.000 [estimado: todavía sin pago registrado este mes]');
+    expect(p).toContain('· Arriendo (Local): $1.680.000\n');
+    expect(p).not.toContain('Arriendo (Local): $1.680.000 [estimado');
   });
 
   it('omite break-even y cobertura cuando no se pueden calcular', () => {

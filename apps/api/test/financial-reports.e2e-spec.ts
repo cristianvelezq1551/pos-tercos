@@ -26,12 +26,12 @@ describe('Reportes financieros del dueño E2E', () => {
   const auth = () => ({ Authorization: `Bearer ${token}` });
   const now = new Date();
 
-  const monthly = async () => {
+  const monthly = async (year = now.getFullYear(), month = now.getMonth() + 1) => {
     // El ledger FIFO tiene caché TTL 60s (staleness deliberada de los reportes).
     // En el test invalidamos para leer FRESCO tras cada movimiento — igual que
     // ledger-snapshot.e2e; en prod lo refresca el cron/snapshot o el paso del TTL.
     cogs.invalidateLedgerCache();
-    return (await request.get(`/reports/financial/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`).set(auth()).expect(200))
+    return (await request.get(`/reports/financial/monthly?year=${year}&month=${month}`).set(auth()).expect(200))
       .body as {
       revenue: number; discountTotal: number; grossRevenue: number;
       cogs: number; grossMargin: number; grossMarginPct: number;
@@ -53,7 +53,7 @@ describe('Reportes financieros del dueño E2E', () => {
       freightCost: number; freightInvoiceCount: number; purchasedTotal: number;
       payablesPaidCost: number; payablesPaidCount: number;
       salesCount: number;
-      fixedCosts: Array<{ name: string; monthlyAmount: number; isPayroll: boolean; isOneTime: boolean }>;
+      fixedCosts: Array<{ name: string; monthlyAmount: number; isPayroll: boolean; isOneTime: boolean; isEstimated: boolean }>;
       cogsEstimated: boolean; cogsPartial: boolean;
     };
   };
@@ -259,6 +259,101 @@ describe('Reportes financieros del dueño E2E', () => {
       expect(after.breakEven).toBeNull();
       expect(after.breakEvenCoverage).toBeNull();
     }
+  });
+
+  // ==================================================================
+  // El monto de un costo fijo es el PAGADO cuando ya se pagó (Fase 1 del
+  // plan de estado financiero, 2026-09-11). Antes salía siempre el
+  // configurado en la ficha: el recibo real de la luz nunca llegaba al
+  // estado, y corregir la ficha reescribía todos los meses anteriores.
+  // ==================================================================
+
+  describe('el monto de un costo fijo es lo pagado cuando ya se pagó', () => {
+    // 1×1 PNG válido (mismo fixture que fixed-costs.e2e).
+    const PNG_1X1 = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const siguiente = new Date(y, m, 1); // mes siguiente (JS: month0 = m)
+    const yN = siguiente.getFullYear();
+    const mN = siguiente.getMonth() + 1;
+
+    const linea = (s: Awaited<ReturnType<typeof monthly>>, name: string) => {
+      const l = s.fixedCosts.find((c) => c.name === name);
+      if (!l) throw new Error(`no hay línea ${name}`);
+      return l;
+    };
+    const crear = async (body: Record<string, unknown>) =>
+      (await request.post('/fixed-costs').set(auth()).send(body).expect(201)).body.id as string;
+    const pagar = (id: string, year: number, month: number, amount: number) =>
+      request
+        .post(`/fixed-costs/${id}/payment`)
+        .set(auth())
+        .field('periodYear', String(year))
+        .field('periodMonth', String(month))
+        .field('amount', String(amount))
+        .field('cashAmount', '0')
+        .field('bankAmount', String(amount))
+        .attach('proof', PNG_1X1, 'proof.png')
+        .expect(201);
+
+    it('mensual: sin pago es la ficha marcada estimado; con pago, lo pagado; el mes siguiente sigue estimado', async () => {
+      const antes = await monthly();
+      const id = await crear({ name: 'Servicios F1', amount: 900_000, frequency: 'MONTHLY', category: 'Servicios' });
+
+      const sinPago = await monthly();
+      expect(linea(sinPago, 'Servicios F1')).toMatchObject({ monthlyAmount: 900_000, isEstimated: true });
+      expect(sinPago.totalFixed - antes.totalFixed).toBe(900_000);
+
+      await pagar(id, y, m, 1_150_000);
+      const conPago = await monthly();
+      expect(linea(conPago, 'Servicios F1')).toMatchObject({ monthlyAmount: 1_150_000, isEstimated: false });
+      expect(conPago.totalFixed - sinPago.totalFixed).toBe(250_000);
+      expect(conPago.netResult - sinPago.netResult).toBe(-250_000);
+
+      // El mes siguiente no tiene pago: vuelve a la ficha, estimado.
+      const proximo = await monthly(yN, mN);
+      expect(linea(proximo, 'Servicios F1')).toMatchObject({ monthlyAmount: 900_000, isEstimated: true });
+
+      // Corregir la ficha NO reescribe el mes ya pagado; sí el que no.
+      await request.patch(`/fixed-costs/${id}`).set(auth()).send({ amount: 950_000 }).expect(200);
+      expect(linea(await monthly(), 'Servicios F1')).toMatchObject({ monthlyAmount: 1_150_000, isEstimated: false });
+      expect(linea(await monthly(yN, mN), 'Servicios F1')).toMatchObject({ monthlyAmount: 950_000, isEstimated: true });
+
+      // Desmarcar el pago devuelve la línea a la ficha, estimada otra vez.
+      await request.delete(`/fixed-costs/${id}/payment?year=${y}&month=${m}`).set(auth()).expect(200);
+      expect(linea(await monthly(), 'Servicios F1')).toMatchObject({ monthlyAmount: 950_000, isEstimated: true });
+    });
+
+    it('anual: el pago de enero se reparte ÷12; puntual: usa el pago de su propio mes', async () => {
+      const seguro = await crear({ name: 'Seguro F1', amount: 1_200_000, frequency: 'ANNUAL', category: 'Otros' });
+      expect(linea(await monthly(), 'Seguro F1')).toMatchObject({ monthlyAmount: 100_000, isEstimated: true });
+      await pagar(seguro, y, 1, 1_500_000);
+      expect(linea(await monthly(), 'Seguro F1')).toMatchObject({ monthlyAmount: 125_000, isEstimated: false });
+
+      const antes = await monthly();
+      const horno = await crear({
+        name: 'Horno F1', amount: 800_000, frequency: 'ONE_TIME', category: 'Equipos', startedAt: hoyLocal(),
+      });
+      const sinPago = await monthly();
+      expect(linea(sinPago, 'Horno F1')).toMatchObject({ monthlyAmount: 800_000, isOneTime: true, isEstimated: true });
+      expect(sinPago.oneTimeCost - antes.oneTimeCost).toBe(800_000);
+      await pagar(horno, y, m, 850_000);
+      const conPago = await monthly();
+      expect(linea(conPago, 'Horno F1')).toMatchObject({ monthlyAmount: 850_000, isOneTime: true, isEstimated: false });
+      expect(conPago.oneTimeCost - sinPago.oneTimeCost).toBe(50_000);
+      // Un puntual nunca entra a lo recurrente, pagado o no.
+      expect(conPago.totalFixed).toBe(sinPago.totalFixed);
+    });
+
+    it('la nómina automática nunca se rotula estimada', async () => {
+      const s = await monthly();
+      for (const l of s.fixedCosts) {
+        if (l.isPayroll) expect(l.isEstimated).toBe(false);
+      }
+    });
   });
 
   // ==================================================================

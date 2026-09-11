@@ -28,7 +28,7 @@ export const FLOW_COSTO_FIJO: GuideFlow = {
     { do: 'Guarda.' },
     {
       do: 'Cuando pagues: entra al costo, toca "Pagar", pon la fecha real del pago y el monto que salió de verdad.',
-      why: 'El monto real puede diferir del esperado: el recibo de la luz nunca da igual dos meses. Lo que entra al resultado del mes es lo que pagaste, no lo que estimaste.',
+      why: 'El monto real puede diferir del esperado: el recibo de la luz nunca da igual dos meses. Hasta que lo marques, el estado usa el monto de la ficha como estimado; al marcarlo, pasa a mostrar lo que pagaste.',
     },
     {
       do: 'Reparte entre Efectivo y Cuenta según de dónde salió la plata, y sube el comprobante.',
@@ -45,7 +45,7 @@ export const FLOW_COSTO_FIJO: GuideFlow = {
       where: 'Gestión → Finanzas → Estado financiero',
       what: 'Dentro del bloque "Costos fijos (recurrentes)" o "Gastos únicos del mes", restando del resultado.',
       means:
-        'Solo entra lo PAGADO en ese mes. Un período generado pero no pagado no resta todavía: el resultado del mes cuenta plata que salió, no compromisos.',
+        'Cada costo pesa en el mes que le corresponde, pagado o no: el resultado dice si el mes dio ganancia, no si alcanzaste a pagar. El monto sí depende del pago: si ya lo marcaste pagado, aparece lo que pagaste; si no, el monto de la ficha, rotulado "estimado".',
     },
     {
       where: 'Gestión → Finanzas → Estado financiero → Punto de equilibrio',
@@ -88,7 +88,7 @@ export const FLOW_COSTO_FIJO: GuideFlow = {
     },
     {
       q: 'La luz me llegó más cara este mes.',
-      a: 'Al marcar pagado escribe el monto REAL. El sistema no te obliga a pagar lo estimado; lo que entra al resultado del mes es lo que efectivamente salió.',
+      a: 'Al marcar pagado escribe el monto REAL. El sistema no te obliga a pagar lo estimado; en cuanto lo marques, el estado del mes muestra lo que efectivamente salió y deja de rotularlo como estimado.',
     },
     {
       q: 'Pagué el arriendo en efectivo, sacándolo de la caja.',
@@ -99,8 +99,8 @@ export const FLOW_COSTO_FIJO: GuideFlow = {
       a: 'Créalo con "Vigente desde" en la fecha real: el sistema genera los períodos que faltan y los pone en pendientes. Los marcas pagados con su fecha real y cada uno cae en el mes que le corresponde.',
     },
     {
-      q: '¿Por qué mi resultado del mes no baja si ya cargué el costo?',
-      a: 'Porque solo resta lo pagado. Cargar el costo crea el compromiso; marcarlo pagado es lo que lo lleva al resultado del mes y descuenta el bolsillo.',
+      q: 'Cargué el costo y el estado lo muestra como "estimado". ¿Está mal?',
+      a: 'No: es que todavía no registraste el pago de ese mes. El costo ya está restando con el monto de la ficha; cuando lo marques pagado, cambia al monto real y pierde la etiqueta. Marcarlo pagado es además lo que descuenta el bolsillo en tesorería.',
     },
   ],
   seeAlso: ['finanzas', 'reportes'],

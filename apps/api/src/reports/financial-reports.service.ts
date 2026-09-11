@@ -242,8 +242,12 @@ export class FinancialReportsService {
     const payrollAmount = await this.computePayrollForRange(monthStart, monthEnd);
     // Vigencia de los costos fijos contra la MISMA ventana del negocio que el
     // resto del estado (ingresos/COGS/nómina) — no el mes calendario. El monto
-    // no se prorratea: cuenta UNA vez por ventana.
-    const otherCosts = await this.fixedCosts.getEffectiveForWindow(monthStart, monthEnd);
+    // no se prorratea: cuenta UNA vez por ventana. Cada línea trae lo PAGADO
+    // del período si ya se pagó, o el configurado marcado como estimado.
+    const otherCosts = await this.fixedCosts.getEffectiveForWindow(monthStart, monthEnd, {
+      year,
+      month1,
+    });
 
     const fixedCostLines: FixedCostLine[] = [];
     if (payrollAmount > 0) {
@@ -254,6 +258,7 @@ export class FinancialReportsService {
         monthlyAmount: round(payrollAmount),
         isPayroll: true,
         isOneTime: false,
+        isEstimated: false,
       });
     }
     for (const c of otherCosts) {
@@ -264,6 +269,7 @@ export class FinancialReportsService {
         monthlyAmount: round(c.monthlyAmount),
         isPayroll: false,
         isOneTime: c.isOneTime,
+        isEstimated: c.isEstimated,
       });
     }
     // Recurrentes (nómina + mensuales/anuales) vs puntuales (gastos únicos): el
@@ -480,6 +486,7 @@ export class FinancialReportsService {
         category: l.category,
         monthlyAmount: l.monthlyAmount,
         isPayroll: l.isPayroll,
+        isEstimated: l.isEstimated,
       })),
       // Sin estas líneas el modelo veía `ingresos − COGS − fijos` y un neto que
       // no cerraba con esos números, así que explicaba el bajón inventando.
