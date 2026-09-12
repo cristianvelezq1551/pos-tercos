@@ -5060,8 +5060,10 @@ navegador los sube. Con eso las dos corridas gemelas quedaron verdes.
 > Salió del mismo hilo que §7.v71, operando el admin de producción: la pantalla
 > decía **"✓ Sin anomalías"** sobre un cajero con cinco turnos seguidos
 > descuadrados, con la columna de alertas en "—" al lado de cifras en rojo.
-> Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes (domain 651, admin
-> 363), **e2e 79 suites / 930** sobre base aislada. Sin migración.
+> Verificado: typecheck 13/13 sin caché, lint 0, unit 12/12 paquetes (domain
+> 653, admin 367), **e2e 79 suites / 936** sobre base aislada, más 42
+> comprobaciones de API contra un entorno desplegado y la pantalla real con los
+> datos de septiembre. Sin migración.
 
 ### Las tres cosas que estaban mal
 1. **Solo se evaluaba el ÚLTIMO turno cerrado.** Los cinco descuadres estaban
@@ -5081,20 +5083,42 @@ navegador los sube. Con eso las dos corridas gemelas quedaron verdes.
    cero y queda marcado el único turno que de verdad se sale.
 
 ### Reglas
+- **Se marca por ENCIMA del umbral, nunca al ras.** Con comparación inclusiva,
+  un cajero que descuadra siempre lo mismo tiene ese monto como mediana y TODOS
+  sus turnos quedarían marcados — lo contrario de "anómalo".
+- **El descuadre y los conteos se miden por separado.** Un turno que cerró con
+  un medio sin arquear no sirve para medir descuadres, pero sus anulaciones y
+  sus aperturas de cajón son datos completos. Mezclarlos dejaba a un cajero sin
+  NINGUNA marca solo porque un turno quedó sin arquear.
 - **Un turno con algún medio SIN arquear no tiene total conocido**: no se marca
-  ni se da por bueno, y no entra a medir lo normal. Suponerlo en cero daría por
-  revisado un turno que nadie revisó.
+  ni se da por bueno. Sin la columna (no hubo movimiento digital) el descuadre
+  de la cuenta es CERO; con la columna en otra forma es DESCONOCIDO — antes eso
+  tiraba un TypeError y el reporte respondía 500, que además abre una alerta de
+  producción por un dato viejo.
 - **Piso de 1 sobre lo habitual en anulaciones y cajón sin venta**: con un
-  cajero que nunca anula la dispersión es 0 y UNA anulación —que es normal—
+  cajero que nunca anula la dispersión es 0 y la primera anulación del mes
   quedaría marcada.
+- **La pantalla cuenta APARTE los turnos que pasaron el umbral del negocio**, y
+  solo cuando agrega algo (hay descuadrados que no quedaron marcados). Sin eso,
+  un cajero que descuadra parejo se leería como "todo bien": eso es anómalo
+  para nadie y aun así es plata que falta.
 - La matemática vive en `packages/domain/src/anomalies` (no tenía una sola
   prueba); en el API quedan solo las lecturas.
 
 ### Compatibilidad de despliegue
 Los campos nuevos del contrato (`totalDifference`, `digitalDifference`,
-`typical*`, `threshold*`) viajan **opcionales** y los viejos (`avg*`/`std*`) se
-siguen enviando: el API (Railway) y el admin (Vercel) salen por separado y una
-versión previa de la pantalla los exige (misma precaución de §7.v62).
+`arqueados`, `typical*`, `threshold*`) viajan **opcionales** y los viejos
+(`avg*`/`std*`) se siguen enviando: el API (Railway) y el admin (Vercel) salen
+por separado y una versión previa de la pantalla los exige (misma precaución de
+§7.v62). Y al revés: **un campo AUSENTE no es un turno sin arquear** — con el
+API viejo la pantalla no dibuja las columnas de cuenta y total en vez de
+mostrarlas en "sin arquear", que afirmaría algo que nadie dijo.
+
+### Cómo verificarlo contra un entorno desplegado
+`scripts/verificar-domicilio-y-anomalias.mjs` — 42 comprobaciones por DELTA
+contra QA o producción: toma una foto, opera, compara, deshace y exige que los
+tres libros vuelvan al valor exacto. Cubre el domicilio (§7.v71) y el contrato
+de esta vista.
 
 ---
 
