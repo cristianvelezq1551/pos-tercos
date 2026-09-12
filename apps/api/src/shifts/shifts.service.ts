@@ -1426,7 +1426,11 @@ export class ShiftsService {
           if (treasuryMovementId) {
             await this.treasury.voidMovementInTx(tx, treasuryMovementId);
           }
-          await tx.cashMovement.deleteMany({ where: { shiftId, pairId } });
+          // Se borra EXACTAMENTE lo que se encontró: el propósito también va en
+          // el filtro para que un `pairId` de otra cosa nunca caiga acá.
+          await tx.cashMovement.deleteMany({
+            where: { shiftId, pairId, purpose: DELIVERY_PAYOUT_PURPOSE },
+          });
           return { amount: Number(patas[0].amount), reason: patas[0].reason, treasuryMovementId };
         },
         { isolationLevel: 'Serializable', timeout: 10_000 },

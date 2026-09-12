@@ -28,6 +28,7 @@ const cajero = (o: Partial<CashierAnomalies> = {}): CashierAnomalies => ({
   totalShifts: 8,
   baseline: {
     sampleSize: 8,
+    arqueados: 8,
     avgDiff: 35143,
     stdDiff: 45477,
     avgVoids: 0,
@@ -100,6 +101,32 @@ describe('AnomaliesView', () => {
   it('sin historial suficiente no inventa un normal', () => {
     render(<AnomaliesView data={[cajero({ baseline: null, totalShifts: 2 })]} />);
     expect(screen.getByText(/Sin historial suficiente/)).toBeTruthy();
+  });
+
+  it('sin 5 turnos arqueados no promete un descuadre habitual', () => {
+    const base = { ...cajero().baseline!, typicalDiff: null, thresholdDiff: null, arqueados: 3 };
+    render(<AnomaliesView data={[cajero({ baseline: base, shifts: [turno(), turno()] })]} />);
+    expect(screen.getByText(/no se marca ningún descuadre/)).toBeTruthy();
+  });
+
+  it('un descuadre parejo no es anomalía, pero la pantalla no lo tapa', () => {
+    // Cinco turnos con el mismo descuadre: para esa persona es su norma, así
+    // que no se marca. Si la pantalla se quedara ahí, se leería "todo bien".
+    const shifts = Array.from({ length: 5 }, () =>
+      turno({ difference: 50000, digitalDifference: 0, totalDifference: 50000 }),
+    );
+    render(
+      <AnomaliesView
+        data={[
+          cajero({
+            shifts,
+            baseline: { ...cajero().baseline!, typicalDiff: 50000, thresholdDiff: 50000, arqueados: 5 },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText('Nada fuera de norma en los últimos 5 turnos')).toBeTruthy();
+    expect(screen.getByText(/5 de 5 turnos cerraron con un descuadre/)).toBeTruthy();
   });
 
   it('si el API todavía no manda el total, no dibuja columnas que no puede llenar', () => {

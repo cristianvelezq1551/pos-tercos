@@ -51,9 +51,15 @@ export const CashierBaselineSchema = z.object({
   stdVoids: z.number(),
   avgNoSale: z.number(),
   stdNoSale: z.number(),
-  /** Lo habitual de esa persona (mediana) y el valor a partir del cual se marca. */
-  typicalDiff: z.number().optional(),
-  thresholdDiff: z.number().optional(),
+  /** De los turnos mirados, cuántos tienen el descuadre arqueado. */
+  arqueados: z.number().int().nonnegative().optional(),
+  /**
+   * Lo habitual de esa persona (mediana) y el valor por encima del cual se
+   * marca. Los del descuadre van en null cuando no hay 5 turnos arqueados: ahí
+   * no se puede decir qué es normal, y por eso no se marca ningún descuadre.
+   */
+  typicalDiff: z.number().nullable().optional(),
+  thresholdDiff: z.number().nullable().optional(),
   typicalVoids: z.number().optional(),
   thresholdVoids: z.number().optional(),
   typicalNoSale: z.number().optional(),
@@ -65,7 +71,7 @@ export const CashierAnomaliesSchema = z.object({
   cashierId: z.string().uuid(),
   cashierName: z.string().nullable(),
   totalShifts: z.number().int().nonnegative(),
-  /** Lo normal de esa persona. Null con menos de 5 turnos arqueados. */
+  /** Lo normal de esa persona. Null con menos de 5 turnos cerrados. */
   baseline: CashierBaselineSchema.nullable(),
   /** Últimos 30 turnos del cajero, del más nuevo al más viejo. TODOS se evalúan. */
   shifts: z.array(ShiftMetricsSchema),
