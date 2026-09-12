@@ -5034,6 +5034,27 @@ hace él. Hacerlo dos veces movería los bolsillos el doble.
 cierre ahora pide arquear la transferencia (§7.v20). Es correcto —esa plata está
 en la cuenta— pero antes no pasaba.
 
+### El flake crónico de `browser-e2e` era un tope por IP, no un test malo
+
+Ese job venía fallando en una suite DISTINTA cada corrida —incluso en `main`—
+y el remedio documentado era relanzarlo. La causa: **todo el job pega desde
+127.0.0.1 y comparte los dos topes por IP** — el general de 100 peticiones por
+minuto y el anti-brute-force de 10 logins. Con 29 specs más las consultas que
+hace el admin al renderizar cada página, las últimas suites recibían 429 en
+cualquier endpoint; y el síntoma era desconcertante, porque su login va por
+FORMULARIO (que no reintenta): "funcionaba" y el middleware rebotaba a
+`/login` sin decir por qué, en specs que no tenían relación con el cambio.
+
+Los dos topes viven ahora en `apps/api/src/common/rate-limit.ts`
+(`API_RATE_LIMIT_PER_MINUTE`, `AUTH_LOGINS_PER_MINUTE`) con el valor REAL de
+producción como default y cayendo a él ante cualquier valor basura —una
+variable mal escrita no puede dejar la puerta abierta—. Solo el job de
+navegador los sube. Con eso las dos corridas gemelas quedaron verdes.
+
+> Regla que queda: **si un job de navegador falla en suites que cambian entre
+> corridas, es contención, no el código.** Antes de leer una línea, buscar qué
+> recurso comparten — acá era un contador por IP.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

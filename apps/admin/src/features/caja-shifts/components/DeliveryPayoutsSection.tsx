@@ -75,7 +75,7 @@ export function DeliveryPayoutsSection({
   };
 
   return (
-    <section className="rounded-xl border border-border bg-card p-3">
+    <section aria-label="Domicilios pagados del cajón" className="rounded-xl border border-border bg-card p-3">
       <p className="caps mb-1 flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
         <Bike className="size-3.5" aria-hidden />
         Domicilios pagados del cajón

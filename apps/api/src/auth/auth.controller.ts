@@ -7,6 +7,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { LoginDtoSchema, type LoginDto } from './dto/login.dto';
+import { loginsPorMinuto } from '../common/rate-limit';
 import { UsersService } from '../users/users.service';
 import type { JwtAccessPayload, LoginResponse, RefreshResponse, User } from '@pos-tercos/types';
 
@@ -48,7 +49,8 @@ export class AuthController {
   ) {}
 
   @Public()
-  @Throttle({ default: { ttl: 60_000, limit: 10 } }) // anti-brute-force de contraseña
+  // Anti-brute-force de la contraseña; ver `common/rate-limit.ts`.
+  @Throttle({ default: { ttl: 60_000, limit: loginsPorMinuto() } })
   @Post('login')
   @HttpCode(200)
   @UsePipes(new ZodValidationPipe(LoginDtoSchema))

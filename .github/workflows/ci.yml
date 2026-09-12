@@ -126,6 +126,17 @@ jobs:
       JWT_ACCESS_SECRET: ci-jwt-access-secret-not-for-production-0001
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret-not-for-production-001
       WEB_ORDER_TOKEN_SECRET: ci-web-order-token-secret-not-for-prod-0001
+      # Todo el job pega desde la IP del runner y comparte el cupo de logins
+      # (10/min en producción). Con ~22 logins repartidos en seis minutos, las
+      # suites del final morían con 429 por vecindad. El anti-brute-force real
+      # NO se relaja: solo este entorno lo sube.
+      AUTH_LOGINS_PER_MINUTE: '200'
+      # Y el tope GENERAL por IP (100/min en producción): 29 specs más las
+      # consultas que hace el admin al renderizar suman muchas más que eso en
+      # un minuto, todas desde 127.0.0.1. Es la causa de fondo del flake
+      # crónico de este job: las últimas suites recibían 429 en cualquier
+      # endpoint y su login por formulario rebotaba a /login sin explicación.
+      API_RATE_LIMIT_PER_MINUTE: '100000'
       # Par VAPID de CI (generado para esto, NO sirve en producción: solo puede
       # escribirle a suscripciones creadas con esta misma llave, y acá no existe
       # ninguna). Sin él, `GET /push/status` devuelve publicKey null, la pantalla

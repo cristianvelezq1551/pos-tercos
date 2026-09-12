@@ -14,6 +14,7 @@ import { NotificationModule } from './notifications/notification.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AuditModule } from './audit/audit.module';
+import { peticionesPorMinuto } from './common/rate-limit';
 import { LedgerFreshnessModule } from './common/ledger-freshness/ledger-freshness.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -63,7 +64,7 @@ import { CortesiasModule } from './cortesias/cortesias.module';
     // manda "ThrottlerException: Too Many Requests", que no le dice nada a
     // quien está tratando de entrar. Se explica QUÉ pasó y QUÉ hacer.
     ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60_000, limit: 100 }],
+      throttlers: [{ ttl: 60_000, limit: peticionesPorMinuto() }],
       errorMessage: 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentar.',
     }),
     PrismaModule,
