@@ -101,4 +101,19 @@ describe('AnomaliesView', () => {
     render(<AnomaliesView data={[cajero({ baseline: null, totalShifts: 2 })]} />);
     expect(screen.getByText(/Sin historial suficiente/)).toBeTruthy();
   });
+
+  it('si el API todavía no manda el total, no dibuja columnas que no puede llenar', () => {
+    // Ventana de despliegue: el admin es nuevo y el API viejo. Los campos vienen
+    // AUSENTES, que no es lo mismo que "sin arquear".
+    const viejo = turno({ difference: -43000 });
+    delete (viejo as { digitalDifference?: unknown }).digitalDifference;
+    delete (viejo as { totalDifference?: unknown }).totalDifference;
+    render(<AnomaliesView data={[cajero({ shifts: [viejo] })]} />);
+    // La tabla dibuja el encabezado dos veces: la columna en escritorio y la
+    // etiqueta de la tarjeta en teléfono.
+    expect(screen.queryAllByText('Cuenta')).toHaveLength(0);
+    expect(screen.queryAllByText('Total')).toHaveLength(0);
+    expect(screen.queryAllByText('sin arquear')).toHaveLength(0);
+    expect(screen.getAllByText('Descuadre').length).toBeGreaterThan(0);
+  });
 });

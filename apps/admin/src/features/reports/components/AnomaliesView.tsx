@@ -10,10 +10,15 @@ const FLAG_LABEL: Record<ShiftAnomalyFlag, string> = {
 
 type Turno = CashierAnomalies['shifts'][number];
 
-/** El descuadre que importa es cajón + cuenta. Un turno con algún medio sin
- *  arquear no tiene total: no se sabe, y no es lo mismo que cero. */
-function totalDe(s: Turno): number | null {
-  return s.totalDifference ?? null;
+/**
+ * Un campo AUSENTE y un campo en null no son lo mismo: ausente es un API que
+ * todavía no lo manda (API y admin se despliegan por separado) y null es un
+ * turno que cerró con un medio sin arquear. Si el campo no viene, las columnas
+ * de cuenta y total no se dibujan — mostrarlas en "sin arquear" sería afirmar
+ * algo que nadie dijo.
+ */
+function traeElTotal(shifts: CashierAnomalies['shifts']): boolean {
+  return shifts.some((s) => s.totalDifference !== undefined);
 }
 
 export function AnomaliesView({ data }: { data: CashierAnomalies[] }) {
@@ -100,11 +105,13 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
       ) : null}
 
       <ShiftsAnomalyTable shifts={c.shifts} />
-      <p className="mt-2 text-[0.6875rem] leading-snug text-muted-foreground">
-        Si el cajón quedó corto y la cuenta sobrada por el mismo monto, no falta plata: es un
-        domicilio que el cliente transfirió y se pagó en efectivo del cajón. Regístralo en Caja y las
-        dos puntas quedan en cero.
-      </p>
+      {traeElTotal(c.shifts) ? (
+        <p className="mt-2 text-[0.6875rem] leading-snug text-muted-foreground">
+          Si el cajón quedó corto y la cuenta sobrada por el mismo monto, no falta plata: es un
+          domicilio que el cliente transfirió y se pagó en efectivo del cajón. Regístralo en Caja y
+          las dos puntas quedan en cero.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -135,6 +142,23 @@ function Monto({ value, fuerte = false }: { value: number | null; fuerte?: boole
  *  tarjeta: las columnas de números no caben en 390 px. */
 function ShiftsAnomalyTable({ shifts }: { shifts: CashierAnomalies['shifts'] }) {
   const num = { align: 'right', numeric: true } as const;
+  const conTotal = traeElTotal(shifts);
+  const columnasDeCuenta: DataTableColumn<Turno>[] = conTotal
+    ? [
+        {
+          key: 'digital',
+          header: 'Cuenta',
+          ...num,
+          cell: (s) => <Monto value={s.digitalDifference ?? null} />,
+        },
+        {
+          key: 'total',
+          header: 'Total',
+          ...num,
+          cell: (s) => <Monto value={s.totalDifference ?? null} fuerte />,
+        },
+      ]
+    : [];
   const columns: DataTableColumn<Turno>[] = [
     {
       key: 'opened',
@@ -144,22 +168,11 @@ function ShiftsAnomalyTable({ shifts }: { shifts: CashierAnomalies['shifts'] }) 
     },
     {
       key: 'difference',
-      header: 'Cajón',
+      header: conTotal ? 'Cajón' : 'Descuadre',
       ...num,
-      cell: (s) => <Monto value={s.difference} />,
+      cell: (s) => <Monto value={s.difference} fuerte={!conTotal} />,
     },
-    {
-      key: 'digital',
-      header: 'Cuenta',
-      ...num,
-      cell: (s) => <Monto value={s.digitalDifference ?? null} />,
-    },
-    {
-      key: 'total',
-      header: 'Total',
-      ...num,
-      cell: (s) => <Monto value={totalDe(s)} fuerte />,
-    },
+    ...columnasDeCuenta,
     {
       key: 'voids',
       header: 'Anulaciones',
