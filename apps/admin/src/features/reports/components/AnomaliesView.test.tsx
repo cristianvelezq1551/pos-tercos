@@ -109,6 +109,19 @@ describe('AnomaliesView', () => {
     expect(screen.getByText(/no se marca ningún descuadre/)).toBeTruthy();
   });
 
+  it('no repite el conteo cuando todos los descuadrados ya están marcados', () => {
+    render(
+      <AnomaliesView
+        data={[
+          cajero({
+            shifts: [turno({ totalDifference: 228000, flags: ['diff_high'] }), turno(), turno()],
+          }),
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/Aparte de lo anterior/)).toBeNull();
+  });
+
   it('un descuadre parejo no es anomalía, pero la pantalla no lo tapa', () => {
     // Cinco turnos con el mismo descuadre: para esa persona es su norma, así
     // que no se marca. Si la pantalla se quedara ahí, se leería "todo bien".

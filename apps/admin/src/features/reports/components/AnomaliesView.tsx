@@ -11,6 +11,11 @@ import { ShiftsAnomalyTable } from './ShiftsAnomalyTable';
  */
 const UMBRAL_DEL_NEGOCIO = 5_000;
 
+/** "0", "1", "2,5" — un umbral de anulaciones con un decimal fijo se lee raro. */
+function conteo(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 function conDescuadreReal(shifts: CashierAnomalies['shifts']): number {
   return shifts.filter((s) => {
     const t = s.totalDifference ?? null;
@@ -39,7 +44,10 @@ export function AnomaliesView({ data }: { data: CashierAnomalies[] }) {
 function CashierBlock({ c }: { c: CashierAnomalies }) {
   const marcados = c.shifts.filter((s) => s.flags.length > 0);
   const revisados = c.shifts.length;
+  // Solo se dice cuando AGREGA algo: si todos los turnos descuadrados ya
+  // quedaron marcados, repetir el número es ruido.
   const descuadrados = traeElTotal(c.shifts) ? conDescuadreReal(c.shifts) : 0;
+  const descuadreSinMarcar = descuadrados > marcados.length;
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
@@ -84,19 +92,19 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
             />
             <BaselineCard
               label="Anulaciones / turno"
-              value={(c.baseline.typicalVoids ?? c.baseline.avgVoids).toFixed(1)}
+              value={conteo(c.baseline.typicalVoids ?? c.baseline.avgVoids)}
               hint={
                 c.baseline.thresholdVoids !== undefined
-                  ? `se marca por encima de ${c.baseline.thresholdVoids.toFixed(1)}`
+                  ? `se marca por encima de ${conteo(c.baseline.thresholdVoids)}`
                   : `σ ${c.baseline.stdVoids.toFixed(2)}`
               }
             />
             <BaselineCard
               label="Cajón sin venta / turno"
-              value={(c.baseline.typicalNoSale ?? c.baseline.avgNoSale).toFixed(1)}
+              value={conteo(c.baseline.typicalNoSale ?? c.baseline.avgNoSale)}
               hint={
                 c.baseline.thresholdNoSale !== undefined
-                  ? `se marca por encima de ${c.baseline.thresholdNoSale.toFixed(1)}`
+                  ? `se marca por encima de ${conteo(c.baseline.thresholdNoSale)}`
                   : `σ ${c.baseline.stdNoSale.toFixed(2)}`
               }
             />
@@ -110,7 +118,7 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
       ) : null}
 
       <ShiftsAnomalyTable shifts={c.shifts} />
-      {descuadrados > 0 ? (
+      {descuadreSinMarcar ? (
         <p className="mt-2 text-[0.6875rem] font-medium leading-snug text-warning">
           Aparte de lo anterior: {descuadrados} de {revisados} turnos cerraron con un descuadre de{' '}
           {formatCop(UMBRAL_DEL_NEGOCIO)} o más. Esta pantalla marca lo que se sale de lo HABITUAL de
