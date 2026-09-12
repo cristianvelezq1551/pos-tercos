@@ -8,6 +8,14 @@ const FLAG_LABEL: Record<ShiftAnomalyFlag, string> = {
   noSale_high: 'Aperturas de cajón sin venta fuera de norma',
 };
 
+type Turno = CashierAnomalies['shifts'][number];
+
+/** El descuadre que importa es cajón + cuenta. Un turno con algún medio sin
+ *  arquear no tiene total: no se sabe, y no es lo mismo que cero. */
+function totalDe(s: Turno): number | null {
+  return s.totalDifference ?? null;
+}
+
 export function AnomaliesView({ data }: { data: CashierAnomalies[] }) {
   if (data.length === 0) {
     return (
@@ -27,8 +35,8 @@ export function AnomaliesView({ data }: { data: CashierAnomalies[] }) {
 }
 
 function CashierBlock({ c }: { c: CashierAnomalies }) {
-  const recent = c.shifts[0];
-  const recentFlags = recent?.flags ?? [];
+  const marcados = c.shifts.filter((s) => s.flags.length > 0);
+  const revisados = c.shifts.length;
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
@@ -38,49 +46,65 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
             {c.totalShifts} turno{c.totalShifts === 1 ? '' : 's'} cerrados
           </p>
         </div>
-        {recentFlags.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {recentFlags.map((f) => (
-              <span
-                key={f}
-                className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive"
-              >
-                ⚠ {FLAG_LABEL[f]}
-              </span>
-            ))}
-          </div>
-        ) : c.baseline !== null ? (
-          <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success">
-            ✓ Sin anomalías
+        {c.baseline === null ? (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
+            Sin historial suficiente (se necesitan 5 turnos arqueados)
+          </span>
+        ) : marcados.length > 0 ? (
+          <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+            {marcados.length} de {revisados} turnos se salen de lo normal
           </span>
         ) : (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
-            Sin historial suficiente (se necesitan 5 turnos o más)
+          <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success">
+            Nada fuera de norma en los últimos {revisados} turnos
           </span>
         )}
       </header>
 
       {c.baseline !== null ? (
-        <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
-          <BaselineCard
-            label="Descuadre prom."
-            value={`±${formatCop(c.baseline.avgDiff)}`}
-            hint={`σ ${formatCop(c.baseline.stdDiff)}`}
-          />
-          <BaselineCard
-            label="Anulaciones / turno"
-            value={c.baseline.avgVoids.toFixed(1)}
-            hint={`σ ${c.baseline.stdVoids.toFixed(2)}`}
-          />
-          <BaselineCard
-            label="Cajón sin venta / turno"
-            value={c.baseline.avgNoSale.toFixed(1)}
-            hint={`σ ${c.baseline.stdNoSale.toFixed(2)}`}
-          />
-        </div>
+        <>
+          <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+            <BaselineCard
+              label="Descuadre habitual"
+              value={`±${formatCop(c.baseline.typicalDiff ?? c.baseline.avgDiff)}`}
+              hint={
+                c.baseline.thresholdDiff !== undefined
+                  ? `se marca por encima de ${formatCop(c.baseline.thresholdDiff)}`
+                  : `σ ${formatCop(c.baseline.stdDiff)}`
+              }
+            />
+            <BaselineCard
+              label="Anulaciones / turno"
+              value={(c.baseline.typicalVoids ?? c.baseline.avgVoids).toFixed(1)}
+              hint={
+                c.baseline.thresholdVoids !== undefined
+                  ? `se marca por encima de ${c.baseline.thresholdVoids.toFixed(1)}`
+                  : `σ ${c.baseline.stdVoids.toFixed(2)}`
+              }
+            />
+            <BaselineCard
+              label="Cajón sin venta / turno"
+              value={(c.baseline.typicalNoSale ?? c.baseline.avgNoSale).toFixed(1)}
+              hint={
+                c.baseline.thresholdNoSale !== undefined
+                  ? `se marca por encima de ${c.baseline.thresholdNoSale.toFixed(1)}`
+                  : `σ ${c.baseline.stdNoSale.toFixed(2)}`
+              }
+            />
+          </div>
+          <p className="mt-2 text-[0.6875rem] leading-snug text-muted-foreground">
+            Lo habitual se mide con la mediana de {c.baseline.sampleSize} turnos arqueados, para que
+            un caso suelto no corra la vara. Nunca se marca por debajo de {formatCop(5000)}.
+          </p>
+        </>
       ) : null}
 
       <ShiftsAnomalyTable shifts={c.shifts} />
+      <p className="mt-2 text-[0.6875rem] leading-snug text-muted-foreground">
+        Si el cajón quedó corto y la cuenta sobrada por el mismo monto, no falta plata: es un
+        domicilio que el cliente transfirió y se pagó en efectivo del cajón. Regístralo en Caja y las
+        dos puntas quedan en cero.
+      </p>
     </section>
   );
 }
@@ -97,11 +121,21 @@ function BaselineCard({ label, value, hint }: { label: string; value: string; hi
   );
 }
 
+function Monto({ value, fuerte = false }: { value: number | null; fuerte?: boolean }) {
+  if (value === null) return <span className="text-muted-foreground">sin arquear</span>;
+  return (
+    <span className={fuerte && Math.abs(value) >= 5000 ? 'font-bold text-destructive' : undefined}>
+      {value > 0 ? '+' : ''}
+      {formatCop(value)}
+    </span>
+  );
+}
+
 /** El histórico de turnos de un cajero. En teléfono cada turno es una
- *  tarjeta: cinco columnas de números no caben en 390 px. */
+ *  tarjeta: las columnas de números no caben en 390 px. */
 function ShiftsAnomalyTable({ shifts }: { shifts: CashierAnomalies['shifts'] }) {
   const num = { align: 'right', numeric: true } as const;
-  const columns: DataTableColumn<CashierAnomalies['shifts'][number]>[] = [
+  const columns: DataTableColumn<Turno>[] = [
     {
       key: 'opened',
       header: 'Turno (apertura)',
@@ -110,28 +144,28 @@ function ShiftsAnomalyTable({ shifts }: { shifts: CashierAnomalies['shifts'] }) 
     },
     {
       key: 'difference',
-      header: 'Descuadre',
+      header: 'Cajón',
       ...num,
-      cell: (s) =>
-        s.difference !== null ? (
-          <span className={Math.abs(s.difference) >= 5000 ? 'font-bold text-destructive' : ''}>
-            {s.difference > 0 ? '+' : ''}
-            {formatCop(s.difference)}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
+      cell: (s) => <Monto value={s.difference} />,
+    },
+    {
+      key: 'digital',
+      header: 'Cuenta',
+      ...num,
+      cell: (s) => <Monto value={s.digitalDifference ?? null} />,
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      ...num,
+      cell: (s) => <Monto value={totalDe(s)} fuerte />,
     },
     {
       key: 'voids',
       header: 'Anulaciones',
       ...num,
       cell: (s) =>
-        s.voidCount > 0 ? (
-          <span className="font-medium text-warning">{s.voidCount}</span>
-        ) : (
-          s.voidCount
-        ),
+        s.voidCount > 0 ? <span className="font-medium text-warning">{s.voidCount}</span> : s.voidCount,
     },
     {
       key: 'noSale',
@@ -149,7 +183,7 @@ function ShiftsAnomalyTable({ shifts }: { shifts: CashierAnomalies['shifts'] }) 
       header: 'Alertas',
       cell: (s) =>
         s.flags.length > 0 ? (
-          <span className="text-xs text-destructive">
+          <span className="text-xs font-semibold text-destructive">
             {s.flags.map((f) => FLAG_LABEL[f]).join(' · ')}
           </span>
         ) : (

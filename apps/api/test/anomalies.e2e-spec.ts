@@ -1,8 +1,12 @@
 /**
- * §4.6 (2σ): `/reports/anomalies` es el anti-fraude del dueño (marca al cajero
- * cuyo descuadre supera avg + 2σ de su propio histórico). Necesita ≥5 shifts de
- * baseline, por eso no tenía test. Se siembran 6 shifts cerrados: 5 con
- * descuadre chico (baseline) + 1 reciente con un descuadre enorme → flag.
+ * `/reports/anomalies` es el anti-fraude del dueño: marca el turno cuyo
+ * descuadre TOTAL (cajón + cuenta) se sale de lo habitual de esa persona.
+ * Necesita ≥5 turnos arqueados. Se siembran 6 cerrados: 5 con descuadre chico
+ * (lo habitual) + 1 con un descuadre enorme → marca.
+ *
+ * Los dos casos que cierran §7.v71: un turno donde el cajón quedó corto y la
+ * cuenta sobrada por lo mismo NO es un faltante (es un domicilio pagado del
+ * cajón), y un descuadre viejo se marca igual que uno reciente.
  */
 import * as bcrypt from 'bcrypt';
 import type { INestApplication } from '@nestjs/common';
@@ -92,5 +96,78 @@ describe('Anomalías por cajero (2σ) E2E', () => {
     const me = (res.body as Array<{ cashierId: string; baseline: unknown | null }>).find((r) => r.cashierId === nuevo.id);
     expect(me).toBeDefined();
     expect(me!.baseline).toBeNull();
+  });
+
+  it('un turno con el cajón corto y la cuenta sobrada por lo mismo NO es faltante', async () => {
+    const hash = await bcrypt.hash('dev12345', 10);
+    const dom = await prisma.user.create({
+      data: { email: 'op-dom-an@test.local', fullName: 'Op Domicilios', role: 'ADMIN_OPERATIVO', passwordHash: hash, mustChangePwd: false, active: true },
+    });
+    // Cinco turnos parejos + uno donde salieron $43.000 del cajón por un
+    // domicilio que el cliente transfirió: cajón −43.000, cuenta +43.000.
+    for (let i = 0; i < 5; i++) {
+      await prisma.shift.create({
+        data: { cashierId: dom.id, openingCash: 0, openedAt: day(i + 1), closedAt: day(i + 1), status: 'CLOSED', difference: 0,
+          digitalCountBreakdown: [{ method: 'TRANSFER', expected: 10000, counted: 10000, difference: 0 }] },
+      });
+    }
+    await prisma.shift.create({
+      data: { cashierId: dom.id, openingCash: 0, openedAt: day(21), closedAt: day(21), status: 'CLOSED', difference: -43000,
+        digitalCountBreakdown: [{ method: 'TRANSFER', expected: 10000, counted: 53000, difference: 43000 }] },
+    });
+
+    const res = await request.get('/reports/anomalies').set(auth()).expect(200);
+    const me = (res.body as Array<{ cashierId: string; shifts: Array<{ difference: number; digitalDifference: number; totalDifference: number; flags: string[] }> }>)
+      .find((r) => r.cashierId === dom.id)!;
+    const reciente = me.shifts[0]!;
+    expect(reciente.difference).toBe(-43000);
+    expect(reciente.digitalDifference).toBe(43000);
+    expect(reciente.totalDifference).toBe(0);
+    expect(reciente.flags).toEqual([]);
+  });
+
+  it('un descuadre viejo se marca igual que uno reciente', async () => {
+    const hash = await bcrypt.hash('dev12345', 10);
+    const viejo = await prisma.user.create({
+      data: { email: 'op-viejo-an@test.local', fullName: 'Op Viejo', role: 'ADMIN_OPERATIVO', passwordHash: hash, mustChangePwd: false, active: true },
+    });
+    // El descuadre grande queda en el MEDIO de la ventana, no al final.
+    const diffs = [0, 0, 300000, 0, 0, 0];
+    for (let i = 0; i < diffs.length; i++) {
+      await prisma.shift.create({
+        data: { cashierId: viejo.id, openingCash: 0, openedAt: day(i + 1), closedAt: day(i + 1), status: 'CLOSED', difference: diffs[i]! },
+      });
+    }
+
+    const res = await request.get('/reports/anomalies').set(auth()).expect(200);
+    const me = (res.body as Array<{ cashierId: string; shifts: Array<{ difference: number; flags: string[] }> }>)
+      .find((r) => r.cashierId === viejo.id)!;
+    const marcados = me.shifts.filter((s) => s.flags.includes('diff_high'));
+    expect(marcados).toHaveLength(1);
+    expect(marcados[0]!.difference).toBe(300000);
+    // Y no es el más reciente: el de arriba es uno de los de $0.
+    expect(me.shifts[0]!.flags).toEqual([]);
+  });
+
+  it('un turno con un medio sin arquear no se da por bueno ni se marca', async () => {
+    const hash = await bcrypt.hash('dev12345', 10);
+    const sinArq = await prisma.user.create({
+      data: { email: 'op-sinarq-an@test.local', fullName: 'Op Sin Arqueo', role: 'ADMIN_OPERATIVO', passwordHash: hash, mustChangePwd: false, active: true },
+    });
+    for (let i = 0; i < 5; i++) {
+      await prisma.shift.create({
+        data: { cashierId: sinArq.id, openingCash: 0, openedAt: day(i + 1), closedAt: day(i + 1), status: 'CLOSED', difference: 0 },
+      });
+    }
+    await prisma.shift.create({
+      data: { cashierId: sinArq.id, openingCash: 0, openedAt: day(22), closedAt: day(22), status: 'CLOSED', difference: -900000,
+        digitalCountBreakdown: [{ method: 'TRANSFER', expected: 10000, counted: null, difference: null }] },
+    });
+
+    const res = await request.get('/reports/anomalies').set(auth()).expect(200);
+    const me = (res.body as Array<{ cashierId: string; shifts: Array<{ totalDifference: number | null; flags: string[] }> }>)
+      .find((r) => r.cashierId === sinArq.id)!;
+    expect(me.shifts[0]!.totalDifference).toBeNull();
+    expect(me.shifts[0]!.flags).toEqual([]);
   });
 });
