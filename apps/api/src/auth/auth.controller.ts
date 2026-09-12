@@ -7,14 +7,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { LoginDtoSchema, type LoginDto } from './dto/login.dto';
-
-const LOGINS_POR_MINUTO_POR_DEFECTO = 10;
-
-/** Se lee una vez, al cargar el módulo: el tope es de arranque. */
-export function loginsPorMinuto(): number {
-  const raw = Number(process.env.AUTH_LOGINS_PER_MINUTE);
-  return Number.isInteger(raw) && raw > 0 ? raw : LOGINS_POR_MINUTO_POR_DEFECTO;
-}
+import { loginsPorMinuto } from '../common/rate-limit';
 import { UsersService } from '../users/users.service';
 import type { JwtAccessPayload, LoginResponse, RefreshResponse, User } from '@pos-tercos/types';
 
@@ -56,13 +49,7 @@ export class AuthController {
   ) {}
 
   @Public()
-  // Anti-brute-force de contraseña. `AUTH_LOGINS_PER_MINUTE` lo ajusta sin
-  // deploy (default 10, el valor real de producción): existe porque los tests
-  // de navegador pegan TODOS desde la misma IP y comparten un solo presupuesto
-  // —el job ya va en ~22 logins—, así que las suites del final fallaban con 429
-  // por vecindad y no por lo que probaban. Y su login por FORMULARIO no
-  // reintenta: rebotaba a /login sin decir por qué. Un valor basura cae al
-  // default, igual que `WEB_ORDER_MAX_PER_IP_PER_DAY` (§7.v21).
+  // Anti-brute-force de la contraseña; ver `common/rate-limit.ts`.
   @Throttle({ default: { ttl: 60_000, limit: loginsPorMinuto() } })
   @Post('login')
   @HttpCode(200)
