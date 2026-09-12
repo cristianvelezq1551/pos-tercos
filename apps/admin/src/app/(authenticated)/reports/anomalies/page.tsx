@@ -26,7 +26,7 @@ export default async function AnomaliesPage() {
       <PageHeader
         eyebrow="Reportes"
         title="Anomalías por cajero"
-        description="Comparamos las métricas del último turno cerrado contra el histórico personal del cajero (mínimo 5 turnos). Si una métrica supera media + 2σ, se marca como anomalía."
+        description="Cada turno cerrado se compara contra lo habitual de ESE cajero (mínimo 5 turnos arqueados). El descuadre que se mide es el total: cajón más cuenta."
         icon={<AlertTriangle className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

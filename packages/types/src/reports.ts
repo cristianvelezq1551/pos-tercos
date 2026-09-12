@@ -6,9 +6,9 @@ import { SaleTypeEnum } from './sales';
 // ====================================================================
 
 export const ShiftAnomalyFlagEnum = z.enum([
-  'diff_high', // |difference| > baseline.avgDiff + 2σ
-  'voids_high', // voidCount > baseline.avgVoids + 2σ
-  'noSale_high', // noSaleCount > baseline.avgNoSale + 2σ
+  'diff_high', // descuadre TOTAL por encima del umbral personal
+  'voids_high', // anulaciones por encima del umbral personal
+  'noSale_high', // aperturas de cajón sin venta por encima del umbral personal
 ]);
 export type ShiftAnomalyFlag = z.infer<typeof ShiftAnomalyFlagEnum>;
 
@@ -16,23 +16,54 @@ export const ShiftMetricsSchema = z.object({
   shiftId: z.string().uuid(),
   openedAt: z.string().datetime(),
   closedAt: z.string().datetime().nullable(),
+  /** Descuadre del CAJÓN. */
   difference: z.number().nullable(),
+  /**
+   * Descuadre de la CUENTA (suma de los medios digitales arqueados). Null si
+   * el turno cerró con algún medio sin arquear: ahí el total no se puede saber
+   * y suponerlo en cero daría por bueno un turno que nadie revisó.
+   */
+  digitalDifference: z.number().nullable().optional(),
+  /**
+   * Cajón + cuenta. Es la métrica con la que se marca (§7.v71): un domicilio
+   * que el cliente transfirió y se pagó del cajón deja el efectivo corto y la
+   * cuenta sobrada por lo mismo, y ahí no falta un peso.
+   */
+  totalDifference: z.number().nullable().optional(),
   voidCount: z.number().int().nonnegative(),
   noSaleCount: z.number().int().nonnegative(),
-  /** Flags marcadas si el valor está > mean + 2σ del baseline personal. */
+  /** Lo que se sale de lo normal de ESE cajero en ESE turno. */
   flags: z.array(ShiftAnomalyFlagEnum),
 });
 export type ShiftMetrics = z.infer<typeof ShiftMetricsSchema>;
 
 export const CashierBaselineSchema = z.object({
-  /** Cantidad de shifts usados para calcular avg/std. */
+  /** Turnos con el descuadre arqueado que se usaron para medir lo normal. */
   sampleSize: z.number().int().nonnegative(),
+  /**
+   * Promedio y desviación, que es como se medía antes. Se conservan para que
+   * una versión previa del admin siga leyendo la respuesta mientras se
+   * despliega (API y admin salen por separado). Lo que MARCA es el umbral.
+   */
   avgDiff: z.number(),
   stdDiff: z.number(),
   avgVoids: z.number(),
   stdVoids: z.number(),
   avgNoSale: z.number(),
   stdNoSale: z.number(),
+  /** De los turnos mirados, cuántos tienen el descuadre arqueado. */
+  arqueados: z.number().int().nonnegative().optional(),
+  /**
+   * Lo habitual de esa persona (mediana) y el valor por encima del cual se
+   * marca. Los del descuadre van en null cuando no hay 5 turnos arqueados: ahí
+   * no se puede decir qué es normal, y por eso no se marca ningún descuadre.
+   */
+  typicalDiff: z.number().nullable().optional(),
+  thresholdDiff: z.number().nullable().optional(),
+  typicalVoids: z.number().optional(),
+  thresholdVoids: z.number().optional(),
+  typicalNoSale: z.number().optional(),
+  thresholdNoSale: z.number().optional(),
 });
 export type CashierBaseline = z.infer<typeof CashierBaselineSchema>;
 
@@ -40,9 +71,9 @@ export const CashierAnomaliesSchema = z.object({
   cashierId: z.string().uuid(),
   cashierName: z.string().nullable(),
   totalShifts: z.number().int().nonnegative(),
-  /** Baseline calculado desde shifts.slice(0, -1). null si <5 shifts (insuficiente). */
+  /** Lo normal de esa persona. Null con menos de 5 turnos cerrados. */
   baseline: CashierBaselineSchema.nullable(),
-  /** Últimos 30 shifts del cajero, ordenados por openedAt desc. */
+  /** Últimos 30 turnos del cajero, del más nuevo al más viejo. TODOS se evalúan. */
   shifts: z.array(ShiftMetricsSchema),
 });
 export type CashierAnomalies = z.infer<typeof CashierAnomaliesSchema>;

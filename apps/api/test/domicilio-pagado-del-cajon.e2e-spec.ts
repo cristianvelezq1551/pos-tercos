@@ -242,6 +242,78 @@ describe('Domicilio pagado del cajón E2E', () => {
     expect((await esperado()).expectedCash).toBe(APERTURA);
   });
 
+  it('un cajero que no abrió esta caja no la puede tocar', async () => {
+    // Antifraude: el egreso baja el esperado y podría tapar un faltante ajeno.
+    const hash = await bcrypt.hash('dev12345', 10);
+    await prisma.user.create({
+      data: {
+        email: 'otro-cajero-dom@test.local',
+        fullName: 'Otro Cajero',
+        role: 'ADMIN_OPERATIVO',
+        passwordHash: hash,
+        mustChangePwd: false,
+        active: true,
+      },
+    });
+    const ajeno = await loginAs(request, 'otro-cajero-dom@test.local');
+    const suAuth = { Authorization: `Bearer ${ajeno}` };
+
+    await request
+      .post(`/shifts/${shiftId}/delivery-payout`)
+      .set(suAuth)
+      .send({ amount: DOMICILIO })
+      .expect(403);
+
+    const mio = await registrar();
+    await request
+      .delete(`/shifts/${shiftId}/delivery-payout/${mio[0]!.pairId}`)
+      .set(suAuth)
+      .expect(403);
+    // Y sigue ahí: el 403 no borró nada.
+    await request
+      .delete(`/shifts/${shiftId}/delivery-payout/${mio[0]!.pairId}`)
+      .set(auth())
+      .expect(200);
+  });
+
+  it('sin el medio habilitado no se registra: el cierre pediría arquear algo invisible', async () => {
+    const antes = await esperado();
+    await request.patch('/payment-methods/TRANSFER').set(auth()).send({ enabled: false }).expect(200);
+    try {
+      const res = await request
+        .post(`/shifts/${shiftId}/delivery-payout`)
+        .set(auth())
+        .send({ amount: DOMICILIO })
+        .expect(400);
+      expect(String((res.body as { message: string }).message)).toMatch(/Medios de pago/i);
+    } finally {
+      await request.patch('/payment-methods/TRANSFER').set(auth()).send({ enabled: true }).expect(200);
+    }
+    // Nada quedó a medias.
+    expect((await esperado()).expectedCash).toBe(antes.expectedCash);
+  });
+
+  it('dos registros a la vez son dos domicilios distintos, y deshacer dos veces a la vez no duplica', async () => {
+    const antes = await esperado();
+    const [a, b] = await Promise.all([registrar(5_000), registrar(3_000)]);
+    expect(a[0]!.pairId).not.toBe(b[0]!.pairId);
+    expect((await esperado()).expectedCash).toBe(antes.expectedCash - 8_000);
+
+    // El mismo par, borrado dos veces en paralelo: uno gana y el otro no encuentra.
+    const salidas = await Promise.allSettled([
+      request.delete(`/shifts/${shiftId}/delivery-payout/${a[0]!.pairId}`).set(auth()),
+      request.delete(`/shifts/${shiftId}/delivery-payout/${a[0]!.pairId}`).set(auth()),
+    ]);
+    const codigos = salidas
+      .map((r) => (r.status === 'fulfilled' ? (r.value as { status: number }).status : 0))
+      .sort();
+    expect(codigos).toEqual([200, 404]);
+    expect((await esperado()).expectedCash).toBe(antes.expectedCash - 3_000);
+
+    await request.delete(`/shifts/${shiftId}/delivery-payout/${b[0]!.pairId}`).set(auth()).expect(200);
+    expect((await esperado()).expectedCash).toBe(antes.expectedCash);
+  });
+
   it('con la caja cerrada ya no se registra ni se deshace', async () => {
     const patas = await registrar();
     const pairId = patas[0].pairId as string;

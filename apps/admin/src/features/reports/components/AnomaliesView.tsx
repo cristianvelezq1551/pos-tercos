@@ -1,12 +1,27 @@
-import type { CashierAnomalies, ShiftAnomalyFlag } from '@pos-tercos/types';
-import { DataTable, DateTimeCell, type DataTableColumn } from '@pos-tercos/ui';
+import type { CashierAnomalies } from '@pos-tercos/types';
 import { formatCop } from '../../../lib/format';
+import { traeElTotal } from './anomalies-shared';
+import { ShiftsAnomalyTable } from './ShiftsAnomalyTable';
 
-const FLAG_LABEL: Record<ShiftAnomalyFlag, string> = {
-  diff_high: 'Descuadre fuera de norma',
-  voids_high: 'Anulaciones fuera de norma',
-  noSale_high: 'Aperturas de cajón sin venta fuera de norma',
-};
+/**
+ * El umbral del negocio (§7.v20). La vista mide lo ANORMAL para cada persona,
+ * así que un cajero que descuadra siempre lo mismo no se marca — esa es su
+ * norma. Contar aparte los turnos que pasaron este umbral evita que la
+ * pantalla se lea como "todo bien" cuando no lo está.
+ */
+const UMBRAL_DEL_NEGOCIO = 5_000;
+
+/** "0", "1", "2,5" — un umbral de anulaciones con un decimal fijo se lee raro. */
+function conteo(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function conDescuadreReal(shifts: CashierAnomalies['shifts']): number {
+  return shifts.filter((s) => {
+    const t = s.totalDifference ?? null;
+    return t !== null && Math.abs(t) >= UMBRAL_DEL_NEGOCIO;
+  }).length;
+}
 
 export function AnomaliesView({ data }: { data: CashierAnomalies[] }) {
   if (data.length === 0) {
@@ -27,8 +42,12 @@ export function AnomaliesView({ data }: { data: CashierAnomalies[] }) {
 }
 
 function CashierBlock({ c }: { c: CashierAnomalies }) {
-  const recent = c.shifts[0];
-  const recentFlags = recent?.flags ?? [];
+  const marcados = c.shifts.filter((s) => s.flags.length > 0);
+  const revisados = c.shifts.length;
+  // Solo se dice cuando AGREGA algo: si todos los turnos descuadrados ya
+  // quedaron marcados, repetir el número es ruido.
+  const descuadrados = traeElTotal(c.shifts) ? conDescuadreReal(c.shifts) : 0;
+  const descuadreSinMarcar = descuadrados > marcados.length;
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
@@ -38,49 +57,81 @@ function CashierBlock({ c }: { c: CashierAnomalies }) {
             {c.totalShifts} turno{c.totalShifts === 1 ? '' : 's'} cerrados
           </p>
         </div>
-        {recentFlags.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {recentFlags.map((f) => (
-              <span
-                key={f}
-                className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive"
-              >
-                ⚠ {FLAG_LABEL[f]}
-              </span>
-            ))}
-          </div>
-        ) : c.baseline !== null ? (
-          <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success">
-            ✓ Sin anomalías
+        {c.baseline === null ? (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
+            Sin historial suficiente (se necesitan 5 turnos cerrados)
+          </span>
+        ) : marcados.length > 0 ? (
+          <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+            {marcados.length} de {revisados} turnos se salen de lo normal
           </span>
         ) : (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
-            Sin historial suficiente (se necesitan 5 turnos o más)
+          <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success">
+            Nada fuera de norma en los últimos {revisados} turnos
           </span>
         )}
       </header>
 
       {c.baseline !== null ? (
-        <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
-          <BaselineCard
-            label="Descuadre prom."
-            value={`±${formatCop(c.baseline.avgDiff)}`}
-            hint={`σ ${formatCop(c.baseline.stdDiff)}`}
-          />
-          <BaselineCard
-            label="Anulaciones / turno"
-            value={c.baseline.avgVoids.toFixed(1)}
-            hint={`σ ${c.baseline.stdVoids.toFixed(2)}`}
-          />
-          <BaselineCard
-            label="Cajón sin venta / turno"
-            value={c.baseline.avgNoSale.toFixed(1)}
-            hint={`σ ${c.baseline.stdNoSale.toFixed(2)}`}
-          />
-        </div>
+        <>
+          <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+            <BaselineCard
+              label="Descuadre habitual"
+              value={
+                c.baseline.typicalDiff === null
+                  ? '—'
+                  : `±${formatCop(c.baseline.typicalDiff ?? c.baseline.avgDiff)}`
+              }
+              hint={
+                c.baseline.typicalDiff === null
+                  ? 'aún no hay 5 turnos arqueados: no se marca ningún descuadre'
+                  : c.baseline.thresholdDiff !== undefined && c.baseline.thresholdDiff !== null
+                    ? `se marca por encima de ${formatCop(c.baseline.thresholdDiff)}`
+                    : `σ ${formatCop(c.baseline.stdDiff)}`
+              }
+            />
+            <BaselineCard
+              label="Anulaciones / turno"
+              value={conteo(c.baseline.typicalVoids ?? c.baseline.avgVoids)}
+              hint={
+                c.baseline.thresholdVoids !== undefined
+                  ? `se marca por encima de ${conteo(c.baseline.thresholdVoids)}`
+                  : `σ ${c.baseline.stdVoids.toFixed(2)}`
+              }
+            />
+            <BaselineCard
+              label="Cajón sin venta / turno"
+              value={conteo(c.baseline.typicalNoSale ?? c.baseline.avgNoSale)}
+              hint={
+                c.baseline.thresholdNoSale !== undefined
+                  ? `se marca por encima de ${conteo(c.baseline.thresholdNoSale)}`
+                  : `σ ${c.baseline.stdNoSale.toFixed(2)}`
+              }
+            />
+          </div>
+          <p className="mt-2 text-[0.6875rem] leading-snug text-muted-foreground">
+            Lo habitual se mide con la mediana de {c.baseline.arqueados ?? c.baseline.sampleSize}{' '}
+            turnos arqueados, para que un caso suelto no corra la vara. Nunca se marca por debajo de{' '}
+            {formatCop(UMBRAL_DEL_NEGOCIO)}.
+          </p>
+        </>
       ) : null}
 
       <ShiftsAnomalyTable shifts={c.shifts} />
+      {descuadreSinMarcar ? (
+        <p className="mt-2 text-[0.6875rem] font-medium leading-snug text-warning">
+          Aparte de lo anterior: {descuadrados} de {revisados} turnos cerraron con un descuadre de{' '}
+          {formatCop(UMBRAL_DEL_NEGOCIO)} o más. Esta pantalla marca lo que se sale de lo HABITUAL de
+          cada persona, así que un descuadre parejo no aparece como anomalía.
+        </p>
+      ) : null}
+      {traeElTotal(c.shifts) ? (
+        <p className="mt-2 text-[0.6875rem] leading-snug text-muted-foreground">
+          Si el cajón quedó corto y la cuenta sobrada por el mismo monto, no falta plata: es un
+          domicilio que el cliente transfirió y se pagó en efectivo del cajón. Regístralo en Caja y
+          las dos puntas quedan en cero.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -94,71 +145,5 @@ function BaselineCard({ label, value, hint }: { label: string; value: string; hi
       <p className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{value}</p>
       <p className="text-[10px] text-muted-foreground">{hint}</p>
     </div>
-  );
-}
-
-/** El histórico de turnos de un cajero. En teléfono cada turno es una
- *  tarjeta: cinco columnas de números no caben en 390 px. */
-function ShiftsAnomalyTable({ shifts }: { shifts: CashierAnomalies['shifts'] }) {
-  const num = { align: 'right', numeric: true } as const;
-  const columns: DataTableColumn<CashierAnomalies['shifts'][number]>[] = [
-    {
-      key: 'opened',
-      header: 'Turno (apertura)',
-      primary: true,
-      cell: (s) => <DateTimeCell value={s.openedAt} className="text-sm text-foreground" />,
-    },
-    {
-      key: 'difference',
-      header: 'Descuadre',
-      ...num,
-      cell: (s) =>
-        s.difference !== null ? (
-          <span className={Math.abs(s.difference) >= 5000 ? 'font-bold text-destructive' : ''}>
-            {s.difference > 0 ? '+' : ''}
-            {formatCop(s.difference)}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      key: 'voids',
-      header: 'Anulaciones',
-      ...num,
-      cell: (s) =>
-        s.voidCount > 0 ? (
-          <span className="font-medium text-warning">{s.voidCount}</span>
-        ) : (
-          s.voidCount
-        ),
-    },
-    {
-      key: 'noSale',
-      header: 'Cajón sin venta',
-      ...num,
-      cell: (s) =>
-        s.noSaleCount > 0 ? (
-          <span className="font-medium text-warning">{s.noSaleCount}</span>
-        ) : (
-          s.noSaleCount
-        ),
-    },
-    {
-      key: 'flags',
-      header: 'Alertas',
-      cell: (s) =>
-        s.flags.length > 0 ? (
-          <span className="text-xs text-destructive">
-            {s.flags.map((f) => FLAG_LABEL[f]).join(' · ')}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        ),
-    },
-  ];
-
-  return (
-    <DataTable rows={shifts} columns={columns} rowKey={(s) => s.shiftId} className="mt-4 rounded-md" />
   );
 }

@@ -1,88 +1,77 @@
 import { Injectable } from '@nestjs/common';
+import { computeCashierBaseline, flagsForShift } from '@pos-tercos/domain';
+import type { CashierAnomalyBaseline, ShiftAnomalySample } from '@pos-tercos/domain';
 import type {
   CashierAnomalies,
   CashierBaseline,
-  ShiftAnomalyFlag,
+  DigitalCountLine,
   ShiftMetrics,
 } from '@pos-tercos/types';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 const RECENT_SHIFTS_PER_CASHIER = 30;
-const MIN_BASELINE_SAMPLE = 5; // si hay menos shifts de baseline, no se calculan flags
-const SIGMA_THRESHOLD = 2;
 
 @Injectable()
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * FASE 11.D: anomalías por cajero. Para cada cajero con shifts cerrados,
-   * calcula:
-   *  - Baseline = media + std de los shifts previos al más reciente.
-   *  - Flags = métrica del shift más reciente que excede `mean + 2σ`.
+   * Anomalías por cajero: qué turno se sale de lo NORMAL para esa persona.
    *
-   * Métricas trackeadas:
-   *  - difference: |shift.difference| (descuadre absoluto)
-   *  - voidCount: # sales VOID asociadas al shift
-   *  - noSaleCount: # `CASH_DRAWER_OPENED_NO_SALE` por ese cajero en la
-   *    ventana del shift (audit_log)
-   *
-   * NO calcula flags si hay <5 shifts de baseline (insuficiente sample).
+   * Lo que se mide es el descuadre TOTAL (cajón + cuenta), las anulaciones y
+   * las aperturas de cajón sin venta. Lo normal y el umbral los calcula
+   * `@pos-tercos/domain` — acá solo se leen los datos. Se evalúan TODOS los
+   * turnos de la ventana, no solo el último.
    */
   async getAnomalies(): Promise<CashierAnomalies[]> {
     const cashiers = await this.prisma.user.findMany({
-      where: {
-        role: { in: ['CAJERO', 'ADMIN_OPERATIVO', 'DUENO'] },
-        active: true,
-      },
+      where: { role: { in: ['CAJERO', 'ADMIN_OPERATIVO', 'DUENO'] }, active: true },
       select: { id: true, fullName: true },
     });
 
     const results: CashierAnomalies[] = [];
     for (const cashier of cashiers) {
-      const allClosed = await this.prisma.shift.findMany({
-        where: {
-          cashierId: cashier.id,
-          status: { in: ['CLOSED', 'RECONCILED'] },
-        },
+      const bloque = await this.anomaliesForCashier(cashier.id, cashier.fullName);
+      if (bloque) results.push(bloque);
+    }
+    return results;
+  }
+
+  private async anomaliesForCashier(
+    cashierId: string,
+    cashierName: string | null,
+  ): Promise<CashierAnomalies | null> {
+    const where = { cashierId, status: { in: ['CLOSED', 'RECONCILED'] } } satisfies Prisma.ShiftWhereInput;
+    const [allClosed, totalShifts] = await Promise.all([
+      this.prisma.shift.findMany({
+        where,
         orderBy: { openedAt: 'desc' },
         take: RECENT_SHIFTS_PER_CASHIER,
-      });
-      if (allClosed.length === 0) continue;
+      }),
+      this.prisma.shift.count({ where }),
+    ]);
+    if (allClosed.length === 0) return null;
 
-      const totalShifts = await this.prisma.shift.count({
-        where: {
-          cashierId: cashier.id,
-          status: { in: ['CLOSED', 'RECONCILED'] },
-        },
-      });
+    const metrics = await Promise.all(
+      allClosed.map((s) => this.computeShiftMetrics(s.id, cashierId, s.openedAt, s.closedAt)),
+    );
 
-      // Calcular metrics por shift en paralelo (limitado a top 30).
-      const metrics: ShiftMetrics[] = await Promise.all(
-        allClosed.map((s) => this.computeShiftMetrics(s.id, cashier.id, s.openedAt, s.closedAt)),
-      );
-
-      // Baseline = todos menos el más reciente (que es metrics[0] porque desc).
-      const baselineSource = metrics.slice(1);
-      const baseline = baselineSource.length >= MIN_BASELINE_SAMPLE
-        ? computeBaseline(baselineSource)
-        : null;
-
-      // Aplicar flags al shift más reciente (metrics[0]) si hay baseline.
-      if (baseline && metrics.length > 0) {
-        metrics[0]!.flags = computeFlags(metrics[0]!, baseline);
-      }
-
-      results.push({
-        cashierId: cashier.id,
-        cashierName: cashier.fullName,
-        totalShifts,
-        baseline,
-        shifts: metrics,
+    const muestras = metrics.map(toSample);
+    const baseline = computeCashierBaseline(muestras);
+    if (baseline) {
+      metrics.forEach((m, i) => {
+        m.flags = flagsForShift(muestras[i]!, baseline);
       });
     }
 
-    return results;
+    return {
+      cashierId,
+      cashierName,
+      totalShifts,
+      baseline: baseline ? toBaselineDto(baseline, metrics) : null,
+      shifts: metrics,
+    };
   }
 
   private async computeShiftMetrics(
@@ -93,7 +82,7 @@ export class ReportsService {
   ): Promise<ShiftMetrics> {
     const shift = await this.prisma.shift.findUnique({
       where: { id: shiftId },
-      select: { difference: true },
+      select: { difference: true, digitalCountBreakdown: true },
     });
 
     const [voidCount, noSaleCount] = await Promise.all([
@@ -112,13 +101,22 @@ export class ReportsService {
       }),
     ]);
 
+    const difference =
+      shift?.difference !== null && shift?.difference !== undefined
+        ? Number(shift.difference)
+        : null;
+    const digitalDifference = sumArqueoDigital(
+      (shift?.digitalCountBreakdown as DigitalCountLine[] | null) ?? null,
+    );
+
     return {
       shiftId,
       openedAt: openedAt.toISOString(),
       closedAt: closedAt?.toISOString() ?? null,
-      difference: shift?.difference !== null && shift?.difference !== undefined
-        ? Number(shift.difference)
-        : null,
+      difference,
+      digitalDifference,
+      totalDifference:
+        difference === null || digitalDifference === null ? null : difference + digitalDifference,
       voidCount,
       noSaleCount,
       flags: [],
@@ -126,44 +124,61 @@ export class ReportsService {
   }
 }
 
-function computeBaseline(shifts: ShiftMetrics[]): CashierBaseline {
-  const diffs = shifts.map((s) => Math.abs(s.difference ?? 0));
-  const voids = shifts.map((s) => s.voidCount);
-  const nosale = shifts.map((s) => s.noSaleCount);
-  const [avgDiff, stdDiff] = avgStd(diffs);
-  const [avgVoids, stdVoids] = avgStd(voids);
-  const [avgNoSale, stdNoSale] = avgStd(nosale);
+/**
+ * Descuadre de la cuenta. Null si algún medio quedó SIN arquear: ahí no se
+ * sabe cuánto fue y darlo por cero daría por bueno un turno que nadie revisó.
+ * Sin medios digitales en el turno, el descuadre de la cuenta es 0.
+ */
+function toSample(m: ShiftMetrics): ShiftAnomalySample {
   return {
-    sampleSize: shifts.length,
-    avgDiff,
-    stdDiff,
-    avgVoids,
-    stdVoids,
-    avgNoSale,
-    stdNoSale,
+    totalDifference: m.totalDifference ?? null,
+    voidCount: m.voidCount,
+    noSaleCount: m.noSaleCount,
   };
 }
 
-function computeFlags(shift: ShiftMetrics, baseline: CashierBaseline): ShiftAnomalyFlag[] {
-  const flags: ShiftAnomalyFlag[] = [];
-  const diffAbs = Math.abs(shift.difference ?? 0);
-  if (diffAbs > baseline.avgDiff + SIGMA_THRESHOLD * baseline.stdDiff) {
-    flags.push('diff_high');
+function sumArqueoDigital(lines: DigitalCountLine[] | null): number | null {
+  // Sin columna = no hubo movimiento digital en el turno (el cierre solo la
+  // escribe cuando hay alguno), así que el descuadre de la cuenta es CERO.
+  if (lines === null || lines === undefined) return 0;
+  // Con otra forma sí es desconocido: es una columna JSON y una fila rara
+  // tiraría un TypeError acá. Un reporte del dueño no puede caerse con 500
+  // —que además abre una alerta— por un dato viejo con forma inesperada.
+  if (!Array.isArray(lines)) return null;
+  if (lines.length === 0) return 0;
+  let total = 0;
+  for (const linea of lines) {
+    const valor = Number(linea?.difference);
+    if (linea?.difference === null || linea?.difference === undefined || !Number.isFinite(valor)) {
+      return null;
+    }
+    total += valor;
   }
-  if (shift.voidCount > baseline.avgVoids + SIGMA_THRESHOLD * baseline.stdVoids) {
-    flags.push('voids_high');
-  }
-  if (shift.noSaleCount > baseline.avgNoSale + SIGMA_THRESHOLD * baseline.stdNoSale) {
-    flags.push('noSale_high');
-  }
-  return flags;
+  return total;
+}
+
+/**
+ * Lo que viaja a la pantalla. `typical*`/`threshold*` es lo que se usa hoy;
+ * `avg*`/`std*` son descriptivos y se conservan porque una versión previa del
+ * admin los exige mientras se despliega (API y admin salen por separado).
+ */
+function toBaselineDto(
+  base: CashierAnomalyBaseline,
+  metrics: readonly ShiftMetrics[],
+): CashierBaseline {
+  const diffs = metrics
+    .filter((m) => m.totalDifference !== null && m.totalDifference !== undefined)
+    .map((m) => Math.abs(m.totalDifference as number));
+  const [avgDiff, stdDiff] = avgStd(diffs);
+  const [avgVoids, stdVoids] = avgStd(metrics.map((m) => m.voidCount));
+  const [avgNoSale, stdNoSale] = avgStd(metrics.map((m) => m.noSaleCount));
+  return { ...base, avgDiff, stdDiff, avgVoids, stdVoids, avgNoSale, stdNoSale };
 }
 
 function avgStd(values: number[]): [number, number] {
   if (values.length === 0) return [0, 0];
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
-  const variance =
-    values.reduce((acc, v) => acc + (v - avg) * (v - avg), 0) / values.length;
+  const variance = values.reduce((acc, v) => acc + (v - avg) * (v - avg), 0) / values.length;
   return [round(avg), round(Math.sqrt(variance))];
 }
 
