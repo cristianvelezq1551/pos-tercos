@@ -138,9 +138,23 @@ function toSample(m: ShiftMetrics): ShiftAnomalySample {
 }
 
 function sumArqueoDigital(lines: DigitalCountLine[] | null): number | null {
-  if (!lines || lines.length === 0) return 0;
-  if (lines.some((d) => d.difference === null || d.difference === undefined)) return null;
-  return lines.reduce((acc, d) => acc + (d.difference ?? 0), 0);
+  // Sin columna = no hubo movimiento digital en el turno (el cierre solo la
+  // escribe cuando hay alguno), así que el descuadre de la cuenta es CERO.
+  if (lines === null || lines === undefined) return 0;
+  // Con otra forma sí es desconocido: es una columna JSON y una fila rara
+  // tiraría un TypeError acá. Un reporte del dueño no puede caerse con 500
+  // —que además abre una alerta— por un dato viejo con forma inesperada.
+  if (!Array.isArray(lines)) return null;
+  if (lines.length === 0) return 0;
+  let total = 0;
+  for (const linea of lines) {
+    const valor = Number(linea?.difference);
+    if (linea?.difference === null || linea?.difference === undefined || !Number.isFinite(valor)) {
+      return null;
+    }
+    total += valor;
+  }
+  return total;
 }
 
 /**

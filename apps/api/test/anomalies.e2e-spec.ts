@@ -170,4 +170,30 @@ describe('Anomalías por cajero (2σ) E2E', () => {
     expect(me.shifts[0]!.totalDifference).toBeNull();
     expect(me.shifts[0]!.flags).toEqual([]);
   });
+
+  it('un arqueo digital con forma rara no tumba el reporte', async () => {
+    // Defensa: la columna es JSON. Una fila vieja con otra forma tiraría un
+    // TypeError y el reporte del dueño respondería 500 —que además abre una
+    // alerta— en vez de decir que ese turno no se sabe.
+    const hash = await bcrypt.hash('dev12345', 10);
+    const raro = await prisma.user.create({
+      data: { email: 'op-raro-an@test.local', fullName: 'Op Raro', role: 'ADMIN_OPERATIVO', passwordHash: hash, mustChangePwd: false, active: true },
+    });
+    for (let i = 0; i < 5; i++) {
+      await prisma.shift.create({
+        data: { cashierId: raro.id, openingCash: 0, openedAt: day(i + 1), closedAt: day(i + 1), status: 'CLOSED', difference: 0 },
+      });
+    }
+    await prisma.shift.create({
+      data: { cashierId: raro.id, openingCash: 0, openedAt: day(23), closedAt: day(23), status: 'CLOSED', difference: 0,
+        // Un objeto donde el código espera una lista.
+        digitalCountBreakdown: { TRANSFER: 10000 } as unknown as object },
+    });
+
+    const res = await request.get('/reports/anomalies').set(auth()).expect(200);
+    const me = (res.body as Array<{ cashierId: string; shifts: Array<{ totalDifference: number | null; flags: string[] }> }>)
+      .find((r) => r.cashierId === raro.id)!;
+    expect(me.shifts[0]!.totalDifference).toBeNull();
+    expect(me.shifts[0]!.flags).toEqual([]);
+  });
 });
