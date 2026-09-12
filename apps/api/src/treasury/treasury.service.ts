@@ -11,7 +11,7 @@ import {
   type TreasurySummary,
   type UpdateTreasuryConfig,
 } from '@pos-tercos/types';
-import type { SaleStatus } from '@prisma/client';
+import type { Prisma, SaleStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { localMidnightOfYmd } from '../common/local-dates';
@@ -146,6 +146,53 @@ export class TreasuryService {
       await this.idempotency.cache({ key: idempotencyKey, endpoint: 'treasury/transfer', body: dto, statusCode: 201, userId: actorId });
     }
     return dto;
+  }
+
+  /**
+   * El MISMO traspaso, pero escrito dentro de una transacción ajena.
+   *
+   * Lo usa el "domicilio pagado del cajón" (§7.v71), que tiene que escribir en
+   * un solo golpe las dos patas del movimiento de caja y este traspaso: si una
+   * fallara y las otras no, un libro quedaría corregido y el otro no.
+   *
+   * No audita ni cachea idempotencia a propósito: quien llama registra UNA
+   * entrada de bitácora por la operación completa (que incluye el id de este
+   * traspaso), en vez de tres entradas sueltas que hay que volver a juntar.
+   * La ESCRITURA sigue viviendo en este service — ningún otro módulo toca
+   * `treasury_movements` con Prisma.
+   */
+  async createTransferInTx(
+    tx: Prisma.TransactionClient,
+    input: CreateTransfer,
+    actorId: string,
+  ): Promise<TreasuryMovement> {
+    if (input.fromPocket === input.toPocket) {
+      throw new BadRequestException('El origen y el destino deben ser distintos.');
+    }
+    const row = await tx.treasuryMovement.create({
+      data: {
+        kind: 'TRANSFER',
+        fromPocket: input.fromPocket,
+        toPocket: input.toPocket,
+        amount: input.amount,
+        reason: input.reason,
+        actorId,
+        occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
+      },
+    });
+    return this.toMovementDto(row, null);
+  }
+
+  /**
+   * Anula un traspaso creado por `createTransferInTx`, dentro de la misma
+   * transacción que deshace la operación que lo creó. Espeja `voidMovement`
+   * pero sin su bitácora, por la misma razón que arriba.
+   */
+  async voidMovementInTx(tx: Prisma.TransactionClient, movementId: string): Promise<void> {
+    await tx.treasuryMovement.updateMany({
+      where: { id: movementId, status: 'ACTIVE' },
+      data: { status: 'VOIDED' },
+    });
   }
 
   async createAdjustment(

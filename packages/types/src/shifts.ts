@@ -122,6 +122,20 @@ export type CloseShift = z.infer<typeof CloseShiftSchema>;
 export const CashMovementTypeEnum = z.enum(['IN', 'OUT']);
 export type CashMovementType = z.infer<typeof CashMovementTypeEnum>;
 
+/**
+ * Operación de caja con DOS patas, que nacen y se borran juntas.
+ *
+ * Hoy solo existe una: el **domicilio pagado del cajón**. El cliente transfiere
+ * la comida MÁS el domicilio en un solo pago, la venta registra solo la comida,
+ * y al domiciliario se le paga en efectivo del cajón. Sin registrarlo, cada
+ * cierre queda con el cajón corto y la cuenta sobrada por el mismo monto.
+ */
+export const DELIVERY_PAYOUT_PURPOSE = 'DELIVERY_PAYOUT';
+
+/** Motivos fijos de las dos patas: el cierre los muestra tal cual. */
+export const DELIVERY_PAYOUT_REASON_OUT = 'Domicilio pagado en efectivo del cajón';
+export const DELIVERY_PAYOUT_REASON_IN = 'Domicilio que el cliente pagó por transferencia';
+
 export const CashMovementSchema = z.object({
   id: z.string().uuid(),
   shiftId: z.string().uuid(),
@@ -133,6 +147,18 @@ export const CashMovementSchema = z.object({
   userId: z.string().uuid(),
   userName: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
+  /**
+   * Operación de dos patas a la que pertenece (hoy `DELIVERY_PAYOUT`). Null o
+   * ausente = movimiento suelto de siempre.
+   *
+   * ⚠️ OPCIONALES a propósito: la API (Railway) y el admin (Vercel) se
+   * despliegan por separado, así que un admin nuevo tiene que poder leer la
+   * respuesta de una API que todavía no los manda (mismo criterio que
+   * `proofsCount`, §7.v62).
+   */
+  purpose: z.string().nullable().optional(),
+  /** Une las dos patas. Editar o borrar una sola descuadra el cierre. */
+  pairId: z.string().uuid().nullable().optional(),
 });
 export type CashMovement = z.infer<typeof CashMovementSchema>;
 
@@ -143,6 +169,18 @@ export const CreateCashMovementSchema = z.object({
   reason: z.string().min(3).max(200),
 });
 export type CreateCashMovement = z.infer<typeof CreateCashMovementSchema>;
+
+/**
+ * Registro de un domicilio que el cliente pagó por transferencia y el cajero
+ * pagó en efectivo del cajón. El monto es SOLO el del domicilio: la venta
+ * (la comida) ya está registrada aparte y no se toca.
+ */
+export const CreateDeliveryPayoutSchema = z.object({
+  amount: z.number().positive(),
+  /** Referencia opcional para reconocerlo después ("pedido de la 30"). */
+  note: z.string().trim().min(3).max(120).optional(),
+});
+export type CreateDeliveryPayout = z.infer<typeof CreateDeliveryPayoutSchema>;
 
 /** Corrección de un movimiento mal registrado (solo con la caja abierta). */
 export const UpdateCashMovementSchema = CreateCashMovementSchema;

@@ -66,6 +66,9 @@ export const AuditActionEnum = z.enum([
   'CASH_MOVEMENT_OUT',
   'CASH_MOVEMENT_UPDATED',
   'CASH_MOVEMENT_DELETED',
+  // §7.v71 — domicilio que el cliente transfirió y se pagó del cajón.
+  'DELIVERY_PAYOUT_REGISTERED',
+  'DELIVERY_PAYOUT_DELETED',
 
   // Promotions (FASE 5+)
   'PROMOTION_CREATED',

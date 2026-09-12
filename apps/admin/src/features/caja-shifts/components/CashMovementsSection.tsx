@@ -9,6 +9,7 @@ import type {
 import { useCallback, useEffect, useState } from 'react';
 import { FALLBACK_METHODS, fetchEnabledMethods } from '../../sales';
 import { addCashMovement, deleteCashMovement, listCashMovements, updateCashMovement } from '../api';
+import { movimientosSueltos } from '../lib/delivery-payouts';
 import { notifyCajaChanged } from '../../../lib/caja-events';
 import { CashMovementForm } from './CashMovementForm';
 import { CashMovementRow } from './CashMovementRow';
@@ -40,7 +41,9 @@ export function CashMovementsSection({
 
   const refresh = useCallback(async () => {
     try {
-      setMovements(await listCashMovements(shiftId));
+      // Las patas de un domicilio se muestran en SU sección: acá se repetirían
+      // y además no se pueden editar ni borrar sueltas.
+      setMovements(movimientosSueltos(await listCashMovements(shiftId)));
     } catch {
       /* no rompemos la vista por esto */
     }

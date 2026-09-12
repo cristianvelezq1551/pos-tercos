@@ -7,3 +7,4 @@ export {
   updateCashMovement,
   deleteCashMovement,
 } from './cash-movements';
+export { addDeliveryPayout, deleteDeliveryPayout } from './delivery-payout';

@@ -14,6 +14,7 @@ import {
 import {
   CloseShiftSchema,
   CreateCashMovementSchema,
+  CreateDeliveryPayoutSchema,
   OpenShiftSchema,
   SyncOfflineShiftOpenSchema,
   UpdateCashMovementSchema,
@@ -22,6 +23,7 @@ import {
   type CashMovement,
   type CloseShift,
   type CreateCashMovement,
+  type CreateDeliveryPayout,
   type CurrentShiftStatus,
   type ExpectedCash,
   type OpenShift,
@@ -134,6 +136,36 @@ export class ShiftsController {
   ): Promise<void> {
     await this.assertShiftOwnership(user, id);
     return this.shifts.deleteCashMovement(id, movementId, user.sub);
+  }
+
+  /**
+   * Domicilio que el cliente pagó por transferencia y el cajero pagó en
+   * efectivo del cajón. Baja el efectivo esperado, sube el esperado de la
+   * cuenta y traspasa Efectivo → Cuenta en tesorería, todo junto (§7.v71).
+   */
+  @CashierAccess()
+  @Post(':id/delivery-payout')
+  async addDeliveryPayout(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(CreateDeliveryPayoutSchema)) body: CreateDeliveryPayout,
+  ): Promise<CashMovement[]> {
+    // Mismo antifraude que los movimientos sueltos: un cajero solo ajusta el
+    // efectivo de SU caja (la salida baja el esperado y podría tapar un faltante).
+    await this.assertShiftOwnership(user, id);
+    return this.shifts.addDeliveryPayout(id, body, user.sub);
+  }
+
+  /** Deshace un domicilio mal registrado, entero (solo con la caja abierta). */
+  @CashierAccess()
+  @Delete(':id/delivery-payout/:pairId')
+  async deleteDeliveryPayout(
+    @CurrentUser() user: JwtAccessPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('pairId', ParseUUIDPipe) pairId: string,
+  ): Promise<void> {
+    await this.assertShiftOwnership(user, id);
+    return this.shifts.deleteDeliveryPayout(id, pairId, user.sub);
   }
 
   /** Reabre una caja cerrada por error (solo Dueño). Conserva la sesión del día. */

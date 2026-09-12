@@ -6,8 +6,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listSales } from '../../sales';
 import { getExpectedCash, listCashMovements } from '../api';
 import { cashMovementsNet } from '../lib/denominations';
+import { agruparDomicilios, movimientosSueltos } from '../lib/delivery-payouts';
 import { computeShiftSummary, type ShiftSummary } from '../lib/shift-summary';
 import { CashMovementsSection } from './CashMovementsSection';
+import { DeliveryPayoutsSection } from './DeliveryPayoutsSection';
 import { CloseShiftAction } from './CloseShiftAction';
 import { ShiftZReport } from './ShiftZReport';
 import { getErrorMessage } from '../../../lib/errors';
@@ -53,7 +55,14 @@ export function CajaPanel({
     void load();
   }, [load]);
 
+  // El esperado usa TODOS los movimientos (el domicilio también salió del
+  // cajón); el reporte los separa para que cada línea diga qué es.
   const net = useMemo(() => cashMovementsNet(movements), [movements]);
+  const netSueltos = useMemo(
+    () => cashMovementsNet(movimientosSueltos(movements)),
+    [movements],
+  );
+  const domicilios = useMemo(() => agruparDomicilios(movements), [movements]);
   const expectedCash =
     serverExpected?.expectedCash ??
     (summary !== null ? shift.openingCash + summary.cashSalesTotal + net.net : null);
@@ -80,8 +89,10 @@ export function CajaPanel({
         shift={shift}
         summary={summary}
         expectedCash={expectedCash ?? 0}
-        cashIn={net.cashIn}
-        cashOut={net.cashOut}
+        cashIn={netSueltos.cashIn}
+        cashOut={netSueltos.cashOut}
+        deliveryPayout={domicilios.reduce((acc, d) => acc + d.amount, 0)}
+        deliveryPayoutCount={domicilios.length}
         nombresDeMedios={Object.fromEntries(
           (serverExpected?.digital ?? []).map((d) => [d.method, d.name]),
         )}
@@ -95,6 +106,11 @@ export function CajaPanel({
         <span className="text-muted-foreground">Ticket promedio</span>
         <Money amount={avgTicket} weight="semibold" />
       </div>
+      <DeliveryPayoutsSection
+        shiftId={shift.id}
+        movements={movements}
+        onChanged={() => void load()}
+      />
       <CashMovementsSection shiftId={shift.id} onChanged={() => void load()} />
       <div className="border-t border-border pt-4">
         <CloseShiftAction shift={shift} onClosed={onClosed} />

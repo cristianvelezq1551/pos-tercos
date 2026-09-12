@@ -15,7 +15,13 @@ import {
   netOfDeliveryFee,
   startOfBusinessDay,
 } from '@pos-tercos/domain';
-import { NON_REVENUE_SALE_STATUSES, paymentMethodLabel } from '@pos-tercos/types';
+import {
+  DELIVERY_PAYOUT_PURPOSE,
+  DELIVERY_PAYOUT_REASON_IN,
+  DELIVERY_PAYOUT_REASON_OUT,
+  NON_REVENUE_SALE_STATUSES,
+  paymentMethodLabel,
+} from '@pos-tercos/types';
 import type {
   AiSummary,
   CashCountLine,
@@ -23,6 +29,7 @@ import type {
   CashMovement,
   CloseShift,
   CreateCashMovement,
+  CreateDeliveryPayout,
   ExpectedCash,
   OpenShift,
   Shift,
@@ -32,12 +39,14 @@ import type {
   SyncOfflineShiftOpen,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
 import { businessName } from '../common/business-name';
 import { runWithSerializationRetry } from '../common/tx';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
+import { TreasuryService } from '../treasury/treasury.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 
@@ -81,6 +90,12 @@ type DbShiftWithCashier = Prisma.ShiftGetPayload<{
  * actual. Cierre (`closeShift`), cálculo de `expected_cash` y conciliación
  * con descuadre llegan en FASE 11 — schema y types ya están listos.
  */
+/**
+ * El domicilio que el cliente paga junto con la comida llega SIEMPRE por
+ * transferencia (el caso en efectivo no descuadra nada y no se registra).
+ */
+const DELIVERY_PAYOUT_METHOD = 'TRANSFER';
+
 @Injectable()
 export class ShiftsService {
   constructor(
@@ -90,6 +105,7 @@ export class ShiftsService {
     private readonly ownerNotifications: OwnerNotificationService,
     private readonly recipes: RecipesService,
     private readonly paymentMethods: PaymentMethodsService,
+    private readonly treasury: TreasuryService,
   ) {}
 
   /**
@@ -1275,6 +1291,161 @@ export class ShiftsService {
     });
   }
 
+  /**
+   * Domicilio que el cliente pagó POR TRANSFERENCIA junto con la comida y que
+   * el cajero le pagó al domiciliario EN EFECTIVO del cajón (§7.v71).
+   *
+   * La venta no se toca: sigue siendo solo la comida. Lo que se corrige son los
+   * tres libros que ese movimiento de plata desacomoda, y cada escritura arregla
+   * exactamente uno:
+   *
+   *  1. salida en EFECTIVO  → el cajón deja de esperar esa plata,
+   *  2. entrada por TRANSFERENCIA → la cuenta espera lo que de verdad llegó,
+   *  3. traspaso Efectivo → Cuenta en tesorería → los bolsillos quedan bien.
+   *
+   * Ninguna cuenta doble: tesorería no lee los movimientos de caja y el cierre
+   * no lee tesorería (§7.v17). Las tres van en la MISMA transacción para que no
+   * pueda quedar un libro corregido y otro no.
+   *
+   * ⚠️ Cuando el cliente paga TODO en efectivo no hay nada que registrar: la
+   * plata del domicilio nunca entró al cajón como venta ni salió de más.
+   */
+  async addDeliveryPayout(
+    shiftId: string,
+    input: CreateDeliveryPayout,
+    userId: string,
+  ): Promise<CashMovement[]> {
+    // La plata entró a la cuenta por este medio; si no está habilitado, el
+    // cierre pediría arquear un medio que el cajero no ve (§7.v20).
+    const enabled = await this.paymentMethods.enabledSet();
+    if (!enabled.has(DELIVERY_PAYOUT_METHOD)) {
+      throw new BadRequestException(
+        'Transferencia no está habilitada como medio de pago. Actívala en Medios de pago antes de registrar un domicilio pagado del cajón.',
+      );
+    }
+    const sufijo = input.note ? ` · ${input.note}` : '';
+    const pairId = randomUUID();
+
+    // Serializable por la misma razón que addCashMovement: el cierre congela el
+    // esperado leyendo estos movimientos, y uno que commitee en el medio se
+    // quedaría fuera del arqueo.
+    const { rows, traspaso } = await runWithSerializationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const shift = await tx.shift.findUnique({
+            where: { id: shiftId },
+            select: { id: true, status: true },
+          });
+          if (!shift) throw new NotFoundException(`Shift ${shiftId} not found`);
+          if (shift.status !== 'OPEN') {
+            throw new BadRequestException('Solo se registran domicilios en una caja abierta.');
+          }
+          const movimiento = await this.treasury.createTransferInTx(
+            tx,
+            {
+              fromPocket: 'EFECTIVO',
+              toPocket: 'CUENTA',
+              amount: input.amount,
+              reason: `${DELIVERY_PAYOUT_REASON_OUT}${sufijo}`,
+            },
+            userId,
+          );
+          const comun = {
+            shiftId,
+            amount: input.amount,
+            userId,
+            purpose: DELIVERY_PAYOUT_PURPOSE,
+            pairId,
+          };
+          const salida = await tx.cashMovement.create({
+            data: {
+              ...comun,
+              type: 'OUT' as const,
+              method: 'CASH',
+              reason: `${DELIVERY_PAYOUT_REASON_OUT}${sufijo}`,
+              treasuryMovementId: movimiento.id,
+            },
+            include: { user: { select: { fullName: true } } },
+          });
+          const entrada = await tx.cashMovement.create({
+            data: {
+              ...comun,
+              type: 'IN' as const,
+              method: DELIVERY_PAYOUT_METHOD,
+              reason: `${DELIVERY_PAYOUT_REASON_IN}${sufijo}`,
+            },
+            include: { user: { select: { fullName: true } } },
+          });
+          return { rows: [salida, entrada], traspaso: movimiento };
+        },
+        { isolationLevel: 'Serializable', timeout: 10_000 },
+      ),
+    );
+
+    // UNA entrada de bitácora por la operación completa: tres sueltas habría
+    // que volver a juntarlas para entender qué pasó.
+    await this.audit.log({
+      userId,
+      action: 'DELIVERY_PAYOUT_REGISTERED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: {
+        pairId,
+        amount: input.amount,
+        note: input.note ?? null,
+        method: DELIVERY_PAYOUT_METHOD,
+        treasuryMovementId: traspaso.id,
+      },
+    });
+    return rows.map(toCashMovementDto);
+  }
+
+  /**
+   * Deshace un domicilio mal registrado, entero: las dos patas del movimiento
+   * de caja y el traspaso de tesorería. Solo con la caja ABIERTA, igual que
+   * cualquier corrección de movimientos (un arqueo cerrado es inmutable).
+   */
+  async deleteDeliveryPayout(shiftId: string, pairId: string, userId: string): Promise<void> {
+    const borrado = await runWithSerializationRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const patas = await tx.cashMovement.findMany({
+            where: { shiftId, pairId, purpose: DELIVERY_PAYOUT_PURPOSE },
+            include: { shift: { select: { status: true } } },
+          });
+          if (patas.length === 0) {
+            throw new NotFoundException('Ese domicilio no existe en esta caja.');
+          }
+          if (patas[0].shift.status !== 'OPEN') {
+            throw new BadRequestException(
+              'La caja ya está cerrada — el arqueo es inmutable. Pídele a un admin que la reabra si hay un error.',
+            );
+          }
+          const treasuryMovementId = patas.find((p) => p.treasuryMovementId !== null)
+            ?.treasuryMovementId;
+          if (treasuryMovementId) {
+            await this.treasury.voidMovementInTx(tx, treasuryMovementId);
+          }
+          await tx.cashMovement.deleteMany({ where: { shiftId, pairId } });
+          return { amount: Number(patas[0].amount), reason: patas[0].reason, treasuryMovementId };
+        },
+        { isolationLevel: 'Serializable', timeout: 10_000 },
+      ),
+    );
+    await this.audit.log({
+      userId,
+      action: 'DELIVERY_PAYOUT_DELETED',
+      entityType: 'shift',
+      entityId: shiftId,
+      metadata: {
+        pairId,
+        amount: borrado.amount,
+        reason: borrado.reason,
+        treasuryMovementId: borrado.treasuryMovementId ?? null,
+      },
+    });
+  }
+
   /** El movimiento existe, pertenece a esa caja y la caja sigue OPEN. */
   private async findOpenShiftMovement(
     shiftId: string,
@@ -1291,6 +1462,14 @@ export class ShiftsService {
     if (row.shift.status !== 'OPEN') {
       throw new BadRequestException(
         'La caja ya está cerrada — el arqueo es inmutable. Pídele a un admin que la reabra si hay un error.',
+      );
+    }
+    // Una pata suelta de una operación de dos NO se edita ni se borra: dejaría
+    // el cajón corregido y la cuenta no (o al revés) y el cierre saldría mal.
+    // El domicilio se quita entero con su propio botón.
+    if (row.pairId !== null) {
+      throw new BadRequestException(
+        'Este movimiento es parte de un domicilio pagado del cajón. Quita el domicilio completo desde Caja; no se puede editar por separado.',
       );
     }
     return row;
@@ -1353,6 +1532,8 @@ function toCashMovementDto(row: DbCashMovement): CashMovement {
     userId: row.userId,
     userName: row.user?.fullName ?? null,
     createdAt: row.createdAt.toISOString(),
+    purpose: row.purpose ?? null,
+    pairId: row.pairId ?? null,
   };
 }
 

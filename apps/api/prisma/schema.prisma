@@ -740,6 +740,17 @@ model CashMovement {
   reason    String
   userId    String           @map("user_id")
   createdAt DateTime         @default(now()) @map("created_at")
+  /// Operación de DOS patas a la que pertenece el movimiento. Hoy solo
+  /// `DELIVERY_PAYOUT` (§7.v71): el domicilio que el cliente transfirió y el
+  /// cajero pagó en efectivo del cajón. Null = movimiento suelto de siempre.
+  purpose            String? @map("purpose")
+  /// Une las dos patas de esa operación: nacen y se borran juntas, y los
+  /// endpoints sueltos de editar/eliminar las rechazan (partirlas descuadra
+  /// el cierre).
+  pairId             String? @map("pair_id")
+  /// Traspaso de tesorería que acompaña la operación, para poder deshacerlo
+  /// junto con ella. Solo lo escribe la pata de salida.
+  treasuryMovementId String? @map("treasury_movement_id")
   shift     Shift            @relation(fields: [shiftId], references: [id])
   user      User             @relation(fields: [userId], references: [id])
 
