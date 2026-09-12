@@ -15,6 +15,8 @@ const CAJA: AuditAction[] = [
   'SHIFT_DISCREPANCY_DETECTED',
   'CASH_MOVEMENT_IN',
   'CASH_MOVEMENT_OUT',
+  'DELIVERY_PAYOUT_REGISTERED',
+  'DELIVERY_PAYOUT_DELETED',
 ];
 const ANULACIONES: AuditAction[] = ['SALE_VOIDED', 'SALE_REFUNDED'];
 /** Ventas que dejaron el stock en negativo (deuda de inventario). */
@@ -123,6 +125,18 @@ export function describeEvent(entry: AuditLogEntry): DescribedEvent {
         label: 'Salida de efectivo',
         detail: `${cop(m.amount)}${m.reason ? ` · ${String(m.reason)}` : ''}`,
         tone: 'warning',
+      };
+    case 'DELIVERY_PAYOUT_REGISTERED':
+      return {
+        label: 'Domicilio pagado del cajón',
+        detail: `${cop(m.amount)} · salió en efectivo y entró a la cuenta${m.note ? ` · ${String(m.note)}` : ''}`,
+        tone: 'warning',
+      };
+    case 'DELIVERY_PAYOUT_DELETED':
+      return {
+        label: 'Quitó un domicilio pagado del cajón',
+        detail: `${cop(m.amount)}${m.reason ? ` · ${String(m.reason)}` : ''}`,
+        tone: 'neutral',
       };
     case 'SHIFT_DISCREPANCY_DETECTED':
       return { label: 'Descuadre de caja', detail: `Diferencia ${cop(m.difference)}`, tone: 'danger' };

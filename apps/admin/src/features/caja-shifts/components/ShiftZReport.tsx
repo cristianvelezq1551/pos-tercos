@@ -49,14 +49,24 @@ export function ShiftZReport({
   expectedCash,
   cashIn = 0,
   cashOut = 0,
+  deliveryPayout = 0,
+  deliveryPayoutCount = 0,
   nombresDeMedios,
 }: {
   shift: Shift;
   summary: ShiftSummary;
   expectedCash: number;
-  /** Entradas/salidas de efectivo del turno (movimientos de caja). */
+  /** Entradas/salidas SUELTAS de efectivo del turno (movimientos de caja). */
   cashIn?: number;
   cashOut?: number;
+  /**
+   * Domicilios que el cliente transfirió y se pagaron en efectivo del cajón
+   * (§7.v71). Van en su propia línea y no dentro de "Salidas de efectivo":
+   * esa plata no se gastó, cambió de bolsillo, y el cajero necesita leerlo así
+   * para entender por qué el cajón espera menos.
+   */
+  deliveryPayout?: number;
+  deliveryPayoutCount?: number;
   /** `{code: nombre}` del catálogo, para llamarlos como el dueño los llama. */
   nombresDeMedios?: Record<string, string>;
 }) {
@@ -82,9 +92,22 @@ export function ShiftZReport({
           ))}
         {cashIn > 0 ? <Row label="Entradas de efectivo" value={cashIn} positive /> : null}
         {cashOut > 0 ? <Row label="Salidas de efectivo" value={-cashOut} /> : null}
+        {deliveryPayout > 0 ? (
+          <Row
+            label={`Domicilios pagados del cajón (${deliveryPayoutCount})`}
+            value={-deliveryPayout}
+          />
+        ) : null}
         <div className="border-t border-border pt-2">
           <Row label="Esperado en caja" value={expectedCash} bold />
         </div>
+
+        {deliveryPayout > 0 ? (
+          <p className="mt-1 text-[0.6875rem] leading-snug text-muted-foreground">
+            Los domicilios salieron del cajón pero el cliente los transfirió: esa misma plata está
+            en la cuenta, y el arqueo de la cuenta ya la espera.
+          </p>
+        ) : null}
 
         <p className="mt-1 text-[0.6875rem] text-muted-foreground">
           Vendido en el turno: {summary.countSales} ·{' '}

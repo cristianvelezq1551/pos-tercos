@@ -4977,6 +4977,63 @@ en el DTO; el aviso de COGS del P&G y el hint del formulario de ajuste dicen
 la regla.
 
 
+## 7.v71 El domicilio que el cliente transfiere y se paga del cajón (2026-09-12)
+
+> Salió de la auditoría de producción (`AUDITORIA-PROD-2026-09-11.md` §3.6): los
+> cierres del 5, 6, 8 y 9 de septiembre tenían el cajón corto y la cuenta
+> sobrada por montos casi iguales. No era un bug: el cliente transfiere la
+> comida MÁS el domicilio en un solo pago, la venta registra solo la comida, y
+> al domiciliario se le paga en efectivo del cajón. Esa plata cambia de bolsillo
+> y el sistema no tenía cómo enterarse.
+> Verificado: typecheck 13/13 sin caché, lint 0, unit 12/12 paquetes (admin 357,
+> +7), **e2e 79 suites / 927** (+12), builds 8/8.
+> Migración: `20260912030000_delivery_payout` (aditiva).
+
+### La regla
+- **La venta NO se toca.** Sigue siendo solo la comida, cobrada por su medio. El
+  domicilio no entra al ingreso, ni al COGS, ni al inventario (§7.v24/§7.v30).
+- **Solo el caso de TRANSFERENCIA se registra.** Cuando el cliente paga todo en
+  efectivo no hay nada que corregir: esa plata nunca entró al cajón como venta
+  ni salió de más.
+- **Una acción, tres escrituras, cada una arregla UN libro** y ninguna cuenta
+  doble (tesorería no lee `cash_movements` y el cierre no lee tesorería, §7.v17):
+
+  | Escritura | Qué corrige |
+  |---|---|
+  | `cash_movements` OUT / CASH | el cajón deja de esperar esa plata |
+  | `cash_movements` IN / TRANSFER | la cuenta espera lo que de verdad llegó |
+  | Traspaso Efectivo → Cuenta (tesorería) | los bolsillos quedan bien sin hacerlo a mano |
+
+- **Las tres van en la MISMA transacción.** Si una fallara y las otras no, un
+  libro quedaría corregido y el otro no — que es exactamente el problema que
+  esto viene a cerrar. Por eso `TreasuryService` ganó `createTransferInTx` /
+  `voidMovementInTx`: la escritura sigue viviendo en su service (ningún otro
+  módulo toca `treasury_movements` con Prisma) pero acepta la tx ajena.
+- **El par nace y muere junto.** `PATCH`/`DELETE` de un movimiento suelto
+  rechazan una pata con un mensaje que dice dónde quitarlo entero; partirlo
+  dejaría el cierre torcido. `DELETE /shifts/:id/delivery-payout/:pairId`
+  deshace las dos patas y anula su traspaso.
+- **Una sola entrada de bitácora por operación** (`DELIVERY_PAYOUT_REGISTERED`),
+  con el id del traspaso adentro: tres sueltas habría que volver a juntarlas.
+
+### Dónde
+`cash_movements` gana tres columnas NULAS (`purpose`, `pair_id`,
+`treasury_movement_id`) — `ADD COLUMN` sin default es O(1) y no reescribe una
+fila; todo lo que hoy lee esa tabla sigue viendo lo mismo hasta que alguien use
+el botón. API: `POST/DELETE /shifts/:id/delivery-payout` (`@CashierAccess`, con
+el mismo antifraude de "solo tu caja"). Admin: `DeliveryPayoutsSection` en Caja
+y una línea propia en el reporte de cierre — **no dentro de "Salidas de
+efectivo"**: esa plata no se gastó, cambió de bolsillo, y el cajero necesita
+leerlo así para entender por qué el cajón espera menos.
+
+### Lo que hay que cambiar en la operación
+Desde que existe el botón, **ya no se hace el traspaso a mano en tesorería**: lo
+hace él. Hacerlo dos veces movería los bolsillos el doble.
+
+⚠️ En un día de solo ventas en efectivo con un domicilio pagado del cajón, el
+cierre ahora pide arquear la transferencia (§7.v20). Es correcto —esa plata está
+en la cuenta— pero antes no pasaba.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

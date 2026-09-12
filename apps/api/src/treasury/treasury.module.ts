@@ -9,5 +9,6 @@ import { TreasuryService } from './treasury.service';
   imports: [PrismaModule, FixedCostsModule, WorkersModule],
   controllers: [TreasuryController],
   providers: [TreasuryService],
+  exports: [TreasuryService],
 })
 export class TreasuryModule {}
