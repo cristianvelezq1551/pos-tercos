@@ -79,11 +79,16 @@ test.afterAll(async () => {
   await api.dispose();
 });
 
+/**
+ * La pantalla de Caja del turno vive en `/caja/cierre` — `/caja` es la de
+ * vender. Se espera al reporte de cierre porque el panel carga sus datos en el
+ * cliente: sin esa espera, las aserciones corren contra una pantalla vacía.
+ */
 async function abrirCaja(browser: Browser): Promise<Page> {
   const ctx = await browser.newContext({ storageState: cookies });
   const page = await ctx.newPage();
-  await page.goto('http://localhost:3004/caja');
-  await page.waitForLoadState('networkidle');
+  await page.goto('http://localhost:3004/caja/cierre');
+  await expect(page.getByText('Reporte de cierre del turno')).toBeVisible({ timeout: 30_000 });
   return page;
 }
 
