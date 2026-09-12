@@ -12,6 +12,8 @@ import {
   OPERATIVO_EMAIL,
   authHeaders,
   ensureOpenShiftToday,
+  getCurrentShift,
+  isCurrentBusinessDay,
   login,
   type ApiShift,
   type Session,
@@ -26,8 +28,12 @@ import {
  * después de registrarlo, y que el reporte de cierre lo nombre en su propia
  * línea en vez de esconderlo dentro de "Salidas de efectivo".
  *
- * ⚠️ UN SOLO `POST /auth/login` por sesión en todo el archivo: el endpoint
- * admite 10 por minuto y por IP y el job entero comparte esa cuota.
+ * ⚠️ UN SOLO `POST /auth/login` en el camino normal. El endpoint admite 10 por
+ * minuto y por IP y el job ENTERO comparte esa cuota: con dos logins acá, las
+ * suites que corren después morían con 429 —y su login por formulario, que no
+ * reintenta, rebotaba a `/login` sin decir por qué—. El segundo login solo se
+ * gasta si de verdad hace falta el dueño (cerrar una caja vieja o reabrir la
+ * de hoy, que es Dueño-only).
  */
 
 test.describe.configure({ timeout: 90_000 });
@@ -35,15 +41,13 @@ test.describe.configure({ timeout: 90_000 });
 const DOMICILIO = 7_000;
 
 let operativo: Session;
-let dueno: Session;
 let shift: ApiShift;
 let cookies: Awaited<ReturnType<Awaited<ReturnType<Browser['newContext']>>['storageState']>>;
 
 test.beforeAll(async ({ browser }) => {
   const api: APIRequestContext = await playwrightRequest.newContext();
   operativo = await login(api, OPERATIVO_EMAIL);
-  dueno = await login(api, DUENO_EMAIL);
-  shift = await ensureOpenShiftToday(api, operativo, dueno);
+  shift = await cajaDeHoy(api);
 
   const ctx = await browser.newContext();
   await ctx.addCookies([
@@ -84,6 +88,17 @@ test.afterAll(async () => {
  * vender. Se espera al reporte de cierre porque el panel carga sus datos en el
  * cliente: sin esa espera, las aserciones corren contra una pantalla vacía.
  */
+/**
+ * La caja abierta de la jornada. Si ya hay una, no gasta el login del dueño;
+ * solo lo pide cuando hay que cerrar una vieja o reabrir la de hoy.
+ */
+async function cajaDeHoy(api: APIRequestContext): Promise<ApiShift> {
+  const actual = await getCurrentShift(api, operativo);
+  if (actual && isCurrentBusinessDay(actual.openedAt)) return actual;
+  const dueno = await login(api, DUENO_EMAIL);
+  return ensureOpenShiftToday(api, operativo, dueno);
+}
+
 async function abrirCaja(browser: Browser): Promise<Page> {
   const ctx = await browser.newContext({ storageState: cookies });
   const page = await ctx.newPage();
