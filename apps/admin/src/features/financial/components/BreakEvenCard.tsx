@@ -1,117 +1,164 @@
+import { chooseMonthTarget } from '@pos-tercos/domain';
+import { BreakEvenDetail } from './BreakEvenDetail';
 import type { MonthlyFinancialStatement } from '@pos-tercos/types';
 import { formatCop } from '@pos-tercos/ui';
 
 const pctText = (v: number): string => `${Math.round(v * 100)}%`;
 
 /**
- * Cuánto hay que vender para cubrir lo fijo.
+ * Cuánto hay que vender en el mes para cubrir todo lo que hay que pagar.
  *
- * Se calcula con el margen de la CARTA —lo que deja cada producto por precio y
- * receta—, no con el margen realizado del mes. Ese era correcto pero inservible
- * con poco volumen: en un mes de $92.000 vendidos, un flete de $34.000 se lleva
- * 37 puntos y el equilibrio saltaba de $4,3 a $8,7 millones. La cifra que se
- * mueve así no es una meta, es ruido.
+ * La meta se calcula con el margen que de verdad queda de cada venta: el que
+ * ya descontó la receta, la merma, las cortesías, los faltantes y los fletes.
+ * La de la CARTA (precio contra receta) ignora esas fugas y por eso queda baja
+ * — vendiendo justo esa meta el mes cierra en pérdida por el monto de las
+ * fugas. Se usa la de la carta solo mientras el mes no tenga ventas suficientes
+ * para medir el margen real, porque con tres ventas un flete se lleva decenas
+ * de puntos y una meta que salta no sirve de meta.
  *
- * Lo realizado NO se esconde: va abajo como contraste, porque es donde se ve
- * cuánto se están comiendo la merma, las cortesías y los fletes.
+ * La barra va de 0 a 100 con una marca en el día de hoy: un porcentaje de
+ * avance sin el tiempo al lado no dice si se va adelantado o corto, y cualquier
+ * número por debajo de 100 se lee como alarma.
  */
 export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
   const c = s.catalogBreakEven;
 
-  if (c.marginPct !== null && c.marginPct <= 0) {
+  // La meta se elige PRIMERO: los guardas de abajo miran el resultado, no el
+  // margen de la carta. Si no, una carta a medio costear bloqueaba la tarjeta
+  // —"tus productos no dejan ganancia"— sobre un mes cuyo margen real era 55%,
+  // y escondía una meta que sí se podía calcular.
+  const meta = chooseMonthTarget({
+    realizedTarget: s.breakEven,
+    realizedMarginPct: s.contributionMarginPct,
+    catalogTarget: c.target,
+    catalogMarginPct: c.marginPct,
+    salesCount: s.salesCount,
+  });
+
+  if (meta === null) {
+    // Sin ninguna de las dos: o la carta no tiene costos con qué estimar, o el
+    // mes no deja nada de cada venta. Se distingue, porque lo que hay que hacer
+    // es distinto.
+    const noDeja = s.contributionMarginPct !== null && s.contributionMarginPct <= 0;
     return (
-      <Marco tone="destructive">
-        <p className="text-sm text-destructive">
-          Con los precios y las recetas de hoy, tus productos <strong>no dejan ganancia</strong>:
-          vender más no te acerca a cubrir los costos fijos. Primero hay que subir precios o bajar
-          el costo de las recetas.
+      <Marco tone={noDeja ? 'destructive' : undefined}>
+        <p className={`text-sm ${noDeja ? 'text-destructive' : 'text-muted-foreground'}`}>
+          {noDeja ? (
+            <>
+              Este mes <strong>cada venta pierde plata</strong>: después del costo de la receta, la
+              merma, las cortesías, los faltantes y los fletes no queda nada para pagar lo fijo.
+              Vender más no acerca al equilibrio. Primero hay que subir precios, bajar el costo de
+              las recetas o cortar esas pérdidas.
+            </>
+          ) : (
+            <>
+              Todavía no se puede calcular: ningún producto tiene un costo de receta con el que
+              estimar cuánto deja. Completa las recetas y los precios de compra de los insumos, y el
+              cálculo se activa solo.
+            </>
+          )}
         </p>
       </Marco>
     );
   }
 
-  if (c.target === null) {
+  if (meta.target <= 0) {
     return (
       <Marco>
         <p className="mt-2 text-sm text-muted-foreground">
-          Todavía no se puede calcular: ningún producto tiene un costo de receta con el que estimar
-          cuánto deja. Completa las recetas y los precios de compra de los insumos, y el cálculo se
-          activa solo.
+          No hay costos ni gastos cargados este mes, así que no hay meta que cubrir. Cárgalos en
+          Finanzas → Costos y gastos y este número aparece solo.
         </p>
       </Marco>
     );
   }
 
-  const cobertura = c.coverage ?? 0;
-  // Sin costos fijos recurrentes cargados la meta es $0: no hay nada que
-  // cubrir. Tratarlo como "0% cubierto" mostraba "te faltan −$ 12.000", un
-  // faltante negativo en una frase que ya dice "faltan".
-  const sinMeta = c.target <= 0;
-  const cubierto = !sinMeta && cobertura >= 1;
-  const falta = Math.max(0, c.target - s.revenue);
+  const cobertura = s.revenue / meta.target;
+  const cubierto = cobertura >= 1;
+  const falta = Math.max(0, meta.target - s.revenue);
+  // Dónde va la marca de "hoy": sin ella, un porcentaje de avance no dice si se
+  // va adelantado o corto, y cualquier número por debajo de 100 se lee como
+  // alarma. Con ella, la comparación es de un vistazo.
+  const corrido =
+    s.periodInProgress && s.periodDaysTotal && s.periodDaysElapsed
+      ? s.periodDaysElapsed / s.periodDaysTotal
+      : null;
+  const adelantado = corrido !== null && cobertura >= corrido;
 
   return (
     <Marco>
       <p className="text-sm text-muted-foreground">
         Es cuánto tienes que vender en el mes para cubrir todo lo que hay que pagar: los costos
         fijos —arriendo, nómina, servicios— más los gastos únicos y los compromisos que se pagaron
-        este mes. Se calcula con lo que deja cada producto de tu carta (precio contra receta), así
-        que no se mueve por lo flojo o lo bueno que haya estado el mes.
+        este mes.
       </p>
 
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="min-w-0 text-muted-foreground">De cada $100 vendidos te quedan</span>
-          <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">
-            ${c.marginPct !== null ? Math.round(c.marginPct * 100) : '—'}
-          </span>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="min-w-0 text-muted-foreground">Hay que cubrir</span>
+          <span className="min-w-0 text-muted-foreground">Hay que cubrir este mes</span>
           <span className="shrink-0 whitespace-nowrap tabular-nums">{formatCop(s.breakEvenBase)}</span>
         </div>
         <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="min-w-0 text-muted-foreground">De cada $100 vendidos te quedan</span>
+          <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">
+            ${Math.round(meta.marginPct * 100)}
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="min-w-0 text-muted-foreground">Ventas necesarias del mes</span>
-          <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">{formatCop(c.target)}</span>
+          <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">
+            {formatCop(meta.target)}
+          </span>
         </div>
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="min-w-0 text-muted-foreground">Llevas vendido</span>
           <span className="shrink-0 whitespace-nowrap tabular-nums">{formatCop(s.revenue)}</span>
         </div>
 
-        <div className="mt-2 h-3 overflow-hidden rounded-full bg-muted">
+        <div className="relative mt-2 h-3 overflow-hidden rounded-full bg-muted">
           <div
             className={`h-full transition-all ${cubierto ? 'bg-success' : 'bg-warning'}`}
-            style={{ width: `${Math.min(100, (Math.min(cobertura, 1.5) / 1.5) * 100)}%` }}
+            style={{ width: `${Math.min(100, Math.max(0, cobertura * 100))}%` }}
           />
+          {corrido !== null ? (
+            <span
+              aria-hidden
+              className="absolute inset-y-0 w-0.5 bg-foreground/70"
+              style={{ left: `${Math.min(100, Math.max(0, corrido * 100))}%` }}
+            />
+          ) : null}
         </div>
+        {corrido !== null ? (
+          <p className="text-[0.6875rem] text-muted-foreground">
+            La marca es hoy: vas por el día {s.periodDaysElapsed} de {s.periodDaysTotal}.
+          </p>
+        ) : null}
+
         <p className="text-xs text-muted-foreground">
-          {sinMeta ? (
-            <>
-              No hay costos ni gastos cargados este mes, así que no hay meta que cubrir. Cárgalos en
-              Finanzas → Costos y gastos y este número aparece solo.
-            </>
+          Cobertura:{' '}
+          <strong className={cubierto ? 'text-success' : 'text-warning'}>{pctText(cobertura)}</strong>
+          {cubierto ? (
+            <> · ya cubre todo lo que hay que pagar este mes.</>
           ) : (
             <>
-              Cobertura:{' '}
-              <strong className={cubierto ? 'text-success' : 'text-warning'}>
-                {pctText(cobertura)}
-              </strong>
-              {cubierto ? (
-                <> · ya cubre los costos fijos recurrentes.</>
-              ) : (
-                <>
-                  {' '}
-                  · te faltan <strong>{formatCop(falta)}</strong> de ventas para llegar al
-                  equilibrio.
-                </>
-              )}
+              {' '}
+              · te faltan <strong>{formatCop(falta)}</strong> de ventas para llegar al equilibrio.
             </>
           )}
+          {corrido !== null ? (
+            <>
+              {' '}
+              Llevas corrido el {pctText(corrido)} del mes, así que{' '}
+              <strong className={adelantado ? 'text-success' : 'text-warning'}>
+                {adelantado ? 'vas adelantado' : 'vas corto'}
+              </strong>
+              .
+            </>
+          ) : null}
         </p>
       </div>
 
-      <ComoSeCalculo c={c} s={s} />
+      <BreakEvenDetail c={c} s={s} basis={meta.basis} />
     </Marco>
   );
 }
@@ -126,64 +173,5 @@ function Marco({ children, tone }: { children: React.ReactNode; tone?: 'destruct
       <h2 className="font-display text-lg font-bold text-foreground">Punto de equilibrio</h2>
       {children}
     </div>
-  );
-}
-
-/**
- * De dónde salió el número, y qué se lo está comiendo.
- *
- * Sin esta parte, el margen de la carta y el que de verdad quedó al final del
- * mes se ven como dos cifras que se contradicen. La diferencia entre las dos es
- * el dato útil: son la merma, las cortesías, los faltantes y los fletes.
- */
-function ComoSeCalculo({
-  c,
-  s,
-}: {
-  c: MonthlyFinancialStatement['catalogBreakEven'];
-  s: MonthlyFinancialStatement;
-}) {
-  const real = s.contributionMarginPct;
-  const brecha = c.marginPct !== null && real !== null ? c.marginPct - real : null;
-
-  return (
-    <details className="border-t border-border pt-3 text-xs text-muted-foreground">
-      <summary className="cursor-pointer font-medium text-foreground">Cómo se calculó</summary>
-      <ul className="mt-2 space-y-1.5">
-        <li>
-          Promedio de <strong>{c.productsConsidered}</strong>{' '}
-          {c.productsConsidered === 1 ? 'opción de la carta' : 'opciones de la carta'}
-          {c.weightedBySales
-            ? ', pesado por lo que se vendió este mes (vender mucho de lo que menos deja baja el promedio).'
-            : ', pareja entre toda la carta porque todavía no hay ventas del mes.'}{' '}
-          Un plato con variantes cuenta una opción por variante: cada una tiene su precio y su
-          receta, y nadie compra la receta base sola.
-        </li>
-        {c.best && c.worst && c.productsConsidered > 1 ? (
-          <li>
-            El que más deja es <strong>{c.best.name}</strong> ({pctText(c.best.marginPct)}); el que
-            menos, <strong>{c.worst.name}</strong> ({pctText(c.worst.marginPct)}).
-          </li>
-        ) : null}
-        {c.productsWithoutCost > 0 ? (
-          <li className="text-warning">
-            {c.productsWithoutCost}{' '}
-            {c.productsWithoutCost === 1
-              ? 'opción quedó fuera porque no se sabe cuánto cuesta'
-              : 'opciones quedaron fuera porque no se sabe cuánto cuestan'}
-            . Completa su receta o el precio de compra de sus insumos para que el promedio los tenga
-            en cuenta.
-          </li>
-        ) : null}
-        {real !== null && brecha !== null ? (
-          <li>
-            Este mes, después de la merma, las cortesías, los faltantes y los fletes, de cada $100
-            te quedaron <strong>${Math.round(real * 100)}</strong> — {pctText(Math.abs(brecha))}{' '}
-            {brecha > 0 ? 'menos' : 'más'} que lo que deja la carta. Esa diferencia es lo que se
-            pierde entre la cocina y la caja.
-          </li>
-        ) : null}
-      </ul>
-    </details>
   );
 }

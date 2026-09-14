@@ -5120,6 +5120,125 @@ contra QA o producción: toma una foto, opera, compara, deshace y exige que los
 tres libros vuelvan al valor exacto. Cubre el domicilio (§7.v71) y el contrato
 de esta vista.
 
+## 7.v73 El estado financiero deja de leerse como una alarma: el mes EN CURSO se dice en curso (2026-09-13)
+
+> El dueño abrió Finanzas → Estado y no entendió los números: *"la barra de
+> porcentaje de lo vendido, la cantidad pendiente de venta para el equilibrio…
+> no tiene sentido"*. La aritmética estaba bien —se verificó peso por peso
+> contra el ledger— pero la pantalla contaba mal la historia: mostraba el mes a
+> mitad de camino con el lenguaje de un mes cerrado. Sus cuatro correcciones,
+> textuales: nómina del mes entero, barra de 0 a 100, no decir que el mes
+> "cerró", y contar TODOS los costos.
+> Verificado: typecheck 13/13 sin caché, lint 0, unit 12/12 paquetes (domain
+> 654, admin 388), **e2e 80 suites / 946**, más la pantalla en un navegador real
+> contra un espejo con los 8 costos fijos y las 3 personas de nómina de
+> producción. Sin migración.
+
+### Lo que hacía que el número se leyera mal
+Un mes en curso carga los costos **completos** (la nómina de todos los días
+laborables, el arriendo entero) contra lo vendido **hasta hoy**. A mitad de mes
+eso da rojo por construcción, no por un mal mes. La pantalla no lo decía en
+ninguna parte, así que el día 13 parecía una pérdida consumada.
+
+- **`periodStatus`** (`future` / `in_progress` / `closed`) + `periodDaysTotal` /
+  `periodDaysElapsed` viajan en el estado, y el encabezado pasa a **"Así va el
+  mes · día 13 de 30"**. La palabra "cerró" queda reservada para cuando cierre
+  de verdad. ⚠️ `hoy > fin` y no `>=`: el último día del mes todavía se vende.
+- **Proyección al ritmo actual** (`projectedRevenue` / `projectedNet`): "al
+  ritmo de lo que llevas, el mes cierra alrededor de −$6,7M con $4,2M de
+  ventas". Necesita **5 días corridos** (`MIN_DAYS_FOR_PROJECTION`) — proyectar
+  un mes con dos días de datos es inventar.
+- La nómina se rotula **"Nómina (mes completo)"** y la nota explica que lo que
+  se le debe HOY a cada persona es otra cosa y vive en Nómina pendiente. Son
+  dos preguntas distintas y sin el rótulo se leían como el mismo número mal
+  calculado.
+
+### La barra va de 0 a 100, con una marca de dónde vas
+Antes la barra se dibujaba con la cobertura cruda: un mes al 150 % desbordaba y
+uno al 86 % se veía como una alerta sin serlo (el dueño lo nombró: *"es
+visualmente una alerta rara"*). Ahora el relleno se topa en
+`min(100, max(0, cobertura))` y aparte va un **marcador absoluto en el día
+corrido** (`corrido × 100`). La comparación deja de ser contra el 100 % y pasa
+a ser contra el avance del mes, que es la pregunta real: llevas el 15 % de la
+meta con el 43 % del mes corrido ⇒ **"vas corto"**; al revés, **"vas
+adelantado"**.
+
+### La meta cubre TODO lo que hay que pagar
+`breakEvenBase = fijos recurrentes + gastos únicos + compromisos pagados`, y es
+la base de los dos equilibrios. Es la continuación de §7.v69 y cierra el mismo
+reclamo: un gasto puntual bajaba el neto sin mover la meta de ventas, como si
+no hubiera que pagarlo.
+
+### La meta que se MUESTRA se elige, y la pantalla dice cuál es
+`chooseMonthTarget` (domain, puro): con **30 ventas o más**
+(`MIN_SALES_FOR_REALIZED_MARGIN`) la meta usa el margen **realizado** del mes
+—el que ya descontó merma, cortesías, faltantes y fletes—; con menos usa el de
+la **carta**, porque un mes de cuatro tickets no alcanza para medir las fugas.
+El cambio de base salta de golpe en la venta #30, así que la tarjeta lo
+**anuncia antes de que pase**: "cuando las tenga, la meta pasa sola al margen
+real, que es más alto de cubrir". Un número que se mueve sin explicación es lo
+que hizo que el equilibrio se leyera como humo en §7.v52.
+
+El prompt del análisis con IA recibe ese MISMO equilibrio (`shownBreakEven`) y
+decide el tono con su cobertura: antes la pantalla mostraba uno y el modelo
+opinaba sobre el otro, o sea dos metas para el mismo mes. Con el mes en curso
+el tono se compara contra el avance del mes, no contra el 100 %.
+
+### Lo demás que se revisó de la vista (pedido del dueño)
+- **Un gasto puntual sin fecha se contaba en TODOS los meses, para siempre.**
+  Sin `startedAt`, `endedAt` también queda en null y la regla "sin fecha =
+  siempre vigente" lo metía en cada ventana: un gasto de una vez inflando la
+  meta mes tras mes. Crear ya lo exigía; **el PATCH no** —su `superRefine` solo
+  corre si mandan `frequency`, así que `{startedAt: null}` sobre un puntual ya
+  existente pasaba—. La validación se movió al service, que es el único que ve
+  el estado RESULTANTE, más un filtro defensivo en `getEffectiveForWindow` para
+  cualquier fila vieja. Prod no tiene ninguna.
+- **El fallo del proveedor de IA salía como 500.** La cuenta sin saldo mostraba
+  "el sistema tuvo un problema" —que no dice qué hacer— y **abría un Issue de
+  alerta de producción** por algo que ningún cambio de código arregla.
+  `describeLlmFailure` ya existía (§7.v35) y lo usaban facturas y sugerencias;
+  esta pantalla se había quedado afuera. Ahora es **502** con el motivo en
+  español. Se descubrió tocando el botón contra un entorno real.
+  ⚠️ Ese endpoint **no tenía ninguna prueba**; ahora tiene 4.
+- **Borrar un costo fijo con pagos** se rechaza (antes la cascada se llevaba el
+  historial de pagos y reescribía meses cerrados), y un costo desactivado que
+  tenga un pago en el período **conserva su línea**: el arriendo que se pagó en
+  septiembre se pagó, aunque el local se mude en noviembre.
+- Las **líneas de pérdida** se muestran con su signo en vez de esconderse
+  cuando no son positivas. Hoy no es alcanzable —una reversa se atribuye al mes
+  del consumo original, así que el total mensual no baja de cero— pero el neto
+  las resta con su signo: si alguna vez cayera del otro lado, la pantalla
+  dejaría de cuadrar sin ninguna pista. Es defensivo, no la corrección de algo
+  que el dueño esté viendo.
+- La **barra roja de la tendencia** pasa a ser `ingresos − neto`, o sea todo lo
+  que se restó (antes solo COGS + fijos, y la leyenda prometía más de lo que
+  dibujaba).
+
+### Deuda conocida (reportada, NO tocada)
+- **`getMonthlyTrend` calcula el margen de la carta 7 veces**: pide un
+  statement completo por mes y el punto de la tendencia solo usa 4 cifras.
+  Medido en el espejo: 20-80 ms, así que no se optimizó — hacerlo obliga a
+  meter una bandera "sin margen de carta" en `getMonthlyStatement` y arriesga
+  que la tendencia y el estado empiecen a decir cosas distintas.
+- **Nómina MENSUAL con mes de negocio que no empieza el día 1**: el costo por
+  día es `sueldo / días del mes calendario de ESE día`, así que una ventana a
+  caballo entre dos meses no suma exactamente un sueldo (deriva ~1,5 %). Con
+  `startDay = 1` —la configuración de prod— es exacto, y en prod las 3 personas
+  son de pago DIARIO. Cambiarlo es una decisión de negocio (prorratear vs.
+  cobrar un sueldo entero por ventana), no un arreglo.
+
+### Piedras de esta sesión
+- ⚠️ **El rewrite `/api` de Next se congela en el BUILD**, no al arrancar: un
+  `next start` con `API_INTERNAL_URL` en el entorno sigue proxiando a donde
+  apuntaba al compilar (`routes-manifest.json`). El admin espejo estuvo
+  pegándole al API del checkout principal y el login daba 401 sin explicación.
+- ⚠️ **El guard de `pnpm build` mira PUERTOS, no directorios**: con dev servers
+  del checkout principal vivos bloquea un build en un worktree, donde el `.next`
+  es otro. Verificar el `cwd` de cada proceso antes de creerle
+  (`lsof -p <pid> -a -d cwd`).
+- ⚠️ **Apuntar el e2e a la base del espejo la borra**: `cleanDb` truncó los
+  datos de producción copiados para mirar la pantalla. La base de un espejo
+  debe llamarse SIN el sufijo `_test` — así `cleanDb` se niega a tocarla.
 ---
 
 ## 8. Estado del proyecto (commits y FASES)

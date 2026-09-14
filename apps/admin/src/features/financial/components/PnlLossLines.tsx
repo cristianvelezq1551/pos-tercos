@@ -11,15 +11,30 @@ import { Row } from './PnlRow';
  * de 200 líneas. Ninguna se mezcla con el COGS: el costo de lo VENDIDO es una
  * cosa y lo que se tiró, se regaló o se pagó por traer es otra.
  */
+/**
+ * Una de estas líneas puede quedar NEGATIVA: anular una merma o una cortesía
+ * netea contra el mes en que se declaró, y un conteo que encuentra de más
+ * deshace faltantes viejos. El neto del mes las resta con su signo, así que
+ * esconderlas cuando no son positivas dejaba la pantalla sin cuadrar: el dueño
+ * sumaba las líneas visibles y no le daba el resultado de abajo.
+ */
+function montoDePerdida(v: number): string {
+  return v < 0 ? `+${formatCop(-v)}` : `−${formatCop(v)}`;
+}
+
 export function PnlLossLines({ s }: { s: MonthlyFinancialStatement }) {
   return (
     <>
       {/* Cortesías: producto regalado (autorizado), valuado a costo FIFO. */}
-      {s.cortesiasCost > 0 || s.cortesiasCostPartial ? (
+      {s.cortesiasCost !== 0 || s.cortesiasCostPartial ? (
         <div className="space-y-1.5 text-sm">
           <Row
-            label="− Cortesías (producto regalado, a costo)"
-            value={`−${formatCop(s.cortesiasCost)}`}
+            label={
+              s.cortesiasCost < 0
+                ? 'Cortesías anuladas (vuelve al resultado)'
+                : '− Cortesías (producto regalado, a costo)'
+            }
+            value={montoDePerdida(s.cortesiasCost)}
             muted
           />
           {s.cortesiasCostPartial ? (
@@ -37,22 +52,30 @@ export function PnlLossLines({ s }: { s: MonthlyFinancialStatement }) {
       ) : null}
 
       {/* Reembolsos: comida preparada cuya plata se devolvió, valuada a costo FIFO. */}
-      {s.refundCost > 0 ? (
+      {s.refundCost !== 0 ? (
         <div className="space-y-1.5 text-sm">
           <Row
-            label="− Reembolsos (comida preparada, a costo)"
-            value={`−${formatCop(s.refundCost)}`}
+            label={
+              s.refundCost < 0
+                ? 'Reembolsos anulados (vuelve al resultado)'
+                : '− Reembolsos (comida preparada, a costo)'
+            }
+            value={montoDePerdida(s.refundCost)}
             muted
           />
         </div>
       ) : null}
 
       {/* Merma: insumo/producto tirado, valuado a costo FIFO (§1.2). */}
-      {s.wasteCost > 0 ? (
+      {s.wasteCost !== 0 ? (
         <div className="space-y-1.5 text-sm">
           <Row
-            label="− Merma (insumo/producto tirado, a costo)"
-            value={`−${formatCop(s.wasteCost)}`}
+            label={
+              s.wasteCost < 0
+                ? 'Merma anulada (vuelve al resultado)'
+                : '− Merma (insumo/producto tirado, a costo)'
+            }
+            value={montoDePerdida(s.wasteCost)}
             muted
           />
           {s.wasteCostEstimated ? (
@@ -68,16 +91,22 @@ export function PnlLossLines({ s }: { s: MonthlyFinancialStatement }) {
           JUNTO a la merma y no dentro de ella a propósito — la merma alguien la
           declaró, esto no lo declaró nadie. Que la segunda pese como la primera
           es la señal de que hay algo que revisar en el manejo del inventario. */}
-      {s.shrinkageCost > 0 ? (
+      {s.shrinkageCost !== 0 ? (
         <div className="space-y-1.5 text-sm">
           <Row
-            label="− Faltantes (lo que apareció de menos al contar)"
-            value={`−${formatCop(s.shrinkageCost)}`}
+            label={
+              s.shrinkageCost < 0
+                ? 'Faltantes corregidos al contar (vuelve al resultado)'
+                : '− Faltantes (lo que apareció de menos al contar)'
+            }
+            value={montoDePerdida(s.shrinkageCost)}
             muted
           />
           <p className="text-xs text-muted-foreground">
-            Nadie lo declaró: salió de comparar el conteo físico con lo que decían los libros.
-            {s.wasteCost > 0 && s.shrinkageCost >= s.wasteCost
+            {s.shrinkageCost < 0
+              ? 'Los conteos del mes encontraron MÁS de lo que decían los libros, así que se devolvió lo que se había dado por perdido.'
+              : 'Nadie lo declaró: salió de comparar el conteo físico con lo que decían los libros.'}
+            {s.shrinkageCost > 0 && s.wasteCost > 0 && s.shrinkageCost >= s.wasteCost
               ? ' Está pesando tanto como la merma declarada — vale la pena revisar porciones y control de bodega.'
               : ''}
           </p>
@@ -93,11 +122,11 @@ export function PnlLossLines({ s }: { s: MonthlyFinancialStatement }) {
       {/* Fletes de compra: lo que cobró el proveedor por traer la mercancía.
           Va acá abajo, con las otras pérdidas, y NO dentro del COGS: no
           encarece ningún producto (decisión del dueño 2026-08-28). */}
-      {s.freightCost > 0 ? (
+      {s.freightCost !== 0 ? (
         <div className="space-y-1.5 text-sm">
           <Row
             label="− Domicilios de compra (lo que cobran por traer)"
-            value={`−${formatCop(s.freightCost)}`}
+            value={montoDePerdida(s.freightCost)}
             muted
           />
           <p className="text-xs text-muted-foreground">
@@ -110,11 +139,11 @@ export function PnlLossLines({ s }: { s: MonthlyFinancialStatement }) {
       {/* Compromisos con personas pagados este mes (H1). Se cuentan al PAGAR,
           no al registrar: mientras se deben son deuda, no pérdida. Las
           devoluciones de préstamo quedan fuera del monto. */}
-      {s.payablesPaidCost > 0 ? (
+      {s.payablesPaidCost !== 0 ? (
         <div className="space-y-1.5 text-sm">
           <Row
             label="− Compromisos pagados (arreglos, servicios)"
-            value={`−${formatCop(s.payablesPaidCost)}`}
+            value={montoDePerdida(s.payablesPaidCost)}
             muted
           />
           <p className="text-xs text-muted-foreground">

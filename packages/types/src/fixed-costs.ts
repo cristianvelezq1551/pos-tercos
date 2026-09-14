@@ -106,6 +106,26 @@ export const MonthlyFinancialStatementSchema = z.object({
   monthLabel: z.string(),
   periodStart: z.string(), // YYYY-MM-DD
   periodEnd: z.string(), // YYYY-MM-DD
+  /**
+   * Cuánto del período va corrido. Sin esto la pantalla comparaba lo vendido
+   * HASTA HOY contra los costos del MES COMPLETO sin decirlo, y un mes que iba
+   * por la mitad se leía como una pérdida cerrada.
+   *
+   * Opcionales: el API y el admin se despliegan por separado, y una versión
+   * previa de la pantalla no los conoce (misma precaución de §7.v62).
+   */
+  periodDaysTotal: z.number().int().positive().optional(),
+  /** Días corridos contando hoy. Igual a `periodDaysTotal` si el mes terminó. */
+  periodDaysElapsed: z.number().int().nonnegative().optional(),
+  periodInProgress: z.boolean().optional(),
+  /** `future` es un mes que todavía no empieza. Sin ese tercer estado, el
+   *  selector dejaba ver noviembre con los costos completos y "el mes cerró en
+   *  pérdida" sobre un mes que no ha pasado. */
+  periodStatus: z.enum(['future', 'in_progress', 'closed']).optional(),
+  /** En cuánto cierra el mes al ritmo de lo que va corrido. null si no hay con
+   *  qué proyectar (mes terminado, sin ventas suficientes o sin margen). */
+  projectedRevenue: z.number().nullable().optional(),
+  projectedNet: z.number().nullable().optional(),
   revenue: z.number(),
   /** Descuentos otorgados en el mes (promos + manuales). YA restados de
    *  `revenue`; se muestran aparte para que el dueño vea cuánto regaló. */
