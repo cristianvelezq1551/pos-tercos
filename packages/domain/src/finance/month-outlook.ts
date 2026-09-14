@@ -13,9 +13,10 @@
  * mes va corrido, cuál meta mostrar, y en cuánto cierra el mes al ritmo actual.
  */
 
-/** Ventas del mes a partir de las cuales el margen realizado es medible. Con
- *  menos, un solo flete lo mueve decenas de puntos y la meta deja de ser meta. */
-export const MIN_SALES_FOR_REALIZED_MARGIN = 30;
+/** Ventas del mes a partir de las cuales el margen BRUTO es medible sobre una
+ *  muestra decente. Con menos, se mide sobre cuatro tickets y no representa la
+ *  carta; ahí manda el margen teórico (precio contra receta). */
+export const MIN_SALES_FOR_MEASURED_MARGIN = 30;
 
 /**
  * Días corridos mínimos para proyectar el cierre. Un local hace 30 o 40 tickets
@@ -79,57 +80,68 @@ export function periodProgress(
   };
 }
 
+/**
+ * La META del mes: cuánto hay que vender para no perder plata.
+ *
+ * DECISIÓN DEL DUEÑO (2026-09-14), y la razón está medida sobre datos reales:
+ *
+ *   meta = (fijos + únicos + compromisos + PÉRDIDAS del mes) ÷ margen BRUTO
+ *
+ * Antes se dividía la base entre el margen de CONTRIBUCIÓN (el que ya descuenta
+ * merma, faltantes, cortesías y fletes). Suena más completo y es un error:
+ * mete montos que YA se gastaron —y que caen de golpe— dentro de una TASA, y
+ * esa tasa después divide la base. El resultado se mueve solo.
+ *
+ * Medido en septiembre de 2026 sobre 10 días, con los costos fijos sin cambiar:
+ * la meta iba de $17,1M a $19,6M (**$2,45M de amplitud**), saltaba +$1,2M los
+ * días de conteo físico y **bajaba** hasta $718k los días siguientes, no porque
+ * el negocio mejorara sino porque más ventas diluyen un monto fijo. Una meta que
+ * se ablanda cuando vendes más está mal construida. Con esta fórmula la
+ * amplitud cae a $1,5M, el salto máximo a $455k y **nunca baja por dilución**.
+ *
+ * Por qué el margen BRUTO y no el de la carta: el bruto es una tasa de verdad
+ * —el COGS crece con las ventas— y se mide con lo que de verdad se pagó por lo
+ * que de verdad se vendió. Medido día a día se movió 63,9 % → 61,4 % sin un
+ * solo salto, mientras el de contribución caía a 52,3 % y rebotaba a 55,3 %.
+ *
+ * ⚠️ Lo que esta meta NO hace: cubrir las pérdidas que todavía no ocurrieron.
+ * Solo suma las ya incurridas, así que sube durante el mes (proyectado para
+ * septiembre: +$550k a +$820k). Es deliberado — la alternativa era pronosticar
+ * merma y faltantes sin historia con qué hacerlo, o sea inventar un número.
+ * En todo momento la meta es un PISO, nunca un techo optimista.
+ */
 export interface MonthTargetInput {
-  /** Meta con el margen REALIZADO del mes (ya descuenta merma, cortesías,
-   *  faltantes y fletes). Es la buena cuando hay con qué medirla. */
-  realizedTarget: number | null;
-  realizedMarginPct: number | null;
-  /** Meta con el margen de la CARTA (precio contra receta). Estable desde el
-   *  primer día, pero ignora todo lo que se pierde entre la cocina y la caja. */
-  catalogTarget: number | null;
+  /** TODO lo que el mes tiene que cubrir con las ventas: los costos fijos
+   *  recurrentes, los gastos únicos, los compromisos pagados **y las pérdidas
+   *  ya ocurridas** (merma, faltantes, cortesías, reembolsos, fletes). */
+  coverBase: number;
+  /** Margen BRUTO real del mes: (ingresos − COGS) ÷ ingresos. Es lo que de
+   *  verdad deja la comida vendida, con los costos FIFO de los lotes que
+   *  salieron. Es una TASA legítima: el COGS crece con las ventas. */
+  grossMarginPct: number | null;
+  /** Margen de la CARTA (precio contra receta). Respaldo mientras el mes no
+   *  tenga ventas suficientes para medir el bruto sobre una muestra decente. */
   catalogMarginPct: number | null;
   salesCount: number;
 }
-
 export interface MonthTarget {
   target: number;
   marginPct: number;
-  /** Con cuál de los dos márgenes se calculó, para que la pantalla lo diga. */
-  basis: 'realized' | 'catalog';
+  /** Con cuál de los dos márgenes se dividió, para que la pantalla lo diga. */
+  basis: 'gross' | 'catalog';
 }
 
-/**
- * Cuál meta mostrar.
- *
- * La realizada es la verdadera: cubrir los costos fijos con lo que de verdad
- * queda de cada venta. La de la carta ignora las fugas y por eso queda baja —
- * vendiendo justo esa meta, el mes cierra en pérdida por el monto de las fugas.
- *
- * Se usa la realizada apenas el mes tiene ventas suficientes para medirla. Antes
- * de eso, la de la carta: un margen calculado sobre tres ventas salta decenas de
- * puntos con un solo flete, y una meta que salta no sirve de meta.
- */
 export function chooseMonthTarget(input: MonthTargetInput): MonthTarget | null {
-  const hayRealizada =
-    input.realizedTarget !== null &&
-    input.realizedMarginPct !== null &&
-    input.realizedMarginPct > 0 &&
-    input.salesCount >= MIN_SALES_FOR_REALIZED_MARGIN;
-  if (hayRealizada) {
-    return {
-      target: input.realizedTarget as number,
-      marginPct: input.realizedMarginPct as number,
-      basis: 'realized',
-    };
-  }
-  if (
-    input.catalogTarget !== null &&
-    input.catalogMarginPct !== null &&
-    input.catalogMarginPct > 0
-  ) {
-    return { target: input.catalogTarget, marginPct: input.catalogMarginPct, basis: 'catalog' };
-  }
-  return null;
+  const margen =
+    input.grossMarginPct !== null &&
+    input.grossMarginPct > 0 &&
+    input.salesCount >= MIN_SALES_FOR_MEASURED_MARGIN
+      ? { pct: input.grossMarginPct, basis: 'gross' as const }
+      : input.catalogMarginPct !== null && input.catalogMarginPct > 0
+        ? { pct: input.catalogMarginPct, basis: 'catalog' as const }
+        : null;
+  if (margen === null) return null;
+  return { target: input.coverBase / margen.pct, marginPct: margen.pct, basis: margen.basis };
 }
 
 export interface MonthCloseProjection {
@@ -158,7 +170,7 @@ export function projectMonthClose(input: {
   if (!progress.inProgress || progress.elapsedFraction <= 0) return null;
   if (progress.daysElapsed < MIN_DAYS_FOR_PROJECTION) return null;
   if (contributionMarginPct === null) return null;
-  if (input.salesCount < MIN_SALES_FOR_REALIZED_MARGIN) return null;
+  if (input.salesCount < MIN_SALES_FOR_MEASURED_MARGIN) return null;
   if (revenue <= 0) return null;
 
   const projectedRevenue = revenue / progress.elapsedFraction;

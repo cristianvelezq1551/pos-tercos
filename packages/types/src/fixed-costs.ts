@@ -220,6 +220,19 @@ export const MonthlyFinancialStatementSchema = z.object({
    * Es la base de los DOS equilibrios (realizado y de la carta).
    */
   breakEvenBase: z.number(),
+  /**
+   * Las pérdidas YA ocurridas del mes (merma + faltantes + cortesías +
+   * reembolsos + fletes de compra), sumadas.
+   *
+   * Va SEPARADO de `breakEvenBase` a propósito, aunque la meta las sume: la
+   * proyección del cierre usa el margen de contribución, que ya las descuenta,
+   * y meterlas también en la base las contaría dos veces.
+   *
+   * Viaja OPCIONAL: el API (Railway) y el admin (Vercel) se despliegan por
+   * separado, y una pantalla nueva contra un API viejo debe caer a sumar las
+   * cinco líneas, que ya vienen en este mismo objeto (§7.v62).
+   */
+  monthLossesCost: z.number().optional(),
   /** Ventas necesarias para cubrir `breakEvenBase`
    *  (= breakEvenBase / contributionMarginPct). null si el margen de contribución
    *  no es positivo: ahí NO hay volumen que alcance. */

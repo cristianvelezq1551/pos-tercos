@@ -8,13 +8,19 @@ const pctText = (v: number): string => `${Math.round(v * 100)}%`;
 /**
  * Cuánto hay que vender en el mes para cubrir todo lo que hay que pagar.
  *
- * La meta se calcula con el margen que de verdad queda de cada venta: el que
- * ya descontó la receta, la merma, las cortesías, los faltantes y los fletes.
- * La de la CARTA (precio contra receta) ignora esas fugas y por eso queda baja
- * — vendiendo justo esa meta el mes cierra en pérdida por el monto de las
- * fugas. Se usa la de la carta solo mientras el mes no tenga ventas suficientes
- * para medir el margen real, porque con tres ventas un flete se lleva decenas
- * de puntos y una meta que salta no sirve de meta.
+ *   meta = (fijos + únicos + compromisos + PÉRDIDAS del mes) ÷ margen BRUTO
+ *
+ * Las pérdidas van ARRIBA, con lo que hay que pagar, no dentro del margen
+ * (decisión del dueño 2026-09-14). Meterlas en el margen convertía montos que
+ * ya se gastaron —y que caen de golpe el día de un conteo— en una "tasa": la
+ * meta saltaba $1,2M ese día y BAJABA $718k al siguiente, no porque el negocio
+ * mejorara sino porque más ventas diluyen un monto fijo. Una meta que se
+ * ablanda cuando vendes más está mal construida.
+ *
+ * El divisor es el margen BRUTO —lo que de verdad deja la comida vendida, con
+ * los costos FIFO reales— porque ése sí es una tasa: el COGS crece con las
+ * ventas. Solo mientras el mes no tenga ventas suficientes para medirlo se usa
+ * el de la CARTA.
  *
  * La barra va de 0 a 100 con una marca en el día de hoy: un porcentaje de
  * avance sin el tiempo al lado no dice si se va adelantado o corto, y cualquier
@@ -27,10 +33,16 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
   // margen de la carta. Si no, una carta a medio costear bloqueaba la tarjeta
   // —"tus productos no dejan ganancia"— sobre un mes cuyo margen real era 55%,
   // y escondía una meta que sí se podía calcular.
+  // `monthLossesCost` viaja opcional (el API y el admin se despliegan por
+  // separado): contra un API viejo se suman las cinco líneas, que ya están acá.
+  const perdidas =
+    s.monthLossesCost ??
+    s.wasteCost + s.shrinkageCost + s.cortesiasCost + s.refundCost + s.freightCost;
+  const cubrir = s.breakEvenBase + perdidas;
+
   const meta = chooseMonthTarget({
-    realizedTarget: s.breakEven,
-    realizedMarginPct: s.contributionMarginPct,
-    catalogTarget: c.target,
+    coverBase: cubrir,
+    grossMarginPct: s.grossMarginPct,
     catalogMarginPct: c.marginPct,
     salesCount: s.salesCount,
   });
@@ -39,16 +51,15 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
     // Sin ninguna de las dos: o la carta no tiene costos con qué estimar, o el
     // mes no deja nada de cada venta. Se distingue, porque lo que hay que hacer
     // es distinto.
-    const noDeja = s.contributionMarginPct !== null && s.contributionMarginPct <= 0;
+    const noDeja = s.grossMarginPct <= 0;
     return (
       <Marco tone={noDeja ? 'destructive' : undefined}>
         <p className={`text-sm ${noDeja ? 'text-destructive' : 'text-muted-foreground'}`}>
           {noDeja ? (
             <>
-              Este mes <strong>cada venta pierde plata</strong>: después del costo de la receta, la
-              merma, las cortesías, los faltantes y los fletes no queda nada para pagar lo fijo.
-              Vender más no acerca al equilibrio. Primero hay que subir precios, bajar el costo de
-              las recetas o cortar esas pérdidas.
+              Este mes <strong>cada venta pierde plata</strong>: el costo de la receta se come
+              todo el precio, así que no queda nada para pagar lo fijo. Vender más no acerca al
+              equilibrio. Primero hay que subir precios o bajar el costo de las recetas.
             </>
           ) : (
             <>
@@ -89,17 +100,24 @@ export function BreakEvenCard({ s }: { s: MonthlyFinancialStatement }) {
     <Marco>
       <p className="text-sm text-muted-foreground">
         Es cuánto tienes que vender en el mes para cubrir todo lo que hay que pagar: los costos
-        fijos —arriendo, nómina, servicios— más los gastos únicos y los compromisos que se pagaron
-        este mes.
+        fijos —arriendo, nómina, servicios—, los gastos únicos, los compromisos que se pagaron y
+        lo que se perdió este mes (merma, faltantes, cortesías y fletes).
       </p>
 
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="min-w-0 text-muted-foreground">Hay que cubrir este mes</span>
-          <span className="shrink-0 whitespace-nowrap tabular-nums">{formatCop(s.breakEvenBase)}</span>
+          <span className="shrink-0 whitespace-nowrap tabular-nums">{formatCop(cubrir)}</span>
         </div>
+        {perdidas > 0 ? (
+          <p className="-mt-1 text-[0.6875rem] text-muted-foreground">
+            {formatCop(s.breakEvenBase)} de costos fijos y gastos ·{' '}
+            <strong className="text-foreground">{formatCop(perdidas)}</strong> que se perdió este
+            mes y hay que volver a vender.
+          </p>
+        ) : null}
         <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="min-w-0 text-muted-foreground">De cada $100 vendidos te quedan</span>
+          <span className="min-w-0 text-muted-foreground">De cada $100 vendidos deja la comida</span>
           <span className="shrink-0 whitespace-nowrap font-bold tabular-nums">
             ${Math.round(meta.marginPct * 100)}
           </span>

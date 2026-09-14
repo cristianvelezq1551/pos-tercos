@@ -4,7 +4,7 @@ import {
   periodProgress,
   projectMonthClose,
   MIN_DAYS_FOR_PROJECTION,
-  MIN_SALES_FOR_REALIZED_MARGIN,
+  MIN_SALES_FOR_MEASURED_MARGIN,
 } from './month-outlook';
 
 const SEP = ['2026-09-01', '2026-09-30'] as const;
@@ -63,41 +63,56 @@ describe('periodProgress', () => {
 });
 
 describe('chooseMonthTarget', () => {
-  const realizada = { realizedTarget: 18_537_213, realizedMarginPct: 0.5531 };
-  const carta = { catalogTarget: 17_098_466, catalogMarginPct: 0.5996 };
+  // Cifras reales de producción, septiembre 2026 (día 14):
+  //   fijos+únicos+compromisos = 10.252.800 · pérdidas del mes = 577.000
+  //   margen bruto 61,4 % · margen de la carta 60,0 %
+  const CUBRIR = 10_252_800 + 577_000;
+  const base = { coverBase: CUBRIR, grossMarginPct: 0.614, catalogMarginPct: 0.5996 };
 
-  it('con ventas suficientes usa el margen REALIZADO: es el que cubre de verdad', () => {
-    const t = chooseMonthTarget({ ...realizada, ...carta, salesCount: 182 })!;
-    expect(t.basis).toBe('realized');
-    expect(t.target).toBe(18_537_213);
+  it('divide TODO lo que hay que cubrir entre el margen BRUTO', () => {
+    const t = chooseMonthTarget({ ...base, salesCount: 182 })!;
+    expect(t.basis).toBe('gross');
+    expect(t.marginPct).toBe(0.614);
+    expect(Math.round(t.target)).toBe(Math.round(CUBRIR / 0.614)); // ≈ $17.638.111
   });
 
-  it('con pocas ventas cae al margen de la carta: el realizado todavía salta', () => {
-    const t = chooseMonthTarget({
-      ...realizada,
-      ...carta,
-      salesCount: MIN_SALES_FOR_REALIZED_MARGIN - 1,
-    })!;
+  it('las pérdidas del mes SÍ están adentro: si no, la meta se alcanza perdiendo plata', () => {
+    const sinPerdidas = chooseMonthTarget({ ...base, coverBase: 10_252_800, salesCount: 182 })!;
+    const conPerdidas = chooseMonthTarget({ ...base, salesCount: 182 })!;
+    // Vender la meta SIN pérdidas deja la contribución justo en los fijos, y las
+    // pérdidas del mes salen igual: el neto queda en −577.000.
+    expect(sinPerdidas.target * 0.614 - 10_252_800 - 577_000).toBeCloseTo(-577_000, 0);
+    // Con ellas adentro, el neto da CERO. Eso es un equilibrio de verdad.
+    expect(conPerdidas.target * 0.614 - 10_252_800 - 577_000).toBeCloseTo(0, 0);
+  });
+
+  it('una pérdida nueva SUBE la meta; vender más NO la baja', () => {
+    const antes = chooseMonthTarget({ ...base, salesCount: 182 })!;
+    // Entra un conteo con 160.377 de faltante (el del 11 de septiembre).
+    const despues = chooseMonthTarget({ ...base, coverBase: CUBRIR + 160_377, salesCount: 182 })!;
+    expect(despues.target).toBeGreaterThan(antes.target);
+    // Y el doble de ventas, con el mismo margen y las mismas pérdidas, deja la
+    // meta IGUAL. Con la fórmula vieja bajaba: el monto fijo se diluía.
+    const masVentas = chooseMonthTarget({ ...base, salesCount: 400 })!;
+    expect(masVentas.target).toBe(antes.target);
+  });
+
+  it('con pocas ventas el bruto no es medible y manda el de la carta', () => {
+    const t = chooseMonthTarget({ ...base, salesCount: MIN_SALES_FOR_MEASURED_MARGIN - 1 })!;
     expect(t.basis).toBe('catalog');
-    expect(t.target).toBe(17_098_466);
+    expect(Math.round(t.target)).toBe(Math.round(CUBRIR / 0.5996));
   });
 
-  it('un margen realizado en cero o negativo no se usa aunque haya ventas', () => {
-    const t = chooseMonthTarget({
-      realizedTarget: null,
-      realizedMarginPct: -0.1,
-      ...carta,
-      salesCount: 500,
-    })!;
+  it('un margen bruto en cero o negativo no se usa aunque sobren ventas', () => {
+    const t = chooseMonthTarget({ ...base, grossMarginPct: -0.1, salesCount: 500 })!;
     expect(t.basis).toBe('catalog');
   });
 
-  it('sin ninguna de las dos no inventa una meta', () => {
+  it('sin ninguno de los dos márgenes no inventa una meta', () => {
     expect(
       chooseMonthTarget({
-        realizedTarget: null,
-        realizedMarginPct: null,
-        catalogTarget: null,
+        coverBase: CUBRIR,
+        grossMarginPct: null,
         catalogMarginPct: null,
         salesCount: 100,
       }),

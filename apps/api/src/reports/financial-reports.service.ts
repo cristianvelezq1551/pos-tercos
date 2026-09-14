@@ -362,6 +362,13 @@ export class FinancialReportsService {
     // hubiera que pagarlos. Un gasto puntual sube la meta de ESE mes, y eso
     // es lo que se quiere leer.
     const breakEvenBase = round(totalFixed + oneTimeCost + payablesPaidCost);
+    // Las pérdidas YA ocurridas. Entran al NUMERADOR de la meta (decisión del
+    // dueño 2026-09-14): son plata que hay que vender para reponer, no una tasa.
+    // Metidas en el divisor —como estaban— hacían saltar la meta $1,2M el día de
+    // un conteo y BAJAR $718k al día siguiente por pura dilución.
+    const monthLossesCost = round(
+      wasteCost + shrinkageCost + cortesiasCost + refundCost + freightCost,
+    );
     const be = computeBreakEven({
       revenue,
       cogs,
@@ -437,6 +444,7 @@ export class FinancialReportsService {
       salesCount: pnl.salesCount,
       netResult,
       breakEvenBase,
+      monthLossesCost,
       contributionMargin: round(be.contributionMargin),
       contributionMarginPct:
         be.contributionMarginPct === null ? null : round4(be.contributionMarginPct),
@@ -533,9 +541,8 @@ export class FinancialReportsService {
       // La MISMA meta que pinta la pantalla. Si el modelo opinara sobre la otra,
       // el dueño leería dos metas distintas en la misma pantalla.
       shownBreakEven: chooseMonthTarget({
-        realizedTarget: statement.breakEven,
-        realizedMarginPct: statement.contributionMarginPct,
-        catalogTarget: statement.catalogBreakEven.target,
+        coverBase: statement.breakEvenBase + (statement.monthLossesCost ?? 0),
+        grossMarginPct: statement.grossMarginPct,
         catalogMarginPct: statement.catalogBreakEven.marginPct,
         salesCount: statement.salesCount,
       }),

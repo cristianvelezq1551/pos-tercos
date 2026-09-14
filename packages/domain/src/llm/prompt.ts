@@ -274,7 +274,7 @@ CÓMO LEER EL ESTADO (son las mismas líneas que muestra la pantalla):
 - Los costos fijos de la lista son RECURRENTES (nómina, arriendo, servicios); los gastos únicos del mes NO están en esa lista, vienen aparte en las otras pérdidas. Los tres juntos son la base del punto de equilibrio. Una línea marcada "estimado" es el monto configurado porque ese mes todavía no tiene pago registrado: menciónala como estimado, nunca como dato cerrado.
 - Las "otras pérdidas" van debajo del margen bruto y NO entran al COGS: merma (alguien la declaró), faltantes (lo que apareció de menos al contar; nadie lo declaró), cortesías, reembolsos, fletes de compra, compromisos pagados y gastos únicos. Los gastos únicos y los compromisos pagados SÍ entran a la base del equilibrio: también hay que pagarlos con las ventas del mes.
 - "Margen de contribución" = ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes: lo que queda de cada venta para pagar lo fijo.
-- La META que el dueño ve en pantalla viene en "equilibrio mostrado", con el margen con el que se calculó. Con ventas suficientes es el REALIZADO (el margen de contribución del mes, que ya descontó merma, cortesías, faltantes y fletes); mientras el mes no tenga ventas suficientes, es el de la CARTA (precio contra receta). Usa SIEMPRE el mostrado: hablar del otro deja al dueño con dos metas distintas y ninguna explicación.
+- La META que el dueño ve en pantalla viene en "equilibrio mostrado". Se calcula dividiendo TODO lo que hay que cubrir —fijos, gastos únicos, compromisos pagados Y las pérdidas ya ocurridas del mes— entre el margen BRUTO (lo que deja la comida vendida). Mientras el mes no tenga ventas suficientes para medir ese margen, usa el de la CARTA. Usa SIEMPRE el mostrado: hablar de otro deja al dueño con dos metas distintas y ninguna explicación. Esa meta SUBE cuando aparece una pérdida nueva, y eso es correcto: cada peso perdido hay que volver a venderlo. NUNCA digas que subió "porque cambió el cálculo".
 - Si el mes está EN CURSO, los costos cargados son los del MES COMPLETO (la nómina de todos los días laborables, el arriendo entero) contra lo vendido hasta hoy, así que el neto va en rojo a mitad de mes por construcción. NUNCA digas que el mes "cerró": di por qué día va y, si viene la proyección, en cuánto cierra al ritmo actual. Compara el avance de ventas contra el avance del mes para decir si va adelantado o corto.
 - Si el mes tiene pocas ventas, dilo antes de sacar conclusiones de porcentajes: cuatro tickets y una merma no son una tendencia.
 
@@ -310,7 +310,7 @@ export interface FinancialAnalysisInput {
   projectedRevenue?: number | null;
   projectedNet?: number | null;
   /** La meta que el dueño ve, y con qué margen se calculó. */
-  shownBreakEven?: { target: number; marginPct: number; basis: 'realized' | 'catalog' } | null;
+  shownBreakEven?: { target: number; marginPct: number; basis: 'gross' | 'catalog' } | null;
   /** Ventas cobradas en el mes: contexto para no leer porcentajes de 4 tickets. */
   salesCount: number;
   /** Lo que habría entrado sin descuentos (solo se muestra si hubo descuentos). */
@@ -496,9 +496,9 @@ function shownBreakEvenLines(
   const m = i.shownBreakEven;
   if (!m) return [];
   const fuente =
-    m.basis === 'realized'
-      ? 'con el margen REALIZADO del mes'
-      : 'con el margen de la CARTA, porque el mes todavía no tiene ventas suficientes para medir las fugas';
+    m.basis === 'gross'
+      ? 'con el margen BRUTO real del mes (lo que deja la comida vendida)'
+      : 'con el margen de la CARTA, porque el mes todavía no tiene ventas suficientes para medirlo';
   const cobertura = m.target > 0 ? ` · cobertura ${pct(i.revenue / m.target)}` : '';
   return [
     `- EQUILIBRIO MOSTRADO (el que ve el dueño, ${fuente}): ${cop(m.target)} de ventas, con $${Math.round(m.marginPct * 100)} de cada $100${cobertura}`,
