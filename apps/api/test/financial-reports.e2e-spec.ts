@@ -36,6 +36,7 @@ describe('Reportes financieros del dueño E2E', () => {
       revenue: number; discountTotal: number; grossRevenue: number;
       cogs: number; grossMargin: number; grossMarginPct: number;
       netResult: number; wasteCost: number; cortesiasCost: number; refundCost: number;
+      shrinkageCost: number;
       totalFixed: number; oneTimeCost: number; breakEvenBase: number; monthLossesCost?: number; breakEven: number | null;
       breakEvenCoverage: number | null;
       catalogBreakEven: {
