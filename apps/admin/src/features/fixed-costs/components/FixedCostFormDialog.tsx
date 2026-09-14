@@ -66,7 +66,7 @@ export function FixedCostFormDialog({
       open
       onClose={onClose}
       title={isEdit ? `Editar "${initial?.name}"` : 'Nuevo costo o gasto'}
-      description="Entra al estado financiero. Mensual = cada mes; Anual = ÷12; Puntual = una vez, en su fecha (ej. una reparación)."
+      description="Entra al estado financiero. Recurrente = se repite todos los meses (arriendo, servicios). Único = pasa una vez y pesa solo en el mes de su fecha (aceite, aseo, una reparación)."
       maxWidth="max-w-md"
       footer={
         <>
@@ -98,9 +98,13 @@ export function FixedCostFormDialog({
               onChange={(e) => setFrequency(e.target.value as FixedCostFrequency)}
               disabled={pending}
             >
-              <option value="MONTHLY">Mensual</option>
-              <option value="ANNUAL">Anual (se prorratea ÷12)</option>
-              <option value="ONE_TIME">Puntual (gasto único)</option>
+              <optgroup label="Se repite solo">
+                <option value="MONTHLY">Cada mes</option>
+                <option value="ANNUAL">Cada año (se prorratea ÷12)</option>
+              </optgroup>
+              <optgroup label="Pasa una sola vez">
+                <option value="ONE_TIME">Gasto único</option>
+              </optgroup>
             </Select>
           </FormField>
         </div>
