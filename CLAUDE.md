@@ -5266,6 +5266,74 @@ junto con la reactivación.
 - ⚠️ **Apuntar el e2e a la base del espejo la borra**: `cleanDb` truncó los
   datos de producción copiados para mirar la pantalla. La base de un espejo
   debe llamarse SIN el sufijo `_test` — así `cleanDb` se niega a tocarla.
+## 7.v74 La meta de ventas: las pérdidas se suman, no se dividen (2026-09-14)
+
+> El dueño vio el equilibrio en $18,5M y preguntó de dónde salía un margen de
+> 55,3 % *"porque no siempre va a ser la misma merma, faltante, cortesías"*.
+> Tenía razón, y la evidencia salió de sus propios datos.
+> Verificado: typecheck 13/13 sin caché, lint 0, unit 12/12 paquetes (domain
+> 656, admin 391), **e2e 81 suites / 948**. Sin migración.
+
+### El problema medido (producción, septiembre 2026)
+La meta dividía la base entre el margen de CONTRIBUCIÓN, que ya descuenta
+merma, faltantes, cortesías y fletes. Eso mete montos que **ya se gastaron —y
+que caen de golpe—** dentro de una TASA, y esa tasa después divide la base.
+
+El faltante no es una tasa: es un escalón. En septiembre entró en 4 días
+puntuales (10 de 14 días en $0; el 8 cayeron $100.015 y el 11, $160.377 de un
+solo conteo de 56 movimientos). Reconstruida día a día con los costos fijos sin
+cambiar, la meta hizo esto:
+
+| día | meta | salto |
+|---|---|---|
+| 09-03 | $17.145.815 | |
+| 09-04 | $18.232.365 | **+$1.086.550** ← conteo |
+| 09-08 | $18.276.182 | **+$761.217** ← conteo |
+| 09-11 | $19.597.045 | **+$1.204.111** ← conteo |
+| 09-12 | $18.878.900 | −$718.145 |
+| 09-13 | $18.548.812 | −$330.088 |
+
+**$2,45M de amplitud en 11 días**, y bajando 4 veces **sin que pasara nada**:
+más ventas diluyen un monto fijo. Una meta que se ablanda cuando vendes más
+está mal construida. Es el mismo "vender humo" que §7.v52 había cerrado y que
+§7.v73 reintrodujo al usar el margen realizado.
+
+### La regla
+```
+meta = (fijos + únicos + compromisos + PÉRDIDAS del mes) ÷ margen BRUTO
+```
+- **Las pérdidas van al NUMERADOR**: son plata que hay que volver a vender, no
+  un menor margen. Cada pérdida nueva SUBE la meta; vender más ya no la baja.
+- **El divisor es el margen BRUTO real** (ingresos − COGS, con costos FIFO de
+  los lotes que salieron) — decisión del dueño, y es la correcta: el COGS **sí**
+  es una tasa (crece con las ventas) y medido día a día fue 63,9 % → 61,4 %
+  **sin un solo salto**, mientras el de contribución caía a 52,3 % y rebotaba.
+- **Respaldo**: con menos de `MIN_SALES_FOR_MEASURED_MARGIN` (30) ventas el
+  bruto se mediría sobre cuatro tickets, así que manda el de la carta.
+- Resultado sobre los datos reales: amplitud $1,5M (antes $2,45M), salto máximo
+  $455k (antes $1,2M) y **cero bajadas por dilución**. Con los números de prod
+  la meta pasa de $18.548.812 a **$17.635.238**, y vendiéndola el neto da **$0**
+  — la de antes no era más exigente, era más inestable.
+
+⚠️ **Lo que esta meta NO hace**: cubrir las pérdidas que todavía no ocurrieron.
+Sube durante el mes (proyectado para septiembre: +$550k a +$820k). Es
+deliberado — la alternativa era pronosticar merma y faltantes sin historia con
+qué hacerlo. En todo momento la meta es un **piso**, nunca un techo optimista.
+
+⚠️ **La proyección del cierre NO cambió**: sigue usando el margen de
+contribución, que extrapola las fugas. Son dos preguntas distintas —"cuánto
+necesito vender para cubrir lo que va" contra "cómo cierra el mes al ritmo
+actual"— y por eso pueden no coincidir en el borde.
+
+### Dónde
+`chooseMonthTarget` (domain) cambió de firma: recibe `coverBase` +
+`grossMarginPct` + `catalogMarginPct` y devuelve `basis: 'gross' | 'catalog'`.
+`MIN_SALES_FOR_REALIZED_MARGIN` pasó a `MIN_SALES_FOR_MEASURED_MARGIN`.
+`MonthlyFinancialStatement.monthLossesCost` viaja **opcional** (§7.v62: el API
+y el admin se despliegan por separado; la pantalla cae a sumar las cinco
+líneas, que ya vienen en el mismo objeto). `breakEvenBase` NO lo incluye a
+propósito: la proyección usa el margen de contribución y las contaría dos veces.
+
 ---
 
 ## 8. Estado del proyecto (commits y FASES)

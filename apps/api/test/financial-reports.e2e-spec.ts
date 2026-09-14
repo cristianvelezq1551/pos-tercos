@@ -36,7 +36,8 @@ describe('Reportes financieros del dueño E2E', () => {
       revenue: number; discountTotal: number; grossRevenue: number;
       cogs: number; grossMargin: number; grossMarginPct: number;
       netResult: number; wasteCost: number; cortesiasCost: number; refundCost: number;
-      totalFixed: number; oneTimeCost: number; breakEvenBase: number; breakEven: number | null;
+      shrinkageCost: number;
+      totalFixed: number; oneTimeCost: number; breakEvenBase: number; monthLossesCost?: number; breakEven: number | null;
       breakEvenCoverage: number | null;
       catalogBreakEven: {
         target: number | null;
@@ -804,6 +805,70 @@ describe('Reportes financieros del dueño E2E', () => {
       expect(lineas).toHaveLength(1);
       expect(lineas[0]!.isOneTime).toBe(true);
       expect(lineas[0]!.monthlyAmount).toBe(500_000);
+    });
+  });
+  describe('lo que hay que cubrir incluye las pérdidas del mes', () => {
+    // Decisión del dueño (2026-09-14). Las pérdidas van al NUMERADOR de la meta,
+    // no dentro del margen: son plata ya gastada que hay que volver a vender.
+    // Metidas en el margen, un conteo físico hacía saltar la meta más de un
+    // millón ese día y BAJARLA al siguiente por pura dilución de las ventas.
+    it('la merma del mes sube lo que hay que cubrir, y la meta con ella', async () => {
+      const antes = await monthly();
+      const cubrirAntes = antes.breakEvenBase + (antes.monthLossesCost ?? 0);
+
+      const ing = (
+        await request
+          .post('/ingredients')
+          .set(auth())
+          .send({ name: `Merma meta ${randomUUID().slice(0, 6)}`, unitPurchase: 'kg', unitRecipe: 'g', conversionFactor: 1000, thresholdMin: 0, isActive: true })
+          .expect(201)
+      ).body as { id: string };
+      // Compra 1 kg a $40.000 y tira 500 g → $20.000 de merma.
+      await request
+        .post('/invoices/manual')
+        .set(auth())
+        .send({
+          supplierNit: `9${Date.now()}`,
+          supplierName: 'Proveedor meta',
+          total: 40_000,
+          items: [{ entityType: 'INGREDIENT', ingredientId: ing.id, descriptionRaw: 'x', quantity: 1, unit: 'kg', unitPrice: 40_000, total: 40_000 }],
+        })
+        .expect(201);
+      await request
+        .post('/inventory/movements')
+        .set(auth())
+        .send({ entityType: 'INGREDIENT', ingredientId: ing.id, delta: -500, type: 'WASTE', notes: 'Se dañó' })
+        .expect(201);
+
+      const despues = await monthly();
+      const cubrirDespues = despues.breakEvenBase + (despues.monthLossesCost ?? 0);
+
+      // Los costos FIJOS no se movieron: lo que subió son las pérdidas.
+      expect(despues.breakEvenBase).toBeCloseTo(antes.breakEvenBase, 2);
+      expect(cubrirDespues - cubrirAntes).toBeCloseTo(20_000, 0);
+      expect(despues.monthLossesCost).toBeCloseTo(
+        despues.wasteCost + despues.shrinkageCost + despues.cortesiasCost + despues.refundCost + despues.freightCost,
+        2,
+      );
+    });
+
+    it('vender MÁS no baja lo que hay que cubrir', async () => {
+      const antes = await monthly();
+      const cubrirAntes = antes.breakEvenBase + (antes.monthLossesCost ?? 0);
+      const sale = await request
+        .post('/sales')
+        .set(auth())
+        .set('Idempotency-Key', randomUUID())
+        .send({ type: 'COUNTER', items: [{ productId, quantity: 1 }] })
+        .expect(201);
+      await request
+        .post(`/sales/${(sale.body as { id: string }).id}/confirm-payment`)
+        .set(auth())
+        .send({ method: 'CASH', amountReceived: 5000 })
+        .expect(201);
+      const despues = await monthly();
+      expect(despues.revenue).toBeGreaterThan(antes.revenue);
+      expect(despues.breakEvenBase + (despues.monthLossesCost ?? 0)).toBeCloseTo(cubrirAntes, 2);
     });
   });
 });

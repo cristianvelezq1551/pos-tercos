@@ -216,10 +216,10 @@ describe('buildFinancialAnalysisUserPrompt', () => {
 
     const conMostrado = buildFinancialAnalysisUserPrompt({
       ...base,
-      shownBreakEven: { target: 28_800_000, marginPct: 0.62, basis: 'realized' },
+      shownBreakEven: { target: 28_800_000, marginPct: 0.62, basis: 'gross' },
     });
     expect(conMostrado).toContain(
-      '- EQUILIBRIO MOSTRADO (el que ve el dueño, con el margen REALIZADO del mes): $28.800.000 de ventas, con $62 de cada $100 · cobertura 111.1%',
+      '- EQUILIBRIO MOSTRADO (el que ve el dueño, con el margen BRUTO real del mes (lo que deja la comida vendida)): $28.800.000 de ventas, con $62 de cada $100 · cobertura 111.1%',
     );
   });
 

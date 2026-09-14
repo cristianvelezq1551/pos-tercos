@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import type { MonthlyFinancialStatement } from '@pos-tercos/types';
 import { render, screen } from '@testing-library/react';
+import { formatCop } from '@pos-tercos/ui';
 import { describe, expect, it } from 'vitest';
 import { BreakEvenCard } from './BreakEvenCard';
+
+/** `formatCop` usa espacio duro (U+00A0); Testing Library lo normaliza solo en
+ *  el DOM, así que hay que normalizar también lo que se espera. */
+const cop = (n: number): string => formatCop(n).replace(/\u00a0/g, ' ');
+
+/** Lo que hay que cubrir = fijos+únicos+compromisos MÁS las pérdidas del mes. */
+const PERDIDAS = 135_889 + 0 + 45_459 + 279_396 + 113_000;
+const CUBRIR = 10_252_800 + PERDIDAS;
 
 /**
  * Los números son los de septiembre de 2026 en producción, que son los que el
@@ -52,6 +61,7 @@ const base = (o: Partial<MonthlyFinancialStatement> = {}): MonthlyFinancialState
     contributionMargin: 5_205_710,
     contributionMarginPct: 0.5531,
     breakEvenBase: 10_252_800,
+    monthLossesCost: PERDIDAS,
     breakEven: 18_537_213,
     breakEvenCoverage: 0.5078,
     catalogBreakEven: {
@@ -71,24 +81,50 @@ const anchoDeLaBarra = (c: HTMLElement): number =>
   Number((c.querySelector('.bg-warning, .bg-success') as HTMLElement).style.width.replace('%', ''));
 
 describe('BreakEvenCard', () => {
-  it('la meta usa el margen REALIZADO, no el de la carta, cuando hay ventas', () => {
+  it('divide TODO lo que hay que cubrir entre el margen BRUTO de la comida', () => {
     render(<BreakEvenCard s={base()} />);
-    // $18.537.213, no $17.098.466: la de la carta ignora merma, cortesías,
-    // faltantes y fletes, y vendiéndola el mes igual cierra en pérdida.
-    expect(screen.getByText('$ 18.537.213')).toBeTruthy();
-    expect(screen.queryByText('$ 17.098.466')).toBeNull();
-    expect(screen.getByText('$55')).toBeTruthy();
+    expect(screen.getByText(cop(CUBRIR / 0.6141))).toBeTruthy();
+    expect(screen.getByText('$61')).toBeTruthy();
+    // Ya no divide por el margen de contribución (55%), que metía montos ya
+    // gastados dentro de una tasa y hacía saltar la meta el día de un conteo.
+    expect(screen.queryByText('$55')).toBeNull();
+    expect(screen.queryByText('$ 18.537.213')).toBeNull();
   });
 
-  it('con pocas ventas cae a la meta de la carta y lo dice', () => {
+  it('las pérdidas del mes están DENTRO de lo que hay que cubrir', () => {
+    render(<BreakEvenCard s={base()} />);
+    expect(screen.getByText(cop(CUBRIR))).toBeTruthy();
+    // Y se desglosa, para que se vea cuánto de la meta es pérdida.
+    expect(screen.getByText(cop(PERDIDAS))).toBeTruthy();
+  });
+
+  it('vender más NO baja la meta; una pérdida nueva SÍ la sube', () => {
+    const conPocasVentas = render(<BreakEvenCard s={base()} />);
+    const meta = cop(CUBRIR / 0.6141);
+    expect(screen.getByText(meta)).toBeTruthy();
+    conPocasVentas.unmount();
+
+    // El doble de ventas, mismo margen: la meta queda IGUAL (antes bajaba).
+    render(<BreakEvenCard s={base({ revenue: 18_824_000 })} />);
+    expect(screen.getByText(meta)).toBeTruthy();
+  });
+
+  it('sin el campo nuevo del API, suma las cinco líneas de pérdida', () => {
+    // El API y el admin se despliegan por separado: una pantalla nueva contra
+    // un API viejo no puede quedarse sin las pérdidas en la meta.
+    render(<BreakEvenCard s={base({ monthLossesCost: undefined })} />);
+    expect(screen.getByText(cop(CUBRIR / 0.6141))).toBeTruthy();
+  });
+
+  it('con pocas ventas el bruto no es medible y cae al de la carta', () => {
     render(<BreakEvenCard s={base({ salesCount: 4 })} />);
-    expect(screen.getByText('$ 17.098.466')).toBeTruthy();
+    expect(screen.getByText(cop(CUBRIR / 0.5996))).toBeTruthy();
     expect(screen.getByText('$60')).toBeTruthy();
   });
 
   it('la barra se llena lo mismo que dice el número', () => {
     const { container } = render(<BreakEvenCard s={base()} />);
-    const cobertura = 9_412_000 / 18_537_213;
+    const cobertura = 9_412_000 / (CUBRIR / 0.6141);
     expect(anchoDeLaBarra(container)).toBeCloseTo(cobertura * 100, 1);
     expect(screen.getByText(`${Math.round(cobertura * 100)}%`)).toBeTruthy();
   });
@@ -124,7 +160,16 @@ describe('BreakEvenCard', () => {
   it('sin meta que cubrir no muestra un faltante negativo', () => {
     render(
       <BreakEvenCard
-        s={base({ breakEvenBase: 0, breakEven: 0, catalogBreakEven: { ...base().catalogBreakEven, target: 0 } })}
+        s={base({
+          breakEvenBase: 0,
+          monthLossesCost: 0,
+          cortesiasCost: 0,
+          wasteCost: 0,
+          shrinkageCost: 0,
+          freightCost: 0,
+          breakEven: 0,
+          catalogBreakEven: { ...base().catalogBreakEven, target: 0 },
+        })}
       />,
     );
     expect(screen.getByText(/no hay meta que cubrir/)).toBeTruthy();

@@ -5,9 +5,10 @@ const pctText = (v: number): string => `${Math.round(v * 100)}%`;
 /**
  * De dónde salió la meta, y qué se está comiendo el margen.
  *
- * Sin esta parte, el margen de la carta y el que de verdad queda al final del
- * mes se ven como dos cifras que se contradicen. La diferencia entre las dos es
- * el dato útil: son la merma, las cortesías, los faltantes y los fletes.
+ * Sin esta parte, el margen bruto y lo que de verdad queda al final del mes se
+ * ven como dos cifras que se contradicen. La diferencia entre las dos es el
+ * dato útil: son la merma, los faltantes, las cortesías y los fletes — que ya
+ * no se esconden en un porcentaje, sino que suman a la meta en pesos.
  */
 export function BreakEvenDetail({
   c,
@@ -16,28 +17,29 @@ export function BreakEvenDetail({
 }: {
   c: MonthlyFinancialStatement['catalogBreakEven'];
   s: MonthlyFinancialStatement;
-  basis: 'realized' | 'catalog';
+  basis: 'gross' | 'catalog';
 }) {
   const real = s.contributionMarginPct;
-  const brecha = c.marginPct !== null && real !== null ? c.marginPct - real : null;
+  const bruto = s.grossMarginPct;
+  const brecha = real !== null ? bruto - real : null;
 
   return (
     <details className="border-t border-border pt-3 text-xs text-muted-foreground">
       <summary className="cursor-pointer font-medium text-foreground">Cómo se calculó</summary>
       <ul className="mt-2 space-y-1.5">
         <li>
-          {basis === 'realized' ? (
+          {basis === 'gross' ? (
             <>
-              La meta usa lo que de verdad quedó de cada venta este mes:{' '}
-              <strong>{real !== null ? pctText(real) : '—'}</strong>, ya descontados el costo de la
-              receta, la merma, las cortesías, los faltantes y los fletes de compra.
+              La meta divide todo lo que hay que cubrir entre lo que deja la comida vendida:{' '}
+              <strong>{pctText(bruto)}</strong> (precio menos el costo real de la receta, lote por
+              lote). Las pérdidas del mes no se descuentan de ese porcentaje: se suman arriba, a lo
+              que hay que pagar — son plata que hay que volver a vender, no un menor margen.
             </>
           ) : (
             <>
               La meta usa por ahora el margen de la <strong>carta</strong> (precio contra receta):
-              este mes todavía no tiene ventas suficientes para medir cuánto se pierde entre la
-              cocina y la caja. Cuando las tenga, la meta pasa sola al margen real, que es más alto
-              de cubrir.
+              este mes todavía no tiene ventas suficientes para medir el margen real sobre una
+              muestra decente. Cuando las tenga, pasa sola al margen medido.
             </>
           )}
         </li>
@@ -66,19 +68,20 @@ export function BreakEvenDetail({
             en cuenta.
           </li>
         ) : null}
-        {real !== null && brecha !== null && c.marginPct !== null ? (
+        {real !== null && brecha !== null ? (
           <li>
-            La carta deja <strong>{pctText(c.marginPct)}</strong> y este mes quedaron{' '}
+            La comida deja <strong>{pctText(bruto)}</strong>, pero al final del mes quedaron{' '}
             <strong>{pctText(real)}</strong>: {pctText(Math.abs(brecha))}{' '}
             {brecha > 0 ? 'menos' : 'más'}. Esa diferencia es lo que se pierde entre la cocina y la
-            caja, y por eso la meta con el margen real es más alta.
+            caja, y es justo lo que la meta suma arriba en pesos.
           </li>
         ) : null}
         {s.periodInProgress ? (
           <li>
-            Los costos que hay que cubrir son los del <strong>mes completo</strong> (la nómina de
-            todos los días laborables, el arriendo entero), aunque el mes vaya por la mitad. Por eso
-            la meta no se mueve día a día.
+            Los costos fijos que hay que cubrir son los del <strong>mes completo</strong> (la
+            nómina de todos los días laborables, el arriendo entero), aunque el mes vaya por la
+            mitad. La meta sí sube cuando aparece una pérdida nueva: cada peso que se pierde hay
+            que volver a venderlo.
           </li>
         ) : null}
       </ul>
