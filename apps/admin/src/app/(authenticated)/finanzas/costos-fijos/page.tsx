@@ -29,7 +29,7 @@ export default async function CostosFijosPage() {
       <PageHeader
         eyebrow="Finanzas"
         title="Costos y gastos"
-        description="Recurrentes (alquiler, servicios, software, contador…) y gastos puntuales (ej. una reparación). Mensual = cada mes; Anual = ÷12; Puntual = una vez en su fecha. La nómina NO va aquí — se jala automática del módulo de Nómina."
+        description="Separados en dos: los RECURRENTES, que se repiten solos cada mes o cada año (arriendo, servicios, software, contador), y los ÚNICOS, que pasan una vez y pesan solo en el mes de su fecha (aceite, aseo, una reparación). La nómina NO va aquí — se jala automática del módulo de Nómina."
         icon={<Coins className="h-6 w-6" strokeWidth={1.75} />}
       />
       <Container size="7xl" padY="md">

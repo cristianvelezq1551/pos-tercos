@@ -1,11 +1,13 @@
 'use client';
 
 import type { FinancePendingFixedCost, FixedCost } from '@pos-tercos/types';
-import { Button, formatCop } from '@pos-tercos/ui';
-import { Plus } from 'lucide-react';
+import { Receipt, Repeat } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { listFixedCosts, listPendingFixedCosts } from '../api/client';
+import { partirCostos } from '../lib/particion';
+import { CostsSectionHeader } from './CostsSectionHeader';
+import { CostsSummaryCard } from './CostsSummaryCard';
 import { DeleteFixedCostDialog } from './DeleteFixedCostDialog';
 import { FixedCostFormDialog } from './FixedCostFormDialog';
 import { FixedCostPaymentDialog } from './FixedCostPaymentDialog';
@@ -50,35 +52,63 @@ export function FixedCostsManager({ costs: initialCosts, pending: initialPending
     }
   };
 
-  const totalMensual = costs
-    .filter((c) => c.isActive)
-    .reduce(
-      (acc, c) => acc + (c.frequency === 'ANNUAL' ? c.amount / 12 : c.amount),
-      0,
-    );
+  // Los dos grupos se separan en pantalla porque son plata de naturaleza
+  // distinta: lo recurrente sostiene el negocio mes a mes (y es lo que entra al
+  // punto de equilibrio); lo único es un gasto suelto que no vuelve.
+  const {
+    recurrentes,
+    unicos,
+    totalRecurrenteMensual,
+    totalUnicos,
+    recurrentesActivos,
+    unicosActivos,
+  } = partirCostos(costs);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
-        <div>
-          <p className="caps text-[0.625rem] text-muted-foreground">Total mensual estimado</p>
-          <p className="text-xl font-bold text-foreground tabular-nums">{formatCop(totalMensual)}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Suma de costos activos en su equivalente mensual (anuales ÷ 12). La nómina se suma
-            aparte automáticamente en el estado financiero.
-          </p>
-        </div>
-        <Button onClick={() => setModal({ kind: 'new' })}>
-          <Plus className="h-4 w-4" /> Nuevo costo fijo
-        </Button>
-      </div>
-
-      <FixedCostsTable
-        costs={costs}
+    <div className="space-y-6">
+      <CostsSummaryCard
+        totalRecurrenteMensual={totalRecurrenteMensual}
+        recurrentesActivos={recurrentesActivos}
+        totalUnicos={totalUnicos}
+        unicosActivos={unicosActivos}
         onCreate={() => setModal({ kind: 'new' })}
-        onEdit={(cost) => setModal({ kind: 'edit', cost })}
-        onDelete={(cost) => setModal({ kind: 'delete', cost })}
       />
+
+      <section className="space-y-3">
+        <CostsSectionHeader
+          icon={Repeat}
+          title="Gastos recurrentes"
+          hint="Se repiten solos: arriendo, servicios, internet, software, contador. Son pocos y sostienen el negocio todos los meses."
+          count={recurrentes.length}
+          total={totalRecurrenteMensual}
+          totalLabel="Al mes"
+        />
+        <FixedCostsTable
+          costs={recurrentes}
+          variant="recurring"
+          onCreate={() => setModal({ kind: 'new' })}
+          onEdit={(cost) => setModal({ kind: 'edit', cost })}
+          onDelete={(cost) => setModal({ kind: 'delete', cost })}
+        />
+      </section>
+
+      <section className="space-y-3">
+        <CostsSectionHeader
+          icon={Receipt}
+          title="Gastos únicos"
+          hint="Pasan una sola vez: aceite, productos de aseo, una reparación, una compra puntual. Cada uno pesa solo en el mes de su fecha."
+          count={unicos.length}
+          total={totalUnicos}
+          totalLabel="Total"
+        />
+        <FixedCostsTable
+          costs={unicos}
+          variant="oneTime"
+          onCreate={() => setModal({ kind: 'new' })}
+          onEdit={(cost) => setModal({ kind: 'edit', cost })}
+          onDelete={(cost) => setModal({ kind: 'delete', cost })}
+        />
+      </section>
 
       <PendingPeriodsPanel
         costs={costs}
