@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BusinessValueSchema,
+  CAMBIAR_INICIO_DE_MES_HABILITADO,
   DEFAULT_OPENING_HOURS,
   PaymentAccountSchema,
   OpeningHoursSchema,
@@ -183,6 +184,24 @@ export class BusinessConfigService {
 
   async update(input: UpdateBusinessConfig, actorId: string): Promise<BusinessConfig> {
     const before = await this.get();
+
+    // El día en que arranca el mes del negocio quedó FIJO (decisión del dueño;
+    // el interruptor es `CAMBIAR_INICIO_DE_MES_HABILITADO` en @pos-tercos/types).
+    // Moverlo recalcula todo el estado financiero de golpe —ingresos, COGS,
+    // nómina y la ventana de los costos fijos cambian de mes a la vez— así que
+    // no basta con esconder el campo: el rechazo va acá, donde también llega
+    // una llamada suelta al API. Reenviar el MISMO valor no es un cambio y se
+    // deja pasar: un cliente que mande la config entera no tiene por qué fallar.
+    if (
+      !CAMBIAR_INICIO_DE_MES_HABILITADO &&
+      input.monthStartDay !== undefined &&
+      input.monthStartDay !== before.monthStartDay
+    ) {
+      throw new BadRequestException(
+        `El mes del negocio está fijo en el día ${before.monthStartDay} y no se puede cambiar desde la app.`,
+      );
+    }
+
     const patch: Record<string, unknown> = { ...input };
 
     // El dueño pega el link de Maps y listo: las coordenadas (mapa embebido +

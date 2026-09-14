@@ -5214,6 +5214,33 @@ el tono se compara contra el avance del mes, no contra el 100 %.
   que se restó (antes solo COGS + fijos, y la leyenda prometía más de lo que
   dibujaba).
 
+### El mes del negocio quedó FIJO (decisión del dueño, 2026-09-14)
+La tarjeta "Mes del negocio" ya **no** deja mover el día en que arranca: solo
+dice de qué día a qué día va el período. En prod siempre estuvo en **1** (mes
+calendario) y la bitácora no registra un solo cambio.
+
+Por qué se cerró: mover ese día recalcula el estado financiero ENTERO de golpe
+—ingresos, COGS, nómina y la ventana de los costos fijos cambian de mes a la
+vez—, o sea que un clic por curiosidad reescribe el histórico con el que se
+decide. Es un ajuste de una sola vez, no una perilla del día a día.
+
+- **El interruptor es UNO**: `CAMBIAR_INICIO_DE_MES_HABILITADO` en
+  `packages/types/src/business-config.ts`. En `true` vuelve el campo a la
+  pantalla **y** vuelve a permitirse el cambio en el API.
+- **No alcanza con esconder el campo**: el PATCH de configuración es uno solo
+  para todo (horario, domicilios, cuentas de pago…), así que el rechazo vive en
+  `BusinessConfigService.update`. Reenviar el MISMO valor no es un cambio y pasa
+  — un cliente que mande la config entera no tiene por qué fallar.
+- El editor se conserva entero en `MonthCutoffEditor.tsx` (con sus hooks
+  adentro, no en la tarjeta) para que reactivarlo sea cambiar la constante y
+  nada más.
+
+⚠️ Si algún día se enciende: el selector de mes abre en el mes del CALENDARIO,
+no en el de negocio. Con un corte distinto de 1, la pantalla se abriría en un
+período que todavía no empezó (lo dice, no miente) mientras el período vivo se
+llama con el nombre del mes anterior. Eso es de antes y habría que resolverlo
+junto con la reactivación.
+
 ### Deuda conocida (reportada, NO tocada)
 - **`getMonthlyTrend` calcula el margen de la carta 7 veces**: pide un
   statement completo por mes y el punto de la tendencia solo usa 4 cifras.
