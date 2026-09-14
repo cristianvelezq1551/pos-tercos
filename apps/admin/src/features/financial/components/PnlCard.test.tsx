@@ -66,7 +66,7 @@ describe('PnlCard rotula el costo fijo sin pago como estimado', () => {
     render(
       <PnlCard
         s={statement([
-          { fixedCostId: null, name: 'Nómina (auto)', category: 'Nómina', monthlyAmount: 2_650_000, isPayroll: true, isOneTime: false, isEstimated: false },
+          { fixedCostId: null, name: 'Nómina (mes completo)', category: 'Nómina', monthlyAmount: 2_650_000, isPayroll: true, isOneTime: false, isEstimated: false },
           { fixedCostId: 'a', name: 'Arriendo', category: 'Alquiler', monthlyAmount: 1_680_000, isPayroll: false, isOneTime: false, isEstimated: false },
           { fixedCostId: 'b', name: 'Servicios', category: 'Servicios', monthlyAmount: 900_000, isPayroll: false, isOneTime: false, isEstimated: true },
           { fixedCostId: 'c', name: 'Horno', category: 'Equipos', monthlyAmount: 800_000, isPayroll: false, isOneTime: true, isEstimated: true },
@@ -78,7 +78,7 @@ describe('PnlCard rotula el costo fijo sin pago como estimado', () => {
     expect(rotulos[0]!.closest('li')!.textContent).toContain('Servicios');
     expect(rotulos[1]!.closest('li')!.textContent).toContain('Horno');
     expect(screen.getByText('Arriendo').closest('li')!.textContent).not.toContain('estimado');
-    expect(screen.getByText('Nómina (auto)').closest('li')!.textContent).not.toContain('estimado');
+    expect(screen.getByText('Nómina (mes completo)').closest('li')!.textContent).not.toContain('estimado');
   });
 
   it('sin líneas estimadas no aparece el rótulo', () => {
@@ -90,5 +90,75 @@ describe('PnlCard rotula el costo fijo sin pago como estimado', () => {
       />,
     );
     expect(screen.queryByText('estimado')).toBeNull();
+  });
+});
+
+describe('PnlCard distingue un mes en curso de uno cerrado', () => {
+  const conPeriodo = (o: Partial<MonthlyFinancialStatement>): MonthlyFinancialStatement => ({
+    ...statement([
+      { fixedCostId: null, name: 'Nómina (mes completo)', category: 'Nómina', monthlyAmount: 6_890_000, isPayroll: true, isOneTime: false, isEstimated: false },
+    ]),
+    netResult: -5_047_090,
+    ...o,
+  });
+
+  it('a mitad de mes NO dice que cerró, dice por qué día va', () => {
+    render(
+      <PnlCard s={conPeriodo({ periodInProgress: true, periodDaysElapsed: 13, periodDaysTotal: 30 })} />,
+    );
+    expect(screen.getByText('Así va el mes · día 13 de 30')).toBeTruthy();
+    expect(screen.queryByText(/El mes cerró en pérdida/)).toBeNull();
+    expect(screen.getByText(/se endereza al vender/)).toBeTruthy();
+  });
+
+  it('cuando el mes terminó sí dice cómo cerró', () => {
+    render(<PnlCard s={conPeriodo({ periodInProgress: false })} />);
+    expect(screen.getByText('Resultado neto del mes')).toBeTruthy();
+    expect(screen.getByText(/El mes cerró en pérdida/)).toBeTruthy();
+  });
+
+  it('con el mes en curso muestra en cuánto cierra al ritmo actual', () => {
+    render(
+      <PnlCard
+        s={conPeriodo({
+          periodInProgress: true,
+          periodDaysElapsed: 13,
+          periodDaysTotal: 30,
+          projectedRevenue: 21_720_000,
+          projectedNet: 1_758_000,
+        })}
+      />,
+    );
+    expect(screen.getByText(/el mes cierra alrededor de/)).toBeTruthy();
+    expect(screen.getByText('$ 1.758.000')).toBeTruthy();
+  });
+
+  it('sin proyección no inventa una', () => {
+    render(
+      <PnlCard s={conPeriodo({ periodInProgress: true, periodDaysElapsed: 2, periodDaysTotal: 30, projectedNet: null })} />,
+    );
+    expect(screen.queryByText(/el mes cierra alrededor de/)).toBeNull();
+  });
+
+  it('un mes en curso YA en verde no dice que va en rojo', () => {
+    render(
+      <PnlCard s={conPeriodo({ periodInProgress: true, periodDaysElapsed: 25, periodDaysTotal: 30, netResult: 900_000 })} />,
+    );
+    expect(screen.getByText(/ya cubres los costos completos del mes/)).toBeTruthy();
+    expect(screen.queryByText(/va en rojo/)).toBeNull();
+  });
+
+  it('un mes que todavía no empieza no dice que cerró', () => {
+    render(<PnlCard s={conPeriodo({ periodStatus: 'future', periodInProgress: false })} />);
+    expect(screen.getByText('Mes que todavía no empieza')).toBeTruthy();
+    expect(screen.queryByText(/El mes cerró/)).toBeNull();
+  });
+
+  it('avisa que los costos son del mes completo mientras el mes corre', () => {
+    render(
+      <PnlCard s={conPeriodo({ periodInProgress: true, periodDaysElapsed: 13, periodDaysTotal: 30 })} />,
+    );
+    expect(screen.getAllByText(/mes completo/).length).toBeGreaterThan(1);
+    expect(screen.getByText('Nómina pendiente')).toBeTruthy();
   });
 });

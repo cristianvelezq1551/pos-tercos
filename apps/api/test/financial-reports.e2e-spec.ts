@@ -55,6 +55,9 @@ describe('Reportes financieros del dueño E2E', () => {
       salesCount: number;
       fixedCosts: Array<{ name: string; monthlyAmount: number; isPayroll: boolean; isOneTime: boolean; isEstimated: boolean }>;
       cogsEstimated: boolean; cogsPartial: boolean;
+      periodStatus?: 'future' | 'in_progress' | 'closed';
+      periodDaysElapsed?: number; periodDaysTotal?: number;
+      projectedRevenue?: number | null; projectedNet?: number | null;
     };
   };
 
@@ -162,7 +165,7 @@ describe('Reportes financieros del dueño E2E', () => {
     expect(after.revenue).toBe(before.revenue);
   });
 
-  it('un salario MENSUAL entra completo como "Nómina (auto)" y baja el neto', async () => {
+  it('un salario MENSUAL entra completo como "Nómina (mes completo)" y baja el neto', async () => {
     const before = await monthly();
     const SALARIO = 3_000_000;
     // Contratado antes del mes y sin salida ⇒ el mes se devenga entero.
@@ -684,6 +687,123 @@ describe('Reportes financieros del dueño E2E', () => {
         antes.catalogBreakEven.marginPct!,
         4,
       );
+    });
+  });
+
+  describe('el mes en curso se distingue de uno cerrado', () => {
+    it('el mes actual viene marcado en curso, con el día que va', async () => {
+      const r = await monthly();
+      expect(r.periodStatus).toBe('in_progress');
+      expect(r.periodDaysElapsed).toBeGreaterThan(0);
+      expect(r.periodDaysElapsed!).toBeLessThanOrEqual(r.periodDaysTotal!);
+    });
+
+    it('un mes viejo viene cerrado; uno que no ha llegado, futuro', async () => {
+      const viejo = await monthly(now.getFullYear() - 1, 1);
+      expect(viejo.periodStatus).toBe('closed');
+      expect(viejo.projectedNet ?? null).toBeNull();
+      const futuro = await monthly(now.getFullYear() + 1, 1);
+      expect(futuro.periodStatus).toBe('future');
+      expect(futuro.projectedNet ?? null).toBeNull();
+    });
+  });
+
+  describe('quien cobra todas las semanas pesa en el mes', () => {
+    it('un empleado SIN fecha de ingreso entra a la nómina del estado', async () => {
+      // La nómina semanal lo incluye desde siempre. Si el estado lo excluía,
+      // esa persona cobraba y no aparecía: el dueño leía ganancia de más.
+      const hash = await bcrypt.hash('dev12345', 10);
+      const sinFecha = await prisma.user.create({
+        data: {
+          email: 'sin-fecha-fin@test.local',
+          fullName: 'Sin Fecha',
+          role: 'COCINERO',
+          passwordHash: hash,
+          mustChangePwd: false,
+          active: true,
+          payType: 'MONTHLY',
+          salaryAmount: 1_500_000,
+          hireDate: null,
+        },
+      });
+      try {
+        const r = await monthly();
+        const nomina = r.fixedCosts.find((l) => l.isPayroll);
+        expect(nomina).toBeDefined();
+        expect(nomina!.monthlyAmount).toBeGreaterThanOrEqual(1_500_000);
+      } finally {
+        await prisma.user.delete({ where: { id: sinFecha.id } });
+      }
+    });
+  });
+
+  describe('un costo fijo con pagos no se puede borrar', () => {
+    const PNG = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    it('borrarlo se rechaza y el mes viejo conserva su línea', async () => {
+      const costo = (
+        await request
+          .post('/fixed-costs')
+          .set(auth())
+          .send({ name: `Aseo ${randomUUID().slice(0, 6)}`, category: 'Otros', frequency: 'MONTHLY', amount: 200_000, startedAt: hoyLocal() })
+          .expect(201)
+      ).body as { id: string };
+      await request
+        .post(`/fixed-costs/${costo.id}/payment`)
+        .set(auth())
+        .field('periodYear', String(now.getFullYear()))
+        .field('periodMonth', String(now.getMonth() + 1))
+        .field('amount', '200000')
+        .field('cashAmount', '0')
+        .field('bankAmount', '200000')
+        .attach('proof', PNG, 'proof.png')
+        .expect(201);
+
+      const res = await request.delete(`/fixed-costs/${costo.id}`).set(auth()).expect(400);
+      expect(String((res.body as { message: string }).message)).toMatch(/desactívalo/i);
+
+      // Y desactivarlo NO le borra la línea al mes que ya lo pagó.
+      await request.patch(`/fixed-costs/${costo.id}`).set(auth()).send({ isActive: false }).expect(200);
+      const r = await monthly();
+      expect(r.fixedCosts.some((l) => l.monthlyAmount === 200_000)).toBe(true);
+    });
+  });
+  describe('un gasto puntual siempre tiene fecha', () => {
+    // La fecha define en QUÉ MES pega. Sin ella, `startedAt` y `endedAt` quedan
+    // en null y la regla "sin fecha = siempre vigente" lo cuenta en TODOS los
+    // meses, para siempre: un gasto de una vez inflando la meta de ventas mes
+    // tras mes. Crear ya lo exigía; quitarle la fecha después, no.
+    it('no se puede dejar sin fecha ni al crear ni al editar, y el mes solo lo cuenta una vez', async () => {
+      await request
+        .post('/fixed-costs')
+        .set(auth())
+        .send({ name: `Sin fecha ${randomUUID().slice(0, 6)}`, category: 'Otros', frequency: 'ONE_TIME', amount: 500_000 })
+        .expect(400);
+
+      const nombre = `Puntual ${randomUUID().slice(0, 6)}`;
+      const costo = (
+        await request
+          .post('/fixed-costs')
+          .set(auth())
+          .send({ name: nombre, category: 'Otros', frequency: 'ONE_TIME', amount: 500_000, startedAt: hoyLocal() })
+          .expect(201)
+      ).body as { id: string };
+
+      const res = await request
+        .patch(`/fixed-costs/${costo.id}`)
+        .set(auth())
+        .send({ startedAt: null })
+        .expect(400);
+      expect(String((res.body as { message: string }).message)).toMatch(/fecha/i);
+
+      // Y sigue contándose una sola vez, en su mes.
+      const r = await monthly();
+      const lineas = r.fixedCosts.filter((l) => l.name === nombre);
+      expect(lineas).toHaveLength(1);
+      expect(lineas[0]!.isOneTime).toBe(true);
+      expect(lineas[0]!.monthlyAmount).toBe(500_000);
     });
   });
 });

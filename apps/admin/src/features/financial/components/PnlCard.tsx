@@ -5,6 +5,8 @@ import { Row } from './PnlRow';
 
 export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
   const netPositive = s.netResult >= 0;
+  const enCurso = s.periodStatus ? s.periodStatus === 'in_progress' : (s.periodInProgress ?? false);
+  const futuro = s.periodStatus === 'future';
   const grossPct = (s.grossMarginPct * 100).toFixed(1);
   const recurring = s.fixedCosts.filter((c) => !c.isOneTime);
   const oneTime = s.fixedCosts.filter((c) => c.isOneTime);
@@ -87,6 +89,14 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
           mes dio ganancia, no si alcanzaste a pagar. Si ya lo pagaste, muestra lo que pagaste; si
           no, el monto de la ficha marcado como estimado. Lo que queda debiendo —de este mes o de
           anteriores— está en Finanzas → Pagos.
+          {enCurso ? (
+            <>
+              {' '}
+              Son los costos del <strong>mes completo</strong>: la nómina de todos los días
+              laborables y el arriendo entero, aunque el mes vaya por la mitad. Lo que se le debe
+              hoy a cada persona es otra cosa y está en <strong>Nómina pendiente</strong>.
+            </>
+          ) : null}
         </p>
       </div>
 
@@ -118,7 +128,13 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
           netPositive ? 'border-success/30 bg-success/10' : 'border-destructive/30 bg-destructive/10'
         }`}
       >
-        <p className="caps text-[0.625rem] text-muted-foreground">Resultado neto del mes</p>
+        <p className="caps text-[0.625rem] text-muted-foreground">
+          {enCurso && s.periodDaysTotal
+            ? `Así va el mes · día ${s.periodDaysElapsed} de ${s.periodDaysTotal}`
+            : futuro
+              ? 'Mes que todavía no empieza'
+              : 'Resultado neto del mes'}
+        </p>
         <p
           className={`mt-1 font-display text-3xl font-bold tabular-nums ${
             netPositive ? 'text-success' : 'text-destructive'
@@ -126,11 +142,32 @@ export function PnlCard({ s }: { s: MonthlyFinancialStatement }) {
         >
           {formatCop(s.netResult)}
         </p>
+        {/* Un mes a la mitad NO cerró, y uno que no empezó tampoco. Decirlo
+            comparaba lo vendido hasta hoy contra los costos del mes completo y
+            lo daba por hecho consumado: con $9,4M vendidos y $10,2M de costos
+            del mes, el 13 de septiembre se leía "el mes cerró en pérdida". El
+            signo del neto manda sobre el texto: un mes en curso ya en verde no
+            puede decir que va en rojo. */}
         <p className={`mt-1 text-xs ${netPositive ? 'text-success/80' : 'text-destructive/80'}`}>
-          {netPositive
-            ? 'El negocio cubrió todos los costos (fijos, gastos únicos y cortesías) y dejó ganancia.'
-            : 'El mes cerró en pérdida: las ventas no alcanzaron a cubrir COGS + costos fijos + gastos únicos + cortesías.'}
+          {futuro
+            ? 'Son los costos ya cargados para ese mes. Todavía no hay ventas porque no ha empezado.'
+            : enCurso
+              ? netPositive
+                ? 'Con lo que llevas vendido ya cubres los costos completos del mes. Lo que entre de aquí al cierre suma.'
+                : 'Están cargados los costos completos del mes contra lo que llevas vendido, así que a mitad de mes este número va en rojo y se endereza al vender.'
+              : netPositive
+                ? 'El negocio cubrió todos los costos del mes y dejó ganancia.'
+                : 'El mes cerró en pérdida: las ventas no alcanzaron a cubrir el costo de lo vendido, los costos fijos, los gastos únicos ni las pérdidas del mes.'}
         </p>
+        {enCurso && s.projectedNet !== null && s.projectedNet !== undefined ? (
+          <p className="mt-2 border-t border-current/15 pt-2 text-xs text-muted-foreground">
+            Al ritmo de lo que llevas, el mes cierra alrededor de{' '}
+            <strong className={s.projectedNet >= 0 ? 'text-success' : 'text-destructive'}>
+              {formatCop(s.projectedNet)}
+            </strong>
+            {s.projectedRevenue ? <> con {formatCop(s.projectedRevenue)} de ventas</> : null}.
+          </p>
+        ) : null}
       </div>
     </div>
   );

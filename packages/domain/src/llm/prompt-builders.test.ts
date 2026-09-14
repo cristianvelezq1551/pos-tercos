@@ -206,13 +206,21 @@ describe('buildFinancialAnalysisUserPrompt', () => {
     expect(p).toContain('· Sueldos (Personal): $9.000.000 [auto desde Nómina]');
   });
 
-  it('le muestra al modelo el MISMO equilibrio que ve el dueño (el de la carta), aparte del realizado', () => {
+  it('le muestra al modelo el MISMO equilibrio que ve el dueño (el mostrado), aparte de los dos que lo originan', () => {
     const p = buildFinancialAnalysisUserPrompt(base);
-    expect(p).toContain('Punto de equilibrio DE LA CARTA (el que ve el dueño): ventas necesarias $27.000.000 · cobertura 118.5% · de cada $100 vendidos quedan $67 · 18 opciones de la carta ponderadas por lo vendido');
+    expect(p).toContain('Punto de equilibrio DE LA CARTA (precio contra receta): ventas necesarias $27.000.000 · cobertura 118.5% · de cada $100 vendidos quedan $67 · 18 opciones de la carta ponderadas por lo vendido');
     expect(p).toContain('el que más deja: Limonada (82.0%); el que menos: Burro de pollo (51.0%)');
     expect(p).toContain('Punto de equilibrio REALIZADO (con la merma, cortesías, faltantes y fletes del mes): $28.800.000 · cobertura 111.0%');
     expect(p).toContain('640 ventas cobradas');
-    expect(FINANCIAL_ANALYSIS_SYSTEM).toContain('"tono" se decide con la cobertura del equilibrio DE LA CARTA');
+    expect(FINANCIAL_ANALYSIS_SYSTEM).toContain('"tono" se decide con la cobertura del equilibrio MOSTRADO');
+
+    const conMostrado = buildFinancialAnalysisUserPrompt({
+      ...base,
+      shownBreakEven: { target: 28_800_000, marginPct: 0.62, basis: 'realized' },
+    });
+    expect(conMostrado).toContain(
+      '- EQUILIBRIO MOSTRADO (el que ve el dueño, con el margen REALIZADO del mes): $28.800.000 de ventas, con $62 de cada $100 · cobertura 111.1%',
+    );
   });
 
   it('solo muestra descuentos y domicilios cuando los hubo, y aclara que el domicilio no es ingreso', () => {

@@ -261,22 +261,53 @@ describe('Editar el domicilio de una factura confirmada E2E', () => {
         .expect(403);
     });
 
-    it('dos ediciones sobre el mismo punto de partida: solo una gana', async () => {
-      const id = await facturar({});
-      const editar = (flete: number) =>
-        request
-          .patch(`/invoices/${id}/freight`)
-          .set(auth())
-          .send({ freight: flete, total: MERCANCIA + flete });
+    // Con DOS peticiones, exigir que una sea rechazada es exigir que la carrera
+    // OCURRA, y eso lo decide el reloj del runner: si la primera alcanza a
+    // escribir antes de que la segunda LEA, la segunda parte de un estado
+    // fresco y gana con todo derecho (mandó la última, el estado queda
+    // coherente). Así falló en CI con el mismo commit que pasó en la corrida
+    // hermana, mientras en local pasaba 6 de 6 — la firma de un test que mide
+    // el entorno y no el código.
+    //
+    // Se prueban dos cosas distintas, y ninguna depende del reloj:
+    //  1. INVARIANTES en cada ráfaga: nadie revienta, quien pierde el claim se
+    //     entera con un mensaje que se entiende, y el estado final es UNO de
+    //     los propuestos — nunca dos diferencias sumadas una sobre otra.
+    //  2. Que el claim EXISTE: se manda una ráfaga de 8 y se repite hasta ver
+    //     un rechazo. Medido, la primera ráfaga ya deja ~4 rechazadas; si
+    //     alguien quitara el `where` condicionado, no habría ninguno en
+    //     NINGUNA ráfaga y el caso falla. Reintentar es lo que lo vuelve
+    //     estable sin aflojar lo que verifica.
+    it('varias ediciones a la vez: una sola gana el punto de partida y quien pierde se entera', async () => {
+      const propuestos = [1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000];
+      let huboRechazo = false;
 
-      const res = await Promise.all([editar(5_000), editar(9_000)]);
-      const ok = res.filter((r) => r.status === 200);
-      expect(ok).toHaveLength(1);
+      for (let intento = 0; intento < 5 && !huboRechazo; intento++) {
+        const id = await facturar({});
+        const editar = (flete: number) =>
+          request
+            .patch(`/invoices/${id}/freight`)
+            .set(auth())
+            .send({ freight: flete, total: MERCANCIA + flete });
 
-      // El total refleja EXACTAMENTE al ganador: nunca las dos diferencias
-      // aplicadas una sobre otra.
-      const inv = await prisma.invoice.findUniqueOrThrow({ where: { id } });
-      expect(Number(inv.total)).toBe(MERCANCIA + Number(inv.freightAmount));
+        const res = await Promise.all(propuestos.map(editar));
+
+        expect(res.some((r) => r.status === 200)).toBe(true);
+        for (const r of res) {
+          expect([200, 400]).toContain(r.status);
+          if (r.status === 400) {
+            huboRechazo = true;
+            expect(String((r.body as { message: string }).message)).toMatch(/cambió esta factura/i);
+          }
+        }
+
+        // El total refleja EXACTAMENTE a un ganador.
+        const inv = await prisma.invoice.findUniqueOrThrow({ where: { id } });
+        expect(propuestos).toContain(Number(inv.freightAmount));
+        expect(Number(inv.total)).toBe(MERCANCIA + Number(inv.freightAmount));
+      }
+
+      expect(huboRechazo).toBe(true);
     });
   });
 });

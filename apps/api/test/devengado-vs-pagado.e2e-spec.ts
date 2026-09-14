@@ -151,7 +151,7 @@ describe('Devengado contra pagado: las dos vistas de la misma plata E2E', () => 
     const r = await resultado();
     const c = await caja(MES);
 
-    const nomina = r.fixedCosts.find((l) => l.name === 'Nómina (auto)');
+    const nomina = r.fixedCosts.find((l) => l.name === 'Nómina (mes completo)');
     expect(nomina).toBeDefined();
     expect(nomina!.monthlyAmount).toBeGreaterThan(0);
 

@@ -62,6 +62,22 @@ export const PaymentAccountInputSchema = z.object({
   note: z.string().trim().max(120).default(''),
 });
 
+/**
+ * ¿Se puede cambiar desde la app el día en que arranca el mes del negocio?
+ *
+ * Decisión del dueño (2026-09-14): **no**. El mes del negocio es el mes
+ * calendario y quedó fijo. Mover ese día recalcula TODO el estado financiero
+ * —ingresos, COGS, nómina y la ventana de los costos fijos cambian de mes a la
+ * vez— así que un clic por curiosidad reescribe el histórico que se usa para
+ * decidir. Es un ajuste de una sola vez, no una perilla del día a día.
+ *
+ * ESTE es el único interruptor: ponerlo en `true` devuelve el campo en la
+ * pantalla (Finanzas → Estado, tarjeta "Mes del negocio") Y vuelve a permitir
+ * el cambio en el API. Con `false`, la tarjeta solo muestra la ventana vigente
+ * y el backend rechaza cualquier intento de moverla.
+ */
+export const CAMBIAR_INICIO_DE_MES_HABILITADO = false;
+
 export const BusinessConfigSchema = z.object({
   monthStartDay: z.number().int().min(1).max(28),
   webOrdersEnabled: z.boolean(),

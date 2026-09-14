@@ -104,7 +104,16 @@ export class FixedCostsService {
     const finalFreq = input.frequency ?? before.frequency;
     if (finalFreq === 'ONE_TIME') {
       const finalStarted = input.startedAt !== undefined ? input.startedAt : before.startedAt;
-      data.endedAt = finalStarted ? parseYmd(finalStarted) : null;
+      // La fecha define en QUÉ MES pega el gasto. Sin ella, `startedAt` y
+      // `endedAt` quedan en null y el filtro de vigencia de `getEffectiveForWindow`
+      // ("sin fecha = siempre vigente") lo cuenta en TODOS los meses, para
+      // siempre: un gasto de una vez inflando la meta de ventas mes tras mes.
+      // El Zod del PATCH no alcanza a verlo —solo mira lo que viene en el
+      // cuerpo— así que la validación va acá, sobre el estado RESULTANTE.
+      if (!finalStarted) {
+        throw new BadRequestException('Un gasto puntual necesita la fecha del gasto.');
+      }
+      data.endedAt = parseYmd(finalStarted);
     }
     const row = await this.prisma.fixedCost.update({ where: { id }, data });
     await this.audit.log({
@@ -119,6 +128,16 @@ export class FixedCostsService {
 
   async remove(id: string, actorId: string): Promise<void> {
     const existing = await this.getById(id);
+    // Los pagos cuelgan de la ficha con `onDelete: Cascade`: borrar el costo
+    // borraba también TODO su historial de pagos, y como el estado financiero
+    // se recalcula al leer, cada mes ya cerrado subía de resultado. Un costo
+    // con historia se desactiva, no se borra.
+    const pagos = await this.prisma.fixedCostPayment.count({ where: { fixedCostId: id } });
+    if (pagos > 0) {
+      throw new BadRequestException(
+        `"${existing.name}" ya tiene ${pagos} pago${pagos === 1 ? '' : 's'} registrado${pagos === 1 ? '' : 's'}. Borrarlo cambiaría el resultado de los meses que ya cerraron. Edítalo y desactívalo: deja de sumar de aquí en adelante y los meses viejos quedan como están.`,
+      );
+    }
     await this.prisma.fixedCost.delete({ where: { id } });
     await this.audit.log({
       userId: actorId,
@@ -159,11 +178,31 @@ export class FixedCostsService {
   ): Promise<EffectiveFixedCostLine[]> {
     const startDay = utcDateOfLocalDay(windowStart);
     const endDay = utcDateOfLocalDay(windowEnd);
+    // Activo, O con un pago registrado en ESTE período. Sin la segunda parte,
+    // desactivar un costo hoy le borraba la línea a todos los meses viejos y
+    // los volvía más baratos de lo que fueron: el arriendo que se pagó en
+    // septiembre se pagó, aunque el local se haya mudado en noviembre.
+    const pagadosEnElPeriodo = await this.prisma.fixedCostPayment.findMany({
+      where: { periodYear: period.year, periodMonth: period.month1 },
+      select: { fixedCostId: true },
+    });
+    const conPago = pagadosEnElPeriodo.map((p) => p.fixedCostId);
     const rows = await this.prisma.fixedCost.findMany({
       where: {
-        isActive: true,
-        OR: [{ startedAt: null }, { startedAt: { lte: endDay } }],
-        AND: [{ OR: [{ endedAt: null }, { endedAt: { gte: startDay } }] }],
+        // Un PUNTUAL sin fecha no tiene mes al cual pertenecer, y la regla de
+        // "sin fecha = siempre vigente" lo metería en TODOS los meses. `update`
+        // y `create` ya lo impiden; esto cubre cualquier fila vieja.
+        NOT: { frequency: 'ONE_TIME', startedAt: null },
+        OR: [
+          {
+            isActive: true,
+            AND: [
+              { OR: [{ startedAt: null }, { startedAt: { lte: endDay } }] },
+              { OR: [{ endedAt: null }, { endedAt: { gte: startDay } }] },
+            ],
+          },
+          ...(conPago.length > 0 ? [{ id: { in: conPago } }] : []),
+        ],
       },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });

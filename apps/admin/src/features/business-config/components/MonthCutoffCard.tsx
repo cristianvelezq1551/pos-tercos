@@ -1,14 +1,10 @@
-'use client';
-
-import { Button, Card, FormField, Input, formatDate } from '@pos-tercos/ui';
+import { CAMBIAR_INICIO_DE_MES_HABILITADO } from '@pos-tercos/types';
+import { Card, formatDate } from '@pos-tercos/ui';
 import { CalendarRange } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { updateBusinessConfig } from '../api/client';
-import { getErrorMessage } from '../../../lib/errors';
+import { MonthCutoffEditor } from './MonthCutoffEditor';
 
 interface MonthCutoffCardProps {
-  /** Día de corte actual (1–28). */
+  /** Día de corte actual (1–28). Solo se usa si el campo está habilitado. */
   monthStartDay: number;
   /** Ventana vigente del mes mostrado (YYYY-MM-DD). */
   periodStart: string;
@@ -16,37 +12,22 @@ interface MonthCutoffCardProps {
 }
 
 /**
- * Configura el día en que arranca el "mes del negocio". Cambiarlo recalcula el
- * estado financiero (ingresos, COGS y nómina caen dentro de la ventana). Los
- * costos fijos mensuales cuentan una vez por mes, sin prorratear.
+ * Qué ventana de días está mirando el estado financiero.
+ *
+ * Decisión del dueño (2026-09-14): el mes del negocio quedó FIJO, así que la
+ * tarjeta ya no ofrece moverlo — solo dice de qué día a qué día va el período.
+ * Mover ese día recalcula todo el estado de golpe (ingresos, COGS, nómina y la
+ * ventana de los costos fijos cambian de mes a la vez), y es un ajuste de una
+ * sola vez, no una perilla del día a día.
+ *
+ * Para devolver el campo: `CAMBIAR_INICIO_DE_MES_HABILITADO` en
+ * @pos-tercos/types. Esa misma constante vuelve a permitir el cambio en el API.
  */
-export function MonthCutoffCard({ monthStartDay, periodStart, periodEnd }: MonthCutoffCardProps) {
-  const router = useRouter();
-  const [day, setDay] = useState(String(monthStartDay));
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-
-  const parsed = Number(day);
-  const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 28;
-  const dirty = parsed !== monthStartDay;
-
-  const save = async (): Promise<void> => {
-    if (!valid || !dirty) return;
-    setError(null);
-    setOk(false);
-    setPending(true);
-    try {
-      await updateBusinessConfig({ monthStartDay: parsed });
-      setOk(true);
-      router.refresh();
-    } catch (e) {
-      setError(getErrorMessage(e, 'No se pudo guardar.'));
-    } finally {
-      setPending(false);
-    }
-  };
-
+export function MonthCutoffCard({
+  monthStartDay,
+  periodStart,
+  periodEnd,
+}: MonthCutoffCardProps) {
   return (
     <Card className="px-5 py-4">
       <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -57,27 +38,9 @@ export function MonthCutoffCard({ monthStartDay, periodStart, periodEnd }: Month
         El estado financiero usa esta ventana, no el mes calendario.
       </p>
 
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <FormField
-          label="Empieza el día"
-          hint="1–28 (1 = mes calendario)"
-          error={day !== '' && !valid ? 'Día inválido' : undefined}
-        >
-          <Input
-            type="number"
-            min={1}
-            max={28}
-            inputMode="numeric"
-            value={day}
-            onChange={(e) => setDay(e.target.value)}
-            disabled={pending}
-            className="w-24"
-          />
-        </FormField>
-        <Button onClick={save} disabled={pending || !valid || !dirty}>
-          {pending ? 'Guardando…' : 'Guardar'}
-        </Button>
-      </div>
+      {CAMBIAR_INICIO_DE_MES_HABILITADO ? (
+        <MonthCutoffEditor monthStartDay={monthStartDay} />
+      ) : null}
 
       <p className="mt-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         Periodo mostrado:{' '}
@@ -85,15 +48,6 @@ export function MonthCutoffCard({ monthStartDay, periodStart, periodEnd }: Month
           {formatDate(periodStart, 'short')} – {formatDate(periodEnd, 'short')}
         </strong>
       </p>
-
-      {error ? (
-        <p role="alert" className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </p>
-      ) : null}
-      {ok && !dirty ? (
-        <p className="mt-2 text-xs text-success">Guardado. Recalculando…</p>
-      ) : null}
     </Card>
   );
 }

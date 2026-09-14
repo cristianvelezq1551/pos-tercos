@@ -271,17 +271,18 @@ export const FINANCIAL_ANALYSIS_SYSTEM = `Eres el analista financiero del dueño
 CÓMO LEER EL ESTADO (son las mismas líneas que muestra la pantalla):
 - "Ingresos" ya vienen netos de descuentos y SIN el cobro de domicilios: esa plata es del repartidor y solo pasa por la caja. Nunca la cuentes como venta ni como ingreso.
 - "COGS" es el costo real de lo vendido, lote por lote (FIFO). "Margen bruto" = ingresos − COGS. Si el COGS viene marcado "estimado" o "parcial", el margen es provisional y lo dices con esa palabra.
-- Los costos fijos son RECURRENTES (nómina, arriendo, servicios) y son la base del punto de equilibrio. Una línea marcada "estimado" es el monto configurado porque ese mes todavía no tiene pago registrado: menciónala como estimado, nunca como dato cerrado.
+- Los costos fijos de la lista son RECURRENTES (nómina, arriendo, servicios); los gastos únicos del mes NO están en esa lista, vienen aparte en las otras pérdidas. Los tres juntos son la base del punto de equilibrio. Una línea marcada "estimado" es el monto configurado porque ese mes todavía no tiene pago registrado: menciónala como estimado, nunca como dato cerrado.
 - Las "otras pérdidas" van debajo del margen bruto y NO entran al COGS: merma (alguien la declaró), faltantes (lo que apareció de menos al contar; nadie lo declaró), cortesías, reembolsos, fletes de compra, compromisos pagados y gastos únicos. Los gastos únicos y los compromisos pagados SÍ entran a la base del equilibrio: también hay que pagarlos con las ventas del mes.
 - "Margen de contribución" = ingresos − COGS − merma − faltantes − cortesías − reembolsos − fletes: lo que queda de cada venta para pagar lo fijo.
-- Hay DOS puntos de equilibrio y el dueño ve el de la CARTA: las ventas necesarias calculadas con lo que deja cada producto por precio y receta, que no se mueve por lo bueno o lo malo que haya estado el mes. El "realizado" usa el margen de contribución del mes: sirve solo para explicar la brecha entre lo que la carta promete y lo que de verdad quedó (merma, cortesías, faltantes, fletes).
+- La META que el dueño ve en pantalla viene en "equilibrio mostrado", con el margen con el que se calculó. Con ventas suficientes es el REALIZADO (el margen de contribución del mes, que ya descontó merma, cortesías, faltantes y fletes); mientras el mes no tenga ventas suficientes, es el de la CARTA (precio contra receta). Usa SIEMPRE el mostrado: hablar del otro deja al dueño con dos metas distintas y ninguna explicación.
+- Si el mes está EN CURSO, los costos cargados son los del MES COMPLETO (la nómina de todos los días laborables, el arriendo entero) contra lo vendido hasta hoy, así que el neto va en rojo a mitad de mes por construcción. NUNCA digas que el mes "cerró": di por qué día va y, si viene la proyección, en cuánto cierra al ritmo actual. Compara el avance de ventas contra el avance del mes para decir si va adelantado o corto.
 - Si el mes tiene pocas ventas, dilo antes de sacar conclusiones de porcentajes: cuatro tickets y una merma no son una tendencia.
 
 REGLAS DURAS:
 - Responde EXCLUSIVAMENTE con un JSON válido con esta forma exacta:
   {"tono":"saludable|atencion|critico","titular":"...","bullets":[{"tipo":"positivo|vigilar|accion","texto":"..."}],"siguiente_paso":"..."}
-- "tono" se decide con la cobertura del equilibrio DE LA CARTA, que es la que ve el dueño: "saludable" si el neto es positivo y esa cobertura es >= 100%; "atencion" si la cobertura está entre 80% y 99%; "critico" si está debajo de 80% o el neto es negativo. Si no viene equilibrio de la carta, usa el realizado; si no viene ninguno, decide solo por el signo del neto.
-- "titular": UNA frase. Empieza con el resultado: cuánto ganó/perdió, contra el equilibrio de la carta. Incluye una cifra concreta en pesos.
+- "tono" se decide con la cobertura del equilibrio MOSTRADO, que es el que ve el dueño. Con el mes TERMINADO: "saludable" si el neto es positivo y la cobertura es >= 100%; "atencion" entre 80% y 99%; "critico" debajo de 80% o con neto negativo. Con el mes EN CURSO se compara contra el avance del mes, no contra el 100%: "saludable" si la cobertura va por encima del porcentaje del mes corrido; "atencion" si va hasta 10 puntos por debajo; "critico" si va más abajo. Sin equilibrio mostrado, decide por el signo del neto.
+- "titular": UNA frase. Con el mes terminado, empieza por cuánto ganó o perdió contra la meta. Con el mes en curso, por cómo va contra la meta y por qué día va. Incluye una cifra concreta en pesos.
 - "bullets": 3 a 5 puntos. Mix de positivos (qué va bien), vigilar (riesgos numéricos) y acción (qué hacer concreto). Cada bullet UNA frase, con número o porcentaje cuando aplique.
 - "siguiente_paso": UNA acción concreta para el próximo mes, basada solo en los datos. No moralices ni filosofes.
 - NO inventes datos. NO menciones cifras que no estén en el input. Una cifra marcada "estimado" o "parcial" se cita como provisional.
@@ -300,6 +301,16 @@ export interface FinancialAnalysisInput {
   year: number;
   month: number; // 1-12
   monthLabel: string; // "mayo 2026"
+  /** `in_progress` = el mes todavía corre: los costos son del mes completo
+   *  contra lo vendido hasta hoy, y decir que "cerró" sería falso. */
+  periodStatus?: 'future' | 'in_progress' | 'closed';
+  periodDaysElapsed?: number;
+  periodDaysTotal?: number;
+  /** Cierre proyectado al ritmo de lo corrido. Ausente si no hay con qué. */
+  projectedRevenue?: number | null;
+  projectedNet?: number | null;
+  /** La meta que el dueño ve, y con qué margen se calculó. */
+  shownBreakEven?: { target: number; marginPct: number; basis: 'realized' | 'catalog' } | null;
   /** Ventas cobradas en el mes: contexto para no leer porcentajes de 4 tickets. */
   salesCount: number;
   /** Lo que habría entrado sin descuentos (solo se muestra si hubo descuentos). */
@@ -369,6 +380,7 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
   const lines: string[] = [
     `Estado financiero del mes (${i.monthLabel}) — ${i.salesCount} ventas cobradas:`,
+    ...periodLines(i, cop),
     ...incomeAndCogsLines(i, cop, pct),
     `- Costos fijos recurrentes: ${cop(i.totalFixed)}`,
     ...fixedCostLines(i.fixedCosts, cop),
@@ -378,6 +390,7 @@ export function buildFinancialAnalysisUserPrompt(i: FinancialAnalysisInput): str
       ? `- Margen de contribución: ${cop(i.contributionMargin)} (sin ingresos, no hay porcentaje)`
       : `- Margen de contribución: ${cop(i.contributionMargin)} (${pct(i.contributionMarginPct)})`,
     `- Base del equilibrio (fijos + gastos únicos + compromisos pagados del mes): ${cop(i.breakEvenBase)}`,
+    ...shownBreakEvenLines(i, cop, pct),
     ...catalogBreakEvenLines(i.catalogBreakEven, cop, pct),
     realizedBreakEvenLine(i, cop, pct),
   ];
@@ -456,6 +469,42 @@ function realizedBreakEvenLine(i: FinancialAnalysisInput, cop: Cop, pct: Pct): s
 }
 
 /** El bloque del equilibrio tal como lo ve el dueño: meta, cobertura y de dónde sale. */
+/** En qué punto del mes va, y en cuánto cierra al ritmo actual. Sin esto el
+ *  modelo veía un neto en rojo de mitad de mes y escribía que el mes cerró. */
+function periodLines(i: FinancialAnalysisInput, cop: (n: number) => string): string[] {
+  if (i.periodStatus === 'future') return ['- El mes TODAVÍA NO EMPIEZA: no hay nada que analizar.'];
+  if (i.periodStatus !== 'in_progress') return ['- El mes ya TERMINÓ: estas cifras son definitivas.'];
+  const out = [
+    `- El mes está EN CURSO: va por el día ${i.periodDaysElapsed ?? '?'} de ${i.periodDaysTotal ?? '?'}. Los costos son del MES COMPLETO contra lo vendido hasta hoy, así que el neto en rojo a esta altura es esperable. NO digas que el mes cerró.`,
+  ];
+  if (i.projectedNet !== null && i.projectedNet !== undefined) {
+    const ventas =
+      i.projectedRevenue !== null && i.projectedRevenue !== undefined
+        ? ` con ${cop(i.projectedRevenue)} de ventas`
+        : '';
+    out.push(`- Al ritmo de lo corrido, el mes cierra alrededor de ${cop(i.projectedNet)}${ventas}.`);
+  }
+  return out;
+}
+
+/** La meta que el dueño TIENE EN PANTALLA. Es la que hay que citar. */
+function shownBreakEvenLines(
+  i: FinancialAnalysisInput,
+  cop: (n: number) => string,
+  pct: (x: number) => string,
+): string[] {
+  const m = i.shownBreakEven;
+  if (!m) return [];
+  const fuente =
+    m.basis === 'realized'
+      ? 'con el margen REALIZADO del mes'
+      : 'con el margen de la CARTA, porque el mes todavía no tiene ventas suficientes para medir las fugas';
+  const cobertura = m.target > 0 ? ` · cobertura ${pct(i.revenue / m.target)}` : '';
+  return [
+    `- EQUILIBRIO MOSTRADO (el que ve el dueño, ${fuente}): ${cop(m.target)} de ventas, con $${Math.round(m.marginPct * 100)} de cada $100${cobertura}`,
+  ];
+}
+
 function catalogBreakEvenLines(
   c: FinancialAnalysisInput['catalogBreakEven'],
   cop: Cop,
@@ -463,12 +512,12 @@ function catalogBreakEvenLines(
 ): string[] {
   if (c.marginPct !== null && c.marginPct <= 0) {
     return [
-      '- Punto de equilibrio DE LA CARTA (el que ve el dueño): no existe: con los precios y recetas de hoy los productos no dejan ganancia; vender más no acerca a cubrir lo fijo',
+      '- Punto de equilibrio DE LA CARTA (precio contra receta): no existe: con los precios y recetas de hoy los productos no dejan ganancia; vender más no acerca a cubrir lo fijo',
     ];
   }
   if (c.target === null) {
     return [
-      '- Punto de equilibrio DE LA CARTA (el que ve el dueño): todavía no se puede calcular (ningún producto tiene costo de receta)',
+      '- Punto de equilibrio DE LA CARTA (precio contra receta): todavía no se puede calcular (ningún producto tiene costo de receta)',
     ];
   }
   const partes = [
@@ -477,7 +526,7 @@ function catalogBreakEvenLines(
     c.marginPct === null ? '' : `de cada $100 vendidos quedan $${Math.round(c.marginPct * 100)}`,
     `${c.productsConsidered} opciones de la carta ${c.weightedBySales ? 'ponderadas por lo vendido' : 'a promedio simple (aún sin ventas)'}`,
   ].filter((p) => p.length > 0);
-  const out = [`- Punto de equilibrio DE LA CARTA (el que ve el dueño): ${partes.join(' · ')}`];
+  const out = [`- Punto de equilibrio DE LA CARTA (precio contra receta): ${partes.join(' · ')}`];
   if (c.productsWithoutCost > 0) {
     out.push(`    · ${c.productsWithoutCost} opciones quedaron fuera del promedio porque no se sabe cuánto cuestan`);
   }

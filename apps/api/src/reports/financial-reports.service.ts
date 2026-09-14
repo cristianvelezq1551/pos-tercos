@@ -3,8 +3,11 @@ import {
   FINANCIAL_ANALYSIS_SYSTEM,
   buildFinancialAnalysisUserPrompt,
   breakEvenFromCatalogMargin,
+  chooseMonthTarget,
   computeBreakEven,
   computeCatalogMargin,
+  periodProgress,
+  projectMonthClose,
   extractJsonObject,
   type CatalogProductMargin,
   computeComboCost,
@@ -23,6 +26,7 @@ import type {
   MonthlyTrend,
   MonthlyTrendPoint,
 } from '@pos-tercos/types';
+import { describeLlmFailure } from '../adapters/llm/llm-failure';
 import { LLMService } from '../adapters/llm/llm.service';
 import { AuditService } from '../audit/audit.service';
 import { BusinessConfigService } from '../business-config/business-config.service';
@@ -254,7 +258,11 @@ export class FinancialReportsService {
     if (payrollAmount > 0) {
       fixedCostLines.push({
         fixedCostId: null,
-        name: 'Nómina (auto)',
+        // Dice "mes completo" a propósito: en Compromisos por pagar la nómina
+        // pendiente se calcula solo hasta HOY (los días futuros no son deuda).
+        // Son dos preguntas distintas —lo que costará el mes y lo que debes
+        // ahora— y sin el rótulo se leían como el mismo número mal calculado.
+        name: 'Nómina (mes completo)',
         category: 'Nómina',
         monthlyAmount: round(payrollAmount),
         isPayroll: true,
@@ -372,12 +380,34 @@ export class FinancialReportsService {
     const catalogo = await this.catalogMargin(monthStart, monthEnd);
     const catalogTarget = breakEvenFromCatalogMargin(breakEvenBase, catalogo.marginPct);
 
+    // Cuánto del período va corrido, y en cuánto cierra al ritmo actual. Sin
+    // esto la pantalla comparaba lo vendido HASTA HOY contra los costos del MES
+    // COMPLETO sin decirlo, y un mes a la mitad se leía como pérdida cerrada.
+    const progreso = periodProgress(
+      ymdLocal(monthStart),
+      ymdLocal(monthEnd),
+      ymdLocal(new Date()),
+    );
+    const proyeccion = projectMonthClose({
+      progress: progreso,
+      revenue,
+      salesCount: pnl.salesCount,
+      contributionMarginPct: be.contributionMarginPct,
+      breakEvenBase,
+    });
+
     return {
       year,
       month: month1,
       monthLabel: `${MONTHS_ES[month0]} ${year}`,
       periodStart: ymdLocal(monthStart),
       periodEnd: ymdLocal(monthEnd),
+      periodDaysTotal: progreso.daysTotal,
+      periodDaysElapsed: progreso.daysElapsed,
+      periodInProgress: progreso.inProgress,
+      periodStatus: progreso.status,
+      projectedRevenue: proyeccion?.projectedRevenue ?? null,
+      projectedNet: proyeccion?.projectedNet ?? null,
       revenue: round(revenue),
       discountTotal: pnl.discountTotal,
       grossRevenue: pnl.grossRevenue,
@@ -495,14 +525,33 @@ export class FinancialReportsService {
       grossMargin: statement.grossMargin,
       grossMarginPct: statement.grossMarginPct,
       totalFixed: statement.totalFixed,
+      periodStatus: statement.periodStatus,
+      periodDaysElapsed: statement.periodDaysElapsed,
+      periodDaysTotal: statement.periodDaysTotal,
+      projectedRevenue: statement.projectedRevenue ?? null,
+      projectedNet: statement.projectedNet ?? null,
+      // La MISMA meta que pinta la pantalla. Si el modelo opinara sobre la otra,
+      // el dueño leería dos metas distintas en la misma pantalla.
+      shownBreakEven: chooseMonthTarget({
+        realizedTarget: statement.breakEven,
+        realizedMarginPct: statement.contributionMarginPct,
+        catalogTarget: statement.catalogBreakEven.target,
+        catalogMarginPct: statement.catalogBreakEven.marginPct,
+        salesCount: statement.salesCount,
+      }),
       breakEvenBase: statement.breakEvenBase,
-      fixedCosts: statement.fixedCosts.map((l) => ({
-        name: l.name,
-        category: l.category,
-        monthlyAmount: l.monthlyAmount,
-        isPayroll: l.isPayroll,
-        isEstimated: l.isEstimated,
-      })),
+      // Solo los RECURRENTES: los puntuales ya viajan en su propia línea de
+      // pérdidas, y mandarlos dos veces hacía que el desglose sumara más que
+      // el encabezado y el modelo pudiera contarlos doble.
+      fixedCosts: statement.fixedCosts
+        .filter((l) => !l.isOneTime)
+        .map((l) => ({
+          name: l.name,
+          category: l.category,
+          monthlyAmount: l.monthlyAmount,
+          isPayroll: l.isPayroll,
+          isEstimated: l.isEstimated,
+        })),
       otherLosses: [
         {
           label: 'Merma (insumo tirado, a costo)',
@@ -585,14 +634,25 @@ export class FinancialReportsService {
    * global solo alerta los 500 crudos).
    */
   private async pedirAnalisis(userPrompt: string): Promise<FinancialAnalysis> {
-    const pedir = () =>
-      this.llm.complete({
-        systemPrompt: FINANCIAL_ANALYSIS_SYSTEM,
-        userPrompt,
-        // El espejo del estado es más largo que antes y la respuesta trae hasta
-        // 5 bullets en español: con 600 el JSON llegaba cortado a mitad de frase.
-        maxTokens: FINANCIAL_ANALYSIS_MAX_TOKENS,
-      });
+    // Un fallo del PROVEEDOR (sin saldo, llave revocada, saturado) no es un bug
+    // nuestro: como 500 le mostraba al dueño "el sistema tuvo un problema" —que
+    // no dice qué hacer— y además abría un Issue de alerta por algo que ningún
+    // cambio de código arregla. `describeLlmFailure` ya existía y lo usaban las
+    // facturas y las sugerencias; esta pantalla se había quedado afuera.
+    const pedir = async (): Promise<{ text: string; modelUsed: string }> => {
+      try {
+        return await this.llm.complete({
+          systemPrompt: FINANCIAL_ANALYSIS_SYSTEM,
+          userPrompt,
+          // El espejo del estado es más largo que antes y la respuesta trae hasta
+          // 5 bullets en español: con 600 el JSON llegaba cortado a mitad de frase.
+          maxTokens: FINANCIAL_ANALYSIS_MAX_TOKENS,
+        });
+      } catch (e) {
+        this.logger.error(`Análisis IA: fallo del proveedor — ${String(e)}`);
+        throw new BadGatewayException(describeLlmFailure(e));
+      }
+    };
     const primero = await pedir();
     const parsed = parseFinancialAnalysisJson(primero.text, primero.modelUsed);
     if (parsed) return parsed;
@@ -621,8 +681,14 @@ export class FinancialReportsService {
     const users = await this.prisma.user.findMany({
       where: {
         payType: { not: null },
-        hireDate: { lte: endDay },
-        OR: [{ terminationDate: null }, { terminationDate: { gte: startDay } }],
+        // `hireDate` es opcional y dejarlo vacío al ponerle sueldo a alguien es
+        // un clic. Sin el `null`, esa persona cobraba todas las semanas —la
+        // nómina semanal SÍ la incluye— y no pesaba un peso en el estado: el
+        // dueño leía ganancia donde había pérdida.
+        AND: [
+          { OR: [{ hireDate: null }, { hireDate: { lte: endDay } }] },
+          { OR: [{ terminationDate: null }, { terminationDate: { gte: startDay } }] },
+        ],
       },
       select: {
         id: true,

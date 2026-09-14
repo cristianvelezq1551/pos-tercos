@@ -38,7 +38,7 @@ export function DeleteFixedCostDialog({
       description={
         error
           ? error
-          : 'El costo se borra definitivamente. Esto NO afecta cierres anteriores ya calculados, pero deja de sumar a partir del próximo cálculo. Si solo quieres pausarlo, edítalo y desactívalo.'
+          : 'El costo se borra definitivamente, con todo su historial de pagos. El estado financiero se recalcula al abrirlo, así que los meses viejos dejarían de contarlo y saldrían con mejor resultado del que tuvieron. Si ya tiene pagos registrados no se puede borrar: edítalo y desactívalo, así deja de sumar de aquí en adelante y los meses viejos quedan como están.'
       }
       confirmLabel="Eliminar"
       destructive
