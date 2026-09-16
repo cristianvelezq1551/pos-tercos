@@ -118,9 +118,16 @@ test('el cliente de la web ve el motivo, no un "Agotado" que mentiría', async (
   await api.dispose();
 
   const page = await pestana(browser, WEB_URL);
-  await page.goto('/');
+  // El menú público se cachea 30 s en el API (`WebMenuService.MENU_TTL_MS`):
+  // un producto recién creado tarda hasta eso en aparecer. Con un solo goto y
+  // 30 s de espera el test caía dentro o fuera del caché según el segundo en
+  // que corría — frenó el CI dos veces el 2026-09-16 sin que nada estuviera
+  // roto. Se recarga hasta verlo, con margen sobre el TTL.
   const card = page.getByText(nombre, { exact: false }).first();
-  await expect(card).toBeVisible({ timeout: 30_000 });
+  await expect(async () => {
+    await page.goto('/');
+    await expect(card).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 45_000 });
   await expect(page.getByText(/^Solo /).first()).toBeVisible();
 
   await page.close();
