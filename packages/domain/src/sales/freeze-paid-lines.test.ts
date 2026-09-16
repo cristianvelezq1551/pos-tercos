@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { freezePaidLines, paidLineKey, type PaidLineSnapshot } from './freeze-paid-lines';
+import { choicesKey, freezePaidLines, paidLineKey, type PaidLineSnapshot } from './freeze-paid-lines';
 
 /**
  * Decisión 2026-08-25: una venta YA COBRADA no se re-precia al editarla. Estas
@@ -83,5 +83,41 @@ describe('paidLineKey', () => {
     expect(paidLineKey('p1', 's1', ['a', 'b'])).toBe(paidLineKey('p1', 's1', ['b', 'a']));
     expect(paidLineKey('p1', 's1', ['a'])).not.toBe(paidLineKey('p1', 's2', ['a']));
     expect(paidLineKey('p1', null, ['a'])).not.toBe(paidLineKey('p1', null, []));
+  });
+});
+
+describe('paidLineKey · la elección del combo es parte de la identidad', () => {
+  const coca = [{ groupId: 'g', productId: 'coca', quantity: 2 }];
+  const jugo = [{ groupId: 'g', productId: 'jugo', quantity: 2 }];
+  const mezcla = [
+    { groupId: 'g', productId: 'coca', quantity: 1 },
+    { groupId: 'g', productId: 'pepsi', quantity: 1 },
+  ];
+
+  it('un combo con Coca y el mismo con Jugo son líneas distintas (la segunda va a precio de hoy)', () => {
+    expect(paidLineKey('combo', null, [], choicesKey(coca))).not.toBe(
+      paidLineKey('combo', null, [], choicesKey(jugo)),
+    );
+  });
+
+  it('el orden de la mezcla no cambia la identidad', () => {
+    expect(choicesKey(mezcla)).toBe(choicesKey([...mezcla].reverse()));
+  });
+
+  it('sin grupos, la huella es exactamente la de siempre', () => {
+    expect(paidLineKey('p1', 's1', ['a', 'b'])).toBe(paidLineKey('p1', 's1', ['b', 'a'], ''));
+    expect(choicesKey([])).toBe('');
+  });
+
+  it('cambiar la bebida de una línea cobrada NO congela su precio: es una línea nueva', () => {
+    const paid: PaidLineSnapshot[] = [
+      { key: paidLineKey('combo', null, [], choicesKey(coca)), quantity: 1, unitPrice: 60000, lineDiscount: 0 },
+    ];
+    const frozen = freezePaidLines(
+      paid,
+      [{ key: paidLineKey('combo', null, [], choicesKey(jugo)), quantity: 1 }],
+      (n) => Math.round(n * 100) / 100,
+    );
+    expect(frozen).toEqual([null]);
   });
 });

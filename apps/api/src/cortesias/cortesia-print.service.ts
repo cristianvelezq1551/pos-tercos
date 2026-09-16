@@ -1,3 +1,4 @@
+import { AppliedChoiceSchema } from '@pos-tercos/types';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   renderComandaEscPos,
@@ -116,6 +117,13 @@ export class CortesiaPrintService {
         quantity: r.quantity,
         salePrice: Number(r.salePrice),
         seCocina: productoPorId.get(r.productId)?.directResale === false,
+        // La bebida elegida del combo regalado: sin ella el papel dice "1x Combo"
+        // y ni la cocina ni quien recibe saben qué salió (lo encontró la
+        // auditoría en QA del 2026-09-16).
+        choiceLabels: AppliedChoiceSchema.array()
+          .catch([])
+          .parse(r.choicesJson)
+          .map((c) => (c.quantity > 1 ? `${c.quantity} ${c.productName}` : c.productName)),
       })),
     };
   }
@@ -128,6 +136,8 @@ interface LineaRegalada {
   salePrice: number;
   /** false = reventa directa (una bebida): se entrega en el mostrador. */
   seCocina: boolean;
+  /** Lo elegido en los grupos del combo ("2 Coca-Cola"), para los dos papeles. */
+  choiceLabels: string[];
 }
 
 interface PedidoRegalado {
@@ -154,7 +164,7 @@ function buildReceipt(p: PedidoRegalado): ReceiptData {
       lineDiscount: 0,
       lineTotal: l.salePrice,
       appliedPromotionName: null,
-      modifiers: [],
+      modifiers: l.choiceLabels.map((name) => ({ name, priceDelta: 0 })),
     })),
     subtotal: p.valorRegalado,
     discountTotal: 0,
@@ -182,7 +192,7 @@ function buildComanda(p: PedidoRegalado, lineas: LineaRegalada[]): ComandaData {
       productName: l.productName,
       sizeName: l.sizeName,
       quantity: l.quantity,
-      modifiers: [],
+      modifiers: l.choiceLabels,
       notes: null,
     })),
     reprintLabel: null,

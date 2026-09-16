@@ -5416,6 +5416,43 @@ grupos recorre exactamente el mismo código que antes.
 - `combo-eleccion.e2e-spec.ts` (13 casos), incluido **"un combo sin grupos
   descuenta exactamente como antes"**.
 
+### Auditoría en QA por la interfaz real (mismo día): 3 huecos que 966 tests no vieron
+Con el código ya en QA (`main`), la auditoría operó las pantallas de verdad y
+verificó cada número contra el API de QA. Lo previo quedó **idéntico** (catálogo,
+14 costos, disponibilidad, stock y estado financiero número por número; el combo
+fijo viejo generó movimientos de la MISMA forma que su venta de referencia). Y
+salieron tres huecos del cambio nuevo, ninguno visible en tests:
+
+1. **Los papeles de la cortesía no decían qué bebida se regaló.** El impresor de
+   cortesías (`cortesia-print.service`) arma su propio recibo y comanda y no leía
+   el `choices_json` que sí se guardaba: el papel decía "1x Combo".
+2. **El pedido web público no exponía la elección.** La página de seguimiento,
+   el link de WhatsApp y el panel del cajero mostraban "1x Combo" sin bebida
+   (el stock sí la seguía). Se pliega en `modifiers: string[]` del DTO público,
+   igual que en la comanda: sin cambiar el schema, que las apps publican antes.
+3. **Editar un pedido cobrado cambiando la bebida no cobraba el recargo**, y el
+   modal del cajero **no mandaba la elección** en el PATCH — o sea, ningún pedido
+   cobrado con un combo con grupos se podía editar (400). Causa raíz de lo
+   primero: la identidad de línea (`paidLineKey` en domain, `lineKey` en el
+   server) no incluía la elección, así que "2 Jugo" coincidía con la línea
+   cobrada "2 Pepsi" y conservaba sus $60.000 con dos jugos adentro. Ahora la
+   elección es parte de la identidad **con valor por defecto vacío**: cambiar la
+   bebida es una línea nueva (a precio de hoy, con recargo), igual que cambiar
+   un modificador, y ninguna línea sin grupos cambia de huella. La regla
+   2026-08-25 sigue intacta: editar SIN cambiar la bebida conserva el precio.
+
+Dos falsas alarmas de las propias aserciones, para no repetirlas: la comanda
+(`GET /sales/:id/comanda-escpos`) devuelve **JSON con el papel en base64** —hay
+que decodificar antes de buscar—, y `POST /sales/:id/print` no devuelve el papel
+(lo manda al agente); el render del recibo con la bebida se verifica con
+`POST /cortesias/print`, que sí devuelve los dos papeles.
+
+⚠️ **La regla operativa que deja esto**: probar por la interfaz real, sobre QA,
+ANTES de prod. Los 966 tests y las 19 leyes pasaron con estos tres huecos
+adentro — dos eran de PAPEL y uno de un modal, justo lo que un test de API no
+ve. Herramienta: `apps/admin/e2e/qa-auditoria-combo.spec.ts` (manual, con
+`QA_PASSWORD` + `vercel env run`; se omite solo en CI).
+
 ### Piedras que valen para la próxima
 - ⚠️ **Un `const` no se hoistea**: declaré un helper después del `return` que lo
   usaba y el estado financiero devolvía 500. Typecheck y los 13 e2e del combo

@@ -1,6 +1,7 @@
 'use client';
 
-import type { ManualDiscount } from '@pos-tercos/types';
+import type {
+  AppliedChoice, ManualDiscount } from '@pos-tercos/types';
 import { Money, cn } from '@pos-tercos/ui';
 import { Lock, Minus, Plus, X } from 'lucide-react';
 
@@ -13,6 +14,11 @@ export interface EditLine {
   quantity: number;
   modifierIds: string[];
   modifierNames: string[];
+  /** Lo elegido en los grupos del combo. Viaja al PATCH: sin él el servidor
+   *  rechaza la edición de cualquier pedido con un combo con grupos. */
+  choices: AppliedChoice[];
+  /** "Bebida: 2 Coca-Cola" — para que el cajero vea qué lleva la línea. */
+  choiceLabels: string[];
   notes: string | null;
   unitPrice: number;
   /** Descuento manual de la línea (se preserva al editar — se reenvía al server). */
@@ -60,6 +66,9 @@ export function EditSaleLineRow({
             {line.sizeName ? ` · ${line.sizeName}` : ''}
           </span>
         </p>
+        {line.choiceLabels.length > 0 ? (
+          <p className="text-xs text-muted-foreground">{line.choiceLabels.join(' · ')}</p>
+        ) : null}
         {line.modifierNames.length > 0 ? (
           <p className="truncate text-[0.6875rem] text-muted-foreground">
             + {line.modifierNames.join(', ')}
