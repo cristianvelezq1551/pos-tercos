@@ -196,6 +196,7 @@ export class SalesOfflineService {
               quantity: l.quantity,
               unitPrice: l.unitPrice,
               modifiersJson: l.modifiers as unknown as Prisma.InputJsonValue,
+              choicesJson: l.choices as unknown as Prisma.InputJsonValue,
               notes: l.notes ?? null,
               appliedPromotionId: l.appliedPromotionId,
               lineSubtotal: l.lineSubtotal,

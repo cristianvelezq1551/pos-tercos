@@ -243,8 +243,23 @@ export const RecipeBookEntrySchema = z.object({
   unit: z.string().nullable(),
   /** Insumos + subproductos directos de la receta. */
   components: z.array(RecipeComponentSchema),
-  /** Solo combos: productos que lo integran. */
+  /** Solo combos: productos que lo integran (los FIJOS). */
   comboItems: z.array(ComboItemSchema),
+  /**
+   * Solo combos: lo que ELIGE el cliente. El cocinero necesita saber que la
+   * bebida no es siempre la misma; sin esto, la biblia describe un combo que
+   * no es el que sale por la ventanilla.
+   * Opcional (no `.default([])`): la cocina se publica antes que el API.
+   */
+  comboChoices: z
+    .array(
+      z.object({
+        label: z.string(),
+        quantity: z.number().int().positive(),
+        options: z.array(z.object({ productId: z.string().uuid(), name: z.string() })),
+      }),
+    )
+    .optional(),
   /**
    * Lo que suma cada variante encima de `components`. Ausente si no tiene.
    *
@@ -399,8 +414,7 @@ export const ComboComponentInputSchema = z.object({
 });
 export type ComboComponentInput = z.infer<typeof ComboComponentInputSchema>;
 
-// ====================================================================
-// VENTANAS DE DISPONIBILIDAD (a qué hora / qué días se puede vender)
+// =============================================================// VENTANAS DE DISPONIBILIDAD (a qué hora / qué días se puede vender)
 // ====================================================================
 
 const VENTANA_TIME_REGEX = /^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
@@ -459,6 +473,61 @@ export const SetProductAvailabilityWindowsSchema = z.object({
   windows: z.array(ProductAvailabilityWindowInputSchema).max(14),
 });
 export type SetProductAvailabilityWindows = z.infer<typeof SetProductAvailabilityWindowsSchema>;
+/** Máximo de grupos por combo y de opciones por grupo. Topes de pantalla: más
+ *  no se eligen de un vistazo en la caja ni en un teléfono. */
+export const MAX_CHOICE_GROUPS_PER_COMBO = 4;
+export const MAX_OPTIONS_PER_CHOICE_GROUP = 12;
+
+/**
+ * Opción elegible dentro de un grupo del combo. `priceDelta` es un RECARGO
+ * sobre el precio del combo (0 = sin recargo) — es precio, no costo: el costo
+ * de la opción sigue siendo el `lastUnitCost` de su producto.
+ */
+export const ComboChoiceOptionSchema = z.object({
+  id: z.string().uuid(),
+  groupId: z.string().uuid(),
+  productId: z.string().uuid(),
+  /** Nombre del producto al momento de leer el catálogo (lo muestra el selector). */
+  productName: z.string(),
+  priceDelta: z.number(),
+  sortOrder: z.number().int().nonnegative(),
+});
+export type ComboChoiceOption = z.infer<typeof ComboChoiceOptionSchema>;
+
+/**
+ * Grupo de elección de un combo: "Bebida — elige 2". Permite que el inventario
+ * descuente lo que REALMENTE salió en vez de un componente fijo.
+ */
+export const ComboChoiceGroupSchema = z.object({
+  id: z.string().uuid(),
+  comboId: z.string().uuid(),
+  label: z.string(),
+  /** Cuántas unidades se eligen en total dentro del grupo. */
+  quantity: z.number().int().positive(),
+  sortOrder: z.number().int().nonnegative(),
+  options: z.array(ComboChoiceOptionSchema),
+});
+export type ComboChoiceGroup = z.infer<typeof ComboChoiceGroupSchema>;
+
+export const ComboChoiceOptionInputSchema = z.object({
+  productId: z.string().uuid(),
+  /** Recargo por elegir esta opción. Nunca negativo: una opción que abarate el
+   *  combo es una promoción, y para eso está el motor de promociones. */
+  priceDelta: z.number().nonnegative().default(0),
+});
+export type ComboChoiceOptionInput = z.infer<typeof ComboChoiceOptionInputSchema>;
+
+export const ComboChoiceGroupInputSchema = z.object({
+  label: z.string().trim().min(1).max(40),
+  quantity: z.number().int().positive().max(20).default(1),
+  /** Un grupo con una sola opción no ofrece nada que elegir: eso es un
+   *  componente fijo. Se rechaza acá para que el error llegue con el campo. */
+  options: z
+    .array(ComboChoiceOptionInputSchema)
+    .min(2, 'Un grupo para elegir necesita al menos dos opciones.')
+    .max(MAX_OPTIONS_PER_CHOICE_GROUP),
+});
+export type ComboChoiceGroupInput = z.infer<typeof ComboChoiceGroupInputSchema>;
 
 export const ProductSchema = z.object({
   id: z.string().uuid(),
@@ -507,6 +576,13 @@ export const ProductSchema = z.object({
   comboComponents: z.array(ComboComponentSchema).optional(),
   /** Franjas en las que se puede vender. Vacío o ausente = siempre. */
   availabilityWindows: z.array(ProductAvailabilityWindowSchema).optional(),
+  /**
+   * Grupos a elegir del combo (bebida, acompañamiento). Opcional a propósito
+   * (no `.default([])`): las apps se publican antes que el API y con el campo
+   * obligatorio el parseo fallaría durante el despliegue — la caja se quedaría
+   * sin catálogo. Ausente o vacío = combo de componentes fijos, como siempre.
+   */
+  choiceGroups: z.array(ComboChoiceGroupSchema).optional(),
 });
 export type Product = z.infer<typeof ProductSchema>;
 
@@ -521,6 +597,41 @@ const ProductImageUrlSchema = z
 /** Emoji del producto: string corto (los emoji compuestos con ZWJ ocupan varios
  *  code units). Vacío se normaliza a null en el service. */
 const ProductEmojiSchema = z.string().max(24);
+
+/**
+ * Reglas de los grupos a elegir que no dependen de la base: solo un combo los
+ * lleva, y dentro de un grupo no se repite una opción (ofrecer dos veces la
+ * misma bebida deja a quien vende eligiendo entre filas idénticas).
+ * Compartido por crear y por reemplazar para que no puedan divergir.
+ */
+function assertChoiceGroupsCoherentes(
+  esCombo: boolean,
+  grupos: ComboChoiceGroupInput[] | undefined,
+  ctx: z.RefinementCtx,
+): void {
+  if (!grupos || grupos.length === 0) return;
+  if (!esCombo) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Solo un combo puede tener grupos para elegir.',
+      path: ['choiceGroups'],
+    });
+  }
+  grupos.forEach((g, i) => {
+    const vistos = new Set<string>();
+    for (const o of g.options) {
+      if (vistos.has(o.productId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `El grupo "${g.label}" repite un producto entre sus opciones.`,
+          path: ['choiceGroups', i, 'options'],
+        });
+        return;
+      }
+      vistos.add(o.productId);
+    }
+  });
+}
 
 export const CreateProductSchema = z
   .object({
@@ -555,8 +666,10 @@ export const CreateProductSchema = z
     sizes: z.array(ProductSizeInputSchema).optional(),
     modifiers: z.array(ProductModifierInputSchema).optional(),
     comboComponents: z.array(ComboComponentInputSchema).optional(),
+    choiceGroups: z.array(ComboChoiceGroupInputSchema).max(MAX_CHOICE_GROUPS_PER_COMBO).optional(),
   })
   .superRefine((data, ctx) => {
+    assertChoiceGroupsCoherentes(data.isCombo === true, data.choiceGroups, ctx);
     if (data.isCombo && (data.comboPrice === undefined || data.comboPrice === null)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -650,6 +763,17 @@ export const SetComboComponentsSchema = z.object({
 });
 export type SetComboComponents = z.infer<typeof SetComboComponentsSchema>;
 
+/** PUT /products/:id/choice-groups — reemplaza los grupos a elegir de un combo.
+ *  Lista vacía = el combo vuelve a ser de componentes fijos. */
+export const SetComboChoiceGroupsSchema = z
+  .object({
+    groups: z.array(ComboChoiceGroupInputSchema).max(MAX_CHOICE_GROUPS_PER_COMBO),
+  })
+  // Que el producto sea un combo lo verifica el service (necesita la base);
+  // acá se atrapa lo que se puede leer del cuerpo.
+  .superRefine((data, ctx) => assertChoiceGroupsCoherentes(true, data.groups, ctx));
+export type SetComboChoiceGroups = z.infer<typeof SetComboChoiceGroupsSchema>;
+
 // ====================================================================
 // DISPONIBILIDAD / STOCK EN TIEMPO REAL
 // ====================================================================
@@ -690,6 +814,23 @@ export const ProductAvailabilitySchema = z.object({
     .optional(),
   /** Motivo que SÍ se le puede mostrar a un cliente anónimo (horario). */
   publicReason: z.string().nullish(),
+  /**
+   * Disponibilidad de cada opción de los grupos del combo. El combo se ofrece
+   * si cada grupo tiene al menos una opción posible, y las que no alcanzan se
+   * deshabilitan en el selector — mismo criterio que `variants`.
+   * Opcional por la misma razón: las apps se publican antes que el API.
+   */
+  choiceOptions: z
+    .array(
+      z.object({
+        groupId: z.string().uuid(),
+        productId: z.string().uuid(),
+        name: z.string(),
+        available: z.boolean(),
+        reason: z.string().nullable(),
+      }),
+    )
+    .optional(),
 });
 export type ProductAvailability = z.infer<typeof ProductAvailabilitySchema>;
 

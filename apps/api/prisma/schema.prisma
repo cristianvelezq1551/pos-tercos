@@ -154,6 +154,8 @@ model Product {
   comboComponents       ComboComponent[]            @relation("ComboParent")
   availabilityWindows   ProductAvailabilityWindow[]
   partOfCombos          ComboComponent[]            @relation("ComboChild")
+  choiceGroups          ComboChoiceGroup[]          @relation("ComboChoiceGroups")
+  partOfChoiceOptions   ComboChoiceOption[]         @relation("ComboChoiceOptions")
   movements             InventoryMovement[]
   invoiceItems          InvoiceItem[]
   stockCounts           StockCount[]
@@ -244,6 +246,46 @@ model ComboComponent {
   @@index([comboId])
   @@index([productId])
   @@map("combo_components")
+}
+
+/// Grupo de elección de un combo: "Bebida — elige 2". Sus opciones son los
+/// productos entre los que el cliente escoge. Es lo que faltaba para que el
+/// inventario descuente lo que REALMENTE salió y no un componente fijo.
+///
+/// Deliberadamente SEPARADO de `combo_components`: un combo sin grupos recorre
+/// exactamente el mismo código que antes de que esto existiera.
+model ComboChoiceGroup {
+  id        String              @id @default(uuid())
+  comboId   String              @map("combo_id")
+  /// Lo que se le pregunta a quien vende ("Bebida", "Acompañamiento").
+  label     String
+  /// Cuántas unidades se eligen en total dentro del grupo (2 = dos bebidas).
+  quantity  Int                 @default(1)
+  sortOrder Int                 @default(0) @map("sort_order")
+  combo     Product             @relation("ComboChoiceGroups", fields: [comboId], references: [id], onDelete: Cascade)
+  options   ComboChoiceOption[]
+
+  @@index([comboId])
+  @@map("combo_choice_groups")
+}
+
+/// Una opción elegible dentro de un grupo. `priceDelta` es un recargo sobre el
+/// precio del combo (0 = sin recargo): es PRECIO, no costo — el costo de la
+/// opción sigue siendo el `lastUnitCost` de su producto.
+model ComboChoiceOption {
+  id         String           @id @default(uuid())
+  groupId    String           @map("group_id")
+  productId  String           @map("product_id")
+  priceDelta Decimal          @default(0) @map("price_delta") @db.Decimal(12, 2)
+  sortOrder  Int              @default(0) @map("sort_order")
+  group      ComboChoiceGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  product    Product          @relation("ComboChoiceOptions", fields: [productId], references: [id])
+
+  /// Una opción no se repite dentro de su grupo (ofrecer dos veces la misma
+  /// bebida deja al cajero eligiendo entre filas idénticas).
+  @@unique([groupId, productId])
+  @@index([productId])
+  @@map("combo_choice_options")
 }
 
 model Subproduct {
@@ -660,6 +702,11 @@ model SaleItem {
   /// La comanda de una cuenta abierta imprime quantity - sent_to_kitchen_qty.
   sentToKitchenQty    Int          @default(0) @map("sent_to_kitchen_qty")
   sentToKitchenAt     DateTime?    @map("sent_to_kitchen_at")
+  /// Snapshot de lo elegido en los grupos del combo (mismo criterio que
+  /// `modifiers_json`): `[{groupId, groupLabel, productId, productName,
+  /// quantity, priceDelta}]`. Es la FUENTE del consumo de stock de la línea —
+  /// sin él, cambiar las opciones del combo reescribiría lo ya vendido.
+  choicesJson         Json         @default("[]") @map("choices_json")
   /// Descuento manual por línea (#5b): 'FIXED' | 'PERCENT' (CHECK en DB).
   /// El monto resultante vive en line_discount (appliedPromotionId queda null).
   manualDiscountKind  String?      @map("manual_discount_kind")
@@ -1453,6 +1500,9 @@ model CortesiaRequest {
   resolvedById    String?        @map("resolved_by_id")
   resolvedAt      DateTime?      @map("resolved_at")
   resolverNote    String?        @map("resolver_note")
+  /// Lo elegido en los grupos del combo regalado (mismo snapshot que
+  /// `sale_items.choices_json`): sin él no se sabría qué bebida descontar.
+  choicesJson     Json           @default("[]") @map("choices_json")
   /// El cajero ya vio el resultado (acusa una cortesía "Observada").
   seenByRequester Boolean        @default(false) @map("seen_by_requester")
   createdAt       DateTime       @default(now()) @map("created_at")

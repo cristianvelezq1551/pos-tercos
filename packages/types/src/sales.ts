@@ -229,6 +229,24 @@ export const AppliedModifierSchema = z.object({
 });
 export type AppliedModifier = z.infer<typeof AppliedModifierSchema>;
 
+/**
+ * Snapshot de lo elegido en un grupo del combo ("Bebida" → 2 Coca-Cola). Se
+ * guarda en `sale_items.choices_json` y es la FUENTE del consumo de stock de
+ * la línea: sin él, cambiar mañana las opciones del combo reescribiría lo que
+ * ya se vendió. El nombre y el recargo quedan CONGELADOS, igual que en los
+ * modificadores.
+ */
+export const AppliedChoiceSchema = z.object({
+  groupId: z.string().uuid(),
+  groupLabel: z.string(),
+  productId: z.string().uuid(),
+  productName: z.string(),
+  /** Unidades de ESTA opción dentro del grupo, por cada unidad de la línea. */
+  quantity: z.number().int().positive(),
+  priceDelta: z.number(),
+});
+export type AppliedChoice = z.infer<typeof AppliedChoiceSchema>;
+
 export const SaleItemSchema = z.object({
   id: z.string().uuid(),
   saleId: z.string().uuid(),
@@ -250,6 +268,10 @@ export const SaleItemSchema = z.object({
   sentToKitchenQty: z.number().int().nonnegative().default(0),
   /** Descuento manual de la línea (null/ausente = sin descuento manual). */
   manualDiscount: ManualDiscountSchema.nullable().optional(),
+  /** Lo elegido en los grupos del combo. Vacío en todo lo que no sea un combo
+   *  con grupos. Opcional (no `.default([])`): las apps se publican antes que
+   *  el API y un campo obligatorio rompería el parseo durante el despliegue. */
+  choices: z.array(AppliedChoiceSchema).optional(),
 });
 export type SaleItem = z.infer<typeof SaleItemSchema>;
 
@@ -347,6 +369,16 @@ export type Sale = z.infer<typeof SaleSchema>;
  * informativo en el request (el backend re-resuelve contra catálogo
  * actual y CONGELA el resultado en el snapshot).
  */
+/** Una elección del cliente dentro de un grupo del combo. */
+export const CreateSaleItemChoiceSchema = z.object({
+  groupId: z.string().uuid(),
+  productId: z.string().uuid(),
+  /** Unidades de esta opción. Por defecto 1 — la suma del grupo debe dar
+   *  exactamente las unidades que el grupo pide. */
+  quantity: z.number().int().positive().max(20).default(1),
+});
+export type CreateSaleItemChoice = z.infer<typeof CreateSaleItemChoiceSchema>;
+
 export const CreateSaleItemModifierSchema = z.object({
   modifierId: z.string().uuid(),
 });
@@ -376,6 +408,21 @@ export const CreateSaleItemSchema = z.object({
   notes: z.string().max(200).optional(),
   /** Descuento manual de la línea (#5b). Exige discountReason en la venta. */
   manualDiscount: ManualDiscountSchema.optional(),
+  /**
+   * Elección en los grupos del combo. Obligatoria cuando el combo tiene
+   * grupos: el backend rechaza la venta si falta, porque descontar el
+   * componente que se pueda sería quedarse corto en silencio.
+   * Sin duplicados (mismo grupo + mismo producto): dos filas iguales sumarían
+   * el recargo dos veces. Para pedir 2 de la misma opción va `quantity: 2`.
+   */
+  choices: z
+    .array(CreateSaleItemChoiceSchema)
+    .max(40)
+    .refine(
+      (cs) => new Set(cs.map((c) => `${c.groupId}:${c.productId}`)).size === cs.length,
+      { message: 'La línea repite la misma opción del combo.' },
+    )
+    .optional(),
 });
 export type CreateSaleItem = z.infer<typeof CreateSaleItemSchema>;
 
@@ -659,6 +706,9 @@ export const SyncOfflineLineSchema = z.object({
   quantity: z.number().int().positive().max(MAX_SALE_LINE_QTY),
   unitPrice: z.number().nonnegative(),
   modifiers: z.array(AppliedModifierSchema).default([]),
+  /** Lo elegido en los grupos del combo, con el mismo snapshot que online.
+   *  Sin esto una venta offline de un combo con grupos no sabría qué descontar. */
+  choices: z.array(AppliedChoiceSchema).default([]),
   notes: z.string().nullable().optional(),
   lineSubtotal: z.number().nonnegative(),
   lineDiscount: z.number().nonnegative(),

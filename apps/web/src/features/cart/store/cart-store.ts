@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { aInputDeChoices } from '@pos-tercos/domain';
 import type { CartLine } from '../lib/cart-types';
 
 interface AddInput {
@@ -13,6 +14,7 @@ interface AddInput {
   quantity: number;
   unitPrice: number;
   isCombo?: boolean;
+  choices?: CartLine['choices'];
   notes?: string;
 }
 
@@ -30,7 +32,13 @@ interface CartState {
 function lineSignature(item: AddInput | CartLine): string {
   const sizeId = item.size?.id ?? '';
   const modIds = [...item.modifiers].map((m) => m.id).sort().join('|');
-  return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}`;
+  // La elección entra en la firma: juntar un combo con Coca y otro con Pepsi
+  // perdería una de las dos y el local prepararía la bebida equivocada.
+  const eleccion = [...(item.choices ?? [])]
+    .map((c) => `${c.groupId}:${c.productId}:${c.quantity}`)
+    .sort()
+    .join('|');
+  return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}::${eleccion}`;
 }
 
 let lineCounter = 0;
@@ -64,6 +72,7 @@ export const useCartStore = create<CartState>()(
                 quantity: input.quantity,
                 unitPrice: input.unitPrice,
                 isCombo: input.isCombo ?? false,
+                choices: input.choices ?? [],
                 notes: input.notes?.trim() || undefined,
               },
             ],
@@ -107,6 +116,9 @@ export function cartLinesToCreateItems(items: readonly CartLine[]) {
     sizeId: it.size?.id,
     quantity: it.quantity,
     modifiers: it.modifiers.map((m) => ({ modifierId: m.id })),
+    // Lo elegido decide qué bebida prepara y descuenta el local. `?? []`: un
+    // carrito guardado antes de que esto existiera no trae el campo.
+    choices: (it.choices ?? []).length > 0 ? aInputDeChoices(it.choices!) : undefined,
     notes: it.notes?.trim() || undefined,
   }));
 }

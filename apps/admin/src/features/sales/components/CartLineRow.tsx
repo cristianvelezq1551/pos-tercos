@@ -45,6 +45,9 @@ export function CartLineRow({
 
   const detalle = [
     ...[line.size?.name, ...line.modifiers.map((m) => m.name)].filter(Boolean),
+    // Qué se eligió en el combo: sin esto, dos líneas del mismo combo con
+    // bebidas distintas se ven idénticas y no hay forma de saber cuál es cuál.
+    ...(line.choiceLabels ?? []),
     `$${Math.round(line.unitPrice).toLocaleString('es-CO')} c/u`,
   ].join(' · ');
 

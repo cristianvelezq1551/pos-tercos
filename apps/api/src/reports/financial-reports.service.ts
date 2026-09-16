@@ -100,6 +100,13 @@ export class FinancialReportsService {
           lastUnitCost: true,
           conversionFactor: true,
           comboComponents: { select: { productId: true, quantity: true } },
+          choiceGroups: {
+            select: {
+              label: true,
+              quantity: true,
+              options: { select: { productId: true } },
+            },
+          },
           sizes: {
             select: { id: true, name: true, priceModifier: true },
             orderBy: { sortOrder: 'asc' },
@@ -194,6 +201,41 @@ export class FinancialReportsService {
       return salidas;
     };
 
+    /**
+     * El componente "peor caso" de un grupo a elegir: su opción MÁS CARA. Cuál
+     * se llevará el cliente no se sabe, y suponer la barata pintaría un margen
+     * mejor que el real justo donde se fija la meta de ventas. Si alguna opción
+     * no tiene costo conocido, el grupo queda sin costo — nada vale $0.
+     */
+    const opcionMasCara = (grupo: (typeof products)[number]['choiceGroups'][number]) => {
+      let peor: { productId: string; productName: string; unitCost: number } | null = null;
+      for (const o of grupo.options) {
+        const prod = porId.get(o.productId);
+        const costo = prod ? costoUnitario(prod) : null;
+        if (prod === undefined || costo === null) {
+          return {
+            productId: o.productId,
+            productName: prod?.name ?? grupo.label,
+            quantity: grupo.quantity,
+            unitCost: null,
+            missingReason: `Sin costo de "${prod?.name ?? 'una opción'}" en ${grupo.label}`,
+          };
+        }
+        if (!peor || costo > peor.unitCost) {
+          peor = { productId: o.productId, productName: prod.name, unitCost: costo };
+        }
+      }
+      return peor === null
+        ? {
+            productId: grupo.label,
+            productName: grupo.label,
+            quantity: grupo.quantity,
+            unitCost: null,
+            missingReason: `${grupo.label} no tiene opciones cargadas`,
+          }
+        : { ...peor, quantity: grupo.quantity, missingReason: null };
+    };
+
     return computeCatalogMargin(
       products.flatMap((p) =>
         !p.isCombo && p.sizes.length > 0 ? lineasDeVariante(p) : [baseLine(p)],
@@ -209,16 +251,24 @@ export class FinancialReportsService {
         // no existe deja el combo sin costo, no con costo de menos).
         cost: p.isCombo
           ? computeComboCost({
-              components: p.comboComponents.map((c) => {
-                const comp = porId.get(c.productId);
-                return {
-                  productId: c.productId,
-                  productName: comp?.name ?? '(eliminado)',
-                  quantity: c.quantity,
-                  unitCost: comp ? costoUnitario(comp) : null,
-                  missingReason: comp ? null : 'Componente eliminado del catálogo',
-                };
-              }),
+              components: [
+                ...p.comboComponents.map((c) => {
+                  const comp = porId.get(c.productId);
+                  return {
+                    productId: c.productId,
+                    productName: comp?.name ?? '(eliminado)',
+                    quantity: c.quantity,
+                    unitCost: comp ? costoUnitario(comp) : null,
+                    missingReason: comp ? null : 'Componente eliminado del catálogo',
+                  };
+                }),
+                // Un grupo a elegir se costea por su opción MÁS CARA: cuál se
+                // llevará el cliente no se sabe, y suponer la barata pintaría
+                // un margen mejor que el real justo donde se fija la meta de
+                // ventas. Si alguna opción no tiene costo, el grupo queda sin
+                // costo (igual que un componente eliminado): nada vale $0.
+                ...p.choiceGroups.map(opcionMasCara),
+              ],
             }).totalCost
           : costoUnitario(p),
         unitsSold: unidades.get(p.id) ?? 0,

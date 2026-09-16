@@ -85,7 +85,15 @@ export async function applyConsumptionForSale(payload: OfflineSalePayload): Prom
     }
   };
 
-  for (const line of payload.lines) consume(line.productId, line.quantity);
+  for (const line of payload.lines) {
+    consume(line.productId, line.quantity);
+    // Lo elegido en el combo descuenta igual que un componente fijo: si no, el
+    // ledger local se queda alto y la caja sigue ofreciendo bebidas que ya no
+    // hay. (`?? []`: una venta encolada antes de que esto existiera.)
+    for (const c of line.choices ?? []) {
+      consume(c.productId, line.quantity * c.quantity);
+    }
+  }
 
   await offlineDb.setLedger({
     ...ledger,

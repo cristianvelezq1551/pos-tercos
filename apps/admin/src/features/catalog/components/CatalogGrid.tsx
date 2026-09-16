@@ -109,6 +109,8 @@ export function CatalogGrid({ products }: { products: Product[] }) {
       quantity: sel.quantity,
       unitPrice: sel.unitPrice,
       isCombo: sel.isCombo,
+      choices: sel.choices,
+      choiceLabels: sel.choiceLabels,
     });
   };
 

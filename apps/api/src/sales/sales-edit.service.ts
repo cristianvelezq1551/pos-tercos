@@ -23,11 +23,13 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
+import { choicesDeLinea } from '../common/sale-choices';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { SalesConsumptionService } from './sales-consumption.service';
 import {
   computeLine,
+  SALE_PRODUCT_INCLUDE,
   SALE_TX_OPTS,
   type ComputedSaleItem,
 } from './sales.service';
@@ -134,7 +136,7 @@ export class SalesEditService {
         const [products, activePromotions] = await Promise.all([
           this.prisma.product.findMany({
             where: { id: { in: allIds } },
-            include: { sizes: true, modifiers: true, availabilityWindows: true },
+            include: SALE_PRODUCT_INCLUDE,
           }),
           hasManualDiscount
             ? Promise.resolve([])
@@ -234,6 +236,7 @@ export class SalesEditService {
                 modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
                   modifierId: m.modifierId,
                 })),
+                choices: choicesDeLinea(it.choicesJson),
               })),
               `Sale ${saleId.slice(0, 8)}`,
             ),
@@ -243,6 +246,7 @@ export class SalesEditService {
                 quantity: it.quantity,
                 sizeId: it.sizeId ?? null,
                 modifiers: it.modifiers,
+                choices: it.choices,
               })),
               `Sale ${saleId.slice(0, 8)}`,
             ),
@@ -359,6 +363,7 @@ export class SalesEditService {
             quantity: c.quantity,
             unitPrice: c.unitPrice,
             modifiersJson: c.modifiers as unknown as Prisma.InputJsonValue,
+            choicesJson: c.choices as unknown as Prisma.InputJsonValue,
             notes: c.notes,
             appliedPromotionId: c.appliedPromotionId,
             lineSubtotal: c.lineSubtotal,

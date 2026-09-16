@@ -85,7 +85,9 @@ interface LineaSimulada {
   precioUnitario: number;
   sizeId?: string;
   extras?: string[];
-  /** Consumo EXTRA por unidad que agregan el tamaño y los extras. */
+  /** Lo elegido en los grupos del combo (viaja en el payload de la venta). */
+  choices?: Array<{ groupId: string; productId: string; quantity: number }>;
+  /** Consumo EXTRA por unidad que agregan el tamaño, los extras y lo elegido. */
   consumoExtra: Map<string, number>;
   manual?: { kind: 'FIXED' | 'PERCENT'; value: number };
   esPromo?: boolean;
@@ -401,6 +403,7 @@ export class Simulacion {
         ...(l.extras && l.extras.length > 0
           ? { modifiers: l.extras.map((modifierId) => ({ modifierId })) }
           : {}),
+        ...(l.choices && l.choices.length > 0 ? { choices: l.choices } : {}),
         ...(l.manual ? { manualDiscount: l.manual } : {}),
       })),
     };
@@ -455,7 +458,15 @@ export class Simulacion {
       descuentoPromo,
       envio,
       total: redondearPeso(Number(creada.body.total) + envio),
-      conOpciones: lineas.some((l) => l.sizeId !== undefined || (l.extras?.length ?? 0) > 0),
+      // Una línea con tamaño, extras o bebida elegida no se edita: la edición
+      // reconstruye el consumo desde el catálogo y esas tres cosas viven en la
+      // LÍNEA, así que el modelo sombra quedaría corto.
+      conOpciones: lineas.some(
+        (l) =>
+          l.sizeId !== undefined ||
+          (l.extras?.length ?? 0) > 0 ||
+          (l.choices?.length ?? 0) > 0,
+      ),
       sinDescuentoManual: lineas.every((l) => l.manual === undefined),
     };
   }
@@ -655,9 +666,33 @@ export class Simulacion {
     precioUnitario: number;
     sizeId?: string;
     extras?: string[];
+    choices?: Array<{ groupId: string; productId: string; quantity: number }>;
     consumoExtra: Map<string, number>;
   } {
     const consumoExtra = new Map<string, number>();
+    // Combo con bebida a ELEGIR: el consumo sale de lo que se elija, no del
+    // catálogo. Se modela como consumo extra de la línea, igual que el tamaño.
+    if (producto.id === this.m.conEleccion.producto.id) {
+      const { grupoId, cantidad, opciones } = this.m.conEleccion;
+      const elegidas = Array.from({ length: cantidad }, () => this.rng.pick(opciones));
+      let precioUnitario = producto.precio;
+      const porProducto = new Map<string, number>();
+      for (const op of elegidas) {
+        precioUnitario += op.priceDelta;
+        porProducto.set(op.productId, (porProducto.get(op.productId) ?? 0) + 1);
+        const clave = claveDe('PRODUCT', op.productId);
+        consumoExtra.set(clave, (consumoExtra.get(clave) ?? 0) + 1);
+      }
+      return {
+        precioUnitario,
+        choices: [...porProducto].map(([productId, quantity]) => ({
+          groupId: grupoId,
+          productId,
+          quantity,
+        })),
+        consumoExtra,
+      };
+    }
     if (producto.id !== this.m.conOpciones.producto.id) {
       return { precioUnitario: producto.precio, consumoExtra };
     }

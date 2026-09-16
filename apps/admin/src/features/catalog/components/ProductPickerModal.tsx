@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  AppliedChoice,
   Product,
   ProductAvailability,
   ProductModifier,
@@ -11,12 +12,23 @@ import {
   Button,
   Dialog,
   FormField,
-  Money,
   NumberInput,
 } from '@pos-tercos/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { getLinePromoDiscount } from '../../sales/lib/promo-preview';
 import { SelectableRow } from './SelectableRow';
+import { PickerChoices } from './PickerChoices';
+import { PickerSizes } from './PickerSizes';
+import { PickerTotal } from './PickerTotal';
+import {
+  aChoices,
+  elegir,
+  nuevaSeleccion,
+  recargoDeSeleccion,
+  resumenDeSeleccion,
+  seleccionCompleta,
+  type ChoiceSelection,
+} from '@pos-tercos/domain';
 import { displayBasePrice } from '../lib/display-price';
 
 export type PickerSelection = {
@@ -29,6 +41,10 @@ export type PickerSelection = {
   unitPrice: number;
   /** Product.isCombo — necesario para que COMBO_OFF se previsualice/cobre igual. */
   isCombo: boolean;
+  /** Lo elegido, con nombre y recargo congelados (como los modificadores). */
+  choices: AppliedChoice[];
+  /** Resumen legible ("Bebida: 2 Coca-Cola") para la fila del carrito. */
+  choiceLabels: string[];
 };
 
 export function ProductPickerModal({
@@ -66,6 +82,8 @@ export function ProductPickerModal({
   const [sizeId, setSizeId] = useState<string | null>(null);
   const [modifierIds, setModifierIds] = useState<Set<string>>(new Set());
   const [quantity, setQuantity] = useState<number | null>(1);
+  const choiceGroups = useMemo(() => product?.choiceGroups ?? [], [product]);
+  const [choiceSel, setChoiceSel] = useState<ChoiceSelection>({});
 
   useEffect(() => {
     if (open && product) {
@@ -76,6 +94,7 @@ export function ProductPickerModal({
       setSizeId(primeraPosible?.id ?? null);
       setModifierIds(new Set());
       setQuantity(1);
+      setChoiceSel(nuevaSeleccion(product.choiceGroups ?? []));
     }
   }, [open, product?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -92,8 +111,9 @@ export function ProductPickerModal({
     if (!product) return 0;
     const sizeMod = selectedSize?.priceModifier ?? 0;
     const modSum = selectedModifiers.reduce((acc, m) => acc + m.priceDelta, 0);
-    return displayBasePrice(product) + sizeMod + modSum;
-  }, [product, selectedSize, selectedModifiers]);
+    const recargo = recargoDeSeleccion(choiceGroups, choiceSel);
+    return displayBasePrice(product) + sizeMod + modSum + recargo;
+  }, [product, selectedSize, selectedModifiers, choiceGroups, choiceSel]);
 
   const qty = quantity ?? 0;
   // Descuento de promo para la selección actual (mismo motor que el carrito).
@@ -108,10 +128,9 @@ export function ProductPickerModal({
   if (!product) return null;
 
   const canConfirm =
-    (!requiresSize || (sizeId !== null && !sizeBlocked(sizeId))) && qty > 0;
-  const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
-  const lineTotal = unitPrice * qty;
-  const discountedTotal = lineTotal - lineDiscount;
+    (!requiresSize || (sizeId !== null && !sizeBlocked(sizeId))) &&
+    qty > 0 &&
+    seleccionCompleta(choiceGroups, choiceSel);
 
   const toggleModifier = (id: string) => {
     setModifierIds((prev) => {
@@ -132,6 +151,8 @@ export function ProductPickerModal({
       quantity: qty,
       unitPrice,
       isCombo: product.isCombo,
+      choices: aChoices(choiceGroups, choiceSel),
+      choiceLabels: resumenDeSeleccion(choiceGroups, choiceSel),
     });
     onClose();
   };
@@ -154,25 +175,21 @@ export function ProductPickerModal({
       }
     >
       <div className="space-y-5">
-        {requiresSize ? (
-          <FormField label="Tamaño">
-            <div className="grid grid-cols-1 gap-2">
-              {sortedSizes.map((s) => (
-                <SelectableRow
-                  key={s.id}
-                  selected={sizeId === s.id}
-                  onSelect={() => setSizeId(s.id)}
-                  type="radio"
-                  name="size"
-                  label={s.name}
-                  delta={s.priceModifier}
-                  disabled={sizeBlocked(s.id)}
-                  disabledReason={variantState.get(s.id)?.reason ?? null}
-                />
-              ))}
-            </div>
-          </FormField>
-        ) : null}
+        <PickerSizes
+          sizes={sizes}
+          selectedId={sizeId}
+          onSelect={setSizeId}
+          availability={availability}
+        />
+
+        <PickerChoices
+          groups={choiceGroups}
+          selection={choiceSel}
+          onSelect={(groupId, index, productId) =>
+            setChoiceSel((prev) => elegir(prev, groupId, index, productId))
+          }
+          availability={availability}
+        />
 
         {modifiersEnabled && modifiers.length > 0 ? (
           <FormField label="Modificadores">
@@ -197,27 +214,7 @@ export function ProductPickerModal({
           </div>
         </FormField>
 
-        <div className="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
-          <span className="text-sm text-muted-foreground">
-            <Money amount={unitPrice} className="text-current" /> × {qty}
-          </span>
-          {lineDiscount > 0 ? (
-            <span className="flex items-baseline gap-2">
-              <Money
-                amount={lineTotal}
-                className="text-muted-foreground line-through"
-              />
-              <Money amount={discountedTotal} size="xl" weight="bold" className="text-success" />
-            </span>
-          ) : (
-            <Money amount={lineTotal} size="xl" weight="bold" />
-          )}
-        </div>
-        {lineDiscount > 0 ? (
-          <p className="-mt-2 text-right text-xs font-medium text-success">
-            Promo aplicada · ahorrás <Money amount={lineDiscount} className="text-success" />
-          </p>
-        ) : null}
+        <PickerTotal unitPrice={unitPrice} quantity={qty} lineDiscount={lineDiscount} />
       </div>
     </Dialog>
   );

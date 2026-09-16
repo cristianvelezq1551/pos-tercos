@@ -24,6 +24,7 @@ import {
   saleStatusLabel,
 } from '@pos-tercos/types';
 import type {
+  AppliedChoice,
   AppliedModifier,
   ConfirmPayment,
   SalePaymentInput,
@@ -46,6 +47,7 @@ import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { OwnerNotificationService } from '../notifications/owner-notification.service';
+import { choicesDeLinea } from '../common/sale-choices';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { ShiftsService } from '../shifts/shifts.service';
@@ -221,7 +223,7 @@ export class SalesService {
     const [products, activePromotions] = await Promise.all([
       this.prisma.product.findMany({
         where: { id: { in: productIds } },
-        include: { sizes: true, modifiers: true, availabilityWindows: true },
+        include: SALE_PRODUCT_INCLUDE,
       }),
       hasManualDiscount
         ? Promise.resolve([])
@@ -302,6 +304,7 @@ export class SalesService {
                 quantity: c.quantity,
                 unitPrice: c.unitPrice,
                 modifiersJson: c.modifiers as unknown as Prisma.InputJsonValue,
+                choicesJson: c.choices as unknown as Prisma.InputJsonValue,
                 notes: c.notes,
                 appliedPromotionId: c.appliedPromotionId,
                 lineSubtotal: c.lineSubtotal,
@@ -616,7 +619,13 @@ export class SalesService {
    * componentes (vía SalesConsumptionService).
    */
   private async buildSaleStockMovements(
-    items: { productId: string; quantity: number; sizeId: string | null; modifiersJson: Prisma.JsonValue }[],
+    items: {
+      productId: string;
+      quantity: number;
+      sizeId: string | null;
+      modifiersJson: Prisma.JsonValue;
+      choicesJson: Prisma.JsonValue;
+    }[],
     saleId: string,
     saleShortRef: string,
     userId: string,
@@ -634,6 +643,7 @@ export class SalesService {
         modifiers: ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => ({
           modifierId: m.modifierId,
         })),
+        choices: choicesDeLinea(it.choicesJson),
       })),
       `Sale ${saleShortRef.slice(0, 8)}`,
     );
@@ -1613,11 +1623,30 @@ export interface ComputedSaleItem {
   /** Descuento manual de la línea (#5b) — null si el descuento vino de promo. */
   manualDiscountKind: 'FIXED' | 'PERCENT' | null;
   manualDiscountValue: number | null;
+  /** Lo elegido en los grupos del combo, congelado. Vacío en todo lo demás. */
+  choices: AppliedChoice[];
 }
 
 export type ProductWithRelations = Prisma.ProductGetPayload<{
-  include: { sizes: true; modifiers: true; availabilityWindows: true };
+  include: typeof SALE_PRODUCT_INCLUDE;
 }>;
+
+/** Include de los grupos a elegir. Compartido por las lecturas que cobran
+ *  (crear venta y editar ítems) para que las dos validen contra lo mismo. */
+export const SALE_PRODUCT_INCLUDE = {
+  sizes: true,
+  modifiers: true,
+  availabilityWindows: true,
+  choiceGroups: {
+    include: {
+      options: {
+        include: { product: { select: { name: true } } },
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
+    orderBy: { sortOrder: 'asc' },
+  },
+} as const satisfies Prisma.ProductInclude;
 
 export function computeLine(
   input: CreateSaleItem,
@@ -1685,6 +1714,12 @@ export function computeLine(
     }
   }
 
+  // Grupos a elegir del combo ("Bebida — elige 2"). El recargo de cada opción
+  // se suma acá, junto al del tamaño y los extras: entra ANTES del motor de
+  // promociones, como todo lo que forma el precio unitario.
+  const choices = resolveChoices(product, input.choices ?? []);
+  for (const c of choices) basePrice += c.priceDelta * c.quantity;
+
   if (basePrice < 0) {
     throw new BadRequestException(
       `Precio negativo después de modifiers para "${product.name}" (${basePrice})`,
@@ -1711,6 +1746,7 @@ export function computeLine(
       lineTotal: roundMoney(lineSubtotal - lineDiscount),
       manualDiscountKind: input.manualDiscount.kind,
       manualDiscountValue: input.manualDiscount.value,
+      choices,
     };
   }
 
@@ -1743,5 +1779,73 @@ export function computeLine(
     lineTotal,
     manualDiscountKind: null,
     manualDiscountValue: null,
+    choices,
   };
+}
+
+/**
+ * Resuelve lo que se eligió en los grupos del combo y lo congela.
+ *
+ * Elegir es OBLIGATORIO cuando el combo tiene grupos: si faltara, habría que
+ * decidir por el cliente y descontar una bebida que quizá no salió — que es
+ * exactamente el descuadre que estos grupos vienen a cerrar. Por eso esto
+ * rechaza en vez de completar con un valor por defecto.
+ */
+export function resolveChoices(
+  product: ProductWithRelations,
+  input: ReadonlyArray<{ groupId: string; productId: string; quantity: number }>,
+): AppliedChoice[] {
+  const grupos = product.choiceGroups ?? [];
+  if (grupos.length === 0) {
+    if (input.length > 0) {
+      throw new BadRequestException(
+        `"${product.name}" no tiene opciones para elegir.`,
+      );
+    }
+    return [];
+  }
+
+  const idsValidos = new Set(grupos.map((g) => g.id));
+  const ajena = input.find((c) => !idsValidos.has(c.groupId));
+  if (ajena) {
+    throw new BadRequestException(
+      `Una de las opciones elegidas no es de "${product.name}". Vuelve a armar el pedido.`,
+    );
+  }
+
+  const out: AppliedChoice[] = [];
+  for (const g of grupos) {
+    const delGrupo = input.filter((c) => c.groupId === g.id);
+    const elegidas = delGrupo.reduce((acc, c) => acc + c.quantity, 0);
+    if (elegidas !== g.quantity) {
+      throw new BadRequestException(
+        elegidas === 0
+          ? `Elige ${cantidadEnPalabras(g.quantity, g.label)} de "${product.name}".`
+          : `En "${g.label}" elegiste ${elegidas} y el combo lleva ${g.quantity}.`,
+      );
+    }
+    for (const c of delGrupo) {
+      const opcion = g.options.find((o) => o.productId === c.productId);
+      if (!opcion) {
+        throw new BadRequestException(
+          `Esa opción ya no está disponible en "${g.label}". Vuelve a elegir.`,
+        );
+      }
+      out.push({
+        groupId: g.id,
+        groupLabel: g.label,
+        productId: opcion.productId,
+        productName: opcion.product.name,
+        quantity: c.quantity,
+        priceDelta: Number(opcion.priceDelta),
+      });
+    }
+  }
+  return out;
+}
+
+/** "la bebida" / "las 2 bebidas" — el mensaje se lee como lo diría una persona. */
+function cantidadEnPalabras(cantidad: number, label: string): string {
+  const nombre = label.toLowerCase();
+  return cantidad === 1 ? `la ${nombre}` : `las ${cantidad} ${nombre}`;
 }

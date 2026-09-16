@@ -131,6 +131,8 @@ describe('selectionToEditLine — línea agregada desde el picker', () => {
       quantity: 2,
       unitPrice: 4000,
       isCombo: false,
+      choices: [],
+      choiceLabels: [],
     });
     expect(line.locked).toBe(false);
     expect(line.manualDiscount).toBeNull();
@@ -146,6 +148,8 @@ describe('selectionToEditLine — línea agregada desde el picker', () => {
       quantity: 1,
       unitPrice: 26_000,
       isCombo: false,
+      choices: [],
+      choiceLabels: [],
     });
     expect(line).toMatchObject({
       sizeId: 's1',

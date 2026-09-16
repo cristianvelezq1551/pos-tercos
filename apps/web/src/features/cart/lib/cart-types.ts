@@ -1,3 +1,5 @@
+import type { ChoiceSnapshot } from '@pos-tercos/domain';
+
 export interface CartLineModifier {
   id: string;
   name: string;
@@ -27,6 +29,11 @@ export interface CartLine {
    * Opcional: los carritos guardados antes de este campo no lo traen.
    */
   isCombo?: boolean;
+  /**
+   * Lo elegido en los grupos del combo, con nombre y recargo congelados.
+   * Opcional: los carritos guardados antes de este campo no lo traen.
+   */
+  choices?: ChoiceSnapshot[];
   /** Nota libre del cliente para este ítem (ej. "sin cebolla"). */
   notes?: string;
 }

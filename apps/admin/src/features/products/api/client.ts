@@ -4,6 +4,7 @@ import {
   UpdateProductSchema,
   type CreateProduct,
   type Product,
+  type SetComboChoiceGroups,
   type SetComboComponents,
   type SetProductAvailabilityWindows,
   type SetProductOptions,
@@ -78,6 +79,19 @@ export function setAvailabilityWindows(
 export function setComboComponents(id: string, input: SetComboComponents): Promise<Product> {
   return request(
     `/products/${id}/combo`,
+    { method: 'PUT', body: JSON.stringify(input) },
+    ProductSchema,
+  );
+}
+
+/** Reemplaza los grupos a elegir de un combo. Lista vacía = vuelve a ser de
+ *  componentes fijos. */
+export function setComboChoiceGroups(
+  id: string,
+  input: SetComboChoiceGroups,
+): Promise<Product> {
+  return request(
+    `/products/${id}/choice-groups`,
     { method: 'PUT', body: JSON.stringify(input) },
     ProductSchema,
   );

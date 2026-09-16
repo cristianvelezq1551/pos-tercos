@@ -68,6 +68,9 @@ export class SalesConsumptionService {
       quantity: number;
       sizeId: string | null;
       modifiers?: ReadonlyArray<{ modifierId: string }>;
+      /** Lo elegido en los grupos del combo (snapshot de `choices_json`). Es
+       *  lo que hace que se descuente la bebida que REALMENTE salió. */
+      choices?: ReadonlyArray<{ productId: string; quantity: number }>;
     }>,
     notePrefix: string,
   ): Promise<ConsumptionSpec[]> {
@@ -82,6 +85,7 @@ export class SalesConsumptionService {
         directResale: true,
         isCombo: true,
         comboComponents: { select: { productId: true, quantity: true } },
+        choiceGroups: { select: { id: true } },
       },
     });
     const saleProductMap = new Map(saleProducts.map((p) => [p.id, p]));
@@ -91,6 +95,9 @@ export class SalesConsumptionService {
     const componentIds = new Set<string>();
     for (const p of saleProducts) {
       if (p.isCombo) for (const c of p.comboComponents) componentIds.add(c.productId);
+    }
+    for (const l of lines) {
+      for (const c of l.choices ?? []) componentIds.add(c.productId);
     }
     const componentProducts = componentIds.size
       ? await this.prisma.product.findMany({
@@ -208,7 +215,19 @@ export class SalesConsumptionService {
       }
       consumeModifiers(line);
       if (product.isCombo) {
-        for (const comp of product.comboComponents) {
+        // Un combo con grupos SIN elección no se puede descontar: habría que
+        // adivinar qué bebida salió. Se rechaza en vez de descontar de menos
+        // en silencio, que es el descuadre que estos grupos vienen a cerrar.
+        if (product.choiceGroups.length > 0 && (line.choices ?? []).length === 0) {
+          throw new BadRequestException(
+            `Falta elegir las opciones de "${product.name}". Vuelve a armar esa línea del pedido.`,
+          );
+        }
+        const partes = [
+          ...product.comboComponents.map((c) => ({ productId: c.productId, quantity: c.quantity })),
+          ...(line.choices ?? []),
+        ];
+        for (const comp of partes) {
           const cp = componentMap.get(comp.productId);
           if (!cp) {
             throw new BadRequestException(

@@ -85,16 +85,33 @@ export function RecipeDetail({
 
         {/* Composición */}
         {entry.isCombo ? (
-          <Section title="Incluye">
-            <ul className="space-y-1 text-sm">
-              {entry.comboItems.map((c) => (
-                <li key={c.productId} className="flex justify-between gap-2">
-                  <span className="text-foreground">{c.name}</span>
-                  <span className="tabular-nums text-muted-foreground">×{c.quantity}</span>
-                </li>
-              ))}
-            </ul>
-          </Section>
+          <>
+            {entry.comboItems.length > 0 ? (
+              <Section title="Incluye">
+                <ul className="space-y-1 text-sm">
+                  {entry.comboItems.map((c) => (
+                    <li key={c.productId} className="flex justify-between gap-2">
+                      <span className="text-foreground">{c.name}</span>
+                      <span className="tabular-nums text-muted-foreground">×{c.quantity}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            ) : null}
+            {/* La bebida no siempre es la misma: el cocinero tiene que saber
+                que sale la que el cliente eligió, no una fija. */}
+            {(entry.comboChoices ?? []).map((g) => (
+              <Section key={g.label} title={`${g.label} — el cliente elige ${g.quantity}`}>
+                <ul className="space-y-1 text-sm">
+                  {g.options.map((o) => (
+                    <li key={o.productId} className="text-foreground">
+                      {o.name}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            ))}
+          </>
         ) : entry.components.length > 0 || variantes.length > 0 ? (
           <>
             {entry.components.length > 0 ? (

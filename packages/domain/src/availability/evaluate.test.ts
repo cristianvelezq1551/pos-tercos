@@ -100,6 +100,7 @@ describe('evaluateAvailability · reventa directa', () => {
       // Motivo publicable: solo lo llena el horario (§ ventanas por producto).
       publicReason: null,
       variants: [],
+      choiceOptions: [],
     });
   });
 

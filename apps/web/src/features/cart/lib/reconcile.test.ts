@@ -16,6 +16,7 @@ function product(over: Partial<PublicMenuProduct> = {}): PublicMenuProduct {
     comboPrice: null,
     sizes: [],
     modifiers: [],
+    choiceGroups: [],
     ...over,
   };
 }

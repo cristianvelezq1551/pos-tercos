@@ -15,6 +15,12 @@ type ParsedExtra = {
   recipeDelta?: Array<{ childType: 'ingredient' | 'subproduct'; childId: string; quantity: number }>;
 };
 type ParsedComponent = { productId: string; quantity: number };
+type ParsedChoiceOption = { productId: string; priceDelta: number };
+export type ParsedChoiceGroup = {
+  label: string;
+  quantity: number;
+  options: ParsedChoiceOption[];
+};
 
 export type ParsedFormResult =
   | { ok: false; error: string }
@@ -26,6 +32,7 @@ export type ParsedFormResult =
       sizes: ParsedSize[];
       modifiers: ParsedExtra[];
       comboComponents: ParsedComponent[];
+      choiceGroups: ParsedChoiceGroup[];
     };
 
 export function parseFormValues(form: FormState): ParsedFormResult {
@@ -89,6 +96,7 @@ export function parseFormValues(form: FormState): ParsedFormResult {
   // ---- Combo ----
   let comboPriceParsed: number | null = null;
   const comboComponents: ParsedComponent[] = [];
+  const choiceGroups: ParsedChoiceGroup[] = [];
   if (form.kind === 'combo') {
     const v = Number(form.comboPrice);
     if (!Number.isFinite(v) || v < 0) {
@@ -96,8 +104,16 @@ export function parseFormValues(form: FormState): ParsedFormResult {
     }
     comboPriceParsed = v;
     const rows = form.comboComponents.filter((c) => c.productId);
-    if (rows.length === 0) {
-      return { ok: false, error: 'Un combo necesita al menos un producto componente.' };
+    const grupos = form.choiceGroups.filter(
+      (g) => g.label.trim() || g.options.some((o) => o.productId),
+    );
+    // Un combo que solo lleva grupos es legítimo ("elige 2 bebidas por $X"):
+    // lo que no puede es quedar vacío.
+    if (rows.length === 0 && grupos.length === 0) {
+      return {
+        ok: false,
+        error: 'Un combo necesita al menos un producto fijo o un grupo para elegir.',
+      };
     }
     for (const c of rows) {
       const q = Number(c.quantity || 1);
@@ -105,6 +121,38 @@ export function parseFormValues(form: FormState): ParsedFormResult {
         return { ok: false, error: 'La cantidad de cada componente debe ser un entero ≥ 1.' };
       }
       comboComponents.push({ productId: c.productId, quantity: q });
+    }
+    for (const g of grupos) {
+      const label = g.label.trim();
+      if (!label) {
+        return { ok: false, error: 'Cada grupo para elegir necesita un nombre (ej. "Bebida").' };
+      }
+      const q = Number(g.quantity || 1);
+      if (!Number.isInteger(q) || q < 1) {
+        return { ok: false, error: `En "${label}", cuántas se eligen debe ser un entero ≥ 1.` };
+      }
+      const opciones = g.options.filter((o) => o.productId);
+      if (opciones.length < 2) {
+        return {
+          ok: false,
+          error: `"${label}" necesita al menos dos opciones: con una sola no hay nada que elegir.`,
+        };
+      }
+      if (new Set(opciones.map((o) => o.productId)).size !== opciones.length) {
+        return { ok: false, error: `"${label}" repite un producto entre sus opciones.` };
+      }
+      const parsedOptions: ParsedChoiceOption[] = [];
+      for (const o of opciones) {
+        const delta = o.priceDelta.trim() === '' ? 0 : Number(o.priceDelta);
+        if (!Number.isFinite(delta) || delta < 0) {
+          return {
+            ok: false,
+            error: `El recargo de una opción de "${label}" debe ser un número ≥ 0.`,
+          };
+        }
+        parsedOptions.push({ productId: o.productId, priceDelta: delta });
+      }
+      choiceGroups.push({ label, quantity: q, options: parsedOptions });
     }
   }
 
@@ -136,7 +184,16 @@ export function parseFormValues(form: FormState): ParsedFormResult {
     };
   }
 
-  return { ok: true, basePrice, comboPriceParsed, drFields, sizes, modifiers, comboComponents };
+  return {
+    ok: true,
+    basePrice,
+    comboPriceParsed,
+    drFields,
+    sizes,
+    modifiers,
+    comboComponents,
+    choiceGroups,
+  };
 }
 
 export function buildCreatePayload(
@@ -162,7 +219,12 @@ export function buildCreatePayload(
       ? { sizes: parsed.sizes.map((s) => ({ name: s.name, priceModifier: s.priceModifier })) }
       : {}),
     ...(parsed.modifiers.length > 0 ? { modifiers: parsed.modifiers } : {}),
-    ...(isCombo ? { comboComponents: parsed.comboComponents } : {}),
+    ...(isCombo && parsed.comboComponents.length > 0
+      ? { comboComponents: parsed.comboComponents }
+      : {}),
+    ...(isCombo && parsed.choiceGroups.length > 0
+      ? { choiceGroups: parsed.choiceGroups }
+      : {}),
     ...(parsed.drFields
       ? {
           directResale: true,

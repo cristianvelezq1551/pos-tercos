@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CreateSaleItemChoiceSchema } from './sales';
 
 /**
  * Cortesía: producto regalado (línea de un pedido o suelto). Desde 2026-07 se
@@ -17,6 +18,10 @@ export const CreateCortesiaSchema = z.object({
   reason: z.string().trim().min(3).max(200),
   /** Pedido que acompañó la cortesía (contexto), si aplica. */
   saleId: z.string().uuid().nullable().optional(),
+  /** Lo elegido en los grupos del combo. Obligatorio si el combo los tiene:
+   *  regalar también descuenta, y descontar la bebida equivocada descuadra
+   *  igual que cobrarla mal. */
+  choices: z.array(CreateSaleItemChoiceSchema).max(40).optional(),
 });
 export type CreateCortesia = z.infer<typeof CreateCortesiaSchema>;
 

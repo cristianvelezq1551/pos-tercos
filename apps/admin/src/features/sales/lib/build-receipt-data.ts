@@ -67,6 +67,7 @@ export function buildOfflinePayload(
           name: m.name,
           priceDelta: m.priceDelta,
         })),
+        choices: line.choices ?? [],
         notes: line.notes ?? null,
         lineSubtotal: t?.lineSubtotal ?? line.unitPrice * line.quantity,
         lineDiscount: t?.lineDiscount ?? 0,

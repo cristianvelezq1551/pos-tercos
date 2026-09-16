@@ -1,6 +1,15 @@
 'use client';
 
 import type { ProductSize, PublicMenuModifier, PublicMenuProduct } from '@pos-tercos/types';
+import {
+  aChoices,
+  elegir,
+  nuevaSeleccion,
+  recargoDeSeleccion,
+  seleccionCompleta,
+  type ChoiceSelection,
+  type ChoiceSnapshot,
+} from '@pos-tercos/domain';
 import { useEffect, useMemo, useState } from 'react';
 import { COP } from '../../../lib/format';
 import { displayBasePrice } from '../../../lib/menu-price';
@@ -10,6 +19,7 @@ import { PickerModifiers } from './picker/PickerModifiers';
 import { PickerNotes } from './picker/PickerNotes';
 import { PickerQuantity } from './picker/PickerQuantity';
 import { PickerSizes } from './picker/PickerSizes';
+import { PickerChoices } from './picker/PickerChoices';
 
 export interface PickerSelection {
   productId: string;
@@ -21,6 +31,8 @@ export interface PickerSelection {
   unitPrice: number;
   /** Product.isCombo — la línea lo guarda para poder aplicar COMBO_OFF. */
   isCombo: boolean;
+  /** Lo elegido en los grupos del combo, con nombre y recargo congelados. */
+  choices: ChoiceSnapshot[];
   notes?: string;
 }
 
@@ -58,6 +70,7 @@ export function ProductPickerModal({
       setModifierIds(new Set());
       setQuantity(1);
       setNotes('');
+      setChoiceSel(nuevaSeleccion(product.choiceGroups ?? []));
     }
   }, [open, product?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -85,13 +98,16 @@ export function ProductPickerModal({
   );
 
   const promotions = usePromotions((s) => s.promotions);
+  const choiceGroups = useMemo(() => product?.choiceGroups ?? [], [product]);
+  const [choiceSel, setChoiceSel] = useState<ChoiceSelection>({});
 
   const unitPrice = useMemo(() => {
     if (!product) return 0;
     const sizeMod = selectedSize?.priceModifier ?? 0;
     const modSum = selectedModifiers.reduce((acc, m) => acc + m.priceDelta, 0);
-    return displayBasePrice(product) + sizeMod + modSum;
-  }, [product, selectedSize, selectedModifiers]);
+    const recargo = recargoDeSeleccion(choiceGroups, choiceSel);
+    return displayBasePrice(product) + sizeMod + modSum + recargo;
+  }, [product, selectedSize, selectedModifiers, choiceGroups, choiceSel]);
 
   // Preview con promos del canal web (mismo motor que el carrito/backend): el
   // badge da el precio por unidad con descuento y el total de la línea el ahorro.
@@ -108,7 +124,9 @@ export function ProductPickerModal({
   if (!open || !product) return null;
 
   const canConfirm =
-    (!requiresSize || (sizeId !== null && !agotadas?.has(sizeId))) && quantity > 0;
+    (!requiresSize || (sizeId !== null && !agotadas?.has(sizeId))) &&
+    quantity > 0 &&
+    seleccionCompleta(choiceGroups, choiceSel);
   const totalPrice = unitPrice * quantity;
   const discountedTotal = totalPrice - promoPreview.lineDiscount;
   const unitDiscountedPrice = promoPreview.badge?.discountedPrice ?? null;
@@ -133,6 +151,7 @@ export function ProductPickerModal({
       quantity,
       unitPrice,
       isCombo: product.isCombo,
+      choices: aChoices(choiceGroups, choiceSel),
       notes: notes.trim() || undefined,
     });
     onClose();
@@ -199,6 +218,14 @@ export function ProductPickerModal({
               agotadas={agotadas}
             />
           ) : null}
+
+          <PickerChoices
+            groups={choiceGroups}
+            selection={choiceSel}
+            onSelect={(groupId, index, productId) =>
+              setChoiceSel((prev) => elegir(prev, groupId, index, productId))
+            }
+          />
 
           <PickerQuantity quantity={quantity} onChange={setQuantity} />
 
