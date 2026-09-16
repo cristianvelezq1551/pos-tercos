@@ -142,6 +142,56 @@ test('C3-C5 · el cajero elige 1 Coca + 1 Jugo, cobra $63.000 y el inventario si
   expect(await stock(ids.pepsi)).toBe(antes.pepsi);
 });
 
+test('C8-UI · el cajero EDITA el pedido cobrado del combo desde el historial (el PATCH lleva la elección)', async ({ browser }) => {
+  // Hueco encontrado en QA el 2026-09-16: el modal no mandaba la elección y el
+  // servidor rechazaba con 400 cualquier edición de un pedido con combo con
+  // grupos. Subir la cantidad a 2 conserva la línea cobrada (misma bebida ⇒
+  // misma identidad ⇒ precio congelado 63.000) y descuenta una Coca y un Jugo más.
+  const antes = { coca: await stock(ids.coca), jugo: await stock(ids.jugo) };
+  const ctx = await browser.newContext({
+    storageState: `/tmp/qa-admin-${SUF}.json`,
+    extraHTTPHeaders: { 'x-vercel-trusted-oidc-idp-token': OIDC },
+    viewport: { width: 1366, height: 900 },
+  });
+  const page = await ctx.newPage();
+  // La fila plegada del historial muestra "#recibo · hora · medio · total", no
+  // el nombre del producto: se busca por el número de recibo de la venta que
+  // C3 acaba de cobrar (la más nueva de este combo).
+  const rv = await api.get(`${API}/sales?limit=30`, { headers: auth(tokDueno) });
+  const vendida = ((await rv.json()) as Array<{ receiptNumber: number; status: string; items: Array<{ productId: string }> }>)
+    .filter((v) => v.status === 'PAGADO' && v.items.some((it) => it.productId === comboId))
+    .sort((a, b) => b.receiptNumber - a.receiptNumber)[0];
+  expect(vendida, 'no se encontró la venta cobrada en C3').toBeTruthy();
+  await page.goto(`${ADMIN}/caja/historial`);
+  // El DOM no deja espacio entre "#58" y "Mostrador", así que `\b` no matchea:
+  // se ancla al nombre accesible del botón de la fila (ese sí va normalizado).
+  const fila = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('button', { name: new RegExp(`^#${vendida!.receiptNumber} `) }) })
+    .first();
+  await expect(fila).toBeVisible({ timeout: 30_000 });
+  await fila.getByRole('button', { name: 'Editar' }).first().click();
+  const modal = page.getByRole('dialog');
+  await expect(modal).toBeVisible();
+  // La línea del combo dice qué bebidas lleva.
+  await expect(modal.getByText(/Bebida:/).first()).toContainText(`Coca QA ${SUF}`);
+  await modal.getByRole('button', { name: new RegExp(`Agregar uno de Combo QA ${SUF}`) }).click();
+  await expect(modal.getByText('Nuevo total estimado').locator('..').getByText(/126\.000/)).toBeVisible();
+  await modal.getByRole('button', { name: /Guardar cambios/ }).click();
+  await expect(modal).toBeHidden({ timeout: 30_000 });
+  await ctx.close();
+
+  expect(await stock(ids.coca)).toBe(antes.coca - 1);
+  expect(await stock(ids.jugo)).toBe(antes.jugo - 1);
+  const r = await api.get(`${API}/sales?limit=20`, { headers: auth(tokDueno) });
+  const ventas = (await r.json()) as Array<{ items: Array<{ productId: string; quantity: number; unitPrice: number; choices?: unknown[] }>; total: number; status: string }>;
+  const editada = ventas.find((v) => v.status === 'PAGADO' && v.items.some((it) => it.productId === comboId && it.quantity === 2));
+  expect(editada, 'no aparece la venta editada con 2 combos').toBeTruthy();
+  expect(editada!.items[0].unitPrice).toBe(63000);
+  expect(editada!.total).toBe(126000);
+  expect(editada!.items[0].choices).toHaveLength(2);
+});
+
 test('C11 · en la web (teléfono) el combo pide elegir y muestra el recargo', async ({ browser }) => {
   const ctx = await browser.newContext({ extraHTTPHeaders: { 'x-vercel-trusted-oidc-idp-token': OIDC_WEB } }); const page = await ctx.newPage();
   await page.setViewportSize({ width: 390, height: 720 });
