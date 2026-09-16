@@ -23,6 +23,7 @@ import type { OfflineAvailabilitySnapshot } from '@pos-tercos/domain';
 import type { Response } from 'express';
 import {
   CreateProductSchema,
+  SetComboChoiceGroupsSchema,
   SetComboComponentsSchema,
   SetProductAvailabilityWindowsSchema,
   SetForceAvailableSchema,
@@ -33,6 +34,7 @@ import {
   type JwtAccessPayload,
   type Product,
   type ProductAvailability,
+  type SetComboChoiceGroups,
   type SetComboComponents,
   type SetProductAvailabilityWindows,
   type SetForceAvailable,
@@ -103,6 +105,15 @@ export class ProductsController {
         sizeId: v.sizeId,
         name: v.name,
         available: v.available,
+        reason: null,
+      })),
+      // Ídem las opciones de un combo: el cliente tiene que ver cuál bebida no
+      // está para no elegirla, pero el motivo ("Sin stock") es interno.
+      choiceOptions: (r.choiceOptions ?? []).map((o) => ({
+        groupId: o.groupId,
+        productId: o.productId,
+        name: o.name,
+        available: o.available,
         reason: null,
       })),
     }));
@@ -186,6 +197,17 @@ export class ProductsController {
     @Body(new ZodValidationPipe(SetComboComponentsSchema)) body: SetComboComponents,
   ): Promise<Product> {
     return this.products.setCombo(id, body);
+  }
+
+  /** Grupos a elegir del combo ("Bebida — elige 2"). Lista vacía = el combo
+   *  vuelve a ser de componentes fijos. */
+  @OnlyDueno()
+  @Put(':id/choice-groups')
+  setChoiceGroups(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(SetComboChoiceGroupsSchema)) body: SetComboChoiceGroups,
+  ): Promise<Product> {
+    return this.products.setChoiceGroups(id, body);
   }
 
   @OnlyDueno()

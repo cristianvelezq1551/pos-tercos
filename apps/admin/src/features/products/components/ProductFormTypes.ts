@@ -50,6 +50,25 @@ export interface ComboRow {
   quantity: string;
 }
 
+/** Una opción elegible dentro de un grupo ("Coca-Cola", "Jugo +$3.000"). */
+export interface ChoiceOptionRow {
+  rowKey: string;
+  productId: string;
+  /** Recargo por elegirla. Vacío o "0" = sin recargo. */
+  priceDelta: string;
+}
+
+/**
+ * Un grupo a elegir del combo: "Bebida — elige 2". Lo que se descuenta del
+ * inventario sale de lo que el cliente elija, no de un componente fijo.
+ */
+export interface ChoiceGroupRow {
+  rowKey: string;
+  label: string;
+  quantity: string;
+  options: ChoiceOptionRow[];
+}
+
 /** Shared form state shape for ProductForm and its sub-components. */
 export interface FormState {
   kind: ProductKind;
@@ -74,6 +93,7 @@ export interface FormState {
   sizes: VariantRow[];
   modifiers: ExtraRow[];
   comboComponents: ComboRow[];
+  choiceGroups: ChoiceGroupRow[];
 }
 
 /** Deriva el tipo desde los flags de un producto existente (para edición). */

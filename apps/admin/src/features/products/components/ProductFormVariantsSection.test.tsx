@@ -46,6 +46,7 @@ function Host({ inicial }: { inicial: FormState['sizes'] }) {
         sizes: inicial,
         modifiers: [],
         comboComponents: [],
+        choiceGroups: [],
       }) as FormState,
   );
   return <ProductFormVariantsSection form={form} setForm={setForm} pending={false} />;

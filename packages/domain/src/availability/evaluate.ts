@@ -40,6 +40,26 @@ export interface AvailabilityProduct {
    * comporta todo el catálogo que no tenga horario configurado.
    */
   availabilityWindows?: ProductAvailabilityWindow[];
+  /** Grupos a elegir del combo ("Bebida — elige 2"). Ausente o vacío = combo
+   *  de componentes fijos, que es como se comportaban todos hasta ahora. */
+  choiceGroups?: AvailabilityChoiceGroup[];
+}
+
+/** Un grupo a elegir, con los productos entre los que se escoge. */
+export interface AvailabilityChoiceGroup {
+  id: string;
+  label: string;
+  /** Unidades que se eligen en total dentro del grupo. */
+  quantity: number;
+  optionProductIds: string[];
+}
+
+export interface AvailabilityChoiceOptionResult {
+  groupId: string;
+  productId: string;
+  name: string;
+  available: boolean;
+  reason: string | null;
 }
 
 export interface AvailabilityVariantResult {
@@ -69,6 +89,12 @@ export interface AvailabilityResult {
    * deshabilitan en el selector en vez de esconder el plato entero.
    */
   variants: AvailabilityVariantResult[];
+  /**
+   * Disponibilidad de cada opción de los grupos del combo. Vacío si no tiene.
+   * El combo se ofrece si cada grupo alcanza en total; las opciones que no
+   * alcanzan se deshabilitan en el selector — mismo criterio que `variants`.
+   */
+  choiceOptions: AvailabilityChoiceOptionResult[];
 }
 
 export interface AvailabilityInput {
@@ -122,6 +148,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           reason: motivoDeHorario(ventanas),
           publicReason: motivoDeHorario(ventanas),
           variants: [],
+          choiceOptions: [],
         };
       }
 
@@ -133,6 +160,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           reason: 'Agotado (manual)',
           publicReason: null,
           variants: [],
+          choiceOptions: [],
         };
       }
 
@@ -146,6 +174,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           reason: null,
           publicReason: null,
           variants: [],
+          choiceOptions: [],
         };
       }
 
@@ -158,11 +187,12 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           reason: stock > 0 ? null : 'Sin stock',
           publicReason: null,
           variants: [],
+          choiceOptions: [],
         };
       }
 
       if (p.isCombo) {
-        const reason = evalComboShortages(
+        const fijos = evalComboShortages(
           p.comboComponents,
           graph,
           productById,
@@ -170,6 +200,15 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           subproductStock,
           productStock,
         );
+        const elegibles = evalChoiceGroups(
+          p.choiceGroups ?? [],
+          graph,
+          productById,
+          ingredientStock,
+          subproductStock,
+          productStock,
+        );
+        const reason = fijos ?? elegibles.reason;
         return {
           productId: p.id,
           available: reason === null,
@@ -177,6 +216,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           reason,
           publicReason: null,
           variants: [],
+          choiceOptions: elegibles.options,
         };
       }
 
@@ -193,6 +233,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           reason,
           publicReason: null,
           variants: [],
+          choiceOptions: [],
         };
       }
 
@@ -215,6 +256,7 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
         reason: alguna ? null : unirMotivos(evaluadas),
         publicReason: null,
         variants: evaluadas,
+        choiceOptions: [],
       };
     });
 }
@@ -277,6 +319,82 @@ function evalRecipeShortages(
     if (have + STOCK_EPSILON < sub.totalQuantity) missing.push(sub.name);
   }
   return missing.length > 0 ? `Sin ${[...new Set(missing)].join(', ')}` : null;
+}
+
+/**
+ * Evalúa los grupos a elegir de un combo.
+ *
+ * Un grupo se puede cubrir si entre TODAS sus opciones hay unidades suficientes
+ * — no hace falta que una sola alcance: quien pide dos bebidas puede llevarse
+ * una Pepsi y una Coca. Cada opción se reporta aparte para que el selector
+ * deshabilite la que no alcanza en vez de esconder el combo entero.
+ *
+ * Los faltantes NO se agregan a los de los componentes fijos: cuál opción se
+ * elegirá no se sabe hasta que el cliente decida. El guard transaccional del
+ * cobro es el que garantiza que no quede stock negativo.
+ */
+function evalChoiceGroups(
+  groups: ReadonlyArray<AvailabilityChoiceGroup>,
+  graph: RecipeGraph,
+  productById: Map<string, AvailabilityProduct>,
+  ingStock: Map<string, number>,
+  subStock: Map<string, number>,
+  prodStock: Map<string, number>,
+): { reason: string | null; options: AvailabilityChoiceOptionResult[] } {
+  const options: AvailabilityChoiceOptionResult[] = [];
+  const faltantes: string[] = [];
+
+  for (const g of groups) {
+    let disponiblesEnElGrupo = 0;
+    for (const productId of g.optionProductIds) {
+      const op = productById.get(productId);
+      if (!op) {
+        options.push({
+          groupId: g.id,
+          productId,
+          name: 'producto',
+          available: false,
+          reason: 'Ya no está en el catálogo',
+        });
+        continue;
+      }
+      const posibles = unidadesPosibles(op, graph, ingStock, subStock, prodStock);
+      disponiblesEnElGrupo += posibles;
+      options.push({
+        groupId: g.id,
+        productId,
+        name: op.name,
+        available: posibles >= 1,
+        reason: posibles >= 1 ? null : op.soldOut ? 'Agotado' : 'Sin stock',
+      });
+    }
+    if (disponiblesEnElGrupo < g.quantity) faltantes.push(g.label.toLowerCase());
+  }
+
+  return {
+    reason: faltantes.length > 0 ? `Sin ${[...new Set(faltantes)].join(', ')}` : null,
+    options,
+  };
+}
+
+/**
+ * Cuántas unidades de un producto se pueden entregar hoy. Para un preparado no
+ * se calcula el número exacto: alcanza saber si se puede hacer al menos una
+ * (mismo criterio que el resto del módulo), y el guard del cobro corta si no.
+ */
+function unidadesPosibles(
+  p: AvailabilityProduct,
+  graph: RecipeGraph,
+  ingStock: Map<string, number>,
+  subStock: Map<string, number>,
+  prodStock: Map<string, number>,
+): number {
+  if (p.soldOut || !p.isActive) return 0;
+  if (p.forceAvailable) return Number.POSITIVE_INFINITY;
+  if (p.directResale) return Math.max(0, prodStock.get(p.id) ?? 0);
+  return evalRecipeShortages(p.id, graph, ingStock, subStock) === null
+    ? Number.POSITIVE_INFINITY
+    : 0;
 }
 
 /**

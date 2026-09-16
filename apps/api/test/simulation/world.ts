@@ -29,6 +29,19 @@ export interface ProductoConOpciones {
   extras: Array<{ id: string; priceDelta: number; consumo: AristaReceta[] }>;
 }
 
+/**
+ * Combo con un grupo a elegir. El consumo de la línea depende de lo que se
+ * elija, así que la contabilidad sombra tiene que enterarse por la LÍNEA y no
+ * por el catálogo — es lo que distingue este caso de un componente fijo.
+ */
+export interface ComboConEleccion {
+  producto: ProductoSombra;
+  grupoId: string;
+  /** Unidades que pide el grupo. */
+  cantidad: number;
+  opciones: Array<{ productId: string; priceDelta: number }>;
+}
+
 export const PIN = '246810';
 
 export interface Mundo {
@@ -53,6 +66,9 @@ export interface Mundo {
   promos: PromoSombra[];
   /** Producto con variantes y extras: precio Y consumo cambian por opción. */
   conOpciones: ProductoConOpciones;
+  /** Combo con bebida a ELEGIR: qué se descuenta depende de lo que pida el
+   *  cliente, no de un componente fijo. */
+  conEleccion: ComboConEleccion;
   auth: () => { Authorization: string };
 }
 
@@ -397,6 +413,61 @@ export async function construirMundo(rng: Rng): Promise<Mundo> {
     receta: [],
   });
 
+  // Combo con bebida A ELEGIR: dos reventas distintas entre las que el cliente
+  // escoge. Lo que se descuenta depende de la LÍNEA, no del catálogo — es el
+  // caso que un componente fijo no puede representar.
+  // Las opciones son BEBIDAS (reventa directa): es el caso real y además el
+  // único que `garantizarStock` sabe reponer para que la simulación siga.
+  const bebidas = productos.filter((p) => p.directResale);
+  const opcionA = bebidas[0]!;
+  const opcionB = bebidas[1] ?? bebidas[0]!;
+  const recargoB = rng.pick([0, 500, 1500]);
+  const precioConEleccion = rng.int(12000, 22000);
+  const comboEleccionRes = await request
+    .post('/products')
+    .set(auth())
+    .send({
+      category: 'Combos',
+      name: 'Combo a elegir Sim',
+      basePrice: precioConEleccion,
+      isCombo: true,
+      comboPrice: precioConEleccion,
+      modifiersEnabled: false,
+      comboComponents: [{ productId: compA.id, quantity: 1 }],
+      choiceGroups: [
+        {
+          label: 'Bebida',
+          quantity: 2,
+          options: [
+            { productId: opcionA.id },
+            { productId: opcionB.id, priceDelta: recargoB },
+          ],
+        },
+      ],
+    })
+    .expect(201);
+  const comboEleccionId = comboEleccionRes.body.id as string;
+  const productoConEleccion: ProductoSombra = {
+    id: comboEleccionId,
+    nombre: 'Combo a elegir',
+    precio: precioConEleccion,
+    directResale: false,
+    isCombo: true,
+    // Solo lo FIJO: las opciones entran por la línea, como el tamaño y los extras.
+    componentes: [{ productId: compA.id, quantity: 1 }],
+    receta: [],
+  };
+  productos.push(productoConEleccion);
+  const conEleccion: ComboConEleccion = {
+    producto: productoConEleccion,
+    grupoId: comboEleccionRes.body.choiceGroups[0].id as string,
+    cantidad: 2,
+    opciones: [
+      { productId: opcionA.id, priceDelta: 0 },
+      { productId: opcionB.id, priceDelta: recargoB },
+    ],
+  };
+
   const catalogo = new Map(productos.map((p) => [p.id, p]));
 
   // ---------- Config del negocio ----------
@@ -555,6 +626,7 @@ export async function construirMundo(rng: Rng): Promise<Mundo> {
     supplierNit,
     promos,
     conOpciones,
+    conEleccion,
     auth,
   };
 }

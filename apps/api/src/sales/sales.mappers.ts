@@ -1,4 +1,5 @@
 import type { ComandaData, ReceiptData } from '@pos-tercos/domain';
+import { AppliedChoiceSchema } from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ManualDiscountKind,
@@ -63,10 +64,18 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
       lineDiscount: it.lineDiscount,
       lineTotal: it.lineTotal,
       appliedPromotionName: it.appliedPromotionName ?? null,
-      modifiers: (it.modifiers ?? []).map((m) => ({
-        name: m.name,
-        priceDelta: m.priceDelta,
-      })),
+      modifiers: [
+        ...(it.modifiers ?? []).map((m) => ({
+          name: m.name,
+          priceDelta: m.priceDelta,
+        })),
+        // Lo elegido va junto a los extras: el cliente tiene que poder ver qué
+        // bebida le cobraron. El recargo se muestra por el TOTAL de unidades.
+        ...(it.choices ?? []).map((c) => ({
+          name: etiquetaDeChoice(c),
+          priceDelta: c.priceDelta * c.quantity,
+        })),
+      ],
     })),
     subtotal: sale.subtotal,
     discountTotal: sale.discountTotal,
@@ -86,6 +95,12 @@ export function buildReceiptData(sale: Sale, isReprint: boolean): ReceiptData {
   };
 }
 
+/** "Coca-Cola" o "2 Coca-Cola": lo que se imprime en la comanda y en el recibo
+ *  por cada opción elegida del combo. */
+function etiquetaDeChoice(c: { productName: string; quantity: number }): string {
+  return c.quantity > 1 ? `${c.quantity} ${c.productName}` : c.productName;
+}
+
 /** Comanda de cocina: sin precios — solo lo que la cocina prepara. */
 export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
   return {
@@ -101,7 +116,10 @@ export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
       productName: it.productName ?? '(sin nombre)',
       sizeName: it.sizeName ?? null,
       quantity: it.quantity,
-      modifiers: (it.modifiers ?? []).map((m) => m.name),
+      modifiers: [
+        ...(it.modifiers ?? []).map((m) => m.name),
+        ...(it.choices ?? []).map(etiquetaDeChoice),
+      ],
       notes: it.notes ?? null,
     })),
     reprintLabel: isReprint ? 'REIMPRESIÓN' : null,
@@ -120,6 +138,7 @@ export function toSaleDto(row: DbSaleWithDetail): Sale {
     quantity: it.quantity,
     unitPrice: Number(it.unitPrice),
     modifiers: (it.modifiersJson as unknown as AppliedModifier[]) ?? [],
+    choices: AppliedChoiceSchema.array().catch([]).parse(it.choicesJson),
     notes: it.notes ?? null,
     appliedPromotionId: it.appliedPromotionId,
     appliedPromotionName: it.appliedPromotion?.name ?? null,

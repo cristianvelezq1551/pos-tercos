@@ -54,6 +54,17 @@ export interface OfflineSaleLine {
   unitPrice: number;
   /** Snapshot de modificadores (precio CONGELADO offline → se sincroniza verbatim). */
   modifiers: Array<{ modifierId: string; name: string; priceDelta: number }>;
+  /** Lo elegido en los grupos del combo, congelado igual que los extras. Sin
+   *  esto, una venta offline de un combo con opciones no sabría qué descontar
+   *  al sincronizar y el backend la rechazaría. */
+  choices: Array<{
+    groupId: string;
+    groupLabel: string;
+    productId: string;
+    productName: string;
+    quantity: number;
+    priceDelta: number;
+  }>;
   notes: string | null;
   lineSubtotal: number;
   lineDiscount: number;

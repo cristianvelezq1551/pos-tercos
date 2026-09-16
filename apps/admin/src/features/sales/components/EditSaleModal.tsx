@@ -87,6 +87,9 @@ export function EditSaleModal({
     modifiers: [],
     quantity: l.quantity,
     unitPrice: l.unitPrice,
+    // El estimado solo calcula promociones: lo elegido no cambia el descuento.
+    choices: [],
+    choiceLabels: [],
     // COMBO_OFF: el estimado debe usar el mismo isCombo que el server (computeLine).
     isCombo: comboById.get(l.productId) ?? false,
   }));

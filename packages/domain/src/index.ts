@@ -17,6 +17,7 @@ export * from './finance';
 export * from './sales';
 export * from './purchasing';
 export * from './anomalies';
+export * from './combos/choices';
 
 // SOLO tipos: el canal de alertas es una interfaz que implementa el API. Un
 // `export *` acá emitiría un require en el bundle de las cinco apps (el

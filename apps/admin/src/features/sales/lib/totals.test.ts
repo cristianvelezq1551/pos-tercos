@@ -9,6 +9,8 @@ const line = (over: Partial<CartLine> = {}): CartLine => ({
   productName: 'Burger',
   size: null,
   modifiers: [],
+  choices: [],
+  choiceLabels: [],
   quantity: 1,
   unitPrice: 10_000,
   isCombo: false,

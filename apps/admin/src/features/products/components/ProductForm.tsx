@@ -7,6 +7,7 @@ import type { Product } from '@pos-tercos/types';
 import {
   createProduct,
   deactivateProduct,
+  setComboChoiceGroups,
   setComboComponents,
   setProductOptions,
   updateProduct,
@@ -31,6 +32,7 @@ import { ProductFormDirectResaleSection } from './ProductFormDirectResaleSection
 import { ProductFormVariantsSection } from './ProductFormVariantsSection';
 import { ProductScheduleSection } from './ProductScheduleSection';
 import { ProductFormExtrasSection } from './ProductFormExtrasSection';
+import { ProductFormChoiceGroupsSection } from './ProductFormChoiceGroupsSection';
 import { ProductFormComboSection } from './ProductFormComboSection';
 import { ProductFormCostInfoPanel } from './ProductFormCostInfoPanel';
 import { ProductFormPreparedCostPanel } from './ProductFormPreparedCostPanel';
@@ -93,6 +95,16 @@ function initFormState(initial?: Product): FormState {
       productId: c.productId,
       quantity: String(c.quantity),
     })),
+    choiceGroups: (initial?.choiceGroups ?? []).map((g) => ({
+      rowKey: newRowKey(),
+      label: g.label,
+      quantity: String(g.quantity),
+      options: g.options.map((o) => ({
+        rowKey: newRowKey(),
+        productId: o.productId,
+        priceDelta: o.priceDelta ? String(o.priceDelta) : '',
+      })),
+    })),
   };
 }
 
@@ -147,7 +159,13 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
         await updateProduct(initial.id, buildUpdatePayload(form, parsed, directResaleLocked));
         // Variantes/extras/combo se editan por endpoints dedicados.
         if (form.kind === 'combo') {
-          await setComboComponents(initial.id, { components: parsed.comboComponents });
+          // Un combo puede quedarse SOLO con grupos (sin componentes fijos):
+          // el endpoint de componentes exige al menos uno, así que solo se
+          // llama cuando de verdad hay.
+          if (parsed.comboComponents.length > 0) {
+            await setComboComponents(initial.id, { components: parsed.comboComponents });
+          }
+          await setComboChoiceGroups(initial.id, { groups: parsed.choiceGroups });
         } else if (form.kind === 'simple' || form.kind === 'variants') {
           await setProductOptions(initial.id, {
             sizes: parsed.sizes.map((s) => ({
@@ -251,12 +269,20 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
         )}
 
         {form.kind === 'combo' && (
-          <ProductFormComboSection
-            form={form}
-            setForm={setForm}
-            pending={pending}
-            candidates={candidates}
-          />
+          <>
+            <ProductFormComboSection
+              form={form}
+              setForm={setForm}
+              pending={pending}
+              candidates={candidates}
+            />
+            <ProductFormChoiceGroupsSection
+              form={form}
+              setForm={setForm}
+              pending={pending}
+              candidates={candidates}
+            />
+          </>
         )}
 
         {isEdit && (

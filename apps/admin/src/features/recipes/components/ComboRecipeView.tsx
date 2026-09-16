@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { formatCop } from '@pos-tercos/ui';
 import { MARGIN_TONE_CLASS, marginTone } from '../../../lib/margin-thresholds';
-import type { ComboComponentCost } from '@pos-tercos/types';
+import type { ComboChoiceGroup, ComboComponentCost } from '@pos-tercos/types';
 
 export interface ComboComponentRow extends ComboComponentCost {
   /** Un componente de reventa descuenta su propio stock; el resto, su receta. */
@@ -20,11 +20,14 @@ export function ComboRecipeView({
   totalCost,
   missingReasons,
   comboPrice,
+  choiceGroups = [],
 }: {
   components: ComboComponentRow[];
   totalCost: number | null;
   missingReasons: string[];
   comboPrice: number;
+  /** Grupos a elegir: lo que descuentan depende de lo que pida el cliente. */
+  choiceGroups?: ComboChoiceGroup[];
 }) {
   // Un costo de $0 en comida SIEMPRE es dato faltante, no un plato gratis:
   // pintarlo como exacto daría "100% de margen" en verde (misma regla que
@@ -35,8 +38,43 @@ export function ComboRecipeView({
       ? ((comboPrice - (totalCost as number)) / comboPrice) * 100
       : null;
 
+  const bloqueDeGrupos =
+    choiceGroups.length === 0 ? null : (
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-semibold text-foreground">Lo que elige el cliente</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Se descuenta la opción que se lleve, no una fija. El costo del combo se calcula
+          con la opción más cara de cada grupo: es la única forma de no prometer un margen
+          mejor que el real.
+        </p>
+        <ul className="mt-3 space-y-3">
+          {choiceGroups.map((g) => (
+            <li key={g.id}>
+              <p className="text-sm font-medium text-foreground">
+                {g.label} · elige {g.quantity}
+              </p>
+              <ul className="mt-1 space-y-1">
+                {g.options.map((o) => (
+                  <li
+                    key={o.id}
+                    className="flex items-center justify-between text-sm text-muted-foreground"
+                  >
+                    <span>{o.productName}</span>
+                    <span className="tabular-nums">
+                      {o.priceDelta === 0 ? '—' : `+${formatCop(o.priceDelta)}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+
   return (
     <div className="space-y-5">
+      {bloqueDeGrupos}
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-semibold text-foreground">Este combo no lleva receta propia</h2>
         <p className="mt-1 text-sm text-muted-foreground">

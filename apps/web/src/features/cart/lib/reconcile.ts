@@ -22,7 +22,15 @@ function freshUnitPrice(line: CartLine, product: PublicMenuProduct): number {
     (acc, m) => acc + (product.modifiers.find((x) => x.id === m.id)?.priceDelta ?? 0),
     0,
   );
-  return base + sizeMod + modSum;
+  // El recargo se relee del menú: si el dueño le subió el precio al jugo, la
+  // línea guardada se repricia igual que con un tamaño.
+  const choiceSum = (line.choices ?? []).reduce((acc, c) => {
+    const opcion = product.choiceGroups
+      .find((g) => g.id === c.groupId)
+      ?.options.find((o) => o.productId === c.productId);
+    return acc + (opcion?.priceDelta ?? 0) * c.quantity;
+  }, 0);
+  return base + sizeMod + modSum + choiceSum;
 }
 
 /**
@@ -57,7 +65,19 @@ export function reconcileCart(
     // banner). Tratamos la línea como removida: el cliente la re-elige.
     const sizeGone = line.size && !product.sizes.some((s) => s.id === line.size!.id);
     const modGone = line.modifiers.some((m) => !product.modifiers.some((x) => x.id === m.id));
-    if (sizeGone || modGone) {
+    // Ídem una opción del combo que ya no se ofrece, o un grupo nuevo que la
+    // línea guardada no tiene elegido: el backend rechaza las dos cosas.
+    const choiceGone = (line.choices ?? []).some((c) => {
+      const g = product.choiceGroups.find((x) => x.id === c.groupId);
+      return !g || !g.options.some((o) => o.productId === c.productId);
+    });
+    const choiceMissing = product.choiceGroups.some((g) => {
+      const elegidas = (line.choices ?? [])
+        .filter((c) => c.groupId === g.id)
+        .reduce((acc, c) => acc + c.quantity, 0);
+      return elegidas !== g.quantity;
+    });
+    if (sizeGone || modGone || choiceGone || choiceMissing) {
       removed.push(line.productName);
       continue;
     }

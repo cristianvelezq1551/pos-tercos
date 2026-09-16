@@ -24,7 +24,16 @@ export class RecipeBookService {
   ) {}
 
   async getRecipeBook(): Promise<RecipeBookResponse> {
-    const [graph, products, subproducts, comboComponents, ingredientesOcultos, sizes, sizeEdges] =
+    const [
+      graph,
+      products,
+      subproducts,
+      comboComponents,
+      choiceGroups,
+      ingredientesOcultos,
+      sizes,
+      sizeEdges,
+    ] =
       await Promise.all([
       this.recipes.loadFullGraph(),
       this.prisma.product.findMany({
@@ -37,6 +46,17 @@ export class RecipeBookService {
       }),
       this.prisma.comboComponent.findMany({
         include: { product: { select: { id: true, name: true } } },
+      }),
+      // Lo que ELIGE el cliente: sin esto la biblia describe un combo con una
+      // bebida fija que no es la que sale por la ventanilla.
+      this.prisma.comboChoiceGroup.findMany({
+        include: {
+          options: {
+            include: { product: { select: { id: true, name: true } } },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+        orderBy: { sortOrder: 'asc' },
       }),
       // Lo que existe SOLO para costear (empaques, recipientes): no se le
       // muestra al cocinero, ni como ficha ni dentro de un "Lleva".
@@ -96,6 +116,15 @@ export class RecipeBookService {
               quantity: c.quantity,
             }))
         : [];
+      const comboChoices = p.isCombo
+        ? choiceGroups
+            .filter((g) => g.comboId === p.id)
+            .map((g) => ({
+              label: g.label,
+              quantity: g.quantity,
+              options: g.options.map((o) => ({ productId: o.productId, name: o.product.name })),
+            }))
+        : [];
       return {
         kind: 'PRODUCT',
         id: p.id,
@@ -109,6 +138,7 @@ export class RecipeBookService {
         unit: null,
         components: this.visibles(edges, graph, unitBySub, ocultos),
         comboItems,
+        comboChoices,
         variants: variantesPorProducto.get(p.id) ?? [],
         preparationSteps: p.preparationSteps,
       };

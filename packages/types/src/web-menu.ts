@@ -19,6 +19,24 @@ export const PublicMenuModifierSchema = z.object({
 });
 export type PublicMenuModifier = z.infer<typeof PublicMenuModifierSchema>;
 
+/** Opción elegible de un combo, vista por el cliente. `priceDelta` es el
+ *  recargo por elegirla (0 = sin recargo). */
+export const PublicMenuChoiceOptionSchema = z.object({
+  id: z.string().uuid(),
+  productId: z.string().uuid(),
+  productName: z.string(),
+  priceDelta: z.number(),
+});
+export type PublicMenuChoiceOption = z.infer<typeof PublicMenuChoiceOptionSchema>;
+
+export const PublicMenuChoiceGroupSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string(),
+  quantity: z.number().int().positive(),
+  options: z.array(PublicMenuChoiceOptionSchema),
+});
+export type PublicMenuChoiceGroup = z.infer<typeof PublicMenuChoiceGroupSchema>;
+
 /**
  * Subset SAFE del producto para exponer públicamente. Excluye:
  *  - lastUnitCost / lastUnitCostDate (info de costos del negocio)
@@ -42,6 +60,9 @@ export const PublicMenuProductSchema = z.object({
   comboPrice: z.number().nullable(),
   sizes: z.array(ProductSizeSchema).default([]),
   modifiers: z.array(PublicMenuModifierSchema).default([]),
+  /** Grupos a elegir del combo ("Bebida — elige 2"). Subset SAFE: solo qué se
+   *  elige y cuánto suma; nada de costos ni de composición interna. */
+  choiceGroups: z.array(PublicMenuChoiceGroupSchema).default([]),
 });
 export type PublicMenuProduct = z.infer<typeof PublicMenuProductSchema>;
 

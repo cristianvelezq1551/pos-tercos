@@ -41,10 +41,7 @@ export class WebMenuService {
       this.prisma.product.findMany({
         where: { isActive: true },
         orderBy: { name: 'asc' },
-        include: {
-          sizes: { orderBy: { sortOrder: 'asc' } },
-          modifiers: { orderBy: { name: 'asc' } },
-        },
+        include: MENU_INCLUDE,
       }),
       // Una categoría desactivada oculta sus productos del menú público
       // (misma regla que el catálogo de la caja).
@@ -83,7 +80,24 @@ export class WebMenuService {
   }
 }
 
-type MenuRow = Prisma.ProductGetPayload<{ include: { sizes: true; modifiers: true } }>;
+/** Lo que el menú público necesita de cada producto. Los grupos a elegir entran
+ *  acá porque sin ellos el cliente pediría un combo sin poder decir qué bebida
+ *  quiere — y el pedido llegaría sin elección, que el backend rechaza. */
+const MENU_INCLUDE = {
+  sizes: { orderBy: { sortOrder: 'asc' } },
+  modifiers: { orderBy: { name: 'asc' } },
+  choiceGroups: {
+    include: {
+      options: {
+        include: { product: { select: { name: true } } },
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
+    orderBy: { sortOrder: 'asc' },
+  },
+} as const satisfies Prisma.ProductInclude;
+
+type MenuRow = Prisma.ProductGetPayload<{ include: typeof MENU_INCLUDE }>;
 
 function toPublicMenuProduct(p: MenuRow): PublicMenuProduct {
   return {
@@ -108,6 +122,17 @@ function toPublicMenuProduct(p: MenuRow): PublicMenuProduct {
       productId: m.productId,
       name: m.name,
       priceDelta: Number(m.priceDelta),
+    })),
+    choiceGroups: p.choiceGroups.map((g) => ({
+      id: g.id,
+      label: g.label,
+      quantity: g.quantity,
+      options: g.options.map((o) => ({
+        id: o.id,
+        productId: o.productId,
+        productName: o.product.name,
+        priceDelta: Number(o.priceDelta),
+      })),
     })),
   };
 }

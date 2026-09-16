@@ -5336,6 +5336,102 @@ propósito: la proyección usa el margen de contribución y las contaría dos ve
 
 ---
 
+## 7.v75 El combo con bebida a ELEGIR: se descuenta lo que salió (2026-09-16)
+
+> El dueño tenía en producción un combo de 2 Double Smash + 2 Pepsi por $60.000
+> y reportó que descuadraba: *"realmente la persona puede elegir cualquier
+> bebida"*. No era un bug — **la elección no existía en el modelo**: un combo
+> lleva componentes FIJOS y `computeConsumptionSpecs` descontaba Pepsi aunque el
+> cliente se llevara Coca-Cola. Cada venta dejaba Pepsi de menos en el papel y
+> otra bebida de menos en la nevera.
+> Verificado: typecheck 13/13, lint 0, unit 12/12 paquetes, **e2e 78 suites /
+> 926**, prueba de oro del ledger intacta, simulación financiera 6 semillas ×
+> 250 operaciones, 3 casos de navegador (caja, web a 390 px y formulario).
+> Migración: `20260916120000_combo_choice_groups`.
+
+### Qué se agregó
+Un componente del combo puede ser **"una de estas opciones"**. La elección viaja
+con la venta, queda congelada en la línea (`sale_items.choices_json`, mismo
+patrón que `modifiers_json`) y de ahí sale el consumo de stock. Sin ese
+snapshot, cambiar mañana las bebidas del combo reescribiría lo ya vendido.
+
+Tablas nuevas `combo_choice_groups` (label, `quantity`) y `combo_choice_options`
+(`price_delta`), **separadas de `combo_components` a propósito**: los 15
+archivos que leen los componentes fijos siguen leyendo lo mismo y un combo sin
+grupos recorre exactamente el mismo código que antes.
+
+### Las cuatro reglas del diseño (NO invertir)
+1. **El motor de costos no se toca.** Una bebida elegida produce
+   `inventory_movements` idénticos en forma a los de un componente fijo, así que
+   no hay `sourceType` nuevo ni rama nueva en `run-ledger.ts` — a diferencia de
+   §7.v47 y §7.v64, que sí tuvieron que abrirlo. Lo demuestra la prueba de oro,
+   que pasa **sin regenerar el fixture**.
+2. **Elegir es obligatorio y sin preselección** (decisión del dueño). Un combo
+   con grupos que llegue sin elección se rechaza con 400 en los cuatro caminos
+   que descuentan (cobro, edición, sincronización offline, cortesía). Descontar
+   "lo que se pueda" sería quedarse corto en silencio, que es el descuadre que
+   esto viene a cerrar. Y una opción premarcada es el mismo problema con otro
+   disfraz: quien va rápido cobra la bebida por defecto.
+3. **El recargo por opción es PRECIO, no costo** (`price_delta ≥ 0`). Se suma en
+   `computeLine` donde ya se suman el tamaño y los extras —antes del motor de
+   promociones— y se cobra **por unidad elegida**: dos jugos son dos recargos
+   (misma lección de §7.v55). El costo de la opción sigue siendo su
+   `lastUnitCost`; confundirlos infla el margen.
+4. **El costeo entró en la misma tanda que el cobro.** Si el cobro supiera de la
+   elección y el costeo no, el combo tendría margen inflado desde la primera
+   venta.
+
+### Dónde se conectó
+- **Cobro**: `resolveChoices` (sales.service) valida que cada grupo quede
+  cubierto exacto y congela el snapshot; la reusa `cortesias.service` para que
+  regalar valide igual que cobrar.
+- **Consumo**: `computeConsumptionSpecs` suma las opciones elegidas a los
+  componentes fijos. `choicesDeLinea` (`common/sale-choices.ts`) es la fuente
+  ÚNICA de lectura del snapshot para los tres caminos de stock y para el costeo.
+- **Costeo**: `cogs.service.expandLineToConsumption` (la SEGUNDA copia de la
+  lógica de consumo, para el margen por producto) lee el snapshot; el margen de
+  la carta (`financial-reports`) costea cada grupo por su **opción más cara** —
+  peor caso, para no prometer un margen mejor que el real justo donde se fija la
+  meta del punto de equilibrio. Si una opción no tiene costo, el combo queda sin
+  costo: nada vale $0.
+- **Disponibilidad** (`evaluate.ts`): el combo se ofrece si cada grupo tiene
+  unidades suficientes **entre todas sus opciones** —se puede mezclar una Pepsi
+  y una Coca— y cada opción se reporta aparte para deshabilitar la que falte,
+  igual que las variantes.
+- **Caja**: un selector por UNIDAD (`PickerChoices`), sin preselección; el
+  carrito no junta dos combos con bebidas distintas (la elección entra en la
+  firma de línea) y la fila dice qué lleva.
+- **Web, papeles, offline y biblia**: menú público con subset SAFE, `reconcile`
+  que re-pide la línea si el dueño quitó una opción, recibo y comanda con la
+  bebida elegida, snapshot en la venta offline, y la biblia de cocina mostrando
+  que la bebida la elige el cliente.
+
+### Cómo se demostró que no se rompió nada
+- **Prueba de oro del ledger** sobre 300 historias: sin mover un decimal.
+- **Diff de la API** (`snapshot-api.tool.ts`) entre `main` y la rama: **0
+  líneas** de diferencia en todos los endpoints de plata.
+- **Ley L21** nueva en la simulación financiera: el simulador ahora vende un
+  combo con bebida a elegir y la ley comprueba contra la base que se descontó lo
+  ELEGIDO. Si ninguna corrida lo vendió, la ley falla en vez de fingir cobertura.
+- `combo-eleccion.e2e-spec.ts` (13 casos), incluido **"un combo sin grupos
+  descuenta exactamente como antes"**.
+
+### Piedras que valen para la próxima
+- ⚠️ **Un `const` no se hoistea**: declaré un helper después del `return` que lo
+  usaba y el estado financiero devolvía 500. Typecheck y los 13 e2e del combo
+  pasaban; lo cazó la suite completa.
+- ⚠️ El **menú público se cachea 30 s** (`WebMenuService.MENU_TTL_MS`): un combo
+  recién creado tarda hasta medio minuto en aparecer en la web. Es deliberado, y
+  el test de navegador lo respeta recargando en vez de fallar.
+- ⚠️ `GET /products/availability` (público) **proyecta un subset a mano**: un
+  campo nuevo de disponibilidad no llega a la web hasta que se agrega ahí.
+- ⚠️ El `dist` de `packages/domain` puede quedar de otra rama y hacer fallar el
+  typecheck del API con errores que no son tuyos: `rm -rf dist` **y el
+  `.tsbuildinfo`**, o el build incremental no reconstruye nada.
+
+---
+
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

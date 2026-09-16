@@ -26,6 +26,7 @@
  *   L10 Ninguna venta queda con líneas que no sumen su total.
  */
 import type { INestApplication } from '@nestjs/common';
+import { AppliedChoiceSchema, NON_REVENUE_SALE_STATUSES } from '@pos-tercos/types';
 import { cleanDb } from './helpers/db-cleaner';
 import { evitarElSegundoSinPromos, hoyLocal } from './helpers/local-day';
 import { descuentoDeLinea } from './simulation/promos';
@@ -401,6 +402,51 @@ describe('Simulación financiera aleatoria', () => {
         // Las leyes L1 y L9 ya midieron ingreso y efectivo contra la sombra,
         // que nunca contó estas cuentas: verlas acá cierra el argumento.
         expect(sim.cuentasAbiertas.every((c) => c.total > 0)).toBe(true);
+      });
+
+      it('L21 · el combo con bebida a elegir descuenta lo ELEGIDO, no un componente fijo', async () => {
+        // El bug que cerró este caso: el combo descontaba siempre la misma
+        // bebida, sin importar cuál se llevara el cliente. Acá se comprueba
+        // contra la base: por cada línea del combo, la bebida elegida salió del
+        // inventario tantas veces como se eligió.
+        const combo = mundo.conEleccion;
+        const lineas = await mundo.prisma.saleItem.findMany({
+          where: {
+            productId: combo.producto.id,
+            sale: { status: { notIn: [...NON_REVENUE_SALE_STATUSES] } },
+          },
+          select: { quantity: true, choicesJson: true },
+        });
+
+        // Si ninguna corrida vendió el combo, esta ley estaría pasando sin
+        // haber probado nada: se dice en voz alta en vez de fingir cobertura.
+        // 0 líneas = la simulación nunca vendió el combo y esta ley no probó nada.
+        expect(lineas.length).toBeGreaterThan(0);
+
+        const esperado = new Map<string, number>();
+        for (const l of lineas) {
+          const elegidas = AppliedChoiceSchema.array().catch([]).parse(l.choicesJson);
+          // Una línea del combo SIN elección sería stock descontado a ciegas.
+          expect(elegidas.length).toBeGreaterThan(0);
+          const unidades = elegidas.reduce((acc, c) => acc + c.quantity, 0);
+          expect(unidades).toBe(combo.cantidad);
+          for (const c of elegidas) {
+            esperado.set(c.productId, (esperado.get(c.productId) ?? 0) + c.quantity * l.quantity);
+          }
+        }
+
+        // Lo elegido tiene que aparecer descontado; y una opción que nunca se
+        // eligió no puede tener consumo atribuido a este combo.
+        for (const op of combo.opciones) {
+          const salidas = await mundo.prisma.inventoryMovement.aggregate({
+            where: { entityType: 'PRODUCT', productId: op.productId, type: 'SALE' },
+            _sum: { delta: true },
+          });
+          const consumido = -Number(salidas._sum.delta ?? 0);
+          // El consumo total incluye ventas sueltas de esa bebida, así que la
+          // comprobación es que ALCANCE para lo elegido (nunca de menos).
+          expect(consumido).toBeGreaterThanOrEqual(esperado.get(op.productId) ?? 0);
+        }
       });
 
       it('L19 · el faltante detectado al contar es una pérdida y aparece en su propia línea', async () => {

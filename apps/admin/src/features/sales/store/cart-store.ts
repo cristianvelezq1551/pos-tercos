@@ -2,6 +2,7 @@
 
 import type { ManualDiscount } from '@pos-tercos/types';
 import { create } from 'zustand';
+import { aInputDeChoices } from '@pos-tercos/domain';
 import type { CartLine } from '../lib/cart-types';
 
 interface AddInput {
@@ -13,6 +14,8 @@ interface AddInput {
   unitPrice: number;
   notes?: string;
   isCombo: boolean;
+  choices?: CartLine['choices'];
+  choiceLabels?: CartLine['choiceLabels'];
 }
 
 export interface LastSaleSummary {
@@ -65,7 +68,14 @@ function lineSignature(item: AddInput | CartLine): string {
     .map((m) => m.id)
     .sort()
     .join('|');
-  return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}`;
+  // Lo elegido entra en la firma: un combo con Coca y otro con Pepsi son dos
+  // líneas. Juntarlos perdería una de las dos elecciones y el inventario
+  // descontaría la bebida equivocada — el bug que los grupos vienen a cerrar.
+  const eleccion = [...(item.choices ?? [])]
+    .map((c) => `${c.groupId}:${c.productId}:${c.quantity}`)
+    .sort()
+    .join('|');
+  return `${item.productId}::${sizeId}::${modIds}::${item.notes?.trim() ?? ''}::${eleccion}`;
 }
 
 let lineCounter = 0;
@@ -115,6 +125,8 @@ export const useCartStore = create<CartState>((set) => ({
             unitPrice: input.unitPrice,
             notes: input.notes,
             isCombo: input.isCombo,
+            choices: input.choices ?? [],
+            choiceLabels: input.choiceLabels ?? [],
           },
         ],
       };
@@ -198,6 +210,9 @@ export function cartLinesToCreateItems(
     sizeId: it.size?.id,
     quantity: it.quantity,
     modifiers: it.modifiers.map((m) => ({ modifierId: m.id })),
+    // `?? []`: una línea que quedó en el navegador antes de que esto existiera
+    // no trae el campo, y cobrarla no puede reventar tras un despliegue.
+    choices: (it.choices ?? []).length > 0 ? aInputDeChoices(it.choices) : undefined,
     notes: it.notes,
     manualDiscount: lineDiscounts[it.lineId],
   }));

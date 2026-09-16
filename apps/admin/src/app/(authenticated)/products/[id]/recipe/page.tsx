@@ -76,6 +76,7 @@ export default async function ProductRecipePage({ params }: PageProps) {
             totalCost={costo?.totalCost ?? null}
             missingReasons={costo?.missingReasons ?? []}
             comboPrice={product.comboPrice ?? product.basePrice}
+            choiceGroups={product.choiceGroups ?? []}
           />
         </Container>
       </>

@@ -25,6 +25,7 @@ import {
   type ProductMarginReport,
 } from '@pos-tercos/types';
 import { ymdLocal } from '../common/local-dates';
+import { choicesDeLinea } from '../common/sale-choices';
 import { LedgerFreshnessService } from '../common/ledger-freshness/ledger-freshness.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
@@ -648,6 +649,8 @@ export class CogsService {
               // Los extras consumen inventario y el cobro los descuenta: sin
               // leerlos acá, el margen del plato salía mejor de lo que es.
               modifiersJson: true,
+              // Ídem la bebida elegida de un combo: es lo que realmente salió.
+              choicesJson: true,
             },
           },
         },
@@ -771,6 +774,7 @@ export class CogsService {
           graphFor,
           extras,
           modifierDeltas,
+          choicesDeLinea(item.choicesJson),
         );
         for (const d of draws) {
           if (d.kind === 'ingredient') {
@@ -843,6 +847,9 @@ export class CogsService {
     graphFor: (productId: string, sizeId: string | null) => Promise<{ graph: RecipeGraph; root: ParentRef }>,
     modifiers: readonly AppliedModifier[] = [],
     modifierDeltas: ReadonlyMap<string, ModifierRecipeDelta> = new Map(),
+    /** Lo elegido en los grupos del combo, del snapshot de la línea. Sin esto
+     *  el combo aparecería SIN el costo de su bebida y con margen inflado. */
+    choices: ReadonlyArray<{ productId: string; quantity: number }> = [],
   ): Promise<{ kind: 'ingredient' | 'subproduct' | 'product'; id: string; qty: number }[]> {
     const draws: { kind: 'ingredient' | 'subproduct' | 'product'; id: string; qty: number }[] = [];
 
@@ -875,7 +882,11 @@ export class CogsService {
     };
 
     if (product.isCombo) {
-      for (const comp of product.comboComponents) {
+      const partes = [
+        ...product.comboComponents,
+        ...choices.map((c) => ({ productId: c.productId, quantity: c.quantity })),
+      ];
+      for (const comp of partes) {
         const cp = meta.get(comp.productId);
         if (!cp) continue;
         await consume(cp, quantity * comp.quantity, null);

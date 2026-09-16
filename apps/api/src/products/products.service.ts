@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { businessWallClock, ModifierRecipeDeltaSchema } from '@pos-tercos/types';
 import type {
+  ComboChoiceGroup,
+  ComboChoiceGroupInput,
   ComboComponent,
   CreateProduct,
   ModifierConsumption,
@@ -16,6 +18,7 @@ import type {
   ProductModifier,
   ProductAvailabilityWindow,
   ProductSize,
+  SetComboChoiceGroups,
   SetComboComponents,
   SetProductAvailabilityWindows,
   SetProductOptions,
@@ -39,13 +42,26 @@ import { STORAGE_PROVIDER } from '../adapters/storage/storage.module';
 import { mimeForExtension } from '../common/image-mime';
 import { normalizePrepImages, toPrepImages } from '../common/prep-images';
 
+/** Include compartido por TODAS las lecturas de producto: si una lo omite, esa
+ *  pantalla se queda sin los grupos y el combo parece de componentes fijos. */
+const PRODUCT_INCLUDE = {
+  sizes: true,
+  modifiers: true,
+  comboComponents: true,
+  availabilityWindows: true,
+  choiceGroups: {
+    include: {
+      options: {
+        include: { product: { select: { name: true } } },
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
+    orderBy: { sortOrder: 'asc' },
+  },
+} as const satisfies Prisma.ProductInclude;
+
 type ProductWithChildren = Prisma.ProductGetPayload<{
-  include: {
-    sizes: true;
-    modifiers: true;
-    comboComponents: true;
-    availabilityWindows: true;
-  };
+  include: typeof PRODUCT_INCLUDE;
 }>;
 
 @Injectable()
@@ -98,7 +114,7 @@ export class ProductsService {
     const [rows, orden] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
+        include: PRODUCT_INCLUDE,
         orderBy: { name: 'asc' },
       }),
       this.categories.orderIndex(),
@@ -118,7 +134,7 @@ export class ProductsService {
   async getById(id: string): Promise<Product> {
     const row = await this.prisma.product.findUnique({
       where: { id },
-      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
+      include: PRODUCT_INCLUDE,
     });
     if (!row) {
       throw new NotFoundException(`Product ${id} not found`);
@@ -171,6 +187,7 @@ export class ProductsService {
     await this.assertModifierConsumptions(input.modifiers);
     if (input.isCombo) {
       await this.assertComboComponentsAreNonComboProducts(input.comboComponents ?? []);
+      await this.assertChoiceOptionsVendibles(input.choiceGroups ?? []);
     }
     const category = await this.categories.resolveCanonicalName(input.category);
     const row = await conNombreUnico('producto', input.name, () =>
@@ -218,8 +235,11 @@ export class ProductsService {
                 })),
               }
             : undefined,
+          choiceGroups: input.isCombo && input.choiceGroups?.length
+            ? { create: input.choiceGroups.map(toChoiceGroupCreate) }
+            : undefined,
         },
-        include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
+        include: PRODUCT_INCLUDE,
       }),
     );
     return toProductDto(row);
@@ -281,7 +301,7 @@ export class ProductsService {
           ...(input.conversionFactor !== undefined && { conversionFactor: input.conversionFactor }),
           ...(input.thresholdMin !== undefined && { thresholdMin: input.thresholdMin }),
         },
-        include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
+        include: PRODUCT_INCLUDE,
       }),
     );
     return toProductDto(row);
@@ -444,6 +464,37 @@ export class ProductsService {
   }
 
   /**
+   * Reemplaza los grupos a elegir de un combo. Lista vacía = vuelve a ser de
+   * componentes fijos.
+   *
+   * Reemplazar BORRA los grupos viejos, y sus ids son los que viajan en las
+   * ventas ya cobradas. Eso no las afecta: la elección quedó congelada en
+   * `sale_items.choices_json`, que es de donde sale el consumo.
+   */
+  async setChoiceGroups(productId: string, input: SetComboChoiceGroups): Promise<Product> {
+    const existing = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, isCombo: true },
+    });
+    if (!existing) throw new NotFoundException(`Product ${productId} not found`);
+    if (!existing.isCombo) {
+      throw new BadRequestException('Solo un combo puede tener grupos para elegir.');
+    }
+    await this.assertChoiceOptionsVendibles(input.groups);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.comboChoiceGroup.deleteMany({ where: { comboId: productId } });
+      for (const [i, g] of input.groups.entries()) {
+        await tx.comboChoiceGroup.create({
+          data: { comboId: productId, ...toChoiceGroupCreate(g, i) },
+        });
+      }
+    });
+
+    return this.getById(productId);
+  }
+
+  /**
    * Disponibilidad en vivo para vender (cajero + web): reventa directa se
    * invalida a 0 stock; los preparados/combos solo por "agotado" manual
    * (no dependen del stock de insumos, que puede no estar cargado).
@@ -518,6 +569,15 @@ export class ProductsService {
           soldOut: true,
           forceAvailable: true,
           comboComponents: { select: { productId: true, quantity: true } },
+          choiceGroups: {
+            select: {
+              id: true,
+              label: true,
+              quantity: true,
+              options: { select: { productId: true }, orderBy: { sortOrder: 'asc' } },
+            },
+            orderBy: { sortOrder: 'asc' },
+          },
           sizes: { select: { id: true, name: true }, orderBy: { sortOrder: 'asc' } },
           availabilityWindows: {
             select: { daysOfWeekMask: true, timeStart: true, timeEnd: true },
@@ -571,6 +631,12 @@ export class ProductsService {
     // disponibilidad se calcula exactamente como hasta ahora.
     const products: AvailabilityProduct[] = allProducts.map((p) => ({
       ...p,
+      choiceGroups: p.choiceGroups.map((g) => ({
+        id: g.id,
+        label: g.label,
+        quantity: g.quantity,
+        optionProductIds: g.options.map((o) => o.productId),
+      })),
       variants: p.sizes.map((size) => ({
         sizeId: size.id,
         name: size.name,
@@ -609,7 +675,7 @@ export class ProductsService {
       where: { id },
       // 86 y forzado son excluyentes: agotar a mano limpia el forzado.
       data: { soldOut, ...(soldOut ? { forceAvailable: false } : {}) },
-      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
+      include: PRODUCT_INCLUDE,
     });
     this.invalidateAvailability();
     return toProductDto(row);
@@ -629,7 +695,7 @@ export class ProductsService {
     const row = await this.prisma.product.update({
       where: { id },
       data: { forceAvailable, ...(forceAvailable ? { soldOut: false } : {}) },
-      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
+      include: PRODUCT_INCLUDE,
     });
     this.invalidateAvailability();
     return toProductDto(row);
@@ -643,7 +709,7 @@ export class ProductsService {
     const row = await this.prisma.product.update({
       where: { id },
       data: { isActive: false },
-      include: { sizes: true, modifiers: true, comboComponents: true, availabilityWindows: true },
+      include: PRODUCT_INCLUDE,
     });
     return toProductDto(row);
   }
@@ -678,6 +744,28 @@ export class ProductsService {
       this.prisma.supplierProduct.deleteMany({ where: { productId: id } }),
       this.prisma.product.delete({ where: { id } }),
     ]);
+  }
+
+  /**
+   * Las opciones de un grupo deben ser productos vendibles: existentes, no
+   * combos (misma regla que los componentes) y ACTIVOS — una opción
+   * desactivada aparecería en el selector y la venta fallaría al cobrar.
+   */
+  private async assertChoiceOptionsVendibles(
+    groups: Array<{ label: string; options: Array<{ productId: string }> }>,
+  ): Promise<void> {
+    const todas = groups.flatMap((g) => g.options);
+    if (todas.length === 0) return;
+    await this.assertComboComponentsAreNonComboProducts(todas);
+    const inactivos = await this.prisma.product.findMany({
+      where: { id: { in: todas.map((o) => o.productId) }, isActive: false },
+      select: { name: true },
+    });
+    if (inactivos.length > 0) {
+      throw new BadRequestException(
+        `No puedes ofrecer productos desactivados como opción: ${inactivos.map((p) => p.name).join(', ')}.`,
+      );
+    }
   }
 
   private async assertComboComponentsAreNonComboProducts(
@@ -730,6 +818,7 @@ function toProductDto(row: ProductWithChildren): Product {
     modifiers: row.modifiers.map(toModifierDto),
     comboComponents: row.comboComponents.map(toComboComponentDto),
     availabilityWindows: row.availabilityWindows.map(toAvailabilityWindowDto),
+    choiceGroups: row.choiceGroups.map(toChoiceGroupDto),
   };
 }
 
@@ -746,6 +835,55 @@ function toAvailabilityWindowDto(row: {
     daysOfWeekMask: row.daysOfWeekMask,
     timeStart: row.timeStart,
     timeEnd: row.timeEnd,
+  };
+}
+
+/** Fila anidada de un grupo, tal como la espera Prisma. Compartido por `create`
+ *  y `setChoiceGroups` para que las dos rutas guarden lo mismo. */
+function toChoiceGroupCreate(g: ComboChoiceGroupInput, index = 0) {
+  return {
+    label: g.label,
+    quantity: g.quantity,
+    sortOrder: index,
+    options: {
+      create: g.options.map((o, i) => ({
+        productId: o.productId,
+        priceDelta: o.priceDelta,
+        sortOrder: i,
+      })),
+    },
+  };
+}
+
+function toChoiceGroupDto(row: {
+  id: string;
+  comboId: string;
+  label: string;
+  quantity: number;
+  sortOrder: number;
+  options: Array<{
+    id: string;
+    groupId: string;
+    productId: string;
+    priceDelta: Prisma.Decimal;
+    sortOrder: number;
+    product: { name: string };
+  }>;
+}): ComboChoiceGroup {
+  return {
+    id: row.id,
+    comboId: row.comboId,
+    label: row.label,
+    quantity: row.quantity,
+    sortOrder: row.sortOrder,
+    options: row.options.map((o) => ({
+      id: o.id,
+      groupId: o.groupId,
+      productId: o.productId,
+      productName: o.product.name,
+      priceDelta: Number(o.priceDelta),
+      sortOrder: o.sortOrder,
+    })),
   };
 }
 

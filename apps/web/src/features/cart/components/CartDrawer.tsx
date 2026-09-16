@@ -211,7 +211,14 @@ function CartLineRow({
   canGrow: boolean;
   onRemove: () => void;
 }) {
-  const description = [line.size?.name, ...line.modifiers.map((m) => m.name)]
+  const description = [
+    line.size?.name,
+    ...line.modifiers.map((m) => m.name),
+    // Qué bebida eligió: dos líneas del mismo combo se ven idénticas sin esto.
+    ...(line.choices ?? []).map((c) =>
+      c.quantity > 1 ? `${c.quantity} ${c.productName}` : c.productName,
+    ),
+  ]
     .filter(Boolean)
     .join(' · ');
   const lineTotal = line.unitPrice * line.quantity;

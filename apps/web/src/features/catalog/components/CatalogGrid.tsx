@@ -55,6 +55,7 @@ export function CatalogGrid({
       })),
       quantity: sel.quantity,
       unitPrice: sel.unitPrice,
+      choices: sel.choices,
       notes: sel.notes,
     });
   };

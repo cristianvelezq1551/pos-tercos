@@ -4,6 +4,7 @@ import type {
   CortesiaGivenSummary,
   CortesiaRequest,
   CortesiaStatus,
+  AppliedChoice,
   CreateCortesia,
 } from '@pos-tercos/types';
 import type { Prisma } from '@prisma/client';
@@ -16,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RecipesService } from '../recipes/recipes.service';
 import { CogsService } from '../reports/cogs.service';
 import { SalesConsumptionService } from '../sales/sales-consumption.service';
+import { resolveChoices, SALE_PRODUCT_INCLUDE } from '../sales/sales.service';
 
 const MONTHS_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -125,6 +127,8 @@ export class CortesiasService {
         unitPrice += Number(size.priceModifier);
       }
     }
+    const choices = await this.resolverChoices(product.id, input.choices ?? []);
+    for (const c of choices) unitPrice += c.priceDelta * c.quantity;
     const salePrice = roundMoney(unitPrice * input.quantity);
 
     // Auto-aprobada: la cortesía es efectiva al registrarse (sin gate de admin).
@@ -140,6 +144,7 @@ export class CortesiasService {
           sizeId: input.sizeId ?? null,
           quantity: input.quantity,
           reason: input.reason,
+          choicesJson: choices as unknown as Prisma.InputJsonValue,
           costAmount,
           salePrice,
           requestedById: userId,
@@ -188,9 +193,26 @@ export class CortesiasService {
    * stock de una cortesía. Descarta consumos que redondean a 0 en Decimal(_,4):
    * un delta=0 viola el CHECK `delta <> 0` y abortaría toda la tx.
    */
+  /**
+   * Valida y congela lo elegido en los grupos del combo regalado. Usa la MISMA
+   * función que el cobro (`resolveChoices`): si regalar validara distinto que
+   * cobrar, una de las dos descontaría la bebida equivocada.
+   */
+  private async resolverChoices(
+    productId: string,
+    choices: ReadonlyArray<{ groupId: string; productId: string; quantity: number }>,
+  ): Promise<AppliedChoice[]> {
+    const conGrupos = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: SALE_PRODUCT_INCLUDE,
+    });
+    if (!conGrupos) throw new NotFoundException('Producto no encontrado');
+    return resolveChoices(conGrupos, choices);
+  }
+
   private async buildCortesiaMovements(
     cortesiaId: string,
-    input: Pick<CreateCortesia, 'productId' | 'quantity' | 'sizeId'> & { reason: string },
+    input: Pick<CreateCortesia, 'productId' | 'quantity' | 'sizeId' | 'choices'> & { reason: string },
     userId: string,
   ): Promise<Prisma.InventoryMovementCreateManyInput[]> {
     const specs = await this.consumption.computeConsumptionSpecs(
@@ -200,6 +222,7 @@ export class CortesiasService {
           quantity: input.quantity,
           sizeId: input.sizeId ?? null,
           modifiers: [],
+          choices: input.choices ?? [],
         },
       ],
       'Cortesía',
