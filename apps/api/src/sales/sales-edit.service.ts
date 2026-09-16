@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  choicesKey,
   freezePaidLines,
   manualDiscountAmount,
   paidLineKey,
@@ -11,7 +12,8 @@ import {
   type ManualDiscountSpec,
   type PaidLineSnapshot,
 } from '@pos-tercos/domain';
-import { isWebSaleType } from '@pos-tercos/types';
+import { isWebSaleType, AppliedChoiceSchema
+} from '@pos-tercos/types';
 import type {
   AppliedModifier,
   ChangeSalePayment,
@@ -164,6 +166,7 @@ export class SalesEditService {
                 (m) => m.modifierId,
               ),
               notes: it.notes,
+              choices: choicesKeyDeLinea(it.choicesJson),
             })),
             productMap,
           );
@@ -174,6 +177,7 @@ export class SalesEditService {
               quantity: it.quantity,
               modifierIds: (it.modifiers ?? []).map((m) => m.modifierId),
               notes: it.notes ?? null,
+              choices: choicesKey(it.choices ?? []),
             })),
             productMap,
           );
@@ -306,6 +310,7 @@ export class SalesEditService {
             it.sizeId,
             ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => m.modifierId),
             it.notes,
+            choicesKeyDeLinea(it.choicesJson),
           );
           const cur = sentByKey.get(key) ?? { qty: 0, at: null };
           cur.qty += it.sentToKitchenQty;
@@ -320,6 +325,7 @@ export class SalesEditService {
             c.sizeId,
             c.modifiers.map((m) => m.modifierId),
             c.notes,
+            choicesKey(c.choices),
           );
           const sent = sentByKey.get(key);
           let sentToKitchenQty = 0;
@@ -557,6 +563,7 @@ export class SalesEditService {
       quantity: number;
       modifierIds: string[];
       notes: string | null;
+      choices: string;
     }>,
     productMap: Map<string, { directResale: boolean }>,
   ): Map<string, number> {
@@ -565,7 +572,7 @@ export class SalesEditService {
       const product = productMap.get(line.productId);
       if (!product) throw new NotFoundException(`Product ${line.productId} not found`);
       if (product.directResale) continue; // reventa: editable siempre
-      const key = lineKey(line.productId, line.sizeId, line.modifierIds, line.notes);
+      const key = lineKey(line.productId, line.sizeId, line.modifierIds, line.notes, line.choices);
       out.set(key, (out.get(key) ?? 0) + line.quantity);
     }
     return out;
@@ -598,6 +605,7 @@ export class SalesEditService {
       lineDiscount: Prisma.Decimal | number;
       appliedPromotionId: string | null;
       modifiersJson: Prisma.JsonValue;
+      choicesJson: Prisma.JsonValue;
     }>,
     computedItems: ComputedSaleItem[],
   ): void {
@@ -612,6 +620,7 @@ export class SalesEditService {
         it.productId,
         it.sizeId,
         ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => m.modifierId),
+        choicesKeyDeLinea(it.choicesJson),
       ),
       quantity: it.quantity,
       unitPrice: Number(it.unitPrice),
@@ -620,7 +629,7 @@ export class SalesEditService {
     const frozen = freezePaidLines(
       snapshots,
       computedItems.map((c) => ({
-        key: paidLineKey(c.productId, c.sizeId, c.modifiers.map((m) => m.modifierId)),
+        key: paidLineKey(c.productId, c.sizeId, c.modifiers.map((m) => m.modifierId), choicesKey(c.choices)),
         quantity: c.quantity,
       })),
       roundMoney,
@@ -634,13 +643,14 @@ export class SalesEditService {
         it.productId,
         it.sizeId,
         mods.map((m) => m.modifierId),
+        choicesKeyDeLinea(it.choicesJson),
       );
       if (!modifiersByKey.has(k)) modifiersByKey.set(k, mods);
     }
     computedItems.forEach((c, i) => {
       const f = frozen[i];
       if (!f) return;
-      const key = paidLineKey(c.productId, c.sizeId, c.modifiers.map((m) => m.modifierId));
+      const key = paidLineKey(c.productId, c.sizeId, c.modifiers.map((m) => m.modifierId), choicesKey(c.choices));
       c.unitPrice = f.unitPrice;
       c.modifiers = modifiersByKey.get(key) ?? c.modifiers;
       c.lineSubtotal = f.lineSubtotal;
@@ -661,6 +671,7 @@ export class SalesEditService {
               it.productId,
               it.sizeId,
               ((it.modifiersJson as unknown as AppliedModifier[]) ?? []).map((m) => m.modifierId),
+              choicesKeyDeLinea(it.choicesJson),
             ) === key,
         )?.appliedPromotionId ?? null;
       }
@@ -753,10 +764,18 @@ function lineKey(
   sizeId: string | null,
   modifierIds: readonly string[],
   notes: string | null,
+  /** Lo elegido en los grupos del combo (`choicesKey`): un combo con Coca y uno
+   *  con Jugo son líneas distintas para la cocina. Vacío = sin grupos. */
+  choices = '',
 ): string {
-  return [productId, sizeId ?? '', [...modifierIds].sort().join(','), (notes ?? '').trim()].join(
+  return [productId, sizeId ?? '', [...modifierIds].sort().join(','), (notes ?? '').trim(), choices].join(
     '|',
   );
+}
+
+/** Firma de la elección de una línea YA persistida (`choices_json`). */
+function choicesKeyDeLinea(raw: Prisma.JsonValue): string {
+  return choicesKey(AppliedChoiceSchema.array().catch([]).parse(raw));
 }
 
 function mapsEqual(a: Map<string, number>, b: Map<string, number>): boolean {

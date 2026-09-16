@@ -1,6 +1,6 @@
 'use client';
 
-import { freezePaidLines, paidLineKey, roundMoney } from '@pos-tercos/domain';
+import { aInputDeChoices, choicesKey, freezePaidLines, paidLineKey, roundMoney } from '@pos-tercos/domain';
 import type { ManualDiscount, Product, Promotion, Sale } from '@pos-tercos/types';
 import { Button, Dialog, Money } from '@pos-tercos/ui';
 import { useEffect, useState } from 'react';
@@ -119,13 +119,14 @@ export function EditSaleModal({
           it.productId,
           it.sizeId,
           it.modifiers.map((m) => m.modifierId),
+          choicesKey(it.choices ?? []),
         ),
         quantity: it.quantity,
         unitPrice: it.unitPrice,
         lineDiscount: it.lineDiscount,
       })),
       lines.map((l) => ({
-        key: paidLineKey(l.productId, l.sizeId, l.modifierIds),
+        key: paidLineKey(l.productId, l.sizeId, l.modifierIds, choicesKey(l.choices)),
         quantity: l.quantity,
       })),
       roundMoney,
@@ -159,6 +160,8 @@ export function EditSaleModal({
           modifiers: l.modifierIds.length
             ? l.modifierIds.map((modifierId) => ({ modifierId }))
             : undefined,
+          // Sin esto el servidor rechaza editar un pedido con combo con grupos.
+          choices: l.choices.length ? aInputDeChoices(l.choices) : undefined,
           notes: l.notes ?? undefined,
           manualDiscount: keepLineDiscounts && l.manualDiscount ? l.manualDiscount : undefined,
         })),

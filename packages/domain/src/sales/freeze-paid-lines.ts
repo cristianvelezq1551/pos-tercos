@@ -69,6 +69,27 @@ export function paidLineKey(
   productId: string,
   sizeId: string | null | undefined,
   modifierIds: readonly string[],
+  /**
+   * Lo elegido en los grupos del combo (`choicesKey`). Un combo con Coca y el
+   * mismo combo con Jugo son líneas DISTINTAS: la segunda va a precio de hoy,
+   * con su recargo — igual que cambiar un modificador. Sin esto la línea
+   * editada "coincidía" con la cobrada y el recargo se perdía (QA 2026-09-16).
+   * Por defecto vacío: ninguna línea sin grupos cambia de identidad.
+   */
+  choices = '',
 ): string {
-  return [productId, sizeId ?? '', [...modifierIds].sort().join(',')].join('|');
+  return [productId, sizeId ?? '', [...modifierIds].sort().join(','), choices].join('|');
+}
+
+/**
+ * Firma estable de una elección, para la identidad de línea. Ordenada para que
+ * "1 Pepsi + 1 Coca" y "1 Coca + 1 Pepsi" sean la misma línea.
+ */
+export function choicesKey(
+  choices: ReadonlyArray<{ groupId: string; productId: string; quantity: number }>,
+): string {
+  return [...choices]
+    .map((c) => `${c.groupId}:${c.productId}:${c.quantity}`)
+    .sort()
+    .join(',');
 }

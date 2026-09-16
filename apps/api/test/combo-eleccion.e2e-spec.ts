@@ -370,6 +370,77 @@ describe('Combo con opciones a elegir E2E', () => {
     expect(deltaDe(movements, cocaId)).toBe(-2);
   });
 
+  it('cambiar la bebida por una CON recargo cobra el recargo (la línea es nueva, no se congela)', async () => {
+    // Hallazgo de la auditoría en QA (2026-09-16): la huella de línea ignoraba
+    // la elección, así que 2 Pepsi → 2 Jugo "coincidía" con la línea cobrada y
+    // conservaba los $60.000 con dos jugos adentro.
+    const sale = await venderCombo([{ groupId: grupoBebidaId, productId: pepsiId, quantity: 2 }]);
+    expect(sale.total).toBe(60000);
+    const res = await request
+      .patch(`/sales/${sale.id}/items`)
+      .set(auth(cajeroToken))
+      .send({ items: [{ productId: comboId, quantity: 1, choices: [{ groupId: grupoBebidaId, productId: jugoId, quantity: 2 }] }] })
+      .expect(200);
+    expect(res.body.total).toBe(66000);
+    expect(res.body.items[0].choices[0]).toMatchObject({ productId: jugoId, quantity: 2, priceDelta: 3000 });
+  });
+
+  it('editar SIN cambiar la bebida conserva el precio cobrado (regla 2026-08-25 intacta)', async () => {
+    const sale = await venderCombo([{ groupId: grupoBebidaId, productId: jugoId, quantity: 2 }]);
+    expect(sale.total).toBe(66000);
+    // Se le agrega una Coca suelta: el combo mantiene sus $66.000 congelados.
+    const res = await request
+      .patch(`/sales/${sale.id}/items`)
+      .set(auth(cajeroToken))
+      .send({
+        items: [
+          { productId: comboId, quantity: 1, choices: [{ groupId: grupoBebidaId, productId: jugoId, quantity: 2 }] },
+          { productId: cocaId, quantity: 1 },
+        ],
+      })
+      .expect(200);
+    const combo = res.body.items.find((it: { productId: string }) => it.productId === comboId);
+    expect(combo.unitPrice).toBe(66000);
+    expect(res.body.total).toBe(66000 + 5000);
+  });
+
+  it('el pedido WEB público muestra la bebida elegida junto a las adiciones', async () => {
+    // Hallazgo QA: el DTO público no exponía la elección — el cliente veía
+    // "1x Combo" en su seguimiento y el link de WhatsApp no decía la bebida.
+    const res = await request
+      .post('/web/orders')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        type: 'WEB_PICKUP',
+        customerName: 'Cliente Elección',
+        customerPhone: '+573001234599',
+        items: [{ productId: comboId, quantity: 1, choices: [{ groupId: grupoBebidaId, productId: cocaId, quantity: 1 }, { groupId: grupoBebidaId, productId: jugoId, quantity: 1 }] }],
+      })
+      .expect(201);
+    const mods: string[] = res.body.order.items[0].modifiers;
+    expect(mods).toEqual(expect.arrayContaining(['Coca-Cola Elección', 'Jugo Natural Elección']));
+    expect(res.body.order.total).toBe(63000);
+  });
+
+  it('los papeles de una CORTESÍA dicen qué bebida se regaló', async () => {
+    // Hallazgo QA: el recibo y la comanda de la cortesía decían solo "1x Combo".
+    const creada = await request
+      .post('/cortesias')
+      .set(auth(cajeroToken))
+      .send({ productId: comboId, quantity: 1, reason: 'Auditoría: papeles', choices: [{ groupId: grupoBebidaId, productId: cocaId, quantity: 2 }] })
+      .expect(201);
+    const papeles = await request
+      .post('/cortesias/print')
+      .set(auth(cajeroToken))
+      .send({ ids: [creada.body.id] })
+      // Devuelve los papeles, no crea nada: 200.
+      .expect(200);
+    const recibo = Buffer.from(papeles.body.receiptBase64, 'base64').toString('latin1');
+    const comanda = Buffer.from(papeles.body.comandaBase64, 'base64').toString('latin1');
+    expect(recibo).toContain('2 Coca-Cola Elección');
+    expect(comanda).toContain('2 Coca-Cola Elección');
+  });
+
   it('una cortesía del combo descuenta la bebida elegida', async () => {
     const antes = await stockDe(cocaId);
     await request
