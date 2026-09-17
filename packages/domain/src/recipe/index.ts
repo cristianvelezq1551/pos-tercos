@@ -13,6 +13,9 @@ export {
 export {
   computeProductCost,
   computeComboCost,
+  worstCaseChoiceGroupComponent,
+  type ChoiceGroupCostInput,
+  type ComboComponentInput,
   type CostResult,
   type IngredientCostMap,
 } from './compute-cost';

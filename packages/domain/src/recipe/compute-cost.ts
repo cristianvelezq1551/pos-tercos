@@ -126,15 +126,18 @@ export function computeProductCost(input: {
  * recursiva 1 nivel: combo → componentes individuales; combos anidados
  * están prohibidos por `assertComboComponentsAreNonComboProducts`).
  */
-export function computeComboCost(input: {
-  components: Array<{
-    productId: string;
-    productName: string;
-    quantity: number;
-    unitCost: number | null;
-    missingReason: string | null;
-  }>;
-}): {
+export interface ComboComponentInput {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitCost: number | null;
+  missingReason: string | null;
+  /** Presente cuando el "componente" es un grupo a elegir costeado por su
+   *  opción más cara (ver `worstCaseChoiceGroupComponent`). */
+  choiceGroupLabel?: string;
+}
+
+export function computeComboCost(input: { components: ComboComponentInput[] }): {
   totalCost: number | null;
   components: Array<{
     productId: string;
@@ -143,6 +146,7 @@ export function computeComboCost(input: {
     unitCost: number | null;
     costContribution: number | null;
     missingReason: string | null;
+    choiceGroupLabel?: string;
   }>;
   missingReasons: string[];
 } {
@@ -164,6 +168,7 @@ export function computeComboCost(input: {
       unitCost: c.unitCost,
       costContribution: contribution,
       missingReason: c.missingReason,
+      ...(c.choiceGroupLabel !== undefined ? { choiceGroupLabel: c.choiceGroupLabel } : {}),
     };
   });
   return {
@@ -173,3 +178,55 @@ export function computeComboCost(input: {
   };
 }
 
+
+/** Lo mínimo de un grupo a elegir para costearlo. */
+export interface ChoiceGroupCostInput {
+  id: string;
+  label: string;
+  quantity: number;
+  options: ReadonlyArray<{ productId: string }>;
+}
+
+/**
+ * El componente "peor caso" de un grupo a elegir: su opción MÁS CARA. Cuál se
+ * llevará el cliente no se sabe, y suponer la barata pintaría un margen mejor
+ * que el real justo donde se fija la meta de ventas. Si alguna opción no tiene
+ * costo conocido, el grupo queda sin costo — nada vale $0.
+ *
+ * Es la ÚNICA fuente de esa regla: la usan el estado financiero, la ficha del
+ * combo (`expanded-cost`) y el costo por lote de la carta. Antes vivía solo en
+ * el estado financiero y la ficha prometía el peor caso sin calcularlo — el
+ * combo real de producción salía $3.333 más barato de lo que puede costar.
+ */
+export function worstCaseChoiceGroupComponent(
+  group: ChoiceGroupCostInput,
+  costOf: (productId: string) => { name: string; unitCost: number | null } | undefined,
+): ComboComponentInput {
+  let peor: { productId: string; productName: string; unitCost: number } | null = null;
+  for (const o of group.options) {
+    const prod = costOf(o.productId);
+    if (prod === undefined || prod.unitCost === null) {
+      return {
+        productId: o.productId,
+        productName: prod?.name ?? group.label,
+        quantity: group.quantity,
+        unitCost: null,
+        missingReason: `Sin costo de "${prod?.name ?? 'una opción'}" en ${group.label}`,
+        choiceGroupLabel: group.label,
+      };
+    }
+    if (!peor || prod.unitCost > peor.unitCost) {
+      peor = { productId: o.productId, productName: prod.name, unitCost: prod.unitCost };
+    }
+  }
+  return peor === null
+    ? {
+        productId: group.id,
+        productName: group.label,
+        quantity: group.quantity,
+        unitCost: null,
+        missingReason: `${group.label} no tiene opciones cargadas`,
+        choiceGroupLabel: group.label,
+      }
+    : { ...peor, quantity: group.quantity, missingReason: null, choiceGroupLabel: group.label };
+}

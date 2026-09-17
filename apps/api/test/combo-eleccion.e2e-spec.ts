@@ -464,4 +464,52 @@ describe('Combo con opciones a elegir E2E', () => {
     });
     return Number(agg._sum.delta ?? 0);
   }
+
+  describe('costo estimado del combo (ficha, lista de productos y estado financiero)', () => {
+    // Costos de referencia deterministas (los INITIAL no fijan lastUnitCost).
+    // Insumo: lastUnitCost por unidad de COMPRA / conversionFactor = por unidad de receta.
+    // Reventa: lastUnitCost por caja de 24 → por unidad.
+    const fijarCostos = async () => {
+      await prisma.ingredient.update({ where: { id: panId }, data: { lastUnitCost: 500 } }); // 10 por paquete → 50/unidad
+      await prisma.ingredient.update({ where: { id: carneId }, data: { lastUnitCost: 30000 } }); // por kg → 30/g
+      await prisma.product.update({ where: { id: pepsiId }, data: { lastUnitCost: 36000 } }); // → 1500
+      await prisma.product.update({ where: { id: cocaId }, data: { lastUnitCost: 38400 } }); // → 1600
+      await prisma.product.update({ where: { id: jugoId }, data: { lastUnitCost: 72000 } }); // → 3000
+    };
+    const SMASH = 1 * 50 + 150 * 30; // 4550
+
+    it('la ficha suma la opción MÁS CARA del grupo × las unidades que pide', async () => {
+      await fijarCostos();
+      const res = await request.get(`/products/${comboId}/expanded-cost`).set(auth(duenoToken)).expect(200);
+      // 2 smash + 2 bebidas al peor caso (jugo, 3000)
+      expect(res.body.totalCost).toBe(2 * SMASH + 2 * 3000);
+      const grupo = res.body.components.find((c: { choiceGroupLabel?: string }) => c.choiceGroupLabel === 'Bebida');
+      expect(grupo).toMatchObject({ productName: 'Jugo Natural Elección', quantity: 2, unitCost: 3000, costContribution: 6000, missingReason: null });
+      // El componente fijo sigue igual que siempre.
+      expect(res.body.components.find((c: { productId: string }) => c.productId === smashId)).toMatchObject({ quantity: 2, unitCost: SMASH });
+    });
+
+    it('el costo por lote de la carta dice lo MISMO que la ficha, y el combo fijo no cambia', async () => {
+      await fijarCostos();
+      const res = await request.get('/product-costs').set(auth(duenoToken)).expect(200);
+      const porId = new Map((res.body as Array<{ productId: string; totalCost: number | null }>).map((c) => [c.productId, c.totalCost]));
+      expect(porId.get(comboId)).toBe(2 * SMASH + 2 * 3000);
+      expect(porId.get(comboFijoId)).toBe(SMASH + 1500);
+    });
+
+    it('una opción sin costo deja el combo SIN costo y nombra la opción — nada vale $0', async () => {
+      await fijarCostos();
+      await prisma.product.update({ where: { id: cocaId }, data: { lastUnitCost: null } });
+      try {
+        const res = await request.get(`/products/${comboId}/expanded-cost`).set(auth(duenoToken)).expect(200);
+        expect(res.body.totalCost).toBeNull();
+        expect(res.body.missingReasons.join(' ')).toContain('Coca-Cola Elección');
+        // El combo FIJO no lleva la Coca: sigue costeado.
+        const lote = await request.get('/product-costs').set(auth(duenoToken)).expect(200);
+        expect((lote.body as Array<{ productId: string; totalCost: number | null }>).find((c) => c.productId === comboFijoId)?.totalCost).toBe(SMASH + 1500);
+      } finally {
+        await prisma.product.update({ where: { id: cocaId }, data: { lastUnitCost: 38400 } });
+      }
+    });
+  });
 });

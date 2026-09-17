@@ -5465,6 +5465,12 @@ ve. Herramienta: `apps/admin/e2e/qa-auditoria-combo.spec.ts` (manual, con
 - ⚠️ El `dist` de `packages/domain` puede quedar de otra rama y hacer fallar el
   typecheck del API con errores que no son tuyos: `rm -rf dist` **y el
   `.tsbuildinfo`**, o el build incremental no reconstruye nada.
+- ⚠️ **La ficha prometía el peor caso y no lo sumaba** (encontrado al editar el
+  combo real de prod, 2026-09-17): `expanded-cost` y el costo por lote de la
+  carta ignoraban los grupos — el combo salía $3.333 más barato de lo que puede
+  costar; solo el estado financiero lo hacía bien. La regla vive ahora UNA vez en
+  `worstCaseChoiceGroupComponent` (domain) y la usan los tres. Y el tope de
+  opciones por grupo subió de 12 a **20**: la carta tiene 15 bebidas.
 
 ---
 

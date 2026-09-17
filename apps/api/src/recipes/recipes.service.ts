@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   computeComboCost,
   computeProductCost,
+  worstCaseChoiceGroupComponent,
   expandRecipe,
   expandRecipeOneLevel,
   roundCost,
@@ -306,7 +307,7 @@ export class RecipesService {
   async expandedCost(productId: string, sizeId?: string): Promise<ExpandedCostResponse> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
-      include: { comboComponents: true },
+      include: { comboComponents: true, choiceGroups: { include: { options: true } } },
     });
     if (!product) throw new NotFoundException(`Product ${productId} not found`);
     if (sizeId) await this.assertSizeBelongsToProduct(productId, sizeId);
@@ -331,11 +332,33 @@ export class RecipesService {
     try {
       // ============= COMBO PATH =============
       if (product.isCombo) {
-        const componentIds = product.comboComponents.map((c) => c.productId);
+        const optionIds = product.choiceGroups.flatMap((g) => g.options.map((o) => o.productId));
+        const componentIds = [...product.comboComponents.map((c) => c.productId), ...optionIds];
         const componentProducts = await this.prisma.product.findMany({
           where: { id: { in: componentIds } },
         });
         const compMap = new Map(componentProducts.map((p) => [p.id, p]));
+        // Costo unitario de un componente u opción: igual que un producto solo.
+        const unitCostOf = async (comp: (typeof componentProducts)[number]) => {
+          let recipe: { graph: RecipeGraph; root: ParentRef } | null = null;
+          if (!comp.directResale) {
+            recipe = await this.loadGraphForProduct(comp.id);
+          }
+          return computeProductCost({
+            product: {
+              id: comp.id,
+              name: comp.name,
+              directResale: comp.directResale,
+              lastUnitCost:
+                comp.lastUnitCost !== null ? Number(comp.lastUnitCost) : null,
+              conversionFactor:
+                comp.conversionFactor !== null ? Number(comp.conversionFactor) : null,
+              isCombo: comp.isCombo,
+            },
+            recipe,
+            ingredientCosts,
+          });
+        };
 
         const componentResults: ComboComponentCost[] = [];
         for (const cc of product.comboComponents) {
@@ -352,25 +375,7 @@ export class RecipesService {
             continue;
           }
 
-          // Para cada componente, compute su unit cost
-          let recipe: { graph: RecipeGraph; root: ParentRef } | null = null;
-          if (!comp.directResale) {
-            recipe = await this.loadGraphForProduct(comp.id);
-          }
-          const r = computeProductCost({
-            product: {
-              id: comp.id,
-              name: comp.name,
-              directResale: comp.directResale,
-              lastUnitCost:
-                comp.lastUnitCost !== null ? Number(comp.lastUnitCost) : null,
-              conversionFactor:
-                comp.conversionFactor !== null ? Number(comp.conversionFactor) : null,
-              isCombo: comp.isCombo,
-            },
-            recipe,
-            ingredientCosts,
-          });
+          const r = await unitCostOf(comp);
           componentResults.push({
             productId: comp.id,
             productName: comp.name,
@@ -383,14 +388,29 @@ export class RecipesService {
           });
         }
 
+        // Un grupo a elegir se costea por su opción MÁS CARA (regla única en
+        // `worstCaseChoiceGroupComponent`). La ficha lo prometía y el estado
+        // financiero ya lo hacía; acá faltaba y el combo salía más barato de lo
+        // que puede costar.
+        const costoDeOpcion = new Map<string, { name: string; unitCost: number | null }>();
+        for (const id of new Set(optionIds)) {
+          const opt = compMap.get(id);
+          if (opt) costoDeOpcion.set(id, { name: opt.name, unitCost: (await unitCostOf(opt)).totalCost });
+        }
+        const gruposPeorCaso = product.choiceGroups.map((g) =>
+          worstCaseChoiceGroupComponent(g, (id) => costoDeOpcion.get(id)),
+        );
         const comboResult = computeComboCost({
-          components: componentResults.map((c) => ({
-            productId: c.productId,
-            productName: c.productName,
-            quantity: c.quantity,
-            unitCost: c.unitCost,
-            missingReason: c.missingReason,
-          })),
+          components: [
+            ...componentResults.map((c) => ({
+              productId: c.productId,
+              productName: c.productName,
+              quantity: c.quantity,
+              unitCost: c.unitCost,
+              missingReason: c.missingReason,
+            })),
+            ...gruposPeorCaso,
+          ],
         });
 
         return {
@@ -405,6 +425,7 @@ export class RecipesService {
             unitCost: c.unitCost,
             costContribution: c.costContribution,
             missingReason: c.missingReason,
+            ...(c.choiceGroupLabel !== undefined ? { choiceGroupLabel: c.choiceGroupLabel } : {}),
           })),
           totalCost: comboResult.totalCost,
           missingReasons: comboResult.missingReasons,
@@ -536,7 +557,9 @@ export class RecipesService {
    */
   private async catalogCosts(withVariants: boolean): Promise<ProductCostWithVariants[]> {
     const [products, allIngredients, graph, sizes, sizeEdges] = await Promise.all([
-      this.prisma.product.findMany({ include: { comboComponents: true } }),
+      this.prisma.product.findMany({
+        include: { comboComponents: true, choiceGroups: { include: { options: true } } },
+      }),
       this.prisma.ingredient.findMany({
         select: { id: true, lastUnitCost: true, conversionFactor: true },
       }),
@@ -670,7 +693,19 @@ export class RecipesService {
                 r.totalCost === null ? r.missingReasons.join(' · ') : null,
             };
           });
-          const combo = computeComboCost({ components });
+          // Los grupos a elegir, por su opción más cara — misma regla que la
+          // ficha y el estado financiero.
+          const combo = computeComboCost({
+            components: [
+              ...components,
+              ...product.choiceGroups.map((g) =>
+                worstCaseChoiceGroupComponent(g, (id) => {
+                  const opt = productById.get(id);
+                  return opt ? { name: opt.name, unitCost: costOf(opt).totalCost } : undefined;
+                }),
+              ),
+            ],
+          });
           return {
             productId: product.id,
             totalCost: combo.totalCost,
