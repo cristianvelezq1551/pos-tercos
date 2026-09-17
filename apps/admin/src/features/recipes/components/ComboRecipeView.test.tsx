@@ -78,6 +78,32 @@ describe('ComboRecipeView', () => {
     expect(screen.queryByText(/Falta cargar el costo/i)).toBeNull();
   });
 
+  it('un grupo a elegir se muestra costeado por su opción más cara, no como producto perdido', () => {
+    // Antes la ficha PROMETÍA el peor caso en el texto pero el total no lo
+    // sumaba: el combo real de prod salía $3.333 más barato de lo que puede costar.
+    render1({
+      components: [
+        preparado,
+        {
+          productId: '33333333-3333-4333-8333-333333333333',
+          productName: 'Colombiana 1250ml',
+          quantity: 2,
+          unitCost: 2500,
+          costContribution: 5000,
+          missingReason: null,
+          choiceGroupLabel: 'Bebida',
+          directResale: null,
+        },
+      ],
+      totalCost: 26527.07,
+    });
+    expect(screen.getByText(/Bebida/)).toBeTruthy();
+    expect(screen.getByText(/opción más cara: Colombiana 1250ml/)).toBeTruthy();
+    expect(screen.getByText(/Lo elige el cliente/)).toBeTruthy();
+    expect(screen.queryByText(/Componente no encontrado/i)).toBeNull();
+    expect(screen.getByText(/26\.527/)).toBeTruthy();
+  });
+
   it('un componente borrado del catálogo se nombra, no se esconde', () => {
     render1({
       components: [{ ...preparado, productName: '(eliminado)', directResale: null }],

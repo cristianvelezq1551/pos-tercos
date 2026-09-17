@@ -937,6 +937,10 @@ export const ComboComponentCostSchema = z.object({
   costContribution: z.number().nullable(),
   /** Si null, explica por qué (ej. "ingrediente sin lastUnitCost"). */
   missingReason: z.string().nullable(),
+  /** Cuando la fila es un grupo a elegir costeado por su opción más cara
+   *  (`productName` = esa opción). Opcional: el API y el admin se despliegan
+   *  por separado. */
+  choiceGroupLabel: z.string().optional(),
 });
 export type ComboComponentCost = z.infer<typeof ComboComponentCostSchema>;
 

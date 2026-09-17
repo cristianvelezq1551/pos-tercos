@@ -53,9 +53,12 @@ export default async function ProductRecipePage({ params }: PageProps) {
     const componentes = await Promise.all(
       (costo?.components ?? []).map(async (c) => ({
         ...c,
-        directResale: await serverFetchJson<Product>(`/products/${c.productId}`)
-          .then((cp) => cp.directResale)
-          .catch(() => null),
+        // La fila de un grupo a elegir no es un producto: no hay ficha que mirar.
+        directResale: c.choiceGroupLabel
+          ? null
+          : await serverFetchJson<Product>(`/products/${c.productId}`)
+              .then((cp) => cp.directResale)
+              .catch(() => null),
       })),
     );
     return (

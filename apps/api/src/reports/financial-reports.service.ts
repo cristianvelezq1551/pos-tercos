@@ -11,6 +11,7 @@ import {
   extractJsonObject,
   type CatalogProductMargin,
   computeComboCost,
+  worstCaseChoiceGroupComponent,
   computeProductCost,
   nextWeekRef,
   payrollWeekFor,
@@ -102,6 +103,7 @@ export class FinancialReportsService {
           comboComponents: { select: { productId: true, quantity: true } },
           choiceGroups: {
             select: {
+              id: true,
               label: true,
               quantity: true,
               options: { select: { productId: true } },
@@ -201,40 +203,14 @@ export class FinancialReportsService {
       return salidas;
     };
 
-    /**
-     * El componente "peor caso" de un grupo a elegir: su opción MÁS CARA. Cuál
-     * se llevará el cliente no se sabe, y suponer la barata pintaría un margen
-     * mejor que el real justo donde se fija la meta de ventas. Si alguna opción
-     * no tiene costo conocido, el grupo queda sin costo — nada vale $0.
-     */
-    const opcionMasCara = (grupo: (typeof products)[number]['choiceGroups'][number]) => {
-      let peor: { productId: string; productName: string; unitCost: number } | null = null;
-      for (const o of grupo.options) {
-        const prod = porId.get(o.productId);
-        const costo = prod ? costoUnitario(prod) : null;
-        if (prod === undefined || costo === null) {
-          return {
-            productId: o.productId,
-            productName: prod?.name ?? grupo.label,
-            quantity: grupo.quantity,
-            unitCost: null,
-            missingReason: `Sin costo de "${prod?.name ?? 'una opción'}" en ${grupo.label}`,
-          };
-        }
-        if (!peor || costo > peor.unitCost) {
-          peor = { productId: o.productId, productName: prod.name, unitCost: costo };
-        }
-      }
-      return peor === null
-        ? {
-            productId: grupo.label,
-            productName: grupo.label,
-            quantity: grupo.quantity,
-            unitCost: null,
-            missingReason: `${grupo.label} no tiene opciones cargadas`,
-          }
-        : { ...peor, quantity: grupo.quantity, missingReason: null };
-    };
+    // La regla del "peor caso" (opción MÁS CARA del grupo) vive UNA vez en el
+    // dominio: la comparten esta pantalla, la ficha del combo y el costo por
+    // lote de la carta.
+    const opcionMasCara = (grupo: (typeof products)[number]['choiceGroups'][number]) =>
+      worstCaseChoiceGroupComponent(grupo, (id) => {
+        const prod = porId.get(id);
+        return prod ? { name: prod.name, unitCost: costoUnitario(prod) } : undefined;
+      });
 
     return computeCatalogMargin(
       products.flatMap((p) =>

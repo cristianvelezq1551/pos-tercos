@@ -98,7 +98,17 @@ export function ComboRecipeView({
             <li key={c.productId} className="border-b border-border pb-3 last:border-0 last:pb-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className="text-sm font-medium text-foreground">
-                  <span className="tabular">{c.quantity}×</span> {c.productName}
+                  <span className="tabular">{c.quantity}×</span>{' '}
+                  {c.choiceGroupLabel ? (
+                    <>
+                      {c.choiceGroupLabel}{' '}
+                      <span className="font-normal text-muted-foreground">
+                        · opción más cara: {c.productName}
+                      </span>
+                    </>
+                  ) : (
+                    c.productName
+                  )}
                 </span>
                 <span className="tabular text-sm text-muted-foreground">
                   {c.costContribution !== null && c.costContribution > 0
@@ -107,7 +117,9 @@ export function ComboRecipeView({
                 </span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {c.directResale === null
+                {c.choiceGroupLabel
+                  ? 'Lo elige el cliente: se descuenta la opción que se lleve. Para el costo se toma la más cara.'
+                  : c.directResale === null
                   ? 'Componente no encontrado en el catálogo.'
                   : c.directResale
                     ? 'Reventa directa — descuenta su propio stock.'

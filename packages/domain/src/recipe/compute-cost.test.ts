@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeComboCost, computeProductCost, type IngredientCostMap } from './compute-cost';
+import {
+  computeComboCost,
+  computeProductCost,
+  worstCaseChoiceGroupComponent,
+  type IngredientCostMap,
+} from './compute-cost';
 import type { ParentRef, RecipeEdgeNode, RecipeGraph } from './types';
 
 function recipeGraph(edges: Array<{ ingId: string; qty: number; merma?: number }>): {
@@ -183,5 +188,46 @@ describe('computeComboCost', () => {
   it('combo vacío cuesta 0 (caso degenerado, no rompe)', () => {
     const result = computeComboCost({ components: [] });
     expect(result.totalCost).toBe(0);
+  });
+});
+
+describe('worstCaseChoiceGroupComponent', () => {
+  const grupo = {
+    id: 'g1',
+    label: 'Bebida',
+    quantity: 2,
+    options: [{ productId: 'pepsi' }, { productId: 'coca' }, { productId: 'jugo' }],
+  };
+  const costos: Record<string, { name: string; unitCost: number | null }> = {
+    pepsi: { name: 'Pepsi', unitCost: 1500 },
+    coca: { name: 'Coca', unitCost: 1600 },
+    jugo: { name: 'Jugo', unitCost: 3000 },
+  };
+
+  it('toma la opción MÁS CARA y la multiplica por lo que pide el grupo', () => {
+    const c = worstCaseChoiceGroupComponent(grupo, (id) => costos[id]);
+    expect(c).toMatchObject({ productId: 'jugo', productName: 'Jugo', quantity: 2, unitCost: 3000, choiceGroupLabel: 'Bebida' });
+    const combo = computeComboCost({ components: [c] });
+    expect(combo.totalCost).toBe(6000);
+    expect(combo.components[0].choiceGroupLabel).toBe('Bebida');
+  });
+
+  it('una opción sin costo deja el grupo sin costo — nada vale $0 — y dice cuál', () => {
+    const c = worstCaseChoiceGroupComponent(grupo, (id) => (id === 'coca' ? { name: 'Coca', unitCost: null } : costos[id]));
+    expect(c.unitCost).toBeNull();
+    expect(c.missingReason).toContain('Coca');
+    expect(computeComboCost({ components: [c] }).totalCost).toBeNull();
+  });
+
+  it('una opción que ya no existe en el catálogo también deja el grupo sin costo', () => {
+    const c = worstCaseChoiceGroupComponent(grupo, (id) => (id === 'jugo' ? undefined : costos[id]));
+    expect(c.unitCost).toBeNull();
+    expect(c.missingReason).toContain('Bebida');
+  });
+
+  it('un grupo sin opciones queda sin costo con su propio motivo', () => {
+    const c = worstCaseChoiceGroupComponent({ ...grupo, options: [] }, () => undefined);
+    expect(c).toMatchObject({ productId: 'g1', unitCost: null, choiceGroupLabel: 'Bebida' });
+    expect(c.missingReason).toContain('no tiene opciones');
   });
 });
