@@ -474,9 +474,11 @@ export const SetProductAvailabilityWindowsSchema = z.object({
 });
 export type SetProductAvailabilityWindows = z.infer<typeof SetProductAvailabilityWindowsSchema>;
 /** Máximo de grupos por combo y de opciones por grupo. Topes de pantalla: más
- *  no se eligen de un vistazo en la caja ni en un teléfono. */
+ *  no se eligen de un vistazo en la caja ni en un teléfono. El de opciones
+ *  arrancó en 12 y dejó afuera al combo real: la carta tiene 15 bebidas que no
+ *  son de 1500 ml y el dueño las quiere todas. */
 export const MAX_CHOICE_GROUPS_PER_COMBO = 4;
-export const MAX_OPTIONS_PER_CHOICE_GROUP = 12;
+export const MAX_OPTIONS_PER_CHOICE_GROUP = 20;
 
 /**
  * Opción elegible dentro de un grupo del combo. `priceDelta` es un RECARGO
