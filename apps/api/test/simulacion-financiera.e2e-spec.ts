@@ -593,6 +593,8 @@ describe('Simulación financiera aleatoria', () => {
               subtotal: Number(l.lineSubtotal),
               cantidad: l.quantity,
               esCombo: false,
+              // El disputado no tiene tamaños ni extras: la base es el unitario.
+              precioBaseUnitario: Number(l.lineSubtotal) / l.quantity,
             });
             if (Math.abs(Number(l.lineDiscount) - mejor) > CENTAVO) {
               perdedoras.push(

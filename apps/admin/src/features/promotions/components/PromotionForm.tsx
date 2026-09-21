@@ -27,12 +27,14 @@ const INITIAL_STATE: FormState = {
   bogoBuyQty: '1',
   bogoGetQty: '1',
   comboMode: 'pct',
+  fixedPrice: '',
   daysMask: 127,
   timeStart: '00:00',
   timeEnd: '23:59',
   activeFrom: '',
   activeTo: '',
   productIds: new Set(),
+  sizeIdsByProduct: {},
 };
 
 interface PromotionFormProps {
@@ -72,6 +74,28 @@ export function PromotionForm({ initial }: PromotionFormProps = {}) {
     if (next.has(id)) next.delete(id);
     else next.add(id);
     update('productIds', next);
+    // Quitar el producto se lleva su limitación de variantes: si vuelve, vuelve
+    // en "todas", que es el default que no sorprende.
+    if (!next.has(id) && state.sizeIdsByProduct[id]) {
+      const { [id]: _quitada, ...resto } = state.sizeIdsByProduct;
+      void _quitada;
+      update('sizeIdsByProduct', resto);
+    }
+  }
+
+  /** Alterna una variante; sin entrada = "todas las variantes". */
+  function toggleSize(productId: string, sizeId: string) {
+    const actual = state.sizeIdsByProduct[productId] ?? [];
+    const siguiente = actual.includes(sizeId)
+      ? actual.filter((s) => s !== sizeId)
+      : [...actual, sizeId];
+    update('sizeIdsByProduct', { ...state.sizeIdsByProduct, [productId]: siguiente });
+  }
+
+  function allSizes(productId: string) {
+    const { [productId]: _todas, ...resto } = state.sizeIdsByProduct;
+    void _todas;
+    update('sizeIdsByProduct', resto);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -80,14 +104,19 @@ export function PromotionForm({ initial }: PromotionFormProps = {}) {
     setSubmitting(true);
     setError(null);
     try {
+      // Navegación COMPLETA, no `router.push`: desde /promotions/new (y desde
+      // /promotions/[id]) la navegación cliente hacia /promotions se queda
+      // colgada —también por el breadcrumb— y el formulario moría en
+      // "Creando…" con la promo ya creada. Medido en el build de producción con
+      // Playwright (2026-09-21); ir a cualquier OTRA ruta sí funciona. Recargar
+      // la página cuesta menos que un formulario que parece roto.
       if (isEdit && initial) {
         await updatePromotion(initial.id, buildUpdatePayload(state));
-        router.push(`/promotions/${initial.id}`);
+        window.location.assign(`/promotions/${initial.id}`);
       } else {
         await createPromotion(buildPayload(state));
-        router.push('/promotions');
+        window.location.assign('/promotions');
       }
-      router.refresh();
     } catch (err) {
       setError((err as Error).message);
       setSubmitting(false);
@@ -108,7 +137,10 @@ export function PromotionForm({ initial }: PromotionFormProps = {}) {
         products={products}
         productsError={productsError}
         productIds={state.productIds}
+        sizeIdsByProduct={state.sizeIdsByProduct}
         onToggleProduct={toggleProduct}
+        onToggleSize={toggleSize}
+        onAllSizes={allSizes}
       />
 
       {validation.error && state.name.length > 0 && (

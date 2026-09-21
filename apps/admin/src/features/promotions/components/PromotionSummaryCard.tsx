@@ -60,6 +60,8 @@ function describeDiscount(p: Promotion): string {
       if (p.discountFixed !== null) return `${formatCop(p.discountFixed)} (solo combos)`;
       return '—';
     }
+    case 'FIXED_PRICE':
+      return p.fixedPrice != null ? `Se vende a ${formatCop(p.fixedPrice)}` : '—';
   }
 }
 

@@ -3,6 +3,7 @@ import {
   getPromoBadge,
   roundMoney,
   type PromoBadge,
+  type PromoBadgeContext,
   type PromotionDef,
 } from '@pos-tercos/domain';
 import type { PublicMenuPromotion } from '@pos-tercos/types';
@@ -16,24 +17,33 @@ export function toPromotionDef(p: PublicMenuPromotion): PromotionDef {
     discountFixed: p.discountFixed ?? undefined,
     bogoBuyQty: p.bogoBuyQty ?? undefined,
     bogoGetQty: p.bogoGetQty ?? undefined,
+    fixedPrice: p.fixedPrice ?? undefined,
     daysOfWeekMask: p.daysOfWeekMask,
     timeStart: p.timeStart,
     timeEnd: p.timeEnd,
     activeFrom: p.activeFrom ?? null,
     activeTo: p.activeTo ?? null,
     productIds: new Set(p.productIds),
+    sizeIdsByProduct: p.sizeIdsByProduct
+      ? new Map(Object.entries(p.sizeIdsByProduct).map(([pid, ids]) => [pid, new Set(ids)]))
+      : undefined,
   };
 }
 
-/** Badge de promo para la tarjeta del menú (mismo motor que el POS). */
+/**
+ * Badge de promo para la tarjeta del menú (mismo motor que el POS). Sin `ctx`
+ * (la tarjeta) una promo limitada a una variante no aparece: se ve al elegir
+ * el tamaño en el selector, que sí lo pasa.
+ */
 export function getMenuPromoBadge(
   productId: string,
   displayPrice: number,
   promos: readonly PublicMenuPromotion[],
   at: Date = new Date(),
   isCombo = false,
+  ctx: PromoBadgeContext = {},
 ): PromoBadge | null {
-  return getPromoBadge(productId, displayPrice, promos.map(toPromotionDef), at, isCombo);
+  return getPromoBadge(productId, displayPrice, promos.map(toPromotionDef), at, isCombo, ctx);
 }
 
 /** Shape mínimo de línea para calcular promos (CartLine lo cumple). */
@@ -43,6 +53,18 @@ export interface PromoLine {
   unitPrice: number;
   /** Product.isCombo — sin esto COMBO_OFF nunca se previsualiza. */
   isCombo?: boolean;
+  /** Tamaño elegido: habilita las promos limitadas por variante. */
+  size?: { id: string } | null;
+  /** Extras y recargos, para derivar el precio SIN ellos (base del precio fijo). */
+  modifiers?: ReadonlyArray<{ priceDelta: number }>;
+  choices?: ReadonlyArray<{ priceDelta: number; quantity: number }>;
+}
+
+/** Precio de una unidad sin extras ni recargos: la base del precio fijo. */
+function unitBasePriceOf(l: PromoLine): number {
+  const extras = (l.modifiers ?? []).reduce((acc, m) => acc + m.priceDelta, 0);
+  const recargos = (l.choices ?? []).reduce((acc, c) => acc + c.priceDelta * c.quantity, 0);
+  return roundMoney(l.unitPrice - extras - recargos);
 }
 
 export interface CartPromoTotals {
@@ -81,6 +103,8 @@ export function computeCartPromoTotals(
         quantity: l.quantity,
         isCombo: l.isCombo ?? false,
         at,
+        sizeId: l.size?.id ?? null,
+        unitBasePrice: unitBasePriceOf(l),
       },
       defs,
     );

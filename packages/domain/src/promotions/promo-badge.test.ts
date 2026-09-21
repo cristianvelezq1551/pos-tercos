@@ -80,3 +80,42 @@ describe('getPromoBadge', () => {
     expect(getPromoBadge('p1', 0, [], NOW)).toBeNull();
   });
 });
+
+describe('getPromoBadge — precio fijo y variantes', () => {
+  it('FIXED_PRICE → "Hoy $22.000" y precio tachado al precio fijo', () => {
+    const defs: PromotionDef[] = [
+      { ...PROMO_BASE, id: 'fp', type: 'FIXED_PRICE', fixedPrice: 22_000, productIds: new Set(['p1']) },
+    ];
+    const b = getPromoBadge('p1', 27_000, defs, NOW, false, { unitBasePrice: 27_000 });
+    expect(b).not.toBeNull();
+    expect(b!.label).toBe('Hoy $22.000');
+    expect(b!.kind).toBe('discount');
+    expect(b!.discountedPrice).toBe(22_000);
+  });
+
+  it('FIXED_PRICE con el producto más barato que el precio fijo → sin badge', () => {
+    const defs: PromotionDef[] = [
+      { ...PROMO_BASE, id: 'fp', type: 'FIXED_PRICE', fixedPrice: 22_000, productIds: new Set(['p1']) },
+    ];
+    expect(getPromoBadge('p1', 20_000, defs, NOW, false, { unitBasePrice: 20_000 })).toBeNull();
+  });
+
+  it('promo limitada a una variante: NADA en la tarjeta, badge al elegir ese tamaño', () => {
+    const defs: PromotionDef[] = [
+      {
+        ...PROMO_BASE,
+        id: 'var',
+        type: 'PERCENT_OFF',
+        discountPct: 0.2,
+        productIds: new Set(['papas']),
+        sizeIdsByProduct: new Map([['papas', new Set(['pollo'])]]),
+      },
+    ];
+    // La tarjeta no sabe el tamaño: no promete un descuento que la otra variante no tiene.
+    expect(getPromoBadge('papas', 25_000, defs, NOW)).toBeNull();
+    expect(getPromoBadge('papas', 25_000, defs, NOW, false, { sizeId: 'carne' })).toBeNull();
+    const b = getPromoBadge('papas', 25_000, defs, NOW, false, { sizeId: 'pollo' });
+    expect(b?.label).toBe('−20%');
+    expect(b?.discountedPrice).toBe(20_000);
+  });
+});

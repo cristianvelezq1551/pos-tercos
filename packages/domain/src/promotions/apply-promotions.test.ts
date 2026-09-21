@@ -334,3 +334,115 @@ describe('getDayOfWeekBit + máscara de días', () => {
     eq(applyPromotion(input({ at: monday }), [withMon]).lineDiscount, 1000);
   });
 });
+
+describe('promo limitada a VARIANTES (sizeIdsByProduct)', () => {
+  const AT = new Date(2026, 8, 21, 12, 0, 0);
+  const soloPollo: PromotionDef = {
+    id: 'papas-pollo',
+    type: 'PERCENT_OFF',
+    discountPct: 0.2,
+    daysOfWeekMask: 127,
+    timeStart: '00:00:00',
+    timeEnd: '23:59:59',
+    activeFrom: null,
+    activeTo: null,
+    productIds: new Set(['papas', 'sandwich']),
+    // Papas solo en "Pollo"; el Sandwich (sin tamaños) aplica entero.
+    sizeIdsByProduct: new Map([['papas', new Set(['pollo'])]]),
+  };
+  const linea = (productId: string, sizeId: string | null) => ({
+    productId,
+    lineSubtotal: 25_000,
+    quantity: 1,
+    isCombo: false,
+    at: AT,
+    sizeId,
+  });
+
+  it('aplica a la variante limitada', () => {
+    expect(applyPromotion(linea('papas', 'pollo'), [soloPollo]).lineDiscount).toBe(5000);
+  });
+  it('NO aplica a otra variante del mismo producto', () => {
+    expect(applyPromotion(linea('papas', 'carne'), [soloPollo]).lineDiscount).toBe(0);
+  });
+  it('sin tamaño elegido (la tarjeta) no promete el descuento', () => {
+    expect(applyPromotion(linea('papas', null), [soloPollo]).lineDiscount).toBe(0);
+    expect(applyPromotion({ ...linea('papas', null), sizeId: undefined }, [soloPollo]).lineDiscount).toBe(0);
+  });
+  it('un producto de la misma promo SIN limitación aplica como siempre', () => {
+    expect(applyPromotion(linea('sandwich', null), [soloPollo]).lineDiscount).toBe(5000);
+  });
+});
+
+describe('FIXED_PRICE — el producto se vende a un precio definido', () => {
+  const AT = new Date(2026, 8, 21, 12, 0, 0);
+  const a22: PromotionDef = {
+    id: 'sandwich-22',
+    type: 'FIXED_PRICE',
+    fixedPrice: 22_000,
+    daysOfWeekMask: 127,
+    timeStart: '00:00:00',
+    timeEnd: '23:59:59',
+    activeFrom: null,
+    activeTo: null,
+    productIds: new Set(['sandwich']),
+  };
+
+  it('descuenta la diferencia entre el precio y el precio fijo, por unidad', () => {
+    const r = applyPromotion(
+      { productId: 'sandwich', lineSubtotal: 27_000 * 3, quantity: 3, isCombo: false, at: AT, unitBasePrice: 27_000 },
+      [a22],
+    );
+    expect(r.appliedPromotionId).toBe('sandwich-22');
+    expect(r.lineDiscount).toBe(5000 * 3);
+  });
+
+  it('los extras se cobran ENCIMA del precio fijo (base = producto con su tamaño)', () => {
+    // Sandwich $27.000 + extra $3.000 = $30.000 la unidad. El cliente paga
+    // 22.000 + 3.000 = 25.000, o sea descuento 5.000, no 8.000.
+    const r = applyPromotion(
+      { productId: 'sandwich', lineSubtotal: 30_000, quantity: 1, isCombo: false, at: AT, unitBasePrice: 27_000 },
+      [a22],
+    );
+    expect(r.lineDiscount).toBe(5000);
+  });
+
+  it('si el producto ya es más barato que el precio fijo, no aplica (nunca sube el precio)', () => {
+    const r = applyPromotion(
+      { productId: 'sandwich', lineSubtotal: 20_000, quantity: 1, isCombo: false, at: AT, unitBasePrice: 20_000 },
+      [a22],
+    );
+    expect(r.appliedPromotionId).toBeNull();
+    expect(r.lineDiscount).toBe(0);
+  });
+
+  it('compite con las demás por descuento absoluto: 10% ($2.700) pierde contra el precio fijo ($5.000)', () => {
+    const pct: PromotionDef = { ...a22, id: 'pct10', type: 'PERCENT_OFF', fixedPrice: undefined, discountPct: 0.1 };
+    const r = applyPromotion(
+      { productId: 'sandwich', lineSubtotal: 27_000, quantity: 1, isCombo: false, at: AT, unitBasePrice: 27_000 },
+      [pct, a22],
+    );
+    expect(r.appliedPromotionId).toBe('sandwich-22');
+    expect(r.lineDiscount).toBe(5000);
+  });
+
+  it('con variante: precio fijo solo para "Pollo" de las Papas ($25.000 → $20.000)', () => {
+    const papasPollo20: PromotionDef = {
+      ...a22,
+      id: 'papas-pollo-20',
+      fixedPrice: 20_000,
+      productIds: new Set(['papas']),
+      sizeIdsByProduct: new Map([['papas', new Set(['pollo'])]]),
+    };
+    const pollo = applyPromotion(
+      { productId: 'papas', lineSubtotal: 25_000, quantity: 1, isCombo: false, at: AT, sizeId: 'pollo', unitBasePrice: 25_000 },
+      [papasPollo20],
+    );
+    const carne = applyPromotion(
+      { productId: 'papas', lineSubtotal: 28_000, quantity: 1, isCombo: false, at: AT, sizeId: 'carne', unitBasePrice: 28_000 },
+      [papasPollo20],
+    );
+    expect(pollo.lineDiscount).toBe(5000);
+    expect(carne.lineDiscount).toBe(0);
+  });
+});

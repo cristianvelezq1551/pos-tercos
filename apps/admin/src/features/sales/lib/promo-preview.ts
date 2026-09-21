@@ -1,4 +1,10 @@
-import { applyPromotion, getPromoBadge, roundMoney, type PromoBadge } from '@pos-tercos/domain';
+import {
+  applyPromotion,
+  getPromoBadge,
+  roundMoney,
+  type PromoBadge,
+  type PromoBadgeContext,
+} from '@pos-tercos/domain';
 import type { Promotion } from '@pos-tercos/types';
 import { toPromotionDef } from './totals';
 
@@ -32,6 +38,8 @@ export function getLinePromoDiscount(
   promos: readonly Promotion[],
   at: Date = new Date(),
   isCombo = false,
+  /** Tamaño elegido y precio sin extras: promos por variante y precio fijo. */
+  ctx: PromoBadgeContext = {},
 ): number {
   const defs = promos.filter((p) => p.isActive).map(toPromotionDef);
   if (defs.length === 0 || quantity <= 0) return 0;
@@ -42,6 +50,8 @@ export function getLinePromoDiscount(
       quantity,
       isCombo,
       at,
+      sizeId: ctx.sizeId,
+      unitBasePrice: ctx.unitBasePrice,
     },
     defs,
   );

@@ -14,12 +14,18 @@
  *                 solo cuentan los sets COMPLETOS.
  *  - COMBO_OFF:   igual que porcentaje o fijo (también por unidad), pero solo
  *                 si la línea es un combo.
+ *  - FIXED_PRICE: el producto se vende a un precio definido. El descuento por
+ *                 unidad es `precio del producto con su tamaño − precio fijo`;
+ *                 los extras se cobran ENCIMA (decisión del dueño 2026-09-21) y
+ *                 si el producto ya es más barato no descuenta nada.
+ *  - Una promo puede limitarse a UNA variante (`tamanoId`): solo aplica a la
+ *                 línea que lleve exactamente ese tamaño.
  *  - NO se acumulan: gana UNA, la de mayor descuento ABSOLUTO en pesos. Es la
  *    única forma justa de comparar un 20% contra $3.000. Si empatan, gana la
  *    de id menor (desempate estable, para que el resultado no dependa del orden).
  */
 
-export type TipoPromo = 'PERCENT_OFF' | 'FIXED_OFF' | 'BOGO' | 'COMBO_OFF';
+export type TipoPromo = 'PERCENT_OFF' | 'FIXED_OFF' | 'BOGO' | 'COMBO_OFF' | 'FIXED_PRICE';
 
 export interface PromoSombra {
   id: string;
@@ -38,6 +44,10 @@ export interface PromoSombra {
   fijo?: number;
   comprar?: number;
   gratis?: number;
+  /** Precio de venta (FIXED_PRICE). */
+  precioFijo?: number;
+  /** Solo aplica a la línea con este tamaño; sin él, a todas las variantes. */
+  tamanoId?: string;
 }
 
 /** Peso entero: es plata que se descuenta al cliente (`roundMoney`). */
@@ -48,8 +58,13 @@ function descuentoDe(
   subtotalLinea: number,
   cantidad: number,
   esCombo: boolean,
+  precioBaseUnitario: number,
 ): number {
   switch (promo.tipo) {
+    case 'FIXED_PRICE': {
+      const porUnidad = Math.max(0, precioBaseUnitario - (promo.precioFijo ?? 0));
+      return Math.min(porUnidad * cantidad, subtotalLinea);
+    }
     case 'PERCENT_OFF':
       return Math.min(subtotalLinea * (promo.pct ?? 0), subtotalLinea);
     case 'FIXED_OFF':
@@ -81,13 +96,29 @@ function descuentoDe(
  */
 export function descuentoDeLinea(
   promos: readonly PromoSombra[],
-  linea: { productoId: string; subtotal: number; cantidad: number; esCombo: boolean },
+  linea: {
+    productoId: string;
+    subtotal: number;
+    cantidad: number;
+    esCombo: boolean;
+    /** Precio de una unidad con su tamaño, sin extras (base del precio fijo). */
+    precioBaseUnitario: number;
+    sizeId?: string;
+  },
 ): number {
   const candidatas = promos
     .filter((p) => p.productoId === linea.productoId)
+    // Limitada a una variante: solo con ese tamaño en la línea.
+    .filter((p) => p.tamanoId === undefined || p.tamanoId === linea.sizeId)
     .map((promo) => ({
       promo,
-      descuento: descuentoDe(promo, linea.subtotal, linea.cantidad, linea.esCombo),
+      descuento: descuentoDe(
+        promo,
+        linea.subtotal,
+        linea.cantidad,
+        linea.esCombo,
+        linea.precioBaseUnitario,
+      ),
     }))
     .filter((c) => c.descuento > 0);
 

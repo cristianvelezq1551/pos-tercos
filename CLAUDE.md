@@ -5475,6 +5475,69 @@ ve. Herramienta: `apps/admin/e2e/qa-auditoria-combo.spec.ts` (manual, con
 ---
 
 
+## 7.v69 Promociones por VARIANTE y a PRECIO FIJO (2026-09-21)
+
+> Dos pedidos del dueño: una promo para "Sandwich TERCOS" y para "Papas TERCOS"
+> **solo en Pollo y Miel ahumada** (Papas tiene 3 tamaños y la promo se los daba a
+> los 3), y poder vender un producto a un **precio definido** en vez de un
+> descuento. Verificado: typecheck 13/13, lint 0, domain 703 (+13), types 188
+> (+6), admin +2, web +3, e2e nueva `promo-variante-y-precio-fijo` (12 casos) y
+> la simulación financiera con los dos tipos en su modelo sombra.
+> Migraciones: `20260921120000_promotion_fixed_price_enum` (solo el enum) +
+> `20260921120100_promotion_variants_and_fixed_price`.
+
+### Promo limitada a variantes
+- `promotion_products.size_id` **opcional**: NULL = el producto con todas sus
+  variantes (todas las filas existentes siguen significando lo mismo); con
+  `size_id`, SOLO esa variante. Como un producto puede tener varias filas, la
+  clave (promoción, producto) pasó a un `id` propio + índice único
+  (promoción, producto, tamaño). Wire: `Promotion.sizeIdsByProduct`
+  (`{ [productId]: sizeId[] }`, **opcional** por el despliegue escalonado) junto
+  al `productIds` de siempre.
+- El motor (`promoMatches`) exige `sizeId` en la línea y dentro del set. **Sin
+  tamaño elegido —la tarjeta— la promo limitada NO aparece**: se ve al elegir el
+  tamaño en el selector (caja y web) y en el carrito. Decisión del dueño: no
+  prometer un descuento que la otra variante no tiene.
+- **No se puede eliminar un tamaño que una promo usa** (`setOptions` lo dice con
+  el nombre de la promo; la FK es `RESTRICT` por si algo lo esquiva).
+- El formulario muestra, por producto con tamaños, "Todas las variantes" (default)
+  o chips por tamaño; el detalle dice "· solo Pollo y Miel".
+
+### Precio fijo (`FIXED_PRICE`)
+- Columna `promotions.fixed_price` + valor de enum + CHECK `chk_promo_fixed_price`
+  (mismo patrón que los cuatro tipos). Descuento por unidad =
+  `precio del producto con su tamaño − fixedPrice`, **los extras y recargos se
+  cobran encima** ("es el precio fijo pero para el sánduche" — dueño,
+  2026-09-21). **Si el producto ya es más barato, no aplica**: una promo nunca
+  sube el precio. Compite con las demás por descuento absoluto, sin acumular, y
+  cumple la invariante de reparto (junta o separada, la misma compra cuesta lo
+  mismo).
+- `ApplyPromotionInput.unitBasePrice` es la base (servidor: antes de extras en
+  `computeLine`; caja: `unitBasePriceOf(line)`; web: derivado de `size` /
+  `modifiers` / `choices` de la línea). El modal de edición ahora arma las líneas
+  con tamaño, extras y recargos — antes iban vacíos y el estimado divergiría.
+- Chip: **"Hoy $22.000"**, no "−$5.000".
+
+### Hallazgo preexistente al probar por pantalla (build de producción)
+Desde `/promotions/new` la navegación **cliente** a `/promotions` se queda colgada
+—`router.push` y hasta el breadcrumb— mientras que ir a cualquier otra ruta, o
+llegar a `/promotions` desde otra página, funciona. El formulario moría en
+"Creando…" con la promo ya creada (201) y "Apagar promoción" tenía el mismo
+salto. No lo introdujo este cambio: pasa igual con una promo de porcentaje.
+Se salió con navegación completa (`window.location.assign`, precedente en la
+apertura de caja y el login). Queda pendiente entender la causa en Next 15.5
+(hijo → padre dentro del mismo `layout` con `requireDuenoServer`).
+
+### ⚠️ Despliegue escalonado y rollback
+- Los campos nuevos del wire son **opcionales**: una app nueva lee un API viejo y
+  viceversa. Pero `type` es un enum estricto en la caja (`fetchActivePromotions`
+  parsea con `PromotionSchema`) y en la web (`safeParse` del menú → menú VACÍO):
+  **la primera promo `FIXED_PRICE` se crea solo con API y las 4 apps en
+  `success`**, y ante un rollback de código hay que apagarla antes.
+- La migración es aditiva salvo el cambio de clave primaria de
+  `promotion_products` (tabla de una fila por producto en promo; reescribirla no
+  cuesta). Postgres de prod es 18; `gen_random_uuid()` es nativo desde 13.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

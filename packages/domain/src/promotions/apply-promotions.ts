@@ -109,6 +109,8 @@ function computeLineDiscount(
       // protege de lineTotal negativo ante quantity/lineSubtotal inconsistentes.
       return Math.min(freeUnits * unitPrice, input.lineSubtotal);
     }
+    case 'FIXED_PRICE':
+      return fixedPriceDiscount(promo, input);
     case 'COMBO_OFF': {
       // Solo aplica si la línea es de un combo. El llamador setea isCombo.
       if (!input.isCombo) return 0;
@@ -135,8 +137,25 @@ function computeLineDiscount(
   }
 }
 
+/**
+ * FIXED_PRICE: el producto se vende a `fixedPrice`. La base es el producto con
+ * su tamaño, sin extras ni recargos — el precio fijo es "del sánduche" y lo que
+ * se le agregue se cobra encima. Nunca sube el precio: si ya es más barato, no
+ * hace nada. Por unidad y con tope al subtotal, como FIXED_OFF: el total no
+ * puede depender de en cuántas líneas quedó repartida la misma cantidad.
+ */
+function fixedPriceDiscount(promo: PromotionDef, input: ApplyPromotionInput): number {
+  if (promo.fixedPrice === undefined || promo.fixedPrice <= 0 || input.quantity <= 0) return 0;
+  const base = input.unitBasePrice ?? input.lineSubtotal / input.quantity;
+  const porUnidad = Math.max(0, base - promo.fixedPrice);
+  return Math.min(porUnidad * input.quantity, input.lineSubtotal);
+}
+
 function promoMatches(p: PromotionDef, input: ApplyPromotionInput): boolean {
   if (!p.productIds.has(input.productId)) return false;
+  // Limitada a ciertas variantes: solo con el tamaño elegido y dentro del set.
+  const sizes = p.sizeIdsByProduct?.get(input.productId);
+  if (sizes !== undefined && (!input.sizeId || !sizes.has(input.sizeId))) return false;
   if (!withinActiveDates(p, input.at)) return false;
   if (!matchesDayOfWeek(p.daysOfWeekMask, input.at)) return false;
   if (!withinTimeWindow(p.timeStart, p.timeEnd, input.at)) return false;

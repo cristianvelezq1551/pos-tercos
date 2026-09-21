@@ -117,12 +117,17 @@ export function ProductPickerModal({
 
   const qty = quantity ?? 0;
   // Descuento de promo para la selección actual (mismo motor que el carrito).
+  // El tamaño elegido habilita las promos limitadas a una variante, y la base
+  // del precio fijo es el producto con su tamaño (los extras van encima).
   const lineDiscount = useMemo(
     () =>
       product
-        ? getLinePromoDiscount(product.id, unitPrice, qty, promos, undefined, product.isCombo)
+        ? getLinePromoDiscount(product.id, unitPrice, qty, promos, undefined, product.isCombo, {
+            sizeId,
+            unitBasePrice: displayBasePrice(product) + (selectedSize?.priceModifier ?? 0),
+          })
         : 0,
-    [product, unitPrice, qty, promos],
+    [product, unitPrice, qty, promos, sizeId, selectedSize],
   );
 
   if (!product) return null;

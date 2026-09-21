@@ -113,3 +113,43 @@ describe('computeCartPromoTotals (web) == motor de domain', () => {
     });
   });
 });
+
+describe('web: promos por variante y precio fijo', () => {
+  const POLLO = '00000000-0000-4000-8000-0000000000b1';
+  const CARNE = '00000000-0000-4000-8000-0000000000b2';
+
+  it('la tarjeta NO muestra una promo limitada a una variante; el selector sí, con el tamaño', () => {
+    const promos = [promo({ sizeIdsByProduct: { [PROD]: [POLLO] } })];
+    expect(getMenuPromoBadge(PROD, 25_000, promos, AT)).toBeNull();
+    expect(getMenuPromoBadge(PROD, 25_000, promos, AT, false, { sizeId: CARNE })).toBeNull();
+    expect(getMenuPromoBadge(PROD, 25_000, promos, AT, false, { sizeId: POLLO })?.discountedPrice).toBe(20_000);
+  });
+
+  it('el carrito descuenta solo la línea de la variante limitada', () => {
+    const promos = [promo({ sizeIdsByProduct: { [PROD]: [POLLO] } })];
+    const t = computeCartPromoTotals(
+      [
+        { productId: PROD, quantity: 1, unitPrice: 25_000, size: { id: POLLO } },
+        { productId: PROD, quantity: 1, unitPrice: 28_000, size: { id: CARNE } },
+      ],
+      promos,
+      AT,
+    );
+    expect(t.lineDiscounts).toEqual([5000, 0]);
+    expect(t.total).toBe(48_000);
+  });
+
+  it('precio fijo con extras: "Hoy $22.000" y el extra encima', () => {
+    const promos = [promo({ type: 'FIXED_PRICE', discountPct: null, fixedPrice: 22_000 })];
+    const badge = getMenuPromoBadge(PROD, 30_000, promos, AT, false, { unitBasePrice: 27_000 });
+    expect(badge?.label).toBe('Hoy $22.000');
+    const t = computeCartPromoTotals(
+      [{ productId: PROD, quantity: 1, unitPrice: 30_000, modifiers: [{ priceDelta: 3000 }] }],
+      promos,
+      AT,
+    );
+    // 27.000 − 22.000 = 5.000 de descuento; el cliente paga 25.000.
+    expect(t.lineDiscounts).toEqual([5000]);
+    expect(t.total).toBe(25_000);
+  });
+});

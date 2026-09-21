@@ -17,36 +17,44 @@ export interface PromoBadge {
  * mostrar exactamente la promo que ganará al venderlo, no una distinta.
  * El llamador pre-filtra las defs por canal/isActive antes de pasarlas.
  */
+export interface PromoBadgeContext {
+  /** Tamaño elegido: habilita las promos limitadas por variante. */
+  sizeId?: string | null;
+  /** Precio del producto con su tamaño, sin extras (base del precio fijo). */
+  unitBasePrice?: number;
+}
+
 export function getPromoBadge(
   productId: string,
   basePrice: number,
   defs: readonly PromotionDef[],
   at: Date = new Date(),
   isCombo = false,
+  ctx: PromoBadgeContext = {},
 ): PromoBadge | null {
   if (basePrice <= 0 || defs.length === 0) return null;
 
-  // 1) Probar con qty=1: dispara PERCENT_OFF, FIXED_OFF, COMBO_OFF (no BOGO).
-  //    `isCombo` habilita COMBO_OFF: sin él, un combo nunca mostraba su badge.
+  // 1) Probar con qty=1: dispara PERCENT_OFF, FIXED_OFF, FIXED_PRICE, COMBO_OFF
+  //    (no BOGO). `isCombo` habilita COMBO_OFF: sin él, un combo nunca mostraba
+  //    su badge. Sin `sizeId` (la tarjeta), una promo limitada a una variante no
+  //    aparece: se ve al elegir el tamaño.
   const r = applyPromotion(
-    { productId, lineSubtotal: basePrice, quantity: 1, isCombo, at },
+    {
+      productId,
+      lineSubtotal: basePrice,
+      quantity: 1,
+      isCombo,
+      at,
+      sizeId: ctx.sizeId,
+      unitBasePrice: ctx.unitBasePrice,
+    },
     defs,
   );
   if (r.lineDiscount > 0) {
     const winner = defs.find((d) => d.id === r.appliedPromotionId);
     if (winner) {
-      let label = '−';
-      if (winner.type === 'PERCENT_OFF' && winner.discountPct != null) {
-        label = `−${Math.round(winner.discountPct * 100)}%`;
-      } else if (winner.type === 'FIXED_OFF' && winner.discountFixed != null) {
-        label = `−${formatCopShort(winner.discountFixed)}`;
-      } else if (winner.type === 'COMBO_OFF' && winner.discountPct != null) {
-        label = `Combo −${Math.round(winner.discountPct * 100)}%`;
-      } else if (winner.type === 'COMBO_OFF' && winner.discountFixed != null) {
-        label = `Combo −${formatCopShort(winner.discountFixed)}`;
-      }
       return {
-        label,
+        label: discountLabel(winner),
         kind: 'discount',
         discountedPrice: roundMoney(basePrice - r.lineDiscount),
       };
@@ -73,6 +81,27 @@ export function getPromoBadge(
   }
 
   return null;
+}
+
+/** Texto del chip según el tipo de la promo ganadora. */
+function discountLabel(winner: PromotionDef): string {
+  if (winner.type === 'PERCENT_OFF' && winner.discountPct != null) {
+    return `−${Math.round(winner.discountPct * 100)}%`;
+  }
+  if (winner.type === 'FIXED_OFF' && winner.discountFixed != null) {
+    return `−${formatCopShort(winner.discountFixed)}`;
+  }
+  if (winner.type === 'COMBO_OFF' && winner.discountPct != null) {
+    return `Combo −${Math.round(winner.discountPct * 100)}%`;
+  }
+  if (winner.type === 'COMBO_OFF' && winner.discountFixed != null) {
+    return `Combo −${formatCopShort(winner.discountFixed)}`;
+  }
+  if (winner.type === 'FIXED_PRICE' && winner.fixedPrice != null) {
+    // El cliente entiende "Hoy $22.000", no "−$5.000".
+    return `Hoy ${formatCopShort(winner.fixedPrice)}`;
+  }
+  return '−';
 }
 
 /** "$2.700" en es-CO sin decimales (más compacto que formatCop). */

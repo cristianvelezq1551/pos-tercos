@@ -1,11 +1,5 @@
 /** Shared primitives used by PromotionForm sub-components. */
-import type {
-  PromotionChannel,
-  PromotionType,
-  CreatePromotion,
-  Promotion,
-  UpdatePromotion,
-} from '@pos-tercos/types';
+import type { PromotionChannel, PromotionType } from '@pos-tercos/types';
 
 export const inputClass =
   'block h-10 w-full rounded-md border border-input bg-card px-3 text-base sm:text-sm text-foreground shadow-sm outline-none focus:border-primary focus:ring-1 focus:ring-ring';
@@ -51,6 +45,7 @@ export function labelFor(t: PromotionType): string {
     FIXED_OFF: 'Descuento $',
     BOGO: 'Lleva X paga Y',
     COMBO_OFF: 'Combo',
+    FIXED_PRICE: 'Precio fijo',
   }[t];
 }
 
@@ -76,6 +71,8 @@ export function descriptionFor(t: PromotionType): string {
     COMBO_OFF:
       'Porcentaje o monto fijo; aplica solo si el producto es un combo. El monto fijo también es por cada unidad.',
     BOGO: 'Lleva X y paga Y. Calcula los juegos completos según la cantidad comprada.',
+    FIXED_PRICE:
+      'El producto se vende a ESE precio mientras dura la promo, sin importar su precio de carta. Es el precio del producto con su tamaño: los extras se suman encima. Si el producto ya es más barato, la promo no hace nada.',
   }[t];
 }
 
@@ -88,12 +85,16 @@ export interface FormState {
   bogoBuyQty: string;
   bogoGetQty: string;
   comboMode: 'pct' | 'fixed';
+  /** FIXED_PRICE: precio de venta, como texto del MoneyInput. */
+  fixedPrice: string;
   daysMask: number;
   timeStart: string;
   timeEnd: string;
   activeFrom: string;
   activeTo: string;
   productIds: Set<string>;
+  /** Productos limitados a ciertas variantes. Sin entrada = todas sus variantes. */
+  sizeIdsByProduct: Record<string, string[]>;
 }
 
 export function validate(s: FormState): { error: string | null } {
@@ -139,73 +140,20 @@ export function validate(s: FormState): { error: string | null } {
       }
       break;
     }
+    case 'FIXED_PRICE': {
+      const price = Number(s.fixedPrice);
+      if (!Number.isFinite(price) || price <= 0)
+        return { error: 'Escribe el precio al que se va a vender' };
+      break;
+    }
+  }
+  // Un producto "limitado" a cero variantes no aplicaría a nada: o se eligen
+  // variantes o se deja en "todas".
+  for (const [pid, sizeIds] of Object.entries(s.sizeIdsByProduct)) {
+    if (s.productIds.has(pid) && sizeIds.length === 0)
+      return { error: 'Elige al menos una variante o deja "Todas las variantes"' };
   }
   return { error: null };
 }
 
-/** Pre-llena el form desde una promo existente (modo edición). */
-export function stateFromPromotion(p: Promotion): FormState {
-  const pctStr = p.discountPct !== null ? String(Math.round(p.discountPct * 100)) : '';
-  const fixedStr = p.discountFixed !== null ? String(p.discountFixed) : '';
-  return {
-    name: p.name,
-    type: p.type,
-    channel: p.channel,
-    discountPctPercent: pctStr,
-    discountFixed: fixedStr,
-    bogoBuyQty: p.bogoBuyQty !== null ? String(p.bogoBuyQty) : '1',
-    bogoGetQty: p.bogoGetQty !== null ? String(p.bogoGetQty) : '1',
-    comboMode: p.discountFixed !== null ? 'fixed' : 'pct',
-    daysMask: p.daysOfWeekMask,
-    timeStart: p.timeStart.slice(0, 5),
-    timeEnd: p.timeEnd.slice(0, 5),
-    activeFrom: p.activeFrom ?? '',
-    activeTo: p.activeTo ?? '',
-    productIds: new Set(p.productIds),
-  };
-}
-
-/** Payload de edición (UpdatePromotion). Solo campos editables — el backend rechaza los demás. */
-export function buildUpdatePayload(s: FormState): UpdatePromotion {
-  return {
-    name: s.name.trim(),
-    channel: s.channel,
-    daysOfWeekMask: s.daysMask,
-    timeStart: `${s.timeStart}:00`,
-    timeEnd: `${s.timeEnd}:00`,
-    activeFrom: s.activeFrom ? s.activeFrom : null,
-    activeTo: s.activeTo ? s.activeTo : null,
-    productIds: Array.from(s.productIds),
-  };
-}
-
-export function buildPayload(s: FormState): CreatePromotion {
-  const base = {
-    name: s.name.trim(),
-    type: s.type,
-    channel: s.channel,
-    daysOfWeekMask: s.daysMask,
-    timeStart: `${s.timeStart}:00`,
-    timeEnd: `${s.timeEnd}:00`,
-    productIds: Array.from(s.productIds),
-    ...(s.activeFrom && { activeFrom: s.activeFrom }),
-    ...(s.activeTo && { activeTo: s.activeTo }),
-  } as const;
-
-  switch (s.type) {
-    case 'PERCENT_OFF':
-      return { ...base, discountPct: Number(s.discountPctPercent) / 100 };
-    case 'FIXED_OFF':
-      return { ...base, discountFixed: Number(s.discountFixed) };
-    case 'BOGO':
-      return {
-        ...base,
-        bogoBuyQty: Number(s.bogoBuyQty),
-        bogoGetQty: Number(s.bogoGetQty),
-      };
-    case 'COMBO_OFF':
-      return s.comboMode === 'pct'
-        ? { ...base, discountPct: Number(s.discountPctPercent) / 100 }
-        : { ...base, discountFixed: Number(s.discountFixed) };
-  }
-}
+export { stateFromPromotion, buildUpdatePayload, buildPayload } from '../lib/form-payload';

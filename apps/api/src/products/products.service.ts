@@ -349,6 +349,23 @@ export class ProductsService {
           `No se puede eliminar una variante con ventas registradas: ${names}. Crea una nueva en su lugar.`,
         );
       }
+      // Una promoción limitada a esta variante quedaría apuntando a nada (y la
+      // FK lo rechazaría con un error técnico). Se dice cuál es y qué hacer.
+      const enPromo = await this.prisma.promotionProduct.findMany({
+        where: { sizeId: { in: toDelete } },
+        select: { sizeId: true, promotion: { select: { name: true } } },
+      });
+      if (enPromo.length > 0) {
+        const detalle = enPromo
+          .map((r) => {
+            const size = existing.sizes.find((s) => s.id === r.sizeId)?.name ?? 'una variante';
+            return `"${size}" está en la promoción "${r.promotion.name}"`;
+          })
+          .join('; ');
+        throw new BadRequestException(
+          `No se puede eliminar la variante: ${detalle}. Quítala de la promoción primero.`,
+        );
+      }
     }
 
     await this.prisma.$transaction(async (tx) => {

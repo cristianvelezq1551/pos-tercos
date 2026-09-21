@@ -23,6 +23,7 @@ const TYPE_CONFIG: Record<
   FIXED_OFF: { label: '$ desc.', tone: 'success' },
   BOGO: { label: 'Lleva 2 paga 1', tone: 'warning' },
   COMBO_OFF: { label: 'Combo', tone: 'info' },
+  FIXED_PRICE: { label: 'Precio fijo', tone: 'success' },
 };
 
 const CHANNEL_CONFIG: Record<
@@ -130,7 +131,7 @@ export function PromotionsTable({ promotions }: PromotionsTableProps) {
         <EmptyState
           illustration={<LineArtIllustration name="empty-plate" />}
           title="Aún no creaste promociones"
-          description="Las promos aplican automáticamente al cobrar la venta. 4 tipos: descuento %, descuento fijo, lleva X paga Y y combo."
+          description="Las promos aplican automáticamente al cobrar la venta: descuento %, descuento en pesos, precio fijo y combo."
           action={
             <Link href="/promotions/new">
               <Button>Crear primera promoción</Button>
@@ -155,6 +156,8 @@ function describeDiscount(p: Promotion): React.ReactNode {
       if (p.discountFixed !== null) return <><Money amount={p.discountFixed} weight="medium" /> combo</>;
       return '—';
     }
+    case 'FIXED_PRICE':
+      return p.fixedPrice != null ? <>Hoy <Money amount={p.fixedPrice} weight="medium" /></> : '—';
   }
 }
 

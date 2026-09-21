@@ -66,13 +66,28 @@ export function toPromotionDef(p: Promotion): PromotionDef {
     discountFixed: p.discountFixed ?? undefined,
     bogoBuyQty: p.bogoBuyQty ?? undefined,
     bogoGetQty: p.bogoGetQty ?? undefined,
+    fixedPrice: p.fixedPrice ?? undefined,
     daysOfWeekMask: p.daysOfWeekMask,
     timeStart: p.timeStart,
     timeEnd: p.timeEnd,
     activeFrom: p.activeFrom ?? null,
     activeTo: p.activeTo ?? null,
     productIds: new Set(p.productIds),
+    sizeIdsByProduct: p.sizeIdsByProduct
+      ? new Map(Object.entries(p.sizeIdsByProduct).map(([pid, ids]) => [pid, new Set(ids)]))
+      : undefined,
   };
+}
+
+/**
+ * Precio de UNA unidad del producto con su tamaño, sin extras ni recargos: la
+ * base del precio fijo. `unitPrice` ya trae extras y recargos sumados, así que
+ * se restan (los recargos del combo van por unidad elegida).
+ */
+export function unitBasePriceOf(line: CartLine): number {
+  const extras = line.modifiers.reduce((acc, m) => acc + m.priceDelta, 0);
+  const recargos = (line.choices ?? []).reduce((acc, c) => acc + c.priceDelta * c.quantity, 0);
+  return roundMoney(line.unitPrice - extras - recargos);
 }
 
 export function computeCartTotals(
@@ -109,6 +124,10 @@ export function computeCartTotals(
           // false → combo sin descuento en pantalla pero cobrado → descuadre).
           isCombo: it.isCombo,
           at,
+          // Promos por variante y precio fijo: el tamaño decide y la base es el
+          // producto con su tamaño, sin extras — igual que en el servidor.
+          sizeId: it.size?.id ?? null,
+          unitBasePrice: unitBasePriceOf(it),
         },
         defs,
       );

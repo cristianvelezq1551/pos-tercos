@@ -134,3 +134,29 @@ describe('el descuento manual tampoco cambia según el reparto', () => {
     expect(manual({ kind: 'FIXED', value: 2_000 }, [3])).toBe(descuentoTotal(promo, [3]));
   });
 });
+
+describe('precio fijo: la misma compra cuesta lo mismo junta o separada', () => {
+  const precioFijo: PromotionDef = { ...base, id: 'pf', type: 'FIXED_PRICE', fixedPrice: 7_000 };
+  const con = (lineas: number[]): number =>
+    lineas.reduce(
+      (acc, cantidad) =>
+        acc +
+        applyPromotion(
+          {
+            productId: 'burger',
+            lineSubtotal: PRECIO * cantidad,
+            quantity: cantidad,
+            isCombo: false,
+            at: AL_MEDIODIA,
+            unitBasePrice: PRECIO,
+          },
+          [precioFijo],
+        ).lineDiscount,
+      0,
+    );
+  it('tres hamburguesas a $7.000: −$9.000 en una línea y −$9.000 en tres líneas', () => {
+    expect(con([3])).toBe(9_000);
+    expect(con([1, 1, 1])).toBe(9_000);
+    expect(con([2, 1])).toBe(9_000);
+  });
+});

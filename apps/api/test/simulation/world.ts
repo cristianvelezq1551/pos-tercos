@@ -604,6 +604,30 @@ export async function construirMundo(rng: Rng): Promise<Mundo> {
     { tipo: 'FIXED_OFF', productoId: bebidaDos.id, fijo: fijoDos },
   );
 
+  // PRECIO FIJO limitado a UNA VARIANTE, sobre el plato con opciones: el
+  // tamaño "Grande" se vende a un precio definido. Ejercita las dos reglas
+  // nuevas a la vez: solo aplica a la línea con ESE tamaño (la "Normal" paga
+  // lleno) y el descuento se calcula sobre el producto con su tamaño — los
+  // extras que la línea traiga se cobran encima.
+  const grandeSim = conOpciones.tamanos.find((t) => t.priceModifier > 0)!;
+  const precioGrande = conOpciones.producto.precio + grandeSim.priceModifier;
+  const precioFijoGrande = precioGrande - rng.int(1000, 3000);
+  await crearPromo(
+    {
+      name: 'Precio fijo Grande Sim',
+      type: 'FIXED_PRICE',
+      fixedPrice: precioFijoGrande,
+      productIds: [conOpciones.producto.id],
+      sizeIdsByProduct: { [conOpciones.producto.id]: [grandeSim.id] },
+    },
+    {
+      tipo: 'FIXED_PRICE',
+      productoId: conOpciones.producto.id,
+      precioFijo: precioFijoGrande,
+      tamanoId: grandeSim.id,
+    },
+  );
+
   const openingCash = rng.money(50_000, 200_000);
   const shiftId = (
     await request.post('/shifts/open').set(auth()).send({ openingCash }).expect(201)
