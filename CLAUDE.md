@@ -5528,6 +5528,25 @@ Se salió con navegación completa (`window.location.assign`, precedente en la
 apertura de caja y el login). Queda pendiente entender la causa en Next 15.5
 (hijo → padre dentro del mismo `layout` con `requireDuenoServer`).
 
+### Auditoría en QA por la interfaz real (mismo día): 5/5
+`apps/admin/e2e/qa-auditoria-promos.spec.ts`, a mano contra QA con el token OIDC
+de cada proyecto (como el del combo). El dueño creó desde el **formulario** la
+promo de precio fijo y la de 20 % limitada a Papas·Pollo; el cajero cobró en la
+caja de QA Papas·Pollo $20.000 + Sandwich $22.000 + una Malteada con promo
+clásica del 10 % → **$51.000 con $11.000 de descuento, recalculados por el
+servidor** y cada línea con SU promo; en la web a 390 px la tarjeta de Papas no
+anuncia nada, el selector descuenta solo Pollo, el Sandwich dice "Hoy $22.000" y
+un pedido real dio **$42.000** (cancelado después); editar las variantes, apagar
+y encender funcionan con la navegación completa; y 10 pantallas abrieron sin
+error de consola ni desborde en 1366 y 390 px.
+- ⚠️ A 390 px el carrito de la web se abre desde la **barra inferior** ("2
+  Carrito"), no desde el botón "ítems" de arriba, que está oculto.
+- La caja de QA llevaba 5 días abierta (stale): el spec la cierra arqueando
+  cajón **y cuenta** con lo que devuelve `expected-cash` (§7.v20) antes de que
+  admin@qa abra la de hoy.
+- Un producto con ventas no se borra con `DELETE /products/:id` (409), pero sí
+  se apaga con `PATCH {isActive:false}`: así quedaron los de la auditoría.
+
 ### ⚠️ Despliegue escalonado y rollback
 - Los campos nuevos del wire son **opcionales**: una app nueva lee un API viejo y
   viceversa. Pero `type` es un enum estricto en la caja (`fetchActivePromotions`
