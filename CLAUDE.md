@@ -5547,6 +5547,14 @@ error de consola ni desborde en 1366 y 390 px.
 - Un producto con ventas no se borra con `DELETE /products/:id` (409), pero sí
   se apaga con `PATCH {isActive:false}`: así quedaron los de la auditoría.
 
+Segunda pasada (mismo día, **10/10** junto con la auditoría del combo como
+regresión): el extra se suma ENCIMA del precio fijo en caja y web (22.000 +
+3.000 = 25.000, cobro real $54.000); un producto más barato que el precio fijo
+no anuncia nada ni en la tarjeta ni en el selector; **editar desde el historial
+una venta cobrada con promos** (subir el Sandwich a 2) estima $79.000 y el
+servidor cobra exactamente eso — el modal de edición ahora arma las líneas con
+tamaño y extras, y era lo que había que ver funcionando; barrido a 13 pantallas.
+
 ### ⚠️ Despliegue escalonado y rollback
 - Los campos nuevos del wire son **opcionales**: una app nueva lee un API viejo y
   viceversa. Pero `type` es un enum estricto en la caja (`fetchActivePromotions`
