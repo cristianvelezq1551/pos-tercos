@@ -25,6 +25,8 @@ const PAPAS = `Papas QA ${SUF}`;
 const POLLO = `Pollo QA ${SUF}`;
 const CARNE = `Carne QA ${SUF}`;
 const MALTEADA = `Malteada QA ${SUF}`;
+const MINI = `Mini QA ${SUF}`;
+const QUESO = `Queso extra QA ${SUF}`;
 const PROMO_FIJA = `Sandwich a 22 QA ${SUF}`;
 const PROMO_POLLO = `20% Papas Pollo QA ${SUF}`;
 const PROMO_CLASICA = `10% Malteada QA ${SUF}`;
@@ -37,6 +39,7 @@ test.setTimeout(150_000);
 let api: APIRequestContext;
 let tokDueno: string;
 let tokAdmin: string;
+let reciboCaja = 0;
 const ids: Record<string, string> = {};
 const promoIds: Record<string, string> = {};
 const auth = (t: string) => ({ Authorization: `Bearer ${t}`, 'X-Client-App': 'admin' });
@@ -132,7 +135,18 @@ test.beforeAll(async () => {
   await cajaAbiertaHoy();
 
   const reventa = { directResale: true, unitPurchase: 'caja', unitStock: 'unidad', conversionFactor: 12 };
-  ids.sandwich = (await crear('/products', { ...reventa, name: SANDWICH, basePrice: 27000, category: 'Comidas' })).id;
+  ids.sandwich = (
+    await crear('/products', {
+      ...reventa,
+      name: SANDWICH,
+      basePrice: 27000,
+      category: 'Comidas',
+      modifiersEnabled: true,
+      modifiers: [{ name: QUESO, priceDelta: 3000 }],
+    })
+  ).id;
+  // Más barato que el precio fijo: la promo NO debe subirle el precio.
+  ids.mini = (await crear('/products', { ...reventa, name: MINI, basePrice: 15000, category: 'Comidas' })).id;
   const papas = await crear<{ id: string; sizes: Array<{ id: string; name: string }> }>('/products', {
     ...reventa,
     name: PAPAS,
@@ -147,7 +161,7 @@ test.beforeAll(async () => {
   ids.pollo = papas.sizes.find((s) => s.name === POLLO)!.id;
   ids.carne = papas.sizes.find((s) => s.name === CARNE)!.id;
   ids.malteada = (await crear('/products', { ...reventa, name: MALTEADA, basePrice: 10000, category: 'Bebidas' })).id;
-  for (const pid of [ids.sandwich, ids.papas, ids.malteada]) {
+  for (const pid of [ids.sandwich, ids.papas, ids.malteada, ids.mini]) {
     await crear('/inventory/movements', { type: 'INITIAL', entityType: 'PRODUCT', productId: pid, delta: 48, unitCost: 5000 });
   }
   // Regresión: una promo CLÁSICA (porcentaje, todas las variantes) creada como
@@ -188,6 +202,7 @@ test('P1 · el dueño crea desde el FORMULARIO la promo de precio fijo y la limi
   await page.getByText('Precio fijo', { exact: true }).click();
   await page.getByPlaceholder('22.000').fill('22000');
   await page.getByRole('checkbox', { name: SANDWICH }).check();
+  await page.getByRole('checkbox', { name: MINI }).check();
   await page.getByRole('button', { name: 'Crear promoción' }).click();
   // Antes del arreglo el formulario moría acá en "Creando…" (navegación
   // cliente colgada) con la promo ya creada.
@@ -231,7 +246,7 @@ test('P1 · el dueño crea desde el FORMULARIO la promo de precio fijo y la limi
   await ctx.close();
 });
 
-test('P2 · en la CAJA: Papas·Carne paga lleno, Papas·Pollo descuenta, el Sandwich dice "Hoy $22.000", la clásica sigue igual; el cobro real da $51.000', async ({ browser }) => {
+test('P2 · en la CAJA: Papas·Carne paga lleno, Papas·Pollo descuenta, el Sandwich dice "Hoy $22.000", la clásica sigue igual; el cobro real da $54.000', async ({ browser }) => {
   const ctx = await ctxCon(browser, { viewport: { width: 1366, height: 900 } });
   const page = await ctx.newPage();
   await loginUi(page, 'admin@qa.tercos.co');
@@ -247,8 +262,18 @@ test('P2 · en la CAJA: Papas·Carne paga lleno, Papas·Pollo descuenta, el Sand
   await expect(tarjetaPapas).toBeVisible();
   await expect(tarjetaPapas).not.toContainText('−20%');
   await expect(tarjetaMalteada).toContainText('−10%');
+  // Más barato que el precio fijo: ni la tarjeta ni el selector prometen nada.
+  const tarjetaMini = page.getByRole('button', { name: new RegExp(MINI) }).first();
+  await expect(tarjetaMini).toBeVisible();
+  await expect(tarjetaMini).not.toContainText('Hoy');
 
   const dialogo = page.getByRole('dialog');
+  await tarjetaMini.click();
+  await expect(dialogo).toBeVisible();
+  await expect(dialogo.getByText(/Promo aplicada/)).toHaveCount(0);
+  await expect(dialogo.getByText('$ 15.000', { exact: false }).first()).toBeVisible();
+  await dialogo.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(dialogo).toBeHidden();
   await tarjetaPapas.click();
   await expect(dialogo).toBeVisible();
   await dialogo.getByRole('radio', { name: new RegExp(CARNE) }).check();
@@ -264,6 +289,10 @@ test('P2 · en la CAJA: Papas·Carne paga lleno, Papas·Pollo descuenta, el Sand
   await expect(dialogo).toBeVisible();
   await expect(dialogo.getByText(/Promo aplicada/)).toBeVisible();
   await expect(dialogo.getByText('$ 22.000', { exact: false }).first()).toBeVisible();
+  // El extra se suma ENCIMA del precio fijo (decisión del dueño): 22.000 + 3.000.
+  await dialogo.getByRole('checkbox', { name: new RegExp(QUESO) }).check();
+  await expect(dialogo.getByText(/Promo aplicada/)).toBeVisible();
+  await expect(dialogo.getByText('$ 25.000', { exact: false }).first()).toBeVisible();
   await dialogo.getByRole('button', { name: /agregar al carrito/i }).click();
   await expect(dialogo).toBeHidden();
 
@@ -285,10 +314,11 @@ test('P2 · en la CAJA: Papas·Carne paga lleno, Papas·Pollo descuenta, el Sand
   await ctx.close();
 
   // El servidor recalcula con su propio motor: Papas Pollo 20.000 + Sandwich
-  // 22.000 + Malteada 9.000 = 51.000, descuentos 5.000 + 5.000 + 1.000.
+  // con queso 25.000 + Malteada 9.000 = 54.000, descuentos 5.000 + 5.000 + 1.000.
   const venta = (await ventas(5)).find((v) => v.status === 'PAGADO' && v.items.some((it) => it.productId === ids.sandwich));
   expect(venta, 'no aparece la venta cobrada').toBeTruthy();
-  expect(venta!.total).toBe(51000);
+  reciboCaja = venta!.receiptNumber;
+  expect(venta!.total).toBe(54000);
   expect(venta!.discountTotal).toBe(11000);
   const papasLinea = venta!.items.find((it) => it.productId === ids.papas)!;
   expect(papasLinea.sizeId).toBe(ids.pollo);
@@ -296,13 +326,14 @@ test('P2 · en la CAJA: Papas·Carne paga lleno, Papas·Pollo descuenta, el Sand
   expect(papasLinea.lineDiscount).toBe(5000);
   const sandwichLinea = venta!.items.find((it) => it.productId === ids.sandwich)!;
   expect(sandwichLinea.appliedPromotionId).toBe(promoIds.fija);
-  expect(sandwichLinea.lineTotal).toBe(22000);
+  expect(sandwichLinea.lineTotal).toBe(25000);
+  expect(sandwichLinea.lineDiscount).toBe(5000);
   const malteadaLinea = venta!.items.find((it) => it.productId === ids.malteada)!;
   expect(malteadaLinea.appliedPromotionId).toBe(promoIds.clasica);
   expect(malteadaLinea.lineDiscount).toBe(1000);
 });
 
-test('P3 · en la WEB (teléfono): la tarjeta de Papas no promete nada, el selector descuenta solo Pollo, el Sandwich dice "Hoy $22.000"; el pedido real da $42.000', async ({ browser }) => {
+test('P3 · en la WEB (teléfono): la tarjeta de Papas no promete nada, el selector descuenta solo Pollo, el Sandwich dice "Hoy $22.000"; el pedido real da $45.000', async ({ browser }) => {
   const ctx = await browser.newContext({
     viewport: { width: 390, height: 720 },
     extraHTTPHeaders: { 'x-vercel-trusted-oidc-idp-token': OIDC_WEB },
@@ -318,6 +349,7 @@ test('P3 · en la WEB (teléfono): la tarjeta de Papas no promete nada, el selec
   await expect(card).not.toContainText('−20%');
   await expect(page.getByRole('button', { name: new RegExp(SANDWICH) }).first()).toContainText('Hoy $22.000');
   await expect(page.getByRole('button', { name: new RegExp(MALTEADA) }).first()).toContainText('−10%');
+  await expect(page.getByRole('button', { name: new RegExp(MINI) }).first()).not.toContainText('Hoy');
 
   const dialogo = page.getByRole('dialog');
   await card.click();
@@ -334,6 +366,8 @@ test('P3 · en la WEB (teléfono): la tarjeta de Papas no promete nada, el selec
   await expect(dialogo).toBeVisible();
   await expect(dialogo.getByText('Hoy $22.000').first()).toBeVisible();
   await expect(dialogo.getByText('$ 22.000').first()).toBeVisible();
+  await dialogo.getByRole('checkbox', { name: new RegExp(QUESO) }).check();
+  await expect(dialogo.getByText('$ 25.000').first()).toBeVisible();
   await dialogo.getByRole('button', { name: /Agregar al carrito/ }).click();
   await expect(dialogo).toBeHidden();
 
@@ -348,7 +382,7 @@ test('P3 · en la WEB (teléfono): la tarjeta de Papas no promete nada, el selec
     await ctx.close();
     return;
   }
-  await expect(page.getByText('$ 42.000').first()).toBeVisible();
+  await expect(page.getByText('$ 45.000').first()).toBeVisible();
   await pagar.click();
   await page.waitForURL((u) => u.pathname === '/checkout', { timeout: 30_000 });
   await page.getByPlaceholder('Como te van a llamar al retirar').fill(CLIENTE);
@@ -359,13 +393,40 @@ test('P3 · en la WEB (teléfono): la tarjeta de Papas no promete nada, el selec
 
   const pedido = (await ventas(10)).find((v) => v.type === 'WEB_PICKUP' && v.customerName === CLIENTE);
   expect(pedido, 'el pedido web no quedó creado').toBeTruthy();
-  expect(pedido!.total).toBe(42000);
+  expect(pedido!.total).toBe(45000);
   expect(pedido!.discountTotal).toBe(10000);
   expect(pedido!.items.find((it) => it.productId === ids.papas)!.appliedPromotionId).toBe(promoIds.pollo);
   expect(pedido!.items.find((it) => it.productId === ids.sandwich)!.appliedPromotionId).toBe(promoIds.fija);
   // Se cancela para no dejar un pedido pendiente en la caja de QA.
   const c = await api.post(`${API}/sales/${pedido!.id}/cancel`, { headers: auth(tokAdmin), data: { reason: 'Auditoría promos QA' } });
   expect(c.ok(), `cancel → ${c.status()} ${await c.text()}`).toBeTruthy();
+});
+
+test('P3b · el cajero EDITA desde el historial la venta cobrada con promos: sube el Sandwich a 2 y el servidor recalcula $79.000', async ({ browser }) => {
+  // El modal de edición arma las líneas con tamaño y extras (cambio de esta
+  // tanda): el estimado tiene que coincidir con lo que cobra el servidor.
+  expect(reciboCaja, 'P2 no dejó el recibo').toBeGreaterThan(0);
+  const ctx = await browser.newContext({ storageState: ADMIN_STATE, extraHTTPHeaders: { 'x-vercel-trusted-oidc-idp-token': OIDC }, viewport: { width: 1366, height: 900 } });
+  const page = await ctx.newPage();
+  await page.goto(`${ADMIN}/caja/historial`);
+  const fila = page.getByRole('listitem').filter({ has: page.getByRole('button', { name: new RegExp(`^#${reciboCaja} `) }) }).first();
+  await expect(fila).toBeVisible({ timeout: 30_000 });
+  await fila.getByRole('button', { name: 'Editar' }).first().click();
+  const modal = page.getByRole('dialog');
+  await expect(modal).toBeVisible();
+  await modal.getByRole('button', { name: new RegExp(`Agregar uno de ${SANDWICH}`) }).click();
+  // 20.000 + 2 × 25.000 + 9.000 = 79.000 (el precio fijo por unidad, extra encima).
+  await expect(modal.getByText('Nuevo total estimado').locator('..').getByText(/79\.000/)).toBeVisible();
+  await modal.getByRole('button', { name: /Guardar cambios/ }).click();
+  await expect(modal).toBeHidden({ timeout: 30_000 });
+  await ctx.close();
+  const editada = (await ventas(10)).find((v) => v.receiptNumber === reciboCaja);
+  expect(editada, 'no aparece la venta editada').toBeTruthy();
+  expect(editada!.total).toBe(79000);
+  expect(editada!.discountTotal).toBe(16000);
+  const sw = editada!.items.find((it) => it.productId === ids.sandwich)!;
+  expect(sw.lineTotal).toBe(50000);
+  expect(sw.appliedPromotionId).toBe(promoIds.fija);
 });
 
 test('P4 · el dueño EDITA la promo por variante (vuelve a "todas") y el detalle lo refleja; apagar y encender funcionan', async ({ browser }) => {
@@ -393,7 +454,7 @@ test('P4 · el dueño EDITA la promo por variante (vuelve a "todas") y el detall
   await ctx.close();
 });
 
-test('P5 · barrido: las pantallas que tocan promociones abren sin error, en escritorio y en teléfono', async ({ browser }) => {
+test('P5 · barrido: 13 pantallas abren sin error, en escritorio y en teléfono', async ({ browser }) => {
   const rutas = [
     '/inicio',
     '/promotions',
@@ -405,6 +466,9 @@ test('P5 · barrido: las pantallas que tocan promociones abren sin error, en esc
     '/reports/sales',
     '/reports/products',
     '/finanzas/estado',
+    '/products',
+    '/shifts',
+    '/inventory',
   ];
   for (const viewport of [{ width: 1366, height: 900 }, { width: 390, height: 844 }]) {
     const ctx = await browser.newContext({ storageState: DUENO_STATE, extraHTTPHeaders: { 'x-vercel-trusted-oidc-idp-token': OIDC }, viewport });
