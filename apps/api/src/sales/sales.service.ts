@@ -1689,6 +1689,9 @@ export function computeLine(
     sizeId = size.id;
     basePrice += Number(size.priceModifier);
   }
+  // Base del PRECIO FIJO: el producto con su tamaño, antes de extras y recargos
+  // (decisión del dueño 2026-09-21: lo que se agregue se cobra encima).
+  const unitBasePrice = roundMoney(basePrice);
 
   // Modifiers (snapshot)
   const modifiers: AppliedModifier[] = [];
@@ -1750,8 +1753,10 @@ export function computeLine(
     };
   }
 
-  // Motor de promociones puro (5.C + 12.A: BOGO/FIXED_OFF/COMBO_OFF).
+  // Motor de promociones puro (5.C + 12.A: BOGO/FIXED_OFF/COMBO_OFF + FIXED_PRICE).
   // Devuelve appliedPromotionId=null + lineDiscount=0 cuando ninguna matchea.
+  // `sizeId` decide las promos limitadas por variante; `unitBasePrice` es la
+  // base del precio fijo.
   const promo = applyPromotion(
     {
       productId: product.id,
@@ -1759,6 +1764,8 @@ export function computeLine(
       quantity: input.quantity,
       isCombo: product.isCombo,
       at,
+      sizeId,
+      unitBasePrice,
     },
     activePromotions,
   );

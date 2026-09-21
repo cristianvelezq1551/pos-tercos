@@ -83,6 +83,8 @@ interface LineaSimulada {
   cantidad: number;
   /** Precio de UNA unidad ya con tamaño y extras. */
   precioUnitario: number;
+  /** Precio de UNA unidad con su tamaño, SIN extras ni recargos (base del precio fijo). */
+  precioBaseUnitario: number;
   sizeId?: string;
   extras?: string[];
   /** Lo elegido en los grupos del combo (viaja en el payload de la venta). */
@@ -650,6 +652,8 @@ export class Simulacion {
                 subtotal: bruto,
                 cantidad: l.cantidad,
                 esCombo: l.producto.isCombo,
+                precioBaseUnitario: l.precioBaseUnitario,
+                sizeId: l.sizeId,
               }),
       };
     });
@@ -664,6 +668,7 @@ export class Simulacion {
    */
   private elegirOpciones(producto: ProductoSombra): {
     precioUnitario: number;
+    precioBaseUnitario: number;
     sizeId?: string;
     extras?: string[];
     choices?: Array<{ groupId: string; productId: string; quantity: number }>;
@@ -685,6 +690,8 @@ export class Simulacion {
       }
       return {
         precioUnitario,
+        // Los recargos de lo elegido son extras: no entran en la base.
+        precioBaseUnitario: producto.precio,
         choices: [...porProducto].map(([productId, quantity]) => ({
           groupId: grupoId,
           productId,
@@ -694,7 +701,7 @@ export class Simulacion {
       };
     }
     if (producto.id !== this.m.conOpciones.producto.id) {
-      return { precioUnitario: producto.precio, consumoExtra };
+      return { precioUnitario: producto.precio, precioBaseUnitario: producto.precio, consumoExtra };
     }
 
     const { tamanos, extras } = this.m.conOpciones;
@@ -702,6 +709,7 @@ export class Simulacion {
     const elegidos = extras.filter(() => this.rng.chance(0.4));
 
     let precioUnitario = producto.precio + tamano.priceModifier;
+    const precioBaseUnitario = precioUnitario;
     for (const arista of tamano.receta) {
       const clave = claveDe(
         arista.childType === 'ingredient' ? 'INGREDIENT' : 'SUBPRODUCT',
@@ -721,6 +729,7 @@ export class Simulacion {
     }
     return {
       precioUnitario,
+      precioBaseUnitario,
       sizeId: tamano.id,
       extras: elegidos.map((e) => e.id),
       consumoExtra,
@@ -821,6 +830,8 @@ export class Simulacion {
         subtotal: bruto,
         cantidad: l.cantidad,
         esCombo: l.producto.isCombo,
+        // El pedido web de la simulación va sin tamaño ni extras.
+        precioBaseUnitario: l.producto.precio,
       });
     }
     const totalEsperado = redondearPeso(subtotal - descuentoPromo);
@@ -926,6 +937,7 @@ export class Simulacion {
           subtotal: l.producto.precio * l.cantidad,
           cantidad: l.cantidad,
           esCombo: l.producto.isCombo,
+          precioBaseUnitario: l.producto.precio,
         }),
       })),
       consumo: new Map(necesidad),

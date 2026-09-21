@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreatePromotionSchema, UpdatePromotionSchema } from './promotions';
+import { CreatePromotionSchema, UpdatePromotionSchema, CREATABLE_PROMOTION_TYPES } from './promotions';
 
 const UUID = '22222222-2222-4222-8222-222222222222';
 
@@ -134,5 +134,81 @@ describe('UpdatePromotionSchema — los campos por tipo son inmutables', () => {
   it('permite cambiar campos meta', () => {
     const r = UpdatePromotionSchema.safeParse({ isActive: false, channel: 'WEB' });
     expect(r.success).toBe(true);
+  });
+});
+
+describe('FIXED_PRICE y variantes', () => {
+  const base = {
+    name: 'Sandwich a 22',
+    daysOfWeekMask: 127,
+    timeStart: '00:00:00',
+    timeEnd: '23:59:59',
+    productIds: ['00000000-0000-4000-8000-000000000001'],
+  };
+  const PRODUCTO = '00000000-0000-4000-8000-000000000001';
+  const OTRO = '00000000-0000-4000-8000-000000000002';
+  const TAMANO = '00000000-0000-4000-8000-0000000000aa';
+
+  it('FIXED_PRICE exige fixedPrice y rechaza los campos de los otros tipos', () => {
+    expect(CreatePromotionSchema.safeParse({ ...base, type: 'FIXED_PRICE' }).success).toBe(false);
+    expect(
+      CreatePromotionSchema.safeParse({ ...base, type: 'FIXED_PRICE', fixedPrice: 22000 }).success,
+    ).toBe(true);
+    const mezcla = CreatePromotionSchema.safeParse({
+      ...base,
+      type: 'FIXED_PRICE',
+      fixedPrice: 22000,
+      discountPct: 0.1,
+    });
+    expect(mezcla.success).toBe(false);
+  });
+
+  it('un precio fijo de $0 o negativo no es una promo', () => {
+    expect(CreatePromotionSchema.safeParse({ ...base, type: 'FIXED_PRICE', fixedPrice: 0 }).success).toBe(false);
+  });
+
+  it('los otros tipos rechazan fixedPrice, con un mensaje para una persona', () => {
+    const r = CreatePromotionSchema.safeParse({ ...base, type: 'PERCENT_OFF', discountPct: 0.2, fixedPrice: 22000 });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.some((i) => /precio fijo/i.test(i.message))).toBe(true);
+    }
+  });
+
+  it('se puede crear el tipo nuevo desde el formulario', () => {
+    expect(CREATABLE_PROMOTION_TYPES).toContain('FIXED_PRICE');
+  });
+
+  it('las variantes solo se limitan en productos que están en la promo', () => {
+    const ok = CreatePromotionSchema.safeParse({
+      ...base,
+      type: 'PERCENT_OFF',
+      discountPct: 0.2,
+      sizeIdsByProduct: { [PRODUCTO]: [TAMANO] },
+    });
+    expect(ok.success).toBe(true);
+    const ajeno = CreatePromotionSchema.safeParse({
+      ...base,
+      type: 'PERCENT_OFF',
+      discountPct: 0.2,
+      sizeIdsByProduct: { [OTRO]: [TAMANO] },
+    });
+    expect(ajeno.success).toBe(false);
+    // Limitar a cero variantes no aplicaría a nada.
+    const vacio = CreatePromotionSchema.safeParse({
+      ...base,
+      type: 'PERCENT_OFF',
+      discountPct: 0.2,
+      sizeIdsByProduct: { [PRODUCTO]: [] },
+    });
+    expect(vacio.success).toBe(false);
+  });
+
+  it('en edición, las variantes viajan junto con los productos', () => {
+    expect(UpdatePromotionSchema.safeParse({ sizeIdsByProduct: { [PRODUCTO]: [TAMANO] } }).success).toBe(false);
+    expect(
+      UpdatePromotionSchema.safeParse({ productIds: [PRODUCTO], sizeIdsByProduct: { [PRODUCTO]: [TAMANO] } })
+        .success,
+    ).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ProductSizeSchema } from './catalog';
-import { PromotionTypeEnum } from './promotions';
+import { PromotionTypeEnum, PromotionSizeIdsByProductSchema } from './promotions';
 
 // ====================================================================
 // WEB MENU — endpoint público para el menú online (FASE 7)
@@ -80,12 +80,16 @@ export const PublicMenuPromotionSchema = z.object({
   discountFixed: z.number().min(0).nullable(),
   bogoBuyQty: z.number().int().min(1).nullable(),
   bogoGetQty: z.number().int().min(1).nullable(),
+  /** FIXED_PRICE. Opcional: despliegue escalonado API/web. */
+  fixedPrice: z.number().positive().nullable().optional(),
   daysOfWeekMask: z.number().int().min(1).max(127),
   timeStart: z.string(),
   timeEnd: z.string(),
   activeFrom: z.string().date().nullable(),
   activeTo: z.string().date().nullable(),
   productIds: z.array(z.string().uuid()),
+  /** Limitación por variante (ver `PromotionSizeIdsByProductSchema`). Opcional. */
+  sizeIdsByProduct: PromotionSizeIdsByProductSchema.optional(),
 });
 export type PublicMenuPromotion = z.infer<typeof PublicMenuPromotionSchema>;
 

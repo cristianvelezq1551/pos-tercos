@@ -113,13 +113,29 @@ export function ProductPickerModal({
   // badge da el precio por unidad con descuento y el total de la línea el ahorro.
   const promoPreview = useMemo(() => {
     if (!product) return { badge: null, lineDiscount: 0 };
-    const badge = getMenuPromoBadge(product.id, unitPrice, promotions, undefined, product.isCombo);
+    // Con el tamaño elegido aparecen las promos limitadas a esa variante, y el
+    // precio fijo se calcula sobre el producto con su tamaño (extras encima).
+    const unitBasePrice = displayBasePrice(product) + (selectedSize?.priceModifier ?? 0);
+    const badge = getMenuPromoBadge(product.id, unitPrice, promotions, undefined, product.isCombo, {
+      sizeId,
+      unitBasePrice,
+    });
     const { discount } = computeCartPromoTotals(
-      [{ productId: product.id, quantity, unitPrice, isCombo: product.isCombo }],
+      [
+        {
+          productId: product.id,
+          quantity,
+          unitPrice,
+          isCombo: product.isCombo,
+          size: selectedSize ? { id: selectedSize.id } : null,
+          modifiers: selectedModifiers,
+          choices: aChoices(choiceGroups, choiceSel),
+        },
+      ],
       promotions,
     );
     return { badge, lineDiscount: discount };
-  }, [product, unitPrice, quantity, promotions]);
+  }, [product, unitPrice, quantity, promotions, sizeId, selectedSize, selectedModifiers, choiceGroups, choiceSel]);
 
   if (!open || !product) return null;
 

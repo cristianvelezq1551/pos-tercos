@@ -9,6 +9,8 @@ export const PromotionTypeEnum = z.enum([
   'BOGO',
   'FIXED_OFF',
   'COMBO_OFF',
+  /** El producto se vende a un precio DEFINIDO mientras dura la promo (2026-09-21). */
+  'FIXED_PRICE',
 ]);
 export type PromotionType = z.infer<typeof PromotionTypeEnum>;
 
@@ -23,7 +25,7 @@ export type PromotionType = z.infer<typeof PromotionTypeEnum>;
  * El formulario del admin lee de acá: así la pantalla y la validación no pueden
  * discrepar.
  */
-export const CREATABLE_PROMOTION_TYPES = ['PERCENT_OFF', 'FIXED_OFF', 'COMBO_OFF'] as const;
+export const CREATABLE_PROMOTION_TYPES = ['PERCENT_OFF', 'FIXED_OFF', 'FIXED_PRICE', 'COMBO_OFF'] as const;
 
 
 /**
@@ -52,6 +54,21 @@ export const DAY_MASK = {
   ALL: 127,
 } as const;
 
+/**
+ * Variantes (tamaños) a las que se limita la promo, por producto:
+ * `{ [productId]: [sizeId, …] }`. Un producto que NO figura acá aplica a todas
+ * sus variantes (como siempre). Solo tiene sentido en productos con tamaños; el
+ * servicio valida que cada tamaño pertenezca a su producto.
+ *
+ * Existe porque "Papas TERCOS" tiene tres tamaños y el dueño quería la promo
+ * SOLO en "Pollo y Miel ahumada": una promo por producto se la daba a las tres.
+ */
+export const PromotionSizeIdsByProductSchema = z.record(
+  z.string().uuid(),
+  z.array(z.string().uuid()).min(1),
+);
+export type PromotionSizeIdsByProduct = z.infer<typeof PromotionSizeIdsByProductSchema>;
+
 /** Regex HH:MM:SS 24h. Coincide con CHECK constraint en DB. */
 const TIME_REGEX = /^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
 const TimeStringSchema = z.string().regex(TIME_REGEX, 'La hora debe tener el formato HH:MM:SS (24h).');
@@ -72,6 +89,10 @@ export const PromotionSchema = z.object({
   bogoBuyQty: z.number().int().min(1).nullable(),
   /** BOGO: cantidad de ítems gratis por cada "set" (típico 1). */
   bogoGetQty: z.number().int().min(1).nullable(),
+  /** FIXED_PRICE: precio al que se vende el producto (con su tamaño; los extras
+   *  se suman encima). Opcional en el wire: el API y las apps se despliegan por
+   *  separado y una app nueva tiene que poder leer una promo del API viejo. */
+  fixedPrice: z.number().positive().nullable().optional(),
   /** Bitmask 1..127. */
   daysOfWeekMask: z.number().int().min(1).max(127),
   timeStart: TimeStringSchema,
@@ -85,6 +106,9 @@ export const PromotionSchema = z.object({
   createdAt: z.string().datetime(),
   /** IDs de productos a los que aplica (resuelto desde join). */
   productIds: z.array(z.string().uuid()),
+  /** Limitación por variante, solo para los productos que la tengan (ver
+   *  `PromotionSizeIdsByProductSchema`). Opcional por el despliegue escalonado. */
+  sizeIdsByProduct: PromotionSizeIdsByProductSchema.optional(),
 });
 export type Promotion = z.infer<typeof PromotionSchema>;
 
@@ -104,6 +128,8 @@ export const CreatePromotionSchema = z
     bogoBuyQty: z.number().int().min(1).optional(),
     /** Required en BOGO; prohibido en otros. */
     bogoGetQty: z.number().int().min(1).optional(),
+    /** Required en FIXED_PRICE; prohibido en otros. */
+    fixedPrice: z.number().positive().optional(),
     daysOfWeekMask: z.number().int().min(1).max(127),
     timeStart: TimeStringSchema,
     timeEnd: TimeStringSchema,
@@ -112,8 +138,13 @@ export const CreatePromotionSchema = z
     channel: PromotionChannelEnum.default('BOTH'),
     /** Productos a los que aplica. Min 1. */
     productIds: z.array(z.string().uuid()).min(1),
+    /** Solo estas variantes, para los productos que se limiten. */
+    sizeIdsByProduct: PromotionSizeIdsByProductSchema.optional(),
   })
   .superRefine((data, ctx) => {
+    // Cada producto limitado por variante tiene que estar entre los productos
+    // de la promo: si no, la limitación no aplica a nada y se pierde en silencio.
+    assertSizeIdsWithinProducts(ctx, data.productIds, data.sizeIdsByProduct);
     // Validación per-type. Espeja CHECK constraints en DB
     // (chk_promo_pct/fixed/bogo/combo).
     switch (data.type) {
@@ -128,6 +159,21 @@ export const CreatePromotionSchema = z
         rejectField(ctx, data, 'discountFixed', 'PERCENT_OFF');
         rejectField(ctx, data, 'bogoBuyQty', 'PERCENT_OFF');
         rejectField(ctx, data, 'bogoGetQty', 'PERCENT_OFF');
+        rejectField(ctx, data, 'fixedPrice', 'PERCENT_OFF');
+        break;
+      }
+      case 'FIXED_PRICE': {
+        if (data.fixedPrice === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Falta el precio al que se va a vender.',
+            path: ['fixedPrice'],
+          });
+        }
+        rejectField(ctx, data, 'discountPct', 'FIXED_PRICE');
+        rejectField(ctx, data, 'discountFixed', 'FIXED_PRICE');
+        rejectField(ctx, data, 'bogoBuyQty', 'FIXED_PRICE');
+        rejectField(ctx, data, 'bogoGetQty', 'FIXED_PRICE');
         break;
       }
       case 'FIXED_OFF': {
@@ -141,6 +187,7 @@ export const CreatePromotionSchema = z
         rejectField(ctx, data, 'discountPct', 'FIXED_OFF');
         rejectField(ctx, data, 'bogoBuyQty', 'FIXED_OFF');
         rejectField(ctx, data, 'bogoGetQty', 'FIXED_OFF');
+        rejectField(ctx, data, 'fixedPrice', 'FIXED_OFF');
         break;
       }
       case 'BOGO': {
@@ -176,6 +223,7 @@ export const CreatePromotionSchema = z
         }
         rejectField(ctx, data, 'bogoBuyQty', 'COMBO_OFF');
         rejectField(ctx, data, 'bogoGetQty', 'COMBO_OFF');
+        rejectField(ctx, data, 'fixedPrice', 'COMBO_OFF');
         break;
       }
     }
@@ -198,10 +246,28 @@ export const CreatePromotionSchema = z
   });
 export type CreatePromotion = z.infer<typeof CreatePromotionSchema>;
 
+function assertSizeIdsWithinProducts(
+  ctx: z.RefinementCtx,
+  productIds: readonly string[] | undefined,
+  sizeIdsByProduct: PromotionSizeIdsByProduct | undefined,
+): void {
+  if (!sizeIdsByProduct) return;
+  const set = new Set(productIds ?? []);
+  for (const productId of Object.keys(sizeIdsByProduct)) {
+    if (!set.has(productId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Solo se pueden limitar variantes de productos que estén en la promoción.',
+        path: ['sizeIdsByProduct', productId],
+      });
+    }
+  }
+}
+
 function rejectField(
   ctx: z.RefinementCtx,
   data: Record<string, unknown>,
-  field: 'discountPct' | 'discountFixed' | 'bogoBuyQty' | 'bogoGetQty',
+  field: 'discountPct' | 'discountFixed' | 'bogoBuyQty' | 'bogoGetQty' | 'fixedPrice',
   forType: PromotionType,
 ): void {
   if (data[field] !== undefined) {
@@ -214,11 +280,15 @@ function rejectField(
 }
 
 /** Nombres legibles para los mensajes de validación (espejan la UI del admin). */
-const CAMPO_LABEL: Record<'discountPct' | 'discountFixed' | 'bogoBuyQty' | 'bogoGetQty', string> = {
+const CAMPO_LABEL: Record<
+  'discountPct' | 'discountFixed' | 'bogoBuyQty' | 'bogoGetQty' | 'fixedPrice',
+  string
+> = {
   discountPct: 'El porcentaje de descuento',
   discountFixed: 'El monto del descuento',
   bogoBuyQty: 'La cantidad que se lleva',
   bogoGetQty: 'La cantidad que se paga',
+  fixedPrice: 'El precio fijo',
 };
 
 const TIPO_LABEL: Record<PromotionType, string> = {
@@ -226,6 +296,7 @@ const TIPO_LABEL: Record<PromotionType, string> = {
   FIXED_OFF: 'Descuento $',
   BOGO: 'Lleva X paga Y',
   COMBO_OFF: 'Combo',
+  FIXED_PRICE: 'Precio fijo',
 };
 
 // ====================================================================
@@ -250,6 +321,18 @@ export const UpdatePromotionSchema = z
     channel: PromotionChannelEnum.optional(),
     isActive: z.boolean().optional(),
     productIds: z.array(z.string().uuid()).min(1).optional(),
+    /** Viaja JUNTO con `productIds`: las filas se reconstruyen con los dos. */
+    sizeIdsByProduct: PromotionSizeIdsByProductSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.sizeIdsByProduct !== undefined && data.productIds === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Para cambiar las variantes hay que mandar también los productos.',
+        path: ['sizeIdsByProduct'],
+      });
+    }
+    assertSizeIdsWithinProducts(ctx, data.productIds, data.sizeIdsByProduct);
+  });
 export type UpdatePromotion = z.infer<typeof UpdatePromotionSchema>;

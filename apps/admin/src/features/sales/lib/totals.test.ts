@@ -205,3 +205,41 @@ describe('computeCartTotals — descuento manual (#5b)', () => {
     expect(r.discount).toBe(10_000);
   });
 });
+
+describe('promos por variante y precio fijo (caja = servidor)', () => {
+  const PAPAS = 'papas';
+  const POLLO = 'pollo';
+  const CARNE = 'carne';
+  const conTamano = (sizeId: string, priceModifier: number, over: Partial<CartLine> = {}): CartLine =>
+    line({
+      lineId: `l-${sizeId}`,
+      productId: PAPAS,
+      productName: 'Papas TERCOS',
+      size: { id: sizeId, name: sizeId, priceModifier },
+      unitPrice: 25_000 + priceModifier,
+      ...over,
+    });
+
+  it('la promo limitada a "Pollo" descuenta esa variante y deja la otra en precio lleno', () => {
+    const promos = [promo({ productIds: [PAPAS], sizeIdsByProduct: { [PAPAS]: [POLLO] } })];
+    const t = computeCartTotals([conTamano(POLLO, 0), conTamano(CARNE, 3000)], promos, new Date(2026, 8, 21, 12));
+    expect(t.lines[0].lineDiscount).toBe(5000);
+    expect(t.lines[1].lineDiscount).toBe(0);
+    expect(t.total).toBe(25_000 - 5000 + 28_000);
+  });
+
+  it('precio fijo: base = producto con tamaño; el extra se cobra encima', () => {
+    const promos = [
+      promo({ type: 'FIXED_PRICE', discountPct: null, fixedPrice: 20_000, productIds: [PAPAS] }),
+    ];
+    const conExtra = conTamano(POLLO, 0, {
+      modifiers: [{ id: 'queso', name: 'Queso extra', priceDelta: 3000 }],
+      unitPrice: 28_000,
+      quantity: 2,
+    });
+    const t = computeCartTotals([conExtra], promos, new Date(2026, 8, 21, 12));
+    // (25.000 − 20.000) × 2 = 10.000; el queso ($3.000 × 2) se paga completo.
+    expect(t.lines[0].lineDiscount).toBe(10_000);
+    expect(t.total).toBe(56_000 - 10_000);
+  });
+});

@@ -32,8 +32,9 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
     setError(null);
     try {
       await deactivatePromotion(promotion.id);
-      router.push('/promotions');
-      router.refresh();
+      // Navegación completa: ver el comentario en PromotionForm (el salto
+      // cliente a /promotions desde esta ruta se queda colgado).
+      window.location.assign('/promotions');
     } catch (err) {
       setError(getErrorMessage(err));
       setBusy(false);
@@ -79,17 +80,28 @@ export function PromotionDetail({ promotion, products }: PromotionDetailProps) {
           <p className="text-sm text-muted-foreground">Sin productos asociados.</p>
         ) : (
           <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-            {linkedProducts.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-sm"
-              >
-                <span>{p.name}</span>
-                {p.isCombo && (
-                  <span className="ml-auto text-xs text-purple-600">combo</span>
-                )}
-              </li>
-            ))}
+            {linkedProducts.map((p) => {
+              // Limitada a ciertas variantes: se nombran, para que no parezca
+              // que la promo cubre el producto entero.
+              const soloIds = promotion.sizeIdsByProduct?.[p.id];
+              const solo = soloIds
+                ? (p.sizes ?? []).filter((s) => soloIds.includes(s.id)).map((s) => s.name)
+                : null;
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-center gap-x-2 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-sm"
+                >
+                  <span>{p.name}</span>
+                  {solo && solo.length > 0 ? (
+                    <span className="text-xs text-muted-foreground">· solo {solo.join(', ')}</span>
+                  ) : null}
+                  {p.isCombo && (
+                    <span className="ml-auto text-xs text-purple-600">combo</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

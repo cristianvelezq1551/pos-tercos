@@ -8,6 +8,7 @@ import type {
   CreatePromotion,
   Promotion,
   PromotionChannel,
+  PromotionSizeIdsByProduct,
   PublicMenuPromotion,
   UpdatePromotion,
 } from '@pos-tercos/types';
@@ -17,10 +18,12 @@ import { PrismaService } from '../prisma/prisma.service';
 
 type DbPromotionWithRelations = Prisma.PromotionGetPayload<{
   include: {
-    products: { select: { productId: true } };
+    products: { select: { productId: true; sizeId: true } };
     createdBy: { select: { fullName: true } };
   };
 }>;
+
+type TargetRow = { productId: string; sizeId: string | null };
 
 /** Canal desde el que se origina una venta/lectura de promos (BOTH matchea ambos). */
 export type SaleChannel = Exclude<PromotionChannel, 'BOTH'>;
@@ -77,6 +80,7 @@ export class PromotionsService {
         r.discountFixed === null ? undefined : Number(r.discountFixed),
       bogoBuyQty: r.bogoBuyQty ?? undefined,
       bogoGetQty: r.bogoGetQty ?? undefined,
+      fixedPrice: r.fixedPrice === null ? undefined : Number(r.fixedPrice),
       daysOfWeekMask: r.daysOfWeekMask,
       timeStart: r.timeStart,
       timeEnd: r.timeEnd,
@@ -84,6 +88,7 @@ export class PromotionsService {
       activeFrom: r.activeFrom ? toDateString(r.activeFrom) : null,
       activeTo: r.activeTo ? toDateString(r.activeTo) : null,
       productIds: new Set(r.products.map((pp) => pp.productId)),
+      sizeIdsByProduct: sizeSetsByProduct(r.products),
     }));
   }
 
@@ -103,12 +108,14 @@ export class PromotionsService {
         r.discountFixed === null ? null : Number(r.discountFixed),
       bogoBuyQty: r.bogoBuyQty,
       bogoGetQty: r.bogoGetQty,
+      fixedPrice: r.fixedPrice === null ? null : Number(r.fixedPrice),
       daysOfWeekMask: r.daysOfWeekMask,
       timeStart: r.timeStart,
       timeEnd: r.timeEnd,
       activeFrom: r.activeFrom ? toDateString(r.activeFrom) : null,
       activeTo: r.activeTo ? toDateString(r.activeTo) : null,
-      productIds: r.products.map((pp) => pp.productId),
+      productIds: uniqueProductIds(r.products),
+      sizeIdsByProduct: sizeIdsByProductDto(r.products),
     }));
   }
 
@@ -123,7 +130,7 @@ export class PromotionsService {
           { OR: [{ activeTo: null }, { activeTo: { gte: dayKey } }] },
         ],
       },
-      include: { products: { select: { productId: true } } },
+      include: { products: { select: { productId: true, sizeId: true } } },
     });
   }
 
@@ -133,6 +140,8 @@ export class PromotionsService {
 
   async create(input: CreatePromotion, userId: string): Promise<Promotion> {
     await this.assertProductsExist(input.productIds);
+    await this.assertSizesBelong(input.sizeIdsByProduct);
+    const targets = targetRows(input.productIds, input.sizeIdsByProduct);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const promo = await tx.promotion.create({
@@ -143,6 +152,7 @@ export class PromotionsService {
           discountFixed: input.discountFixed ?? null,
           bogoBuyQty: input.bogoBuyQty ?? null,
           bogoGetQty: input.bogoGetQty ?? null,
+          fixedPrice: input.fixedPrice ?? null,
           daysOfWeekMask: input.daysOfWeekMask,
           timeStart: input.timeStart,
           timeEnd: input.timeEnd,
@@ -150,9 +160,7 @@ export class PromotionsService {
           activeTo: input.activeTo ? new Date(input.activeTo) : null,
           channel: input.channel,
           createdById: userId,
-          products: {
-            create: input.productIds.map((pid) => ({ productId: pid })),
-          },
+          products: { create: targets },
         },
         include: includeFull(),
       });
@@ -187,6 +195,7 @@ export class PromotionsService {
 
     if (input.productIds) {
       await this.assertProductsExist(input.productIds);
+      await this.assertSizesBelong(input.sizeIdsByProduct);
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -209,11 +218,14 @@ export class PromotionsService {
       });
 
       if (input.productIds) {
+        // Se reconstruyen las filas con productos Y variantes: mandar solo los
+        // productos vuelve la promo a "todas las variantes", que es lo que el
+        // formulario manda cuando no hay ninguna limitada.
         await tx.promotionProduct.deleteMany({ where: { promotionId: id } });
         await tx.promotionProduct.createMany({
-          data: input.productIds.map((pid) => ({
+          data: targetRows(input.productIds, input.sizeIdsByProduct).map((t) => ({
             promotionId: id,
-            productId: pid,
+            ...t,
           })),
         });
       }
@@ -270,6 +282,28 @@ export class PromotionsService {
   // HELPERS
   // ==================================================================
 
+  /** Cada variante limitada tiene que existir Y ser de su producto. */
+  private async assertSizesBelong(
+    sizeIdsByProduct: PromotionSizeIdsByProduct | undefined,
+  ): Promise<void> {
+    if (!sizeIdsByProduct) return;
+    const pares = Object.entries(sizeIdsByProduct).flatMap(([productId, sizeIds]) =>
+      sizeIds.map((sizeId) => ({ productId, sizeId })),
+    );
+    if (pares.length === 0) return;
+    const sizes = await this.prisma.productSize.findMany({
+      where: { id: { in: pares.map((p) => p.sizeId) } },
+      select: { id: true, productId: true },
+    });
+    const porId = new Map(sizes.map((s) => [s.id, s.productId]));
+    const ajenas = pares.filter((p) => porId.get(p.sizeId) !== p.productId);
+    if (ajenas.length > 0) {
+      throw new BadRequestException(
+        'Una de las variantes elegidas no existe o no pertenece a su producto. Recarga la página y vuelve a intentarlo.',
+      );
+    }
+  }
+
   private async assertProductsExist(productIds: string[]): Promise<void> {
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -296,9 +330,52 @@ function startOfDay(d: Date): Date {
 
 function includeFull() {
   return {
-    products: { select: { productId: true } },
+    products: { select: { productId: true, sizeId: true } },
     createdBy: { select: { fullName: true } },
   } satisfies Prisma.PromotionInclude;
+}
+
+/**
+ * Filas de `promotion_products` a partir del payload: un producto sin
+ * variantes limitadas es UNA fila con `sizeId: null` (todas sus variantes,
+ * como siempre); uno limitado es una fila por variante.
+ */
+function targetRows(
+  productIds: readonly string[],
+  sizeIdsByProduct: PromotionSizeIdsByProduct | undefined,
+): TargetRow[] {
+  const out: TargetRow[] = [];
+  for (const productId of new Set(productIds)) {
+    const sizes = sizeIdsByProduct?.[productId];
+    if (sizes && sizes.length > 0) {
+      for (const sizeId of new Set(sizes)) out.push({ productId, sizeId });
+    } else {
+      out.push({ productId, sizeId: null });
+    }
+  }
+  return out;
+}
+
+function uniqueProductIds(rows: readonly TargetRow[]): string[] {
+  return [...new Set(rows.map((r) => r.productId))];
+}
+
+/** Solo los productos con filas de variante; una fila NULL del mismo producto
+ *  lo deja sin limitar (defensivo: el servicio nunca escribe las dos). */
+function sizeIdsByProductDto(rows: readonly TargetRow[]): PromotionSizeIdsByProduct | undefined {
+  const todas = new Set(rows.filter((r) => r.sizeId === null).map((r) => r.productId));
+  const out: PromotionSizeIdsByProduct = {};
+  for (const r of rows) {
+    if (r.sizeId === null || todas.has(r.productId)) continue;
+    (out[r.productId] ??= []).push(r.sizeId);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function sizeSetsByProduct(rows: readonly TargetRow[]): Map<string, Set<string>> | undefined {
+  const dto = sizeIdsByProductDto(rows);
+  if (!dto) return undefined;
+  return new Map(Object.entries(dto).map(([productId, sizeIds]) => [productId, new Set(sizeIds)]));
 }
 
 function toPromotionDto(row: DbPromotionWithRelations): Promotion {
@@ -311,6 +388,7 @@ function toPromotionDto(row: DbPromotionWithRelations): Promotion {
       row.discountFixed === null ? null : Number(row.discountFixed),
     bogoBuyQty: row.bogoBuyQty,
     bogoGetQty: row.bogoGetQty,
+    fixedPrice: row.fixedPrice === null ? null : Number(row.fixedPrice),
     daysOfWeekMask: row.daysOfWeekMask,
     timeStart: row.timeStart,
     timeEnd: row.timeEnd,
@@ -321,7 +399,8 @@ function toPromotionDto(row: DbPromotionWithRelations): Promotion {
     createdById: row.createdById,
     createdByName: row.createdBy?.fullName ?? null,
     createdAt: row.createdAt.toISOString(),
-    productIds: row.products.map((pp) => pp.productId),
+    productIds: uniqueProductIds(row.products),
+    sizeIdsByProduct: sizeIdsByProductDto(row.products),
   };
 }
 

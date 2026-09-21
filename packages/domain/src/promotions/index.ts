@@ -1,5 +1,5 @@
 export { applyPromotion, getDayOfWeekBit, withinTimeWindow } from './apply-promotions';
-export { getPromoBadge, type PromoBadge } from './promo-badge';
+export { getPromoBadge, type PromoBadge, type PromoBadgeContext } from './promo-badge';
 export {
   promotionScheduleState,
   type PromotionScheduleReason,

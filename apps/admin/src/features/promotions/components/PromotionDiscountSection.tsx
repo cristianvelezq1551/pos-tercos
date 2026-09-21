@@ -140,6 +140,23 @@ export function PromotionDiscountSection({ state, onUpdate, locked = false }: Pr
         </Field>
       )}
 
+      {state.type === 'FIXED_PRICE' && (
+        <Field label="Precio de venta en COP" required>
+          <MoneyInput
+            required
+            disabled={locked}
+            value={state.fixedPrice}
+            onChange={(v) => onUpdate('fixedPrice', v)}
+            className="max-w-[200px]"
+            placeholder="22.000"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Es el precio del producto con su tamaño. Los extras se cobran encima. Si el
+            producto ya cuesta menos, la promo no le baja nada.
+          </p>
+        </Field>
+      )}
+
       {state.type === 'BOGO' && (
         <div className="grid grid-cols-2 gap-3">
           <Field label="Compra (paga)" required>

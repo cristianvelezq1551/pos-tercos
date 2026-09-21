@@ -78,21 +78,28 @@ export function EditSaleModal({
   // descuento manual (de línea u orden) desactiva promos para toda la venta;
   // sin manual, aplican las promos activas AHORA. El descuento sobre el total
   // lo preserva el server (no se reenvía); los de línea se reenvían abajo.
-  const comboById = new Map(products.map((p) => [p.id, p.isCombo] as const));
-  const cartLines: CartLine[] = lines.map((l, i) => ({
-    lineId: String(i),
-    productId: l.productId,
-    productName: l.productName,
-    size: null,
-    modifiers: [],
-    quantity: l.quantity,
-    unitPrice: l.unitPrice,
-    // El estimado solo calcula promociones: lo elegido no cambia el descuento.
-    choices: [],
-    choiceLabels: [],
-    // COMBO_OFF: el estimado debe usar el mismo isCombo que el server (computeLine).
-    isCombo: comboById.get(l.productId) ?? false,
-  }));
+  const productById = new Map(products.map((p) => [p.id, p] as const));
+  const cartLines: CartLine[] = lines.map((l, i) => {
+    const prod = productById.get(l.productId);
+    return {
+      lineId: String(i),
+      productId: l.productId,
+      productName: l.productName,
+      // El tamaño decide las promos limitadas a una variante, y los extras y
+      // recargos se restan para la base del precio fijo: sin ellos el estimado
+      // divergiría de lo que cobra el servidor (computeLine).
+      size: l.sizeId ? { id: l.sizeId, name: l.sizeName ?? '', priceModifier: 0 } : null,
+      modifiers: (prod?.modifiers ?? [])
+        .filter((m) => l.modifierIds.includes(m.id))
+        .map((m) => ({ id: m.id, name: m.name, priceDelta: m.priceDelta })),
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      choices: l.choices,
+      choiceLabels: l.choiceLabels,
+      // COMBO_OFF: el estimado debe usar el mismo isCombo que el server (computeLine).
+      isCombo: prod?.isCombo ?? false,
+    };
+  });
   const manual: ManualCartDiscounts | undefined = (() => {
     if (!sale) return undefined;
     const lineDiscounts: Record<string, ManualDiscount> = {};

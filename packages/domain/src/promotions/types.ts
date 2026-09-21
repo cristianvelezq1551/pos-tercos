@@ -19,8 +19,13 @@
  *   (`discountFixed`) que aplica SOLO si el producto de la línea es un
  *   combo (`isCombo=true`). Tipo discriminado: el motor recibe un flag
  *   en `ApplyPromotionInput.isCombo` para filtrar.
+ * - `FIXED_PRICE` — el producto se vende a `fixedPrice` mientras dura la promo.
+ *   El descuento por unidad es `precio del producto con su tamaño − fixedPrice`;
+ *   los extras y los recargos se cobran ENCIMA (decisión del dueño, 2026-09-21:
+ *   "es el precio fijo pero para el sánduche"). Si el producto ya es más barato
+ *   que el precio fijo, no aplica: una promo nunca sube el precio.
  */
-export type PromotionTypeKind = 'PERCENT_OFF' | 'BOGO' | 'FIXED_OFF' | 'COMBO_OFF';
+export type PromotionTypeKind = 'PERCENT_OFF' | 'BOGO' | 'FIXED_OFF' | 'COMBO_OFF' | 'FIXED_PRICE';
 
 /**
  * Promoción candidata. El llamador debe haber pre-cargado los productIds
@@ -60,6 +65,8 @@ export interface PromotionDef {
   bogoBuyQty?: number;
   /** BOGO: cantidad de ítems gratis por cada "set" (típico 1). */
   bogoGetQty?: number;
+  /** FIXED_PRICE: precio de venta del producto con su tamaño. */
+  fixedPrice?: number;
   daysOfWeekMask: number;
   timeStart: string;
   timeEnd: string;
@@ -69,6 +76,14 @@ export interface PromotionDef {
   activeTo: string | null;
   /** Productos a los que aplica. Set para lookup O(1). */
   productIds: Set<string>;
+  /**
+   * Variantes a las que se limita, por producto. Un producto que no está acá
+   * aplica a todas sus variantes. Con un producto acá, la línea tiene que traer
+   * `sizeId` y estar en el set: sin tamaño elegido (la tarjeta del catálogo)
+   * la promo NO se muestra — no se promete un descuento que la otra variante
+   * no tiene.
+   */
+  sizeIdsByProduct?: Map<string, Set<string>>;
 }
 
 /**
@@ -91,6 +106,15 @@ export interface ApplyPromotionInput {
   isCombo: boolean;
   /** Momento de la venta (UTC ok, internamente extraemos día/hora). */
   at: Date;
+  /** Tamaño elegido en la línea. Decide las promos limitadas por variante. */
+  sizeId?: string | null;
+  /**
+   * Precio de UNA unidad del producto con su tamaño, SIN extras ni recargos.
+   * Es la base del precio fijo (los extras van encima). Si falta, se toma
+   * `lineSubtotal / quantity` — que incluye los extras, o sea descuenta de MÁS:
+   * los tres llamadores (servidor, caja, web) lo pasan siempre.
+   */
+  unitBasePrice?: number;
 }
 
 export interface ApplyPromotionOutput {

@@ -218,6 +218,8 @@ model ProductSize {
   /// Receta propia de la variante (aditiva sobre la receta base del producto).
   /// Ej. la proteína: "Carne" descuenta carne, "Pollo" descuenta pollo.
   recipeEdges   RecipeEdge[] @relation("SizeRecipe")
+  /// Promociones limitadas a esta variante.
+  promotionTargets PromotionProduct[]
 
   @@index([productId])
   @@map("product_sizes")
@@ -829,6 +831,8 @@ model Promotion {
   discountFixed  Decimal?           @map("discount_fixed") @db.Decimal(10, 2)
   bogoBuyQty     Int?               @map("bogo_buy_qty")
   bogoGetQty     Int?               @map("bogo_get_qty")
+  /// FIXED_PRICE: precio al que se vende el producto (con su tamaño) mientras dura la promo.
+  fixedPrice     Decimal?           @map("fixed_price") @db.Decimal(12, 2)
   daysOfWeekMask Int                @map("days_of_week_mask")
   timeStart      String             @map("time_start")
   timeEnd        String             @map("time_end")
@@ -846,14 +850,24 @@ model Promotion {
   @@map("promotions")
 }
 
+/// A qué aplica una promoción. `sizeId` NULL = el producto con todas sus
+/// variantes (como siempre); con `sizeId`, SOLO esa variante. Un producto puede
+/// tener varias filas (una por variante), por eso la clave dejó de ser
+/// (promoción, producto).
 model PromotionProduct {
-  promotionId String    @map("promotion_id")
-  productId   String    @map("product_id")
-  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  id          String       @id @default(uuid())
+  promotionId String       @map("promotion_id")
+  productId   String       @map("product_id")
+  sizeId      String?      @map("size_id")
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  promotion   Promotion    @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  /// Restrict: un tamaño que está en una promo no se borra por accidente
+  /// (el servicio lo explica antes de llegar acá).
+  size        ProductSize? @relation(fields: [sizeId], references: [id], onDelete: Restrict)
 
-  @@id([promotionId, productId])
+  @@unique([promotionId, productId, sizeId])
   @@index([productId])
+  @@index([promotionId])
   @@map("promotion_products")
 }
 
@@ -1143,6 +1157,7 @@ enum PromotionType {
   BOGO
   FIXED_OFF
   COMBO_OFF
+  FIXED_PRICE
 }
 
 /// Dónde aplica la promoción: caja (POS), web pública, o ambos canales.
