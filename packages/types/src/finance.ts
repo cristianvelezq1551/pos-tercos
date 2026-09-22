@@ -60,7 +60,12 @@ export const FinancePaidPayableSchema = z.object({
   hasProof: z.boolean(),
   /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
    *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
-  proofsCount: z.number().int().nonnegative().optional(),
+  /** De qué bolsillo salió: `cashAmount` + `bankAmount` = lo pagado. Opcionales
+   *  a propósito — la API (Railway) y el admin (Vercel) se despliegan por
+   *  separado, así que el navegador nuevo puede pegarle unos minutos a la API
+   *  vieja; sin el dato la pantalla dice que no se registró, no lo inventa. */
+  cashAmount: z.number().nonnegative().optional(),
+  bankAmount: z.number().nonnegative().optional(),
 });
 export type FinancePaidPayable = z.infer<typeof FinancePaidPayableSchema>;
 
@@ -102,7 +107,12 @@ export const FinancePaidPayrollSchema = z.object({
   hasProof: z.boolean(),
   /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
    *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
-  proofsCount: z.number().int().nonnegative().optional(),
+  /** De qué bolsillo salió: `cashAmount` + `bankAmount` = lo pagado. Opcionales
+   *  a propósito — la API (Railway) y el admin (Vercel) se despliegan por
+   *  separado, así que el navegador nuevo puede pegarle unos minutos a la API
+   *  vieja; sin el dato la pantalla dice que no se registró, no lo inventa. */
+  cashAmount: z.number().nonnegative().optional(),
+  bankAmount: z.number().nonnegative().optional(),
 });
 export type FinancePaidPayroll = z.infer<typeof FinancePaidPayrollSchema>;
 
@@ -116,7 +126,12 @@ export const FinancePaidInvoiceSchema = z.object({
   hasProof: z.boolean(),
   /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
    *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
-  proofsCount: z.number().int().nonnegative().optional(),
+  /** De qué bolsillo salió: `cashAmount` + `bankAmount` = lo pagado. Opcionales
+   *  a propósito — la API (Railway) y el admin (Vercel) se despliegan por
+   *  separado, así que el navegador nuevo puede pegarle unos minutos a la API
+   *  vieja; sin el dato la pantalla dice que no se registró, no lo inventa. */
+  cashAmount: z.number().nonnegative().optional(),
+  bankAmount: z.number().nonnegative().optional(),
 });
 export type FinancePaidInvoice = z.infer<typeof FinancePaidInvoiceSchema>;
 
@@ -149,6 +164,12 @@ export const FinancePaidFixedCostSchema = z.object({
   /** Cuántos comprobantes hay (un pago puede llevar varios). Opcional: la API
    *  y el admin se despliegan por separado (cae a `hasProof ? 1 : 0`). */
   proofsCount: z.number().int().nonnegative().optional(),
+  /** De qué bolsillo salió: `cashAmount` + `bankAmount` = lo pagado. Opcionales
+   *  a propósito — la API (Railway) y el admin (Vercel) se despliegan por
+   *  separado, así que el navegador nuevo puede pegarle unos minutos a la API
+   *  vieja; sin el dato la pantalla dice que no se registró, no lo inventa. */
+  cashAmount: z.number().nonnegative().optional(),
+  bankAmount: z.number().nonnegative().optional(),
 });
 export type FinancePaidFixedCost = z.infer<typeof FinancePaidFixedCostSchema>;
 

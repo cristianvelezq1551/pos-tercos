@@ -101,6 +101,8 @@ export class FinanceSummaryService {
           paidAt: true,
           paymentProofKey: true,
           paymentProofExtraKeys: true,
+          paymentCashAmount: true,
+          paymentBankAmount: true,
           supplier: { select: { name: true } },
         },
         orderBy: [{ paidAt: 'desc' }],
@@ -124,6 +126,8 @@ export class FinanceSummaryService {
           paidAt: true,
           proofImageKey: true,
           proofExtraKeys: true,
+          cashAmount: true,
+          bankAmount: true,
         },
         orderBy: [{ paidAt: 'desc' }],
       }),
@@ -149,6 +153,8 @@ export class FinanceSummaryService {
       paidAt: (r.paidAt as Date).toISOString(),
       hasProof: r.paymentProofKey !== null,
       proofsCount: proofCount(r.paymentProofKey, r.paymentProofExtraKeys),
+      cashAmount: Number(r.paymentCashAmount),
+      bankAmount: Number(r.paymentBankAmount),
     }));
 
     const pendingPayables: FinancePendingPayable[] = pendingPayableRows.map((r) => ({
@@ -165,6 +171,8 @@ export class FinanceSummaryService {
       paidAt: (r.paidAt as Date).toISOString(),
       hasProof: r.proofImageKey !== null,
       proofsCount: proofCount(r.proofImageKey, r.proofExtraKeys),
+      cashAmount: Number(r.cashAmount),
+      bankAmount: Number(r.bankAmount),
     }));
 
     const pendingPayrollTotal = round(pendingPayroll.reduce((a, p) => a + p.total, 0));

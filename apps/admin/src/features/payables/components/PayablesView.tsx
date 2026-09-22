@@ -6,6 +6,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { cancelPayable, createPayable } from '../api/client';
+import { PocketBadge } from '../../../components/PocketBadge';
 import { PayableProofsDialog } from './PayableProofsDialog';
 import { PayPayableModal } from './PayPayableModal';
 import { getErrorMessage } from '../../../lib/errors';
@@ -91,10 +92,9 @@ export function PayablesView({ payables }: { payables: PayableCommitment[] }) {
                     </Badge>
                   ) : null}
                   {p.status === 'PAID' ? (
-                    <span className="text-xs text-muted-foreground">
-                      {p.cashAmount > 0 && p.bankAmount > 0
-                        ? `Efectivo ${p.cashAmount} · Cuenta ${p.bankAmount}`
-                        : p.cashAmount > 0 ? 'Efectivo' : 'Cuenta'} · {formatDate(p.paidAt, 'short')}
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <PocketBadge pago={p} mostrarSinDato />
+                      {formatDate(p.paidAt, 'short')}
                     </span>
                   ) : (
                     <span className="text-xs font-semibold text-destructive">CANCELADO</span>
