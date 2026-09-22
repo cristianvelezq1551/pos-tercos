@@ -1,6 +1,7 @@
 import { comprobantesDe, type FinancePaidInvoice } from '@pos-tercos/types';
 import { Badge, Money } from '@pos-tercos/ui';
 import Link from 'next/link';
+import { PocketBadge } from '../../../components/PocketBadge';
 import { EmptyHint } from './EmptyHint';
 import { formatShortDate } from './format-short-date';
 
@@ -22,8 +23,11 @@ export function PaidInvoicesCard({ rows }: { rows: FinancePaidInvoice[] }) {
                 <p className="truncate text-sm font-medium text-foreground">
                   {r.supplierName ?? 'Proveedor sin nombre'}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {r.invoiceNumber ?? 'sin nº'} · pagada {formatShortDate(r.paidAt)}
+                <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                  <span className="max-w-full truncate">
+                    {r.invoiceNumber ?? 'sin nº'} · pagada {formatShortDate(r.paidAt)}
+                  </span>
+                  <PocketBadge pago={r} />
                 </p>
               </Link>
               <div className="flex shrink-0 items-center gap-2">

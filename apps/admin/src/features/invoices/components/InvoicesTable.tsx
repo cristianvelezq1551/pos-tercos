@@ -11,6 +11,7 @@ import {
   type StatusMapping,
 } from '@pos-tercos/ui';
 import { LineArtIllustration } from '@pos-tercos/brand';
+import { PocketBadge } from '../../../components/PocketBadge';
 import { CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -90,9 +91,14 @@ export function InvoicesTable({ rows }: InvoicesTableProps) {
         }
         if (inv.paymentStatus === 'PAID') {
           return (
-            <Badge tone="success" size="sm">
-              <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
-            </Badge>
+            <div className="flex flex-wrap items-center gap-1">
+              <Badge tone="success" size="sm">
+                <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
+              </Badge>
+              <PocketBadge
+                pago={{ cashAmount: inv.paymentCashAmount, bankAmount: inv.paymentBankAmount }}
+              />
+            </div>
           );
         }
         return <Badge tone="warning" size="sm">Por pagar</Badge>;

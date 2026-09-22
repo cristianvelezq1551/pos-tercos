@@ -4,6 +4,7 @@ import { comprobantesDe, type FinancePaidFixedCost } from '@pos-tercos/types';
 import { Money } from '@pos-tercos/ui';
 import { Eye } from 'lucide-react';
 import { useState } from 'react';
+import { PocketBadge } from '../../../components/PocketBadge';
 import { FixedCostProofsDialog } from '../../fixed-costs';
 import { EmptyHint } from './EmptyHint';
 import { formatShortDate } from './format-short-date';
@@ -27,8 +28,11 @@ export function PaidFixedCostsCard({ rows }: { rows: FinancePaidFixedCost[] }) {
               <li key={r.paymentId} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{r.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {r.periodLabel.replace(`${r.name} · `, '')} · pagado {formatShortDate(r.paidAt)}
+                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                    <span className="max-w-full truncate">
+                      {r.periodLabel.replace(`${r.name} · `, '')} · pagado {formatShortDate(r.paidAt)}
+                    </span>
+                    <PocketBadge pago={r} />
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

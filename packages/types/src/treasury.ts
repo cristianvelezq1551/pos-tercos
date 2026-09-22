@@ -14,6 +14,50 @@ export const POCKET_LABELS: Record<Pocket, string> = {
   CUENTA: 'Cuenta',
 };
 
+/**
+ * De qué bolsillo salió un pago. `MIXTO` = una parte de cada uno.
+ *
+ * Es la MISMA pregunta que hace el selector al pagar ("¿de qué bolsillo
+ * salió?"), así que el vocabulario tiene que ser el mismo en los dos lados.
+ */
+export type PocketKind = Pocket | 'MIXTO';
+
+export const POCKET_KIND_LABELS: Record<PocketKind, string> = {
+  ...POCKET_LABELS,
+  MIXTO: 'Mixto',
+};
+
+/** Reparto de un pago entre los dos bolsillos. Suman el monto pagado. */
+export interface PocketSplit {
+  cashAmount?: number | null;
+  bankAmount?: number | null;
+}
+
+/**
+ * Bolsillo de un pago a partir de su reparto. **Fuente única** — antes cada
+ * pantalla tenía su propia cadena de ternarios y ya habían divergido.
+ *
+ * Devuelve `null` cuando NO hay reparto registrado (ambos en cero o ausentes):
+ * es un pago viejo, anterior a que se guardara el dato, o una API más vieja que
+ * todavía no lo manda. Ahí la respuesta honesta es "no se sabe" — dar por
+ * sentado "Cuenta" (el default del formulario) inventaría de dónde salió la
+ * plata, que es justo lo que se quiere poder auditar.
+ */
+export function pocketOf(split: PocketSplit): PocketKind | null {
+  const cash = split.cashAmount ?? 0;
+  const bank = split.bankAmount ?? 0;
+  if (cash > 0 && bank > 0) return 'MIXTO';
+  if (cash > 0) return 'EFECTIVO';
+  if (bank > 0) return 'CUENTA';
+  return null;
+}
+
+/** Etiqueta lista para pantalla, o `null` si el pago no tiene reparto. */
+export function pocketLabelOf(split: PocketSplit): string | null {
+  const kind = pocketOf(split);
+  return kind === null ? null : POCKET_KIND_LABELS[kind];
+}
+
 const DateOnlyNullable = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)')

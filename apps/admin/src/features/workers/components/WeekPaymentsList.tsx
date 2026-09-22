@@ -1,8 +1,9 @@
 'use client';
 
 import { comprobantesDe, type PayrollWeekPayment } from '@pos-tercos/types';
-import { Money, cn, formatCop, formatDate } from '@pos-tercos/ui';
+import { Money, cn, formatDate } from '@pos-tercos/ui';
 import { useState } from 'react';
+import { PocketBadge } from '../../../components/PocketBadge';
 import { WeekPaymentProofsDialog } from './WeekPaymentProofsDialog';
 import { VoidWeekPaymentDialog } from './VoidWeekPaymentDialog';
 
@@ -27,13 +28,7 @@ export function WeekPaymentsList({ payments }: { payments: PayrollWeekPayment[] 
               <span className={cn('font-semibold text-foreground', voided && 'line-through')}>
                 <Money amount={p.amount} size="xs" weight="bold" />
               </span>
-              <span className="text-muted-foreground">
-                {p.cashAmount > 0 && p.bankAmount > 0
-                  ? `Efectivo ${formatCop(p.cashAmount)} · Cuenta ${formatCop(p.bankAmount)}`
-                  : p.cashAmount > 0
-                    ? 'Efectivo'
-                    : 'Cuenta'}
-              </span>
+              <PocketBadge pago={p} mostrarSinDato />
               <span className="text-muted-foreground">
                 días {p.paidDays.map((d) => d.slice(8, 10)).join(', ')}
               </span>

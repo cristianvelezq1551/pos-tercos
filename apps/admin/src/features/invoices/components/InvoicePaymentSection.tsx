@@ -2,6 +2,7 @@
 
 import type { Invoice } from '@pos-tercos/types';
 import { Badge, BUSINESS_TIME_ZONE, formatCop } from '@pos-tercos/ui';
+import { PocketBadge } from '../../../components/PocketBadge';
 import { CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { InvoicePaymentActions } from './InvoicePaymentActions';
@@ -35,14 +36,10 @@ export function InvoicePaymentSection({
         year: 'numeric',
       })
     : null;
-  const pocketLabel =
-    invoice.paymentPocket === 'EFECTIVO'
-      ? 'Efectivo'
-      : invoice.paymentPocket === 'CUENTA'
-        ? 'Cuenta (transferencia)'
-        : invoice.paymentPocket === 'MIXTO'
-          ? `Mixto — ${formatCop(invoice.paymentCashAmount ?? 0)} efectivo · ${formatCop(invoice.paymentBankAmount ?? 0)} cuenta`
-          : null;
+  const pago = {
+    cashAmount: invoice.paymentCashAmount,
+    bankAmount: invoice.paymentBankAmount,
+  };
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -53,9 +50,12 @@ export function InvoicePaymentSection({
           </h2>
           <div className="mt-2 flex flex-wrap items-baseline gap-2">
             {isPaid ? (
-              <Badge tone="success" size="sm">
-                <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
-              </Badge>
+              <>
+                <Badge tone="success" size="sm">
+                  <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
+                </Badge>
+                <PocketBadge pago={pago} mostrarSinDato />
+              </>
             ) : (
               <Badge tone="warning" size="sm">
                 Por pagar
@@ -67,7 +67,7 @@ export function InvoicePaymentSection({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {isPaid
-              ? `Pagada el ${paidAtLabel}${invoice.paymentActorName ? ` por ${invoice.paymentActorName}` : ''}${pocketLabel ? ` · ${pocketLabel}` : ''}${invoice.paymentNote ? ` · ${invoice.paymentNote}` : ''}`
+              ? `Pagada el ${paidAtLabel}${invoice.paymentActorName ? ` por ${invoice.paymentActorName}` : ''}${invoice.paymentNote ? ` · ${invoice.paymentNote}` : ''}`
               : 'Sube el comprobante de la transferencia para marcarla pagada y sacarla de la lista de pendientes.'}
           </p>
         </div>

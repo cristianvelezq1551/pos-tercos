@@ -560,6 +560,8 @@ export class FixedCostsService {
       paidAt: r.paidAt.toISOString(),
       hasProof: true,
       proofsCount: proofCount(r.proofImageKey, r.proofExtraKeys),
+      cashAmount: Number(r.cashAmount),
+      bankAmount: Number(r.bankAmount),
     }));
   }
 }
