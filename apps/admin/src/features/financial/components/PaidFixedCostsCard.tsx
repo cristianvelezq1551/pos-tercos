@@ -48,9 +48,14 @@ export function PaidFixedCostsCard({ rows }: { rows: FinancePaidFixedCost[] }) {
                       onClick={() => setAbierto(r)}
                       title={comprobantes > 1 ? `Ver ${comprobantes} comprobantes` : 'Ver comprobante'}
                       aria-label={`Ver los comprobantes de ${r.name}`}
-                      className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+                      /* El área de clic la fijan `min-h`/`min-w`, NO el icono:
+                         con un solo comprobante el contenido es el clip de
+                         12 px y el botón quedaba de 12×12 — imposible de
+                         acertar. Los márgenes negativos devuelven el espacio
+                         para que la fila no crezca. */
+                      className="-my-1.5 -mr-1.5 inline-flex min-h-[36px] min-w-[36px] shrink-0 items-center justify-center gap-0.5 rounded-md text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     >
-                      <Paperclip className="h-3 w-3" strokeWidth={2} />
+                      <Paperclip className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
                       {comprobantes > 1 ? comprobantes : null}
                     </button>
                   ) : null}
