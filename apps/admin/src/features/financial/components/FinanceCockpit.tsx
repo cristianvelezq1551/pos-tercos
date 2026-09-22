@@ -4,6 +4,7 @@ import type { FinanceSummary } from '@pos-tercos/types';
 import { Money, StatCard, formatCop } from '@pos-tercos/ui';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { PocketLegend } from '../../../components/PocketBadge';
 import { PaidFixedCostsCard } from './PaidFixedCostsCard';
 import { PaidInvoicesCard } from './PaidInvoicesCard';
 import { PaidPayablesCard } from './PaidPayablesCard';
@@ -28,7 +29,7 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
   return (
     <div className="space-y-8">
       {/* 4 KPIs */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 [&>*]:min-w-0 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Ingresos del mes"
           value={<Money amount={summary.revenue} size="2xl" weight="bold" />}
@@ -72,7 +73,7 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
           atrasado de meses anteriores también aparece aquí.
         </p>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 [&>*]:min-w-0 md:grid-cols-2 xl:grid-cols-4">
           <PendingPayrollCard rows={summary.pendingPayroll} />
           <PendingInvoicesCard rows={summary.pendingInvoices} />
           <PendingFixedCostsCard rows={summary.pendingFixedCosts} onChanged={refresh} />
@@ -90,8 +91,11 @@ export function FinanceCockpit({ summary }: { summary: FinanceSummary }) {
             Total: <Money amount={summary.paid.total} weight="bold" />
           </span>
         </header>
+        {/* Qué es cada icono. Va una vez acá y no en cada fila: es lo que
+            permite que el bolsillo sea un icono y no una palabra repetida. */}
+        <PocketLegend />
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 [&>*]:min-w-0 md:grid-cols-2 xl:grid-cols-4">
           <PaidPayrollCard rows={summary.paidPayroll} />
           <PaidInvoicesCard rows={summary.paidInvoices} />
           <PaidFixedCostsCard rows={summary.paidFixedCosts} />

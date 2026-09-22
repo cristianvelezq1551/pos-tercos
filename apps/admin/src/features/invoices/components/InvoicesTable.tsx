@@ -91,15 +91,14 @@ export function InvoicesTable({ rows }: InvoicesTableProps) {
         }
         if (inv.paymentStatus === 'PAID') {
           return (
-            <div className="flex flex-wrap items-center gap-1">
+            <span className="inline-flex items-center gap-1.5">
               <Badge tone="success" size="sm">
                 <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
               </Badge>
               <PocketBadge
-                variant="badge"
                 pago={{ cashAmount: inv.paymentCashAmount, bankAmount: inv.paymentBankAmount }}
               />
-            </div>
+            </span>
           );
         }
         return <Badge tone="warning" size="sm">Por pagar</Badge>;
