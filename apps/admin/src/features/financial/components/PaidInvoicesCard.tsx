@@ -3,6 +3,7 @@ import { Money } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { PocketBadge } from '../../../components/PocketBadge';
 import { EmptyHint } from './EmptyHint';
+import { invoicePaymentProofUrl } from '../../invoices';
 import { ProofMark } from './ProofMark';
 import { formatShortDate } from './format-short-date';
 
@@ -39,7 +40,12 @@ export function PaidInvoicesCard({ rows }: { rows: FinancePaidInvoice[] }) {
               </Link>
               <div className="flex shrink-0 items-center gap-2">
                 <Money amount={r.total} weight="semibold" />
-                <ProofMark count={comprobantesDe(r)} />
+                <ProofMark
+                  count={comprobantesDe(r)}
+                  title="Comprobante del pago al proveedor"
+                  description={`${r.supplierName ?? 'Proveedor sin nombre'} · ${r.invoiceNumber ?? 'sin nº'}`}
+                  proofUrl={(i) => invoicePaymentProofUrl(r.invoiceId, i)}
+                />
               </div>
             </li>
           ))}

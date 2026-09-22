@@ -213,6 +213,87 @@ async function readFixture(n: number): Promise<Buffer> {
   return readFile(fixture(n));
 }
 
+test.describe('El comprobante se abre desde Pagos y cobros', () => {
+  /**
+   * El cockpit marca con un clip los pagos que tienen comprobante. El dueño
+   * intentaba tocarlo y no pasaba nada: la marca era informativa en facturas,
+   * compromisos y nómina (solo costos fijos abría). Un clip pide que lo
+   * toquen, así que ahora las cuatro tarjetas abren su comprobante.
+   */
+  test('una factura pagada abre su comprobante desde el cockpit', async ({ browser, request }) => {
+    const invoiceId = await facturaPorPagar(request, dueno);
+    const paid = await request.post(`${API}/invoices/${invoiceId}/payment/paid`, {
+      headers: { ...authHeaders(dueno), 'X-Approval-Pin': PIN },
+      multipart: {
+        proof: { name: 'p.png', mimeType: 'image/png', buffer: await readFixture(1) },
+        bankAmount: '200000',
+        cashAmount: '0',
+      },
+    });
+    expect(paid.ok(), `pagar → ${paid.status()}`).toBeTruthy();
+
+    const page = await pestanaAutenticada(browser);
+    await page.goto('/finanzas/pagos');
+    const tarjeta = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Facturas pagadas' }) })
+      .last();
+    const boton = tarjeta.getByRole('button', { name: /comprobante/i }).first();
+    await expect(boton, 'la marca de comprobante tiene que ser un BOTÓN').toBeVisible({
+      timeout: 20_000,
+    });
+
+    // El área de clic no puede depender de cuántos comprobantes haya.
+    const lado = await boton.evaluate((el: HTMLElement) => ({
+      w: el.offsetWidth,
+      h: el.offsetHeight,
+    }));
+    expect(lado.h, 'alto del botón').toBeGreaterThanOrEqual(32);
+    expect(lado.w, 'ancho del botón').toBeGreaterThanOrEqual(32);
+
+    await boton.click();
+    const galeria = page.getByRole('dialog');
+    await expect(galeria).toBeVisible();
+    expect(await anchosDeLasImagenes(galeria as unknown as Page)).toHaveLength(1);
+
+    // El cockpit es auditoría: se mira, no se gestiona (eso vive en el módulo).
+    await expect(galeria.getByRole('button', { name: /Agregar|Quitar/ })).toHaveCount(0);
+  });
+
+  test('un compromiso pagado abre su comprobante desde el cockpit', async ({ browser, request }) => {
+    const H = { ...authHeaders(dueno), 'Content-Type': 'application/json' };
+    const beneficiario = `Electricista ${Date.now()}`;
+    const creado = await request.post(`${API}/payables`, {
+      headers: H,
+      data: { beneficiary: beneficiario, description: 'Revisión tablero', amount: 95_000 },
+    });
+    expect(creado.ok(), `crear compromiso → ${creado.status()}`).toBeTruthy();
+    const { id } = (await creado.json()) as { id: string };
+
+    const pagado = await request.post(`${API}/payables/${id}/pay`, {
+      headers: authHeaders(dueno),
+      multipart: {
+        payload: JSON.stringify({ cashAmount: 95_000, bankAmount: 0 }),
+        proof: { name: 'p.png', mimeType: 'image/png', buffer: await readFixture(1) },
+      },
+    });
+    expect(pagado.ok(), `pagar compromiso → ${pagado.status()}`).toBeTruthy();
+
+    const page = await pestanaAutenticada(browser);
+    await page.goto('/finanzas/pagos');
+    const tarjeta = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Compromisos pagados' }) })
+      .last();
+    const boton = tarjeta.getByRole('button', { name: /comprobante/i }).first();
+    await expect(boton).toBeVisible({ timeout: 20_000 });
+    await boton.click();
+    const galeria = page.getByRole('dialog');
+    await expect(galeria).toBeVisible();
+    expect(await anchosDeLasImagenes(galeria as unknown as Page)).toHaveLength(1);
+  });
+});
+
 test.describe('Costos y gastos con varios comprobantes', () => {
   test('un costo fijo se paga con dos comprobantes y se ven desde Pagos', async ({
     browser,
