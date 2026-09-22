@@ -1,35 +1,31 @@
 'use client';
 
 import { pocketOf, type PocketSplit } from '@pos-tercos/types';
-import { Badge, cn, formatCop } from '@pos-tercos/ui';
-import { Banknote, Landmark, Split } from 'lucide-react';
+import { cn, formatCop } from '@pos-tercos/ui';
+import { Banknote, HelpCircle, Landmark, Split } from 'lucide-react';
 
 const ICONOS = { EFECTIVO: Banknote, CUENTA: Landmark, MIXTO: Split } as const;
-const PALABRAS = { EFECTIVO: 'Efectivo', CUENTA: 'Cuenta', MIXTO: 'Mixto' } as const;
+export const POCKET_PALABRAS = { EFECTIVO: 'Efectivo', CUENTA: 'Cuenta', MIXTO: 'Mixto' } as const;
 
-/** El desglose completo, para el `title` — en MIXTO es el dato que falta a la vista. */
-function detalle(kind: 'EFECTIVO' | 'CUENTA' | 'MIXTO', cash: number, bank: number): string {
-  if (kind === 'MIXTO') return `Efectivo ${formatCop(cash)} · Cuenta ${formatCop(bank)}`;
+/** Lo que se lee al pasar el mouse y lo que oye un lector de pantalla. */
+function describir(kind: 'EFECTIVO' | 'CUENTA' | 'MIXTO', cash: number, bank: number): string {
+  if (kind === 'MIXTO') return `Mixto: ${formatCop(cash)} en efectivo y ${formatCop(bank)} de la cuenta`;
   return kind === 'EFECTIVO'
     ? `Salió en efectivo: ${formatCop(cash)}`
     : `Salió de la cuenta: ${formatCop(bank)}`;
 }
 
 /**
- * De qué bolsillo salió un pago: Efectivo, Cuenta o Mixto. Misma palabra que
- * usa `PocketPaymentField` al pagar ("¿de qué bolsillo salió?").
+ * De qué bolsillo salió un pago: efectivo, cuenta o mixto.
  *
- * Dos presentaciones, porque el peso visual que corresponde no es el mismo:
+ * Es SOLO un icono. Estas listas repiten el dato en cada fila, y una palabra
+ * por fila —peor aún, una palabra dentro de un chip— pesa más que el monto y
+ * convierte la lista en ruido. Un billete y un banco se distinguen de un golpe
+ * de vista, que es como se barre una lista de pagos.
  *
- * - `inline` (por defecto) para las LISTAS de pagos. El bolsillo es metadato,
- *   de la misma familia que la fecha, así que se rinde como ella: icono + texto
- *   tenue, sin fondo ni borde. Un chip claro por fila sobre el tema oscuro
- *   pesa más que el monto y convierte la lista en un muro de etiquetas.
- * - `badge` para una COLUMNA dedicada (la tabla de facturas), donde la celda
- *   existe para este dato y un chip es lo que se espera.
- *
- * El icono es lo que se distingue de un vistazo al barrer la lista (billete vs
- * banco); el texto lo confirma, porque un icono solo es adivinanza.
+ * Lo que un icono solo no puede hacer es enseñarse a sí mismo, así que:
+ * `title` con el desglose, `aria-label` para lectores de pantalla, y una
+ * leyenda por sección (`PocketLegend`) que dice qué es cada uno.
  *
  * Un pago SIN reparto registrado no se pinta, salvo `mostrarSinDato`: no se
  * sabe de dónde salió, y dar por sentado "Cuenta" —el default del formulario—
@@ -37,12 +33,14 @@ function detalle(kind: 'EFECTIVO' | 'CUENTA' | 'MIXTO', cash: number, bank: numb
  */
 export function PocketBadge({
   pago,
-  variant = 'inline',
+  conPalabra = false,
   mostrarSinDato = false,
   className,
 }: {
   pago: PocketSplit;
-  variant?: 'inline' | 'badge';
+  /** Añade la palabra al lado. Solo en pantallas de DETALLE, donde el dato
+   *  aparece una vez y no hay lista que barrer. */
+  conPalabra?: boolean;
   mostrarSinDato?: boolean;
   className?: string;
 }) {
@@ -50,36 +48,50 @@ export function PocketBadge({
 
   if (kind === null) {
     if (!mostrarSinDato) return null;
-    const aviso = 'Este pago se registró antes de que se guardara de qué bolsillo salía';
-    return variant === 'badge' ? (
-      <Badge tone="neutral" variant="outline" size="sm" className={cn('shrink-0', className)} title={aviso}>
-        Sin registrar
-      </Badge>
-    ) : (
-      <span className={cn('shrink-0 italic text-muted-foreground', className)} title={aviso}>
-        sin registrar
+    const aviso = 'No quedó registrado de qué bolsillo salió este pago';
+    return (
+      <span
+        className={cn('inline-flex shrink-0 items-center gap-1 text-muted-foreground', className)}
+        title={aviso}
+        aria-label={aviso}
+      >
+        <HelpCircle className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+        {conPalabra ? 'Sin registrar' : null}
       </span>
     );
   }
 
   const Icono = ICONOS[kind];
-  const title = detalle(kind, pago.cashAmount ?? 0, pago.bankAmount ?? 0);
-
-  if (variant === 'badge') {
-    return (
-      <Badge tone="neutral" size="sm" className={cn('shrink-0 font-normal', className)} title={title}>
-        <Icono className="h-3 w-3" strokeWidth={2} /> {PALABRAS[kind]}
-      </Badge>
-    );
-  }
+  const texto = describir(kind, pago.cashAmount ?? 0, pago.bankAmount ?? 0);
 
   return (
     <span
       className={cn('inline-flex shrink-0 items-center gap-1 text-muted-foreground', className)}
-      title={title}
+      title={texto}
+      aria-label={texto}
     >
-      <Icono className="h-3 w-3 shrink-0" strokeWidth={2} aria-hidden />
-      {PALABRAS[kind]}
+      <Icono className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+      {conPalabra ? POCKET_PALABRAS[kind] : null}
+    </span>
+  );
+}
+
+/**
+ * Qué significa cada icono. Va UNA vez por sección, no por fila: es lo que
+ * hace que un icono solo sea legible sin repetir la palabra 40 veces.
+ */
+export function PocketLegend({ className }: { className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center gap-3 text-xs text-muted-foreground', className)}>
+      <span className="inline-flex items-center gap-1">
+        <Banknote className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> efectivo
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <Landmark className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> cuenta
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <Split className="h-3.5 w-3.5" strokeWidth={2} aria-hidden /> mixto
+      </span>
     </span>
   );
 }

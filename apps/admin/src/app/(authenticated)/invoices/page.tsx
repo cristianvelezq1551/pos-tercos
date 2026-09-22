@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Button, Chip, Container, PageHeader } from '@pos-tercos/ui';
 import { Receipt } from 'lucide-react';
 import { InvoiceDateFilter, InvoicesTable, PendingDraftsBanner } from '../../../features/invoices';
+import { PocketLegend } from '../../../components/PocketBadge';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import type { Invoice } from '@pos-tercos/types';
@@ -86,7 +87,12 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         <PendingDraftsBanner count={pendingDrafts} />
 
         {Array.isArray(result) ? (
-          <InvoicesTable rows={result} />
+          <div className="space-y-2">
+            {/* La columna Pago marca el bolsillo con un icono; acá se dice cuál
+                es cuál, para no repetir la palabra en cada una de las filas. */}
+            <PocketLegend />
+            <InvoicesTable rows={result} />
+          </div>
         ) : (
           <p
             role="alert"
