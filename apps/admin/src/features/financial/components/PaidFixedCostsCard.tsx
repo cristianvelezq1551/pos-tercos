@@ -2,7 +2,7 @@
 
 import { comprobantesDe, type FinancePaidFixedCost } from '@pos-tercos/types';
 import { Money } from '@pos-tercos/ui';
-import { Eye } from 'lucide-react';
+import { Paperclip } from 'lucide-react';
 import { useState } from 'react';
 import { PocketBadge } from '../../../components/PocketBadge';
 import { FixedCostProofsDialog } from '../../fixed-costs';
@@ -27,9 +27,14 @@ export function PaidFixedCostsCard({ rows }: { rows: FinancePaidFixedCost[] }) {
             return (
               <li key={r.paymentId} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{r.name}</p>
-                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-                    <span className="max-w-full truncate">
+                  <p className="truncate text-sm font-medium text-foreground" title={r.name}>
+                    {r.name}
+                  </p>
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span
+                      className="truncate"
+                      title={`${r.periodLabel.replace(`${r.name} · `, '')} · pagado ${formatShortDate(r.paidAt)}`}
+                    >
                       {r.periodLabel.replace(`${r.name} · `, '')} · pagado {formatShortDate(r.paidAt)}
                     </span>
                     <PocketBadge pago={r} />
@@ -43,9 +48,9 @@ export function PaidFixedCostsCard({ rows }: { rows: FinancePaidFixedCost[] }) {
                       onClick={() => setAbierto(r)}
                       title={comprobantes > 1 ? `Ver ${comprobantes} comprobantes` : 'Ver comprobante'}
                       aria-label={`Ver los comprobantes de ${r.name}`}
-                      className="inline-flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                      className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
                     >
-                      <Eye className="h-3.5 w-3.5" />
+                      <Paperclip className="h-3 w-3" strokeWidth={2} />
                       {comprobantes > 1 ? comprobantes : null}
                     </button>
                   ) : null}
