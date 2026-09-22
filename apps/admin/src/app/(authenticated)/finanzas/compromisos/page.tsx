@@ -1,6 +1,7 @@
 import { Container, PageHeader } from '@pos-tercos/ui';
 import { HandCoins } from 'lucide-react';
-import { PayablesView, getPayablesServer } from '../../../../features/payables';
+import { PayablesView } from '../../../../features/payables';
+import { getPayablesServer } from '../../../../features/payables/server';
 import { requireRole } from '../../../../lib/guards';
 
 export const dynamic = 'force-dynamic';

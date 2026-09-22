@@ -3,6 +3,7 @@ import { Money } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { PocketBadge } from '../../../components/PocketBadge';
 import { EmptyHint } from './EmptyHint';
+import { payableProofUrl } from '../../payables';
 import { ProofMark } from './ProofMark';
 import { formatShortDate } from './format-short-date';
 
@@ -36,7 +37,12 @@ export function PaidPayablesCard({ rows }: { rows: FinancePaidPayable[] }) {
               </Link>
               <div className="flex shrink-0 items-center gap-2">
                 <Money amount={r.amount} weight="semibold" />
-                <ProofMark count={comprobantesDe(r)} />
+                <ProofMark
+                  count={comprobantesDe(r)}
+                  title="Comprobante del compromiso"
+                  description={`${r.beneficiary} · ${r.description}`}
+                  proofUrl={(i) => payableProofUrl(r.id, i)}
+                />
               </div>
             </li>
           ))}

@@ -3,6 +3,7 @@ import { Money } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { PocketBadge } from '../../../components/PocketBadge';
 import { EmptyHint } from './EmptyHint';
+import { weekPaymentProofUrl } from '../../workers';
 import { ProofMark } from './ProofMark';
 import { formatShortDate } from './format-short-date';
 
@@ -39,7 +40,12 @@ export function PaidPayrollCard({ rows }: { rows: FinancePaidPayroll[] }) {
               </Link>
               <div className="flex shrink-0 items-center gap-2">
                 <Money amount={r.amount} weight="semibold" />
-                <ProofMark count={comprobantesDe(r)} />
+                <ProofMark
+                  count={comprobantesDe(r)}
+                  title="Comprobante del abono de nómina"
+                  description={`${r.userName} · ${r.periodLabel}`}
+                  proofUrl={(i) => weekPaymentProofUrl(r.paymentId, i)}
+                />
               </div>
             </li>
           ))}

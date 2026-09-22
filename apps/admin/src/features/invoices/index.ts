@@ -10,3 +10,4 @@ export { VoidInvoiceAction } from './components/VoidInvoiceAction';
 export { InvoicePaymentActions } from './components/InvoicePaymentActions';
 export { InvoicePaymentSection } from './components/InvoicePaymentSection';
 export * from './api';
+export { invoicePaymentProofUrl } from './api/client';
