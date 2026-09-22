@@ -96,6 +96,7 @@ export function InvoicesTable({ rows }: InvoicesTableProps) {
                 <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
               </Badge>
               <PocketBadge
+                variant="badge"
                 pago={{ cashAmount: inv.paymentCashAmount, bankAmount: inv.paymentBankAmount }}
               />
             </div>

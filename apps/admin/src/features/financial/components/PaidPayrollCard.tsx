@@ -1,8 +1,9 @@
 import { comprobantesDe, type FinancePaidPayroll } from '@pos-tercos/types';
-import { Badge, Money } from '@pos-tercos/ui';
+import { Money } from '@pos-tercos/ui';
 import Link from 'next/link';
 import { PocketBadge } from '../../../components/PocketBadge';
 import { EmptyHint } from './EmptyHint';
+import { ProofMark } from './ProofMark';
 import { formatShortDate } from './format-short-date';
 
 export function PaidPayrollCard({ rows }: { rows: FinancePaidPayroll[] }) {
@@ -23,9 +24,14 @@ export function PaidPayrollCard({ rows }: { rows: FinancePaidPayroll[] }) {
                 href={`/workers/semana?week=${r.periodStart}`}
                 className="min-w-0 hover:underline"
               >
-                <p className="truncate text-sm font-medium text-foreground">{r.userName}</p>
-                <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-                  <span className="max-w-full truncate">
+                <p className="truncate text-sm font-medium text-foreground" title={r.userName}>
+                  {r.userName}
+                </p>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    className="truncate"
+                    title={`${r.periodLabel} · pagado ${formatShortDate(r.paidAt)}`}
+                  >
                     {r.periodLabel} · pagado {formatShortDate(r.paidAt)}
                   </span>
                   <PocketBadge pago={r} />
@@ -33,11 +39,7 @@ export function PaidPayrollCard({ rows }: { rows: FinancePaidPayroll[] }) {
               </Link>
               <div className="flex shrink-0 items-center gap-2">
                 <Money amount={r.amount} weight="semibold" />
-                {r.hasProof ? (
-                  <Badge tone="success" size="sm">
-                    {comprobantesDe(r) > 1 ? `${comprobantesDe(r)} comprobantes` : 'Comprobante'}
-                  </Badge>
-                ) : null}
+                <ProofMark count={comprobantesDe(r)} />
               </div>
             </li>
           ))}

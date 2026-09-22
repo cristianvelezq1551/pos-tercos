@@ -54,7 +54,7 @@ export function InvoicePaymentSection({
                 <Badge tone="success" size="sm">
                   <CheckCircle2 className="mr-1 h-3 w-3" /> Pagada
                 </Badge>
-                <PocketBadge pago={pago} mostrarSinDato />
+                <PocketBadge variant="badge" pago={pago} mostrarSinDato />
               </>
             ) : (
               <Badge tone="warning" size="sm">
