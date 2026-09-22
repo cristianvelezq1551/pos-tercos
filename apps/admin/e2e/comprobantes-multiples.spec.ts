@@ -270,6 +270,68 @@ test.describe('Costos y gastos con varios comprobantes', () => {
     expect(await anchosDeLasImagenes(galeria as unknown as Page)).toHaveLength(2);
   });
 
+  test('con UN solo comprobante el botón se puede tocar y abre la galería', async ({
+    browser,
+    request,
+  }) => {
+    // Regresión: el botón mostraba el número de comprobantes al lado del clip,
+    // así que con uno solo su contenido era el icono de 12 px y el botón medía
+    // 12×12 — imposible de acertar. Con dos o más sí funcionaba, y por eso el
+    // caso de arriba (que paga con dos) no lo detectaba.
+    const H = { ...authHeaders(dueno), 'Content-Type': 'application/json' };
+    const nombre = `Internet prueba ${Date.now()}`;
+    const hoy = new Date();
+    const desde = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-01`;
+    const creado = await request.post(`${API}/fixed-costs`, {
+      headers: H,
+      data: {
+        name: nombre,
+        amount: 129_900,
+        frequency: 'MONTHLY',
+        category: 'Servicios',
+        startedAt: desde,
+      },
+    });
+    expect(creado.ok(), `crear costo fijo → ${creado.status()}`).toBeTruthy();
+
+    const page = await pestanaAutenticada(browser);
+    await page.goto('/finanzas/costos-fijos');
+    const grupo = page
+      .locator('div')
+      .filter({ hasText: new RegExp(nombre) })
+      .filter({ has: page.getByRole('button', { name: /^Pagar$/ }) })
+      .last();
+    await expect(grupo).toBeVisible({ timeout: 15_000 });
+    await grupo.getByRole('button', { name: /^Pagar$/ }).first().click();
+
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible();
+    await modal.locator('input[type="file"]').setInputFiles([fixture(1)]);
+    await modal.getByRole('button', { name: /confirmar pago/i }).click();
+    await expect(modal).toBeHidden({ timeout: 20_000 });
+
+    await page.goto('/finanzas/pagos');
+    const boton = page
+      .getByRole('button', { name: new RegExp(`Ver los comprobantes de ${nombre}`) })
+      .first();
+    await expect(boton).toBeVisible({ timeout: 20_000 });
+
+    // El área de clic NO puede depender de que haya varios comprobantes.
+    // `offsetHeight` en vez de boundingBox: el rect se mide a mitad de la
+    // animación del diálogo y devuelve décimas de menos (§7.v65).
+    const lado = await boton.evaluate((el: HTMLElement) => ({
+      w: el.offsetWidth,
+      h: el.offsetHeight,
+    }));
+    expect(lado.h, 'alto del botón con UN comprobante').toBeGreaterThanOrEqual(32);
+    expect(lado.w, 'ancho del botón con UN comprobante').toBeGreaterThanOrEqual(32);
+
+    await boton.click();
+    const galeria = page.getByRole('dialog');
+    await expect(galeria).toBeVisible();
+    expect(await anchosDeLasImagenes(galeria as unknown as Page)).toHaveLength(1);
+  });
+
   test('un compromiso se paga con dos comprobantes y admite un tercero después', async ({
     browser,
     request,
