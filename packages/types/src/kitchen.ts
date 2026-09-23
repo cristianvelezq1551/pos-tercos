@@ -230,7 +230,10 @@ export type KitchenProductionInput = z.infer<typeof KitchenProductionInputSchema
  * dueño la piensa ("Fulano produjo 20 porciones de pollo").
  */
 export const KitchenProductionRunSchema = z.object({
-  runId: z.string().uuid(),
+  // No se exige UUID: las tandas que registra una corrección de datos (p. ej.
+  // `fix21-prod-…`, producción no registrada del conteo del 21-sep-2026) llevan
+  // otro identificador, y un solo run así tumbaba la lista entera.
+  runId: z.string().min(1),
   subproductId: z.string().uuid(),
   subproductName: z.string(),
   quantityProduced: z.number(),

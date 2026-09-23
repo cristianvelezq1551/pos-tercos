@@ -4,6 +4,8 @@ import type { KitchenProductionRun } from '@pos-tercos/types';
 import { Button, Dialog, EmptyState, formatDate } from '@pos-tercos/ui';
 import { DetailRow, DetailSection, EvidenceLink } from './DetailPieces';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Qué pasó en UNA tanda. Los insumos consumidos son la razón de ser de este
  * detalle: una tanda puede tener diez y en la tabla no cabían — apilados en la
@@ -20,6 +22,10 @@ export function ProductionDetailModal({
 }) {
   if (!run) return null;
   const anulada = run.voidedAt !== null;
+  // Una tanda de corrección de datos es un asiento, no una producción de la
+  // cocina: anularla reabriría el descuadre que corrigió (y la API solo acepta
+  // UUID en la ruta de anulación).
+  const esCorreccion = !UUID_RE.test(run.runId);
 
   return (
     <Dialog
@@ -29,7 +35,7 @@ export function ProductionDetailModal({
       description={`Tanda del ${formatDate(run.createdAt, 'datetime')}`}
       maxWidth="max-w-lg"
       footer={
-        anulada ? null : (
+        anulada || esCorreccion ? null : (
           <div className="flex justify-end">
             <Button variant="destructive" onClick={() => onAnular(run)}>
               Anular tanda
