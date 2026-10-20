@@ -37,6 +37,7 @@ import { ProductFormComboSection } from './ProductFormComboSection';
 import { ProductFormCostInfoPanel } from './ProductFormCostInfoPanel';
 import { ProductFormPreparedCostPanel } from './ProductFormPreparedCostPanel';
 import { getErrorMessage } from '../../../lib/errors';
+import { tieneVariantes } from '../lib/combo-variantes';
 
 interface ProductFormProps {
   initial?: Product;
@@ -93,6 +94,7 @@ function initFormState(initial?: Product): FormState {
     comboComponents: (initial?.comboComponents ?? []).map((c) => ({
       rowKey: newRowKey(),
       productId: c.productId,
+      sizeId: c.sizeId ?? '',
       quantity: String(c.quantity),
     })),
     choiceGroups: (initial?.choiceGroups ?? []).map((g) => ({
@@ -118,6 +120,9 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
   const isEdit = Boolean(initial);
   const directResaleLocked = isEdit && (initial?.directResale ?? false);
   const candidates = comboCandidates.filter((p) => !p.isCombo && p.id !== initial?.id);
+  // Elegir la variante dentro de un grupo no existe: un plato con variantes
+  // solo puede ir como componente fijo (el servidor rechaza lo contrario).
+  const opcionesElegibles = candidates.filter((p) => !tieneVariantes(p));
 
   // El tipo elegido deriva los flags + siembra una fila guía en variantes/combo.
   const setKind = (kind: ProductKind) =>
@@ -132,7 +137,7 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
           : f.sizes,
       comboComponents:
         kind === 'combo' && f.comboComponents.length === 0
-          ? [{ rowKey: newRowKey(), productId: '', quantity: '1' }]
+          ? [{ rowKey: newRowKey(), productId: '', sizeId: '', quantity: '1' }]
           : f.comboComponents,
     }));
 
@@ -280,7 +285,8 @@ export function ProductForm({ initial, comboCandidates = [], categories = [] }: 
               form={form}
               setForm={setForm}
               pending={pending}
-              candidates={candidates}
+              candidates={opcionesElegibles}
+              hayPlatosConVariantes={opcionesElegibles.length < candidates.length}
             />
           </>
         )}

@@ -14,7 +14,7 @@ type ParsedExtra = {
   priceDelta: number;
   recipeDelta?: Array<{ childType: 'ingredient' | 'subproduct'; childId: string; quantity: number }>;
 };
-type ParsedComponent = { productId: string; quantity: number };
+type ParsedComponent = { productId: string; sizeId?: string; quantity: number };
 type ParsedChoiceOption = { productId: string; priceDelta: number };
 export type ParsedChoiceGroup = {
   label: string;
@@ -120,7 +120,11 @@ export function parseFormValues(form: FormState): ParsedFormResult {
       if (!Number.isInteger(q) || q < 1) {
         return { ok: false, error: 'La cantidad de cada componente debe ser un entero ≥ 1.' };
       }
-      comboComponents.push({ productId: c.productId, quantity: q });
+      comboComponents.push({
+        productId: c.productId,
+        ...(c.sizeId ? { sizeId: c.sizeId } : {}),
+        quantity: q,
+      });
     }
     for (const g of grupos) {
       const label = g.label.trim();

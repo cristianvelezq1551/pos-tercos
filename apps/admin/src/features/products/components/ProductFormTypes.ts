@@ -47,6 +47,9 @@ export interface ComboRow {
   /** Identidad de fila para React. Ver `newRowKey`. */
   rowKey: string;
   productId: string;
+  /** Variante del plato ("Pollo y Miel ahumada"). '' = el plato no tiene, o
+   *  todavía no se eligió (el selector la exige si el plato tiene variantes). */
+  sizeId: string;
   quantity: string;
 }
 

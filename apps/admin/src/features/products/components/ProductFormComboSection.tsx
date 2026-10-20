@@ -1,10 +1,12 @@
 'use client';
 
 import type { Product } from '@pos-tercos/types';
-import { Button, Input, Label, MoneyInput } from '@pos-tercos/ui';
+import { Button, Label, MoneyInput } from '@pos-tercos/ui';
 import { useMemo } from 'react';
 import { formatCop } from '../../../lib/format';
-import type { FormState } from './ProductFormTypes';
+import { precioDeComponente } from '../lib/combo-variantes';
+import { ComboComponentFields } from './ComboComponentFields';
+import type { ComboRow, FormState } from './ProductFormTypes';
 import { newRowKey } from './ProductFormTypes';
 
 export function ProductFormComboSection({
@@ -21,7 +23,7 @@ export function ProductFormComboSection({
 }) {
   const byId = useMemo(() => new Map(candidates.map((p) => [p.id, p])), [candidates]);
 
-  const update = (i: number, patch: Partial<{ productId: string; quantity: string }>) =>
+  const update = (i: number, patch: Partial<Pick<ComboRow, 'productId' | 'sizeId' | 'quantity'>>) =>
     setForm((f) => ({
       ...f,
       comboComponents: f.comboComponents.map((c, idx) => (idx === i ? { ...c, ...patch } : c)),
@@ -31,7 +33,7 @@ export function ProductFormComboSection({
       ...f,
       comboComponents: [
         ...f.comboComponents,
-        { rowKey: newRowKey(), productId: '', quantity: '1' },
+        { rowKey: newRowKey(), productId: '', sizeId: '', quantity: '1' },
       ],
     }));
   const remove = (i: number) =>
@@ -43,7 +45,9 @@ export function ProductFormComboSection({
   const componentsSum = form.comboComponents.reduce((acc, c) => {
     const p = byId.get(c.productId);
     const qty = Number(c.quantity || 0);
-    return acc + (p ? p.basePrice * (Number.isFinite(qty) ? qty : 0) : 0);
+    // Con el precio de la variante elegida: la suma tiene que ser lo que el
+    // cliente pagaría por las partes sueltas, o el "ahorro" mentiría.
+    return acc + (p ? precioDeComponente(p, c.sizeId) * (Number.isFinite(qty) ? qty : 0) : 0);
   }, 0);
   const comboPrice = Number(form.comboPrice);
   const hasComboPrice = Number.isFinite(comboPrice) && form.comboPrice !== '';
@@ -63,42 +67,15 @@ export function ProductFormComboSection({
       ) : (
         <ul className="space-y-2">
           {form.comboComponents.map((c, i) => (
-            <li key={c.rowKey} className="flex items-center gap-2">
-              <select
-                value={c.productId}
-                onChange={(e) => update(i, { productId: e.target.value })}
-                disabled={pending}
-                className="h-9 flex-1 rounded-md border border-input bg-card px-2 text-sm text-foreground focus:border-primary focus:outline-none"
-              >
-                <option value="">— Elegir producto —</option>
-                {candidates.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({formatCop(p.basePrice)})
-                  </option>
-                ))}
-              </select>
-              <Input
-                type="number"
-                inputMode="numeric"
-                min="1"
-                value={c.quantity}
-                onChange={(e) => update(i, { quantity: e.target.value })}
-                disabled={pending}
-                className="w-20 shrink-0 tabular-nums"
-                aria-label="Cantidad"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => remove(i)}
-                disabled={pending}
-                aria-label="Quitar componente"
-                className="shrink-0 text-destructive"
-              >
-                ✕
-              </Button>
-            </li>
+            <ComboComponentFields
+              key={c.rowKey}
+              row={c}
+              product={byId.get(c.productId)}
+              candidates={candidates}
+              pending={pending}
+              onChange={(patch) => update(i, patch)}
+              onRemove={() => remove(i)}
+            />
           ))}
         </ul>
       )}

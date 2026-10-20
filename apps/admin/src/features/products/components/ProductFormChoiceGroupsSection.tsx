@@ -17,12 +17,15 @@ export function ProductFormChoiceGroupsSection({
   setForm,
   pending,
   candidates,
+  hayPlatosConVariantes = false,
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   pending: boolean;
-  /** Productos elegibles como opción (activos, no combos). */
+  /** Productos elegibles como opción (activos, no combos, sin variantes). */
   candidates: Product[];
+  /** true = se dejaron afuera platos con variantes: se explica por qué. */
+  hayPlatosConVariantes?: boolean;
 }) {
   const updateGroup = (gi: number, patch: Partial<{ label: string; quantity: string }>) =>
     setForm((f) => ({
@@ -89,6 +92,12 @@ export function ProductFormChoiceGroupsSection({
       <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Grupos para elegir
       </legend>
+      {hayPlatosConVariantes ? (
+        <p className="text-xs text-muted-foreground">
+          Los platos con variantes no aparecen como opción: agrégalos arriba como componente
+          fijo, con su variante.
+        </p>
+      ) : null}
 
       {form.choiceGroups.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-sm text-muted-foreground">

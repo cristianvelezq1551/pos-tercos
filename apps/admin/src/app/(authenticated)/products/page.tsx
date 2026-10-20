@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button, Container, PageHeader } from '@pos-tercos/ui';
 import { BrandIcon } from '@pos-tercos/brand';
-import { ProductsList, type RealCost } from '../../../features/products';
+import { CombosSinVarianteAlert, ProductsList, type RealCost } from '../../../features/products';
 import { serverFetchJson } from '../../../lib/api-server';
 import { friendlyApiError } from '../../../lib/error-copy';
 import { getCurrentUserServer } from '../../../features/auth/server';
@@ -72,6 +72,7 @@ export default async function ProductsPage() {
       />
 
       <Container size="7xl" padY="md">
+        {Array.isArray(result) ? <CombosSinVarianteAlert products={result} /> : null}
         {Array.isArray(result) ? (
           <ProductsList
             products={result}
