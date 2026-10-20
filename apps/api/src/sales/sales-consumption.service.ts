@@ -84,7 +84,7 @@ export class SalesConsumptionService {
         name: true,
         directResale: true,
         isCombo: true,
-        comboComponents: { select: { productId: true, quantity: true } },
+        comboComponents: { select: { productId: true, quantity: true, sizeId: true } },
         choiceGroups: { select: { id: true } },
       },
     });
@@ -102,7 +102,13 @@ export class SalesConsumptionService {
     const componentProducts = componentIds.size
       ? await this.prisma.product.findMany({
           where: { id: { in: [...componentIds] } },
-          select: { id: true, name: true, directResale: true, isCombo: true },
+          select: {
+            id: true,
+            name: true,
+            directResale: true,
+            isCombo: true,
+            sizes: { select: { id: true } },
+          },
         })
       : [];
     const componentMap = new Map(componentProducts.map((p) => [p.id, p]));
@@ -224,8 +230,18 @@ export class SalesConsumptionService {
           );
         }
         const partes = [
-          ...product.comboComponents.map((c) => ({ productId: c.productId, quantity: c.quantity })),
-          ...(line.choices ?? []),
+          ...product.comboComponents.map((c) => ({
+            productId: c.productId,
+            quantity: c.quantity,
+            sizeId: c.sizeId,
+            esOpcion: false,
+          })),
+          ...(line.choices ?? []).map((c) => ({
+            productId: c.productId,
+            quantity: c.quantity,
+            sizeId: null,
+            esOpcion: true,
+          })),
         ];
         for (const comp of partes) {
           const cp = componentMap.get(comp.productId);
@@ -239,9 +255,11 @@ export class SalesConsumptionService {
               `Combo anidado no soportado en "${product.name}".`,
             );
           }
+          assertVarianteDelComponente(product.name, cp, comp);
           // El origen es el combo (line.productId): si el combo está forzado,
-          // se toleran los faltantes de todos sus componentes.
-          await consume(cp, line.quantity * comp.quantity, line.productId);
+          // se toleran los faltantes de todos sus componentes. La variante
+          // suma su receta a la base, igual que en una venta suelta.
+          await consume(cp, line.quantity * comp.quantity, line.productId, comp.sizeId);
         }
       } else {
         await consume(product, line.quantity, line.productId, line.sizeId);
@@ -402,4 +420,29 @@ export class SalesConsumptionService {
       `Stock insuficiente para esta venta:\n· ${lines.join('\n· ')}`,
     );
   }
+}
+
+/**
+ * Un componente de combo se descuenta con la receta de SU variante. Si el plato
+ * tiene variantes y el combo no dice cuál (ganó variantes después de entrar al
+ * combo, o es una opción a elegir), descontar la receta base sería el error
+ * silencioso que esto cierra: se rechaza y se dice qué hacer.
+ */
+function assertVarianteDelComponente(
+  comboName: string,
+  cp: { name: string; sizes: ReadonlyArray<{ id: string }> },
+  comp: { sizeId: string | null; esOpcion: boolean },
+): void {
+  if (comp.sizeId) {
+    if (cp.sizes.some((s) => s.id === comp.sizeId)) return;
+    throw new BadRequestException(
+      `La variante de "${cp.name}" en el combo "${comboName}" ya no existe. Edita el combo y vuelve a intentar.`,
+    );
+  }
+  if (cp.sizes.length === 0) return;
+  throw new BadRequestException(
+    comp.esOpcion
+      ? `"${cp.name}" tiene variantes y no se puede elegir dentro del combo "${comboName}". Elige otra opción.`
+      : `El combo "${comboName}" no tiene elegida la variante de "${cp.name}". Edita el combo y vuelve a intentar.`,
+  );
 }

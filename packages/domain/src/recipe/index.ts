@@ -10,6 +10,7 @@ export {
   type ExpandedIngredientOneLevel,
   type ExpandedSubproductOneLevel,
 } from './expand-recipe-one-level';
+export { comboComponentVariant } from './combo-component-variant';
 export {
   computeProductCost,
   computeComboCost,

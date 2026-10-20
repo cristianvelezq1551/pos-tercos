@@ -208,18 +208,20 @@ model ProductAvailabilityWindow {
 }
 
 model ProductSize {
-  id            String       @id @default(uuid())
-  productId     String       @map("product_id")
-  name          String
-  priceModifier Decimal      @default(0) @map("price_modifier") @db.Decimal(12, 2)
-  sortOrder     Int          @default(0) @map("sort_order")
-  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  saleItems     SaleItem[]
+  id               String             @id @default(uuid())
+  productId        String             @map("product_id")
+  name             String
+  priceModifier    Decimal            @default(0) @map("price_modifier") @db.Decimal(12, 2)
+  sortOrder        Int                @default(0) @map("sort_order")
+  product          Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  saleItems        SaleItem[]
   /// Receta propia de la variante (aditiva sobre la receta base del producto).
   /// Ej. la proteína: "Carne" descuenta carne, "Pollo" descuenta pollo.
-  recipeEdges   RecipeEdge[] @relation("SizeRecipe")
+  recipeEdges      RecipeEdge[]       @relation("SizeRecipe")
   /// Promociones limitadas a esta variante.
   promotionTargets PromotionProduct[]
+  /// Combos que llevan esta variante como componente.
+  comboComponents  ComboComponent[]   @relation("ComboComponentSize")
 
   @@index([productId])
   @@map("product_sizes")
@@ -238,15 +240,24 @@ model ProductModifier {
 }
 
 model ComboComponent {
-  id        String  @id @default(uuid())
-  comboId   String  @map("combo_id")
-  productId String  @map("product_id")
-  quantity  Int     @default(1)
-  combo     Product @relation("ComboParent", fields: [comboId], references: [id], onDelete: Cascade)
-  product   Product @relation("ComboChild", fields: [productId], references: [id])
+  id        String       @id @default(uuid())
+  comboId   String       @map("combo_id")
+  productId String       @map("product_id")
+  /// Variante del componente ("Papas TERCOS · Pollo"). NULL = producto sin
+  /// variantes, que es como se comportan todos los combos anteriores a esto.
+  /// Obligatoria si el producto tiene variantes: la proteína vive en la receta
+  /// de la variante, y sin ella el combo descontaría y costearía solo la base.
+  sizeId    String?      @map("size_id")
+  quantity  Int          @default(1)
+  combo     Product      @relation("ComboParent", fields: [comboId], references: [id], onDelete: Cascade)
+  product   Product      @relation("ComboChild", fields: [productId], references: [id])
+  /// Restrict: una variante que usa un combo no se borra (el servicio lo
+  /// explica antes de llegar acá, con el nombre del combo).
+  size      ProductSize? @relation("ComboComponentSize", fields: [sizeId], references: [id], onDelete: Restrict)
 
   @@index([comboId])
   @@index([productId])
+  @@index([sizeId])
   @@map("combo_components")
 }
 
@@ -390,34 +401,34 @@ model RecipeEdge {
 }
 
 model InventoryMovement {
-  id             String                @id @default(uuid())
-  ingredientId   String?               @map("ingredient_id")
-  delta          Decimal               @db.Decimal(14, 4)
-  type           InventoryMovementType
+  id                String                @id @default(uuid())
+  ingredientId      String?               @map("ingredient_id")
+  delta             Decimal               @db.Decimal(14, 4)
+  type              InventoryMovementType
   /// Costo por unidad de stock/receta. Solo entradas (delta > 0: PURCHASE,
   /// INITIAL, ajuste+). NULL en consumos (el costo lo resuelve el motor FIFO)
   /// y en entradas sin costo conocido. Base del costeo real (COGS).
-  unitCost       Decimal?              @map("unit_cost") @db.Decimal(14, 4)
+  unitCost          Decimal?              @map("unit_cost") @db.Decimal(14, 4)
   /// El costo se ESTIMÓ al escribir (último precio conocido) porque la entrada
   /// llegó sin precio: sobrante de conteo, ajuste manual sin costo. El motor lo
   /// propaga a lo que salga de ese lote como "estimado" (§7.v70).
-  unitCostEstimated Boolean            @default(false) @map("unit_cost_estimated")
-  sourceType     String?               @map("source_type")
-  sourceId       String?               @map("source_id")
-  userId         String?               @map("user_id")
-  notes          String?
+  unitCostEstimated Boolean               @default(false) @map("unit_cost_estimated")
+  sourceType        String?               @map("source_type")
+  sourceId          String?               @map("source_id")
+  userId            String?               @map("user_id")
+  notes             String?
   /// Foto de evidencia (#6). Storage key de la foto que sube el cocinero al
   /// registrar una producción. Se guarda en el movement +N de la tanda.
-  evidenceKey    String?               @map("evidence_key")
-  idempotencyKey String?               @unique @map("idempotency_key")
-  createdAt      DateTime              @default(now()) @map("created_at")
-  entityType     StockableType         @map("entity_type")
-  productId      String?               @map("product_id")
-  subproductId   String?               @map("subproduct_id")
-  ingredient     Ingredient?           @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
-  product        Product?              @relation(fields: [productId], references: [id], onDelete: Restrict)
-  subproduct     Subproduct?           @relation(fields: [subproductId], references: [id], onDelete: Restrict)
-  user           User?                 @relation(fields: [userId], references: [id])
+  evidenceKey       String?               @map("evidence_key")
+  idempotencyKey    String?               @unique @map("idempotency_key")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  entityType        StockableType         @map("entity_type")
+  productId         String?               @map("product_id")
+  subproductId      String?               @map("subproduct_id")
+  ingredient        Ingredient?           @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  product           Product?              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  subproduct        Subproduct?           @relation(fields: [subproductId], references: [id], onDelete: Restrict)
+  user              User?                 @relation(fields: [userId], references: [id])
 
   @@index([ingredientId, createdAt(sort: Desc)])
   @@index([productId, createdAt(sort: Desc)])
@@ -780,28 +791,28 @@ model Shift {
 /// (ej. fondo de cambio, pago a proveedor en efectivo, retiro). Ajustan el
 /// efectivo esperado al cierre. Insert-only (no se editan; se compensan).
 model CashMovement {
-  id        String           @id @default(uuid())
-  shiftId   String           @map("shift_id")
-  type      CashMovementType
+  id                 String           @id @default(uuid())
+  shiftId            String           @map("shift_id")
+  type               CashMovementType
   /// CASH = cajón físico; digital = cuenta del negocio (arqueo digital).
-  method    String           @default("CASH")
-  amount    Decimal          @db.Decimal(14, 2)
-  reason    String
-  userId    String           @map("user_id")
-  createdAt DateTime         @default(now()) @map("created_at")
+  method             String           @default("CASH")
+  amount             Decimal          @db.Decimal(14, 2)
+  reason             String
+  userId             String           @map("user_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
   /// Operación de DOS patas a la que pertenece el movimiento. Hoy solo
   /// `DELIVERY_PAYOUT` (§7.v71): el domicilio que el cliente transfirió y el
   /// cajero pagó en efectivo del cajón. Null = movimiento suelto de siempre.
-  purpose            String? @map("purpose")
+  purpose            String?          @map("purpose")
   /// Une las dos patas de esa operación: nacen y se borran juntas, y los
   /// endpoints sueltos de editar/eliminar las rechazan (partirlas descuadra
   /// el cierre).
-  pairId             String? @map("pair_id")
+  pairId             String?          @map("pair_id")
   /// Traspaso de tesorería que acompaña la operación, para poder deshacerlo
   /// junto con ella. Solo lo escribe la pata de salida.
-  treasuryMovementId String? @map("treasury_movement_id")
-  shift     Shift            @relation(fields: [shiftId], references: [id])
-  user      User             @relation(fields: [userId], references: [id])
+  treasuryMovementId String?          @map("treasury_movement_id")
+  shift              Shift            @relation(fields: [shiftId], references: [id])
+  user               User             @relation(fields: [userId], references: [id])
 
   @@index([shiftId, createdAt])
   // §2.7: este índice YA existe en la DB (migración 20260611140000) pero faltaba

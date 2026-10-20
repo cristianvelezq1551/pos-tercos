@@ -1637,10 +1637,15 @@ export const SALE_PRODUCT_INCLUDE = {
   sizes: true,
   modifiers: true,
   availabilityWindows: true,
+  // Las variantes de cada componente y opción: un plato con variantes sin una
+  // elegida no se puede vender dentro del combo (se descontaría la base).
+  comboComponents: {
+    select: { sizeId: true, product: { select: { name: true, sizes: { select: { id: true } } } } },
+  },
   choiceGroups: {
     include: {
       options: {
-        include: { product: { select: { name: true } } },
+        include: { product: { select: { name: true, sizes: { select: { id: true } } } } },
         orderBy: { sortOrder: 'asc' },
       },
     },
@@ -1671,6 +1676,7 @@ export function computeLine(
       `"${product.name}" hoy no se vende: ${motivoDeHorario(ventanas).toLowerCase()}.`,
     );
   }
+  assertComboArmable(product);
 
   let basePrice = Number(product.basePrice);
   if (product.isCombo && product.comboPrice !== null) {
@@ -1838,6 +1844,13 @@ export function resolveChoices(
           `Esa opción ya no está disponible en "${g.label}". Vuelve a elegir.`,
         );
       }
+      // Elegir la variante dentro de un grupo no existe: la opción ganó
+      // variantes después de entrar al combo y se descontaría solo la base.
+      if (opcion.product.sizes.length > 0) {
+        throw new BadRequestException(
+          `"${opcion.product.name}" tiene variantes y no se puede elegir dentro del combo "${product.name}". Elige otra opción.`,
+        );
+      }
       out.push({
         groupId: g.id,
         groupLabel: g.label,
@@ -1849,6 +1862,21 @@ export function resolveChoices(
     }
   }
   return out;
+}
+
+/**
+ * Un combo cuyo componente es un plato con variantes, sin una elegida, no se
+ * vende: pasa cuando el plato gana variantes después de entrar al combo, y
+ * venderlo descontaría solo la receta base. Se valida al AGREGAR (como el
+ * horario); el consumo lo vuelve a verificar al cobrar.
+ */
+function assertComboArmable(product: ProductWithRelations): void {
+  if (!product.isCombo) return;
+  const sinVariante = product.comboComponents.find((c) => !c.sizeId && c.product.sizes.length > 0);
+  if (!sinVariante) return;
+  throw new BadRequestException(
+    `El combo "${product.name}" no tiene elegida la variante de "${sinVariante.product.name}". Edita el combo y vuelve a intentar.`,
+  );
 }
 
 /** "la bebida" / "las 2 bebidas" — el mensaje se lee como lo diría una persona. */

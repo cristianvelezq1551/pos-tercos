@@ -11,9 +11,12 @@
  *     siempre metería en el promedio un plato que no existe en la carta.
  *  2. Una variante cuyo costo NO se sabe (un insumo sin precio de compra). No
  *     puede colarse como $0: queda fuera y se reporta (§7.v32).
- *  3. Un combo que contiene un producto con variantes. El componente no lleva
- *     variante elegida, así que se costea con la base — y eso hay que dejarlo
- *     escrito para que nadie lo "corrija" en silencio.
+ *  3. Un combo que contiene un producto con variantes. Hasta 2026-10-20 el
+ *     componente no podía llevar variante y se costeaba con la base; desde
+ *     entonces (PLAN-COMBO-CON-VARIANTE.md, decisión del dueño) la variante es
+ *     OBLIGATORIA y el componente se costea con ella. Un combo que quedó sin
+ *     variante —el plato la ganó después— no se costea con la base: queda sin
+ *     costo y lo dice. El cambio fue explícito; no se "corrige" en silencio.
  */
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
@@ -192,7 +195,7 @@ describe('Costo por variante: los bordes E2E', () => {
         isCombo: true,
         comboPrice: 24_000,
         modifiersEnabled: false,
-        comboComponents: [{ productId: platoId, quantity: 1 }],
+        comboComponents: [{ productId: platoId, sizeId: conPolloId, quantity: 1 }],
       })
       .expect(201);
     comboId = combo.body.id as string;
@@ -348,13 +351,35 @@ describe('Costo por variante: los bordes E2E', () => {
   });
 
   describe('un combo con un producto de variantes adentro', () => {
-    it('costea el componente con la receta base (nadie eligió variante ahí)', async () => {
+    const costoDelCombo = async () => {
       const res = await request.get('/product-costs/with-variants').set(auth()).expect(200);
-      const combo = (
-        res.body as Array<{ productId: string; totalCost: number | null; variants: unknown[] }>
+      return (
+        res.body as Array<{
+          productId: string;
+          totalCost: number | null;
+          missingReasons: string[];
+          variants: unknown[];
+        }>
       ).find((p) => p.productId === comboId)!;
-      expect(combo.totalCost).toBeCloseTo(COSTO_BASE, 2);
+    };
+
+    it('costea el componente con la receta de SU variante', async () => {
+      const combo = await costoDelCombo();
+      expect(combo.totalCost).toBeCloseTo(COSTO_CON_POLLO, 2);
       expect(combo.variants).toEqual([]);
+    });
+
+    it('si quedó sin variante (el plato la ganó después) NO se costea con la base', async () => {
+      // Se simula el combo viejo directo en la base: por la API ya no se puede
+      // guardar así. Costearlo con la base daría un margen falso.
+      await prisma.comboComponent.updateMany({ where: { comboId }, data: { sizeId: null } });
+      try {
+        const combo = await costoDelCombo();
+        expect(combo.totalCost).toBeNull();
+        expect(combo.missingReasons.join(' ')).toContain('Falta elegir la variante');
+      } finally {
+        await prisma.comboComponent.updateMany({ where: { comboId }, data: { sizeId: conPolloId } });
+      }
     });
   });
 });

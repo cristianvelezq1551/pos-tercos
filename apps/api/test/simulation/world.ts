@@ -15,7 +15,7 @@ import type { INestApplication } from '@nestjs/common';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { CogsService } from '../../src/reports/cogs.service';
 import type { Rng } from './rng';
-import type { AristaReceta, ProductoSombra, SubproductoSombra } from './shadow';
+import { cantidadBruta, type AristaReceta, type ProductoSombra, type SubproductoSombra } from './shadow';
 import type { PromoSombra } from './promos';
 
 /**
@@ -69,7 +69,21 @@ export interface Mundo {
   /** Combo con bebida a ELEGIR: qué se descuenta depende de lo que pida el
    *  cliente, no de un componente fijo. */
   conEleccion: ComboConEleccion;
+  /** Combo cuyo componente lleva VARIANTE: la receta del tamaño suma a la del
+   *  plato (PLAN-COMBO-CON-VARIANTE.md). */
+  conVariante: ComboConVariante;
   auth: () => { Authorization: string };
+}
+
+/** Combo "2 × plato · tamaño grande": el insumo del tamaño tiene que salir. */
+export interface ComboConVariante {
+  producto: ProductoSombra;
+  /** Insumo de la receta del tamaño. Puede estar también en otras recetas: por
+   *  eso la ley mide que lo descontado ALCANCE, y la exactitud la dan las leyes
+   *  de stock contra la sombra. */
+  insumoVarianteId: string;
+  /** Cuánto de ese insumo descuenta UN combo (bruto, ya con su merma). */
+  insumoVariantePorCombo: number;
 }
 
 const NOMBRES_INSUMO = ['Carne', 'Pan', 'Queso', 'Papa', 'Salsa', 'Lechuga'];
@@ -413,6 +427,42 @@ export async function construirMundo(rng: Rng): Promise<Mundo> {
     receta: [],
   });
 
+  // Combo cuyo componente lleva VARIANTE: 2 platos con opciones en tamaño
+  // grande. La receta del tamaño SUMA a la del plato — el caso que un combo no
+  // podía representar antes de PLAN-COMBO-CON-VARIANTE.md. Precio fijo (sin
+  // pedirle al rng) para no correr más de lo necesario las historias.
+  const precioConVariante = precioOpciones * 2;
+  const comboVarianteId = (
+    await request
+      .post('/products')
+      .set(auth())
+      .send({
+        category: 'Combos',
+        name: 'Combo con variante Sim',
+        basePrice: precioConVariante,
+        isCombo: true,
+        comboPrice: precioConVariante,
+        modifiersEnabled: false,
+        comboComponents: [{ productId: opcionesId, sizeId: grande.id, quantity: 2 }],
+      })
+      .expect(201)
+  ).body.id as string;
+  const productoConVariante: ProductoSombra = {
+    id: comboVarianteId,
+    nombre: 'Combo con variante',
+    precio: precioConVariante,
+    directResale: false,
+    isCombo: true,
+    componentes: [{ productId: opcionesId, quantity: 2, recetaVariante: recetaGrande }],
+    receta: [],
+  };
+  productos.push(productoConVariante);
+  const conVariante: ComboConVariante = {
+    producto: productoConVariante,
+    insumoVarianteId: insumoTamano.id,
+    insumoVariantePorCombo: 2 * cantidadBruta(recetaGrande[0]!),
+  };
+
   // Combo con bebida A ELEGIR: dos reventas distintas entre las que el cliente
   // escoge. Lo que se descuenta depende de la LÍNEA, no del catálogo — es el
   // caso que un componente fijo no puede representar.
@@ -651,6 +701,7 @@ export async function construirMundo(rng: Rng): Promise<Mundo> {
     promos,
     conOpciones,
     conEleccion,
+    conVariante,
     auth,
   };
 }

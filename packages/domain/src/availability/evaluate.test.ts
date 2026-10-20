@@ -550,3 +550,127 @@ describe('evaluateAvailability · horario del producto', () => {
     expect(evaluarBebida(MIERC, { availabilityWindows: soloMiercoles, isActive: false })).toBeUndefined();
   });
 });
+
+/**
+ * Combos cuyos componentes llevan VARIANTE ("2 Papas · Pollo"). La proteína vive
+ * en la receta de la variante: si la disponibilidad mirara solo la base, la caja
+ * ofrecería el combo el día que se acaba el pollo y el cobro lo rechazaría con
+ * el cliente enfrente (PLAN-COMBO-CON-VARIANTE.md, L6). Es la MISMA función que
+ * corre la caja sin conexión, así que esto también la cubre.
+ */
+describe('evaluateAvailability · combos con componentes con variante', () => {
+  const variante = (sizeId: string, name: string, ing: string, blocks = true) => ({
+    sizeId,
+    name,
+    edges: [
+      {
+        parent: { kind: 'product' as const, id: 'papas' },
+        child: { kind: 'ingredient' as const, id: ing },
+        quantityNeta: 100,
+        mermaPct: 0,
+        blocksAvailability: blocks,
+      },
+    ],
+  });
+  const papas = product('papas', {
+    variants: [
+      variante('pollo', 'Pollo', 'pollo'),
+      variante('carne', 'Carne', 'carne'),
+      variante('salsa', 'Con salsa', 'sobre', false),
+    ],
+  });
+  const sandwich = product('sandwich');
+  const grafo = buildGraph({
+    ingredients: [
+      { id: 'papa', name: 'Papa' },
+      { id: 'pollo', name: 'Pollo' },
+      { id: 'carne', name: 'Carne' },
+      { id: 'pan', name: 'Pan' },
+      { id: 'sobre', name: 'Sobre de salsa' },
+    ],
+    edges: [
+      { parentId: 'papas', childKind: 'ingredient', childId: 'papa', qty: 100, blocksAvailability: true },
+      { parentId: 'sandwich', childKind: 'ingredient', childId: 'pan', qty: 1, blocksAvailability: true },
+    ],
+  });
+  const combo = (comboComponents: AvailabilityProduct['comboComponents']) =>
+    product('combo', { isCombo: true, comboComponents });
+  const evaluarCombo = (c: AvailabilityProduct, ingredientStock: Record<string, number>) =>
+    evaluateAvailability({
+      at: AHORA,
+      products: [c, papas, sandwich],
+      graph: grafo,
+      productStock: new Map(),
+      ingredientStock: new Map(Object.entries(ingredientStock)),
+      subproductStock: new Map(),
+    }).find((r) => r.productId === 'combo')!;
+
+  const dosPollo = combo([{ productId: 'papas', sizeId: 'pollo', quantity: 2 }]);
+
+  it('exige la proteína de la variante POR CADA unidad del combo', () => {
+    const corto = evaluarCombo(dosPollo, { papa: 1000, pollo: 150 });
+    expect(corto.available).toBe(false);
+    expect(corto.reason).toBe('Sin Pollo');
+    expect(evaluarCombo(dosPollo, { papa: 1000, pollo: 200 }).available).toBe(true);
+  });
+
+  it('no pide la proteína de OTRA variante del mismo plato', () => {
+    expect(evaluarCombo(dosPollo, { papa: 1000, pollo: 500, carne: 0 }).available).toBe(true);
+  });
+
+  it('dos variantes del mismo plato en un combo piden cada una lo suyo', () => {
+    const mixto = combo([
+      { productId: 'papas', sizeId: 'pollo', quantity: 1 },
+      { productId: 'papas', sizeId: 'carne', quantity: 1 },
+    ]);
+    const r = evaluarCombo(mixto, { papa: 1000, pollo: 500, carne: 0 });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Sin Carne');
+  });
+
+  it('un consumible de la variante no frena el combo', () => {
+    const conSalsa = combo([{ productId: 'papas', sizeId: 'salsa', quantity: 1 }]);
+    expect(evaluarCombo(conSalsa, { papa: 1000, sobre: 0 }).available).toBe(true);
+  });
+
+  it('la base del plato se suma a la de la variante', () => {
+    expect(evaluarCombo(dosPollo, { papa: 150, pollo: 500 }).reason).toBe('Sin Papa');
+  });
+
+  it('una variante que el plato ya no tiene deja el combo mal configurado (no lo ofrece a ciegas)', () => {
+    const roto = combo([{ productId: 'papas', sizeId: 'no-existe', quantity: 1 }]);
+    const r = evaluarCombo(roto, { papa: 1000, pollo: 500, carne: 500 });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Combo mal configurado');
+  });
+
+  it('L9: un componente sin variante cuyo plato AHORA tiene variantes apaga el combo', () => {
+    // Pasa cuando el dueño le agrega variantes a un producto que ya estaba en
+    // un combo. Ofrecerlo descontaría solo la receta base: se apaga y lo dice.
+    const sinElegir = combo([{ productId: 'papas', quantity: 1 }]);
+    const r = evaluarCombo(sinElegir, { papa: 1000, pollo: 500, carne: 500 });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Falta elegir la variante de papas en el combo');
+  });
+
+  it('L9: una OPCIÓN a elegir con variantes se apaga sola; el combo sigue con las demás', () => {
+    const conGrupo = product('combo', {
+      isCombo: true,
+      comboComponents: [],
+      choiceGroups: [{ id: 'g', label: 'Plato', quantity: 1, optionProductIds: ['papas', 'sandwich'] }],
+    });
+    const r = evaluarCombo(conGrupo, { papa: 1000, pollo: 500, carne: 500, pan: 10 });
+    expect(r.available).toBe(true);
+    expect(r.choiceOptions.find((o) => o.productId === 'papas')).toMatchObject({
+      available: false,
+      reason: 'Tiene variantes: quítalo de las opciones',
+    });
+    expect(r.choiceOptions.find((o) => o.productId === 'sandwich')?.available).toBe(true);
+  });
+
+  it('REGRESIÓN: un componente sin variante se evalúa como siempre', () => {
+    const fijo = combo([{ productId: 'sandwich', quantity: 2 }]);
+    expect(evaluarCombo(fijo, { pan: 2 }).available).toBe(true);
+    expect(evaluarCombo(fijo, { pan: 1 }).reason).toBe('Sin Pan');
+  });
+});

@@ -5565,6 +5565,76 @@ tamaño y extras, y era lo que había que ver funcionando; barrido a 13 pantalla
   `promotion_products` (tabla de una fila por producto en promo; reescribirla no
   cuesta). Postgres de prod es 18; `gen_random_uuid()` es nativo desde 13.
 
+## 7.v76 El componente del combo lleva su variante — entrega 1, solo API (2026-10-20)
+
+> Pedido del dueño: "2 Papas TERCOS · Pollo y Miel ahumada por $40.000" — y que
+> la funcionalidad permita cualquier combinación fija ("Papas · Pollo +
+> Sandwich", dos variantes del mismo plato, con o sin bebidas). Condición dura:
+> **lo que funciona en prod no se mueve**. Plan completo, decisiones y leyes en
+> `PLAN-COMBO-CON-VARIANTE.md`. Verificado: typecheck 13/13 sin caché, lint 0,
+> unit 12/12 paquetes, e2e completa, simulación 115/115, y la copia de prod
+> (abajo). Migración: `20261020120000_combo_component_size` (aditiva).
+
+### El hueco
+`combo_components` no guardaba variante, y los platos con variantes tienen la
+proteína en la receta de la VARIANTE. Un combo "Papas TERCOS × 2" descontaba y
+costeaba solo papas y salsas: con la receta real, $6.971 en vez de $17.190 —
+margen de 83 % en vez de 57 %—. Y nada impedía guardarlo.
+
+### La regla (NO invertir sin leer el plan)
+- `combo_components.size_id` **opcional**, FK `RESTRICT`. **NULL = exactamente
+  lo de antes.**
+- **Variante obligatoria** si el producto la tiene; prohibida si no; de ESE
+  producto. **No se borra una variante que usa un combo** (400 con su nombre).
+- **Si un componente GANA variantes después** de entrar al combo, el combo **se
+  apaga**: no se ofrece (motivo "Falta elegir la variante de X en el combo"), no
+  entra a un pedido y el cobro lo rechaza sin descontar. Nunca se descuenta ni
+  se costea con la base. ⚠️ El servidor NO obliga a elegir variante en una venta
+  SUELTA (eso lo controla la pantalla): la regla es propia del combo.
+- **Un plato con variantes no puede ser opción de un grupo "elige tu opción"**
+  (elegir la variante ahí está fuera de alcance), y si una opción gana variantes
+  se apaga sola; las demás del grupo siguen. En el costeo del peor caso se dejó
+  como estaba: su costo base solo puede SUBIR el peor caso, nunca bajarlo.
+- El precio sigue siendo el `comboPrice`; el recargo de la variante no participa.
+
+### Los 7 lugares que leen los componentes (todos pasan la variante)
+Consumo (`computeConsumptionSpecs`: cobro, edición, venta sin red, cortesía) ·
+ficha (`expandedCost`) · costo de la carta (`catalogCosts`) · **equilibrio de la
+carta (`financial-reports.catalogMargin`, que tiene su PROPIO cálculo del combo)**
+· margen por producto (`cogs.service`) · disponibilidad (`evaluate.ts` + su
+cargador; también la caja sin red) · biblia. `comboComponentVariant` (domain,
+puro) es la ÚNICA fuente de "cómo se llama y si se puede costear" un
+componente con variante, para los tres costeos.
+
+### Cómo se demostró que prod no se mueve
+- **Pruebas escritas ANTES del código** y comprobadas fallando en main por la
+  razón correcta: `combo-variante.e2e-spec.ts` (L3 consumo = sueltas, L4 un solo
+  costo en 9 pantallas, L7 anular), `combo-variante-reglas.e2e-spec.ts` (L6
+  disponibilidad = cobro, L8 reglas al guardar, L9 componente u opción que ganó
+  variantes) y 9 casos en `evaluate.test.ts`.
+- **Simulación financiera**: la sombra suma la receta de la variante del
+  componente (L22). Con el código viejo fallan 25 leyes; en la rama 115/115.
+- **Copia de prod** (Postgres 18 desechable, prod solo leída, push y canales de
+  salida vacíos, destruida al terminar): 213 pantallas con `main`, con `main`
+  + la migración y con la rama. **0 distintas** en las dos primeras; en la rama
+  3, y la única diferencia es `"sizeId": null` en el componente del Combo
+  Double Smash. La función nueva se probó sobre la receta real: "2 Papas con
+  pollo" descuenta igual que 2 sueltas en los 16 insumos y subproductos.
+- `costo-por-variante-bordes` documentaba el comportamiento VIEJO (combo con
+  plato con variantes costeado con la base): se actualizó a la regla nueva por
+  decisión del dueño, dejando escrito por qué.
+
+### Rollback
+Revertir la entrega 2 (pantallas) no tiene riesgo. Revertir ESTA entrega después
+de crear combos con variante: el código viejo ignora la columna y esos combos
+dejarían de descontar la proteína — **primero se apagan, después se revierte**.
+
+### Lo que sigue
+**Entrega 2**: selector de variante en el formulario del combo, la ficha con el
+nombre de la variante y la comanda con los componentes de TODOS los combos
+("Papas TERCOS · Pollo y Miel ahumada × 2"; el Combo Double Smash pasa a imprimir
+también "Double smash × 2"). Después, **canal por producto** (pieza aparte).
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

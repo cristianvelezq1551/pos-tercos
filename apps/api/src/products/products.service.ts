@@ -187,6 +187,7 @@ export class ProductsService {
     await this.assertModifierConsumptions(input.modifiers);
     if (input.isCombo) {
       await this.assertComboComponentsAreNonComboProducts(input.comboComponents ?? []);
+      await this.assertComponentVariants(input.comboComponents ?? []);
       await this.assertChoiceOptionsVendibles(input.choiceGroups ?? []);
     }
     const category = await this.categories.resolveCanonicalName(input.category);
@@ -231,6 +232,7 @@ export class ProductsService {
             ? {
                 create: input.comboComponents.map((c) => ({
                   productId: c.productId,
+                  sizeId: c.sizeId ?? null,
                   quantity: c.quantity,
                 })),
               }
@@ -366,6 +368,7 @@ export class ProductsService {
           `No se puede eliminar la variante: ${detalle}. Quítala de la promoción primero.`,
         );
       }
+      await this.assertSizesNotInCombos(toDelete, existing.sizes);
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -465,6 +468,7 @@ export class ProductsService {
       throw new BadRequestException('El producto no es un combo.');
     }
     await this.assertComboComponentsAreNonComboProducts(input.components);
+    await this.assertComponentVariants(input.components);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.comboComponent.deleteMany({ where: { comboId: productId } });
@@ -472,6 +476,7 @@ export class ProductsService {
         data: input.components.map((c) => ({
           comboId: productId,
           productId: c.productId,
+          sizeId: c.sizeId ?? null,
           quantity: c.quantity,
         })),
       });
@@ -585,7 +590,7 @@ export class ProductsService {
           isCombo: true,
           soldOut: true,
           forceAvailable: true,
-          comboComponents: { select: { productId: true, quantity: true } },
+          comboComponents: { select: { productId: true, quantity: true, sizeId: true } },
           choiceGroups: {
             select: {
               id: true,
@@ -783,6 +788,72 @@ export class ProductsService {
         `No puedes ofrecer productos desactivados como opción: ${inactivos.map((p) => p.name).join(', ')}.`,
       );
     }
+    // Elegir la variante dentro de un grupo no existe todavía: como opción, un
+    // plato con variantes se descontaría solo con su receta base.
+    const conVariantes = await this.prisma.product.findMany({
+      where: { id: { in: todas.map((o) => o.productId) }, sizes: { some: {} } },
+      select: { name: true },
+    });
+    if (conVariantes.length > 0) {
+      throw new BadRequestException(
+        `${conVariantes.map((p) => `"${p.name}"`).join(', ')} tiene variantes y todavía no se puede ofrecer como opción a elegir. Agrégalo como componente fijo del combo, con su variante.`,
+      );
+    }
+  }
+
+  /**
+   * Una variante que un combo lleva como componente no se borra: sin ella, el
+   * combo descontaría solo la receta base (y la FK lo rechazaría con un error
+   * técnico). Se dice qué combo la usa y qué hacer.
+   */
+  private async assertSizesNotInCombos(
+    sizeIds: string[],
+    sizes: Array<{ id: string; name: string }>,
+  ): Promise<void> {
+    const enCombo = await this.prisma.comboComponent.findMany({
+      where: { sizeId: { in: sizeIds } },
+      select: { sizeId: true, combo: { select: { name: true } } },
+    });
+    if (enCombo.length === 0) return;
+    const detalle = enCombo
+      .map((r) => {
+        const size = sizes.find((s) => s.id === r.sizeId)?.name ?? 'una variante';
+        return `"${size}" está en el combo "${r.combo.name}"`;
+      })
+      .join('; ');
+    throw new BadRequestException(`No se puede eliminar la variante: ${detalle}. Quítala del combo primero.`);
+  }
+
+  /**
+   * La variante de cada componente fijo: obligatoria si el producto tiene
+   * variantes (la proteína vive en la receta de la variante), prohibida si no
+   * tiene, y siempre de ESE producto.
+   */
+  private async assertComponentVariants(
+    components: Array<{ productId: string; sizeId?: string | null }>,
+  ): Promise<void> {
+    if (components.length === 0) return;
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: components.map((c) => c.productId) } },
+      select: { id: true, name: true, sizes: { select: { id: true } } },
+    });
+    const byId = new Map(products.map((p) => [p.id, p]));
+    for (const c of components) {
+      const p = byId.get(c.productId);
+      if (!p) continue; // la existencia ya la valida assertComboComponentsAreNonComboProducts
+      if (c.sizeId) {
+        if (p.sizes.length === 0) {
+          throw new BadRequestException(`"${p.name}" no tiene variantes: quítale la variante en el combo.`);
+        }
+        if (!p.sizes.some((s) => s.id === c.sizeId)) {
+          throw new BadRequestException(
+            `La variante elegida para "${p.name}" no es de ese producto. Vuelve a elegirla.`,
+          );
+        }
+      } else if (p.sizes.length > 0) {
+        throw new BadRequestException(`"${p.name}" tiene variantes: elige cuál lleva el combo.`);
+      }
+    }
   }
 
   private async assertComboComponentsAreNonComboProducts(
@@ -925,11 +996,18 @@ function toModifierDto(row: { id: string; productId: string; name: string; price
   };
 }
 
-function toComboComponentDto(row: { id: string; comboId: string; productId: string; quantity: number }): ComboComponent {
+function toComboComponentDto(row: {
+  id: string;
+  comboId: string;
+  productId: string;
+  sizeId: string | null;
+  quantity: number;
+}): ComboComponent {
   return {
     id: row.id,
     comboId: row.comboId,
     productId: row.productId,
+    sizeId: row.sizeId,
     quantity: row.quantity,
   };
 }

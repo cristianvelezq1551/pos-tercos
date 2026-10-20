@@ -404,12 +404,21 @@ export const ComboComponentSchema = z.object({
   id: z.string().uuid(),
   comboId: z.string().uuid(),
   productId: z.string().uuid(),
+  /**
+   * Variante del componente ("Papas TERCOS · Pollo"). null = producto sin
+   * variantes. Opcional (no `.default`) a propósito: el API y las apps se
+   * publican por separado, y una app que lea un API viejo no lo recibe.
+   */
+  sizeId: z.string().uuid().nullable().optional(),
   quantity: z.number().int().positive(),
 });
 export type ComboComponent = z.infer<typeof ComboComponentSchema>;
 
 export const ComboComponentInputSchema = z.object({
   productId: z.string().uuid(),
+  /** Obligatoria si el producto tiene variantes; prohibida si no (lo valida el
+   *  servicio, que es el que conoce las variantes de cada producto). */
+  sizeId: z.string().uuid().nullable().optional(),
   quantity: z.number().int().positive().default(1),
 });
 export type ComboComponentInput = z.infer<typeof ComboComponentInputSchema>;
