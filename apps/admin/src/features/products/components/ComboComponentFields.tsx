@@ -62,7 +62,9 @@ export function ComboComponentFields({
             value={row.sizeId}
             onChange={(e) => onChange({ sizeId: e.target.value })}
             disabled={pending}
-            className={`${SELECT_CLASS} min-w-0 flex-1`}
+            // También en su propio renglón en el celular: compartiéndolo con la
+            // cantidad, "Pollo y Miel ahumada" no cabía entera.
+            className={`${SELECT_CLASS} min-w-0 basis-full sm:basis-0 sm:flex-1`}
           >
             <option value="">— Elegir variante —</option>
             {product.sizes?.map((s) => (

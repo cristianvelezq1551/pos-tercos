@@ -150,6 +150,48 @@ test('armar "2 Papas · Pollo" desde el formulario guarda la variante elegida', 
   await page.close();
 });
 
+/**
+ * En el celular el plato y su variante iban en el mismo renglón y quedaban
+ * cortados ("Papas" / "Pollo y"). Al darles renglón propio y letra de 16 px, el
+ * recuadro se salía 14 px de la tarjeta: un `fieldset` no se encoge por debajo
+ * de su contenido. La página NO se desborda, así que hay que medir los hijos.
+ */
+test('390 px: el recuadro del combo cabe en la tarjeta y la variante se lee', async ({ browser }) => {
+  const ctx = await browser.newContext({ storageState: cookies, baseURL: BASE, viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await abrirComboNuevo(page, `Combo celular UI ${sufijo()}`);
+  await page.getByLabel('Producto', { exact: true }).first().selectOption(papasId);
+  await page.getByLabel(`Variante de ${papasNombre}`).selectOption(polloId);
+
+  const medidas = await page.getByRole('group', { name: 'Componentes del combo' }).evaluate((fs) => {
+    const caja = fs.getBoundingClientRect();
+    const tarjeta = (fs.closest('form') ?? fs.parentElement!).getBoundingClientRect();
+    const selects = [...fs.querySelectorAll('select')];
+    // ¿Cabe el NOMBRE de la variante elegida? Se mide con la letra real del
+    // selector, descontando el relleno y la flecha. Un select corta el texto en
+    // silencio: verlo "más ancho" no alcanza.
+    const variante = selects[1];
+    const estilo = getComputedStyle(variante);
+    const lienzo = document.createElement('canvas').getContext('2d')!;
+    lienzo.font = `${estilo.fontWeight} ${estilo.fontSize} ${estilo.fontFamily}`;
+    const nombre = (variante.selectedOptions[0]?.text ?? '').split(' (')[0];
+    const disponible =
+      variante.clientWidth - parseFloat(estilo.paddingLeft) - parseFloat(estilo.paddingRight) - 20;
+    return {
+      sobraTarjeta: caja.right - tarjeta.right,
+      sobraCaja: Math.max(...selects.map((s) => s.getBoundingClientRect().right - caja.right)),
+      nombre,
+      faltaParaElNombre: lienzo.measureText(nombre).width - disponible,
+    };
+  });
+  expect(medidas.sobraTarjeta, 'el recuadro se sale de la tarjeta').toBeLessThanOrEqual(0.5);
+  expect(medidas.sobraCaja, 'un selector se sale del recuadro').toBeLessThanOrEqual(0.5);
+  // La variante tiene que leerse entera: con el plato al lado salía "Pollo y".
+  expect(medidas.nombre).toBe('Pollo y Miel ahumada');
+  expect(medidas.faltaParaElNombre, 'el nombre de la variante no cabe').toBeLessThanOrEqual(0);
+  await ctx.close();
+});
+
 test('sin elegir la variante el combo NO se guarda', async ({ browser }) => {
   const page = await pestana(browser);
   await abrirComboNuevo(page, `Combo sin variante UI ${sufijo()}`);
