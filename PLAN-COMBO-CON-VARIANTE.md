@@ -133,3 +133,18 @@ Como el canal de las promociones: cada producto se vende en caja, web o ambos.
 Todos los actuales nacen en "ambos" (= hoy). Lleva su propio inventario (menú web,
 catálogo de caja, rechazo al crear un pedido con un producto de otro canal, caja
 sin red, formulario) y sus propias leyes. Se diseña cuando esta pieza esté en prod.
+
+## 9. Estado (actualizar al avanzar)
+
+| Fase | Estado |
+|---|---|
+| 0 · consulta de prod | ✅ 2026-10-20 — ningún combo con componentes con variantes (§2) |
+| 1 · pruebas antes del código | ✅ L3–L9 escritas y comprobadas fallando en main por la razón correcta |
+| Entrega 1 · API | ✅ en la rama, sin subir: los 7 lugares + reglas + migración aditiva |
+| L1 · copia de prod | ✅ 213 pantallas: 0 distintas con main, ni con main + migración; en la rama solo `"sizeId": null` en el componente del Combo Double Smash |
+| L2 · prueba de oro del motor | ✅ sin regenerar |
+| L5 · simulación | ✅ 115/115 en la rama; con el código viejo fallan 25 leyes |
+| Función nueva con la receta real | ✅ "2 Papas con pollo" cuesta $17.190 (57,0 % de margen a $40.000) y descuenta igual que 2 sueltas en los 16 insumos y subproductos |
+| Entrega 2 · pantallas y comanda | ⏳ pendiente |
+| QA por la interfaz → backup → prod | ⏳ pendiente |
+
