@@ -32,7 +32,9 @@ export interface AvailabilityProduct {
   soldOut: boolean;
   /** Forzado disponible por el dueño: pisa el cómputo de stock. */
   forceAvailable: boolean;
-  comboComponents: Array<{ productId: string; quantity: number }>;
+  /** `sizeId`: variante del componente ("Papas · Pollo"). Ausente o null =
+   *  producto sin variantes, como todos los combos anteriores a esto. */
+  comboComponents: Array<{ productId: string; quantity: number; sizeId?: string | null }>;
   /** Variantes del producto. Ausente o vacío = no tiene. */
   variants?: AvailabilityVariant[];
   /**
@@ -358,6 +360,18 @@ function evalChoiceGroups(
         });
         continue;
       }
+      // Elegir la variante dentro de un grupo no existe: ofrecerlo descontaría
+      // solo la receta base. Pasa cuando una opción gana variantes después.
+      if ((op.variants ?? []).length > 0) {
+        options.push({
+          groupId: g.id,
+          productId,
+          name: op.name,
+          available: false,
+          reason: 'Tiene variantes: quítalo de las opciones',
+        });
+        continue;
+      }
       const posibles = unidadesPosibles(op, graph, ingStock, subStock, prodStock);
       disponiblesEnElGrupo += posibles;
       options.push({
@@ -403,7 +417,7 @@ function unidadesPosibles(
  * escalados por cantidad. Devuelve el motivo o null.
  */
 function evalComboShortages(
-  components: ReadonlyArray<{ productId: string; quantity: number }>,
+  components: AvailabilityProduct['comboComponents'],
   graph: RecipeGraph,
   productById: Map<string, AvailabilityProduct>,
   ingStock: Map<string, number>,
@@ -419,6 +433,19 @@ function evalComboShortages(
   for (const comp of components) {
     const cp = productById.get(comp.productId);
     if (!cp) return 'Combo mal configurado';
+    // La proteína vive en la receta de la VARIANTE: el componente se evalúa con
+    // la base MÁS la suya. Un plato con variantes sin una elegida (ganó
+    // variantes después de entrar al combo) no se ofrece: se vendería con la
+    // receta base, que es el error silencioso que esto cierra.
+    const variantes = cp.variants ?? [];
+    let grafo = graph;
+    if (comp.sizeId) {
+      const variante = variantes.find((v) => v.sizeId === comp.sizeId);
+      if (!variante) return 'Combo mal configurado';
+      if (variante.edges.length > 0) grafo = withVariantEdges(graph, cp.id, variante.edges);
+    } else if (variantes.length > 0) {
+      return `Falta elegir la variante de ${cp.name} en el combo`;
+    }
     if (cp.soldOut) return `Sin ${cp.name}`;
     // Componente forzado disponible → no bloquea el combo por su stock.
     if (cp.forceAvailable) continue;
@@ -428,7 +455,7 @@ function evalComboShortages(
     }
     try {
       const needs = expandRecipeOneLevel(
-        graph,
+        grafo,
         { kind: 'product', id: comp.productId },
         comp.quantity,
       );

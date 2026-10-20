@@ -102,7 +102,11 @@ jobs:
   # integración que los e2e de API no ven (ej. guard sin la cookie de cocina,
   # 2026-07-06). Corre en paralelo a `verify` con su propia DB seedeada.
   browser-e2e:
-    runs-on: ubuntu-latest
+    # Fijo en 24.04 y no `ubuntu-latest`: desde 2026-10-12 `latest` es 26.04, y
+    # Playwright 1.60 no sabe instalar Chromium ahí ("does not support chromium
+    # on ubuntu26.04-x64") — el job moría antes de correr una sola prueba.
+    # Subir Playwright es el arreglo de fondo; volver a `latest` cuando se haga.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     services:

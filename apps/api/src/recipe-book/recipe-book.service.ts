@@ -45,7 +45,10 @@ export class RecipeBookService {
         orderBy: { name: 'asc' },
       }),
       this.prisma.comboComponent.findMany({
-        include: { product: { select: { id: true, name: true } } },
+        include: {
+          product: { select: { id: true, name: true } },
+          size: { select: { name: true } },
+        },
       }),
       // Lo que ELIGE el cliente: sin esto la biblia describe un combo con una
       // bebida fija que no es la que sale por la ventanilla.
@@ -112,7 +115,8 @@ export class RecipeBookService {
             .filter((c) => c.comboId === p.id)
             .map((c) => ({
               productId: c.productId,
-              name: c.product.name,
+              // Con variante, el cocinero tiene que saber CUÁL prepara.
+              name: c.size ? `${c.product.name} · ${c.size.name}` : c.product.name,
               quantity: c.quantity,
             }))
         : [];
