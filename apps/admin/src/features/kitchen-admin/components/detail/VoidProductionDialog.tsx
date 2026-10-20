@@ -36,7 +36,8 @@ export function VoidProductionDialog({
   run: KitchenProductionRun;
   open: boolean;
   onClose: () => void;
-  onVoided: () => void;
+  /** Ya anulada en el servidor; recibe el motivo para marcar la fila al instante. */
+  onVoided: (reason: string) => void;
 }) {
   const router = useRouter();
   const [motivo, setMotivo] = useState('');
@@ -75,7 +76,7 @@ export function VoidProductionDialog({
     setError(null);
     try {
       await voidProduction(run.runId, { reason: motivo.trim() });
-      onVoided();
+      onVoided(motivo.trim());
       onClose();
       router.refresh();
     } catch (e) {

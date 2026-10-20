@@ -5591,6 +5591,11 @@ margen de 83 % en vez de 57 %—. Y nada impedía guardarlo.
   entra a un pedido y el cobro lo rechaza sin descontar. Nunca se descuenta ni
   se costea con la base. ⚠️ El servidor NO obliga a elegir variante en una venta
   SUELTA (eso lo controla la pantalla): la regla es propia del combo.
+  **Ni el "forzar disponible" ni el 86 lo destapan** (corregido 2026-10-20, lo
+  encontró la prueba en QA): forzado, la caja lo ofrecía y el cobro lo rechazaba
+  con el cliente enfrente. `problemaDeArmado` corre antes que los dos y marca
+  `blockedBySetup`; la caja dice **"Revisar combo"** (nunca "Agotado", porque no
+  falta stock) y no ofrece "Forzar".
 - **Un plato con variantes no puede ser opción de un grupo "elige tu opción"**
   (elegir la variante ahí está fuera de alcance), y si una opción gana variantes
   se apaga sola; las demás del grupo siguen. En el costeo del peor caso se dejó

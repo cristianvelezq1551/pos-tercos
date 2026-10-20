@@ -53,9 +53,14 @@ export function CatalogTiles({
         // disponible" (forzar es para inventario, no para el calendario). Si
         // acá lo dejáramos pasar, la caja ofrecería algo que el cobro rechaza.
         const porHorario = avail?.publicReason ?? null;
+        // Combo mal armado: tampoco lo destapa "forzar" (el cobro lo rechaza) y
+        // no está "Agotado" — hay que editar el combo, y eso es lo que dice.
+        const porArmado = avail?.blockedBySetup === true;
         const unavailable =
-          manualSoldOut || porHorario !== null || (!forced && computedUnavailable);
-        const reason = porHorario ?? (manualSoldOut ? null : forced ? null : (avail?.reason ?? null));
+          manualSoldOut || porHorario !== null || porArmado || (!forced && computedUnavailable);
+        const reason = porArmado
+          ? (avail?.reason ?? null)
+          : (porHorario ?? (manualSoldOut ? null : forced ? null : (avail?.reason ?? null)));
         return (
           <ProductTile
             key={p.id}
@@ -64,10 +69,10 @@ export function CatalogTiles({
             availability={avail}
             manualSoldOut={manualSoldOut}
             forced={forced}
-            computedUnavailable={computedUnavailable}
+            computedUnavailable={computedUnavailable && !porArmado}
             unavailable={unavailable}
             reason={porHorario ? null : reason}
-            unavailableLabel={porHorario ?? 'Agotado'}
+            unavailableLabel={porHorario ?? (porArmado ? 'Revisar combo' : 'Agotado')}
             toggling={togglingId === p.id}
             promo={promoById.get(p.id) ?? null}
             onClick={() => onOpen(p)}
