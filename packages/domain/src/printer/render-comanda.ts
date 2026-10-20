@@ -6,7 +6,7 @@
  */
 
 import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
-import { truncate, wrap } from './escpos-text';
+import { truncate, wrap, wrapWithPrefix } from './escpos-text';
 
 export interface ComandaData {
   /**
@@ -146,21 +146,19 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
 
   out.push(SEPARATOR);
 
-  // Ítems: cantidad + producto en doble alto (legible a un metro).
+  // Ítems: cantidad + producto en doble alto (legible a un metro). Se PARTE
+  // por palabras, nunca se corta: la variante va al final del nombre
+  // ("Papas TERCOS Pollo y Miel ahumada") y es justo lo que se perdía.
   for (const item of comanda.items) {
-    out.push(SIZE_2H);
-    out.push(BOLD_ON);
-    out.push(
-      latin1(
-        truncate(
-          `${item.quantity}x ${item.productName}${item.sizeName ? ` ${item.sizeName}` : ''}`,
-          32,
-        ),
-      ),
-    );
-    out.push(BOLD_OFF);
-    out.push(SIZE_NORMAL);
-    out.push(LF);
+    const nombre = `${item.productName}${item.sizeName ? ` ${item.sizeName}` : ''}`;
+    for (const linea of wrapWithPrefix(`${item.quantity}x `, nombre, 32)) {
+      out.push(SIZE_2H);
+      out.push(BOLD_ON);
+      out.push(latin1(linea));
+      out.push(BOLD_OFF);
+      out.push(SIZE_NORMAL);
+      out.push(LF);
+    }
     // Componentes del combo: partidos por PALABRAS con sangría, nunca cortados
     // — "Papas TERCOS Pollo y Miel ahumada" truncado a 32 perdería la variante,
     // que es justo lo que la cocina necesita leer.
@@ -171,8 +169,10 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
       });
     }
     for (const mod of item.modifiers) {
-      out.push(latin1(truncate(`   + ${mod}`, 32)));
-      out.push(LF);
+      for (const linea of wrapWithPrefix('   + ', mod, 32)) {
+        out.push(latin1(linea));
+        out.push(LF);
+      }
     }
     if (item.notes) {
       // La indicación se parte por PALABRAS, no se corta: truncada a 32, un

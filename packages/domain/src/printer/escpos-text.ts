@@ -6,8 +6,14 @@
  * solo en uno, así que el recibo no sabía partir un texto largo.
  */
 
+/**
+ * Corta con un PUNTO, no con "…": los papeles se codifican en latin1 y "…"
+ * (U+2026) no existe ahí — `Buffer.from(s, 'latin1')` escribe su byte bajo,
+ * 0x26, y la impresora imprimía "&" ("Papas TERCOS Pollo y Miel ah&").
+ * Lo que la cocina tiene que leer entero NO pasa por acá: va por `wrap`.
+ */
 export function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max - 1) + '…';
+  return s.length <= max ? s : s.slice(0, max - 1) + '.';
 }
 
 /**
@@ -37,6 +43,19 @@ export function wrap(text: string, max: number): string[] {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/**
+ * `wrap` con un prefijo en la primera línea ("2x ", "   + ") y, en las
+ * siguientes, una sangría del mismo ancho: la continuación se lee como parte
+ * del mismo ítem y no como uno nuevo. Si el texto cabe, sale exactamente
+ * `prefix + text` — el papel de siempre, byte por byte.
+ */
+export function wrapWithPrefix(prefix: string, text: string, max: number): string[] {
+  const indent = ' '.repeat(prefix.length);
+  const lineas = wrap(text, Math.max(1, max - prefix.length));
+  if (lineas.length === 0) return [prefix.trimEnd()];
+  return lineas.map((linea, i) => (i === 0 ? prefix : indent) + linea);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { truncate, twoCol, wrap } from './escpos-text';
+import { twoCol, wrap, wrapWithPrefix } from './escpos-text';
 import type { ReceiptData } from './types';
 import { BUSINESS_TIME_ZONE } from '@pos-tercos/types';
 
@@ -125,13 +125,19 @@ export function renderReceiptEscPos(receipt: ReceiptData): Buffer {
 
   // Items
   for (const item of receipt.items) {
-    const headLine =
-      `${item.quantity}x ${item.productName}` + (item.sizeName ? ` ${item.sizeName}` : '');
-    out.push(latin1(truncate(headLine, 32)));
-    out.push(LF);
-    if (item.modifiers.length > 0) {
-      out.push(latin1(`  + ${item.modifiers.map((m) => m.name).join(', ')}`));
+    // Partido por palabras, como la comanda: truncado, el cliente leía
+    // "Papas TERCOS Pollo y Miel ah&" en su recibo.
+    const nombre = `${item.productName}${item.sizeName ? ` ${item.sizeName}` : ''}`;
+    for (const linea of wrapWithPrefix(`${item.quantity}x `, nombre, 32)) {
+      out.push(latin1(linea));
       out.push(LF);
+    }
+    if (item.modifiers.length > 0) {
+      const extras = item.modifiers.map((m) => m.name).join(', ');
+      for (const linea of wrapWithPrefix('  + ', extras, 32)) {
+        out.push(latin1(linea));
+        out.push(LF);
+      }
     }
     out.push(latin1(twoCol(`  ${formatCop(item.unitPrice)}`, formatCop(item.lineSubtotal), 32)));
     out.push(LF);
