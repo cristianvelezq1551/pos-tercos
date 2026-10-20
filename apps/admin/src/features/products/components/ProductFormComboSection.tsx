@@ -55,7 +55,7 @@ export function ProductFormComboSection({
   const savingPct = componentsSum > 0 ? (saving / componentsSum) * 100 : 0;
 
   return (
-    <fieldset className="space-y-3 rounded-md border border-border p-4">
+    <fieldset className="min-w-0 space-y-3 rounded-md border border-border p-4">
       <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Componentes del combo
       </legend>

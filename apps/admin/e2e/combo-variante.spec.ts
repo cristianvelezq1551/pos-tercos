@@ -150,6 +150,36 @@ test('armar "2 Papas · Pollo" desde el formulario guarda la variante elegida', 
   await page.close();
 });
 
+/**
+ * En el celular el plato y su variante iban en el mismo renglón y quedaban
+ * cortados ("Papas" / "Pollo y"). Al darles renglón propio y letra de 16 px, el
+ * recuadro se salía 14 px de la tarjeta: un `fieldset` no se encoge por debajo
+ * de su contenido. La página NO se desborda, así que hay que medir los hijos.
+ */
+test('390 px: el recuadro del combo cabe en la tarjeta y la variante se lee', async ({ browser }) => {
+  const ctx = await browser.newContext({ storageState: cookies, baseURL: BASE, viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await abrirComboNuevo(page, `Combo celular UI ${sufijo()}`);
+  await page.getByLabel('Producto', { exact: true }).first().selectOption(papasId);
+  await page.getByLabel(`Variante de ${papasNombre}`).selectOption(polloId);
+
+  const medidas = await page.getByRole('group', { name: 'Componentes del combo' }).evaluate((fs) => {
+    const caja = fs.getBoundingClientRect();
+    const tarjeta = (fs.closest('form') ?? fs.parentElement!).getBoundingClientRect();
+    const selects = [...fs.querySelectorAll('select')].map((s) => s.getBoundingClientRect());
+    return {
+      sobraTarjeta: caja.right - tarjeta.right,
+      sobraCaja: Math.max(...selects.map((s) => s.right - caja.right)),
+      anchoVariante: selects[1]?.width ?? 0,
+    };
+  });
+  expect(medidas.sobraTarjeta, 'el recuadro se sale de la tarjeta').toBeLessThanOrEqual(0.5);
+  expect(medidas.sobraCaja, 'un selector se sale del recuadro').toBeLessThanOrEqual(0.5);
+  // La variante tiene que leerse: con el plato al lado medía ~70 px ("Pollo y").
+  expect(medidas.anchoVariante).toBeGreaterThan(150);
+  await ctx.close();
+});
+
 test('sin elegir la variante el combo NO se guarda', async ({ browser }) => {
   const page = await pestana(browser);
   await abrirComboNuevo(page, `Combo sin variante UI ${sufijo()}`);
