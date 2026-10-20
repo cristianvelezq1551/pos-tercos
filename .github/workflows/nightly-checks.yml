@@ -43,6 +43,13 @@ jobs:
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
 
+      # Hay pruebas de domain que importan `@pos-tercos/types`, que se consume
+      # COMPILADO (dist/). Sin este paso la suite completa moría con "Failed to
+      # resolve entry for package" — rojo todas las noches desde 2026-09-21,
+      # aunque las 20.000 historias del paso de abajo pasaban.
+      - name: Build de @pos-tercos/types
+        run: pnpm -F @pos-tercos/types build
+
       # --testTimeout: con 20.000 historias, LEY 3 y LEY 6 superan los 5s del
       # default de vitest en el runner de GitHub (falló el 2026-08-20 por
       # timeout, no por una ley rota). El presupuesto va acorde a la escala.
