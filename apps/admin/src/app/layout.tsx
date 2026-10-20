@@ -1,12 +1,17 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import localFont from 'next/font/local';
 import './globals.css';
 
-const fontSans = Inter({
-  subsets: ['latin'],
+/**
+ * Inter va AUTO-HOSPEDADA por la misma razón que Big Shoulders (abajo): desde
+ * 2026-10-20 `next/font/google` con Inter tumbaba builds al azar con el mismo
+ * `Cannot read properties of null (reading '1')`. Es el mismo woff2 variable
+ * (subset latin, pesos 400–700) que Next descargaba de Google en cada build.
+ */
+const fontSans = localFont({
+  src: './fonts/inter-latin-var.woff2',
   display: 'swap',
-  weight: ['400', '500', '600', '700'],
+  weight: '400 700',
   variable: '--font-sans-app',
 });
 
