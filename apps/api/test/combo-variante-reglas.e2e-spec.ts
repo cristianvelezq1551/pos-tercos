@@ -402,6 +402,27 @@ describe('Combo con variante — disponibilidad y reglas E2E', () => {
       expect(combo.reason).toBe('Falta elegir la variante de Sandwich Reglas en el combo');
     });
 
+    it('"forzar disponible" no lo destapa: el cobro lo rechazaría igual', async () => {
+      // Si la caja lo ofreciera forzado, el cajero lo tocaría y el servidor
+      // diría que no con el cliente enfrente (disponibilidad = cobro).
+      await request.post(`/products/${comboSandwichId}/force-available`).set(auth()).send({ forceAvailable: true }).expect(201);
+      try {
+        const interno = (await disponibilidad(comboSandwichId)) as { available: boolean; blockedBySetup?: boolean };
+        expect(interno.available).toBe(false);
+        expect(interno.blockedBySetup).toBe(true);
+        const publico = await request.get('/products/availability').expect(200);
+        const fila = (publico.body as Array<{ productId: string; available: boolean }>).find(
+          (p) => p.productId === comboSandwichId,
+        );
+        // El público está cacheado: si todavía trae la foto de antes de forzar,
+        // igual decía no disponible (el plato ya tenía variantes).
+        expect(fila?.available).toBe(false);
+        await crearVenta([{ productId: comboSandwichId, quantity: 1 }]).expect(400);
+      } finally {
+        await request.post(`/products/${comboSandwichId}/force-available`).set(auth()).send({ forceAvailable: false }).expect(201);
+      }
+    });
+
     it('no se puede agregar a un pedido nuevo', async () => {
       const res = await crearVenta([{ productId: comboSandwichId, quantity: 1 }]).expect(400);
       expect(mensaje(res.body)).toContain('Sandwich Reglas');

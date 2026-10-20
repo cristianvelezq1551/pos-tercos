@@ -86,6 +86,13 @@ export interface AvailabilityResult {
    */
   publicReason: string | null;
   /**
+   * true = no se vende porque el combo está MAL ARMADO (un plato ganó variantes
+   * y el combo no dice cuál lleva), no por stock. "Forzar disponible" no lo
+   * arregla —el cobro lo rechaza igual—, así que la caja no debe ofrecerlo ni
+   * decir "Agotado": lo que hay que hacer es editar el combo. Ausente = false.
+   */
+  blockedBySetup?: boolean;
+  /**
    * Disponibilidad de cada variante. Vacío si el producto no tiene.
    * El plato se ofrece si AL MENOS UNA se puede hacer; las que no, se
    * deshabilitan en el selector en vez de esconder el plato entero.
@@ -149,6 +156,23 @@ export function evaluateAvailability(input: AvailabilityInput): AvailabilityResu
           stock: p.directResale ? (productStock.get(p.id) ?? 0) : null,
           reason: motivoDeHorario(ventanas),
           publicReason: motivoDeHorario(ventanas),
+          variants: [],
+          choiceOptions: [],
+        };
+      }
+
+      // Un combo mal armado va ANTES del 86 y del "forzar": no es falta de stock
+      // y el cobro lo rechaza aunque esté forzado. Si la caja lo ofreciera, el
+      // cajero lo tocaría y el servidor diría que no con el cliente enfrente.
+      const armado = p.isCombo ? problemaDeArmado(p.comboComponents, productById) : null;
+      if (armado) {
+        return {
+          productId: p.id,
+          available: false,
+          stock: null,
+          reason: armado,
+          publicReason: null,
+          blockedBySetup: true,
           variants: [],
           choiceOptions: [],
         };
@@ -409,6 +433,29 @@ function unidadesPosibles(
   return evalRecipeShortages(p.id, graph, ingStock, subStock) === null
     ? Number.POSITIVE_INFINITY
     : 0;
+}
+
+/**
+ * Si el combo está mal ARMADO (no por stock): un componente que ya no existe,
+ * una variante que el plato ya no tiene, o un plato que ganó variantes después
+ * de entrar al combo sin que el combo diga cuál lleva. Mismo criterio que el
+ * guard del cobro (`assertComboArmable`): lo que acá se apaga, allá se rechaza.
+ */
+function problemaDeArmado(
+  components: AvailabilityProduct['comboComponents'],
+  productById: Map<string, AvailabilityProduct>,
+): string | null {
+  for (const comp of components) {
+    const cp = productById.get(comp.productId);
+    if (!cp) return 'Combo mal configurado';
+    const variantes = cp.variants ?? [];
+    if (comp.sizeId) {
+      if (!variantes.some((v) => v.sizeId === comp.sizeId)) return 'Combo mal configurado';
+    } else if (variantes.length > 0) {
+      return `Falta elegir la variante de ${cp.name} en el combo`;
+    }
+  }
+  return null;
 }
 
 /**
