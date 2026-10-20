@@ -5635,6 +5635,41 @@ nombre de la variante y la comanda con los componentes de TODOS los combos
 ("Papas TERCOS · Pollo y Miel ahumada × 2"; el Combo Double Smash pasa a imprimir
 también "Double smash × 2"). Después, **canal por producto** (pieza aparte).
 
+## 7.v77 Combos con variante — entrega 2: formulario y comanda (2026-10-20)
+
+> Sigue a §7.v76 (que ya está en prod). Con esto el dueño arma "2 Papas TERCOS ·
+> Pollo y Miel ahumada por $40.000" desde el admin. Sin migración.
+
+### Formulario del combo (admin)
+- Cada componente con variantes muestra un selector **obligatorio y sin nada
+  elegido**; cambiar de plato borra la variante. Una fila con plato con
+  variantes y sin elegir (combo varado) lo dice en la misma fila.
+- La suma de componentes y el "ahorro" usan el precio de la variante elegida.
+- Los platos con variantes **no se ofrecen como opción a elegir** (el servidor
+  los rechaza ahí), con una nota que explica por qué.
+- `/products` avisa arriba de los combos que quedaron sin variante porque un
+  plato la ganó después, con enlace para editarlos. ⚠️ Por la pantalla un plato
+  NO gana variantes (el tipo no se cambia al editar): pasa solo por el API.
+- `features/products/lib/combo-variantes.ts`: lógica pura, espejo del servidor.
+
+### Comanda: debajo de cada combo, lo que lleva
+"2x Papas TERCOS Pollo y Miel ahumada" debajo del combo, en **TODOS** los combos
+(el Combo Double Smash imprime ahora también "2x Double smash") y en los tres
+papeles de cocina: la comanda normal (con su anulación y reimpresión), las
+adiciones de una cuenta abierta y la de una cortesía. **El recibo del cliente
+no cambia.** `comboComponentLines` (`sales/combo-comanda.ts`) es la única fuente
+de esas líneas; `renderComandaEscPos` las parte por palabras con sangría (truncar
+a 32 cortaba la variante) y sin componentes imprime byte a byte igual que antes.
+⚠️ **ASCII a propósito** (sin "·" ni "×"): la comanda nunca fija el juego de
+caracteres de la impresora y esos dos pueden salir como basura.
+
+### Verificado
+Pruebas escritas antes del código y comprobadas fallando en main: render-comanda
+(3), e2e `comanda-componentes` (8), admin `ProductFormComboSection` (6) y
+`combo-variantes` (7), y la prueba de navegador `e2e/combo-variante.spec.ts` (4,
+arma el combo desde el formulario y verifica por el API la variante guardada).
+Typecheck 13/13 sin caché, lint 0, unit 12/12 paquetes.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

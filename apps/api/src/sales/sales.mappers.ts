@@ -101,8 +101,16 @@ function etiquetaDeChoice(c: { productName: string; quantity: number }): string 
   return c.quantity > 1 ? `${c.quantity} ${c.productName}` : c.productName;
 }
 
-/** Comanda de cocina: sin precios — solo lo que la cocina prepara. */
-export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
+/**
+ * Comanda de cocina: sin precios — solo lo que la cocina prepara.
+ * `componentes`: las líneas de cada combo por id de producto (ver
+ * `comboComponentLines`); sin ellas el combo sale solo con su nombre.
+ */
+export function buildComandaData(
+  sale: Sale,
+  isReprint: boolean,
+  componentes: ReadonlyMap<string, string[]> = new Map(),
+): ComandaData {
   return {
     receiptNumber: sale.receiptNumber,
     createdAt: sale.createdAt,
@@ -116,6 +124,7 @@ export function buildComandaData(sale: Sale, isReprint: boolean): ComandaData {
       productName: it.productName ?? '(sin nombre)',
       sizeName: it.sizeName ?? null,
       quantity: it.quantity,
+      components: componentes.get(it.productId) ?? [],
       modifiers: [
         ...(it.modifiers ?? []).map((m) => m.name),
         ...(it.choices ?? []).map(etiquetaDeChoice),

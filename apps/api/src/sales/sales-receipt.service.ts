@@ -25,6 +25,7 @@ import { OwnerNotificationService } from '../notifications/owner-notification.se
 import { PrismaService } from '../prisma/prisma.service';
 import { businessName } from '../common/business-name';
 import { runWithSerializationRetry } from '../common/tx';
+import { comboComponentLines } from './combo-comanda';
 import { buildComandaData, buildReceiptData, includeFull, toSaleDto } from './sales.mappers';
 
 const PRINTABLE_STATUSES = ['PAGADO', 'EN_PREPARACION', 'LISTO_DESPACHO', 'ENTREGADO'] as const;
@@ -139,8 +140,12 @@ export class SalesReceiptService {
       where: { action: 'COMANDA_PRINTED', entityType: 'sale', entityId: saleId },
     });
     const isReprint = !cancel && previousPrints > 0;
+    const componentes = await comboComponentLines(
+      this.prisma,
+      scoped.items.map((it) => it.productId),
+    );
     const comanda = {
-      ...buildComandaData(toSaleDto(scoped), isReprint),
+      ...buildComandaData(toSaleDto(scoped), isReprint, componentes),
       cancelled: cancel,
       title: variant === 'kitchen' ? 'COMANDA COCINA' : 'COMANDA COMPLETA',
       // Edición de un pedido → la comanda reemplaza la anterior; rótulo claro
@@ -227,10 +232,15 @@ export class SalesReceiptService {
       }
 
       const batch = prevBatches + 1;
+      const componentes = await comboComponentLines(
+        tx,
+        pending.map((it) => it.productId),
+      );
       const pendingLines = pending.map((it) => ({
         productName: it.product?.name ?? '(sin nombre)',
         sizeName: it.size?.name ?? null,
         quantity: it.quantity - it.sentToKitchenQty,
+        components: componentes.get(it.productId) ?? [],
         modifiers: (((it.modifiersJson as unknown as AppliedModifier[]) ?? []) as AppliedModifier[]).map(
           (m) => m.name,
         ),

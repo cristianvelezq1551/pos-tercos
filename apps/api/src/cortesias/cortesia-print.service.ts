@@ -10,6 +10,7 @@ import type { CortesiaPrintDocs } from '@pos-tercos/types';
 import { AuditService } from '../audit/audit.service';
 import { businessInfo } from '../common/business-info';
 import { PrismaService } from '../prisma/prisma.service';
+import { comboComponentLines } from '../sales/combo-comanda';
 
 /** Tope de líneas por impresión: es un pedido de mostrador, no un inventario. */
 const MAX_LINEAS = 50;
@@ -86,7 +87,7 @@ export class CortesiaPrintService {
       throw new NotFoundException('Alguna de las cortesías del pedido ya no existe.');
     }
 
-    const [products, sizes, cajero] = await Promise.all([
+    const [products, sizes, cajero, componentes] = await Promise.all([
       this.prisma.product.findMany({
         where: { id: { in: [...new Set(rows.map((r) => r.productId))] } },
         select: { id: true, name: true, directResale: true },
@@ -99,6 +100,7 @@ export class CortesiaPrintService {
         where: { id: rows[0].requestedById },
         select: { fullName: true },
       }),
+      comboComponentLines(this.prisma, rows.map((r) => r.productId)),
     ]);
     const productoPorId = new Map(products.map((p) => [p.id, p]));
     const tallePorId = new Map(sizes.map((z) => [z.id, z.name]));
@@ -117,6 +119,7 @@ export class CortesiaPrintService {
         quantity: r.quantity,
         salePrice: Number(r.salePrice),
         seCocina: productoPorId.get(r.productId)?.directResale === false,
+        components: componentes.get(r.productId) ?? [],
         // La bebida elegida del combo regalado: sin ella el papel dice "1x Combo"
         // y ni la cocina ni quien recibe saben qué salió (lo encontró la
         // auditoría en QA del 2026-09-16).
@@ -136,6 +139,8 @@ interface LineaRegalada {
   salePrice: number;
   /** false = reventa directa (una bebida): se entrega en el mostrador. */
   seCocina: boolean;
+  /** Solo combos: lo que lleva, para la comanda (el recibo no los muestra). */
+  components: string[];
   /** Lo elegido en los grupos del combo ("2 Coca-Cola"), para los dos papeles. */
   choiceLabels: string[];
 }
@@ -192,6 +197,7 @@ function buildComanda(p: PedidoRegalado, lineas: LineaRegalada[]): ComandaData {
       productName: l.productName,
       sizeName: l.sizeName,
       quantity: l.quantity,
+      components: l.components,
       modifiers: l.choiceLabels,
       notes: null,
     })),

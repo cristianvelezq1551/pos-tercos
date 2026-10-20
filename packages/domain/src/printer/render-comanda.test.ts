@@ -177,3 +177,68 @@ describe('la nota de cocina se parte por palabras, nunca se corta', () => {
     expect(papel).toContain('cebolla');
   });
 });
+
+/**
+ * Los componentes de un combo en la comanda (PLAN-COMBO-CON-VARIANTE.md, decisión 3):
+ * la cocina tiene que leer QUÉ arma —"2x Papas TERCOS Pollo y Miel ahumada"—, no solo
+ * el nombre del combo. ASCII a propósito (sin "·" ni "×"): la comanda no fija el juego
+ * de caracteres de la impresora y esos dos pueden salir como basura.
+ */
+describe('renderComandaEscPos · componentes del combo', () => {
+  const COMBO: ComandaData = {
+    ...BASE,
+    items: [
+      {
+        productName: '2 Papas con pollo',
+        sizeName: null,
+        quantity: 1,
+        components: ['2x Papas TERCOS Pollo y Miel ahumada'],
+        modifiers: [],
+        notes: null,
+      },
+    ],
+  };
+
+  it('imprime cada componente debajo del combo, con su variante y su cantidad', () => {
+    const lineas = lineasVisibles(text(renderComandaEscPos(COMBO)));
+    const i = lineas.findIndex((l) => l.includes('1x 2 Papas con pollo'));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(lineas[i + 1]?.startsWith('   - 2x Papas TERCOS')).toBe(true);
+  });
+
+  it('un nombre largo se PARTE por palabras con sangría: la variante no se corta', () => {
+    const lineas = lineasVisibles(text(renderComandaEscPos(COMBO)));
+    const i = lineas.findIndex((l) => l.startsWith('   - 2x Papas TERCOS'));
+    const bloque = [lineas[i]!, ...lineas.slice(i + 1).filter((l, k, arr) => arr.slice(0, k + 1).every((x) => x.startsWith('     ')))];
+    expect(bloque.join(' ').replace(/\s+/g, ' ').trim()).toBe('- 2x Papas TERCOS Pollo y Miel ahumada');
+    for (const l of bloque) expect(l.length).toBeLessThanOrEqual(32);
+    expect(bloque.length).toBeGreaterThan(1);
+  });
+
+  it('los componentes van ANTES de lo elegido y de las notas', () => {
+    const out = text(
+      renderComandaEscPos({
+        ...BASE,
+        items: [
+          {
+            productName: 'Combo Smash',
+            sizeName: null,
+            quantity: 1,
+            components: ['2x Double smash'],
+            modifiers: ['2 Coca-Cola'],
+            notes: 'sin cebolla',
+          },
+        ],
+      }),
+    );
+    expect(out).toContain('- 2x Double smash');
+    expect(out.indexOf('- 2x Double smash')).toBeLessThan(out.indexOf('+ 2 Coca-Cola'));
+    expect(out.indexOf('+ 2 Coca-Cola')).toBeLessThan(out.indexOf('* sin cebolla'));
+  });
+
+  it('REGRESIÓN: un ítem sin componentes imprime exactamente como antes', () => {
+    const sin = renderComandaEscPos(BASE);
+    const conVacio = renderComandaEscPos({ ...BASE, items: [{ ...BASE.items[0]!, components: [] }] });
+    expect(conVacio.equals(sin)).toBe(true);
+  });
+});
