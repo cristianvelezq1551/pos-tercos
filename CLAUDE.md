@@ -5670,6 +5670,24 @@ Pruebas escritas antes del código y comprobadas fallando en main: render-comand
 arma el combo desde el formulario y verifica por el API la variante guardada).
 Typecheck 13/13 sin caché, lint 0, unit 12/12 paquetes.
 
+## 7.v78 La línea del producto se parte, no se corta con "&" (2026-10-20)
+
+> Lo encontró la prueba en QA de §7.v77: la comanda de dos papas sueltas decía
+> `2x Papas TERCOS Pollo y Miel ah&`. El defecto ya estaba en prod desde antes.
+
+- **El "&" era el "…"**: `truncate` cortaba con U+2026, que no existe en latin1,
+  y `Buffer.from(s, 'latin1')` escribe su byte bajo (0x26). Ahora corta con un
+  punto ASCII. Queda solo para datos donde cortar no hace daño (cliente,
+  teléfono, pie).
+- **La línea del producto y los extras se PARTEN por palabras** en la comanda y
+  en el recibo (`wrapWithPrefix`): la continuación lleva la sangría del prefijo
+  (`2x `, `   + `), y en la comanda cada renglón repite doble alto + negrita.
+  La variante va al final del nombre, así que era justo lo que se perdía.
+- **Un papel donde todo cabe no cambió ni un byte**:
+  `lineas-del-producto.test.ts` compara contra papeles generados con el
+  renderizador anterior (main 8f642fa). Si ese test falla, el cambio movió un
+  papel que ya funcionaba.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
