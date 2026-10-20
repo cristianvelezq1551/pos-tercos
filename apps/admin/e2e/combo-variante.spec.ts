@@ -166,17 +166,29 @@ test('390 px: el recuadro del combo cabe en la tarjeta y la variante se lee', as
   const medidas = await page.getByRole('group', { name: 'Componentes del combo' }).evaluate((fs) => {
     const caja = fs.getBoundingClientRect();
     const tarjeta = (fs.closest('form') ?? fs.parentElement!).getBoundingClientRect();
-    const selects = [...fs.querySelectorAll('select')].map((s) => s.getBoundingClientRect());
+    const selects = [...fs.querySelectorAll('select')];
+    // ¿Cabe el NOMBRE de la variante elegida? Se mide con la letra real del
+    // selector, descontando el relleno y la flecha. Un select corta el texto en
+    // silencio: verlo "más ancho" no alcanza.
+    const variante = selects[1];
+    const estilo = getComputedStyle(variante);
+    const lienzo = document.createElement('canvas').getContext('2d')!;
+    lienzo.font = `${estilo.fontWeight} ${estilo.fontSize} ${estilo.fontFamily}`;
+    const nombre = (variante.selectedOptions[0]?.text ?? '').split(' (')[0];
+    const disponible =
+      variante.clientWidth - parseFloat(estilo.paddingLeft) - parseFloat(estilo.paddingRight) - 20;
     return {
       sobraTarjeta: caja.right - tarjeta.right,
-      sobraCaja: Math.max(...selects.map((s) => s.right - caja.right)),
-      anchoVariante: selects[1]?.width ?? 0,
+      sobraCaja: Math.max(...selects.map((s) => s.getBoundingClientRect().right - caja.right)),
+      nombre,
+      faltaParaElNombre: lienzo.measureText(nombre).width - disponible,
     };
   });
   expect(medidas.sobraTarjeta, 'el recuadro se sale de la tarjeta').toBeLessThanOrEqual(0.5);
   expect(medidas.sobraCaja, 'un selector se sale del recuadro').toBeLessThanOrEqual(0.5);
-  // La variante tiene que leerse: con el plato al lado medía ~70 px ("Pollo y").
-  expect(medidas.anchoVariante).toBeGreaterThan(150);
+  // La variante tiene que leerse entera: con el plato al lado salía "Pollo y".
+  expect(medidas.nombre).toBe('Pollo y Miel ahumada');
+  expect(medidas.faltaParaElNombre, 'el nombre de la variante no cabe').toBeLessThanOrEqual(0);
   await ctx.close();
 });
 
