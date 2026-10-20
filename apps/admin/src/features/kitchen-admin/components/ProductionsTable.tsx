@@ -26,6 +26,16 @@ function resumenDeInsumos(inputs: KitchenProductionInput[]): string {
 export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
   const [abierta, setAbierta] = useState<KitchenProductionRun | null>(null);
   const [anulando, setAnulando] = useState<KitchenProductionRun | null>(null);
+  // Lo que el servidor YA confirmó anulado. No se espera al `router.refresh()`:
+  // a veces vuelve con la lista de antes (200 en milisegundos, sin consultar) y
+  // no reintenta, así que la tanda seguía viéndose viva después de anularla.
+  const [anuladasAca, setAnuladasAca] = useState<Map<string, { voidedAt: string; voidReason: string }>>(
+    () => new Map(),
+  );
+  const filas = runs.map((run) => {
+    const local = anuladasAca.get(run.runId);
+    return local && !run.voidedAt ? { ...run, ...local } : run;
+  });
 
   const columns: DataTableColumn<KitchenProductionRun>[] = [
     {
@@ -115,7 +125,7 @@ export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
   return (
     <>
       <DataTable
-        rows={runs}
+        rows={filas}
         columns={columns}
         rowKey={(run) => run.runId}
         className="rounded-lg"
@@ -144,7 +154,13 @@ export function ProductionsTable({ runs }: { runs: KitchenProductionRun[] }) {
           run={anulando}
           open
           onClose={() => setAnulando(null)}
-          onVoided={() => setAnulando(null)}
+          onVoided={(reason) => {
+            const runId = anulando.runId;
+            setAnuladasAca((prev) =>
+              new Map(prev).set(runId, { voidedAt: new Date().toISOString(), voidReason: reason }),
+            );
+            setAnulando(null);
+          }}
         />
       ) : null}
     </>
