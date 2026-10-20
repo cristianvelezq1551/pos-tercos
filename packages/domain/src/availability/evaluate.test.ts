@@ -668,6 +668,34 @@ describe('evaluateAvailability · combos con componentes con variante', () => {
     expect(r.choiceOptions.find((o) => o.productId === 'sandwich')?.available).toBe(true);
   });
 
+  it('"forzar disponible" NO destapa un combo mal armado: el cobro lo rechaza igual', () => {
+    const forzado = { ...combo([{ productId: 'papas', quantity: 1 }]), forceAvailable: true };
+    const r = evaluarCombo(forzado, { papa: 1000, pollo: 500, carne: 500 });
+    expect(r.available).toBe(false);
+    expect(r.blockedBySetup).toBe(true);
+    expect(r.reason).toBe('Falta elegir la variante de papas en el combo');
+  });
+
+  it('el 86 manual no tapa que el combo está mal armado (lo que hay que hacer es editarlo)', () => {
+    const agotado = { ...combo([{ productId: 'papas', quantity: 1 }]), soldOut: true };
+    const r = evaluarCombo(agotado, { papa: 1000, pollo: 500, carne: 500 });
+    expect(r.blockedBySetup).toBe(true);
+    expect(r.reason).toBe('Falta elegir la variante de papas en el combo');
+  });
+
+  it('REGRESIÓN: un combo bien armado y forzado sigue disponible, sin la marca', () => {
+    const forzado = { ...dosPollo, forceAvailable: true };
+    const r = evaluarCombo(forzado, { papa: 0, pollo: 0 });
+    expect(r.available).toBe(true);
+    expect(r.blockedBySetup).toBeUndefined();
+  });
+
+  it('REGRESIÓN: la falta de stock NO se marca como combo mal armado', () => {
+    const r = evaluarCombo(dosPollo, { papa: 1000, pollo: 0 });
+    expect(r.available).toBe(false);
+    expect(r.blockedBySetup).toBeUndefined();
+  });
+
   it('REGRESIÓN: un componente sin variante se evalúa como siempre', () => {
     const fijo = combo([{ productId: 'sandwich', quantity: 2 }]);
     expect(evaluarCombo(fijo, { pan: 2 }).available).toBe(true);

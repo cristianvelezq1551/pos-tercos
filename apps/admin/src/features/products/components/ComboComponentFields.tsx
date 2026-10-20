@@ -6,8 +6,10 @@ import { formatCop } from '../../../lib/format';
 import { tieneVariantes } from '../lib/combo-variantes';
 import type { ComboRow } from './ProductFormTypes';
 
+// En el celular: 44 px de alto (piso táctil) y letra de 16 px (con menos, iOS
+// amplía la pantalla al tocar el campo y no la devuelve).
 const SELECT_CLASS =
-  'h-9 rounded-md border border-input bg-card px-2 text-sm text-foreground focus:border-primary focus:outline-none';
+  'min-h-[44px] rounded-md border border-input bg-card px-2 text-base text-foreground focus:border-primary focus:outline-none sm:min-h-0 sm:h-9 sm:text-sm';
 
 /**
  * Una fila de componente del combo: el plato, su VARIANTE si la tiene, y la
@@ -41,7 +43,10 @@ export function ComboComponentFields({
           // La variante es de UN plato: al cambiar de plato, se borra.
           onChange={(e) => onChange({ productId: e.target.value, sizeId: '' })}
           disabled={pending}
-          className={`${SELECT_CLASS} min-w-0 flex-1`}
+          // En el celular el plato ocupa su propio renglón: compartiéndolo con
+          // la variante, los dos quedaban cortados ("Papas" / "Pollo y") y no
+          // se alcanzaba a leer qué variante quedó elegida.
+          className={`${SELECT_CLASS} min-w-0 basis-full sm:basis-0 sm:flex-1`}
         >
           <option value="">— Elegir producto —</option>
           {candidates.map((p) => (

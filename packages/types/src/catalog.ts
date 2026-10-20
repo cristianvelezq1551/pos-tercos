@@ -826,6 +826,12 @@ export const ProductAvailabilitySchema = z.object({
   /** Motivo que SÍ se le puede mostrar a un cliente anónimo (horario). */
   publicReason: z.string().nullish(),
   /**
+   * true = combo mal ARMADO (un plato ganó variantes y el combo no dice cuál
+   * lleva): no se vende ni forzado, porque el cobro lo rechaza. Opcional por el
+   * despliegue escalonado: ausente = como antes.
+   */
+  blockedBySetup: z.boolean().optional(),
+  /**
    * Disponibilidad de cada opción de los grupos del combo. El combo se ofrece
    * si cada grupo tiene al menos una opción posible, y las que no alcanzan se
    * deshabilitan en el selector — mismo criterio que `variants`.
