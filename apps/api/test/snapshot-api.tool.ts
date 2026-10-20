@@ -163,6 +163,27 @@ describe('Snapshot de la API (herramienta de validación)', () => {
     // El costo de la reventa sale de su última compra, no del movimiento.
     await prisma.product.update({ where: { id: coca.id }, data: { lastUnitCost: 36_000 } });
 
+    // El combo lleva un preparado SIN variantes: así corre idéntico en código
+    // viejo y nuevo. Desde 2026-10-20 un plato con variantes exige elegir cuál
+    // lleva el combo (PLAN-COMBO-CON-VARIANTE.md), y ese cambio a propósito lo
+    // cubren `combo-variante*.e2e-spec.ts`, no esta comparación.
+    const papasSolas = await producto('papas-solas', {
+      name: 'Papas solas',
+      basePrice: 9000,
+      directResale: false,
+      isCombo: false,
+      modifiersEnabled: false,
+    });
+    await request
+      .put(`/products/${papasSolas.id}/recipe`)
+      .set(auth())
+      .send({
+        edges: [
+          { childType: 'ingredient', childId: papa, quantityNeta: 100, mermaPct: 0.05 },
+          { childType: 'subproduct', childId: salsa, quantityNeta: 1, mermaPct: 0 },
+        ],
+      })
+      .expect(200);
     const combo = await producto('combo', {
       category: 'Combos',
       name: 'Combo del día',
@@ -172,7 +193,7 @@ describe('Snapshot de la API (herramienta de validación)', () => {
       comboPrice: 23_000,
       modifiersEnabled: false,
       comboComponents: [
-        { productId: conVariantes.id, quantity: 1 },
+        { productId: papasSolas.id, quantity: 1 },
         { productId: coca.id, quantity: 1 },
       ],
     });

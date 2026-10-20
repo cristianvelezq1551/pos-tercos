@@ -663,7 +663,7 @@ export class CogsService {
         name: true,
         directResale: true,
         isCombo: true,
-        comboComponents: { select: { productId: true, quantity: true } },
+        comboComponents: { select: { productId: true, quantity: true, sizeId: true } },
       },
     });
     const meta = new Map(products.map((p) => [p.id, p]));
@@ -840,10 +840,10 @@ export class CogsService {
    * directo). Arreglarlo exigiría snapshot de receta por venta.
    */
   private async expandLineToConsumption(
-    product: { id: string; directResale: boolean; isCombo: boolean; comboComponents: { productId: string; quantity: number }[] },
+    product: { id: string; directResale: boolean; isCombo: boolean; comboComponents: { productId: string; quantity: number; sizeId: string | null }[] },
     quantity: number,
     sizeId: string | null,
-    meta: Map<string, { id: string; directResale: boolean; isCombo: boolean; comboComponents: { productId: string; quantity: number }[] }>,
+    meta: Map<string, { id: string; directResale: boolean; isCombo: boolean; comboComponents: { productId: string; quantity: number; sizeId: string | null }[] }>,
     graphFor: (productId: string, sizeId: string | null) => Promise<{ graph: RecipeGraph; root: ParentRef }>,
     modifiers: readonly AppliedModifier[] = [],
     modifierDeltas: ReadonlyMap<string, ModifierRecipeDelta> = new Map(),
@@ -882,14 +882,16 @@ export class CogsService {
     };
 
     if (product.isCombo) {
+      // Cada componente con la receta de SU variante, igual que el cobro. Una
+      // opción elegida no lleva variante (elegirla ahí no existe).
       const partes = [
         ...product.comboComponents,
-        ...choices.map((c) => ({ productId: c.productId, quantity: c.quantity })),
+        ...choices.map((c) => ({ productId: c.productId, quantity: c.quantity, sizeId: null })),
       ];
       for (const comp of partes) {
         const cp = meta.get(comp.productId);
         if (!cp) continue;
-        await consume(cp, quantity * comp.quantity, null);
+        await consume(cp, quantity * comp.quantity, comp.sizeId);
       }
     } else {
       await consume(product, quantity, sizeId);

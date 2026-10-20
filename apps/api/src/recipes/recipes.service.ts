@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  comboComponentVariant,
   computeComboCost,
   computeProductCost,
   worstCaseChoiceGroupComponent,
@@ -29,7 +30,6 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type DbRecipeEdge = Prisma.RecipeEdgeGetPayload<Record<string, never>>;
-type DbProductSize = Prisma.ProductSizeGetPayload<Record<string, never>>;
 
 /** Consulta de costos ya resuelta: producto o producto+variante. */
 export interface CatalogCostLookup {
@@ -336,13 +336,15 @@ export class RecipesService {
         const componentIds = [...product.comboComponents.map((c) => c.productId), ...optionIds];
         const componentProducts = await this.prisma.product.findMany({
           where: { id: { in: componentIds } },
+          include: { sizes: { select: { id: true, name: true } } },
         });
         const compMap = new Map(componentProducts.map((p) => [p.id, p]));
-        // Costo unitario de un componente u opción: igual que un producto solo.
-        const unitCostOf = async (comp: (typeof componentProducts)[number]) => {
+        // Costo unitario de un componente u opción: igual que un producto solo,
+        // con la receta de su variante cuando la lleva.
+        const unitCostOf = async (comp: (typeof componentProducts)[number], sizeId?: string) => {
           let recipe: { graph: RecipeGraph; root: ParentRef } | null = null;
           if (!comp.directResale) {
-            recipe = await this.loadGraphForProduct(comp.id);
+            recipe = await this.loadGraphForProduct(comp.id, sizeId);
           }
           return computeProductCost({
             product: {
@@ -375,10 +377,24 @@ export class RecipesService {
             continue;
           }
 
-          const r = await unitCostOf(comp);
+          // Un plato con variantes sin una elegida no se costea con la base:
+          // el combo no se vende así (ver `assertComboArmable`).
+          const variante = comboComponentVariant(comp, cc.sizeId);
+          if (variante.missingReason) {
+            componentResults.push({
+              productId: comp.id,
+              productName: variante.name,
+              quantity: cc.quantity,
+              unitCost: null,
+              costContribution: null,
+              missingReason: variante.missingReason,
+            });
+            continue;
+          }
+          const r = await unitCostOf(comp, cc.sizeId ?? undefined);
           componentResults.push({
             productId: comp.id,
-            productName: comp.name,
+            productName: variante.name,
             quantity: cc.quantity,
             unitCost: r.totalCost,
             costContribution:
@@ -564,14 +580,12 @@ export class RecipesService {
         select: { id: true, lastUnitCost: true, conversionFactor: true },
       }),
       this.loadFullGraph(),
-      withVariants
-        ? this.prisma.productSize.findMany({
-            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-          })
-        : Promise.resolve([] as DbProductSize[]),
-      withVariants
-        ? this.prisma.recipeEdge.findMany({ where: { parentSizeId: { not: null } } })
-        : Promise.resolve([] as DbRecipeEdge[]),
+      // Siempre, aunque no se pidan las variantes: un combo cuyo componente
+      // lleva variante se costea con ella.
+      this.prisma.productSize.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      }),
+      this.prisma.recipeEdge.findMany({ where: { parentSizeId: { not: null } } }),
     ]);
     const ingredientCosts: IngredientCostMap = new Map(
       allIngredients.map((i) => [
@@ -683,10 +697,25 @@ export class RecipesService {
                 missingReason: `Un componente del combo ya no existe en el catálogo.`,
               };
             }
-            const r = costOf(comp);
+            const variante = comboComponentVariant(
+              { name: comp.name, sizes: sizesByProduct.get(comp.id) ?? [] },
+              cc.sizeId,
+            );
+            if (variante.missingReason) {
+              return {
+                productId: comp.id,
+                productName: variante.name,
+                quantity: cc.quantity,
+                unitCost: null,
+                missingReason: variante.missingReason,
+              };
+            }
+            const r = cc.sizeId
+              ? costWithVariant(comp, edgesBySize.get(cc.sizeId) ?? [])
+              : costOf(comp);
             return {
               productId: comp.id,
-              productName: comp.name,
+              productName: variante.name,
               quantity: cc.quantity,
               unitCost: r.totalCost,
               missingReason:
@@ -710,7 +739,7 @@ export class RecipesService {
             productId: product.id,
             totalCost: combo.totalCost,
             missingReasons: combo.missingReasons,
-            variants: variantsOf(product),
+            variants: withVariants ? variantsOf(product) : [],
           };
         }
         const r = costOf(product);
@@ -718,7 +747,7 @@ export class RecipesService {
           productId: product.id,
           totalCost: r.totalCost,
           missingReasons: r.missingReasons,
-          variants: variantsOf(product),
+          variants: withVariants ? variantsOf(product) : [],
         };
       } catch (err) {
         return {

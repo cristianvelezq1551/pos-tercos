@@ -10,6 +10,7 @@ import {
   projectMonthClose,
   extractJsonObject,
   type CatalogProductMargin,
+  comboComponentVariant,
   computeComboCost,
   worstCaseChoiceGroupComponent,
   computeProductCost,
@@ -100,7 +101,7 @@ export class FinancialReportsService {
           directResale: true,
           lastUnitCost: true,
           conversionFactor: true,
-          comboComponents: { select: { productId: true, quantity: true } },
+          comboComponents: { select: { productId: true, quantity: true, sizeId: true } },
           choiceGroups: {
             select: {
               id: true,
@@ -230,12 +231,29 @@ export class FinancialReportsService {
               components: [
                 ...p.comboComponents.map((c) => {
                   const comp = porId.get(c.productId);
+                  if (!comp) {
+                    return {
+                      productId: c.productId,
+                      productName: '(eliminado)',
+                      quantity: c.quantity,
+                      unitCost: null,
+                      missingReason: 'Componente eliminado del catálogo',
+                    };
+                  }
+                  // Con variante, su receta suma a la base (mismo costo que la
+                  // línea de esa variante en la carta). Sin una elegida en un
+                  // plato que la tiene, el combo queda sin costo: no se vende así.
+                  const variante = comboComponentVariant(comp, c.sizeId);
                   return {
                     productId: c.productId,
-                    productName: comp?.name ?? '(eliminado)',
+                    productName: variante.name,
                     quantity: c.quantity,
-                    unitCost: comp ? costoUnitario(comp) : null,
-                    missingReason: comp ? null : 'Componente eliminado del catálogo',
+                    unitCost: variante.missingReason
+                      ? null
+                      : c.sizeId
+                        ? costosDeVariante.unitCost(c.productId, c.sizeId)
+                        : costoUnitario(comp),
+                    missingReason: variante.missingReason,
                   };
                 }),
                 // Un grupo a elegir se costea por su opción MÁS CARA: cuál se
