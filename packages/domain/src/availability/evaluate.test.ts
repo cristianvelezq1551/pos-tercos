@@ -644,6 +644,15 @@ describe('evaluateAvailability · combos con componentes con variante', () => {
     expect(r.reason).toBe('Combo mal configurado');
   });
 
+  it('L9: un componente sin variante cuyo plato AHORA tiene variantes apaga el combo', () => {
+    // Pasa cuando el dueño le agrega variantes a un producto que ya estaba en
+    // un combo. Ofrecerlo descontaría solo la receta base: se apaga y lo dice.
+    const sinElegir = combo([{ productId: 'papas', quantity: 1 }]);
+    const r = evaluarCombo(sinElegir, { papa: 1000, pollo: 500, carne: 500 });
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('Falta elegir la variante de papas en el combo');
+  });
+
   it('REGRESIÓN: un componente sin variante se evalúa como siempre', () => {
     const fijo = combo([{ productId: 'sandwich', quantity: 2 }]);
     expect(evaluarCombo(fijo, { pan: 2 }).available).toBe(true);

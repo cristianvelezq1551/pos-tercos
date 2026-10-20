@@ -32,6 +32,13 @@ la receta de la VARIANTE, no en la base. Hoy, un combo "Papas TERCOS × 2":
 4. **Canal por producto** (solo web / solo caja / ambos) es OTRA pieza, después de
    esta (ver §8). Mientras tanto un combo se comporta como cualquier producto:
    activo = caja y web.
+5. **Si un producto de un combo GANA variantes después** (ej. el Double smash
+   pasa a tener "con tocineta"), **el combo se apaga** hasta que lo edites: no se
+   ofrece en caja ni web (motivo "Falta elegir la variante de X en el combo"),
+   no se puede agregar a un pedido y el cobro lo rechaza. Nunca descuenta ni
+   costea con la receta base. Ojo: el servidor NO obliga a elegir variante en una
+   venta suelta (eso lo controla la pantalla), así que esta regla es propia del
+   combo. Hoy no aplica a nada (ver §2).
 
 ## 2. Fase 0 — lo que hay en prod (consulta de solo lectura, 2026-10-20)
 
@@ -89,8 +96,9 @@ registró; editar un pedido cobrado topa sus reversos en lo realmente descontado
 | L6 | Lo que la caja ofrece se puede cobrar | Se acaba el pollo → el combo se apaga y el cobro lo rechaza; se acaba un consumible → no frena |
 | L7 | Anular deja todo en cero | Neto por insumo = 0 tras anular |
 | L8 | Lo mal configurado no se guarda | Sin variante / variante ajena / variante en producto sin variantes / borrar variante en uso → mensaje claro, nunca un 500 |
+| L9 | Un componente que se quedó sin variante no vende | El producto gana variantes → el combo se apaga, no entra a un pedido, el cobro lo rechaza sin descontar; al editar el combo vuelve |
 
-**Regla del proceso**: L3–L8 se escriben ANTES del código y se comprueba que
+**Regla del proceso**: L3–L9 se escriben ANTES del código y se comprueba que
 **fallan en `main`**. Una prueba que nunca falló no demuestra nada.
 
 ## 5. Dos entregas

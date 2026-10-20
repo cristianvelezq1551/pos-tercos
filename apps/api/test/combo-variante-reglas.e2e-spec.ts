@@ -321,4 +321,93 @@ describe('Combo con variante — disponibilidad y reglas E2E', () => {
       expect(await prisma.recipeEdge.count({ where: { parentSizeId: tamPolloId } })).toBe(1);
     });
   });
+
+  /**
+   * Decisión del dueño (2026-10-20): si a un producto que YA está en un combo
+   * le agregan variantes, el combo se apaga hasta que lo editen. Venderlo con la
+   * receta base sería el error silencioso que esto viene a cerrar.
+   */
+  describe('L9 — un componente que se quedó sin variante no vende', () => {
+    let sandwichId: string;
+    let comboSandwichId: string;
+    let ventaPendienteId: string;
+    let ventaPendienteTotal: number;
+
+    beforeAll(async () => {
+      const panId = (
+        await request
+          .post('/ingredients')
+          .set(auth())
+          .send({ name: 'Pan Reglas', unitPurchase: 'paquete', unitRecipe: 'unidad', conversionFactor: 10 })
+          .expect(201)
+      ).body.id as string;
+      await prisma.ingredient.update({ where: { id: panId }, data: { lastUnitCost: 5000 } });
+      await request
+        .post('/inventory/movements')
+        .set(auth())
+        .send({ type: 'INITIAL', entityType: 'INGREDIENT', ingredientId: panId, delta: 100, unitCost: 500 })
+        .expect(201);
+      sandwichId = (
+        await request
+          .post('/products')
+          .set(auth())
+          .send({ category: 'Test', name: 'Sandwich Reglas', basePrice: 18_000, directResale: false, isCombo: false, modifiersEnabled: false })
+          .expect(201)
+      ).body.id as string;
+      await request
+        .put(`/products/${sandwichId}/recipe`)
+        .set(auth())
+        .send({ edges: [{ childType: 'ingredient', childId: panId, quantityNeta: 1 }] })
+        .expect(200);
+      comboSandwichId = (await crearCombo('Combo Sandwich Reglas', [{ productId: sandwichId, quantity: 1 }]).expect(201))
+        .body.id as string;
+    });
+
+    it('mientras el plato no tiene variantes, el combo se vende normal', async () => {
+      expect((await disponibilidad(comboSandwichId)).available).toBe(true);
+      // Un pedido que queda abierto ANTES del cambio (una cuenta abierta).
+      const venta = await crearVenta([{ productId: comboSandwichId, quantity: 1 }]).expect(201);
+      ventaPendienteId = venta.body.id as string;
+      ventaPendienteTotal = venta.body.total as number;
+    });
+
+    it('al agregarle variantes al plato, el combo se apaga y dice qué falta', async () => {
+      await request
+        .put(`/products/${sandwichId}/options`)
+        .set(auth())
+        .send({ sizes: [{ name: 'Clásico', priceModifier: 0, sortOrder: 0 }], modifiers: [] })
+        .expect(200);
+      const combo = await disponibilidad(comboSandwichId);
+      expect(combo.available).toBe(false);
+      expect(combo.reason).toBe('Falta elegir la variante de Sandwich Reglas en el combo');
+    });
+
+    it('no se puede agregar a un pedido nuevo', async () => {
+      const res = await crearVenta([{ productId: comboSandwichId, quantity: 1 }]).expect(400);
+      expect(mensaje(res.body)).toContain('Sandwich Reglas');
+      expect(mensaje(res.body).toLowerCase()).toContain('variante');
+      expect(mensaje(res.body)).not.toMatch(UUID);
+    });
+
+    it('el pedido que ya lo tenía no se cobra con la receta base, y no descuenta nada', async () => {
+      const res = await cobrar(ventaPendienteId, ventaPendienteTotal).expect(400);
+      expect(mensaje(res.body)).toContain('Sandwich Reglas');
+      expect(mensaje(res.body)).not.toMatch(UUID);
+      expect(
+        await prisma.inventoryMovement.count({ where: { sourceType: 'sale', sourceId: ventaPendienteId } }),
+      ).toBe(0);
+    });
+
+    it('al elegir la variante en el combo, vuelve a venderse y el pedido se cobra', async () => {
+      const sandwich = await request.get(`/products/${sandwichId}`).set(auth()).expect(200);
+      const clasicoId = (sandwich.body.sizes as Array<{ id: string }>)[0].id;
+      await request
+        .put(`/products/${comboSandwichId}/combo`)
+        .set(auth())
+        .send({ components: [{ productId: sandwichId, sizeId: clasicoId, quantity: 1 }] })
+        .expect(200);
+      expect((await disponibilidad(comboSandwichId)).available).toBe(true);
+      await cobrar(ventaPendienteId, ventaPendienteTotal).expect(201);
+    });
+  });
 });
