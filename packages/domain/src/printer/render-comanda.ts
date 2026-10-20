@@ -32,6 +32,12 @@ export interface ComandaData {
     productName: string;
     sizeName: string | null;
     quantity: number;
+    /**
+     * Solo combos: lo que lleva, una línea por componente con su variante
+     * ("2x Papas TERCOS Pollo y Miel ahumada"). La cocina arma el combo con
+     * esto, no con el nombre. Opcional: ausente o vacío = sin líneas.
+     */
+    components?: string[];
     modifiers: string[];
     notes: string | null;
   }>;
@@ -155,6 +161,15 @@ export function renderComandaEscPos(comanda: ComandaData): Buffer {
     out.push(BOLD_OFF);
     out.push(SIZE_NORMAL);
     out.push(LF);
+    // Componentes del combo: partidos por PALABRAS con sangría, nunca cortados
+    // — "Papas TERCOS Pollo y Miel ahumada" truncado a 32 perdería la variante,
+    // que es justo lo que la cocina necesita leer.
+    for (const comp of item.components ?? []) {
+      wrap(comp, 32 - COMPONENT_INDENT.length).forEach((linea, i) => {
+        out.push(latin1(`${i === 0 ? COMPONENT_BULLET : COMPONENT_INDENT}${linea}`));
+        out.push(LF);
+      });
+    }
     for (const mod of item.modifiers) {
       out.push(latin1(truncate(`   + ${mod}`, 32)));
       out.push(LF);
@@ -203,6 +218,9 @@ const SIZE_2H = Buffer.from([0x1d, 0x21, 0x01]);
 const SIZE_2H_2W = Buffer.from([0x1d, 0x21, 0x11]);
 const CUT_PARTIAL = Buffer.from([0x1d, 0x56, 0x01]);
 const SEPARATOR = Buffer.from('-'.repeat(32) + '\n', 'latin1');
+/** Viñeta de un componente de combo y la sangría de sus líneas siguientes. */
+const COMPONENT_BULLET = '   - ';
+const COMPONENT_INDENT = '     ';
 /** Margen inferior (6 líneas) para cortar a mano sin dañar el texto del pedido. */
 const FEED_TEAR_MARGIN = Buffer.from('\n'.repeat(6), 'latin1');
 
