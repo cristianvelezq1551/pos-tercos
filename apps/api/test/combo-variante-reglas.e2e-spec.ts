@@ -48,6 +48,7 @@ describe('Combo con variante — disponibilidad y reglas E2E', () => {
         available: boolean;
         reason: string | null;
         variants: Array<{ sizeId: string; available: boolean }>;
+        choiceOptions: Array<{ productId: string; available: boolean; reason: string | null }>;
       }>
     ).find((p) => p.productId === productId);
     expect(fila).toBeDefined();
@@ -290,6 +291,25 @@ describe('Combo con variante — disponibilidad y reglas E2E', () => {
       );
     });
 
+    it('una opción a elegir no puede ser un plato con variantes (elegir la variante ahí no existe todavía)', async () => {
+      const res = await request
+        .post('/products')
+        .set(auth())
+        .send({
+          category: 'Test',
+          name: 'Combo con opción con variantes Reglas',
+          basePrice: 30_000,
+          isCombo: true,
+          comboPrice: 30_000,
+          modifiersEnabled: false,
+          comboComponents: [{ productId: gaseosaId, quantity: 1 }],
+          choiceGroups: [{ label: 'Acompañamiento', quantity: 1, options: [{ productId: papasId }, { productId: gaseosaId }] }],
+        })
+        .expect(400);
+      expect(mensaje(res.body)).toContain('Papas Reglas');
+      expect(mensaje(res.body)).not.toMatch(UUID);
+    });
+
     it('REGRESIÓN: un combo de productos sin variantes se guarda como siempre', async () => {
       await crearCombo('Combo solo gaseosas Reglas', [{ productId: gaseosaId, quantity: 2 }]).expect(201);
     });
@@ -408,6 +428,54 @@ describe('Combo con variante — disponibilidad y reglas E2E', () => {
         .expect(200);
       expect((await disponibilidad(comboSandwichId)).available).toBe(true);
       await cobrar(ventaPendienteId, ventaPendienteTotal).expect(201);
+    });
+
+    it('una OPCIÓN a elegir que gana variantes se apaga y no se puede elegir; las demás siguen', async () => {
+      const postreId = (
+        await request
+          .post('/products')
+          .set(auth())
+          .send({ category: 'Test', name: 'Postre Reglas', basePrice: 6000, directResale: false, isCombo: false, modifiersEnabled: false })
+          .expect(201)
+      ).body.id as string;
+      const combo = await request
+        .post('/products')
+        .set(auth())
+        .send({
+          category: 'Test',
+          name: 'Combo con postre Reglas',
+          basePrice: 30_000,
+          isCombo: true,
+          comboPrice: 30_000,
+          modifiersEnabled: false,
+          comboComponents: [{ productId: gaseosaId, quantity: 1 }],
+          choiceGroups: [{ label: 'Final', quantity: 1, options: [{ productId: postreId }, { productId: gaseosaId }] }],
+        })
+        .expect(201);
+      const comboConPostreId = combo.body.id as string;
+      const grupoId = (combo.body.choiceGroups as Array<{ id: string }>)[0].id;
+
+      await request
+        .put(`/products/${postreId}/options`)
+        .set(auth())
+        .send({ sizes: [{ name: 'Grande', priceModifier: 2000, sortOrder: 0 }], modifiers: [] })
+        .expect(200);
+
+      const disp = await disponibilidad(comboConPostreId);
+      // El combo sigue: la gaseosa todavía se puede elegir.
+      expect(disp.available).toBe(true);
+      const opcionPostre = disp.choiceOptions.find((o) => o.productId === postreId);
+      expect(opcionPostre?.available).toBe(false);
+      expect(opcionPostre?.reason).toBe('Tiene variantes: quítalo de las opciones');
+
+      const conPostre = await crearVenta([
+        { productId: comboConPostreId, quantity: 1, choices: [{ groupId: grupoId, productId: postreId, quantity: 1 }] },
+      ]).expect(400);
+      expect(mensaje(conPostre.body)).toContain('Postre Reglas');
+      expect(mensaje(conPostre.body)).not.toMatch(UUID);
+      await crearVenta([
+        { productId: comboConPostreId, quantity: 1, choices: [{ groupId: grupoId, productId: gaseosaId, quantity: 1 }] },
+      ]).expect(201);
     });
   });
 });

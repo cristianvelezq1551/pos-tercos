@@ -653,6 +653,21 @@ describe('evaluateAvailability · combos con componentes con variante', () => {
     expect(r.reason).toBe('Falta elegir la variante de papas en el combo');
   });
 
+  it('L9: una OPCIÓN a elegir con variantes se apaga sola; el combo sigue con las demás', () => {
+    const conGrupo = product('combo', {
+      isCombo: true,
+      comboComponents: [],
+      choiceGroups: [{ id: 'g', label: 'Plato', quantity: 1, optionProductIds: ['papas', 'sandwich'] }],
+    });
+    const r = evaluarCombo(conGrupo, { papa: 1000, pollo: 500, carne: 500, pan: 10 });
+    expect(r.available).toBe(true);
+    expect(r.choiceOptions.find((o) => o.productId === 'papas')).toMatchObject({
+      available: false,
+      reason: 'Tiene variantes: quítalo de las opciones',
+    });
+    expect(r.choiceOptions.find((o) => o.productId === 'sandwich')?.available).toBe(true);
+  });
+
   it('REGRESIÓN: un componente sin variante se evalúa como siempre', () => {
     const fijo = combo([{ productId: 'sandwich', quantity: 2 }]);
     expect(evaluarCombo(fijo, { pan: 2 }).available).toBe(true);
