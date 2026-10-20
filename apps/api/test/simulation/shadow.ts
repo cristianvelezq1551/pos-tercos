@@ -107,8 +107,12 @@ export interface ProductoSombra {
   precio: number;
   directResale: boolean;
   isCombo: boolean;
-  /** Solo si es combo: componentes y su cantidad. */
-  componentes: Array<{ productId: string; quantity: number }>;
+  /**
+   * Solo si es combo: componentes y su cantidad. `recetaVariante` es la receta
+   * PROPIA de la variante del componente (aditiva sobre la del plato): la sombra
+   * guarda la que se le mandó a la API, no la que la app calcula.
+   */
+  componentes: Array<{ productId: string; quantity: number; recetaVariante?: AristaReceta[] }>;
   /** Solo si es preparado: receta de primer nivel. */
   receta: AristaReceta[];
 }
@@ -137,6 +141,12 @@ export function consumoDeUnaUnidad(
       if (!hijo) throw new Error(`Componente ${comp.productId} ausente del catálogo sombra`);
       for (const [clave, qty] of consumoDeUnaUnidad(hijo, catalogo)) {
         sumar(clave, qty * comp.quantity);
+      }
+      for (const arista of comp.recetaVariante ?? []) {
+        sumar(
+          claveDe(arista.childType === 'ingredient' ? 'INGREDIENT' : 'SUBPRODUCT', arista.childId),
+          cantidadBruta(arista) * comp.quantity,
+        );
       }
     }
     return out;

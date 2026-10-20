@@ -449,6 +449,41 @@ describe('Simulación financiera aleatoria', () => {
         }
       });
 
+      it('L22 · el combo cuyo componente lleva variante descuenta la receta de la variante', async () => {
+        // El hueco que cerró PLAN-COMBO-CON-VARIANTE.md: el componente no
+        // guardaba la variante, así que "2 × plato grande" descontaba solo la
+        // receta del plato. La EXACTITUD del consumo la dan las leyes de stock
+        // contra la sombra (que suma la receta del tamaño); esta ley asegura que
+        // la simulación de verdad vendió el combo y que cada venta lo descontó.
+        const combo = mundo.conVariante;
+        const lineas = await mundo.prisma.saleItem.findMany({
+          where: {
+            productId: combo.producto.id,
+            sale: { status: { notIn: [...NON_REVENUE_SALE_STATUSES] } },
+          },
+          select: { quantity: true, saleId: true },
+        });
+        // 0 líneas = la simulación nunca vendió el combo y esta ley no probó nada.
+        expect(lineas.length).toBeGreaterThan(0);
+
+        for (const l of lineas) {
+          const salidas = await mundo.prisma.inventoryMovement.aggregate({
+            where: {
+              sourceType: 'sale',
+              sourceId: l.saleId,
+              entityType: 'INGREDIENT',
+              ingredientId: combo.insumoVarianteId,
+            },
+            _sum: { delta: true },
+          });
+          // La venta puede traer otras líneas que usen el mismo insumo: tiene
+          // que ALCANZAR para lo que pide el combo, nunca de menos.
+          expect(-Number(salidas._sum.delta ?? 0)).toBeGreaterThanOrEqual(
+            combo.insumoVariantePorCombo * l.quantity - 1e-6,
+          );
+        }
+      });
+
       it('L19 · el faltante detectado al contar es una pérdida y aparece en su propia línea', async () => {
         // Hasta 2026-08-28 este valor se iba del inventario sin entrar a NINGUNA
         // línea del P&G: el margen bruto quedaba alto por exactamente esa plata.
