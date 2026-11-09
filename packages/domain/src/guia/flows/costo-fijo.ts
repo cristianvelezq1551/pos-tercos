@@ -38,7 +38,7 @@ export const FLOW_COSTO_FIJO: GuideFlow = {
   sightings: [
     {
       where: 'Gestión → Finanzas → Costos y gastos',
-      what: 'El costo en la lista y, abajo, los períodos pendientes de pago.',
+      what: 'El costo en su bloque y, abajo, los períodos pendientes de pago. Los recurrentes se ven siempre; los gastos únicos, solo los del mes elegido (arranca en el mes en curso y se cambia con las flechas).',
       means: 'Un período pendiente es plata que debes este mes y todavía no sale de ningún lado. Es tu lista de "por pagar".',
     },
     {

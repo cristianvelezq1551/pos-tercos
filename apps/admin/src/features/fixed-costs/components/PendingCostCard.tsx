@@ -95,9 +95,11 @@ export function PendingCostCard({
   ).length;
 
   return (
+    // `min-w-0`: la tarjeta es un ítem de grid y sin esto no se encoge — un
+    // nombre largo estiraba la columna más allá de los 390 px del celular.
     <div
       className={cn(
-        'rounded-2xl border bg-card p-4',
+        'min-w-0 rounded-2xl border bg-card p-4',
         overdueCount > 0 ? 'border-warning-border/60' : 'border-border',
       )}
     >

@@ -5693,6 +5693,32 @@ Typecheck 13/13 sin caché, lint 0, unit 12/12 paquetes.
   renderizador anterior (main 8f642fa). Si ese test falla, el cambio movió un
   papel que ya funcionaba.
 
+## 7.v79 Los gastos únicos se ven mes a mes (2026-11-09)
+
+> Pedido del dueño: Costos y gastos listaba los 56 gastos únicos de prod juntos
+> (septiembre a noviembre, $13,4 M) y el total no correspondía a ningún mes.
+
+- **Los únicos se filtran por el mes CALENDARIO de su fecha**, que es la misma
+  clave con la que se guarda su pago (`paymentPeriodFor`) y, con el mes de
+  negocio fijo en el día 1 (§7.v73), la misma ventana del estado financiero.
+  Abre en el mes en curso del LOCAL (`businessWallClock` en el server) y se
+  cambia con flechas. Los recurrentes siguen completos.
+- **Filtra en el cliente, no navega**: el catálogo entero ya llegó. Por eso
+  `MonthStepper` (`apps/admin/src/components/`) es controlado; `MonthPicker` de
+  finanzas lo envuelve con la navegación por URL de siempre.
+- Guardar un gasto único con fecha de otro mes **salta a ese mes** (si no,
+  desaparecería apenas se guarda). Uno sin fecha no cae en ningún mes y se
+  avisa por nombre para corregirlo.
+- Verificado sobre la copia de prod del 2026-11-09: cada mes muestra los mismos
+  nombres y totales que la consulta SQL, y como todos están pagados por el monto
+  de la ficha, coinciden con lo que cuenta el estado financiero.
+
+⚠️ **Hallazgo aparte, sin tocar**: en el build de producción LOCAL, la flecha de
+mes del estado financiero pide el mes correcto pero Next aborta la respuesta y
+la URL no cambia. Pasa igual con el código anterior (A/B): es el mismo patrón
+que la navegación colgada de `/promotions` (memoria de Next 15.5). En dev sí
+funciona. No verificado en prod real (ahí no se hace login).
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
