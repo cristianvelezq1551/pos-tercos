@@ -29,6 +29,7 @@ import supertest from 'supertest';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
+import { diaLocal } from './helpers/local-day';
 
 /** PNG mínimo válido: el comprobante se valida por los bytes, no por el nombre. */
 const PNG = Buffer.from(
@@ -61,10 +62,15 @@ describe('Devengado contra pagado: las dos vistas de la misma plata E2E', () => 
 
   const auth = (): { Authorization: string } => ({ Authorization: `Bearer ${token}` });
 
-  /** Semana fija y pasada: si fuera "esta semana", lo devengado cambiaría
-   *  según el día en que corra el test y los números no serían estables. */
-  const SEMANA = '2026-05-13';
-  const MES = { year: 2026, month: 5 };
+  /** Semana PASADA y fija durante la corrida: si fuera "esta semana", lo
+   *  devengado cambiaría según el día en que corra el test. Va a 8 semanas de
+   *  hoy, no a una fecha escrita: así cae siempre en un mes anterior al de pago
+   *  y siempre dentro de las 26 semanas que mira el pendiente de nómina (§1.8).
+   *  Con '2026-05-13' fija, el 2026-11-09 la semana salió de esa ventana y
+   *  pagarla dejó de bajar el pendiente — la prueba caducó, no el sistema. */
+  const SEMANA = diaLocal(-56);
+  const MES = { year: Number(SEMANA.slice(0, 4)), month: Number(SEMANA.slice(5, 7)) };
+  const INICIO_MES = `${SEMANA.slice(0, 7)}-01`;
   const rangoMes = `year=${MES.year}&month=${MES.month}`;
   /** El mes en que ocurren los pagos de esta corrida: hoy. */
   const hoy = new Date();
@@ -135,7 +141,7 @@ describe('Devengado contra pagado: las dos vistas de la misma plata E2E', () => 
     await request
       .patch('/treasury/config')
       .set(auth())
-      .send({ anchorDate: '2026-05-01', initialCash: 1_000_000, initialBank: 5_000_000 })
+      .send({ anchorDate: INICIO_MES, initialCash: 1_000_000, initialBank: 5_000_000 })
       .expect(200);
   });
 
@@ -252,7 +258,7 @@ describe('Devengado contra pagado: las dos vistas de la misma plata E2E', () => 
         category: 'Arriendo',
         amount: 800_000,
         frequency: 'MONTHLY',
-        startedAt: '2026-05-01',
+        startedAt: INICIO_MES,
       })
       .expect(201);
 
@@ -266,8 +272,8 @@ describe('Devengado contra pagado: las dos vistas de la misma plata E2E', () => 
     await request
       .post(`/fixed-costs/${creado.body.id}/payment`)
       .set(auth())
-      .field('periodYear', '2026')
-      .field('periodMonth', '5')
+      .field('periodYear', String(MES.year))
+      .field('periodMonth', String(MES.month))
       .field('cashAmount', '0')
       .field('bankAmount', '800000')
       .attach('proof', PNG, 'comprobante.png')

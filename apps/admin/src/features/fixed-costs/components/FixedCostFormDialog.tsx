@@ -14,7 +14,7 @@ export function FixedCostFormDialog({
 }: {
   initial: FixedCost | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (saved: FixedCost) => void;
 }) {
   const isEdit = initial !== null;
   const [name, setName] = useState(initial?.name ?? '');
@@ -48,12 +48,11 @@ export function FixedCostFormDialog({
         endedAt: endedAt || null,
         notes: notes.trim() || null,
       };
-      if (isEdit && initial) {
-        await updateFixedCost(initial.id, { ...payload, isActive });
-      } else {
-        await createFixedCost(payload);
-      }
-      onSaved();
+      const saved =
+        isEdit && initial
+          ? await updateFixedCost(initial.id, { ...payload, isActive })
+          : await createFixedCost(payload);
+      onSaved(saved);
     } catch (e) {
       setError(getErrorMessage(e, 'No se pudo guardar.'));
     } finally {

@@ -82,12 +82,15 @@ function baseColumns(
 export function FixedCostsTable({
   costs,
   variant,
+  periodLabel,
   onCreate,
   onEdit,
   onDelete,
 }: {
   costs: FixedCost[];
   variant: FixedCostsTableVariant;
+  /** Mes que se está mirando ("noviembre 2026"). Solo aplica a los únicos. */
+  periodLabel?: string;
   onCreate: () => void;
   onEdit: (cost: FixedCost) => void;
   onDelete: (cost: FixedCost) => void;
@@ -152,12 +155,14 @@ export function FixedCostsTable({
           title={
             variant === 'recurring'
               ? 'Aún no tienes gastos que se repitan'
-              : 'Aún no tienes gastos únicos cargados'
+              : periodLabel
+                ? `No hay gastos únicos en ${periodLabel}`
+                : 'Aún no tienes gastos únicos cargados'
           }
           description={
             variant === 'recurring'
               ? 'Carga arriendo, servicios, internet, software, contador. Se descuentan todos los meses al calcular si tu negocio gana o pierde dinero.'
-              : 'Aquí van los gastos que pasan una sola vez: aceite, productos de aseo, una reparación, una compra puntual. Pesan solo en el mes de su fecha.'
+              : 'Aquí van los gastos que pasan una sola vez: aceite, productos de aseo, una reparación, una compra puntual. Pesan solo en el mes de su fecha; para ver los de otro mes, cámbialo con las flechas.'
           }
           action={
             <Button onClick={onCreate}>

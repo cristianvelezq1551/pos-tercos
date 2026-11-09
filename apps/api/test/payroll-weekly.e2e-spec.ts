@@ -9,7 +9,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { bootstrapApp, loginAs } from './helpers/app-bootstrap';
 import { cleanDb } from './helpers/db-cleaner';
 import type { WeeklyPayrollReport } from '@pos-tercos/types';
-import { hoyLocal, mesLocalQuery } from './helpers/local-day';
+import { diaLocal, hoyLocal, mesLocalQuery } from './helpers/local-day';
 
 describe('Nómina semanal unificada E2E', () => {
   let app: INestApplication;
@@ -20,7 +20,10 @@ describe('Nómina semanal unificada E2E', () => {
   let dailyId: string;
 
   // Semana fija en el pasado (no-futuro) para que owed sea estable.
-  const WEEK = '2026-05-13'; // miércoles
+  // Semana pasada a 8 semanas de hoy, no una fecha escrita: el pendiente de
+  // nómina mira solo las últimas 26 semanas (§1.8), y con '2026-05-13' fija
+  // el 2026-11-09 la semana salió de la ventana y el abono dejó de bajarlo.
+  const WEEK = diaLocal(-56);
 
   beforeAll(async () => {
     ({ app, prisma, request } = await bootstrapApp());

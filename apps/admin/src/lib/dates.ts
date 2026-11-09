@@ -22,3 +22,29 @@ export function ymdLocalToday(): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${m}-${day}`;
 }
+
+const MESES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+/** "noviembre 2026" — `month` va de 1 a 12. */
+export function monthLabel(year: number, month: number): string {
+  return `${MESES[month - 1]} ${year}`;
+}
+
+/** El mes que queda `delta` meses antes (negativo) o después de (year, month). */
+export function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const d = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+}

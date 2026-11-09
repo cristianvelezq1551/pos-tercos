@@ -14,12 +14,15 @@ export function CostsSummaryCard({
   recurrentesActivos,
   totalUnicos,
   unicosActivos,
+  periodLabel,
   onCreate,
 }: {
   totalRecurrenteMensual: number;
   recurrentesActivos: number;
   totalUnicos: number;
   unicosActivos: number;
+  /** Mes al que corresponden los gastos únicos ("noviembre 2026"). */
+  periodLabel: string;
   onCreate: () => void;
 }) {
   return (
@@ -41,14 +44,14 @@ export function CostsSummaryCard({
         <div className="sm:border-l sm:border-border sm:pl-8">
           <p className="caps flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
             <Receipt className="h-3 w-3" strokeWidth={2} />
-            Gastos únicos cargados
+            Gastos únicos de {periodLabel}
           </p>
           <p className="mt-0.5 text-xl font-bold text-foreground tabular-nums">
             <Money amount={totalUnicos} weight="bold" />
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {unicosActivos} gasto{unicosActivos === 1 ? '' : 's'} · no se repiten: cada uno pesa
-            solo en el mes de su fecha.
+            solo en el mes de su fecha. Abajo puedes ver los de otro mes.
           </p>
         </div>
       </div>
