@@ -19,7 +19,7 @@ export function PickerSizes({
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm font-semibold text-foreground">Tamaño</p>
+      <p className="text-sm font-semibold text-foreground">Elige una opción</p>
       <div className="flex flex-col gap-2">
         {sizes.map((s) => {
           const checked = sizeId === s.id;

@@ -24,7 +24,7 @@ export function PickerSizes({
     (availability?.variants ?? []).map((v) => [v.sizeId, { available: v.available, reason: v.reason }]),
   );
   return (
-    <FormField label="Tamaño">
+    <FormField label="Elige una opción">
       <div className="grid grid-cols-1 gap-2">
         {[...sizes]
           .sort((a, b) => a.sortOrder - b.sortOrder)
