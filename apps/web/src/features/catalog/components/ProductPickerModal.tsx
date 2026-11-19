@@ -63,10 +63,9 @@ export function ProductPickerModal({
 
   useEffect(() => {
     if (open && product) {
-      // Se preselecciona una que SÍ se pueda: si no, el botón de agregar
-      // aparece bloqueado sin que se entienda por qué.
-      const primera = sortedSizes.find((sz) => !agotadas?.has(sz.id)) ?? sortedSizes[0];
-      setSizeId(primera?.id ?? null);
+      // La opción NO viene marcada: con una por defecto, quien pide rápido se
+      // lleva una que no eligió y la cocina prepara otra cosa.
+      setSizeId(null);
       setModifierIds(new Set());
       setQuantity(1);
       setNotes('');

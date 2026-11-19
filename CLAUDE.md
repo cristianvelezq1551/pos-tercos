@@ -5719,6 +5719,24 @@ la URL no cambia. Pasa igual con el código anterior (A/B): es el mismo patrón
 que la navegación colgada de `/promotions` (memoria de Next 15.5). En dev sí
 funciona. No verificado en prod real (ahí no se hace login).
 
+## 7.v80 La variante ya no viene marcada (2026-11-19)
+
+> Lo encontró la validación en QA de "Perros TERCOS" (3 variantes: dos Perro
+> sandwich, dos Perro burger o uno de cada uno). Sin migración ni cambio de API.
+
+- **La caja y la web abrían el selector con la primera variante disponible ya
+  marcada** (desde e770462, 2026-09-02). Quien va rápido cobraba la opción por
+  defecto aunque la cocina preparara otra, y el inventario descontaba lo que no
+  era. Es el mismo problema que el dueño ya había descartado para los grupos a
+  elegir de un combo (§7.v75): ahora **ninguna variante viene marcada** y
+  "Agregar al carrito" se habilita solo al elegir una. Aplica a todo producto con
+  variantes (Papas TERCOS, Burros, Mac & Papas, Perros TERCOS).
+- El título de la sección dejó de ser **"Tamaño"** (se leía "Tamaño: Mixto") y
+  pasó a **"Elige una opción"**, en la caja y en la web.
+- ⚠️ Las pruebas de navegador que venden "cualquier producto vendible"
+  (`findSellableProduct`) ahora excluyen los productos con variantes o grupos a
+  elegir: no eligen nada, y con opciones el botón queda bloqueado.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2

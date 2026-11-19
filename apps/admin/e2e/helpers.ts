@@ -204,8 +204,22 @@ export async function findSellableProduct(
   expect(prodRes.ok()).toBeTruthy();
   const availability = (await availRes.json()) as { productId: string; available: boolean }[];
   const availableIds = new Set(availability.filter((a) => a.available).map((a) => a.productId));
-  const products = (await prodRes.json()) as { id: string; name: string; soldOut: boolean }[];
-  const candidate = products.find((p) => availableIds.has(p.id) && !p.soldOut);
+  const products = (await prodRes.json()) as {
+    id: string;
+    name: string;
+    soldOut: boolean;
+    sizes?: unknown[];
+    choiceGroups?: unknown[];
+  }[];
+  // Sin opciones que elegir: con variantes o grupos, "Agregar al carrito"
+  // queda bloqueado hasta escoger, y estos flujos no eligen nada.
+  const candidate = products.find(
+    (p) =>
+      availableIds.has(p.id) &&
+      !p.soldOut &&
+      (p.sizes?.length ?? 0) === 0 &&
+      (p.choiceGroups?.length ?? 0) === 0,
+  );
   expect(candidate, 'no hay ningún producto vendible en el catálogo').toBeTruthy();
   return candidate!;
 }

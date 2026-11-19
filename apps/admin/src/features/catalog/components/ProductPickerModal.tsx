@@ -87,11 +87,10 @@ export function ProductPickerModal({
 
   useEffect(() => {
     if (open && product) {
-      const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
-      // Preselecciona la primera que SÍ se pueda hacer: dejar marcada una sin
-      // insumos obligaría al cajero a descubrir por qué no lo deja confirmar.
-      const primeraPosible = sortedSizes.find((sz) => !sizeBlocked(sz.id)) ?? sortedSizes[0];
-      setSizeId(primeraPosible?.id ?? null);
+      // La variante NO viene marcada: quien va rápido cobraría la opción por
+      // defecto aunque la cocina prepare otra, y el inventario descontaría lo
+      // que no es. Misma regla que los grupos a elegir de un combo.
+      setSizeId(null);
       setModifierIds(new Set());
       setQuantity(1);
       setChoiceSel(nuevaSeleccion(product.choiceGroups ?? []));
