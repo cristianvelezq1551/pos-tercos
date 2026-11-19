@@ -5737,6 +5737,20 @@ funciona. No verificado en prod real (ahí no se hace login).
   (`findSellableProduct`) ahora excluyen los productos con variantes o grupos a
   elegir: no eligen nada, y con opciones el botón queda bloqueado.
 
+## 7.v81 Editar un pedido cobrado ofrece TODOS los productos (2026-11-19)
+
+> Encontrado validando §7.v80 en QA. Sin migración ni cambio de API.
+
+- "Agregar producto" en la edición de un pedido (`AddProductChips`) cortaba en
+  los primeros **24** productos (`slice(0, 24)`). En QA quedaban fuera 14 de 38
+  —varias bebidas, Porción papas y Perros TERCOS—: no se podían agregar a un
+  pedido ya cobrado y el cajero tenía que hacer una venta aparte.
+- Ahora se muestran **todos** y hay un **buscador** (`ListSearch` +
+  `filtrarPorTexto`, el mismo criterio sin tildes del resto del admin; busca por
+  nombre y categoría, y dice "N de M productos" o "ningún producto coincide").
+- Sigue igual: con la cocina en curso solo se ofrece reventa directa, y lo
+  agotado se ve tachado y no se puede agregar.
+
 ## 8. Estado del proyecto (commits y FASES)
 
 ### Commits en `main` (base v1, 92 commits) + rama v2
